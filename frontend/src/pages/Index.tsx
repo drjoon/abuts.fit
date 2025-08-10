@@ -136,72 +136,105 @@ const Index = () => {
 
       {/* Pricing Section */}
       <section id="pricing" className="py-16 bg-muted/30">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <h2 className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent mb-8">
+        <div className="max-w-6xl mx-auto px-4">
+          <h2 className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent mb-12 text-center">
             요금제
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            {/* 치과기공소 카드 */}
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle className="text-2xl text-primary">
-                  치과기공소
-                </CardTitle>
-                <CardDescription className="text-lg">
-                  의뢰자 100% 무료 이용
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-stretch">
+            {/* 치과기공소 */}
+            <div className="flex flex-col items-center h-full">
+              <Card className="w-full h-full shadow-elegant min-h-[440px] flex flex-col border-2 border-green-200">
+                <CardHeader className="pb-2 flex flex-row items-center gap-2 justify-center">
+                  <CardTitle className="text-2xl lg:text-3xl text-green-600 text-center">
+                    치과기공소
+                  </CardTitle>
+                </CardHeader>
+                <CardDescription className="inline-block text-center bg-green-100 text-green-700 font-bold text-sm px-3 py-1">
+                  플랫폼 모델
                 </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="text-center">
-                  <div className="text-4xl font-bold text-green-600 mb-2">
-                    무료
+                <CardContent className="flex-1 flex flex-col justify-center space-y-8">
+                  <div className="text-center">
+                    <div className="text-3xl lg:text-4xl font-bold mb-1 text-green-600">
+                      무료
+                    </div>
                   </div>
-                  <p className="text-muted-foreground">
-                    모든 의뢰 기능을 무료로 이용하세요
-                  </p>
-                </div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>• 제작사 검색 및 연결</p>
-                  <p>• 의뢰 등록 및 관리</p>
-                  <p>• 실시간 채팅 상담</p>
-                  <p>• 품질 보증 서비스</p>
-                </div>
-              </CardContent>
-            </Card>
+                  <ul className="space-y-2 text-base lg:text-lg text-center">
+                    <li>• 의뢰 등록 및 관리</li>
+                    <li>• 실시간 채팅 상담</li>
+                    <li>• 품질 보증 서비스</li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
 
-            {/* 제작사 카드 */}
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle className="text-2xl text-primary">제작사</CardTitle>
-                <CardDescription className="text-lg">
-                  거래 성사시에만 수수료 발생
+            {/* 플랫폼 모델 */}
+            <div className="flex flex-col items-center h-full">
+              <Card className="w-full h-full shadow-elegant min-h-[440px] flex flex-col border-2 border-primary/30">
+                <CardHeader className="pb-2 flex flex-row items-center gap-2 justify-center">
+                  <CardTitle className="text-2xl lg:text-3xl text-primary text-center">
+                    어벗먼트 제조사
+                  </CardTitle>
+                </CardHeader>
+                <CardDescription className="inline-block text-center bg-blue-100 text-blue-700 font-bold text-sm px-3 py-1">
+                  플랫폼 모델
                 </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="text-center">
-                  <div className="text-4xl font-bold mb-2">
-                    <span className="line-through text-muted-foreground">
+                <CardContent className="flex-1 flex flex-col justify-center space-y-8">
+                  <div className="text-center">
+                    <div className="text-3xl lg:text-4xl font-bold text-blue-600 mb-1">
                       5%
-                    </span>
-                    <span className="text-green-600 ml-2">무료</span>
+                    </div>
+                    <p className="text-base lg:text-lg font-semibold">
+                      판매 가격 대비 수수료
+                    </p>
                   </div>
-                  <p className="text-muted-foreground">서비스 가격의 수수료</p>
-                </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <p className="text-green-800 font-medium">
-                    🎉 현재 모든 수수료 무료!
-                  </p>
-                  <p className="text-green-700 text-sm mt-1">
-                    별도의 공지가 있을 때까지 모든 거래 수수료를 면제합니다
-                  </p>
-                </div>
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p>• 의뢰 접수 및 관리</p>
-                  <p>• 투명한 정산 시스템</p>
-                  <p>• 품질 인증 배지</p>
-                </div>
-              </CardContent>
-            </Card>
+                  <div>
+                    <ul className="space-y-1 text-base lg:text-lg text-center">
+                      <li>• 의뢰 접수 및 관리</li>
+                      <li>• 안정적인 의뢰 물량</li>
+                      <li>• 투명한 정산 시스템</li>
+                    </ul>
+                    <p className="mt-2 text-blue-800 text-center text-base lg:text-lg font-semibold">
+                      🎓 CAM, 기술 교육 등 필요시 추가 비용
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* 파트너십 모델 */}
+            <div className="flex flex-col items-center h-full">
+              <Card className="w-full h-full shadow-elegant min-h-[440px] flex flex-col border-2 border-primary/30">
+                <CardHeader className="pb-2 flex flex-row items-center gap-2 justify-center">
+                  <CardTitle className="text-2xl lg:text-3xl text-primary text-center">
+                    어벗먼트 제조사
+                  </CardTitle>
+                </CardHeader>
+                <CardDescription className="inline-block text-center bg-blue-100 text-blue-700 font-bold text-sm px-3 py-1">
+                  파트너십 모델
+                </CardDescription>
+                <CardContent className="flex-1 flex flex-col justify-center space-y-8">
+                  <div className="text-center">
+                    <div className="text-3xl lg:text-4xl font-bold text-blue-600 mb-1">
+                      50%
+                    </div>
+                    <p className="text-base lg:text-lg font-semibold">
+                      판매 가격 대비 수익 공유
+                    </p>
+                  </div>
+                  <div>
+                    <p className="mt-2 text-blue-800 text-center text-base lg:text-lg font-semibold">
+                      🚀 플랫폼 모델 + 초기 투자 지원
+                    </p>
+                    <ul className="space-y-1 text-base lg:text-lg text-center">
+                      <li>• 자동선반 복합기 제공</li>
+                      <li>• CAM 라이센스 제공</li>
+                      <li>• 기술 교육 및 지원</li>
+                      <li>• 의뢰건 우선 배정</li>
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </div>
       </section>

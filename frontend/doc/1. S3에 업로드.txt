@@ -42,12 +42,12 @@ aws cloudfront list-distributions
 npm run build
 aws s3 sync ./dist s3://abuts.fit --region ap-south-1
 aws cloudfront create-invalidation \
-  --distribution-id E2CEDBBNSXCSGZ \
+  --distribution-id E3Q4N37DS75X0Y \
   --paths "/*"
 
 # CloudFront 캐시 무효화
 aws cloudfront create-invalidation \
-  --distribution-id E2CEDBBNSXCSGZ \
+  --distribution-id E3Q4N37DS75X0Y \
   --paths "/*"
 
 9. Route 53에서 abuts.fit 도메인에 S3 웹사이트 엔드포인트(Alias) 연결
