@@ -7,7 +7,7 @@ export const SecurityPage = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      
+
       <div className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
@@ -27,7 +27,10 @@ export const SecurityPage = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 text-muted-foreground">
-                  <p>어벗츠.핏은 사용자의 개인정보와 데이터를 안전하게 보호하기 위해 다음과 같은 보안 조치를 취하고 있습니다:</p>
+                  <p>
+                    어벗츠.핏은 사용자의 개인정보와 데이터를 안전하게 보호하기
+                    위해 다음과 같은 보안 조치를 취하고 있습니다:
+                  </p>
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>SSL/TLS 암호화를 통한 데이터 전송 보호</li>
                     <li>정기적인 보안 점검 및 취약점 분석</li>
@@ -49,7 +52,10 @@ export const SecurityPage = () => {
                 <div className="space-y-4 text-muted-foreground">
                   <p>안전한 계정 사용을 위한 권장사항:</p>
                   <ul className="list-disc list-inside space-y-2 ml-4">
-                    <li>강력한 비밀번호 사용 (8자 이상, 대소문자, 숫자, 특수문자 포함)</li>
+                    <li>
+                      강력한 비밀번호 사용 (8자 이상, 대소문자, 숫자, 특수문자
+                      포함)
+                    </li>
                     <li>정기적인 비밀번호 변경</li>
                     <li>다른 서비스와 동일한 비밀번호 사용 금지</li>
                     <li>의심스러운 활동 발견시 즉시 신고</li>
@@ -89,10 +95,11 @@ export const SecurityPage = () => {
                 <div className="space-y-4 text-muted-foreground">
                   <p>보안 취약점이나 의심스러운 활동을 발견하신 경우:</p>
                   <div className="bg-muted/50 p-4 rounded-lg">
-                    <p><strong>보안팀 연락처</strong></p>
+                    <p>
+                      <strong>보안팀 연락처</strong>
+                    </p>
                     <p>이메일: security@abuts.fit</p>
-                    <p>전화: 02-1234-5678 (긴급시)</p>
-                    <p>24시간 모니터링 중</p>
+                    <p>전화: 055-314-4607</p>
                   </div>
                 </div>
               </CardContent>

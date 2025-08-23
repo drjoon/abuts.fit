@@ -15,21 +15,23 @@ export const ContactPage = () => {
     email: "",
     phone: "",
     subject: "",
-    message: ""
+    message: "",
   });
   const { toast } = useToast();
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // 실제 구현에서는 여기서 폼 데이터를 서버로 전송
-    console.log('Contact form submission:', formData);
-    
+    console.log("Contact form submission:", formData);
+
     toast({
       title: "문의가 접수되었습니다",
       description: "빠른 시일 내에 답변드리겠습니다.",
@@ -41,14 +43,14 @@ export const ContactPage = () => {
       email: "",
       phone: "",
       subject: "",
-      message: ""
+      message: "",
     });
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      
+
       <div className="container mx-auto px-4 py-24">
         <div className="max-w-6xl mx-auto">
           {/* 헤더 */}
@@ -70,10 +72,8 @@ export const ContactPage = () => {
                   <div className="flex items-start gap-4">
                     <MapPin className="h-6 w-6 text-primary mt-1" />
                     <div>
-                      <h3 className="font-medium mb-1">본사 주소</h3>
                       <p className="text-muted-foreground">
-                        서울특별시 강남구 테헤란로 123<br />
-                        메이븐빌딩 10층
+                        경남 김해시 전하로 85번길 5
                       </p>
                     </div>
                   </div>
@@ -81,15 +81,13 @@ export const ContactPage = () => {
                   <div className="flex items-start gap-4">
                     <Phone className="h-6 w-6 text-primary mt-1" />
                     <div>
-                      <h3 className="font-medium mb-1">전화번호</h3>
-                      <p className="text-muted-foreground">02-1234-5678</p>
+                      <p className="text-muted-foreground">055-314-4607</p>
                     </div>
                   </div>
 
                   <div className="flex items-start gap-4">
                     <Mail className="h-6 w-6 text-primary mt-1" />
                     <div>
-                      <h3 className="font-medium mb-1">이메일</h3>
                       <p className="text-muted-foreground">contact@abuts.fit</p>
                     </div>
                   </div>
@@ -99,8 +97,10 @@ export const ContactPage = () => {
                     <div>
                       <h3 className="font-medium mb-1">운영시간</h3>
                       <p className="text-muted-foreground">
-                        평일: 오전 9시 - 오후 6시<br />
-                        토요일: 오전 9시 - 오후 1시<br />
+                        평일: 오전 9시 - 오후 6시
+                        <br />
+                        토요일: 오전 9시 - 오후 1시
+                        <br />
                         일요일 및 공휴일 휴무
                       </p>
                     </div>
