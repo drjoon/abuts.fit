@@ -92,9 +92,9 @@ export const PartnershipBenefitsModal = ({
                 <div className="flex items-center gap-4 p-5 bg-background rounded-lg border">
                   <div className="w-2 h-2 bg-accent rounded-full"></div>
                   <div>
-                    <h4 className="font-semibold">CAM 디자인 시스템</h4>
+                    <h4 className="font-semibold">CAM 시스템</h4>
                     <p className="text-sm text-muted-foreground">
-                      어벗츠 전용 NC 코드 생성 시스템
+                      어벗츠 전용 NC 코드 생성
                     </p>
                   </div>
                 </div>

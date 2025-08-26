@@ -7,9 +7,11 @@ import {
 } from "@/components/ui/card";
 import { useState } from "react";
 import { PartnershipBenefitsModal } from "./PartnerShipBenefitsModal";
+import { CommissionDetailsModal } from "./CommissionDetailsModal";
 
 export const PricingSection = () => {
   const [showPartnershipBenefits, setShowPartnershipBenefits] = useState(false);
+  const [showCommissionDetails, setShowCommissionDetails] = useState(false);
 
   return (
     <>
@@ -70,14 +72,17 @@ export const PricingSection = () => {
                     <div className="mt-2 text-3xl lg:text-4xl font-bold text-blue-600 mb-1">
                       5% ~ 15%
                     </div>
-                    <p className="mt-2 text-blue-800 text-center text-sm lg:text-sm font-semibold">
-                      🎓 CAM, 기술 지원 등 필요시 추가 비용
-                    </p>
+                    <button
+                      className="mt-2 w-full flex items-center justify-center gap-2 bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-2 px-4 rounded-md transition-colors duration-200"
+                      onClick={() => setShowCommissionDetails(true)}
+                    >
+                      💼 수수료 자세히 보기
+                    </button>
                   </div>
                   <div>
                     <ul className="space-y-1 text-base lg:text-lg text-center">
                       <li>• 의뢰 접수 및 관리</li>
-                      <li>• 제조사가 수수료율 설정</li>
+                      <li>• 디자인 파일 혹은 NC 코드 제공</li>
                       <li>• 수수료율에 따른 물량 배정</li>
                       <li>• 투명한 배정 및 정산 시스템</li>
                     </ul>
@@ -131,7 +136,7 @@ export const PricingSection = () => {
                     </p>
                     <ul className="mt-2 space-y-1 text-base lg:text-lg text-center">
                       <li>• 자동선반 복합기 제공</li>
-                      <li>• CAM 라이센스 제공</li>
+                      <li>• NC 코드 제공</li>
                       <li>• 기술 교육 및 지원</li>
                       <li>• 안정적인 의뢰 물량 배정</li>
                     </ul>
@@ -145,6 +150,10 @@ export const PricingSection = () => {
       <PartnershipBenefitsModal
         open={showPartnershipBenefits}
         onOpenChange={setShowPartnershipBenefits}
+      />
+      <CommissionDetailsModal
+        open={showCommissionDetails}
+        onOpenChange={setShowCommissionDetails}
       />
     </>
   );
