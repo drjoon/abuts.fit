@@ -1,0 +1,11 @@
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\bin\Debug\Hi_Link_CSharp.exe.config
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\bin\Debug\Hi_Link_CSharp.exe
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\bin\Debug\Hi_Link_CSharp.pdb
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\obj\Debug\Hi_Link_CSharp.csproj.AssemblyReference.cache
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\obj\Debug\Hi_Link_CSharp.Form1.resources
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\obj\Debug\Hi_Link_CSharp.Properties.Resources.resources
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\obj\Debug\Hi_Link_CSharp.csproj.GenerateResource.cache
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\obj\Debug\Hi_Link_CSharp.csproj.CoreCompileInputs.cache
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\obj\Debug\Hi_Link_CSharp.csproj.CopyComplete
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\obj\Debug\Hi_Link_CSharp.exe
+E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi_Link_CSharp\Hi_Link_CSharp\obj\Debug\Hi_Link_CSharp.pdb
