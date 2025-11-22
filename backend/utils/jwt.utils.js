@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
  * @param {String} expiresIn - 토큰 만료 시간 (기본값: '1d')
  * @returns {String} 생성된 JWT 토큰
  */
-const generateToken = (payload, expiresIn = "1d") => {
+export const generateToken = (payload, expiresIn = "1d") => {
   return jwt.sign(payload, process.env.JWT_SECRET || "your_jwt_secret_key", {
     expiresIn,
   });
@@ -17,7 +17,7 @@ const generateToken = (payload, expiresIn = "1d") => {
  * @param {String} token - 검증할 JWT 토큰
  * @returns {Object} 디코딩된 토큰 데이터
  */
-const verifyToken = (token) => {
+export const verifyToken = (token) => {
   try {
     return jwt.verify(token, process.env.JWT_SECRET || "your_jwt_secret_key");
   } catch (error) {
@@ -30,7 +30,7 @@ const verifyToken = (token) => {
  * @param {String} userId - 사용자 ID
  * @returns {String} 생성된 리프레시 토큰
  */
-const generateRefreshToken = (userId) => {
+export const generateRefreshToken = (userId) => {
   return jwt.sign(
     { userId },
     process.env.REFRESH_TOKEN_SECRET || "your_refresh_token_secret",
@@ -38,10 +38,4 @@ const generateRefreshToken = (userId) => {
       expiresIn: "7d",
     }
   );
-};
-
-module.exports = {
-  generateToken,
-  verifyToken,
-  generateRefreshToken,
 };

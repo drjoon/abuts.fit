@@ -34,6 +34,7 @@ const sidebarItems = {
   manufacturer: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Building2, label: "의뢰 목록", href: "/dashboard/request-list" },
+    { icon: BarChart3, label: "CNC", href: "/dashboard/cnc" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [

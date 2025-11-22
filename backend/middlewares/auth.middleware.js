@@ -1,11 +1,11 @@
-import { verifyToken } from "../utils/jwt.utils";
-import User from "../models/user.model";
+import { verifyToken } from "../utils/jwt.utils.js";
+import User from "../models/user.model.js";
 
 /**
  * 인증 미들웨어
  * 요청 헤더에서 토큰을 추출하고 검증하여 사용자 정보를 req.user에 추가
  */
-const authenticate = async (req, res, next) => {
+export const authenticate = async (req, res, next) => {
   try {
     // 헤더에서 토큰 추출
     const authHeader = req.headers.authorization;
@@ -57,7 +57,7 @@ const authenticate = async (req, res, next) => {
  * 권한 확인 미들웨어
  * @param {Array} roles - 허용된 역할 배열
  */
-const authorize = (roles = []) => {
+export const authorize = (roles = []) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
@@ -75,9 +75,4 @@ const authorize = (roles = []) => {
 
     next();
   };
-};
-
-module.exports = {
-  authenticate,
-  authorize,
 };

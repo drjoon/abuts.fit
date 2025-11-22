@@ -1,7 +1,7 @@
 import { Router } from "express";
 const router = Router();
-import authController from "../controllers/auth.controller";
-import { authenticate } from "../middlewares/auth.middleware";
+import authController from "../controllers/auth.controller.js";
+import { authenticate } from "../middlewares/auth.middleware.js";
 
 // 회원가입
 router.post("/register", authController.register);

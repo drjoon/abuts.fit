@@ -1,7 +1,7 @@
 import { Router } from "express";
 const router = Router();
-import userController from "../controllers/user.controller";
-import { authenticate, authorize } from "../middlewares/auth.middleware";
+import * as userController from "../controllers/user.controller.js";
+import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticate);
@@ -20,7 +20,11 @@ router.get(
 );
 
 // 의뢰자 목록 조회 (제조사, 관리자만 접근 가능)
-router.get("/requestors", authorize(["manufacturer", "admin"]), userController.getRequestors);
+router.get(
+  "/requestors",
+  authorize(["manufacturer", "admin"]),
+  userController.getRequestors
+);
 
 // 알림 설정 조회
 router.get("/notification-settings", userController.getNotificationSettings);

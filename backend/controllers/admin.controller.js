@@ -1,8 +1,8 @@
-import User from "../models/user.model";
-import Request from "../models/request.model";
-import File from "../models/file.model";
+import User from "../models/user.model.js";
+import Request from "../models/request.model.js";
+import File from "../models/file.model.js";
 import { Types } from "mongoose";
-import ActivityLog from "../models/activityLog.model";
+import ActivityLog from "../models/activityLog.model.js";
 
 /**
  * 모든 사용자 목록 조회
@@ -794,7 +794,7 @@ async function getActivityLogs(req, res) {
           .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
       }
       filter.user = new Types.ObjectId(req.query.userId);
-}
+    }
     if (req.query.action) filter.action = req.query.action;
     if (req.query.startDate && req.query.endDate) {
       filter.createdAt = {
@@ -824,11 +824,11 @@ async function getActivityLogs(req, res) {
     });
   } catch (error) {
     res.status(500).json({
-  success: false,
-  message: "활동 로그 조회 중 오류가 발생했습니다.",
-  error: error.message,
-  stack: error.stack,
-});
+      success: false,
+      message: "활동 로그 조회 중 오류가 발생했습니다.",
+      error: error.message,
+      stack: error.stack,
+    });
   }
 }
 

@@ -32,10 +32,6 @@ export const LoginPage = () => {
     try {
       const success = await login(email, password);
       if (success) {
-        toast({
-          title: "로그인 성공",
-          description: "환영합니다!",
-        });
         navigate("/dashboard");
       } else {
         toast({

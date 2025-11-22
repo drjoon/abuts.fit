@@ -1,7 +1,7 @@
 import express from "express";
 const router = express.Router();
-import requestController from "../controllers/request.controller";
-import { authenticate, authorize } from "../middlewares/auth.middleware";
+import requestController from "../controllers/request.controller.js";
+import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticate);

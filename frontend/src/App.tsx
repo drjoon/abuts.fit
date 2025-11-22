@@ -19,6 +19,7 @@ import { AdminRequestMonitoring } from "./pages/AdminRequestMonitoring";
 import { AdminChatManagement } from "./pages/AdminChatManagement";
 import { AdminAnalytics } from "./pages/AdminAnalytics";
 import { AdminSecurity } from "./pages/AdminSecurity";
+import { CncDashboardPage } from "./pages/CncDashboardPage";
 import { HelpPage } from "./pages/HelpPage";
 import { ContactPage } from "./pages/ContactPage";
 import { TermsPage } from "./pages/TermsPage";
@@ -137,6 +138,7 @@ const App = () => (
               <Route index element={<DashboardHome />} />
               <Route path="new-request" element={<NewRequestPage />} />
               <Route path="request-list" element={<RequestListPage />} />
+              <Route path="cnc" element={<CncDashboardPage />} />
               <Route path="user-management" element={<AdminUserManagement />} />
               <Route
                 path="request-monitoring"

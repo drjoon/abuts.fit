@@ -1,5 +1,5 @@
-import Request from "../models/request.model";
-import User from "../models/user.model";
+import Request from "../models/request.model.js";
+import User from "../models/user.model.js";
 import { Types } from "mongoose";
 
 /**
@@ -25,7 +25,7 @@ async function createRequest(req, res) {
   } catch (error) {
     if (error.name === "ValidationError") {
       // Mongoose ValidationError 처리
-      const errors = Object.values(error.errors).map(e => e.message);
+      const errors = Object.values(error.errors).map((e) => e.message);
       res.status(400).json({
         success: false,
         message: "필수 입력 항목이 누락되었습니다.",

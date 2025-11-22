@@ -137,8 +137,8 @@ const requestSchema = new mongoose.Schema(
         status: { type: String, required: true },
         note: String,
         updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-        updatedAt: { type: Date, default: Date.now }
-      }
+        updatedAt: { type: Date, default: Date.now },
+      },
     ],
     feedback: {
       rating: {
@@ -174,4 +174,4 @@ requestSchema.pre("save", async function (next) {
 // 의뢰 모델 생성
 const Request = mongoose.model("Request", requestSchema);
 
-module.exports = Request;
+export default Request;

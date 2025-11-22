@@ -14,12 +14,19 @@ config();
 const app = express();
 
 // 데이터베이스 연결
-const mongoUri = process.env.NODE_ENV === 'test' 
-  ? (process.env.MONGODB_URI_TEST || "mongodb://localhost:27017/abutsFitTest")
-  : (process.env.MONGODB_URI || "mongodb://localhost:27017/abutsFit");
+const mongoUri =
+  process.env.NODE_ENV === "test"
+    ? process.env.MONGODB_URI_TEST || "mongodb://localhost:27017/abutsFitTest"
+    : process.env.MONGODB_URI || "mongodb://localhost:27017/abutsFit";
 
 connect(mongoUri)
-  .then(() => console.log(`MongoDB 연결 성공: ${process.env.NODE_ENV === 'test' ? 'TEST DB' : 'PROD DB'}`))
+  .then(() =>
+    console.log(
+      `MongoDB 연결 성공: ${
+        process.env.NODE_ENV === "test" ? "TEST DB" : "PROD DB"
+      }`
+    )
+  )
   .catch((err) => console.error("MongoDB 연결 실패:", err));
 
 // 기본 미들웨어
@@ -42,21 +49,22 @@ const limiter = rateLimit({
 app.use("/api", limiter);
 
 // 정적 파일 제공 (업로드된 파일 등)
-app.use("/uploads", staticMiddleware(join(__dirname, "uploads")));
+// ESM 환경에서는 __dirname이 없으므로 process.cwd()를 기준으로 업로드 경로를 지정
+app.use("/uploads", staticMiddleware(join(process.cwd(), "uploads")));
 
 // 라우트 모듈 가져오기
-import authRoutes from "./routes/auth.routes";
-import userRoutes from "./routes/user.routes";
-import requestRoutes from "./routes/request.routes";
-import fileRoutes from "./routes/file.routes";
-import adminRoutes from "./routes/admin.routes";
+import authRoutes from "./routes/auth.routes.js";
+import userRoutes from "./routes/user.routes.js";
+import requestRoutes from "./routes/request.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
+import machineRoutes from "./routes/machine.routes.js";
 
 // 라우트 설정
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/requests", requestRoutes);
-app.use("/api/files", fileRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/machines", machineRoutes);
 
 // 기본 라우트
 app.get("/", (req, res) => {

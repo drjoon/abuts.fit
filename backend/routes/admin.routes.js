@@ -1,7 +1,7 @@
 import { Router } from "express";
 const router = Router();
-import adminController from "../controllers/admin.controller";
-import { authenticate, authorize } from "../middlewares/auth.middleware";
+import adminController from "../controllers/admin.controller.js";
+import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
