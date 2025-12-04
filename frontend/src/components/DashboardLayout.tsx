@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -19,9 +19,13 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  Building2,
+  PanelLeftOpen,
+  PanelLeft,
   Users,
   Shield,
+  ClipboardList,
+  Factory,
+  Printer,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
 
@@ -33,8 +37,9 @@ const sidebarItems = {
   ],
   manufacturer: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: Building2, label: "의뢰 목록", href: "/dashboard/request-list" },
-    { icon: BarChart3, label: "CNC", href: "/dashboard/cnc" },
+    { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
+    { icon: Factory, label: "자동선반", href: "/dashboard/cnc" },
+    { icon: Printer, label: "프린터", href: "/dashboard/printer" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
@@ -89,7 +94,9 @@ const getRoleBadgeVariant = (role: string) => {
 export const DashboardLayout = () => {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   if (!user) {
     navigate("/login");
@@ -124,43 +131,83 @@ export const DashboardLayout = () => {
         {/* Sidebar */}
         <aside
           className={`
-          fixed lg:relative inset-y-0 left-0 z-50 w-64 bg-card border-r border-border flex flex-col
+          fixed lg:relative inset-y-0 left-0 z-50 ${
+            isCollapsed ? "w-24" : "w-52"
+          } bg-card border-r border-border flex flex-col
           transform transition-transform duration-300 ease-in-out
           lg:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"}
         `}
         >
           {/* Logo */}
           <div className="p-4 lg:p-6 border-b border-border">
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-1 flex-1 min-w-0">
               <img
                 src={logo}
                 alt="Abuts.fit"
-                className="h-6 w-6 lg:h-8 lg:w-8"
+                className="h-9 w-9 lg:h-12 lg:w-12 flex-shrink-0"
               />
-              <span className="text-lg lg:text-xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-                abuts.fit
-              </span>
+              {!isCollapsed && (
+                <span className="text-lg lg:text-xl font-bold bg-gradient-hero bg-clip-text text-transparent whitespace-nowrap">
+                  abuts.fit
+                </span>
+              )}
             </div>
           </div>
+
+          {/* Collapse / Expand Toggle (desktop only) */}
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((prev) => !prev)}
+            className="hidden lg:flex items-center justify-center absolute top-20 -right-4 w-8 h-8 rounded-full bg-card border border-border shadow-sm hover:bg-muted/60 hover:border-muted-foreground/40 transition-colors"
+          >
+            {isCollapsed ? (
+              <PanelLeftOpen className="w-4 h-4" />
+            ) : (
+              <PanelLeft className="w-4 h-4" />
+            )}
+          </button>
 
           {/* Navigation */}
           <nav className="flex-1 p-3 lg:p-4">
             <ul className="space-y-1 lg:space-y-2">
-              {menuItems.map((item) => (
-                <li key={item.href}>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-sm lg:text-base h-9 lg:h-10"
-                    onClick={() => {
-                      navigate(item.href);
-                      setIsOpen(false); // Close mobile menu after navigation
-                    }}
-                  >
-                    <item.icon className="mr-2 lg:mr-3 h-4 w-4" />
-                    <span className="truncate">{item.label}</span>
-                  </Button>
-                </li>
-              ))}
+              {menuItems.map((item) => {
+                const isRootDashboard = item.href === "/dashboard";
+                const isActive = isRootDashboard
+                  ? location.pathname === item.href
+                  : location.pathname === item.href ||
+                    location.pathname.startsWith(`${item.href}/`);
+
+                return (
+                  <li key={item.href}>
+                    <Button
+                      variant="ghost"
+                      className={`w-full h-9 lg:h-10 text-sm lg:text-base transition-all ${
+                        isCollapsed
+                          ? "justify-center px-2"
+                          : "justify-start px-3 lg:px-4"
+                      } ${
+                        isActive
+                          ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                      }`}
+                      onClick={() => {
+                        navigate(item.href);
+                        setIsOpen(false); // Close mobile menu after navigation
+                      }}
+                      aria-current={isActive ? "page" : undefined}
+                    >
+                      <item.icon
+                        className={`h-4 w-4 flex-shrink-0 ${
+                          isCollapsed ? "" : "mr-2 lg:mr-3"
+                        }`}
+                      />
+                      {!isCollapsed && (
+                        <span className="truncate">{item.label}</span>
+                      )}
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           </nav>
 
@@ -170,19 +217,27 @@ export const DashboardLayout = () => {
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  className="w-full justify-start p-2 h-auto"
+                  className={`w-full p-2 h-auto transition-all ${
+                    isCollapsed ? "justify-center" : "justify-start"
+                  }`}
                 >
-                  <Avatar className="h-6 w-6 lg:h-8 lg:w-8 mr-2 lg:mr-3 flex-shrink-0">
+                  <Avatar
+                    className={`h-6 w-6 lg:h-8 lg:w-8 flex-shrink-0 ${
+                      isCollapsed ? "" : "mr-2 lg:mr-3"
+                    }`}
+                  >
                     <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
                   </Avatar>
-                  <div className="flex-1 text-left min-w-0">
-                    <div className="text-xs lg:text-sm font-medium truncate">
-                      {user.name}
+                  {!isCollapsed && (
+                    <div className="flex-1 text-left min-w-0">
+                      <div className="text-xs lg:text-sm font-medium truncate">
+                        {user.name}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {user.companyName}
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {user.companyName}
-                    </div>
-                  </div>
+                  )}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
@@ -224,7 +279,7 @@ export const DashboardLayout = () => {
               </div>
             </Button>
             <div className="flex items-center space-x-2">
-              <img src={logo} alt="Abuts.fit" className="h-6 w-6" />
+              <img src={logo} alt="Abuts.fit" className="h-9 w-9" />
               <span className="font-bold bg-gradient-hero bg-clip-text text-transparent">
                 abuts.fit
               </span>

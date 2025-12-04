@@ -8,11 +8,9 @@ const machineSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    // Hi-Link 내부에서 사용하는 실제 장비 UID
+    // Hi-Link DLL에 전달되는 실제 UID (숫자 포맷 등 별도 관리 가능)
     hiLinkUid: {
       type: String,
-      required: true,
-      unique: true,
       trim: true,
     },
     manufacturer: {
@@ -35,6 +33,14 @@ const machineSchema = new mongoose.Schema(
     port: {
       type: Number,
       default: 0,
+    },
+    allowJobStart: {
+      type: Boolean,
+      default: true,
+    },
+    allowProgramDelete: {
+      type: Boolean,
+      default: false,
     },
     lastStatus: {
       status: { type: String, default: "Unknown" },

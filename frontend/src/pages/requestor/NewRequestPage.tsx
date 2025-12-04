@@ -1,0 +1,615 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import {
+  Upload,
+  FileText,
+  Clock,
+  MessageSquare,
+  Plus,
+  Image,
+  FileIcon,
+  RotateCcw,
+} from "lucide-react";
+import { StlPreviewViewer } from "@/components/StlPreviewViewer";
+import { ExpandedRequestCard } from "@/components/ExpandedRequestCard";
+import { useNewRequestPage } from "@/features/requestor/hooks/useNewRequestPage";
+import ClinicAutocompleteField from "@/components/ClinicAutocompleteField";
+import LabeledAutocompleteField from "@/components/LabeledAutocompleteField";
+
+export const NewRequestPage = () => {
+  const {
+    user,
+    message,
+    setMessage,
+    files,
+    selectedPreviewIndex,
+    setSelectedPreviewIndex,
+    abutDiameters,
+    connectionDiameters,
+    handleDiameterComputed,
+    isDragOver,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleFileSelect,
+    handleFileListWheel,
+    manufacturerOptions,
+    systemOptions,
+    typeOptions,
+    implantManufacturer,
+    setImplantManufacturer,
+    implantSystem,
+    setImplantSystem,
+    implantType,
+    setImplantType,
+    syncSelectedConnection,
+    handleSubmit,
+    handleCancel,
+    removeFile,
+    getWorkTypeForFilename,
+    aiFileInfos,
+    setAiFileInfos,
+    selectedRequest,
+    setSelectedRequest,
+    patientCasesPreview,
+    clinicPresets,
+    selectedClinicId,
+    handleSelectClinic,
+    handleAddOrSelectClinic,
+    handleDeleteClinic,
+  } = useNewRequestPage();
+  const [clinicInput, setClinicInput] = useState("");
+  const manufacturerSelectRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const selected = clinicPresets.find((c) => c.id === selectedClinicId);
+    setClinicInput(selected?.name ?? "");
+  }, [clinicPresets, selectedClinicId]);
+
+  useEffect(() => {
+    if (selectedPreviewIndex === null) return;
+    const file = files[selectedPreviewIndex];
+    if (!file) return;
+
+    const info = aiFileInfos.find((i) => i.filename === file.name);
+    if (!info?.clinicName) return;
+
+    const name = info.clinicName.trim();
+    if (!name) return;
+
+    setClinicInput(name);
+    handleAddOrSelectClinic(name);
+  }, [selectedPreviewIndex, files, aiFileInfos, handleAddOrSelectClinic]);
+
+  const appendAiSummary = useCallback(
+    (aiItems: any[]) => {
+      if (!Array.isArray(aiItems) || aiItems.length === 0) return;
+
+      const lines = aiItems.map((item) => {
+        const filename = item?.filename ?? "";
+        const patientName = item?.patientName || null;
+        const teeth = Array.isArray(item?.teeth) ? item.teeth : [];
+        const workType = item?.workType || null;
+
+        const parts: string[] = [];
+
+        if (patientName) {
+          parts.push(`환자: ${patientName}`);
+        }
+
+        if (teeth.length > 0) {
+          parts.push(`치식: ${teeth.join(", ")}`);
+        }
+
+        if (workType) {
+          parts.push(`작업: ${workType}`);
+        }
+
+        const detail =
+          parts.length > 0
+            ? parts.join(" / ")
+            : "세부 정보를 추출하지 못했습니다";
+
+        return `[Gemini AI] 파일: ${filename}${detail ? ` / ${detail}` : ""}`;
+      });
+
+      const block = lines.join("\n");
+
+      setMessage((prev) => {
+        if (!prev.trim()) {
+          return block;
+        }
+        return `${prev.trim()}\n\n${block}`;
+      });
+    },
+    [setMessage]
+  );
+
+  const patientNameOptions = (() => {
+    const map = new Map<string, string>();
+    aiFileInfos.forEach((info) => {
+      const raw = (info.patientName || "").trim();
+      if (!raw) return;
+      const key = raw.toLowerCase();
+      if (!map.has(key)) map.set(key, raw);
+    });
+    return Array.from(map.values()).map((name) => ({ id: name, label: name }));
+  })();
+
+  const teethOptions = (() => {
+    const map = new Map<string, string>();
+    aiFileInfos.forEach((info) => {
+      const raw = (info.teethText || "").trim();
+      if (!raw) return;
+      const key = raw.toLowerCase();
+      if (!map.has(key)) map.set(key, raw);
+    });
+    return Array.from(map.values()).map((t) => ({ id: t, label: t }));
+  })();
+
+  return (
+    <div className="min-h-screen bg-gradient-subtle p-6">
+      <div className="max-w-6xl mx-auto space-y-8">
+        {/* Main Message Card */}
+        <Card className="shadow-elegant hover:shadow-glow transition-all duration-300">
+          <CardContent className="space-y-6 mt-6">
+            {/* File Upload Area */}
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                isDragOver
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/50"
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <Upload className="h-8 w-8 mx-auto text-muted-foreground"></Upload>
+              <p className="text-lg font-medium mb-2">
+                어벗과 보철 STL 파일 드롭
+              </p>
+              <Button
+                variant="outline"
+                className="text-sm"
+                onClick={() => document.getElementById("file-input")?.click()}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                파일 선택
+              </Button>
+              <p className="text-sm text-muted-foreground mt-2">
+                파일명에 치과이름, 환자이름, 치아번호가 있으면 여러 환자의
+                어벗과 보철이 섞여도 됩니다.
+              </p>
+              <input
+                id="file-input"
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+                accept=".stl"
+              />
+            </div>
+            {/* Uploaded Files */}
+            {files.length > 0 && (
+              <div
+                className="flex gap-4 overflow-x-auto pb-3 scrollbar-thin scrollbar-thumb-blue-400 scrollbar-track-blue-100"
+                onWheel={handleFileListWheel}
+              >
+                {files.map((file, index) => {
+                  const filename = file.name;
+                  const workType = getWorkTypeForFilename(filename);
+                  const isSelected = selectedPreviewIndex === index;
+
+                  const isAbutment = workType === "abutment";
+                  const isProsthesis = workType === "prosthesis";
+
+                  return (
+                    <div
+                      key={index}
+                      onClick={() => setSelectedPreviewIndex(index)}
+                      className={`shrink-0 w-64 p-3 rounded-lg border cursor-pointer text-xs space-y-2 transition-colors ${
+                        isSelected
+                          ? "border-primary shadow-md"
+                          : "border-gray-200 hover:border-primary/40 hover:shadow"
+                      } ${
+                        isAbutment
+                          ? "bg-gray-300 text-gray-900" // 어벗: 조금 밝은 회색 카드
+                          : isProsthesis
+                          ? "bg-gray-100 text-gray-900" // 보철: 옅은 회색 카드
+                          : "bg-gray-50 text-gray-900" // 미지정
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate flex-1">{filename}</span>
+                        <button
+                          type="button"
+                          className="text-xl leading-none text-muted-foreground hover:text-destructive flex items-center justify-center"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFile(index);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="flex gap-2 mt-1">
+                        {/* 어벗 버튼: 밝은 회색 */}
+                        <button
+                          type="button"
+                          className="flex-1 rounded py-1 border text-[11px] bg-gray-300 text-gray-900 border-gray-400"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPreviewIndex(index);
+                            setAiFileInfos((prev) => {
+                              const next = [...prev];
+                              const idx = next.findIndex(
+                                (i) => i.filename === filename
+                              );
+                              if (idx >= 0) {
+                                next[idx] = {
+                                  ...next[idx],
+                                  workType: "abutment",
+                                };
+                              } else {
+                                next.push({
+                                  filename,
+                                  patientName: "",
+                                  teethText: "",
+                                  workType: "abutment",
+                                  rawSummary: "",
+                                });
+                              }
+                              return next;
+                            });
+
+                            if (
+                              !implantManufacturer &&
+                              !implantSystem &&
+                              !implantType
+                            ) {
+                              const baseManufacturer = "OSSTEM";
+                              const baseSystem = "Regular";
+                              const baseType = "Hex";
+                              setImplantManufacturer(baseManufacturer);
+                              setImplantSystem(baseSystem);
+                              setImplantType(baseType);
+                              syncSelectedConnection(
+                                baseManufacturer,
+                                baseSystem,
+                                baseType
+                              );
+                            }
+                          }}
+                        >
+                          어벗
+                        </button>
+                        {/* 보철 버튼: 옅은 회색 */}
+                        <button
+                          type="button"
+                          className="flex-1 rounded py-1 border text-[11px] bg-gray-50 text-gray-900 border-gray-300"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPreviewIndex(index);
+                            setAiFileInfos((prev) => {
+                              const next = [...prev];
+                              const idx = next.findIndex(
+                                (i) => i.filename === filename
+                              );
+                              if (idx >= 0) {
+                                next[idx] = {
+                                  ...next[idx],
+                                  workType: "prosthesis",
+                                };
+                              } else {
+                                next.push({
+                                  filename,
+                                  patientName: "",
+                                  teethText: "",
+                                  workType: "prosthesis",
+                                  rawSummary: "",
+                                });
+                              }
+                              return next;
+                            });
+                          }}
+                        >
+                          보철
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {selectedPreviewIndex !== null && files[selectedPreviewIndex] && (
+              <div className="mt-4 w-full grid gap-6 lg:grid-cols-2 items-start">
+                <div className="space-y-2 px-2 md:px-4">
+                  <StlPreviewViewer
+                    file={files[selectedPreviewIndex]}
+                    onDiameterComputed={handleDiameterComputed}
+                  />
+                </div>
+                <div className="space-y-3 text-sm px-2 md:px-4">
+                  {(() => {
+                    const fname = files[selectedPreviewIndex].name;
+                    const info = aiFileInfos.find((i) => i.filename === fname);
+                    const patientName = info?.patientName || "";
+                    const teethText = info?.teethText || "";
+
+                    return (
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap gap-y-2 text-sm text-foreground">
+                          <div className="flex w-full gap-2 items-start">
+                            {/* 치과명 */}
+                            <ClinicAutocompleteField
+                              value={clinicInput}
+                              onChange={setClinicInput}
+                              presets={clinicPresets}
+                              selectedId={selectedClinicId}
+                              onSelectClinic={handleSelectClinic}
+                              onAddOrSelectClinic={handleAddOrSelectClinic}
+                              onDeleteClinic={handleDeleteClinic}
+                            />
+
+                            {/* 환자명 */}
+                            <LabeledAutocompleteField
+                              value={patientName}
+                              onChange={(next) => {
+                                setAiFileInfos((prev) =>
+                                  prev.map((item) =>
+                                    item.filename === fname
+                                      ? { ...item, patientName: next }
+                                      : item
+                                  )
+                                );
+                              }}
+                              options={patientNameOptions}
+                              placeholder="환자명"
+                              onOptionSelect={(label) => {
+                                setAiFileInfos((prev) =>
+                                  prev.map((item) =>
+                                    item.filename === fname
+                                      ? { ...item, patientName: label }
+                                      : item
+                                  )
+                                );
+                              }}
+                              onClear={() => {
+                                setAiFileInfos((prev) =>
+                                  prev.map((item) =>
+                                    item.filename === fname
+                                      ? { ...item, patientName: "" }
+                                      : item
+                                  )
+                                );
+                              }}
+                              onDelete={() => {
+                                setAiFileInfos((prev) =>
+                                  prev.map((item) =>
+                                    item.filename === fname
+                                      ? { ...item, patientName: "" }
+                                      : item
+                                  )
+                                );
+                              }}
+                              inputClassName="h-8 text-xs w-full pr-10"
+                            />
+
+                            {/* 치아번호 */}
+                            <LabeledAutocompleteField
+                              value={teethText}
+                              onChange={(next) => {
+                                setAiFileInfos((prev) =>
+                                  prev.map((item) =>
+                                    item.filename === fname
+                                      ? { ...item, teethText: next }
+                                      : item
+                                  )
+                                );
+                              }}
+                              options={teethOptions}
+                              placeholder="치아번호"
+                              onOptionSelect={(label) => {
+                                setAiFileInfos((prev) =>
+                                  prev.map((item) =>
+                                    item.filename === fname
+                                      ? { ...item, teethText: label }
+                                      : item
+                                  )
+                                );
+                              }}
+                              onClear={() => {
+                                setAiFileInfos((prev) =>
+                                  prev.map((item) =>
+                                    item.filename === fname
+                                      ? { ...item, teethText: "" }
+                                      : item
+                                  )
+                                );
+                              }}
+                              onDelete={() => {
+                                setAiFileInfos((prev) =>
+                                  prev.map((item) =>
+                                    item.filename === fname
+                                      ? { ...item, teethText: "" }
+                                      : item
+                                  )
+                                );
+                              }}
+                              inputClassName="h-8 text-xs w-full pr-10"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {(() => {
+                    const fname = files[selectedPreviewIndex].name;
+                    const info = aiFileInfos.find((i) => i.filename === fname);
+                    const diameter = abutDiameters[fname];
+                    const connectionDiameter = connectionDiameters[fname];
+                    const isAbutment = info?.workType === "abutment";
+
+                    return (
+                      <div className="space-y-3 ">
+                        {isAbutment && diameter && (
+                          <div className="text-sm font-medium flex flex-wrap gap-4">
+                            <span>최대 직경: {diameter.toFixed(2)} mm</span>
+                            {connectionDiameter && (
+                              <span>
+                                커넥션 직경: {connectionDiameter.toFixed(2)} mm
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {isAbutment && (
+                          <div className="space-y-1">
+                            <div className="flex gap-2 text-[11px]">
+                              <div className="flex-1 space-y-1">
+                                <Select
+                                  value={implantManufacturer}
+                                  onValueChange={(value) => {
+                                    setImplantManufacturer(value);
+                                    setImplantSystem("");
+                                    setImplantType("");
+                                    syncSelectedConnection(value, "", "");
+                                  }}
+                                >
+                                  <SelectTrigger ref={manufacturerSelectRef}>
+                                    <SelectValue placeholder="제조사" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {manufacturerOptions.map((m) => (
+                                      <SelectItem key={m} value={m}>
+                                        {m}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="flex-1 space-y-1">
+                                <Select
+                                  value={implantSystem}
+                                  onValueChange={(value) => {
+                                    setImplantSystem(value);
+                                    setImplantType("");
+                                    syncSelectedConnection(
+                                      implantManufacturer,
+                                      value,
+                                      ""
+                                    );
+                                  }}
+                                  disabled={!implantManufacturer}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="시스템" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {systemOptions.map((s) => (
+                                      <SelectItem key={s} value={s}>
+                                        {s}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="flex-1 space-y-1">
+                                <Select
+                                  value={implantType}
+                                  onValueChange={(value) => {
+                                    setImplantType(value);
+                                    syncSelectedConnection(
+                                      implantManufacturer,
+                                      implantSystem,
+                                      value
+                                    );
+                                  }}
+                                  disabled={!implantSystem}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="유형" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {typeOptions.map((t) => (
+                                      <SelectItem key={t} value={t}>
+                                        {t}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 메모 + 의뢰 버튼 (어벗/보철 공통) */}
+                        <div className="space-y-2 pt-2">
+                          <Textarea
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            placeholder="메모.."
+                            className="min-h-[80px] resize-none text-sm mb-4"
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={handleSubmit}
+                              size="lg"
+                              className="flex-1"
+                            >
+                              의뢰 등록하기
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="lg"
+                              className="w-24"
+                              onClick={handleCancel}
+                            >
+                              전체 초기화
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Expanded Request Card Modal */}
+      {selectedRequest && (
+        <ExpandedRequestCard
+          request={selectedRequest}
+          onClose={() => setSelectedRequest(null)}
+          currentUserId={user?.id}
+          currentUserRole={user?.role}
+        />
+      )}
+    </div>
+  );
+};

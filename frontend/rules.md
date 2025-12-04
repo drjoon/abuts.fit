@@ -20,10 +20,10 @@
 
 - **언어**: 모든 코드는 TypeScript로 작성합니다.
 - **컴포넌트**: 함수형 컴포넌트와 Hooks 사용을 원칙으로 합니다.
-- **네이밍**: 
-    - 컴포넌트 파일 및 폴더: `PascalCase` (e.g., `UserProfile.tsx`, `SharedComponents/`)
-    - 변수 및 함수: `camelCase` (e.g., `userData`, `fetchUserData`)
-    - 타입 및 인터페이스: `PascalCase` (e.g., `type User`, `interface Post`)
+- **네이밍**:
+  - 컴포넌트 파일 및 폴더: `PascalCase` (e.g., `UserProfile.tsx`, `SharedComponents/`)
+  - 변수 및 함수: `camelCase` (e.g., `userData`, `fetchUserData`)
+  - 타입 및 인터페이스: `PascalCase` (e.g., `type User`, `interface Post`)
 - **스타일링**: Tailwind CSS 유틸리티 클래스를 사용합니다. CSS-in-JS나 별도의 CSS 파일 작성은 지양합니다.
 - **Linter & Formatter**: ESLint와 Prettier 설정을 준수합니다. 커밋 전에 항상 코드 포맷팅을 실행해주세요.
 
@@ -58,5 +58,14 @@
 
 - **패키지 설치**: `bun install` 명령어를 사용하여 의존성을 설치합니다.
 - **패키지 추가**: `bun add [package-name]` 명령어를 사용하여 새로운 패키지를 추가합니다.
+
+## 6. CNC 프로그램 번호 및 파일명 규칙
+
+- CNC 프로그램 번호는 Fanuc 계열 규칙을 기준으로 합니다.
+- CNC 장비 내부 프로그램 번호 형식: `O` + 네 자리 숫자 (예: `O0001`, `O3001`).
+- 브리지 서버/로컬에 저장되는 프로그램 파일명은 `O####.nc` 형식을 사용합니다.
+  - 예: `O3001.nc`, `O0123.nc`.
+- CNC 장비로 전송할 때는 확장자를 사용하지 않고, 숫자 프로그램 번호만 사용합니다.
+- 파일명에서 프로그램 번호를 추출할 때는 `O####` 패턴을 우선적으로 해석합니다.
 
 이 규칙은 프로젝트의 일관성을 유지하고 협업 효율을 높이기 위해 만들어졌습니다. 규칙에 대한 수정이나 추가 제안이 있다면 팀과 논의해주세요.

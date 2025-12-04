@@ -18,6 +18,14 @@ export default defineConfig(({ mode }) => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/core/, "/api"),
       },
+      "/api/bridge-store": {
+        target: "http://localhost:5001",
+        changeOrigin: true,
+      },
+      "/api": {
+        target: "http://localhost:5001",
+        changeOrigin: true,
+      },
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(

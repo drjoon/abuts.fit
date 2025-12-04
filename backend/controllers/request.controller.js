@@ -43,6 +43,57 @@ async function createRequest(req, res) {
 }
 
 /**
+ * 현재 로그인한 의뢰인의 최다 사용 임플란트 조합 조회
+ * @route GET /api/requests/my/favorite-implant
+ */
+async function getMyFavoriteImplant(req, res) {
+  try {
+    const requestorId = req.user._id;
+
+    const [favorite] = await Request.aggregate([
+      { $match: { requestor: requestorId } },
+      {
+        $group: {
+          _id: {
+            implantManufacturer: "$implantManufacturer",
+            implantSystem: "$implantSystem",
+            implantType: "$implantType",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 1 },
+    ]);
+
+    if (!favorite) {
+      return res.status(200).json({
+        success: true,
+        data: null,
+      });
+    }
+
+    const { implantManufacturer, implantSystem, implantType } = favorite._id;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        implantManufacturer,
+        implantSystem,
+        implantType,
+        count: favorite.count,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "선호 임플란트 정보를 조회하는 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 모든 의뢰 목록 조회 (관리자용)
  * @route GET /api/requests/all
  */
@@ -68,13 +119,27 @@ async function getAllRequests(req, res) {
       sort.createdAt = -1; // 기본 정렬: 최신순
     }
 
-    // 의뢰 조회
-    const requests = await Request.find(filter)
+    // 의뢰 조회 (현재 사용자 기준 unreadCount 포함)
+    const rawRequests = await Request.find(filter)
       .populate("requestor", "name email organization")
       .populate("manufacturer", "name email organization")
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    const requests = rawRequests.map((r) => {
+      const messages = Array.isArray(r.messages) ? r.messages : [];
+      const unreadCount = messages.filter((m) => {
+        if (!m) return false;
+        if (m.isRead) return false;
+        if (!m.sender) return true;
+        const senderId =
+          typeof m.sender === "string" ? m.sender : m.sender.toString();
+        return senderId !== req.user._id.toString();
+      }).length;
+      return { ...r, unreadCount };
+    });
 
     // 전체 의뢰 수
     const total = await Request.countDocuments(filter);
@@ -184,12 +249,26 @@ async function getAssignedRequests(req, res) {
       sort.createdAt = -1; // 기본 정렬: 최신순
     }
 
-    // 의뢰 조회
-    const requests = await Request.find(filter)
+    // 의뢰 조회 (현재 사용자 기준 unreadCount 포함)
+    const rawRequests = await Request.find(filter)
       .populate("requestor", "name email organization")
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    const requests = rawRequests.map((r) => {
+      const messages = Array.isArray(r.messages) ? r.messages : [];
+      const unreadCount = messages.filter((m) => {
+        if (!m) return false;
+        if (m.isRead) return false;
+        if (!m.sender) return true;
+        const senderId =
+          typeof m.sender === "string" ? m.sender : m.sender.toString();
+        return senderId !== req.user._id.toString();
+      }).length;
+      return { ...r, unreadCount };
+    });
 
     // 전체 의뢰 수
     const total = await Request.countDocuments(filter);
@@ -231,10 +310,11 @@ async function getRequestById(req, res) {
       });
     }
 
-    // 의뢰 조회
+    // 의뢰 조회 (메시지 발신자 정보까지 포함)
     const request = await Request.findById(requestId)
-      .populate("requestor", "name email phoneNumber organization")
-      .populate("manufacturer", "name email phoneNumber organization");
+      .populate("requestor", "name email phoneNumber organization role")
+      .populate("manufacturer", "name email phoneNumber organization role")
+      .populate("messages.sender", "name email role");
 
     if (!request) {
       return res.status(404).json({
@@ -629,6 +709,386 @@ async function assignManufacturer(req, res) {
   }
 }
 
+// 최대 직경 기준 4개 구간(<6, <8, <10, >=10mm) 통계를 계산하는 헬퍼
+function computeDiameterStats(requests) {
+  if (!Array.isArray(requests) || requests.length === 0) {
+    const buckets = [6, 8, 10, 11].map((d, index) => ({
+      diameter: d,
+      shipLabel:
+        index === 0
+          ? "모레"
+          : index === 1
+          ? "내일"
+          : index === 2
+          ? "+3일"
+          : "+5일",
+      count: 0,
+      ratio: 0,
+    }));
+    return { total: 0, buckets };
+  }
+
+  const bucketDefs = [
+    { id: "lt6", diameter: 6, label: "<6mm", shipLabel: "모레" },
+    { id: "lt8", diameter: 8, label: "<8mm", shipLabel: "내일" },
+    { id: "lt10", diameter: 10, label: "<10mm", shipLabel: "+3일" },
+    { id: "gte10", diameter: 11, label: "10mm 이상", shipLabel: "+5일" },
+  ];
+
+  const counts = {
+    lt6: 0,
+    lt8: 0,
+    lt10: 0,
+    gte10: 0,
+  };
+
+  requests.forEach((r) => {
+    const d = typeof r.maxDiameter === "number" ? r.maxDiameter : null;
+    if (d == null || Number.isNaN(d)) return;
+
+    if (d < 6) counts.lt6 += 1;
+    else if (d >= 6 && d < 8) counts.lt8 += 1;
+    else if (d >= 8 && d < 10) counts.lt10 += 1;
+    else if (d >= 10) counts.gte10 += 1;
+  });
+
+  const total = counts.lt6 + counts.lt8 + counts.lt10 + counts.gte10;
+
+  const maxCount = Math.max(
+    1,
+    counts.lt6,
+    counts.lt8,
+    counts.lt10,
+    counts.gte10
+  );
+
+  const buckets = bucketDefs.map((def) => {
+    const count =
+      def.id === "lt6"
+        ? counts.lt6
+        : def.id === "lt8"
+        ? counts.lt8
+        : def.id === "lt10"
+        ? counts.lt10
+        : counts.gte10;
+
+    return {
+      diameter: def.diameter,
+      shipLabel: def.shipLabel,
+      count,
+      ratio: maxCount > 0 ? count / maxCount : 0,
+    };
+  });
+
+  return {
+    total,
+    buckets,
+  };
+}
+
+/**
+ * 내 대시보드 요약 (의뢰자용)
+ * @route GET /api/requests/my/dashboard-summary
+ */
+async function getMyDashboardSummary(req, res) {
+  try {
+    const requestorId = req.user._id;
+
+    const requests = await Request.find({ requestor: requestorId })
+      .populate("manufacturer", "name organization")
+      .lean();
+
+    const total = requests.length;
+    const inProduction = requests.filter((r) => r.status === "진행중").length;
+    const completed = requests.filter((r) => r.status === "완료").length;
+    const inShipping = requests.filter((r) => {
+      const shippedAt = r.deliveryInfo?.shippedAt;
+      const deliveredAt = r.deliveryInfo?.deliveredAt;
+      return r.status === "진행중" && shippedAt && !deliveredAt;
+    }).length;
+
+    const active = requests.filter((r) =>
+      ["검토중", "견적 대기", "진행중"].includes(r.status)
+    );
+
+    const stageCounts = {
+      design: 0,
+      cnc: 0,
+      post: 0,
+      shipping: 0,
+    };
+
+    active.forEach((r) => {
+      const shippedAt = r.deliveryInfo?.shippedAt;
+      if (r.status === "검토중" || r.status === "견적 대기") {
+        stageCounts.design += 1;
+      } else if (r.status === "진행중" && !shippedAt) {
+        stageCounts.cnc += 1;
+      } else if (r.status === "진행중" && shippedAt) {
+        stageCounts.shipping += 1;
+      }
+    });
+
+    const totalActive = active.length || 1;
+    const manufacturingSummary = {
+      totalActive: active.length,
+      stages: [
+        { key: "design", label: "디자인 검토", count: stageCounts.design },
+        { key: "cnc", label: "CNC 가공", count: stageCounts.cnc },
+        { key: "post", label: "후처리/폴리싱", count: stageCounts.post },
+        {
+          key: "shipping",
+          label: "출고/배송 준비",
+          count: stageCounts.shipping,
+        },
+      ].map((s) => ({
+        ...s,
+        percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
+      })),
+    };
+
+    const now = new Date();
+    const delayedItems = [];
+    const warningItems = [];
+
+    requests.forEach((r) => {
+      const est = r.timeline?.estimatedCompletion
+        ? new Date(r.timeline.estimatedCompletion)
+        : null;
+      if (!est) return;
+
+      const shippedAt = r.deliveryInfo?.shippedAt
+        ? new Date(r.deliveryInfo.shippedAt)
+        : null;
+      const deliveredAt = r.deliveryInfo?.deliveredAt
+        ? new Date(r.deliveryInfo.deliveredAt)
+        : null;
+      const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
+
+      const diffDays = (now.getTime() - est.getTime()) / (1000 * 60 * 60 * 24);
+
+      if (!isDone && diffDays >= 1) {
+        delayedItems.push(r);
+      } else if (!isDone && diffDays >= 0 && diffDays < 1) {
+        warningItems.push(r);
+      }
+    });
+
+    const totalWithEta = requests.filter(
+      (r) => r.timeline?.estimatedCompletion
+    ).length;
+    const delayedCount = delayedItems.length;
+    const warningCount = warningItems.length;
+    const onTimeBase = totalWithEta || 1;
+    const onTimeRate = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100
+        )
+      )
+    );
+
+    const toRiskItem = (r, level) => ({
+      id: r.requestId,
+      title: r.title,
+      manufacturer: r.manufacturer?.organization || r.manufacturer?.name || "",
+      riskLevel: level,
+      message:
+        level === "danger"
+          ? "제조 공정 지연으로 출고일 재조정이 필요할 수 있습니다."
+          : "예상 출고일과 근접해 있어 지연 가능성이 있습니다.",
+    });
+
+    const riskItems = [
+      ...delayedItems.slice(0, 3).map((r) => toRiskItem(r, "danger")),
+      ...warningItems.slice(0, 3).map((r) => toRiskItem(r, "warning")),
+    ];
+
+    const riskSummary = {
+      delayedCount,
+      warningCount,
+      onTimeRate,
+      items: riskItems,
+    };
+
+    const diameterStats = computeDiameterStats(requests);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        stats: {
+          totalRequests: total,
+          inProduction,
+          inShipping,
+          completed,
+        },
+        manufacturingSummary,
+        riskSummary,
+        diameterStats,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getMyDashboardSummary:", error);
+    return res.status(500).json({
+      success: false,
+      message: "대시보드 요약 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 제조사용 대시보드 요약 (할당된 의뢰 기준)
+ * @route GET /api/requests/assigned/dashboard-summary
+ */
+async function getAssignedDashboardSummary(req, res) {
+  try {
+    const manufacturerId = req.user._id;
+
+    const requests = await Request.find({ manufacturer: manufacturerId })
+      .populate("requestor", "name organization")
+      .lean();
+
+    const total = requests.length;
+    const inProduction = requests.filter((r) => r.status === "진행중").length;
+    const completed = requests.filter((r) => r.status === "완료").length;
+    const inShipping = requests.filter((r) => {
+      const shippedAt = r.deliveryInfo?.shippedAt;
+      const deliveredAt = r.deliveryInfo?.deliveredAt;
+      return r.status === "진행중" && shippedAt && !deliveredAt;
+    }).length;
+
+    const active = requests.filter((r) =>
+      ["검토중", "견적 대기", "진행중"].includes(r.status)
+    );
+
+    const stageCounts = {
+      design: 0,
+      cnc: 0,
+      post: 0,
+      shipping: 0,
+    };
+
+    active.forEach((r) => {
+      const shippedAt = r.deliveryInfo?.shippedAt;
+      if (r.status === "검토중" || r.status === "견적 대기") {
+        stageCounts.design += 1;
+      } else if (r.status === "진행중" && !shippedAt) {
+        stageCounts.cnc += 1;
+      } else if (r.status === "진행중" && shippedAt) {
+        stageCounts.shipping += 1;
+      }
+    });
+
+    const totalActive = active.length || 1;
+    const manufacturingSummary = {
+      totalActive: active.length,
+      stages: [
+        { key: "design", label: "디자인 검토", count: stageCounts.design },
+        { key: "cnc", label: "CNC 가공", count: stageCounts.cnc },
+        { key: "post", label: "후처리/폴리싱", count: stageCounts.post },
+        {
+          key: "shipping",
+          label: "출고/배송 준비",
+          count: stageCounts.shipping,
+        },
+      ].map((s) => ({
+        ...s,
+        percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
+      })),
+    };
+
+    const now = new Date();
+    const delayedItems = [];
+    const warningItems = [];
+
+    requests.forEach((r) => {
+      const est = r.timeline?.estimatedCompletion
+        ? new Date(r.timeline.estimatedCompletion)
+        : null;
+      if (!est) return;
+
+      const shippedAt = r.deliveryInfo?.shippedAt
+        ? new Date(r.deliveryInfo.shippedAt)
+        : null;
+      const deliveredAt = r.deliveryInfo?.deliveredAt
+        ? new Date(r.deliveryInfo.deliveredAt)
+        : null;
+      const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
+
+      const diffDays = (now.getTime() - est.getTime()) / (1000 * 60 * 60 * 24);
+
+      if (!isDone && diffDays >= 1) {
+        delayedItems.push(r);
+      } else if (!isDone && diffDays >= 0 && diffDays < 1) {
+        warningItems.push(r);
+      }
+    });
+
+    const totalWithEta = requests.filter(
+      (r) => r.timeline?.estimatedCompletion
+    ).length;
+    const delayedCount = delayedItems.length;
+    const warningCount = warningItems.length;
+    const onTimeBase = totalWithEta || 1;
+    const onTimeRate = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100
+        )
+      )
+    );
+
+    const toRiskItem = (r, level) => ({
+      id: r.requestId,
+      title: r.title,
+      manufacturer: r.requestor?.organization || r.requestor?.name || "",
+      riskLevel: level,
+      message:
+        level === "danger"
+          ? "제조 공정 지연으로 출고일 재조정이 필요할 수 있습니다."
+          : "예상 출고일과 근접해 있어 지연 가능성이 있습니다.",
+    });
+
+    const riskItems = [
+      ...delayedItems.slice(0, 3).map((r) => toRiskItem(r, "danger")),
+      ...warningItems.slice(0, 3).map((r) => toRiskItem(r, "warning")),
+    ];
+
+    const riskSummary = {
+      delayedCount,
+      warningCount,
+      onTimeRate,
+      items: riskItems,
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        stats: {
+          totalRequests: total,
+          inProduction,
+          inShipping,
+          completed,
+        },
+        manufacturingSummary,
+        riskSummary,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getAssignedDashboardSummary:", error);
+    return res.status(500).json({
+      success: false,
+      message: "제조사 대시보드 요약 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export default {
   createRequest,
   getAllRequests,
@@ -640,4 +1100,7 @@ export default {
   addMessage,
   deleteRequest,
   assignManufacturer,
+  getMyFavoriteImplant,
+  getMyDashboardSummary,
+  getAssignedDashboardSummary,
 };

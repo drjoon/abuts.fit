@@ -32,7 +32,13 @@ export const LoginPage = () => {
     try {
       const success = await login(email, password);
       if (success) {
-        navigate("/dashboard");
+        const loggedInUser = mockUsers.find((u) => u.email === email);
+
+        if (loggedInUser?.role === "requestor") {
+          navigate("/dashboard/new-request");
+        } else {
+          navigate("/dashboard");
+        }
       } else {
         toast({
           title: "로그인 실패",

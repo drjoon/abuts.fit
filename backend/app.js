@@ -30,8 +30,9 @@ connect(mongoUri)
   .catch((err) => console.error("MongoDB 연결 실패:", err));
 
 // 기본 미들웨어
-app.use(json());
-app.use(urlencoded({ extended: true }));
+// CNC/브리지 업로드에서 비교적 큰 텍스트 파일을 주고받기 위해 바디 용량 제한을 완화한다.
+app.use(json({ limit: "10mb" }));
+app.use(urlencoded({ extended: true, limit: "10mb" }));
 app.use(cors());
 app.use(helmet());
 app.use(morgan("dev"));
@@ -58,6 +59,12 @@ import userRoutes from "./routes/user.routes.js";
 import requestRoutes from "./routes/request.routes.js";
 import adminRoutes from "./routes/admin.routes.js";
 import machineRoutes from "./routes/machine.routes.js";
+import bridgeStoreRoutes from "./routes/bridgeStore.routes.js";
+import supportRoutes from "./routes/support.routes.js";
+import connectionRoutes from "./routes/connection.routes.js";
+import fileRoutes from "./routes/file.routes.js";
+import aiRoutes from "./routes/ai.routes.js";
+import clinicRoutes from "./routes/clinic.routes.js";
 
 // 라우트 설정
 app.use("/api/auth", authRoutes);
@@ -65,6 +72,12 @@ app.use("/api/users", userRoutes);
 app.use("/api/requests", requestRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/machines", machineRoutes);
+app.use("/api/bridge-store", bridgeStoreRoutes);
+app.use("/api/support", supportRoutes);
+app.use("/api/connections", connectionRoutes);
+app.use("/api/files", fileRoutes);
+app.use("/api/ai", aiRoutes);
+app.use("/api/clinics", clinicRoutes);
 
 // 기본 라우트
 app.get("/", (req, res) => {

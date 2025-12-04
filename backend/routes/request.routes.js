@@ -35,11 +35,32 @@ router.get(
   requestController.getMyRequests
 );
 
+// 내 대시보드 요약 (의뢰자용)
+router.get(
+  "/my/dashboard-summary",
+  authorize(["requestor", "admin"]),
+  requestController.getMyDashboardSummary
+);
+
+// 내 최다 사용 임플란트 조합 조회 (의뢰자용)
+router.get(
+  "/my/favorite-implant",
+  authorize(["requestor", "admin"]),
+  requestController.getMyFavoriteImplant
+);
+
 // 할당된 의뢰 목록 조회 (제조사용)
 router.get(
   "/assigned",
   authorize(["manufacturer", "admin"]),
   requestController.getAssignedRequests
+);
+
+// 제조사용 대시보드 요약 (할당된 의뢰 기준)
+router.get(
+  "/assigned/dashboard-summary",
+  authorize(["manufacturer", "admin"]),
+  requestController.getAssignedDashboardSummary
 );
 
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)

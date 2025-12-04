@@ -296,6 +296,79 @@ async function changeUserRole(req, res) {
   }
 }
 
+// 최대 직경 기준 4개 구간(<6, <8, <10, >=10mm) 통계를 계산하는 헬퍼 (관리자용)
+function computeAdminDiameterStats(requests) {
+  if (!Array.isArray(requests) || requests.length === 0) {
+    const buckets = [6, 8, 10, 11].map((d, index) => ({
+      diameter: d,
+      shipLabel:
+        index === 0
+          ? "모레"
+          : index === 1
+          ? "내일"
+          : index === 2
+          ? "+3일"
+          : "+5일",
+      count: 0,
+      ratio: 0,
+    }));
+    return { total: 0, buckets };
+  }
+
+  const bucketDefs = [
+    { id: "lt6", diameter: 6, label: "<6mm", shipLabel: "모레" },
+    { id: "lt8", diameter: 8, label: "<8mm", shipLabel: "내일" },
+    { id: "lt10", diameter: 10, label: "<10mm", shipLabel: "+3일" },
+    { id: "gte10", diameter: 11, label: "10mm 이상", shipLabel: "+5일" },
+  ];
+
+  const counts = {
+    lt6: 0,
+    lt8: 0,
+    lt10: 0,
+    gte10: 0,
+  };
+
+  requests.forEach((r) => {
+    const d = typeof r.maxDiameter === "number" ? r.maxDiameter : null;
+    if (d == null || Number.isNaN(d)) return;
+
+    if (d < 6) counts.lt6 += 1;
+    else if (d >= 6 && d < 8) counts.lt8 += 1;
+    else if (d >= 8 && d < 10) counts.lt10 += 1;
+    else if (d >= 10) counts.gte10 += 1;
+  });
+
+  const total = counts.lt6 + counts.lt8 + counts.lt10 + counts.gte10;
+  const maxCount = Math.max(
+    1,
+    counts.lt6,
+    counts.lt8,
+    counts.lt10,
+    counts.gte10
+  );
+
+  const buckets = bucketDefs.map((def) => {
+    const count =
+      def.id === "lt6"
+        ? counts.lt6
+        : def.id === "lt8"
+        ? counts.lt8
+        : def.id === "lt10"
+        ? counts.lt10
+        : counts.gte10;
+
+    return {
+      diameter: def.diameter,
+      shipLabel: def.shipLabel,
+      count,
+      ratio: maxCount > 0 ? count / maxCount : 0,
+    };
+  });
+
+  return { total, buckets };
+}
+
 /**
  * 대시보드 통계 조회
  * @route GET /api/admin/dashboard
@@ -359,6 +432,14 @@ async function getDashboardStats(req, res) {
       },
     ]);
 
+    // 직경 통계 (maxDiameter 기반, 선택 필드)
+    const requestsForDiameter = await Request.find({
+      maxDiameter: { $ne: null },
+    })
+      .select("maxDiameter")
+      .lean();
+    const diameterStats = computeAdminDiameterStats(requestsForDiameter);
+
     // 응답 데이터 구성
     const dashboardData = {
       users: {
@@ -376,6 +457,7 @@ async function getDashboardStats(req, res) {
         total: totalFiles,
         totalSize: totalFileSize.length > 0 ? totalFileSize[0].totalSize : 0,
       },
+      diameterStats,
     };
 
     res.status(200).json({
@@ -384,6 +466,7 @@ async function getDashboardStats(req, res) {
         userStats: dashboardData.users,
         requestStats: dashboardData.requests,
         recentActivity: dashboardData.files,
+        diameterStats: dashboardData.diameterStats,
       },
     });
   } catch (error) {

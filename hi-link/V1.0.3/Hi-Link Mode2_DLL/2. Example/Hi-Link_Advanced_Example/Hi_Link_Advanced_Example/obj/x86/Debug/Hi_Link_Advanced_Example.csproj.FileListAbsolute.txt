@@ -22,3 +22,15 @@ E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi-Link_Advanced_Example\Hi_Link_Ad
 E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.exe
 E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.pdb
 E:\0.Project\7.Hi-Link\1.ProjectFIle\Hi-Link\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.csproj.AssemblyReference.cache
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\bin\x86\Debug\Hi_Link_Advanced_Example.exe.config
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\bin\x86\Debug\Hi_Link_Advanced_Example.exe
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\bin\x86\Debug\Hi_Link_Advanced_Example.pdb
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.csproj.AssemblyReference.cache
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.Form1.resources
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.ProgView.resources
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.Properties.Resources.resources
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.csproj.GenerateResource.cache
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.csproj.CoreCompileInputs.cache
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_.7030831A.Up2Date
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.exe
+C:\abuts.fit\hi-link\V1.0.3\Hi-Link Mode2_DLL\2. Example\Hi-Link_Advanced_Example\Hi_Link_Advanced_Example\obj\x86\Debug\Hi_Link_Advanced_Example.pdb

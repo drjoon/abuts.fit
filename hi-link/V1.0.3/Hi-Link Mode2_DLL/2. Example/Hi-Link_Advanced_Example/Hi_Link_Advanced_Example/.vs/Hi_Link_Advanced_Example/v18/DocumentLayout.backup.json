@@ -1,0 +1,71 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|c:\\abuts.fit\\hi-link\\v1.0.3\\hi-link mode2_dll\\2. example\\hi-link_advanced_example\\hi_link_advanced_example\\hilinkhandler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:hilinkhandler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|c:\\abuts.fit\\hi-link\\v1.0.3\\hi-link mode2_dll\\2. example\\hi-link_advanced_example\\hi_link_advanced_example\\machineinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:machineinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|c:\\abuts.fit\\hi-link\\v1.0.3\\hi-link mode2_dll\\2. example\\hi-link_advanced_example\\hi_link_advanced_example\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 2,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Program.cs",
+              "RelativeDocumentMoniker": "Program.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Program.cs",
+              "RelativeToolTip": "Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:25:06.408Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "MachineInfo.cs",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\MachineInfo.cs",
+              "RelativeDocumentMoniker": "MachineInfo.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\MachineInfo.cs",
+              "RelativeToolTip": "MachineInfo.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAsAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:25:00.874Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "HiLinkHandler.cs",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\HiLinkHandler.cs",
+              "RelativeDocumentMoniker": "HiLinkHandler.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\HiLinkHandler.cs",
+              "RelativeToolTip": "HiLinkHandler.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAAAdAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:24:57.876Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

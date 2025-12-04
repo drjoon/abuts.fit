@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { MessageSquare, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -16,11 +21,12 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!name.trim() || !email.trim() || !message.trim()) {
       toast({
         title: "입력 오류",
@@ -30,19 +36,43 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
       return;
     }
 
-    // 실제 구현에서는 여기서 문의 내용을 메일로 전송
-    console.log('Guest inquiry (메일 발송):', { name, email, message });
-    
-    toast({
-      title: "문의 접수 완료",
-      description: "입력하신 이메일로 답변드리겠습니다.",
-    });
+    const submit = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("/api/support/guest-inquiries", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ name, email, message }),
+        });
 
-    // 폼 초기화
-    setName("");
-    setEmail("");
-    setMessage("");
-    onOpenChange(false);
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.message || "문의 전송 중 오류가 발생했습니다.");
+        }
+
+        toast({
+          title: "문의 접수 완료",
+          description: "입력하신 이메일로 답변드리겠습니다.",
+        });
+
+        setName("");
+        setEmail("");
+        setMessage("");
+        onOpenChange(false);
+      } catch (error: any) {
+        toast({
+          title: "전송 실패",
+          description: error?.message || "문의 저장 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void submit();
   };
 
   return (
@@ -54,7 +84,7 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
             문의 남기기
           </DialogTitle>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">이름 *</Label>
@@ -92,12 +122,13 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
           </div>
 
           <div className="text-xs text-muted-foreground">
-            * 문의 남기기 기능은 비회원용입니다. 답변은 입력하신 이메일로 발송됩니다.
+            * 문의 남기기 기능은 비회원용입니다. 답변은 입력하신 이메일로
+            발송됩니다.
           </div>
 
-          <Button type="submit" className="w-full">
+          <Button type="submit" className="w-full" disabled={loading}>
             <Send className="h-4 w-4 mr-2" />
-            문의 남기기
+            {loading ? "전송 중..." : "문의 남기기"}
           </Button>
         </form>
       </DialogContent>

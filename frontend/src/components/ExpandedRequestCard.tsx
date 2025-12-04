@@ -21,9 +21,10 @@ import {
   CheckCircle2,
   Clock8,
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useRequestChat } from "@/hooks/useRequestChat";
 
 interface Message {
   id: string;
@@ -49,7 +50,7 @@ interface PaymentStatus {
   paymentMethod?: string;
 }
 
-// Mock chat data
+// Mock chat data (request._id가 없을 때만 사용)
 const mockChatMessages: Message[] = [
   {
     id: "1",
@@ -96,7 +97,7 @@ export const ExpandedRequestCard = ({
 }: ExpandedRequestCardProps) => {
   const { toast } = useToast();
   const { user } = useAuthStore();
-  const [messages, setMessages] = useState<Message[]>(mockChatMessages);
+  const backendRequestId = (request as any)?._id as string | undefined;
   const [newMessage, setNewMessage] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -109,25 +110,18 @@ export const ExpandedRequestCard = ({
     dueDate: "2024-06-30",
   });
 
-  const handleSendMessage = () => {
+  const { messages, sendMessage } = useRequestChat({
+    requestId: backendRequestId,
+    fallbackMessages: mockChatMessages,
+    currentUserId: user?.id || currentUserId,
+    currentUserRole: (user?.role as Message["senderRole"]) || currentUserRole,
+    currentUserName: user?.name,
+  });
+
+  const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
-
-    const message: Message = {
-      id: Date.now().toString(),
-      senderId: currentUserId,
-      senderName: currentUserRole === "requestor" ? "김철수" : "박영희",
-      senderRole: currentUserRole,
-      content: newMessage,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, message]);
+    await sendMessage(newMessage.trim());
     setNewMessage("");
-
-    toast({
-      title: "메시지가 전송되었습니다",
-      description: "상대방이 곧 응답할 예정입니다.",
-    });
   };
 
   const getRoleColor = (role: string) => {
@@ -146,11 +140,11 @@ export const ExpandedRequestCard = ({
   const getRoleLabel = (role: string) => {
     switch (role) {
       case "requestor":
-        return "의뢰자";
+        return "치과기공소";
       case "manufacturer":
-        return "제작사";
+        return "애크로덴트(제조사)";
       case "admin":
-        return "어벗츠.핏";
+        return "어벗츠.핏(운영자)";
       default:
         return "사용자";
     }

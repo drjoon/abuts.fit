@@ -1,0 +1,1 @@
+netsh http add urlacl url=http://+:5005/ user=Everyone

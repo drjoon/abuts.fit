@@ -20,6 +20,17 @@ export const authenticate = async (req, res, next) => {
     // Bearer 제거하고 토큰만 추출
     const token = authHeader.split(" ")[1];
 
+    // 개발용 MOCK 토큰 우회 (프론트 mock 로그인과 연동)
+    if (process.env.NODE_ENV !== "production" && token === "MOCK_DEV_TOKEN") {
+      // 최소 필드만 가진 가짜 사용자 객체 (개발 시 제조사 권한으로 동작)
+      req.user = {
+        _id: new User({})._id, // 임의 ObjectId
+        role: "manufacturer",
+        active: true,
+      };
+      return next();
+    }
+
     // 토큰 검증
     const decoded = verifyToken(token);
 

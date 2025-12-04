@@ -19,7 +19,7 @@ const Index = () => {
       <FeaturesSection />
 
       <PricingSection />
-      <CustomerSupportSection />
+      <CustomerSupportSection onOpenGuestChat={() => setShowGuestChat(true)} />
 
       <Footer />
       <GuestChatModal open={showGuestChat} onOpenChange={setShowGuestChat} />

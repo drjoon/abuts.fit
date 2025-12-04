@@ -5,7 +5,6 @@ const requestSchema = new mongoose.Schema(
     requestId: {
       type: String,
       unique: true,
-      required: true,
     },
     title: {
       type: String,
@@ -14,7 +13,6 @@ const requestSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      required: [true, "설명은 필수 입력 항목입니다."],
     },
     requirements: {
       type: String,
@@ -39,14 +37,26 @@ const requestSchema = new mongoose.Schema(
       enum: ["낮음", "보통", "높음"],
       default: "보통",
     },
+    implantManufacturer: {
+      type: String,
+      required: true,
+    },
+    implantSystem: {
+      type: String,
+      required: true,
+    },
     implantType: {
       type: String,
       required: true,
-      enum: ["straumann", "nobel", "osstem", "dentium", "기타"],
     },
-    implantSpec: {
-      type: String,
-      required: true,
+    // 최대 직경(mm) - 직경별 통계/집계를 위한 숫자 필드 (선택)
+    maxDiameter: {
+      type: Number,
+    },
+    connection: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Connection",
+      default: null,
     },
     files: [
       {
@@ -60,6 +70,19 @@ const requestSchema = new mongoose.Schema(
           type: Date,
           default: Date.now,
         },
+      },
+    ],
+    patientCases: [
+      {
+        patientName: String,
+        teeth: [String],
+        files: [
+          {
+            filename: String,
+            workType: String,
+          },
+        ],
+        note: String,
       },
     ],
     messages: [

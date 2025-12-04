@@ -1,0 +1,210 @@
+import { useState, useEffect, useRef } from "react";
+import { Machine } from "@/features/manufacturer/cnc/types";
+import { useToast } from "@/hooks/use-toast";
+
+export const useCncWorkBoard = (
+  workUid: string,
+  machines: Machine[],
+  setLoading: (l: boolean) => void,
+  setError: (e: string | null) => void,
+  callRaw: (uid: string, dataType: string, payload?: any) => Promise<any>
+) => {
+  const { toast } = useToast();
+
+  const [opStatus, setOpStatus] = useState<any | null>(null);
+  const [motorTemp, setMotorTemp] = useState<any | null>(null);
+  const [toolSummary, setToolSummary] = useState<{
+    needReplace: number;
+    total: number;
+  } | null>(null);
+  const [programSummary, setProgramSummary] = useState<{
+    current?: any;
+    list?: any[];
+  } | null>(null);
+  const [scanStatus, setScanStatus] = useState<
+    "idle" | "running" | "ok" | "error"
+  >("idle");
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [lastScanAt, setLastScanAt] = useState<string | null>(null);
+  const [scanHistory, setScanHistory] = useState<
+    { status: "ok" | "error"; message?: string | null; at: string }[]
+  >([]);
+  const workBoardErrorShownRef = useRef(false);
+
+  const refreshWorkBoard = async () => {
+    if (!workUid) return;
+    const targetUid = workUid || (machines[0]?.uid ?? "");
+    if (!targetUid) {
+      setError("먼저 장비를 등록하고 선택해 주세요.");
+      return;
+    }
+
+    setLoading(true);
+    setScanStatus("running");
+    setScanError(null);
+    setError(null);
+
+    try {
+      const [opRes, listRes, actRes] = await Promise.all([
+        callRaw(targetUid, "GetOPStatus"),
+        callRaw(targetUid, "GetProgListInfo", 0),
+        callRaw(targetUid, "GetActivateProgInfo"),
+      ]);
+
+      setOpStatus(opRes?.data ?? opRes);
+
+      const pl = (listRes && (listRes.data ?? listRes)) as any;
+      const progList = pl?.machineProgramListInfo?.programArray ?? [];
+      const act = (actRes && (actRes.data ?? actRes)) as any;
+      const current = act?.machineCurrentProgInfo ?? null;
+      setProgramSummary({
+        current,
+        list: Array.isArray(progList) ? progList : [],
+      });
+
+      const now = new Date();
+      const ts = now.toLocaleTimeString();
+      setLastScanAt(ts);
+      setScanHistory((prev) => {
+        const next = [
+          {
+            status: "ok" as const,
+            message: null,
+            at: ts,
+          },
+          ...prev,
+        ];
+        return next.slice(0, 5);
+      });
+      setScanStatus("ok");
+    } catch (e: any) {
+      const message = e?.message ?? "작업 상태 보드 갱신 중 오류";
+      console.warn("refreshWorkBoard error", message, e);
+      setScanStatus("error");
+      setScanError(message);
+      const now = new Date();
+      const ts = now.toLocaleTimeString();
+      setLastScanAt(ts);
+      setScanHistory((prev) => {
+        const next = [
+          {
+            status: "error" as const,
+            message,
+            at: ts,
+          },
+          ...prev,
+        ];
+        return next.slice(0, 5);
+      });
+      if (!workBoardErrorShownRef.current) {
+        workBoardErrorShownRef.current = true;
+        setError(message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const targetUid = workUid || (machines[0]?.uid ?? "");
+    if (!targetUid) return;
+    void refreshWorkBoard();
+  }, [workUid, machines.length]);
+
+  const fetchMotorTemp = async () => {
+    if (!workUid) return;
+    try {
+      const res = await callRaw(workUid, "GetMotorTemperature");
+      setMotorTemp(res?.data ?? res);
+    } catch (e: any) {
+      setError(e?.message ?? "모터 온도 조회 중 오류");
+    }
+  };
+
+  const fetchToolLife = async () => {
+    if (!workUid) return;
+    try {
+      const res = await callRaw(workUid, "GetToolLifeInfo");
+      const toolData = (res && (res.data ?? res)) as any;
+      const toolLife = toolData?.machineToolLife?.toolLife ?? [];
+      let needReplace = 0;
+      if (Array.isArray(toolLife)) {
+        toolLife.forEach((t: any) => {
+          const use = Number(t?.useCount ?? 0);
+          const config = Number(t?.configCount ?? 0) || 0;
+          const warn = Number(t?.warningCount ?? 0) || 0;
+          if (config > 0 && (use >= config || use >= warn)) needReplace += 1;
+        });
+      }
+      setToolSummary({
+        needReplace,
+        total: Array.isArray(toolLife) ? toolLife.length : 0,
+      });
+    } catch (e: any) {
+      setError(e?.message ?? "툴 정보 조회 중 오류");
+    }
+  };
+
+  const fetchProgramList = async () => {
+    if (!workUid) return;
+    try {
+      const [listRes, actRes] = await Promise.all([
+        callRaw(workUid, "GetProgListInfo", 0),
+        callRaw(workUid, "GetActivateProgInfo"),
+      ]);
+
+      const pl = (listRes && (listRes.data ?? listRes)) as any;
+      const progList = pl?.machineProgramListInfo?.programArray ?? [];
+      const act = (actRes && (actRes.data ?? actRes)) as any;
+      const current = act?.machineCurrentProgInfo ?? null;
+
+      setProgramSummary({
+        current,
+        list: Array.isArray(progList) ? progList : [],
+      });
+    } catch (e: any) {
+      setError(e?.message ?? "프로그램 목록 조회 중 오류");
+    }
+  };
+
+  const togglePanelIO = async (ioUid: string) => {
+    if (!workUid || !opStatus || !Array.isArray(opStatus?.ioInfo)) return;
+    const target = opStatus.ioInfo.find((io: any) => io?.IOUID === ioUid);
+    if (!target) return;
+
+    const nextStatus = ((target.Status ?? target.status ?? 0) + 1) % 2;
+    const payload = { ...target, Status: nextStatus };
+
+    try {
+      await callRaw(workUid, "UpdateOPStatus", payload);
+      setOpStatus((prev: any) => {
+        if (!prev || !Array.isArray(prev.ioInfo)) return prev;
+        return {
+          ...prev,
+          ioInfo: prev.ioInfo.map((io: any) =>
+            io?.IOUID === ioUid ? { ...io, Status: nextStatus } : io
+          ),
+        };
+      });
+    } catch (e: any) {
+      setError(e?.message ?? "패널 IO 업데이트 중 오류");
+    }
+  };
+
+  return {
+    opStatus,
+    motorTemp,
+    toolSummary,
+    programSummary,
+    scanStatus,
+    scanError,
+    lastScanAt,
+    scanHistory,
+    refreshWorkBoard,
+    fetchMotorTemp,
+    fetchToolLife,
+    fetchProgramList,
+    setOpStatus,
+    togglePanelIO,
+  };
+};

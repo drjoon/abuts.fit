@@ -1,0 +1,137 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|c:\\abuts.fit\\hi-link\\v1.0.3\\hi-link mode2_dll\\2. example\\hi-link_advanced_example\\hi_link_advanced_example\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|c:\\abuts.fit\\hi-link\\v1.0.3\\hi-link mode2_dll\\2. example\\hi-link_advanced_example\\hi_link_advanced_example\\form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:form1.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|c:\\abuts.fit\\hi-link\\v1.0.3\\hi-link mode2_dll\\2. example\\hi-link_advanced_example\\hi_link_advanced_example\\form1.designer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:form1.designer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|c:\\abuts.fit\\hi-link\\v1.0.3\\hi-link mode2_dll\\2. example\\hi-link_advanced_example\\hi_link_advanced_example\\form1.resx||{81828910-B8B3-4D2B-99A3-067027C180C1}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:form1.resx||{81828910-B8B3-4D2B-99A3-067027C180C1}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|c:\\abuts.fit\\hi-link\\v1.0.3\\hi-link mode2_dll\\2. example\\hi-link_advanced_example\\hi_link_advanced_example\\hilinkhandler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:hilinkhandler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\machineinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:machineinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{832324FA-0D29-4DE9-8E55-F252FD4CCFD9}|Hi_Link_Advanced_Example.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Form1.cs",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Form1.cs",
+              "RelativeDocumentMoniker": "Form1.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Form1.cs",
+              "RelativeToolTip": "Form1.cs",
+              "ViewState": "AgIAADwCAAAA2szMzMwIwAkCAAAXAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:30:19.448Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Form1.cs [\uB514\uC790\uC778]",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Form1.cs",
+              "RelativeDocumentMoniker": "Form1.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Form1.cs [\uB514\uC790\uC778]",
+              "RelativeToolTip": "Form1.cs [\uB514\uC790\uC778]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:30:16.452Z",
+              "EditorCaption": " [\uB514\uC790\uC778]"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Form1.Designer.cs",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Form1.Designer.cs",
+              "RelativeDocumentMoniker": "Form1.Designer.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Form1.Designer.cs",
+              "RelativeToolTip": "Form1.Designer.cs",
+              "ViewState": "AgIAABYAAAAAZWZmZmYuwBMAAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:29:28.319Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "Form1.resx",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Form1.resx",
+              "RelativeDocumentMoniker": "Form1.resx",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Form1.resx",
+              "RelativeToolTip": "Form1.resx",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001005|",
+              "WhenOpened": "2025-11-23T03:30:07.166Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Program.cs",
+              "RelativeDocumentMoniker": "Program.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\Program.cs",
+              "RelativeToolTip": "Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:25:06.408Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "MachineInfo.cs",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\MachineInfo.cs",
+              "RelativeDocumentMoniker": "MachineInfo.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\MachineInfo.cs",
+              "RelativeToolTip": "MachineInfo.cs",
+              "ViewState": "AgIAACQAAAAAAAAAAAAAABMAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:25:00.874Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "HiLinkHandler.cs",
+              "DocumentMoniker": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\HiLinkHandler.cs",
+              "RelativeDocumentMoniker": "HiLinkHandler.cs",
+              "ToolTip": "C:\\abuts.fit\\hi-link\\V1.0.3\\Hi-Link Mode2_DLL\\2. Example\\Hi-Link_Advanced_Example\\Hi_Link_Advanced_Example\\HiLinkHandler.cs",
+              "RelativeToolTip": "HiLinkHandler.cs",
+              "ViewState": "AgIAAAIAAAAAMzMzMzMbwA8AAAAlAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-23T03:24:57.876Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

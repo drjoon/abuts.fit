@@ -11,15 +11,15 @@ import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
 import { DashboardLayout } from "./components/DashboardLayout";
 import { DashboardHome } from "./pages/DashboardHome";
-import { NewRequestPage } from "./pages/NewRequestPage";
-import { RequestListPage } from "./pages/RequestListPage";
+import { NewRequestPage } from "./pages/requestor/NewRequestPage";
+import { RequestListPage } from "./pages/requestor/WorkSheet";
 import { SettingsPage } from "./pages/SettingsPage";
-import { AdminUserManagement } from "./pages/AdminUserManagement";
-import { AdminRequestMonitoring } from "./pages/AdminRequestMonitoring";
-import { AdminChatManagement } from "./pages/AdminChatManagement";
-import { AdminAnalytics } from "./pages/AdminAnalytics";
-import { AdminSecurity } from "./pages/AdminSecurity";
-import { CncDashboardPage } from "./pages/CncDashboardPage";
+import { AdminUserManagement } from "./pages/admin/AdminUserManagement";
+import { AdminRequestMonitoring } from "./pages/admin/AdminRequestMonitoring";
+import { AdminChatManagement } from "./pages/admin/AdminChatManagement";
+import { AdminAnalytics } from "./pages/admin/AdminAnalytics";
+import { AdminSecurity } from "./pages/admin/AdminSecurity";
+import { CncDashboardPage } from "./pages/manufacturer/CncDashboardPage";
 import { HelpPage } from "./pages/HelpPage";
 import { ContactPage } from "./pages/ContactPage";
 import { TermsPage } from "./pages/TermsPage";
@@ -35,6 +35,24 @@ const queryClient = new QueryClient();
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+};
+
+// Role-based Protected Route (예: manufacturer 전용)
+const RoleProtectedRoute = ({
+  roles,
+  children,
+}: {
+  roles: ("requestor" | "manufacturer" | "admin")[];
+  children: React.ReactNode;
+}) => {
+  const { isAuthenticated, user } = useAuthStore();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!user || !roles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
 };
 
 const App = () => (
@@ -137,8 +155,23 @@ const App = () => (
             >
               <Route index element={<DashboardHome />} />
               <Route path="new-request" element={<NewRequestPage />} />
-              <Route path="request-list" element={<RequestListPage />} />
-              <Route path="cnc" element={<CncDashboardPage />} />
+              <Route path="worksheet" element={<RequestListPage />} />
+              <Route
+                path="cnc"
+                element={
+                  <RoleProtectedRoute roles={["manufacturer"]}>
+                    <CncDashboardPage />
+                  </RoleProtectedRoute>
+                }
+              />
+              <Route
+                path="printer"
+                element={
+                  <RoleProtectedRoute roles={["manufacturer"]}>
+                    <CncDashboardPage />
+                  </RoleProtectedRoute>
+                }
+              />
               <Route path="user-management" element={<AdminUserManagement />} />
               <Route
                 path="request-monitoring"

@@ -29,11 +29,11 @@ const getRoleColor = (role: string) => {
 const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
-      return "기공소";
+      return "치과기공소";
     case "manufacturer":
-      return "제작사";
+      return "애크로덴트(제조사)";
     case "admin":
-      return "어벗츠.핏";
+      return "어벗츠.핏(운영자)";
     default:
       return "사용자";
   }

@@ -38,6 +38,7 @@ export const mockUsers: User[] = [
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
+  token: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
 }
@@ -45,13 +46,15 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
+  token: null,
   login: async (email: string, password: string) => {
     const foundUser = mockUsers.find((u) => u.email === email);
     if (foundUser && password === "a64468ff-514b") {
-      set({ user: foundUser, isAuthenticated: true });
+      const mockToken = "MOCK_DEV_TOKEN";
+      set({ user: foundUser, isAuthenticated: true, token: mockToken });
       return true;
     }
     return false;
   },
-  logout: () => set({ user: null, isAuthenticated: false }),
+  logout: () => set({ user: null, isAuthenticated: false, token: null }),
 }));

@@ -1,0 +1,700 @@
+import { useEffect, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Search,
+  MessageSquare,
+  Clock,
+  Users,
+  AlertTriangle,
+  Eye,
+  Ban,
+  Volume2,
+  VolumeX,
+  Send,
+} from "lucide-react";
+
+// Mock chat rooms data
+const mockChatRooms = [
+  {
+    id: "CHAT-001",
+    requestId: "REQ-001",
+    requestTitle: "상악 우측 제1대구치 임플란트",
+    participants: [
+      { name: "김철수", role: "requestor", company: "서울치과기공소" },
+      { name: "박영희", role: "manufacturer", company: "프리미엄 어벗먼트" },
+    ],
+    lastMessage: {
+      sender: "김철수",
+      content: "배송은 언제쯤 가능할까요?",
+      timestamp: "2024-01-20 14:30",
+    },
+    unreadCount: 3,
+    status: "active",
+    hasIssue: false,
+    createdAt: "2024-01-15",
+  },
+  {
+    id: "CHAT-002",
+    requestId: "REQ-002",
+    requestTitle: "하악 좌측 제2소구치 임플란트",
+    participants: [
+      { name: "이영희", role: "requestor", company: "부산치과기공소" },
+      { name: "정수진", role: "manufacturer", company: "정밀 어벗먼트" },
+    ],
+    lastMessage: {
+      sender: "정수진",
+      content: "제작이 완료되었습니다.",
+      timestamp: "2024-01-20 13:45",
+    },
+    unreadCount: 0,
+    status: "completed",
+    hasIssue: false,
+    createdAt: "2024-01-14",
+  },
+  {
+    id: "CHAT-003",
+    requestId: "REQ-003",
+    requestTitle: "상악 전치부 임플란트",
+    participants: [
+      { name: "박민수", role: "requestor", company: "대구치과기공소" },
+      { name: "최민영", role: "manufacturer", company: "스마트 어벗먼트" },
+    ],
+    lastMessage: {
+      sender: "박민수",
+      content: "이런 식으로 하면 안 되잖아요!",
+      timestamp: "2024-01-20 12:15",
+    },
+    unreadCount: 8,
+    status: "active",
+    hasIssue: true,
+    createdAt: "2024-01-13",
+  },
+  {
+    id: "CHAT-004",
+    requestId: "REQ-004",
+    requestTitle: "하악 우측 제1대구치 임플란트",
+    participants: [
+      { name: "송지훈", role: "requestor", company: "전주치과기공소" },
+      { name: "강동현", role: "manufacturer", company: "정밀 어벗먼트" },
+    ],
+    lastMessage: {
+      sender: "어벗츠.핏",
+      content: "해당 이슈는 해결되었습니다.",
+      timestamp: "2024-01-20 11:30",
+    },
+    unreadCount: 1,
+    status: "monitored",
+    hasIssue: false,
+    createdAt: "2024-01-12",
+  },
+];
+
+// Admin용 mock 대화 데이터 (요청자 ↔ 제조사 ↔ 어벗츠.핏)
+const mockChatMessages: Record<
+  string,
+  {
+    id: string;
+    sender: "requestor" | "manufacturer" | "admin";
+    name: string;
+    content: string;
+    timestamp: string;
+  }[]
+> = {
+  "CHAT-001": [
+    {
+      id: "m1",
+      sender: "requestor",
+      name: "김철수",
+      content: "배송 일정이 조금 더 정확히 어떻게 될까요?",
+      timestamp: "2024-01-20 14:25",
+    },
+    {
+      id: "m2",
+      sender: "manufacturer",
+      name: "박영희",
+      content: "현재 제작 마무리 단계이고, 금요일 발송 예정입니다.",
+      timestamp: "2024-01-20 14:28",
+    },
+    {
+      id: "m3",
+      sender: "requestor",
+      name: "김철수",
+      content: "배송은 언제쯤 가능할까요?",
+      timestamp: "2024-01-20 14:30",
+    },
+  ],
+  "CHAT-002": [
+    {
+      id: "m1",
+      sender: "manufacturer",
+      name: "정수진",
+      content: "제작이 완료되었습니다. 출고 준비 중입니다.",
+      timestamp: "2024-01-20 13:45",
+    },
+  ],
+  "CHAT-003": [
+    {
+      id: "m1",
+      sender: "requestor",
+      name: "박민수",
+      content: "이런 식으로 하면 안 되잖아요!",
+      timestamp: "2024-01-20 12:15",
+    },
+    {
+      id: "m2",
+      sender: "admin",
+      name: "어벗츠.핏",
+      content: "불편을 드려 죄송합니다. 상세 상황을 확인 중입니다.",
+      timestamp: "2024-01-20 12:20",
+    },
+  ],
+  "CHAT-004": [
+    {
+      id: "m1",
+      sender: "admin",
+      name: "어벗츠.핏",
+      content: "이슈는 해결되었으며, 추가로 불편한 점이 있으시면 알려주세요.",
+      timestamp: "2024-01-20 11:30",
+    },
+  ],
+};
+
+// 백엔드 Request.messages를 Admin용 메시지 형식으로 매핑
+const mapApiMessagesToAdminMessages = (
+  apiMessages: any[] | undefined | null
+):
+  | {
+      id: string;
+      sender: "requestor" | "manufacturer" | "admin";
+      name: string;
+      content: string;
+      timestamp: string;
+    }[] => {
+  if (!apiMessages || !Array.isArray(apiMessages)) return [];
+
+  return apiMessages.map((m, index) => {
+    const sender: any = m.sender || {};
+    const role =
+      (sender.role as "requestor" | "manufacturer" | "admin") || "requestor";
+    const name = sender.name || "알 수 없음";
+    const createdAt = m.createdAt ? new Date(m.createdAt) : new Date();
+    const timestamp = createdAt.toISOString().slice(0, 16).replace("T", " ");
+
+    return {
+      id: m._id || m.id || String(index),
+      sender: role,
+      name,
+      content: m.content || "",
+      timestamp,
+    };
+  });
+};
+
+const getStatusBadge = (status: string) => {
+  switch (status) {
+    case "active":
+      return (
+        <Badge className="bg-green-100 text-green-700 border-green-200">
+          활성
+        </Badge>
+      );
+    case "completed":
+      return <Badge variant="secondary">완료</Badge>;
+    case "monitored":
+      return (
+        <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
+          모니터링
+        </Badge>
+      );
+    case "suspended":
+      return <Badge variant="destructive">일시정지</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+};
+
+export const AdminChatManagement = () => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("all");
+  const [showIssuesOnly, setShowIssuesOnly] = useState(false);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [messageInput, setMessageInput] = useState("");
+  const [messagesByChat, setMessagesByChat] = useState(mockChatMessages);
+  const [backendMessagesByChat, setBackendMessagesByChat] = useState<
+    Record<
+      string,
+      {
+        id: string;
+        sender: "requestor" | "manufacturer" | "admin";
+        name: string;
+        content: string;
+        timestamp: string;
+      }[]
+    >
+  >({});
+  const [loadingChatId, setLoadingChatId] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
+
+  const filteredChats = mockChatRooms.filter((chat) => {
+    const matchesSearch =
+      chat.requestTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      chat.participants.some((p) =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+
+    const matchesStatus =
+      selectedStatus === "all" || chat.status === selectedStatus;
+    const matchesIssue = !showIssuesOnly || chat.hasIssue;
+
+    return matchesSearch && matchesStatus && matchesIssue;
+  });
+
+  const activeChat = selectedChatId
+    ? filteredChats.find((chat) => chat.id === selectedChatId) ||
+      mockChatRooms.find((chat) => chat.id === selectedChatId) ||
+      null
+    : null;
+
+  const activeMessages = selectedChatId
+    ? backendMessagesByChat[selectedChatId] ||
+      messagesByChat[selectedChatId] ||
+      []
+    : [];
+
+  // 선택된 채팅의 requestId 기반으로 실제 의뢰 메시지 불러오기
+  useEffect(() => {
+    if (!selectedChatId) return;
+    const chat =
+      filteredChats.find((c) => c.id === selectedChatId) ||
+      mockChatRooms.find((c) => c.id === selectedChatId);
+    if (!chat?.requestId) return;
+
+    const requestId = chat.requestId;
+    setLoadingChatId(selectedChatId);
+    setChatError(null);
+
+    const fetchMessages = async () => {
+      try {
+        const res = await fetch(`/api/requests/${requestId}`);
+        if (!res.ok) {
+          throw new Error("의뢰 메시지 조회에 실패했습니다.");
+        }
+        const body = await res.json();
+        const requestData = body?.data || body;
+        const apiMessages = requestData?.messages ?? [];
+        setBackendMessagesByChat((prev) => ({
+          ...prev,
+          [selectedChatId]: mapApiMessagesToAdminMessages(apiMessages),
+        }));
+      } catch (e: any) {
+        setChatError(e?.message || "메시지 조회 중 오류가 발생했습니다.");
+      } finally {
+        setLoadingChatId(null);
+      }
+    };
+
+    void fetchMessages();
+  }, [selectedChatId, filteredChats]);
+
+  const handleSendAdminMessage = async () => {
+    if (!selectedChatId || !messageInput.trim()) return;
+
+    const chat =
+      filteredChats.find((c) => c.id === selectedChatId) ||
+      mockChatRooms.find((c) => c.id === selectedChatId);
+
+    const newMessage = {
+      id: `admin-${Date.now()}`,
+      sender: "admin" as const,
+      name: "어벗츠.핏",
+      content: messageInput.trim(),
+      timestamp: new Date().toISOString().slice(0, 16).replace("T", " "),
+    };
+
+    // 백엔드 Request ID가 있는 경우: API를 통해 메시지 추가 시도
+    if (chat?.requestId) {
+      try {
+        const res = await fetch(
+          `/api/requests/${encodeURIComponent(chat.requestId)}/messages`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ content: newMessage.content }),
+          }
+        );
+
+        const body = await res.json().catch(() => null);
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "메시지 전송에 실패했습니다.");
+        }
+
+        const updatedRequest = body?.data || {};
+        const apiMessages = updatedRequest?.messages ?? [];
+        setBackendMessagesByChat((prev) => ({
+          ...prev,
+          [selectedChatId]: mapApiMessagesToAdminMessages(apiMessages),
+        }));
+      } catch (e: any) {
+        setChatError(e?.message || "메시지 전송 중 오류가 발생했습니다.");
+      }
+    }
+
+    // 항상 mock 상태도 함께 갱신 (fallback 용)
+    setMessagesByChat((prev) => ({
+      ...prev,
+      [selectedChatId]: [...(prev[selectedChatId] || []), newMessage],
+    }));
+
+    setMessageInput("");
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-subtle p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="space-y-4">
+          <h1 className="text-4xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+            채팅 관리
+          </h1>
+          <p className="text-muted-foreground text-lg">
+            플랫폼 내 모든 채팅을 모니터링하고 관리하세요
+          </p>
+
+          {/* Search and Filter */}
+          <div className="flex gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[300px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="채팅방 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant={selectedStatus === "all" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("all")}
+                size="sm"
+              >
+                전체
+              </Button>
+              <Button
+                variant={selectedStatus === "active" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("active")}
+                size="sm"
+              >
+                활성
+              </Button>
+              <Button
+                variant={selectedStatus === "monitored" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("monitored")}
+                size="sm"
+              >
+                모니터링
+              </Button>
+            </div>
+            <Button
+              variant={showIssuesOnly ? "default" : "outline"}
+              onClick={() => setShowIssuesOnly(!showIssuesOnly)}
+              size="sm"
+            >
+              <AlertTriangle className="mr-2 h-4 w-4" />
+              이슈만 보기
+            </Button>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <MessageSquare className="h-4 w-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">총 채팅방</p>
+                  <p className="text-2xl font-bold">456</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Users className="h-4 w-4 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">활성 채팅</p>
+                  <p className="text-2xl font-bold">89</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">이슈 발생</p>
+                  <p className="text-2xl font-bold">12</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-100 rounded-lg">
+                  <Eye className="h-4 w-4 text-yellow-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">모니터링 중</p>
+                  <p className="text-2xl font-bold">7</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Chat Rooms List */}
+        <Card>
+          <CardHeader>
+            <CardTitle>채팅방 목록</CardTitle>
+            <CardDescription>
+              총 {filteredChats.length}개의 채팅방이 검색되었습니다
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {filteredChats.map((chat) => (
+                <div
+                  key={chat.id}
+                  className={`p-4 border rounded-lg hover:bg-muted/50 transition-colors ${
+                    chat.hasIssue
+                      ? "border-red-200 bg-red-50/50"
+                      : "border-border"
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        <MessageSquare className="h-4 w-4 text-primary" />
+                        <h3 className="font-medium">{chat.requestTitle}</h3>
+                        {chat.hasIssue && (
+                          <AlertTriangle className="h-4 w-4 text-red-500" />
+                        )}
+                        {chat.unreadCount > 0 && (
+                          <Badge variant="destructive" className="text-xs">
+                            {chat.unreadCount}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <span>요청 ID: {chat.requestId}</span>
+                        <span>•</span>
+                        <span>생성일: {chat.createdAt}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      {getStatusBadge(chat.status)}
+                    </div>
+                  </div>
+
+                  {/* Participants */}
+                  <div className="flex items-center gap-4 mb-3">
+                    {chat.participants.map((participant, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Avatar className="h-6 w-6">
+                          <AvatarFallback className="text-xs">
+                            {participant.name[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm">
+                          {participant.name} ({participant.company})
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {participant.role === "requestor"
+                            ? "의뢰자"
+                            : "제조사"}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Last Message */}
+                  <div className="p-3 bg-muted/30 rounded-lg mb-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-medium">
+                          {chat.lastMessage.sender}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {chat.lastMessage.content}
+                        </p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {chat.lastMessage.timestamp}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedChatId(chat.id)}
+                    >
+                      <Eye className="mr-2 h-4 w-4" />
+                      채팅 보기
+                    </Button>
+                    {chat.status === "active" && (
+                      <Button variant="outline" size="sm">
+                        <Volume2 className="mr-2 h-4 w-4" />
+                        모니터링 시작
+                      </Button>
+                    )}
+                    {chat.status === "monitored" && (
+                      <Button variant="outline" size="sm">
+                        <VolumeX className="mr-2 h-4 w-4" />
+                        모니터링 해제
+                      </Button>
+                    )}
+                    {chat.hasIssue && (
+                      <Button variant="destructive" size="sm">
+                        <Ban className="mr-2 h-4 w-4" />
+                        채팅 일시정지
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 선택된 채팅 대화 패널 */}
+        {activeChat && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>{activeChat.requestTitle} - 실시간 대화</span>
+                <Badge>{activeChat.id}</Badge>
+              </CardTitle>
+              <CardDescription>
+                의뢰인 ↔ 제작사 사이의 메인 대화에 어벗츠.핏이 개입할 수
+                있습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* 참여자 정보 */}
+              <div className="flex flex-wrap gap-4 items-center text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  <span>
+                    참여자:{" "}
+                    {activeChat.participants.map((p) => p.name).join(", ")}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  <span>생성일: {activeChat.createdAt}</span>
+                </div>
+              </div>
+
+              {/* 메시지 리스트 */}
+              <div className="border rounded-lg p-3 max-h-80 overflow-y-auto bg-background">
+                {loadingChatId === activeChat.id && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    메시지를 불러오는 중입니다...
+                  </p>
+                )}
+                {chatError && loadingChatId === null && (
+                  <p className="text-xs text-destructive text-center pb-2">
+                    {chatError}
+                  </p>
+                )}
+                {activeMessages.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    아직 메시지가 없습니다. 어벗츠.핏 이름으로 첫 메시지를
+                    남겨보세요.
+                  </p>
+                )}
+                {activeMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex mb-3 ${
+                      msg.sender === "admin" ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    <div
+                      className={`max-w-[70%] rounded-lg px-3 py-2 text-sm shadow-sm ${
+                        msg.sender === "admin"
+                          ? "bg-primary text-primary-foreground"
+                          : msg.sender === "requestor"
+                          ? "bg-blue-50 text-blue-900"
+                          : "bg-green-50 text-green-900"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="font-semibold text-xs">
+                          {msg.sender === "admin" ? "어벗츠.핏" : msg.name}
+                        </span>
+                        <span className="text-[10px] opacity-80">
+                          {msg.timestamp}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap leading-snug">
+                        {msg.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 어드민 입력 */}
+              <div className="flex gap-2 items-center">
+                <Input
+                  placeholder="어벗츠.핏 이름으로 메시지를 입력하세요"
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendAdminMessage();
+                    }
+                  }}
+                />
+                <Button
+                  size="icon"
+                  variant="default"
+                  onClick={handleSendAdminMessage}
+                  disabled={!messageInput.trim()}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+};

@@ -1,6 +1,0 @@
-/Users/joonholee/Joon/1-Project/dev/hi-link/bridge-service/HiLinkBridgeService/obj/Release/net8.0/win-x64/HiLinkBridgeService.csproj.AssemblyReference.cache
-/Users/joonholee/Joon/1-Project/dev/hi-link/bridge-service/HiLinkBridgeService/obj/Release/net8.0/win-x64/HiLinkBridgeService.GeneratedMSBuildEditorConfig.editorconfig
-/Users/joonholee/Joon/1-Project/dev/hi-link/bridge-service/HiLinkBridgeService/obj/Release/net8.0/win-x64/HiLinkBridgeService.AssemblyInfoInputs.cache
-/Users/joonholee/Joon/1-Project/dev/hi-link/bridge-service/HiLinkBridgeService/obj/Release/net8.0/win-x64/HiLinkBridgeService.AssemblyInfo.cs
-/Users/joonholee/Joon/1-Project/dev/hi-link/bridge-service/HiLinkBridgeService/obj/Release/net8.0/win-x64/HiLinkBridgeService.csproj.CoreCompileInputs.cache
-/Users/joonholee/Joon/1-Project/dev/hi-link/bridge-service/HiLinkBridgeService/obj/Release/net8.0/win-x64/HiLinkBridgeService.MvcApplicationPartsAssemblyInfo.cache

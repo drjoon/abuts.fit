@@ -4,12 +4,9 @@ import {
   upsertMachine,
   deleteMachine,
   getMachineStatusProxy,
-  startMachineProxy,
-  stopMachineProxy,
   resetMachineProxy,
-  pauseAllProxy,
-  resumeAllProxy,
   callRawProxy,
+  startMachineProxy,
 } from "../controllers/machine.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 
@@ -30,40 +27,17 @@ const maybeAuth =
     });
   };
 
-// 제조사/관리자만 장비 목록/등록/삭제 및 제어 가능 (test 환경 제외)
-router.get("/", maybeAuth(["manufacturer", "admin"]), getMachines);
-router.post("/", maybeAuth(["manufacturer", "admin"]), upsertMachine);
-router.delete("/:uid", maybeAuth(["manufacturer", "admin"]), deleteMachine);
+// 제조사만 장비 목록/등록/삭제 및 제어 가능 (test 환경 제외)
+router.get("/", maybeAuth(["manufacturer"]), getMachines);
+router.post("/", maybeAuth(["manufacturer"]), upsertMachine);
+router.delete("/:uid", maybeAuth(["manufacturer"]), deleteMachine);
 
-router.get(
-  "/:uid/status",
-  maybeAuth(["manufacturer", "admin"]),
-  getMachineStatusProxy
-);
-router.post(
-  "/:uid/start",
-  maybeAuth(["manufacturer", "admin"]),
-  startMachineProxy
-);
-router.post(
-  "/:uid/stop",
-  maybeAuth(["manufacturer", "admin"]),
-  stopMachineProxy
-);
-router.post(
-  "/:uid/reset",
-  maybeAuth(["manufacturer", "admin"]),
-  resetMachineProxy
-);
+router.get("/:uid/status", maybeAuth(["manufacturer"]), getMachineStatusProxy);
 
-router.post("/pause-all", maybeAuth(["manufacturer", "admin"]), pauseAllProxy);
+router.post("/:uid/reset", maybeAuth(["manufacturer"]), resetMachineProxy);
 
-router.post(
-  "/resume-all",
-  maybeAuth(["manufacturer", "admin"]),
-  resumeAllProxy
-);
+router.post("/:uid/start", maybeAuth(["manufacturer"]), startMachineProxy);
 
-router.post("/:uid/raw", maybeAuth(["manufacturer", "admin"]), callRawProxy);
+router.post("/:uid/raw", maybeAuth(["manufacturer"]), callRawProxy);
 
 export default router;

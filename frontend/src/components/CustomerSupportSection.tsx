@@ -2,20 +2,23 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Phone, Mail } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-export const CustomerSupportSection = () => {
+interface CustomerSupportSectionProps {
+  onOpenGuestChat: () => void;
+}
+
+export const CustomerSupportSection = ({
+  onOpenGuestChat,
+}: CustomerSupportSectionProps) => {
   const { isAuthenticated } = useAuthStore();
-  const [showGuestChat, setShowGuestChat] = useState(false);
+  const navigate = useNavigate();
 
   const handleChatClick = () => {
     if (isAuthenticated) {
-      // 로그인한 사용자는 실시간 채팅으로 이동
-      // 실제 구현에서는 채팅 페이지로 리다이렉트
-      console.log("Redirect to chat");
+      navigate("/dashboard");
     } else {
-      // 비로그인 사용자는 게스트 채팅 모달 표시
-      setShowGuestChat(true);
+      onOpenGuestChat();
     }
   };
 
