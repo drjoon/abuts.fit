@@ -1,5 +1,5 @@
-import { Navigation } from "@/components/Navigation";
-import { Footer } from "@/components/Footer";
+import { Navigation } from "@/features/layout/Navigation";
+import { Footer } from "@/features/landing/Footer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Cookie, Settings, Info, Shield } from "lucide-react";
 
@@ -7,7 +7,7 @@ export const CookiesPage = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
-      
+
       <div className="container mx-auto px-4 py-20">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
@@ -27,7 +27,11 @@ export const CookiesPage = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 text-muted-foreground">
-                  <p>쿠키는 웹사이트가 사용자의 컴퓨터나 모바일 기기에 저장하는 작은 텍스트 파일입니다. 쿠키를 통해 웹사이트는 사용자의 행동과 선호도를 기억할 수 있습니다.</p>
+                  <p>
+                    쿠키는 웹사이트가 사용자의 컴퓨터나 모바일 기기에 저장하는
+                    작은 텍스트 파일입니다. 쿠키를 통해 웹사이트는 사용자의
+                    행동과 선호도를 기억할 수 있습니다.
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -42,17 +46,23 @@ export const CookiesPage = () => {
               <CardContent>
                 <div className="space-y-4 text-muted-foreground">
                   <div>
-                    <h4 className="font-medium text-foreground mb-2">필수 쿠키</h4>
-                    <p>웹사이트의 기본 기능 제공을 위해 반드시 필요한 쿠키입니다.</p>
+                    <h4 className="font-medium text-foreground mb-2">
+                      필수 쿠키
+                    </h4>
+                    <p>
+                      웹사이트의 기본 기능 제공을 위해 반드시 필요한 쿠키입니다.
+                    </p>
                     <ul className="list-disc list-inside space-y-1 ml-4 mt-2">
                       <li>로그인 세션 유지</li>
                       <li>보안 설정</li>
                       <li>언어 설정</li>
                     </ul>
                   </div>
-                  
+
                   <div>
-                    <h4 className="font-medium text-foreground mb-2">기능 쿠키</h4>
+                    <h4 className="font-medium text-foreground mb-2">
+                      기능 쿠키
+                    </h4>
                     <p>사용자 경험 향상을 위한 쿠키입니다.</p>
                     <ul className="list-disc list-inside space-y-1 ml-4 mt-2">
                       <li>사용자 선호도 저장</li>
@@ -62,7 +72,9 @@ export const CookiesPage = () => {
                   </div>
 
                   <div>
-                    <h4 className="font-medium text-foreground mb-2">분석 쿠키</h4>
+                    <h4 className="font-medium text-foreground mb-2">
+                      분석 쿠키
+                    </h4>
                     <p>웹사이트 이용 통계 분석을 위한 쿠키입니다.</p>
                     <ul className="list-disc list-inside space-y-1 ml-4 mt-2">
                       <li>방문자 수 집계</li>
@@ -83,7 +95,9 @@ export const CookiesPage = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 text-muted-foreground">
-                  <p>사용자는 브라우저 설정을 통해 쿠키를 관리할 수 있습니다:</p>
+                  <p>
+                    사용자는 브라우저 설정을 통해 쿠키를 관리할 수 있습니다:
+                  </p>
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>모든 쿠키 허용</li>
                     <li>쿠키 허용 여부를 묻도록 설정</li>
@@ -91,7 +105,8 @@ export const CookiesPage = () => {
                     <li>기존 쿠키 삭제</li>
                   </ul>
                   <p className="mt-4">
-                    <strong>주의:</strong> 필수 쿠키를 차단할 경우 웹사이트의 일부 기능이 정상적으로 작동하지 않을 수 있습니다.
+                    <strong>주의:</strong> 필수 쿠키를 차단할 경우 웹사이트의
+                    일부 기능이 정상적으로 작동하지 않을 수 있습니다.
                   </p>
                 </div>
               </CardContent>
@@ -106,7 +121,10 @@ export const CookiesPage = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 text-muted-foreground">
-                  <p>어벗츠.핏은 쿠키를 안전하게 관리하기 위해 다음과 같은 조치를 취합니다:</p>
+                  <p>
+                    어벗츠.핏은 쿠키를 안전하게 관리하기 위해 다음과 같은 조치를
+                    취합니다:
+                  </p>
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>민감한 정보는 쿠키에 저장하지 않습니다</li>
                     <li>암호화된 연결(HTTPS)을 통해서만 쿠키를 전송합니다</li>

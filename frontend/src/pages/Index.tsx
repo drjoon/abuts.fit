@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Navigation } from "../components/Navigation";
-import { HeroSection } from "../components/HeroSection";
-import { FeaturesSection } from "../components/FeaturesSection";
-import { PricingSection } from "../components/PricingSection";
-import { AnnouncementSection } from "../components/AnnouncementSection";
-import { CustomerSupportSection } from "../components/CustomerSupportSection";
-import { Footer } from "../components/Footer";
-import { GuestChatModal } from "../components/GuestChatModal";
+import { Navigation } from "@/features/layout/Navigation";
+import { HeroSection } from "@/features/landing/HeroSection";
+import { FeaturesSection } from "@/features/landing/FeaturesSection";
+import { PricingSection } from "@/features/landing/PricingSection";
+import { AnnouncementSection } from "@/features/landing/AnnouncementSection";
+import { CustomerSupportSection } from "@/features/landing/CustomerSupportSection";
+import { Footer } from "@/features/landing/Footer";
+import { GuestChatModal } from "@/components/GuestChatModal";
 
 const Index = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);

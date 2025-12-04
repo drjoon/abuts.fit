@@ -34,12 +34,15 @@
 ```
 /src
 |-- /assets         # 이미지, 폰트 등 정적 에셋
-|-- /components     # 공통 UI 컴포넌트 (shadcn/ui 기반)
-|   |-- /ui         # shadcn/ui 기본 컴포넌트
-|   `-- /shared     # 여러 페이지에서 재사용되는 조합 컴포넌트
-|-- /constants      # 전역 상수
-|-- /hooks          # 커스텀 Hooks
-|-- /lib            # 유틸리티 함수, API 클라이언트 등
+|-- /components     # 공통 UI 컴포넌트 (주로 shadcn/ui 래퍼)
+|   `-- /ui         # shadcn/ui 기본 컴포넌트 모음
+|-- /features       # 도메인/기능 단위 컴포넌트 및 로직 (requestor, manufacturer 등)
+|-- /shared         # 여러 feature에서 재사용되는 공용 레이어
+|   |-- /ui         # 도메인 맥락이 살짝 섞인 재사용 UI (예: 공용 대시보드 카드)
+|   |-- /hooks      # 전역/공용 커스텀 Hooks
+|   `-- /lib        # 공용 유틸리티 함수
+|-- /hooks          # (레거시) 기존 경로 호환용 re-export, 신규 코드는 shared/hooks 사용 권장
+|-- /lib            # 도메인별/페이지별로만 쓰이는 유틸 등
 |-- /pages          # 라우팅 단위의 페이지 컴포넌트
 |-- /providers      # Context Provider
 |-- /routes         # 라우팅 설정

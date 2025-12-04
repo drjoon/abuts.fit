@@ -13,8 +13,8 @@ import { mockUsers, useAuthStore } from "@/store/useAuthStore";
 import { useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Navigation } from "@/components/Navigation";
-import { Footer } from "@/components/Footer";
+import { Navigation } from "@/features/layout/Navigation";
+import { Footer } from "@/features/landing/Footer";
 
 export const LoginPage = () => {
   const [email, setEmail] = useState("");

@@ -12,7 +12,7 @@ import {
 import {
   WorksheetDiameterCard,
   DiameterStats,
-} from "@/shared/components/dashboard/WorksheetDiameterCard";
+} from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";

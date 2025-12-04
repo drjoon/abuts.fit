@@ -10,8 +10,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCardForDashboard } from "@/pages/requestor/WorkSheet";
-import type { DiameterStats } from "@/shared/components/dashboard/WorksheetDiameterCard";
-import { DashboardShell } from "@/shared/components/dashboard/DashboardShell";
+import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
+import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import {
   Clock,
   CheckCircle,
