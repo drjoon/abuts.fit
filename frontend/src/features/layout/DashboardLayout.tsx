@@ -103,6 +103,7 @@ export const DashboardLayout = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [worksheetSearch, setWorksheetSearch] = useState("");
+  const [showCompleted, setShowCompleted] = useState(false);
 
   if (!user) {
     navigate("/login");
@@ -328,8 +329,8 @@ export const DashboardLayout = () => {
                   )}
 
                   {isWorksheetRoute && (
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                      <div className="flex gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 sm:flex-nowrap sm:justify-between">
+                      <div className="flex gap-2 flex-shrink-0">
                         <Button
                           variant={
                             worksheetType === "cnc" ? "default" : "ghost"
@@ -358,8 +359,8 @@ export const DashboardLayout = () => {
 
                       {worksheetType === "cnc" && (
                         <>
-                          <div className="hidden sm:block h-8 w-px bg-muted-foreground/60" />
-                          <div className="flex flex-wrap gap-1 text-xs">
+                          <div className="hidden sm:block h-8 w-px bg-muted-foreground/60 flex-shrink-0" />
+                          <div className="flex flex-wrap gap-1 text-xs flex-shrink-0">
                             <Button
                               variant={
                                 worksheetStage === "receive"
@@ -374,7 +375,21 @@ export const DashboardLayout = () => {
                                 )
                               }
                             >
-                              의뢰, CAM
+                              의뢰
+                            </Button>
+                            <Button
+                              variant={
+                                worksheetStage === "cam" ? "default" : "ghost"
+                              }
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() =>
+                                navigate(
+                                  "/dashboard/worksheet?type=cnc&stage=cam"
+                                )
+                              }
+                            >
+                              CAM
                             </Button>
                             <Button
                               variant={
@@ -404,7 +419,7 @@ export const DashboardLayout = () => {
                                 )
                               }
                             >
-                              세척,검사,포장
+                              세척·검사·포장
                             </Button>
                             <Button
                               variant={
@@ -442,8 +457,17 @@ export const DashboardLayout = () => {
                         </>
                       )}
 
-                      <div className="w-full sm:w-auto sm:ml-auto flex justify-end">
-                        <div className="relative w-full max-w-xs">
+                      <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-end gap-2 min-w-0 sm:flex-nowrap">
+                        <label className="flex items-center gap-2 text-xs text-muted-foreground select-none ">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded border-muted-foreground/40 text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                            checked={showCompleted}
+                            onChange={(e) => setShowCompleted(e.target.checked)}
+                          />
+                          <span>완료포함</span>
+                        </label>
+                        <div className="relative w-full max-w-[110px] lg:max-w-[200px]">
                           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
                             placeholder="검색..."
@@ -458,7 +482,14 @@ export const DashboardLayout = () => {
                 </div>
               </div>
             ) : null}
-            <Outlet context={{ worksheetSearch, setWorksheetSearch }} />
+            <Outlet
+              context={{
+                worksheetSearch,
+                setWorksheetSearch,
+                showCompleted,
+                setShowCompleted,
+              }}
+            />
           </div>
         </main>
       </div>

@@ -224,6 +224,13 @@ const WorksheetCardGrid = ({
 export const ManufacturerWorksheetPage = () => {
   const { user } = useAuthStore();
   const location = useLocation();
+  const { worksheetSearch, setWorksheetSearch, showCompleted } =
+    useOutletContext<{
+      worksheetSearch: string;
+      setWorksheetSearch: (value: string) => void;
+      showCompleted: boolean;
+      setShowCompleted: (value: boolean) => void;
+    }>();
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
   const worksheetStage = worksheetParams.get("stage") || "receive";
@@ -231,7 +238,6 @@ export const ManufacturerWorksheetPage = () => {
     worksheetType === "cnc" && worksheetStage === "machining";
 
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
-  const [worksheetSearch, setWorksheetSearch] = useState("");
 
   const [receiveQueueModalOpen, setReceiveQueueModalOpen] = useState(false);
   const [receiveSelectedBucket, setReceiveSelectedBucket] =

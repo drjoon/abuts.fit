@@ -349,7 +349,8 @@ type WorksheetSortOrder = "asc" | "desc";
 
 const useWorksheetFilters = (
   requests: typeof mockRequests,
-  controlledSearch?: { value: string; setValue: (value: string) => void }
+  controlledSearch?: { value: string; setValue: (value: string) => void },
+  options?: { showCompleted?: boolean }
 ) => {
   const [internalSearch, setInternalSearch] = useState("");
   const searchQuery = controlledSearch
@@ -372,8 +373,14 @@ const useWorksheetFilters = (
         request.dentistName.toLowerCase().includes(lower) ||
         request.patientName.toLowerCase().includes(lower);
 
-      const matchesStatus =
+      const matchesStatusBase =
         selectedStatus === "all" || request.status === selectedStatus;
+      const includeCompleted = options?.showCompleted ?? false;
+      const matchesCompleted = includeCompleted
+        ? true
+        : request.status !== "완료";
+
+      const matchesStatus = matchesStatusBase && matchesCompleted;
 
       return matchesSearch && matchesStatus;
     });
@@ -417,7 +424,14 @@ const useWorksheetFilters = (
     });
 
     return sorted;
-  }, [requests, searchQuery, selectedStatus, sortKey, sortOrder]);
+  }, [
+    requests,
+    searchQuery,
+    selectedStatus,
+    sortKey,
+    sortOrder,
+    options?.showCompleted,
+  ]);
 
   const toggleSort = (key: WorksheetSortKey) => {
     if (sortKey === key) {
