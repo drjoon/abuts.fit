@@ -12,7 +12,7 @@ import { SignupPage } from "./pages/SignupPage";
 import { DashboardLayout } from "./components/DashboardLayout";
 import { DashboardHome } from "./pages/DashboardHome";
 import { NewRequestPage } from "./pages/requestor/NewRequestPage";
-import { RequestListPage } from "./pages/requestor/WorkSheet";
+import { ManufacturerWorksheetPage } from "./pages/manufacturer/WorkSheet";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AdminUserManagement } from "./pages/admin/AdminUserManagement";
 import { AdminRequestMonitoring } from "./pages/admin/AdminRequestMonitoring";
@@ -155,7 +155,14 @@ const App = () => (
             >
               <Route index element={<DashboardHome />} />
               <Route path="new-request" element={<NewRequestPage />} />
-              <Route path="worksheet" element={<RequestListPage />} />
+              <Route
+                path="worksheet"
+                element={
+                  <RoleProtectedRoute roles={["manufacturer"]}>
+                    <ManufacturerWorksheetPage />
+                  </RoleProtectedRoute>
+                }
+              />
               <Route
                 path="cnc"
                 element={

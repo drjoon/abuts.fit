@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useLocation, useOutletContext } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { ExpandedRequestCard } from "@/components/ExpandedRequestCard";
 import {
@@ -32,6 +33,7 @@ import {
   FileText,
   MessageSquare,
 } from "lucide-react";
+import { WorksheetCncMachineSection } from "@/features/manufacturer/cnc/components/WorksheetCncMachineSection";
 
 const mockRequests = [
   {
@@ -202,6 +204,78 @@ const mockRequests = [
       material: "티타늄",
     },
   },
+  {
+    id: "REQ-008",
+    title: "상악 전치부 브릿지 임플란트",
+    description: "와이드 직경 어벗먼트, 심미 및 강도 균형 고려",
+    client: "수원치과기공소",
+    clientContact: "한지민",
+    dentistName: "수원미소치과 남원장",
+    patientName: "정민호",
+    tooth: "11",
+    requestDate: "2025-07-08",
+    urgency: "보통",
+    status: "진행중",
+    attachments: 4,
+    specifications: {
+      implantType: "Osstem",
+      implantCompany: "Osstem",
+      implantProduct: "TSIII CA",
+      implantSize: "6.0×10mm",
+      diameter: "6.0mm",
+      height: "5mm",
+      angle: "15도",
+      material: "티타늄",
+    },
+  },
+  {
+    id: "REQ-009",
+    title: "하악 양측 대구치 풀브릿지",
+    description: "장축 하중 분산을 위한 와이드 직경 어벗먼트",
+    client: "창원치과기공소",
+    clientContact: "오세훈",
+    dentistName: "창원스마일치과 문원장",
+    patientName: "김나래",
+    tooth: "36/46",
+    requestDate: "2025-07-07",
+    urgency: "높음",
+    status: "제작중",
+    attachments: 5,
+    specifications: {
+      implantType: "Straumann",
+      implantCompany: "Straumann",
+      implantProduct: "BLX",
+      implantSize: "8.0×10mm",
+      diameter: "8.0mm",
+      height: "6mm",
+      angle: "직각",
+      material: "티타늄",
+    },
+  },
+  {
+    id: "REQ-010",
+    title: "상악 전악 임플란트 풀마우스",
+    description: "10mm 이상 와이드 직경 풀마우스 케이스",
+    client: "서울프리미엄기공소",
+    clientContact: "이도윤",
+    dentistName: "서울스페셜치과 정원장",
+    patientName: "박서연",
+    tooth: "16/14/11/21/24/26",
+    requestDate: "2025-07-06",
+    urgency: "높음",
+    status: "검토중",
+    attachments: 8,
+    specifications: {
+      implantType: "Nobel Biocare",
+      implantCompany: "Nobel Biocare",
+      implantProduct: "NobelActive",
+      implantSize: "10.0×12mm",
+      diameter: "10.0mm",
+      height: "7mm",
+      angle: "20도",
+      material: "티타늄+지르코니아",
+    },
+  },
 ];
 
 const getStatusBadge = (status: string) => {
@@ -273,8 +347,17 @@ type WorksheetSortKey =
 
 type WorksheetSortOrder = "asc" | "desc";
 
-const useWorksheetFilters = (requests: typeof mockRequests) => {
-  const [searchQuery, setSearchQuery] = useState("");
+const useWorksheetFilters = (
+  requests: typeof mockRequests,
+  controlledSearch?: { value: string; setValue: (value: string) => void }
+) => {
+  const [internalSearch, setInternalSearch] = useState("");
+  const searchQuery = controlledSearch
+    ? controlledSearch.value
+    : internalSearch;
+  const setSearchQuery = controlledSearch
+    ? controlledSearch.setValue
+    : setInternalSearch;
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [sortKey, setSortKey] = useState<WorksheetSortKey>("requestDate");
   const [sortOrder, setSortOrder] = useState<WorksheetSortOrder>("desc");
@@ -658,49 +741,20 @@ export const WorksheetTopSectionForDashboard = () => (
 const WorksheetSortBar = ({
   searchQuery,
   setSearchQuery,
-  selectedStatus,
-  setSelectedStatus,
-  sortKey,
-  sortOrder,
-  toggleSort,
-}: ReturnType<typeof useWorksheetFilters>) => {
-  const renderSortButton = (key: WorksheetSortKey, label: string) => {
-    const active = sortKey === key;
-    const direction = active ? (sortOrder === "asc" ? "↑" : "↓") : "";
-    return (
-      <Button
-        variant={active ? "default" : "outline"}
-        size="sm"
-        onClick={() => toggleSort(key)}
-      >
-        {label} {direction}
-      </Button>
-    );
-  };
-
+}: {
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+}) => {
   return (
-    <div className="space-y-3">
-      <div className="flex gap-4 flex-wrap items-center">
-        <div className="relative flex-1 min-w-[260px]">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="기공소, 치과, 환자, 제목으로 검색..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2 items-center text-xs">
-          {renderSortButton("client", "기공소명")}
-          {renderSortButton("requestDate", "의뢰일")}
-          {renderSortButton("dentistName", "치과명")}
-          {renderSortButton("patientName", "환자명")}
-          {renderSortButton("tooth", "치식")}
-          {renderSortButton("diameter", "소재 직경")}
-          {renderSortButton("implantCompany", "회사명")}
-          {renderSortButton("implantProduct", "제품명")}
-          {renderSortButton("implantSize", "규격")}
-        </div>
+    <div className="w-full flex justify-end">
+      <div className="relative w-full max-w-xs">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="기공소, 치과, 환자, 제목으로 검색..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10"
+        />
       </div>
     </div>
   );
@@ -712,148 +766,108 @@ const WorksheetCardGrid = ({
 }: {
   requests: typeof mockRequests;
   onSelect: (request: (typeof mockRequests)[number]) => void;
-}) => {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {requests.map((request) => (
-        <Card
-          key={request.id}
-          className="hover:shadow-elegant transition-all duration-300 cursor-pointer h-full flex flex-col"
-          onClick={() => onSelect(request)}
-        >
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  {getStatusIcon(request.status)}
-                  <CardTitle className="text-sm line-clamp-1">
-                    {request.title}
-                  </CardTitle>
-                </div>
-                <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                  <span>{request.client}</span>
-                  <span>•</span>
-                  <span>{request.dentistName}</span>
-                  <span>•</span>
-                  <span>{request.requestDate}</span>
-                </div>
+}) => (
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    {requests.map((request) => (
+      <Card
+        key={request.id}
+        className="shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer h-full flex flex-col"
+        onClick={() => onSelect(request)}
+      >
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                {getStatusIcon(request.status)}
+                <CardTitle className="text-sm line-clamp-1">
+                  {request.title}
+                </CardTitle>
               </div>
-              <div className="flex flex-col items-end gap-1">
-                {getStatusBadge(request.status)}
-                {getUrgencyBadge(request.urgency)}
+              <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                <span>{request.client}</span>
+                <span>•</span>
+                <span>{request.dentistName}</span>
+                <span>•</span>
+                <span>{request.requestDate}</span>
               </div>
             </div>
-          </CardHeader>
-          <CardContent className="pt-0 flex-1 flex flex-col justify-between">
-            <div className="space-y-2">
-              <CardDescription className="text-xs line-clamp-2">
-                {request.description}
-              </CardDescription>
-              <div className="grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">
-                <div>
-                  <span className="font-medium">환자</span>{" "}
-                  {request.patientName}
-                </div>
-                <div className="text-right">
-                  <span className="font-medium">치식</span> {request.tooth}
-                </div>
-                <div>
-                  <span className="font-medium">임플란트</span>{" "}
-                  {request.specifications.implantCompany}
-                </div>
-                <div className="text-right">
-                  {request.specifications.implantProduct}
-                </div>
-                <div>
-                  <span className="font-medium">규격</span>{" "}
-                  {request.specifications.implantSize}
-                </div>
-                <div className="text-right">
-                  {request.specifications.diameter} /{" "}
-                  {request.specifications.material}
-                </div>
-              </div>
+            <div className="flex flex-col items-end gap-1">
+              {getStatusBadge(request.status)}
+              {getUrgencyBadge(request.urgency)}
             </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-};
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 flex-1 flex flex-col justify-between">
+          <div className="space-y-1.5 text-[11px] text-muted-foreground">
+            <div className="text-xs font-semibold text-blue-700">
+              소재 직경 {request.specifications.diameter}
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              <span>{request.dentistName}</span>
+              <span>•</span>
+              <span>{request.requestDate}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              <span>{request.client}</span>
+              <span>•</span>
+              <span>환자 {request.patientName}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              <span>치아번호 {request.tooth}</span>
+              <span>•</span>
+              <span>커넥션 직경 {request.specifications.implantSize}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
+              <span>
+                임플란트 {request.specifications.implantCompany}/
+                {request.specifications.implantProduct}/
+                {request.specifications.implantSize}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    ))}
+  </div>
+);
 
 export const RequestListPage = () => {
   const { user } = useAuthStore();
-  const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const location = useLocation();
+  const { worksheetSearch, setWorksheetSearch } = useOutletContext<{
+    worksheetSearch: string;
+    setWorksheetSearch: (value: string) => void;
+  }>();
+  const worksheetParams = new URLSearchParams(location.search);
+  const worksheetType = worksheetParams.get("type") || "abutment";
+  const worksheetStage = worksheetParams.get("stage") || "receive";
+  const isCncMachining =
+    worksheetType === "cnc" && worksheetStage === "machining";
+  const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
 
-  const filters = useWorksheetFilters(mockRequests);
+  const filters = useWorksheetFilters(mockRequests, {
+    value: worksheetSearch,
+    setValue: setWorksheetSearch,
+  });
 
-  const filteredRequests = filters.filteredAndSorted as typeof mockRequests;
-
-  const parseDiameter = (value: string | undefined) => {
-    if (!value) return null;
-    const match = value.match(/([0-9]+\.?[0-9]*)/);
-    if (!match) return null;
-    const num = parseFloat(match[1]);
-    return Number.isNaN(num) ? null : num;
-  };
-
-  const diameterBuckets: {
-    id: string;
-    label: string;
-    matches: (d: number | null) => boolean;
-  }[] = [
-    {
-      id: "lt6",
-      label: "최대직경 6mm 미만",
-      matches: (d) => d !== null && d < 6,
-    },
-    {
-      id: "lt8",
-      label: "최대직경 8mm 미만",
-      matches: (d) => d !== null && d >= 6 && d < 8,
-    },
-    {
-      id: "lt10",
-      label: "최대직경 10mm 미만",
-      matches: (d) => d !== null && d >= 8 && d < 10,
-    },
-    {
-      id: "gte10",
-      label: "최대직경 10mm 이상",
-      matches: (d) => d !== null && d >= 10,
-    },
-  ];
+  if (isCncMachining) {
+    return (
+      <div className="min-h-screen bg-gradient-subtle p-6">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <WorksheetCncMachineSection searchQuery={filters.searchQuery} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        <WorksheetSortBar {...filters} />
-
-        <div className="space-y-6">
-          <p className="text-xs text-muted-foreground">
-            의뢰 카드는 어벗먼트 최대 직경 기준으로 네 구간(&lt;6mm, &lt;8mm,
-            &lt;10mm, 10mm 이상)으로 나뉘어 표시됩니다.
-          </p>
-          {diameterBuckets.map((bucket) => {
-            const bucketRequests = filteredRequests.filter((request) => {
-              const d = parseDiameter(request.specifications.diameter);
-              return bucket.matches(d);
-            });
-
-            if (!bucketRequests.length) return null;
-
-            return (
-              <div key={bucket.id} className="space-y-2">
-                <h2 className="text-sm font-semibold text-muted-foreground">
-                  {bucket.label}
-                </h2>
-                <WorksheetCardGrid
-                  requests={bucketRequests}
-                  onSelect={(request) => setSelectedRequest(request)}
-                />
-              </div>
-            );
-          })}
+        <div className="space-y-4">
+          <WorksheetCardGrid
+            requests={filters.filteredAndSorted as typeof mockRequests}
+            onSelect={(request) => setSelectedRequest(request)}
+          />
         </div>
       </div>
 

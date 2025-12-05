@@ -165,7 +165,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
-            className="inline-flex items-center justify-center rounded-md px-3.5 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-40"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={onTempClick}
             title={
               tempTooltip || "모터 온도를 조회해 축별 온도 분포를 확인합니다."
@@ -177,7 +177,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-md px-3.5 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-40"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={onToolClick}
             title={toolTooltip || "공구 수명과 교체 시점을 확인합니다."}
             disabled={loading}
@@ -185,18 +185,13 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             <Wrench className={`h-4 w-4 ${getHealthColorClass(toolHealth)}`} />
           </button>
           <button
-            className="inline-flex items-center gap-1 rounded-md px-3.5 py-2 text-sm font-semibold text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors"
             onClick={onEditClick}
           >
             {machine.allowJobStart === false ? (
-              <>
-                <ShieldOff className="h-5 w-5 text-red-500" />
-                <span className="text-[11px] font-medium text-red-500">
-                  차단
-                </span>
-              </>
+              <ShieldOff className="h-4 w-4 text-red-500" />
             ) : (
-              <Settings className="h-5 w-5" />
+              <Settings className="h-4 w-4" />
             )}
           </button>
         </div>
