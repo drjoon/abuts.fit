@@ -71,4 +71,45 @@
 - CNC 장비로 전송할 때는 확장자를 사용하지 않고, 숫자 프로그램 번호만 사용합니다.
 - 파일명에서 프로그램 번호를 추출할 때는 `O####` 패턴을 우선적으로 해석합니다.
 
-이 규칙은 프로젝트의 일관성을 유지하고 협업 효율을 높이기 위해 만들어졌습니다. 규칙에 대한 수정이나 추가 제안이 있다면 팀과 논의해주세요.
+## 7. 페이지 및 컴포넌트 구조 (Manufacturer)
+
+제조사(Manufacturer) 관련 페이지는 다음과 같은 계층 구조를 따릅니다.
+
+```
+pages/manufacturer/worksheet/
+|-- custom_abutment/    # 커스텀 어벗먼트 관련
+|   |-- request/        # 의뢰 목록 (RequestPage.tsx)
+|   |-- cam/            # CAM (예정)
+|   |-- machining/      # 가공 (MachiningPage.tsx)
+|   `-- ...             # 세척, 발송 등 단계별 폴더
+|-- crown/              # 크라운 관련 (예정)
+`-- ...
+```
+
+- `WorkSheet.tsx`는 라우팅 래퍼(Routing Wrapper) 역할만 수행하며, 실제 로직은 하위 폴더의 컴포넌트(Page)로 분리합니다.
+- URL 파라미터(`type`, `stage`)에 따라 적절한 하위 페이지를 렌더링합니다.
+
+## 8. 페이지 및 컴포넌트 구조 (Requestor & Admin)
+
+의뢰자(Requestor) 및 관리자(Admin) 페이지도 기능 단위로 폴더를 구분하여 관리합니다.
+
+### Requestor
+
+```
+pages/requestor/
+|-- new_request/    # 의뢰 생성 (NewRequestPage.tsx)
+|-- worksheet/      # 의뢰 관리
+|   `-- list/       # 의뢰 목록 (RequestListPage.tsx)
+|-- dashboard/      # 대시보드 (RequestorDashboardPage.tsx)
+```
+
+### Admin
+
+```
+pages/admin/
+|-- users/          # 사용자 관리
+|-- monitoring/     # 의뢰 모니터링
+|-- support/        # 채팅 및 고객지원
+|-- system/         # 시스템 분석 및 보안
+|-- dashboard/      # 대시보드
+```
