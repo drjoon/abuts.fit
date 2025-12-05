@@ -22,10 +22,11 @@ export const authenticate = async (req, res, next) => {
 
     // 개발용 MOCK 토큰 우회 (프론트 mock 로그인과 연동)
     if (process.env.NODE_ENV !== "production" && token === "MOCK_DEV_TOKEN") {
+      const mockRole = req.headers["x-mock-role"] || "manufacturer";
       // 최소 필드만 가진 가짜 사용자 객체 (개발 시 제조사 권한으로 동작)
       req.user = {
         _id: new User({})._id, // 임의 ObjectId
-        role: "manufacturer",
+        role: mockRole,
         active: true,
       };
       return next();

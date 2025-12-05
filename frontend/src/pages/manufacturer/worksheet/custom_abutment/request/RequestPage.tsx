@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { ExpandedRequestCard } from "@/components/ExpandedRequestCard";
@@ -14,6 +14,7 @@ import {
 
 type ManufacturerRequest = {
   id: string;
+  _id: string; // Backend ID
   title: string;
   description: string;
   client: string;
@@ -21,103 +22,27 @@ type ManufacturerRequest = {
   patientName: string;
   tooth: string;
   requestDate: string;
+  status: string;
+  referenceId?: string[];
   specifications: {
     diameter: string;
+    connectionDiameter?: string;
+    implantSystem?: string;
+    implantType?: string;
+    connectionType?: string;
     implantSize: string;
   };
+  workType?: string; // 'abutment' | 'prosthesis' | 'mixed'
 };
 
-const mockRequests: ManufacturerRequest[] = [
-  {
-    id: "M-001",
-    title: "상악 우측 제1대구치 임플란트",
-    description: "티타늄 어벗먼트, 4.3mm 직경, 높이 5mm",
-    client: "서울치과기공소",
-    dentistName: "서울치과의원 김원장",
-    patientName: "홍길동",
-    tooth: "16",
-    requestDate: "2025-07-15",
-    specifications: {
-      diameter: "4.3mm",
-      implantSize: "4.3×10mm",
-    },
-  },
-  {
-    id: "M-002",
-    title: "하악 좌측 제2소구치 임플란트",
-    description: "지르코니아 어벗먼트, 미적 고려",
-    client: "부산치과기공소",
-    dentistName: "부산스마일치과 박원장",
-    patientName: "김민수",
-    tooth: "35",
-    requestDate: "2025-07-14",
-    specifications: {
-      diameter: "3.8mm",
-      implantSize: "3.8×11.5mm",
-    },
-  },
-];
-
 const getDiameterBucketIndex = (diameter: string) => {
+  if (!diameter) return -1;
   const value = parseFloat(diameter.replace(/[^0-9.]/g, "")) || 0;
   if (value <= 6) return 0;
   if (value <= 8) return 1;
   if (value <= 10) return 2;
   return 3;
 };
-
-type ReceiveQueueItem = {
-  id: string;
-  client: string;
-  patient: string;
-  tooth: string;
-  description: string;
-  qty: number;
-};
-
-const mockReceiveDiameterQueues: Record<DiameterBucketKey, ReceiveQueueItem[]> =
-  {
-    "6": [
-      {
-        id: "R-601",
-        client: "서울치과기공소",
-        patient: "홍길동",
-        tooth: "16",
-        description: "상악 대구치 커스텀 어벗",
-        qty: 2,
-      },
-    ],
-    "8": [
-      {
-        id: "R-801",
-        client: "부산치과기공소",
-        patient: "김민수",
-        tooth: "35",
-        description: "하악 소구치 어벗",
-        qty: 1,
-      },
-    ],
-    "10": [
-      {
-        id: "R-1001",
-        client: "수원치과기공소",
-        patient: "정민호",
-        tooth: "11",
-        description: "전치부 브릿지",
-        qty: 3,
-      },
-    ],
-    "10+": [
-      {
-        id: "R-10P1",
-        client: "서울프리미엄기공소",
-        patient: "박서연",
-        tooth: "16/14/11/21/24/26",
-        description: "풀마우스 와이드",
-        qty: 6,
-      },
-    ],
-  };
 
 const WorksheetCardGrid = ({
   requests,
@@ -135,11 +60,40 @@ const WorksheetCardGrid = ({
       >
         <CardContent className="pt-6 flex-1 flex flex-col justify-between">
           <div className="space-y-2 text-[12px] text-slate-700">
+            {request.referenceId && request.referenceId.length > 0 && (
+              <div className="mb-2">
+                {(() => {
+                  const first = request.referenceId![0];
+                  const extraCount = request.referenceId!.length - 1;
+                  const label =
+                    extraCount > 0 ? `${first} 외 ${extraCount}건` : first;
+                  return (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-100">
+                      Ref: {label}
+                    </span>
+                  );
+                })()}
+              </div>
+            )}
             {(() => {
               const bucketIndex = getDiameterBucketIndex(
                 request.specifications.diameter
               );
               const labels = ["6", "8", "10", "10+"];
+
+              if (bucketIndex === -1) {
+                return (
+                  <div className="mb-2">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
+                      {request.title.includes("크라운") ||
+                      request.workType === "prosthesis"
+                        ? "크라운/보철"
+                        : "기타"}
+                    </span>
+                  </div>
+                );
+              }
+
               return (
                 <div className="space-y-1">
                   <div className="text-xs font-semibold text-blue-700">
@@ -176,18 +130,48 @@ const WorksheetCardGrid = ({
                 </div>
               );
             })()}
-            <div className="flex flex-wrap items-center gap-1">
-              <span>{request.client}</span>
-              <span>•</span>
-              <span>환자 {request.patientName}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-1">
-              <span>치아번호 {request.tooth}</span>
-              <span>•</span>
-              <span>커넥션 직경 {request.specifications.implantSize}</span>
-            </div>
             <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
-              <span>임플란트 제조사/시스템/규격 정보 준비중</span>
+              <span>{request.client}</span>
+              {request.dentistName && (
+                <>
+                  <span>•</span>
+                  <span>{request.dentistName}</span>
+                </>
+              )}
+              {request.requestDate && (
+                <>
+                  <span>•</span>
+                  <span>{request.requestDate}</span>
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              <span>환자 {request.patientName || "미지정"}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              <span>치아번호 {request.tooth || "-"}</span>
+              {(request.specifications.connectionDiameter ||
+                request.specifications.implantSize) && (
+                <>
+                  <span>•</span>
+                  <span>
+                    커넥션 직경{" "}
+                    {request.specifications.connectionDiameter ||
+                      request.specifications.implantSize}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
+              {(request.specifications.implantSystem ||
+                request.specifications.implantType ||
+                request.specifications.implantSize) && (
+                <span>
+                  임플란트 {request.specifications.implantSystem || ""}/
+                  {request.specifications.implantType || ""}/
+                  {request.specifications.implantSize || ""}
+                </span>
+              )}
             </div>
           </div>
         </CardContent>
@@ -201,7 +185,7 @@ export const RequestPage = ({
 }: {
   showQueueBar?: boolean;
 }) => {
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
   const { worksheetSearch } = useOutletContext<{
     worksheetSearch: string;
     setWorksheetSearch: (value: string) => void;
@@ -209,16 +193,141 @@ export const RequestPage = ({
     setShowCompleted: (value: boolean) => void;
   }>();
 
+  const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
   const [receiveQueueModalOpen, setReceiveQueueModalOpen] = useState(false);
   const [receiveSelectedBucket, setReceiveSelectedBucket] =
     useState<DiameterBucketKey | null>(null);
 
+  useEffect(() => {
+    const fetchRequests = async () => {
+      if (!token) return;
+
+      try {
+        setIsLoading(true);
+        const res = await fetch("/api/requests/assigned", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          console.error("Failed to fetch requests");
+          return;
+        }
+
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data.requests)) {
+          const mappedRequests: ManufacturerRequest[] = data.data.requests.map(
+            (req: any) => {
+              // Determine workType from patientCases
+              let workType = "mixed";
+              const types = new Set<string>();
+              if (Array.isArray(req.patientCases)) {
+                req.patientCases.forEach((pc: any) => {
+                  if (Array.isArray(pc.files)) {
+                    pc.files.forEach((f: any) => {
+                      if (f.workType) types.add(f.workType);
+                    });
+                  }
+                });
+              }
+
+              if (types.has("abutment") && !types.has("prosthesis")) {
+                workType = "abutment";
+              } else if (!types.has("abutment") && types.has("prosthesis")) {
+                workType = "prosthesis";
+              } else if (types.size === 0) {
+                // Fallback if no files or types (e.g. legacy data)
+                workType = req.specifications?.implantSystem
+                  ? "abutment"
+                  : "prosthesis";
+              }
+
+              const diameterValue =
+                (req.specifications && req.specifications.maxDiameter) ??
+                req.maxDiameter;
+
+              const connectionDiameterValue =
+                (req.specifications && req.specifications.connectionDiameter) ??
+                req.connectionDiameter;
+
+              const implantSystemValue =
+                (req.specifications && req.specifications.implantSystem) ||
+                req.implantManufacturer ||
+                req.implantSystem ||
+                req.implantSystemLegacy;
+
+              const implantTypeValue =
+                (req.specifications && req.specifications.implantType) ||
+                req.implantType ||
+                req.implantTypeLegacy;
+
+              const connectionTypeValue =
+                req.specifications && req.specifications.connectionType;
+
+              const implantSizeValue =
+                (req.specifications && req.specifications.implantSize) ||
+                req.implantSize;
+
+              return {
+                id: req.requestId,
+                _id: req._id,
+                title: req.title,
+                description: req.description || "",
+                client:
+                  req.requestor?.organization ||
+                  req.requestor?.name ||
+                  "미지정",
+                dentistName: req.dentistName || "",
+                patientName: req.patientName || "",
+                tooth: req.tooth || "",
+                requestDate: req.createdAt
+                  ? new Date(req.createdAt).toISOString().split("T")[0]
+                  : "",
+                referenceId: Array.isArray(req.referenceId)
+                  ? req.referenceId
+                  : req.referenceId
+                  ? [req.referenceId]
+                  : [],
+                status: req.status,
+                workType,
+                specifications: {
+                  diameter:
+                    typeof diameterValue === "number"
+                      ? `${diameterValue}mm`
+                      : "",
+                  connectionDiameter:
+                    typeof connectionDiameterValue === "number"
+                      ? `${connectionDiameterValue}mm`
+                      : undefined,
+                  implantSystem: implantSystemValue,
+                  implantType: implantTypeValue,
+                  connectionType: connectionTypeValue,
+                  implantSize: implantSizeValue || "",
+                },
+              };
+            }
+          );
+          setRequests(mappedRequests);
+        }
+      } catch (error) {
+        console.error("Error fetching requests:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchRequests();
+  }, [token]);
+
   const searchLower = worksheetSearch.toLowerCase();
-  const filteredAndSorted = [...mockRequests]
+  const filteredAndSorted = requests
     .filter((request) => {
       const text = (
         request.title +
+        (request.referenceId || "") +
         request.client +
         request.dentistName +
         request.patientName +
@@ -234,56 +343,46 @@ export const RequestPage = ({
   const diameterQueueForReceive = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "10+"];
     const counts = labels.map(() => 0);
+    const buckets: Record<DiameterBucketKey, WorksheetQueueItem[]> = {
+      "6": [],
+      "8": [],
+      "10": [],
+      "10+": [],
+    };
 
     for (const req of filteredAndSorted) {
       const bucketIndex = getDiameterBucketIndex(req.specifications.diameter);
-      if (bucketIndex >= 0 && bucketIndex < counts.length) {
-        counts[bucketIndex] += 1;
+      const item: WorksheetQueueItem = {
+        id: req.id,
+        client: req.client,
+        patient: req.patientName,
+        tooth: req.tooth,
+        programText: req.description,
+        qty: 1, // 기본 1개로 가정
+      };
+
+      if (bucketIndex === 0) {
+        counts[0]++;
+        buckets["6"].push(item);
+      } else if (bucketIndex === 1) {
+        counts[1]++;
+        buckets["8"].push(item);
+      } else if (bucketIndex === 2) {
+        counts[2]++;
+        buckets["10"].push(item);
+      } else {
+        counts[3]++;
+        buckets["10+"].push(item);
       }
     }
 
     const total = counts.reduce((sum, c) => sum + c, 0);
-    return { labels, counts, total };
+    return { labels, counts, total, buckets };
   }, [filteredAndSorted]);
 
-  const receiveQueues: Record<DiameterBucketKey, WorksheetQueueItem[]> =
-    useMemo(
-      () => ({
-        "6": mockReceiveDiameterQueues["6"].map((q) => ({
-          id: q.id,
-          client: q.client,
-          patient: q.patient,
-          tooth: q.tooth,
-          programText: q.description,
-          qty: q.qty,
-        })),
-        "8": mockReceiveDiameterQueues["8"].map((q) => ({
-          id: q.id,
-          client: q.client,
-          patient: q.patient,
-          tooth: q.tooth,
-          programText: q.description,
-          qty: q.qty,
-        })),
-        "10": mockReceiveDiameterQueues["10"].map((q) => ({
-          id: q.id,
-          client: q.client,
-          patient: q.patient,
-          tooth: q.tooth,
-          programText: q.description,
-          qty: q.qty,
-        })),
-        "10+": mockReceiveDiameterQueues["10+"].map((q) => ({
-          id: q.id,
-          client: q.client,
-          patient: q.patient,
-          tooth: q.tooth,
-          programText: q.description,
-          qty: q.qty,
-        })),
-      }),
-      []
-    );
+  if (isLoading) {
+    return <div className="p-8 text-center">Loading...</div>;
+  }
 
   return (
     <>
@@ -320,7 +419,7 @@ export const RequestPage = ({
         open={receiveQueueModalOpen}
         onOpenChange={setReceiveQueueModalOpen}
         processLabel="커스텀어벗 > 의뢰, CAM"
-        queues={receiveQueues}
+        queues={diameterQueueForReceive.buckets}
         selectedBucket={receiveSelectedBucket}
         onSelectBucket={setReceiveSelectedBucket}
       />

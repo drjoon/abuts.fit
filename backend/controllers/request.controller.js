@@ -10,6 +10,95 @@ async function createRequest(req, res) {
   console.log("createRequest req.user:", req.user);
   console.log("createRequest req.body:", req.body);
   try {
+    // Batch request processing
+    if (req.body.items && Array.isArray(req.body.items)) {
+      const createdRequests = [];
+      const items = req.body.items;
+
+      // Generate a common referenceId for the batch if not provided in items
+      // However, items might already have referenceIds grouped by patient
+      // So we just process each item.
+
+      for (const item of items) {
+        const patientCases = Array.isArray(item.patientCases)
+          ? item.patientCases
+          : [];
+
+        // Validate each item
+        const hasValidPatientCases =
+          patientCases.length > 0 &&
+          patientCases.every((c) => {
+            if (!c) return false;
+            const name = (c.patientName || "").trim();
+            const teethArr = Array.isArray(c.teeth) ? c.teeth : [];
+            // batch 모드에서도 단일 요청과 동일하게: 환자명 + 최소 1개 치아번호 필수
+            return name.length > 0 && teethArr.length > 0;
+          });
+
+        if (!hasValidPatientCases) {
+          // Continue or fail? Let's fail whole batch for integrity or skip?
+          // For now, let's just throw to fail.
+          throw new Error(
+            `환자 정보가 누락된 항목이 있습니다. (Patient: ${
+              patientCases[0]?.patientName || "Unknown"
+            })`
+          );
+        }
+
+        const { referenceId, referenceIds, ...rest } = item;
+
+        let normalizedReferenceIds = undefined;
+        if (Array.isArray(referenceIds) && referenceIds.length > 0) {
+          normalizedReferenceIds = referenceIds;
+        } else if (
+          typeof referenceId === "string" &&
+          referenceId.trim().length > 0
+        ) {
+          normalizedReferenceIds = [referenceId];
+        }
+
+        const newRequest = new Request({
+          ...rest,
+          ...(normalizedReferenceIds
+            ? { referenceId: normalizedReferenceIds }
+            : {}),
+          requestor: req.user._id,
+        });
+        await newRequest.save();
+        createdRequests.push(newRequest);
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: `${createdRequests.length}건의 의뢰가 성공적으로 등록되었습니다.`,
+        data: createdRequests,
+      });
+    }
+
+    // 환자 정보(patientCases)는 필수
+    const patientCases = Array.isArray(req.body.patientCases)
+      ? req.body.patientCases
+      : [];
+
+    const hasValidPatientCases =
+      patientCases.length > 0 &&
+      patientCases.every((c) => {
+        if (!c) return false;
+        const name = (c.patientName || "").trim();
+        const teethArr = Array.isArray(c.teeth) ? c.teeth : [];
+        return name.length > 0 && teethArr.length > 0;
+      });
+
+    if (!hasValidPatientCases) {
+      return res.status(400).json({
+        success: false,
+        message: "환자 이름과 치아번호는 필수입니다.",
+        errors: [
+          "각 환자 케이스에 patientName과 하나 이상의 teeth가 포함되어야 합니다.",
+        ],
+      });
+    }
+
     const newRequest = new Request({
       ...req.body,
       requestor: req.user._id,
@@ -235,7 +324,9 @@ async function getAssignedRequests(req, res) {
     const skip = (page - 1) * limit;
 
     // 필터링 파라미터
-    const filter = { manufacturer: req.user._id };
+    const filter = {
+      $or: [{ manufacturer: req.user._id }, { manufacturer: null }],
+    };
     if (req.query.status) filter.status = req.query.status;
     if (req.query.implantType) filter.implantType = req.query.implantType;
 

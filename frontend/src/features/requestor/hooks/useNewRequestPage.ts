@@ -565,6 +565,34 @@ export const useNewRequestPage = () => {
         );
 
         if (unique.length > 0) {
+          // 파일명 기반 기본 workType/AI 슬롯 먼저 세팅
+          setAiFileInfos((prevInfos) => {
+            const next = [...prevInfos];
+            unique.forEach((file) => {
+              const filename = file.name;
+              const idx = next.findIndex((i) => i.filename === filename);
+              const suggested =
+                file.size < 1024 * 1024 ? "abutment" : "prosthesis";
+              if (idx >= 0) {
+                if (!next[idx].workType) {
+                  next[idx] = { ...next[idx], workType: suggested };
+                }
+              } else {
+                next.push({
+                  filename,
+                  patientName: "",
+                  teethText: "",
+                  workType: suggested,
+                  rawSummary: "",
+                });
+              }
+            });
+            return next;
+          });
+
+          const filenames = unique.map((file) => file.name);
+          await analyzeFilenamesWithAi(filenames);
+
           const uploaded = await uploadFilesWithToast(unique);
           if (uploaded.length > 0) {
             setUploadedFiles((prev) => {
@@ -576,33 +604,6 @@ export const useNewRequestPage = () => {
               });
               return Array.from(map.values());
             });
-
-            setAiFileInfos((prevInfos) => {
-              const next = [...prevInfos];
-              unique.forEach((file) => {
-                const filename = file.name;
-                const idx = next.findIndex((i) => i.filename === filename);
-                const suggested =
-                  file.size < 1024 * 1024 ? "abutment" : "prosthesis";
-                if (idx >= 0) {
-                  if (!next[idx].workType) {
-                    next[idx] = { ...next[idx], workType: suggested };
-                  }
-                } else {
-                  next.push({
-                    filename,
-                    patientName: "",
-                    teethText: "",
-                    workType: suggested,
-                    rawSummary: "",
-                  });
-                }
-              });
-              return next;
-            });
-
-            const filenames = unique.map((file) => file.name);
-            analyzeFilenamesWithAi(filenames);
 
             if (!implantManufacturer && !implantSystem && !implantType) {
               const baseManufacturer = "OSSTEM";
@@ -679,6 +680,34 @@ export const useNewRequestPage = () => {
         );
 
         if (unique.length > 0) {
+          // 파일명 기반 기본 workType/AI 슬롯 먼저 세팅
+          setAiFileInfos((prevInfos) => {
+            const next = [...prevInfos];
+            unique.forEach((file) => {
+              const filename = file.name;
+              const idx = next.findIndex((i) => i.filename === filename);
+              const suggested =
+                file.size < 1024 * 1024 ? "abutment" : "prosthesis";
+              if (idx >= 0) {
+                if (!next[idx].workType) {
+                  next[idx] = { ...next[idx], workType: suggested };
+                }
+              } else {
+                next.push({
+                  filename,
+                  patientName: "",
+                  teethText: "",
+                  workType: suggested,
+                  rawSummary: "",
+                });
+              }
+            });
+            return next;
+          });
+
+          const filenames = unique.map((file) => file.name);
+          await analyzeFilenamesWithAi(filenames);
+
           const uploaded = await uploadFilesWithToast(unique);
           if (uploaded.length > 0) {
             setUploadedFiles((prev) => {
@@ -690,33 +719,6 @@ export const useNewRequestPage = () => {
               });
               return Array.from(map.values());
             });
-
-            setAiFileInfos((prevInfos) => {
-              const next = [...prevInfos];
-              unique.forEach((file) => {
-                const filename = file.name;
-                const idx = next.findIndex((i) => i.filename === filename);
-                const suggested =
-                  file.size < 1024 * 1024 ? "abutment" : "prosthesis";
-                if (idx >= 0) {
-                  if (!next[idx].workType) {
-                    next[idx] = { ...next[idx], workType: suggested };
-                  }
-                } else {
-                  next.push({
-                    filename,
-                    patientName: "",
-                    teethText: "",
-                    workType: suggested,
-                    rawSummary: "",
-                  });
-                }
-              });
-              return next;
-            });
-
-            const filenames = unique.map((file) => file.name);
-            analyzeFilenamesWithAi(filenames);
 
             if (!implantManufacturer && !implantSystem && !implantType) {
               const baseManufacturer = "OSSTEM";
@@ -790,78 +792,189 @@ export const useNewRequestPage = () => {
       return;
     }
 
-    if (
-      !implantManufacturer ||
-      !implantSystem ||
-      !implantType ||
-      !selectedConnectionId
-    ) {
+    // 파일/AI 정보 존재 여부 검사 (메모만 선택 사항)
+    if (!uploadedFiles.length || !aiFileInfos.length) {
       toast({
-        title: "임플란트 정보를 모두 선택해주세요",
-        description: "제조사, 시스템, 유형을 모두 선택해야 합니다.",
+        title: "파일을 업로드해주세요",
+        description:
+          "최소 1개 이상의 STL 파일을 업로드해야 의뢰를 등록할 수 있습니다.",
         variant: "destructive",
       });
       return;
     }
 
-    const payload: any = {
-      title: "커스텀 어벗먼트 의뢰",
-      description: message,
-      implantManufacturer,
-      implantSystem,
-      implantType,
-      connection: selectedConnectionId,
-    };
+    // 필수 필드: 환자명/치아번호 모두 채워져 있어야 함
+    const hasMissingPatient = aiFileInfos.some(
+      (info) => !info.patientName || !info.patientName.trim()
+    );
+    const hasMissingTeeth = aiFileInfos.some(
+      (info) => !info.teethText || !info.teethText.trim()
+    );
 
-    // STL 분석에서 계산된 최대 직경 정보가 있다면 payload.maxDiameter로 전송
-    const diameterValues = Object.values(abutDiameters || {});
-    if (diameterValues.length > 0) {
-      const maxDiameter = Math.max(...diameterValues);
-      if (Number.isFinite(maxDiameter)) {
-        payload.maxDiameter = maxDiameter;
-      }
+    if (hasMissingPatient || hasMissingTeeth) {
+      toast({
+        title: "환자 정보가 누락되었습니다",
+        description:
+          "모든 파일에 대해 환자 이름과 치아번호를 입력해야 합니다. 각 파일 카드 우측의 입력란을 확인해주세요.",
+        variant: "destructive",
+      });
+      return;
     }
 
-    if (aiFileInfos.length > 0) {
-      const caseMap = new Map<
-        string,
-        {
-          patientName: string;
-          teethSet: Set<string>;
-          files: { filename: string; workType: string }[];
+    // Check if we have any abutment / crown files
+    const hasAbutment = aiFileInfos.some(
+      (info) => info.workType === "abutment"
+    );
+    const hasCrown = aiFileInfos.some((info) => info.workType === "prosthesis");
+
+    // 지금은 커스텀 어벗만 실제 의뢰 대상으로 처리.
+    // 크라운만 있는 경우에는 안내 후 의뢰 생성 중단.
+    if (!hasAbutment && hasCrown) {
+      toast({
+        title: "커스텀 어벗 STL 파일이 필요합니다",
+        description:
+          "현재 시스템은 커스텀 어벗 의뢰만 접수합니다. 크라운 STL만 업로드된 경우 어벗 STL을 함께 올려주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Only validate implant info if there are abutment files
+    if (
+      hasAbutment &&
+      (!implantManufacturer ||
+        !implantSystem ||
+        !implantType ||
+        !selectedConnectionId)
+    ) {
+      toast({
+        title: "임플란트 정보를 모두 선택해주세요",
+        description:
+          "어벗먼트 제작을 위해 제조사, 시스템, 유형을 모두 선택해야 합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Group by Patient
+    const patientGroups = new Map<string, typeof aiFileInfos>();
+    aiFileInfos.forEach((info) => {
+      const pName = (info.patientName || "미지정").trim();
+      if (!patientGroups.has(pName)) {
+        patientGroups.set(pName, []);
+      }
+      patientGroups.get(pName)!.push(info);
+    });
+
+    const requestItems: any[] = [];
+
+    patientGroups.forEach((infos, pName) => {
+      // Group by Tooth (or teeth set) to create individual requests
+      const toothGroups = new Map<string, typeof aiFileInfos>();
+      infos.forEach((info) => {
+        const tKey = (info.teethText || "Unspecified").trim();
+        if (!toothGroups.has(tKey)) {
+          toothGroups.set(tKey, []);
         }
-      >();
-
-      aiFileInfos.forEach((info) => {
-        const key = (info.patientName || "미지정").trim();
-        if (!caseMap.has(key)) {
-          caseMap.set(key, {
-            patientName: key === "미지정" ? "" : key,
-            teethSet: new Set<string>(),
-            files: [],
-          });
-        }
-
-        const entry = caseMap.get(key)!;
-
-        const teethTokens = info.teethText
-          .split(",")
-          .map((t) => t.trim())
-          .filter((t) => t.length > 0);
-        teethTokens.forEach((t) => entry.teethSet.add(t));
-
-        entry.files.push({
-          filename: info.filename,
-          workType: info.workType || "",
-        });
+        toothGroups.get(tKey)!.push(info);
       });
 
-      payload.patientCases = Array.from(caseMap.values()).map((entry) => ({
-        patientName: entry.patientName,
-        teeth: Array.from(entry.teethSet),
-        files: entry.files,
-        note: "",
-      }));
+      // 환자 단위로 여러 요청이 동시에 생성될 수 있으므로,
+      // 각 요청별 개별 reference ID를 만들되,
+      // 같은 환자 안의 모든 reference ID 배열을 함께 저장한다.
+      // ref ID는 사람이 읽기 쉬운 형태: 환자이름-치아정보-랜덤코드 형식으로 생성.
+      const toothEntries = Array.from(toothGroups.entries());
+      const basePatientSlug = (pName === "미지정" ? "NO-NAME" : pName)
+        .trim()
+        .replace(/\s+/g, "-")
+        .replace(/[^0-9a-zA-Z가-힣_-]/g, "")
+        .toUpperCase();
+
+      const referenceIdList = toothEntries.length
+        ? toothEntries.map(([tKey]) => {
+            const toothSlug =
+              tKey && tKey !== "Unspecified"
+                ? tKey.replace(/\s+/g, "").replace(/[^0-9,-]/g, "")
+                : "NO-TOOTH";
+            const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+            return `${basePatientSlug}_${toothSlug}_${rand}`;
+          })
+        : [];
+
+      toothEntries.forEach(([tKey, groupInfos], index) => {
+        const selfRefId = referenceIdList[index] || referenceIdList[0];
+        const groupFilenames = new Set(groupInfos.map((i) => i.filename));
+        const groupFiles = uploadedFiles.filter((f) =>
+          groupFilenames.has(f.originalName)
+        );
+
+        const isAbutmentRequest = groupInfos.some(
+          (i) => i.workType === "abutment"
+        );
+
+        const reqPayload: any = {
+          title: isAbutmentRequest
+            ? "커스텀 어벗먼트 의뢰"
+            : "크라운/보철 의뢰",
+          description: message,
+          patientName: pName === "미지정" ? "" : pName,
+          tooth: tKey === "Unspecified" ? "" : tKey,
+          files: groupFiles.map((f) => ({
+            fileName: f.originalName,
+            fileType: f.mimetype,
+            fileSize: f.size,
+            filePath: f.location,
+            s3Key: f.key,
+            s3Url: f.location,
+          })),
+          // 같은 환자 그룹 내의 모든 reference ID 목록과,
+          // 이 요청의 개별 reference ID를 함께 저장
+          referenceId: selfRefId,
+          referenceIds: referenceIdList,
+        };
+
+        if (isAbutmentRequest) {
+          reqPayload.implantManufacturer = implantManufacturer;
+          reqPayload.implantSystem = implantSystem;
+          reqPayload.implantType = implantType;
+          reqPayload.connection = selectedConnectionId;
+
+          // STL 분석에서 계산된 최대 직경 정보
+          const groupDiameters = groupInfos
+            .map((i) => abutDiameters[i.filename])
+            .filter((d) => typeof d === "number");
+
+          if (groupDiameters.length > 0) {
+            reqPayload.maxDiameter = Math.max(...groupDiameters);
+          }
+        }
+
+        // Valid patientCases for backend validation
+        reqPayload.patientCases = [
+          {
+            patientName: pName === "미지정" ? "" : pName,
+            teeth:
+              tKey === "Unspecified"
+                ? []
+                : tKey.split(",").map((t) => t.trim()),
+            files: groupInfos.map((i) => ({
+              filename: i.filename,
+              workType: i.workType,
+            })),
+            note: "",
+          },
+        ];
+
+        requestItems.push(reqPayload);
+      });
+    });
+
+    if (requestItems.length === 0) {
+      toast({
+        title: "등록할 파일이 없습니다",
+        variant: "destructive",
+      });
+      return;
     }
 
     try {
@@ -870,8 +983,9 @@ export const useNewRequestPage = () => {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
+          "x-mock-role": "requestor",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ items: requestItems }),
       });
 
       const body = await res.json().catch(() => ({}));
@@ -885,9 +999,22 @@ export const useNewRequestPage = () => {
         return;
       }
 
+      const hasAbutment = aiFileInfos.some(
+        (info) => info.workType === "abutment"
+      );
+      const hasCrown = aiFileInfos.some(
+        (info) => info.workType === "prosthesis"
+      );
+
+      let successDescription = `${requestItems.length}건의 의뢰가 생성되었습니다.`;
+      if (hasAbutment && !hasCrown) {
+        successDescription +=
+          "\n크라운 STL을 함께 올려주시면 디자인과 적합도 검토에 큰 도움이 됩니다.";
+      }
+
       toast({
         title: "의뢰가 성공적으로 등록되었습니다",
-        description: "제조사들이 검토 후 연락드릴 예정입니다.",
+        description: successDescription,
       });
 
       try {

@@ -27,9 +27,24 @@ const requestSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    // 추가된 필드들
+    referenceId: {
+      type: [String],
+      index: true,
+    },
+    dentistName: {
+      type: String,
+    },
+    patientName: {
+      type: String,
+    },
+    tooth: {
+      type: String,
+    },
+
     status: {
       type: String,
-      enum: ["검토중", "견적 대기", "진행중", "완료", "취소"],
+      enum: ["검토중", "견적 대기", "진행중", "완료", "취소", "제작중"],
       default: "검토중",
     },
     priority: {
@@ -37,22 +52,37 @@ const requestSchema = new mongoose.Schema(
       enum: ["낮음", "보통", "높음"],
       default: "보통",
     },
+
+    // Specifications 통합
+    specifications: {
+      implantSystem: String, // e.g. OSSTEM, Straumann (implantCompany)
+      implantType: String, // e.g. Regular, Bone Level RC (implantProduct)
+      connectionType: String, // e.g. Hex, Non-hex
+
+      maxDiameter: Number,
+      connectionDiameter: Number,
+
+      implantSize: String, // e.g. 4.3x10mm
+      height: String, // e.g. 5mm
+      angle: String, // e.g. 15도
+      material: String, // e.g. 티타늄
+    },
+
+    // Legacy fields for compatibility (optional to keep or remove, keeping for safety but marking deprecated)
     implantManufacturer: {
       type: String,
-      required: true,
+      // required: true, -> making optional as we move to specifications
     },
-    implantSystem: {
+    implantSystemLegacy: {
+      // Renamed to avoid conflict if needed, or just remove required
       type: String,
-      required: true,
+      alias: "implantSystem",
     },
-    implantType: {
+    implantTypeLegacy: {
       type: String,
-      required: true,
+      alias: "implantType",
     },
-    // 최대 직경(mm) - 직경별 통계/집계를 위한 숫자 필드 (선택)
-    maxDiameter: {
-      type: Number,
-    },
+
     connection: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Connection",

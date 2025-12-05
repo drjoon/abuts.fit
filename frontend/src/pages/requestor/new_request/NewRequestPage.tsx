@@ -578,7 +578,7 @@ export const NewRequestPage = () => {
                               size="lg"
                               className="flex-1"
                             >
-                              의뢰 등록하기
+                              의뢰하기
                             </Button>
                             <Button
                               type="button"
@@ -587,7 +587,7 @@ export const NewRequestPage = () => {
                               className="w-24"
                               onClick={handleCancel}
                             >
-                              전체 초기화
+                              취소하기
                             </Button>
                           </div>
                         </div>

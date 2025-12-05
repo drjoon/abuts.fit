@@ -266,7 +266,37 @@ export const ExpandedRequestCard = ({
         <CardHeader className="flex-shrink-0">
           <div className="flex items-start justify-between">
             <div className="space-y-2">
-              <CardTitle className="text-xl">{request.title}</CardTitle>
+              <CardTitle className="text-xl flex items-center gap-2">
+                {request.title}
+                {(request.referenceId || (request as any).referenceId) && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs font-normal text-slate-500"
+                  >
+                    {(() => {
+                      const raw =
+                        (request as any).referenceId ??
+                        (request as any).referenceIds ??
+                        null;
+
+                      if (!raw) return null;
+
+                      const list: string[] = Array.isArray(raw)
+                        ? raw
+                        : [String(raw)];
+
+                      if (!list.length) return null;
+
+                      const first = list[0];
+                      const extra = list.length - 1;
+                      const label =
+                        extra > 0 ? `${first} 외 ${extra}건` : first;
+
+                      return <>Ref: {label}</>;
+                    })()}
+                  </Badge>
+                )}
+              </CardTitle>
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
@@ -293,21 +323,117 @@ export const ExpandedRequestCard = ({
         <CardContent className="flex-1 flex flex-col min-h-0">
           {/* Request Details */}
           <div className="bg-muted/30 rounded-lg p-4 mb-4">
-            <h4 className="font-medium mb-2">의뢰 내용</h4>
-            <p className="text-sm text-muted-foreground">
-              {request.description}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <h4 className="font-medium text-sm mb-1 text-muted-foreground">
+                  환자 정보
+                </h4>
+                <div className="text-sm font-medium">
+                  {request.patientName}{" "}
+                  <span className="text-muted-foreground font-normal">
+                    (치아 {request.tooth})
+                  </span>
+                </div>
+                {request.dentistName && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {request.dentistName}
+                  </div>
+                )}
+              </div>
+              <div>
+                <h4 className="font-medium text-sm mb-1 text-muted-foreground">
+                  사양 정보
+                </h4>
+                <div className="text-sm space-y-1">
+                  {(() => {
+                    const spec = (request as any).specifications || {};
+
+                    const implantSystem =
+                      spec.implantSystem ||
+                      spec.implantCompany ||
+                      (request as any).implantManufacturer ||
+                      (request as any).implantSystem ||
+                      (request as any).implantSystemLegacy;
+
+                    const implantType =
+                      spec.implantType ||
+                      spec.implantProduct ||
+                      (request as any).implantType ||
+                      (request as any).implantTypeLegacy;
+
+                    const connectionType =
+                      spec.connectionType ||
+                      spec.connection ||
+                      (spec.angle === "직각" || spec.angle
+                        ? spec.angle
+                        : undefined);
+
+                    const maxDiameter =
+                      typeof spec.maxDiameter === "number"
+                        ? `${spec.maxDiameter}mm`
+                        : typeof (request as any).maxDiameter === "number"
+                        ? `${(request as any).maxDiameter}mm`
+                        : spec.diameter;
+
+                    const connectionDiameter =
+                      typeof spec.connectionDiameter === "number"
+                        ? `${spec.connectionDiameter}mm`
+                        : typeof (request as any).connectionDiameter ===
+                          "number"
+                        ? `${(request as any).connectionDiameter}mm`
+                        : spec.implantSize;
+
+                    if (
+                      !implantSystem &&
+                      !implantType &&
+                      !connectionType &&
+                      !maxDiameter &&
+                      !connectionDiameter
+                    ) {
+                      return null;
+                    }
+
+                    return (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground text-xs w-20">
+                            시스템/타입
+                          </span>
+                          <span>
+                            {implantSystem || ""} / {implantType || ""}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground text-xs w-20">
+                            커넥션
+                          </span>
+                          <span>{connectionType || "-"}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground text-xs w-20">
+                            최대 직경
+                          </span>
+                          <span>{maxDiameter || "-"}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground text-xs w-20">
+                            커넥션 직경
+                          </span>
+                          <span>{connectionDiameter || "-"}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            <h4 className="font-medium text-sm mb-2 text-muted-foreground">
+              메모
+            </h4>
+            <p className="text-sm">
+              {request.description || "메모가 없습니다."}
             </p>
-            {request.implantType && (
-              <div className="mt-2 text-xs text-muted-foreground">
-                임플란트: {request.implantType} | 규격: {request.implantSpec}
-              </div>
-            )}
-            {request.specifications && (
-              <div className="mt-2 text-xs text-muted-foreground">
-                임플란트: {request.specifications.implantType} | 직경:{" "}
-                {request.specifications.diameter}
-              </div>
-            )}
           </div>
 
           {/* Payment Section - 의뢰자인 경우에만 표시 */}
