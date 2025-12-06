@@ -7,6 +7,7 @@ type DashboardShellProps = {
   stats: ReactNode;
   mainLeft?: ReactNode;
   mainRight?: ReactNode;
+  headerRight?: ReactNode;
 };
 
 export const DashboardShell = ({
@@ -16,6 +17,7 @@ export const DashboardShell = ({
   stats,
   mainLeft,
   mainRight,
+  headerRight,
 }: DashboardShellProps) => {
   return (
     <div className="p-6 space-y-6">
@@ -23,12 +25,14 @@ export const DashboardShell = ({
         <h1 className="text-3xl font-bold">{title}</h1>
         <p className="text-muted-foreground">{subtitle}</p>
       </div> */}
+      <div className="space-y-3">
+        {headerRight && <div className="flex justify-start">{headerRight}</div>}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {stats}
+        </div>
+      </div>
 
       {topSection && <div>{topSection}</div>}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats}
-      </div>
 
       {(mainLeft || mainRight) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

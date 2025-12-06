@@ -2,6 +2,52 @@ import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
 import { Types } from "mongoose";
 
+// status(단일 필드)를 status1/status2와 동기화하는 헬퍼
+function applyStatusMapping(requestDoc, statusValue) {
+  const status = statusValue || requestDoc.status || "의뢰접수";
+
+  let status1 = "의뢰접수";
+  let status2 = "없음";
+
+  switch (status) {
+    case "의뢰접수":
+      status1 = "의뢰접수";
+      status2 = "없음";
+      break;
+    case "가공전":
+      status1 = "가공";
+      status2 = "전";
+      break;
+    case "가공후":
+      status1 = "가공";
+      status2 = "후";
+      break;
+    case "배송대기":
+      status1 = "세척/검사/포장";
+      status2 = "후";
+      break;
+    case "배송중":
+      status1 = "배송";
+      status2 = "중";
+      break;
+    case "완료":
+      status1 = "완료";
+      status2 = "없음";
+      break;
+    case "취소":
+      status1 = "취소";
+      status2 = "없음";
+      break;
+    default:
+      // 알 수 없는 값인 경우 기본값 유지
+      break;
+  }
+
+  requestDoc.status = status;
+  requestDoc.status1 = status1;
+  requestDoc.status2 = status2;
+}
+
 /**
  * 새 의뢰 생성
  * @route POST /api/requests
@@ -64,6 +110,7 @@ async function createRequest(req, res) {
             : {}),
           requestor: req.user._id,
         });
+        applyStatusMapping(newRequest, newRequest.status);
         await newRequest.save();
         createdRequests.push(newRequest);
       }
@@ -103,6 +150,8 @@ async function createRequest(req, res) {
       ...req.body,
       requestor: req.user._id,
     });
+
+    applyStatusMapping(newRequest, newRequest.status);
 
     await newRequest.save();
 
@@ -198,6 +247,18 @@ async function getAllRequests(req, res) {
     if (req.query.status) filter.status = req.query.status;
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
+    // 개발 환경 + MOCK_DEV_TOKEN 인 경우, 기존 시드 데이터 확인을 위해
+    // requestor 필터를 제거하고 나머지 필터만 적용한다.
+    const authHeader = req.headers.authorization || "";
+    const isMockDevToken =
+      process.env.NODE_ENV !== "production" &&
+      authHeader === "Bearer MOCK_DEV_TOKEN";
+
+    if (isMockDevToken) {
+      const { requestor, ...rest } = filter;
+      filter = rest;
+    }
+
     // 정렬 파라미터
     const sort = {};
     if (req.query.sortBy) {
@@ -265,10 +326,22 @@ async function getMyRequests(req, res) {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // 필터링 파라미터
-    const filter = { requestor: req.user._id };
+    // 기본 필터: 로그인한 의뢰자 본인
+    let filter = { requestor: req.user._id };
     if (req.query.status) filter.status = req.query.status;
     if (req.query.implantType) filter.implantType = req.query.implantType;
+
+    // 개발 환경 + MOCK_DEV_TOKEN 인 경우, 기존 시드 데이터 확인을 위해
+    // requestor 필터를 제거하고 나머지 필터만 적용한다.
+    const authHeader = req.headers.authorization || "";
+    const isMockDevToken =
+      process.env.NODE_ENV !== "production" &&
+      authHeader === "Bearer MOCK_DEV_TOKEN";
+
+    if (isMockDevToken) {
+      const { requestor, ...rest } = filter;
+      filter = rest;
+    }
 
     // 정렬 파라미터
     const sort = {};
@@ -524,8 +597,16 @@ async function updateRequestStatus(req, res) {
     const requestId = req.params.id;
     const { status } = req.body;
 
-    // 상태 유효성 검사
-    const validStatuses = ["검토중", "견적 대기", "진행중", "완료", "취소"];
+    // 상태 유효성 검사 (새 워크플로우)
+    const validStatuses = [
+      "의뢰접수",
+      "가공전",
+      "가공후",
+      "배송대기",
+      "배송중",
+      "완료",
+      "취소",
+    ];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -551,8 +632,16 @@ async function updateRequestStatus(req, res) {
       });
     }
 
+    // 개발 환경 + MOCK_DEV_TOKEN 여부 확인 (대시보드와 동일한 정책)
+    const authHeader = req.headers.authorization || "";
+    const isMockDevToken =
+      process.env.NODE_ENV !== "production" &&
+      authHeader === "Bearer MOCK_DEV_TOKEN";
+
     // 접근 권한 확인 (의뢰자, 제조사, 관리자만 상태 변경 가능)
-    const isRequestor = req.user._id.equals(request.requestor._id);
+    const isRequestor = isMockDevToken
+      ? req.user.role === "requestor"
+      : req.user._id.equals(request.requestor._id);
     const isManufacturer =
       request.manufacturer && req.user._id.equals(request.manufacturer);
     const isAdmin = req.user.role === "admin";
@@ -572,8 +661,25 @@ async function updateRequestStatus(req, res) {
       });
     }
 
+    // 취소는 의뢰접수/가공전 상태에서만 가능
+    if (status === "취소" && !["의뢰접수", "가공전"].includes(request.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "의뢰접수 또는 가공전 상태에서만 취소할 수 있습니다.",
+      });
+    }
+
+    // 제조사/관리자만 변경 가능한 상태들 (가공 관련 및 배송 상태)
+    const manufacturerOnlyStatuses = [
+      "가공전",
+      "가공후",
+      "배송대기",
+      "배송중",
+      "완료",
+    ];
+
     if (
-      (status === "견적 대기" || status === "진행중" || status === "완료") &&
+      manufacturerOnlyStatuses.includes(status) &&
       !isManufacturer &&
       !isAdmin
     ) {
@@ -583,8 +689,8 @@ async function updateRequestStatus(req, res) {
       });
     }
 
-    // 의뢰 상태 변경
-    request.status = status;
+    // 의뢰 상태 변경 (status1/status2 동기화 포함)
+    applyStatusMapping(request, status);
     await request.save();
 
     res.status(200).json({
@@ -884,22 +990,44 @@ function computeDiameterStats(requests) {
 async function getMyDashboardSummary(req, res) {
   try {
     const requestorId = req.user._id;
+    const { period = "30d" } = req.query;
 
-    const requests = await Request.find({ requestor: requestorId })
+    let dateFilter = {};
+    if (period && period !== "all") {
+      let days = 30;
+      if (period === "7d") days = 7;
+      else if (period === "90d") days = 90;
+
+      const from = new Date();
+      from.setDate(from.getDate() - days);
+      dateFilter = { createdAt: { $gte: from } };
+    }
+
+    // 기본적으로는 로그인한 의뢰자 본인(requestorId)의 데이터만 조회
+    // 단, 개발 환경에서 MOCK_DEV_TOKEN을 사용하는 경우에는
+    // 기존 시드 데이터 확인을 위해 requestor 필터를 생략한다.
+    const authHeader = req.headers.authorization || "";
+    const isMockDevToken =
+      process.env.NODE_ENV !== "production" &&
+      authHeader === "Bearer MOCK_DEV_TOKEN";
+
+    const requestFilter = isMockDevToken
+      ? { ...dateFilter }
+      : { requestor: requestorId, ...dateFilter };
+
+    const requests = await Request.find(requestFilter)
       .populate("manufacturer", "name organization")
       .lean();
 
     const total = requests.length;
-    const inProduction = requests.filter((r) => r.status === "진행중").length;
+    const inProduction = requests.filter((r) =>
+      ["가공전", "가공후"].includes(r.status)
+    ).length;
     const completed = requests.filter((r) => r.status === "완료").length;
-    const inShipping = requests.filter((r) => {
-      const shippedAt = r.deliveryInfo?.shippedAt;
-      const deliveredAt = r.deliveryInfo?.deliveredAt;
-      return r.status === "진행중" && shippedAt && !deliveredAt;
-    }).length;
+    const inShipping = requests.filter((r) => r.status === "배송중").length;
 
     const active = requests.filter((r) =>
-      ["검토중", "견적 대기", "진행중"].includes(r.status)
+      ["의뢰접수", "가공전", "가공후", "배송대기", "배송중"].includes(r.status)
     );
 
     const stageCounts = {
@@ -910,12 +1038,13 @@ async function getMyDashboardSummary(req, res) {
     };
 
     active.forEach((r) => {
-      const shippedAt = r.deliveryInfo?.shippedAt;
-      if (r.status === "검토중" || r.status === "견적 대기") {
+      if (r.status === "의뢰접수") {
         stageCounts.design += 1;
-      } else if (r.status === "진행중" && !shippedAt) {
+      } else if (r.status === "가공전") {
         stageCounts.cnc += 1;
-      } else if (r.status === "진행중" && shippedAt) {
+      } else if (r.status === "가공후") {
+        stageCounts.post += 1;
+      } else if (r.status === "배송대기" || r.status === "배송중") {
         stageCounts.shipping += 1;
       }
     });
@@ -1006,6 +1135,23 @@ async function getMyDashboardSummary(req, res) {
 
     const diameterStats = computeDiameterStats(requests);
 
+    const recentRequests = requests
+      .slice()
+      .sort((a, b) => {
+        const aDate = new Date(a.createdAt || a.updatedAt || 0).getTime();
+        const bDate = new Date(b.createdAt || b.updatedAt || 0).getTime();
+        return bDate - aDate;
+      })
+      .slice(0, 5)
+      .map((r) => ({
+        id: r.requestId,
+        title: r.title,
+        status: r.status,
+        manufacturer:
+          r.manufacturer?.organization || r.manufacturer?.name || "",
+        date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
+      }));
+
     return res.status(200).json({
       success: true,
       data: {
@@ -1018,6 +1164,7 @@ async function getMyDashboardSummary(req, res) {
         manufacturingSummary,
         riskSummary,
         diameterStats,
+        recentRequests,
       },
     });
   } catch (error) {
@@ -1043,16 +1190,14 @@ async function getAssignedDashboardSummary(req, res) {
       .lean();
 
     const total = requests.length;
-    const inProduction = requests.filter((r) => r.status === "진행중").length;
+    const inProduction = requests.filter((r) =>
+      ["가공전", "가공후"].includes(r.status)
+    ).length;
     const completed = requests.filter((r) => r.status === "완료").length;
-    const inShipping = requests.filter((r) => {
-      const shippedAt = r.deliveryInfo?.shippedAt;
-      const deliveredAt = r.deliveryInfo?.deliveredAt;
-      return r.status === "진행중" && shippedAt && !deliveredAt;
-    }).length;
+    const inShipping = requests.filter((r) => r.status === "배송중").length;
 
     const active = requests.filter((r) =>
-      ["검토중", "견적 대기", "진행중"].includes(r.status)
+      ["의뢰접수", "가공전", "가공후", "배송대기", "배송중"].includes(r.status)
     );
 
     const stageCounts = {
@@ -1063,12 +1208,13 @@ async function getAssignedDashboardSummary(req, res) {
     };
 
     active.forEach((r) => {
-      const shippedAt = r.deliveryInfo?.shippedAt;
-      if (r.status === "검토중" || r.status === "견적 대기") {
+      if (r.status === "의뢰접수") {
         stageCounts.design += 1;
-      } else if (r.status === "진행중" && !shippedAt) {
+      } else if (r.status === "가공전") {
         stageCounts.cnc += 1;
-      } else if (r.status === "진행중" && shippedAt) {
+      } else if (r.status === "가공후") {
+        stageCounts.post += 1;
+      } else if (r.status === "배송대기" || r.status === "배송중") {
         stageCounts.shipping += 1;
       }
     });
@@ -1180,6 +1326,106 @@ async function getAssignedDashboardSummary(req, res) {
   }
 }
 
+/**
+ * 묶음 배송 후보 조회 (의뢰자용)
+ * @route GET /api/requests/my/bulk-shipping
+ */
+async function getMyBulkShipping(req, res) {
+  try {
+    const requestorId = req.user._id;
+
+    const requests = await Request.find({
+      requestor: requestorId,
+      status: { $in: ["가공전", "가공후", "배송대기"] },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const mapItem = (r) => ({
+      id: r.requestId,
+      title: r.title,
+      clinic: r.requestor?.organization || r.requestor?.name || "",
+      patient: r.patientName || "",
+      tooth: r.tooth || "",
+      diameter: r.specifications?.maxDiameter
+        ? `${r.specifications.maxDiameter}mm`
+        : "",
+      status: r.status,
+      status1: r.status1,
+      status2: r.status2,
+    });
+
+    const pre = requests.filter((r) => r.status === "가공전").map(mapItem);
+    const post = requests.filter((r) => r.status === "가공후").map(mapItem);
+    const waiting = requests
+      .filter((r) => r.status === "배송대기")
+      .map(mapItem);
+
+    return res.status(200).json({
+      success: true,
+      data: { pre, post, waiting },
+    });
+  } catch (error) {
+    console.error("Error in getMyBulkShipping:", error);
+    return res.status(500).json({
+      success: false,
+      message: "묶음 배송 후보 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 묶음 배송 생성/신청 (의뢰자용)
+ * @route POST /api/requests/my/bulk-shipping
+ */
+async function createMyBulkShipping(req, res) {
+  try {
+    const requestorId = req.user._id;
+    const { requestIds } = req.body || {};
+
+    if (!Array.isArray(requestIds) || requestIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "선택된 의뢰가 없습니다.",
+      });
+    }
+
+    const requests = await Request.find({
+      requestId: { $in: requestIds },
+      requestor: requestorId,
+      status: { $in: ["가공전", "가공후", "배송대기"] },
+    });
+
+    if (!requests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    for (const r of requests) {
+      applyStatusMapping(r, "배송대기");
+      await r.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${requests.length}건의 의뢰가 배송대기 상태로 변경되었습니다.`,
+      data: {
+        updatedIds: requests.map((r) => r.requestId),
+      },
+    });
+  } catch (error) {
+    console.error("Error in createMyBulkShipping:", error);
+    return res.status(500).json({
+      success: false,
+      message: "묶음 배송 신청 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export default {
   createRequest,
   getAllRequests,
@@ -1194,4 +1440,6 @@ export default {
   getMyFavoriteImplant,
   getMyDashboardSummary,
   getAssignedDashboardSummary,
+  getMyBulkShipping,
+  createMyBulkShipping,
 };

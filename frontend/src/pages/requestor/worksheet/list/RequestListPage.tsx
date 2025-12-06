@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useOutletContext } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { ExpandedRequestCard } from "@/components/ExpandedRequestCard";
@@ -280,14 +280,31 @@ const mockRequests = [
 
 const getStatusBadge = (status: string) => {
   switch (status) {
-    case "진행중":
+    case "의뢰접수":
+      return <Badge variant="outline">의뢰접수</Badge>;
+    case "가공전":
+    case "가공후":
       return <Badge variant="default">{status}</Badge>;
-    case "제작중":
-      return <Badge variant="default">{status}</Badge>;
-    case "검토중":
-      return <Badge variant="outline">{status}</Badge>;
+    case "배송대기":
+      return (
+        <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-xs">
+          배송대기
+        </Badge>
+      );
+    case "배송중":
+      return (
+        <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+          배송중
+        </Badge>
+      );
     case "완료":
-      return <Badge variant="secondary">{status}</Badge>;
+      return <Badge variant="secondary">완료</Badge>;
+    case "취소":
+      return (
+        <Badge className="bg-red-50 text-red-700 border-red-200 text-xs">
+          취소
+        </Badge>
+      );
     default:
       return <Badge>{status}</Badge>;
   }
@@ -320,14 +337,19 @@ const getUrgencyBadge = (urgency: string) => {
 
 const getStatusIcon = (status: string) => {
   switch (status) {
-    case "진행중":
-      return <Clock className="h-4 w-4 text-blue-500" />;
-    case "제작중":
-      return <Building2 className="h-4 w-4 text-blue-500" />;
-    case "검토중":
+    case "의뢰접수":
       return <AlertCircle className="h-4 w-4 text-orange-500" />;
+    case "가공전":
+    case "가공후":
+      return <Building2 className="h-4 w-4 text-blue-500" />;
+    case "배송대기":
+      return <Clock className="h-4 w-4 text-amber-500" />;
+    case "배송중":
+      return <Clock className="h-4 w-4 text-blue-500" />;
     case "완료":
       return <CheckCircle className="h-4 w-4 text-green-500" />;
+    case "취소":
+      return <AlertCircle className="h-4 w-4 text-red-500" />;
     default:
       return <FileText className="h-4 w-4" />;
   }
@@ -859,7 +881,91 @@ export const RequestListPage = () => {
     worksheetType === "cnc" && worksheetStage === "machining";
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
 
-  const filters = useWorksheetFilters(mockRequests, {
+  const [requests, setRequests] = useState<typeof mockRequests>(mockRequests);
+
+  useEffect(() => {
+    const fetchRequests = async () => {
+      try {
+        const res = await fetch("/api/requests/my");
+        if (!res.ok) {
+          console.error("Failed to fetch my requests");
+          return;
+        }
+
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data.requests)) {
+          const mapped: typeof mockRequests = data.data.requests.map(
+            (req: any) => {
+              const diameterValue =
+                (req.specifications && req.specifications.maxDiameter) ??
+                req.maxDiameter;
+
+              const implantCompanyValue =
+                (req.specifications &&
+                  req.specifications.implantManufacturer) ||
+                (req.specifications && req.specifications.implantSystem) ||
+                req.implantManufacturer ||
+                req.implantSystem ||
+                req.implantSystemLegacy;
+
+              const implantProductValue =
+                (req.specifications && req.specifications.implantType) ||
+                req.implantType ||
+                req.implantTypeLegacy;
+
+              const implantSizeValue =
+                (req.specifications && req.specifications.implantSize) ||
+                req.implantSize;
+
+              return {
+                id: req.requestId,
+                title: req.title,
+                description: req.description || "",
+                client:
+                  req.manufacturer?.organization ||
+                  req.manufacturer?.name ||
+                  "미배정",
+                clientContact: "",
+                dentistName: req.dentistName || "",
+                patientName: req.patientName || "",
+                tooth: req.tooth || "",
+                requestDate: req.createdAt
+                  ? new Date(req.createdAt).toISOString().split("T")[0]
+                  : "",
+                urgency: "보통", // TODO: 실제 긴급도 필드 연동
+                status: req.status,
+                attachments: Array.isArray(req.files) ? req.files.length : 0,
+                specifications: {
+                  implantType: implantProductValue,
+                  implantCompany: implantCompanyValue,
+                  implantProduct: implantProductValue,
+                  implantSize:
+                    typeof implantSizeValue === "string"
+                      ? implantSizeValue
+                      : "",
+                  diameter:
+                    typeof diameterValue === "number"
+                      ? `${diameterValue}mm`
+                      : "",
+                  height: "",
+                  angle: "",
+                  material: "",
+                },
+              };
+            }
+          );
+
+          setRequests(mapped);
+        }
+      } catch (error) {
+        console.error("Error fetching my requests:", error);
+      }
+    };
+
+    fetchRequests();
+  }, []);
+
+  const filters = useWorksheetFilters(requests, {
     value: worksheetSearch,
     setValue: setWorksheetSearch,
   });

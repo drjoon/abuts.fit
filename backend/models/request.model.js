@@ -44,8 +44,28 @@ const requestSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["검토중", "견적 대기", "진행중", "완료", "취소", "제작중"],
-      default: "검토중",
+      enum: [
+        "의뢰접수",
+        "가공전",
+        "가공후",
+        "배송대기",
+        "배송중",
+        "완료",
+        "취소",
+      ],
+      default: "의뢰접수",
+    },
+    // 상위 공정 상태 (의뢰접수, 가공, 세척/검사/포장, 배송, 완료, 취소)
+    status1: {
+      type: String,
+      enum: ["의뢰접수", "가공", "세척/검사/포장", "배송", "완료", "취소"],
+      default: "의뢰접수",
+    },
+    // 공정 내 세부 단계 (없음, 전, 중, 후)
+    status2: {
+      type: String,
+      enum: ["없음", "전", "중", "후"],
+      default: "없음",
     },
     priority: {
       type: String,

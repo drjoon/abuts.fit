@@ -21,7 +21,7 @@ type ClinicPreset = {
   favorite?: ClinicFavoriteImplant;
 };
 
-export const useNewRequestPage = () => {
+export const useNewRequestPage = (existingRequestId?: string) => {
   const { user, token } = useAuthStore();
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
@@ -69,7 +69,9 @@ export const useNewRequestPage = () => {
     return `${NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX}${userId}`;
   }, [user?.id]);
 
+  // 신규 의뢰 초안 복원 (수정 모드가 아닐 때만)
   useEffect(() => {
+    if (existingRequestId) return;
     if (typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
@@ -782,6 +784,42 @@ export const useNewRequestPage = () => {
     []
   );
 
+  // 수정 모드이면 기존 의뢰 메타데이터를 불러와서 기본값으로 사용
+  useEffect(() => {
+    if (!existingRequestId || !token) return;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/requests/${existingRequestId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "x-mock-role": "requestor",
+          },
+        });
+
+        if (!res.ok) return;
+        const body = await res.json().catch(() => ({} as any));
+        const req = body?.data ?? body;
+        if (!req) return;
+
+        if (typeof req.description === "string") {
+          setMessage(req.description);
+        }
+        if (typeof req.implantManufacturer === "string") {
+          setImplantManufacturer(req.implantManufacturer);
+        }
+        if (typeof req.implantSystem === "string") {
+          setImplantSystem(req.implantSystem);
+        }
+        if (typeof req.implantType === "string") {
+          setImplantType(req.implantType);
+        }
+      } catch {
+        // no-op
+      }
+    })();
+  }, [existingRequestId, token]);
+
   const handleSubmit = async () => {
     if (!token) {
       toast({
@@ -792,7 +830,56 @@ export const useNewRequestPage = () => {
       return;
     }
 
-    // 파일/AI 정보 존재 여부 검사 (메모만 선택 사항)
+    // 수정 모드: 메타데이터만 업데이트, 파일 재업로드는 요구하지 않음
+    if (existingRequestId) {
+      try {
+        const payload: any = {
+          description: message,
+        };
+
+        if (implantManufacturer)
+          payload.implantManufacturer = implantManufacturer;
+        if (implantSystem) payload.implantSystem = implantSystem;
+        if (implantType) payload.implantType = implantType;
+
+        const res = await fetch(`/api/requests/${existingRequestId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            "x-mock-role": "requestor",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const body = await res.json().catch(() => ({}));
+
+        if (!res.ok || !body?.success) {
+          toast({
+            title: "의뢰 수정에 실패했습니다",
+            description: body?.message || "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        toast({
+          title: "의뢰가 수정되었습니다",
+        });
+
+        navigate("/dashboard");
+      } catch (err: any) {
+        toast({
+          title: "의뢰 수정 중 오류가 발생했습니다",
+          description: err?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+
+      return;
+    }
+
+    // 신규 생성 모드: 파일/AI 정보 존재 여부 검사 (메모만 선택 사항)
     if (!uploadedFiles.length || !aiFileInfos.length) {
       toast({
         title: "파일을 업로드해주세요",
@@ -803,29 +890,26 @@ export const useNewRequestPage = () => {
       return;
     }
 
-    // 필수 필드: 환자명/치아번호 모두 채워져 있어야 함
-    const hasMissingPatient = aiFileInfos.some(
-      (info) => !info.patientName || !info.patientName.trim()
-    );
-    const hasMissingTeeth = aiFileInfos.some(
-      (info) => !info.teethText || !info.teethText.trim()
+    // 화면에 표시된 STL 카드(files)와 매칭되는 AI 정보만 대상으로 유효성 검사 수행
+    const activeInfos = aiFileInfos.filter((info) =>
+      files.some((f) => f.name === info.filename)
     );
 
-    if (hasMissingPatient || hasMissingTeeth) {
+    if (!activeInfos.length) {
       toast({
-        title: "환자 정보가 누락되었습니다",
+        title: "커스텀 어벗 STL이 필요합니다",
         description:
-          "모든 파일에 대해 환자 이름과 치아번호를 입력해야 합니다. 각 파일 카드 우측의 입력란을 확인해주세요.",
+          "현재 시스템은 커스텀 어벗 STL이 포함된 의뢰만 접수합니다. 최소 1개 이상의 커스텀 어벗 STL 파일을 함께 업로드해주세요.",
         variant: "destructive",
       });
       return;
     }
 
     // Check if we have any abutment / crown files
-    const hasAbutment = aiFileInfos.some(
+    const hasAbutment = activeInfos.some(
       (info) => info.workType === "abutment"
     );
-    const hasCrown = aiFileInfos.some((info) => info.workType === "prosthesis");
+    const hasCrown = activeInfos.some((info) => info.workType === "prosthesis");
 
     // 지금은 커스텀 어벗만 실제 의뢰 대상으로 처리.
     // 크라운만 있는 경우에는 안내 후 의뢰 생성 중단.
@@ -834,6 +918,24 @@ export const useNewRequestPage = () => {
         title: "커스텀 어벗 STL 파일이 필요합니다",
         description:
           "현재 시스템은 커스텀 어벗 의뢰만 접수합니다. 크라운 STL만 업로드된 경우 어벗 STL을 함께 올려주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 필수 필드: 환자명/치아번호 모두 채워져 있어야 함 (실제 전송 대상 파일 기준)
+    const hasMissingPatient = activeInfos.some(
+      (info) => !info.patientName || !info.patientName.trim()
+    );
+    const hasMissingTeeth = activeInfos.some(
+      (info) => !info.teethText || !info.teethText.trim()
+    );
+
+    if (hasMissingPatient || hasMissingTeeth) {
+      toast({
+        title: "환자 정보가 누락되었습니다",
+        description:
+          "모든 파일에 대해 환자 이름과 치아번호를 입력해야 합니다. 각 파일 카드 우측의 입력란을 확인해주세요.",
         variant: "destructive",
       });
       return;
@@ -856,9 +958,9 @@ export const useNewRequestPage = () => {
       return;
     }
 
-    // Group by Patient
-    const patientGroups = new Map<string, typeof aiFileInfos>();
-    aiFileInfos.forEach((info) => {
+    // Group by Patient (실제 전송 대상 파일만 사용)
+    const patientGroups = new Map<string, typeof activeInfos>();
+    activeInfos.forEach((info) => {
       const pName = (info.patientName || "미지정").trim();
       if (!patientGroups.has(pName)) {
         patientGroups.set(pName, []);
@@ -1006,7 +1108,11 @@ export const useNewRequestPage = () => {
         (info) => info.workType === "prosthesis"
       );
 
-      let successDescription = `${requestItems.length}건의 의뢰가 생성되었습니다.`;
+      const abutmentRequestCount = requestItems.filter(
+        (item) => item.title === "커스텀 어벗먼트 의뢰"
+      ).length;
+
+      let successDescription = `${abutmentRequestCount}건의 커스텀 어벗 의뢰가 생성되었습니다.`;
       if (hasAbutment && !hasCrown) {
         successDescription +=
           "\n크라운 STL을 함께 올려주시면 디자인과 적합도 검토에 큰 도움이 됩니다.";

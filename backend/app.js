@@ -39,11 +39,28 @@ app.use(morgan("dev"));
 
 // Rate Limiting 설정
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15분
-  max: 100, // IP당 최대 요청 수
+  // 15분 기준, 대시보드/폴링 트래픽을 고려해 상당히 여유 있게 설정
+  windowMs: 15 * 60 * 1000,
+  max: 1000, // IP당 최대 요청 수 상향
   standardHeaders: true,
   legacyHeaders: false,
   message: "너무 많은 요청이 발생했습니다. 잠시 후 다시 시도해주세요.",
+  // 리퀘스터 대시보드 전용 엔드포인트는 Rate Limit에서 제외
+  skip: (req) => {
+    // 개발 환경에서는 전체 Rate Limit 비활성화
+    if (process.env.NODE_ENV === "development") {
+      return true;
+    }
+
+    // app.use("/api", limiter) 아래에서의 req.path 예시:
+    //   /requests/my/dashboard-summary
+    //   /requests/my/bulk-shipping
+    if (req.path.startsWith("/requests/my")) {
+      return true;
+    }
+
+    return false;
+  },
 });
 
 // API 요청에 Rate Limiting 적용

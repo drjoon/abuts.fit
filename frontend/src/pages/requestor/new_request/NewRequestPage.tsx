@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -8,7 +9,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -35,6 +35,7 @@ import ClinicAutocompleteField from "@/components/ClinicAutocompleteField";
 import LabeledAutocompleteField from "@/components/LabeledAutocompleteField";
 
 export const NewRequestPage = () => {
+  const { id: existingRequestId } = useParams<{ id?: string }>();
   const {
     user,
     message,
@@ -75,7 +76,7 @@ export const NewRequestPage = () => {
     handleSelectClinic,
     handleAddOrSelectClinic,
     handleDeleteClinic,
-  } = useNewRequestPage();
+  } = useNewRequestPage(existingRequestId);
   const [clinicInput, setClinicInput] = useState("");
   const manufacturerSelectRef = useRef<HTMLButtonElement | null>(null);
 
@@ -170,7 +171,7 @@ export const NewRequestPage = () => {
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Main Message Card */}
         <Card className="shadow-elegant hover:shadow-glow transition-all duration-300">
-          <CardContent className="space-y-6 mt-6">
+          <CardContent className="space-y-6 mt-6 ">
             {/* File Upload Area */}
             <div
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
@@ -196,7 +197,11 @@ export const NewRequestPage = () => {
               </Button>
               <p className="text-sm text-muted-foreground mt-2">
                 파일명에 치과이름, 환자이름, 치아번호가 있으면 여러 환자의
-                어벗과 보철이 섞여도 됩니다.
+                데이터를 섞어 업로드하셔도 됩니다.
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                품질 향상을 위해 커스텀 어벗과 함께 보철 데이터도 업로드
+                부탁드립니다.
               </p>
               <input
                 id="file-input"
@@ -564,14 +569,21 @@ export const NewRequestPage = () => {
                           </div>
                         )}
 
-                        {/* 메모 + 의뢰 버튼 (어벗/보철 공통) */}
-                        <div className="space-y-2 pt-2">
-                          <Textarea
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            placeholder="메모.."
-                            className="min-h-[80px] resize-none text-sm mb-4"
-                          />
+                        {/* 의뢰 버튼 및 결제/배송 안내 (어벗/보철 공통) */}
+                        <div className="space-y-3 pt-2">
+                          <div className="rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-xs md:text-sm leading-relaxed text-orange-900">
+                            <p className="font-semibold">
+                              본 서비스 비용에는 부가세(VAT)와 배송비가 포함되어
+                              있지 않습니다.
+                            </p>
+                            <p className="mt-1 text-xs md:text-sm">
+                              부가세(VAT) 및 배송비는 별도 청구되며, 비용 절감을
+                              위해 묶음 배송을 권장드립니다.
+                            </p>
+                            <p className="mt-1 font-bold">
+                              잊지 마시고 대시보드에서 배송 신청하세요!
+                            </p>
+                          </div>
                           <div className="flex gap-2">
                             <Button
                               onClick={handleSubmit}

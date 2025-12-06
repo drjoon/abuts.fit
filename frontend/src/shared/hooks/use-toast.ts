@@ -3,8 +3,8 @@ import * as React from "react";
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
 const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 3000;
-const DUPLICATE_SUPPRESS_INTERVAL = 3000;
+const TOAST_REMOVE_DELAY = 11000;
+const DUPLICATE_SUPPRESS_INTERVAL = 5000;
 
 type ToasterToast = ToastProps & {
   id: string;
@@ -157,6 +157,22 @@ function toast({ ...props }: Toast) {
   lastToastKey = key;
   lastToastTimestamp = now;
 
+  const titleText =
+    typeof props.title === "string" ? props.title : String(props.title ?? "");
+  const descriptionText =
+    typeof props.description === "string"
+      ? props.description
+      : String(props.description ?? "");
+
+  const totalLength = (titleText || "").length + (descriptionText || "").length;
+  const baseDuration = 5000;
+  const extraStep = 1000;
+  const charsPerStep = 10; // 10글자당 +1초
+  const maxExtra = 5000;
+  const steps = Math.floor(totalLength / charsPerStep);
+  const extra = Math.min(steps * extraStep, maxExtra);
+  const duration = props.duration ?? baseDuration + extra;
+
   const id = genId();
 
   const update = (props: ToasterToast) =>
@@ -171,6 +187,7 @@ function toast({ ...props }: Toast) {
     toast: {
       ...props,
       id,
+      duration,
       open: true,
       onOpenChange: (open) => {
         if (!open) dismiss();
@@ -196,7 +213,7 @@ function useToast() {
         listeners.splice(index, 1);
       }
     };
-  }, [state]);
+  }, []);
 
   return {
     ...state,

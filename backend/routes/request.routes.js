@@ -42,6 +42,20 @@ router.get(
   requestController.getMyDashboardSummary
 );
 
+// 묶음 배송 후보 조회 (의뢰자용)
+router.get(
+  "/my/bulk-shipping",
+  authorize(["requestor", "admin"]),
+  requestController.getMyBulkShipping
+);
+
+// 묶음 배송 생성/신청 (의뢰자용)
+router.post(
+  "/my/bulk-shipping",
+  authorize(["requestor", "admin"]),
+  requestController.createMyBulkShipping
+);
+
 // 내 최다 사용 임플란트 조합 조회 (의뢰자용)
 router.get(
   "/my/favorite-implant",

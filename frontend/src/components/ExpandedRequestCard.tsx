@@ -152,17 +152,29 @@ export const ExpandedRequestCard = ({
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "진행중":
-      case "제작중":
+      case "의뢰접수":
+        return <Badge variant="outline">의뢰접수</Badge>;
+      case "가공전":
+      case "가공후":
         return <Badge variant="default">{status}</Badge>;
-      case "완료":
-        return <Badge variant="secondary">{status}</Badge>;
-      case "검토중":
-        return <Badge variant="outline">{status}</Badge>;
-      case "견적 대기":
+      case "배송대기":
         return (
-          <Badge className="bg-orange-100 text-orange-700 border-orange-200">
-            {status}
+          <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-xs">
+            배송대기
+          </Badge>
+        );
+      case "배송중":
+        return (
+          <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+            배송중
+          </Badge>
+        );
+      case "완료":
+        return <Badge variant="secondary">완료</Badge>;
+      case "취소":
+        return (
+          <Badge className="bg-red-50 text-red-700 border-red-200 text-xs">
+            취소
           </Badge>
         );
       default:
@@ -455,6 +467,10 @@ export const ExpandedRequestCard = ({
                   <span className="text-muted-foreground">결제기한:</span>{" "}
                   {paymentStatus.dueDate}
                 </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  표시된 금액에는 부가세(VAT)와 배송비가 포함되어 있지 않으며,
+                  부가세(VAT) 및 배송비는 별도 청구됩니다.
+                </p>
                 {paymentStatus.paidDate && (
                   <div>
                     <span className="text-muted-foreground">결제일:</span>{" "}
@@ -519,6 +535,11 @@ export const ExpandedRequestCard = ({
                   </div>
                 )}
               </div>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                금액은 부가세(VAT) 및 배송비 제외 기준이며, 부가세와 배송비는
+                의뢰자에게 별도로 청구됩니다.
+              </p>
             </div>
           )}
 

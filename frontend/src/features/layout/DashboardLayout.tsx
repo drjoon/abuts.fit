@@ -34,7 +34,7 @@ import logo from "@/assets/logo.png";
 const sidebarItems = {
   requestor: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: FileText, label: "신규 의뢰", href: "/dashboard/new-request" },
+    { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   manufacturer: [

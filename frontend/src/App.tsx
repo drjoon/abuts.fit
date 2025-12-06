@@ -155,6 +155,7 @@ const App = () => (
             >
               <Route index element={<DashboardHome />} />
               <Route path="new-request" element={<NewRequestPage />} />
+              <Route path="new-request/:id" element={<NewRequestPage />} />
               <Route
                 path="worksheet"
                 element={

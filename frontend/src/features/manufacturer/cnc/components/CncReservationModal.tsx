@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MultiActionDialog } from "@/components/MultiActionDialog";
+import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 import { CncFileCard } from "./CncFileCard";
 import { CncBridgePanel } from "./CncBridgePanel";
 import { parseProgramNoFromName } from "../lib/programNaming";
@@ -642,7 +643,6 @@ export const CncReservationModal = ({
                       onDragOver={(e) => {
                         e.preventDefault();
                         if (dragIndex === null || dragIndex === index) return;
-                        // 드래그 중 다른 위치로 진입하면 즉시 순서를 재배열한다.
                         setJobs((prev) => {
                           const next = [...prev];
                           const [moved] = next.splice(dragIndex, 1);
@@ -656,48 +656,46 @@ export const CncReservationModal = ({
                         setDragIndex(null);
                       }}
                       onDragEnd={() => setDragIndex(null)}
-                      className={`group flex items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-colors min-h-[56px] ${
-                        highlightJobId === job.id
-                          ? "border-blue-500 bg-blue-50 ring-1 ring-blue-300"
-                          : "border-slate-200 bg-white hover:border-blue-400 hover:bg-blue-50/60"
-                      }`}
+                      className="group"
                     >
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-mono text-[11px] text-slate-500 mb-0.5">
-                          {job.programNo != null ? `#${job.programNo}` : ""}
-                        </span>
-                        <span className="font-medium truncate">{job.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          value={job.qty}
-                          onChange={(e) => {
-                            const v = Math.max(
-                              1,
-                              Number(e.target.value) || job.qty || 1
-                            );
-                            setJobs((prev) =>
-                              prev.map((j) =>
-                                j.id === job.id ? { ...j, qty: v } : j
-                              )
-                            );
-                          }}
-                          className="w-16 bg-white border border-slate-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setJobs((prev) =>
-                              prev.filter((j) => j.id !== job.id)
-                            )
-                          }
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 border border-red-200"
-                        >
-                          ×
-                        </button>
-                      </div>
+                      <FunctionalItemCard
+                        className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 transition-colors min-h-[56px] ${
+                          highlightJobId === job.id
+                            ? "border-blue-500 bg-blue-50 ring-1 ring-blue-300"
+                            : "border-slate-200 bg-white hover:border-blue-400 hover:bg-blue-50/60"
+                        }`}
+                        onRemove={() =>
+                          setJobs((prev) => prev.filter((j) => j.id !== job.id))
+                        }
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-mono text-[11px] text-slate-500 mb-0.5">
+                            {job.programNo != null ? `#${job.programNo}` : ""}
+                          </span>
+                          <span className="font-medium truncate">
+                            {job.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            value={job.qty}
+                            onChange={(e) => {
+                              const v = Math.max(
+                                1,
+                                Number(e.target.value) || job.qty || 1
+                              );
+                              setJobs((prev) =>
+                                prev.map((j) =>
+                                  j.id === job.id ? { ...j, qty: v } : j
+                                )
+                              );
+                            }}
+                            className="w-16 bg-white border border-slate-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                      </FunctionalItemCard>
                     </li>
                   ))}
                 </ul>

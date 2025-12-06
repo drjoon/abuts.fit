@@ -23,6 +23,8 @@ type ManufacturerRequest = {
   tooth: string;
   requestDate: string;
   status: string;
+  status1?: string;
+  status2?: string;
   referenceId?: string[];
   specifications: {
     diameter: string;
@@ -173,6 +175,41 @@ const WorksheetCardGrid = ({
                 </span>
               )}
             </div>
+            {(() => {
+              const { status1, status2, status } = request;
+              let label = status;
+
+              if (status1) {
+                if (status1 === "의뢰접수") {
+                  label = "의뢰접수";
+                } else if (status1 === "가공") {
+                  if (status2 === "전") label = "가공 전";
+                  else if (status2 === "중") label = "가공 중";
+                  else if (status2 === "후") label = "가공 후";
+                  else label = "가공";
+                } else if (status1 === "세척/검사/포장") {
+                  if (status2 === "전") label = "세척/검사/포장 전";
+                  else if (status2 === "중") label = "세척/검사/포장 중";
+                  else if (status2 === "후") label = "세척/검사/포장 후";
+                  else label = "세척/검사/포장";
+                } else if (status1 === "배송") {
+                  if (status2 === "전") label = "배송 전";
+                  else if (status2 === "중") label = "배송 중";
+                  else if (status2 === "후") label = "배송 후";
+                  else label = "배송";
+                } else if (status1 === "완료") {
+                  label = "완료";
+                } else if (status1 === "취소") {
+                  label = "취소";
+                }
+              }
+
+              return (
+                <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-[10px] font-medium text-slate-700">
+                  {label}
+                </div>
+              );
+            })()}
           </div>
         </CardContent>
       </Card>
@@ -292,6 +329,8 @@ export const RequestPage = ({
                   ? [req.referenceId]
                   : [],
                 status: req.status,
+                status1: req.status1,
+                status2: req.status2,
                 workType,
                 specifications: {
                   diameter:
