@@ -6,6 +6,11 @@ const requestSchema = new mongoose.Schema(
       type: String,
       unique: true,
     },
+    lotNumber: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     title: {
       type: String,
       required: [true, "제목은 필수 입력 항목입니다."],
@@ -230,17 +235,17 @@ const requestSchema = new mongoose.Schema(
 
 // 의뢰 ID 자동 생성 (REQ-001, REQ-002, ...)
 requestSchema.pre("save", async function (next) {
-  if (this.isNew) {
-    try {
-      const count = await this.constructor.countDocuments({});
-      const paddedCount = String(count + 1).padStart(3, "0");
-      this.requestId = `REQ-${paddedCount}`;
-      next();
-    } catch (error) {
-      next(error);
-    }
-  } else {
+  if (!this.isNew) {
+    return next();
+  }
+
+  try {
+    const count = await this.constructor.countDocuments({});
+    const paddedCount = String(count + 1).padStart(3, "0");
+    this.requestId = `REQ-${paddedCount}`;
     next();
+  } catch (error) {
+    next(error);
   }
 });
 

@@ -48,6 +48,58 @@ function applyStatusMapping(requestDoc, statusValue) {
   requestDoc.status2 = status2;
 }
 
+// 가공 시작 시점에 로트넘버(lotNumber)를 부여하는 헬퍼
+async function ensureLotNumberForMachining(requestDoc) {
+  if (requestDoc.lotNumber) {
+    return;
+  }
+
+  const patientCases = Array.isArray(requestDoc.patientCases)
+    ? requestDoc.patientCases
+    : [];
+
+  const workTypes = patientCases.flatMap((c) =>
+    Array.isArray(c.files)
+      ? c.files.map((f) => f?.workType).filter(Boolean)
+      : []
+  );
+
+  let prefixBase = null;
+  if (workTypes.includes("abutment")) {
+    prefixBase = "AB";
+  } else if (workTypes.includes("crown")) {
+    prefixBase = "CR";
+  }
+
+  if (!prefixBase) {
+    return;
+  }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const dateStr = `${year}${month}${day}`; // YYYYMMDD
+
+  const prefix = `${prefixBase}${dateStr}-`;
+
+  const todayCount = await Request.countDocuments({
+    lotNumber: { $regex: `^${prefix}` },
+  });
+
+  const index = todayCount; // 0-based index: 0 -> AAA, 1 -> AAB ...
+  const toLetters = (n) => {
+    const A = "A".charCodeAt(0);
+    const first = String.fromCharCode(A + (Math.floor(n / (26 * 26)) % 26));
+    const second = String.fromCharCode(A + (Math.floor(n / 26) % 26));
+    const third = String.fromCharCode(A + (n % 26));
+    return `${first}${second}${third}`;
+  };
+
+  const code = toLetters(index);
+  requestDoc.lotNumber = `${prefix}${code}`;
+}
+
 /**
  * 새 의뢰 생성
  * @route POST /api/requests
@@ -691,6 +743,12 @@ async function updateRequestStatus(req, res) {
 
     // 의뢰 상태 변경 (status1/status2 동기화 포함)
     applyStatusMapping(request, status);
+
+    // 가공 시작 시점(가공전 진입)에서만 로트넘버 부여
+    if (status === "가공전") {
+      await ensureLotNumberForMachining(request);
+    }
+
     await request.save();
 
     res.status(200).json({

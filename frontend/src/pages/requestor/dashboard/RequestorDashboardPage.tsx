@@ -4,12 +4,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCardForDashboard } from "@/pages/requestor/WorkSheet";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import {
-  Clock,
-  CheckCircle,
-  TrendingUp,
-  FileText,
-} from "lucide-react";
+import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
 import { RequestorRecentRequestsDialog } from "@/features/requestor/components/dashboard/RequestorRecentRequestsDialog";
 import {
   RequestorEditRequestDialog,
@@ -20,6 +15,7 @@ import { RequestorDashboardStatsCards } from "@/features/requestor/components/da
 import { RequestorBulkShippingBannerCard } from "@/features/requestor/components/dashboard/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "@/features/requestor/components/dashboard/RequestorRecentRequestsCard";
 import { RequestorRiskSummaryCard } from "@/features/requestor/components/dashboard/RequestorRiskSummaryCard";
+import { RequestorPricingReferralPolicyCard } from "@/features/requestor/components/dashboard/RequestorPricingReferralPolicyCard";
 import type { RequestorDashboardStat } from "@/features/requestor/components/dashboard/RequestorDashboardStatsCards";
 
 export const RequestorDashboardPage = () => {
@@ -302,7 +298,10 @@ export const RequestorDashboardPage = () => {
                 />
               </div>
 
-              <RequestorRiskSummaryCard riskSummary={riskSummary} />
+              <div className="flex flex-col gap-6 h-full">
+                <RequestorPricingReferralPolicyCard />
+                <RequestorRiskSummaryCard riskSummary={riskSummary} />
+              </div>
             </div>
           </div>
         }
