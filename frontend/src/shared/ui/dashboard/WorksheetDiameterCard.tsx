@@ -12,7 +12,24 @@ export type DiameterStats = {
   total: number;
 };
 
-export const WorksheetDiameterCard = ({ stats }: { stats: DiameterStats }) => {
+export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
+  if (!stats) {
+    return (
+      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium mb-2">
+            커스텀 어벗먼트 최대 직경별 진행 현황
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center text-muted-foreground text-sm py-10">
+            데이터를 불러오는 중입니다...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader className="pb-2">

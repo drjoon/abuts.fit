@@ -27,7 +27,6 @@ export const NewRequestPage = () => {
     setSelectedPreviewIndex,
     abutDiameters,
     connectionDiameters,
-    handleDiameterComputed,
     isDragOver,
     handleDragOver,
     handleDragLeave,
@@ -45,6 +44,7 @@ export const NewRequestPage = () => {
     handleSubmit,
     handleCancel,
     removeFile,
+    handleDiameterComputed,
     getWorkTypeForFilename,
     aiFileInfos,
     setAiFileInfos,
@@ -93,7 +93,7 @@ export const NewRequestPage = () => {
   const teethOptions = (() => {
     const map = new Map<string, string>();
     aiFileInfos.forEach((info) => {
-      const raw = (info.teethText || "").trim();
+      const raw = (info.tooth || "").trim();
       if (!raw) return;
       const key = raw.toLowerCase();
       if (!map.has(key)) map.set(key, raw);
@@ -211,10 +211,11 @@ export const NewRequestPage = () => {
                               } else {
                                 next.push({
                                   filename,
+                                  clinicName: "",
                                   patientName: "",
-                                  teethText: "",
+                                  tooth: "",
                                   workType: "abutment",
-                                  rawSummary: "",
+                                  abutType: "",
                                 });
                               }
                               return next;
@@ -261,10 +262,11 @@ export const NewRequestPage = () => {
                               } else {
                                 next.push({
                                   filename,
+                                  clinicName: "",
                                   patientName: "",
-                                  teethText: "",
+                                  tooth: "",
                                   workType: "prosthesis",
-                                  rawSummary: "",
+                                  abutType: "",
                                 });
                               }
                               return next;
@@ -286,13 +288,32 @@ export const NewRequestPage = () => {
                     file={files[selectedPreviewIndex]}
                     onDiameterComputed={handleDiameterComputed}
                   />
+                  {(() => {
+                    const fname = files[selectedPreviewIndex].name;
+                    const maxDiameter = abutDiameters[fname];
+                    const connDiameter = connectionDiameters[fname];
+                    return (
+                      (maxDiameter || connDiameter) && (
+                        <div className="text-sm font-medium flex flex-wrap gap-4 mt-2">
+                          {maxDiameter && (
+                            <span>최대 직경: {maxDiameter.toFixed(2)} mm</span>
+                          )}
+                          {connDiameter && (
+                            <span>
+                              커넥션 직경: {connDiameter.toFixed(2)} mm
+                            </span>
+                          )}
+                        </div>
+                      )
+                    );
+                  })()}
                 </div>
                 <div className="space-y-3 text-sm px-2 md:px-4">
                   {(() => {
                     const fname = files[selectedPreviewIndex].name;
                     const info = aiFileInfos.find((i) => i.filename === fname);
                     const patientName = info?.patientName || "";
-                    const teethText = info?.teethText || "";
+                    const tooth = info?.tooth || "";
 
                     return (
                       <div className="space-y-1">
@@ -355,12 +376,12 @@ export const NewRequestPage = () => {
 
                             {/* 치아번호 */}
                             <LabeledAutocompleteField
-                              value={teethText}
+                              value={tooth}
                               onChange={(next) => {
                                 setAiFileInfos((prev) =>
                                   prev.map((item) =>
                                     item.filename === fname
-                                      ? { ...item, teethText: next }
+                                      ? { ...item, tooth: next }
                                       : item
                                   )
                                 );
@@ -371,7 +392,7 @@ export const NewRequestPage = () => {
                                 setAiFileInfos((prev) =>
                                   prev.map((item) =>
                                     item.filename === fname
-                                      ? { ...item, teethText: label }
+                                      ? { ...item, tooth: label }
                                       : item
                                   )
                                 );
@@ -380,7 +401,7 @@ export const NewRequestPage = () => {
                                 setAiFileInfos((prev) =>
                                   prev.map((item) =>
                                     item.filename === fname
-                                      ? { ...item, teethText: "" }
+                                      ? { ...item, tooth: "" }
                                       : item
                                   )
                                 );
@@ -389,7 +410,7 @@ export const NewRequestPage = () => {
                                 setAiFileInfos((prev) =>
                                   prev.map((item) =>
                                     item.filename === fname
-                                      ? { ...item, teethText: "" }
+                                      ? { ...item, tooth: "" }
                                       : item
                                   )
                                 );
@@ -405,23 +426,10 @@ export const NewRequestPage = () => {
                   {(() => {
                     const fname = files[selectedPreviewIndex].name;
                     const info = aiFileInfos.find((i) => i.filename === fname);
-                    const diameter = abutDiameters[fname];
-                    const connectionDiameter = connectionDiameters[fname];
                     const isAbutment = info?.workType === "abutment";
 
                     return (
                       <div className="space-y-3 ">
-                        {isAbutment && diameter && (
-                          <div className="text-sm font-medium flex flex-wrap gap-4">
-                            <span>최대 직경: {diameter.toFixed(2)} mm</span>
-                            {connectionDiameter && (
-                              <span>
-                                커넥션 직경: {connectionDiameter.toFixed(2)} mm
-                              </span>
-                            )}
-                          </div>
-                        )}
-
                         {isAbutment && (
                           <div className="space-y-1">
                             <div className="flex gap-2 text-[11px]">

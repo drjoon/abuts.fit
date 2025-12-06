@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
+import { apiFetch } from "@/lib/apiClient";
 
 export type ChatSenderRole = "requestor" | "manufacturer" | "admin";
 
@@ -60,12 +61,15 @@ export const useRequestChat = ({
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/requests/${requestId}`);
+        const res = await apiFetch<any>({
+          path: `/api/requests/${requestId}`,
+          method: "GET",
+        });
         if (!res.ok) {
           throw new Error("의뢰 메시지 조회에 실패했습니다.");
         }
-        const body = await res.json();
-        const requestData = body?.data || body;
+        const body = res.data || {};
+        const requestData = (body as any)?.data || body;
         const apiMessages = requestData?.messages ?? [];
         setMessages(mapApiMessagesToChatMessages(apiMessages));
       } catch (e: any) {
@@ -93,20 +97,18 @@ export const useRequestChat = ({
 
     if (requestId) {
       try {
-        const res = await fetch(`/api/requests/${requestId}/messages`, {
+        const res = await apiFetch<any>({
+          path: `/api/requests/${requestId}/messages`,
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ content: content.trim() }),
+          jsonBody: { content: content.trim() },
         });
 
-        const body = await res.json().catch(() => null);
+        const body = (res.data as any) ?? null;
         if (!res.ok || body?.success === false) {
           throw new Error(body?.message || "메시지 전송에 실패했습니다.");
         }
 
-        const updatedRequest = body?.data || {};
+        const updatedRequest = body?.data || body || {};
         const apiMessages = updatedRequest?.messages ?? [];
         setMessages(mapApiMessagesToChatMessages(apiMessages));
 

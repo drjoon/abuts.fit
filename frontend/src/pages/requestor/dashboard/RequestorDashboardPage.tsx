@@ -1,8 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { WorksheetDiameterCardForDashboard } from "@/pages/requestor/WorkSheet";
-import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
 import {
@@ -16,6 +15,10 @@ import { RequestorRecentRequestsCard } from "@/features/requestor/components/das
 import { RequestorRiskSummaryCard } from "@/features/requestor/components/dashboard/RequestorRiskSummaryCard";
 import { RequestorPricingReferralPolicyCard } from "@/features/requestor/components/dashboard/RequestorPricingReferralPolicyCard";
 import type { RequestorDashboardStat } from "@/features/requestor/components/dashboard/RequestorDashboardStatsCards";
+import {
+  WorksheetDiameterCard,
+  type DiameterStats,
+} from "@/shared/ui/dashboard/WorksheetDiameterCard";
 
 export const RequestorDashboardPage = () => {
   const { user, token } = useAuthStore();
@@ -48,21 +51,20 @@ export const RequestorDashboardPage = () => {
       if (period) {
         params.set("period", period);
       }
-      const res = await fetch(
-        `/api/requests/my/dashboard-summary?${params.toString()}`,
-        {
-          headers: token
-            ? {
-                Authorization: `Bearer ${token}`,
-                "x-mock-role": "requestor",
-              }
-            : undefined,
-        }
-      );
+      const res = await apiFetch<any>({
+        path: `/api/requests/my/dashboard-summary?${params.toString()}`,
+        method: "GET",
+        token,
+        headers: token
+          ? {
+              "x-mock-role": "requestor",
+            }
+          : undefined,
+      });
       if (!res.ok) {
         throw new Error("대시보드 요약 조회에 실패했습니다.");
       }
-      return res.json();
+      return res.data;
     },
     retry: false,
   });
@@ -75,10 +77,12 @@ export const RequestorDashboardPage = () => {
   } = useQuery({
     queryKey: ["requestor-bulk-shipping"],
     queryFn: async () => {
-      const res = await fetch(`/api/requests/my/bulk-shipping`, {
+      const res = await apiFetch<any>({
+        path: `/api/requests/my/bulk-shipping`,
+        method: "GET",
+        token,
         headers: token
           ? {
-              Authorization: `Bearer ${token}`,
               "x-mock-role": "requestor",
             }
           : undefined,
@@ -86,7 +90,7 @@ export const RequestorDashboardPage = () => {
       if (!res.ok) {
         throw new Error("묶음 배송 후보 조회에 실패했습니다.");
       }
-      return res.json();
+      return res.data;
     },
   });
 
@@ -137,22 +141,21 @@ export const RequestorDashboardPage = () => {
     if (!token) return;
 
     try {
-      const res = await fetch(`/api/requests/${requestId}/status`, {
+      const res = await apiFetch<any>({
+        path: `/api/requests/${requestId}/status`,
         method: "PATCH",
+        token,
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
           "x-mock-role": "requestor",
         },
-        body: JSON.stringify({ status: "취소" }),
+        jsonBody: { status: "취소" },
       });
 
       if (!res.ok) {
-        console.error("의뢰 취소 실패", await res.text());
+        console.error("의뢰 취소 실패", await res.raw.text().catch(() => ""));
         return;
       }
-
-      await res.json();
 
       await queryClient.invalidateQueries({
         queryKey: ["requestor-dashboard-summary-page"],
@@ -212,10 +215,8 @@ export const RequestorDashboardPage = () => {
     ? summaryResponse.data.recentRequests ?? []
     : [];
 
-  let diameterStatsFromApi: DiameterStats | undefined;
-  if (summaryResponse?.success && summaryResponse.data.diameterStats) {
-    diameterStatsFromApi = summaryResponse.data.diameterStats as DiameterStats;
-  }
+  const diameterStatsFromApi: DiameterStats | undefined =
+    summaryResponse?.success ? summaryResponse.data.diameterStats : undefined;
 
   return (
     <div>
@@ -254,9 +255,7 @@ export const RequestorDashboardPage = () => {
           <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
               <div>
-                <WorksheetDiameterCardForDashboard
-                  stats={diameterStatsFromApi}
-                />
+                <WorksheetDiameterCard stats={diameterStatsFromApi} />
               </div>
 
               <div className="flex flex-col gap-6 h-full">
@@ -332,18 +331,22 @@ export const RequestorDashboardPage = () => {
               payload.implantType = editingImplantType.trim();
             }
 
-            const res = await fetch(`/api/requests/${editingRequest.id}`, {
+            const res = await apiFetch<any>({
+              path: `/api/requests/${editingRequest.id}`,
               method: "PUT",
+              token,
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
                 "x-mock-role": "requestor",
               },
-              body: JSON.stringify(payload),
+              jsonBody: payload,
             });
 
             if (!res.ok) {
-              console.error("의뢰 수정 실패", await res.text());
+              console.error(
+                "의뢰 수정 실패",
+                await res.raw.text().catch(() => "")
+              );
             } else {
               await queryClient.invalidateQueries({
                 queryKey: ["requestor-dashboard-summary-page"],
@@ -380,19 +383,18 @@ export const RequestorDashboardPage = () => {
           }
 
           try {
-            const res = await fetch(`/api/requests/my/bulk-shipping`, {
+            const res = await apiFetch<any>({
+              path: `/api/requests/my/bulk-shipping`,
               method: "POST",
+              jsonBody: { requestIds: selectedIds },
               headers: {
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({ requestIds: selectedIds }),
             });
 
             if (!res.ok) {
               throw new Error("묶음 배송 신청에 실패했습니다.");
             }
-
-            await res.json();
             await queryClient.invalidateQueries({
               queryKey: ["requestor-bulk-shipping"],
             });

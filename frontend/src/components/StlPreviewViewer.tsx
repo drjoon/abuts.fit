@@ -14,6 +14,11 @@ type Props = {
 
 export function StlPreviewViewer({ file, onDiameterComputed }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const onDiameterComputedRef = useRef(onDiameterComputed);
+
+  useEffect(() => {
+    onDiameterComputedRef.current = onDiameterComputed;
+  }, [onDiameterComputed]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -129,8 +134,12 @@ export function StlPreviewViewer({ file, onDiameterComputed }: Props) {
           const connectionDiameter =
             connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
 
-          if (onDiameterComputed) {
-            onDiameterComputed(file.name, maxDiameter, connectionDiameter);
+          if (onDiameterComputedRef.current) {
+            onDiameterComputedRef.current(
+              file.name,
+              maxDiameter,
+              connectionDiameter
+            );
           }
 
           // 3) 시각화를 위해서만 메쉬를 씬 중앙으로 이동
@@ -197,7 +206,7 @@ export function StlPreviewViewer({ file, onDiameterComputed }: Props) {
         containerRef.current.innerHTML = "";
       }
     };
-  }, [file, onDiameterComputed]);
+  }, [file]);
 
   return <div ref={containerRef} className="w-full max-w-full h-[300px]" />;
 }

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { WorksheetDiameterCardForDashboard } from "@/pages/requestor/WorkSheet";
+import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import {
@@ -146,7 +146,7 @@ export const ManufacturerDashboardPage = () => {
       subtitle="제작 현황을 확인하세요."
       topSection={
         <div className="space-y-3">
-          <WorksheetDiameterCardForDashboard stats={diameterStatsFromApi} />
+          <WorksheetDiameterCard stats={diameterStatsFromApi} />
           {manufacturingSummaryFromApi && (
             <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-muted-foreground px-1">
               {manufacturingSummaryFromApi.stages.map((s) => (

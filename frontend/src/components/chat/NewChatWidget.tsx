@@ -68,7 +68,7 @@ export const NewChatWidget = () => {
 
   useEffect(() => {
     const loadRequests = async () => {
-      if (!user) return;
+      if (!user || !isAuthenticated) return;
       setLoading(true);
       setError(null);
 
@@ -78,7 +78,12 @@ export const NewChatWidget = () => {
           : "/api/requests/my";
 
       try {
-        const res = await fetch(path);
+        const res = await fetch(path, {
+          headers: {
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+            "x-mock-role": user.role,
+          },
+        });
         if (!res.ok) {
           throw new Error("의뢰 목록을 불러오지 못했습니다.");
         }
@@ -90,14 +95,13 @@ export const NewChatWidget = () => {
         setBackendRequests(list);
       } catch (e: any) {
         setError(e?.message || "의뢰 목록 조회 중 오류가 발생했습니다.");
-        // 실패 시에도 위젯은 mock 기반으로 동작하도록 backendRequests는 그대로 둔다.
       } finally {
         setLoading(false);
       }
     };
 
     void loadRequests();
-  }, [user]);
+  }, [user, isAuthenticated]);
 
   // 백엔드 의뢰 목록을 요약 형태로 변환
   const summarizeRequests = (
@@ -143,39 +147,6 @@ export const NewChatWidget = () => {
       } as RequestSummary;
     });
   };
-
-  useEffect(() => {
-    const loadRequests = async () => {
-      if (!user) return;
-      setLoading(true);
-      setError(null);
-
-      const path =
-        user.role === "manufacturer"
-          ? "/api/requests/assigned"
-          : "/api/requests/my";
-
-      try {
-        const res = await fetch(path);
-        if (!res.ok) {
-          throw new Error("의뢰 목록을 불러오지 못했습니다.");
-        }
-        const body = await res.json();
-        const data = body?.data;
-        const list = Array.isArray(data?.requests)
-          ? (data.requests as RequestBase[])
-          : [];
-        setBackendRequests(list);
-      } catch (e: any) {
-        setError(e?.message || "의뢰 목록 조회 중 오류가 발생했습니다.");
-        // 실패 시에도 위젯은 mock 기반으로 동작하도록 backendRequests는 그대로 둔다.
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void loadRequests();
-  }, [user]);
 
   if (!isAuthenticated || !user) {
     return null; // 로그인하지 않은 사용자에게는 채팅 위젯을 표시하지 않음

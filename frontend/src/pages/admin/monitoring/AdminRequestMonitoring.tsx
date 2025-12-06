@@ -1,11 +1,18 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { useAuthStore } from "@/store/useAuthStore";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { 
-  Search, 
-  Filter, 
+import {
+  Search,
+  Filter,
   FileText,
   Clock,
   CheckCircle,
@@ -13,74 +20,49 @@ import {
   Building2,
   User,
   Eye,
-  MessageSquare
+  MessageSquare,
 } from "lucide-react";
 
-// Mock requests data
-const mockRequests = [
-  {
-    id: "REQ-001",
-    title: "상악 우측 제1대구치 임플란트",
-    requestor: "김철수",
-    requestorCompany: "서울치과기공소",
-    manufacturer: "프리미엄 어벗먼트",
-    status: "진행중",
-    priority: "높음",
-    amount: "200,000원",
-    requestDate: "2024-01-15",
-    dueDate: "2024-01-25",
-    progress: 75
-  },
-  {
-    id: "REQ-002",
-    title: "하악 좌측 제2소구치 임플란트",
-    requestor: "이영희",
-    requestorCompany: "부산치과기공소",
-    manufacturer: "정밀 어벗먼트",
-    status: "완료",
-    priority: "보통",
-    amount: "180,000원",
-    requestDate: "2024-01-14",
-    dueDate: "2024-01-24",
-    progress: 100
-  },
-  {
-    id: "REQ-003",
-    title: "상악 전치부 임플란트",
-    requestor: "박민수",
-    requestorCompany: "대구치과기공소",
-    manufacturer: "-",
-    status: "견적 대기",
-    priority: "높음",
-    amount: "-",
-    requestDate: "2024-01-13",
-    dueDate: "2024-01-23",
-    progress: 10
-  },
-  {
-    id: "REQ-004",
-    title: "하악 우측 제1대구치 임플란트",
-    requestor: "정수진",
-    requestorCompany: "인천치과기공소",
-    manufacturer: "스마트 어벗먼트",
-    status: "지연",
-    priority: "높음",
-    amount: "220,000원",
-    requestDate: "2024-01-12",
-    dueDate: "2024-01-20",
-    progress: 40
-  }
-];
+const getStatusBadge = (status1?: string, status2?: string) => {
+  const statusText =
+    status2 && status2 !== "없음" ? `${status1}(${status2})` : status1;
 
-const getStatusBadge = (status: string) => {
+  switch (status1) {
+    case "의뢰접수":
+      return <Badge variant="outline">{statusText}</Badge>;
+    case "가공":
+      return <Badge variant="default">{statusText}</Badge>;
+    case "세척/검사/포장":
+      return (
+        <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
+          {statusText}
+        </Badge>
+      );
+    case "배송":
+      return (
+        <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+          {statusText}
+        </Badge>
+      );
+    case "완료":
+      return <Badge variant="secondary">{statusText}</Badge>;
+    case "취소":
+      return <Badge variant="destructive">{statusText}</Badge>;
+    default:
+      return <Badge>{statusText || "상태 미지정"}</Badge>;
+  }
   switch (status) {
-    case '진행중':
+    case "진행중":
       return <Badge variant="default">{status}</Badge>;
-    case '완료':
+    case "완료":
       return <Badge variant="secondary">{status}</Badge>;
-    case '견적 대기':
-      return <Badge className="bg-orange-100 text-orange-700 border-orange-200">{status}</Badge>;
-    case '지연':
+    case "견적 대기":
+      return (
+        <Badge className="bg-orange-100 text-orange-700 border-orange-200">
+          {status}
+        </Badge>
+      );
+    case "지연":
       return <Badge variant="destructive">{status}</Badge>;
     default:
       return <Badge>{status}</Badge>;
@@ -89,12 +71,24 @@ const getStatusBadge = (status: string) => {
 
 const getPriorityBadge = (priority: string) => {
   switch (priority) {
-    case '높음':
-      return <Badge variant="destructive" className="text-xs">{priority}</Badge>;
-    case '보통':
-      return <Badge variant="outline" className="text-xs">{priority}</Badge>;
-    case '낮음':
-      return <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">{priority}</Badge>;
+    case "높음":
+      return (
+        <Badge variant="destructive" className="text-xs">
+          {priority}
+        </Badge>
+      );
+    case "보통":
+      return (
+        <Badge variant="outline" className="text-xs">
+          {priority}
+        </Badge>
+      );
+    case "낮음":
+      return (
+        <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">
+          {priority}
+        </Badge>
+      );
     default:
       return <Badge className="text-xs">{priority}</Badge>;
   }
@@ -102,13 +96,13 @@ const getPriorityBadge = (priority: string) => {
 
 const getStatusIcon = (status: string) => {
   switch (status) {
-    case '진행중':
+    case "진행중":
       return <Clock className="h-4 w-4 text-blue-500" />;
-    case '완료':
+    case "완료":
       return <CheckCircle className="h-4 w-4 text-green-500" />;
-    case '견적 대기':
+    case "견적 대기":
       return <FileText className="h-4 w-4 text-orange-500" />;
-    case '지연':
+    case "지연":
       return <AlertTriangle className="h-4 w-4 text-red-500" />;
     default:
       return <FileText className="h-4 w-4" />;
@@ -116,16 +110,51 @@ const getStatusIcon = (status: string) => {
 };
 
 export const AdminRequestMonitoring = () => {
+  const { token } = useAuthStore();
+  const [requests, setRequests] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
-  const filteredRequests = mockRequests.filter(request => {
-    const matchesSearch = request.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         request.requestor.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         request.requestorCompany.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus = selectedStatus === "all" || request.status === selectedStatus;
-    
+  useEffect(() => {
+    const fetchRequests = async () => {
+      if (!token) return;
+      try {
+        const res = await fetch("/api/requests", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setRequests(data.data.requests);
+        }
+      } catch (error) {
+        console.error("Failed to fetch requests:", error);
+      }
+    };
+    fetchRequests();
+  }, [token]);
+
+  const filteredRequests = requests.filter((request) => {
+    const caseInfos = request.caseInfos || {};
+    const requestor = request.requestor || {};
+    const matchesSearch =
+      (caseInfos.patientName || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      (caseInfos.clinicName || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      (requestor.name || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      (requestor.organization || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+
+    const matchesStatus =
+      selectedStatus === "all" || request.status1 === selectedStatus;
+
     return matchesSearch && matchesStatus;
   });
 
@@ -140,7 +169,7 @@ export const AdminRequestMonitoring = () => {
           <p className="text-muted-foreground text-lg">
             모든 의뢰의 진행 상황을 실시간으로 모니터링하세요
           </p>
-          
+
           {/* Search and Filter */}
           <div className="flex gap-4 flex-wrap">
             <div className="relative flex-1 min-w-[300px]">
@@ -252,18 +281,25 @@ export const AdminRequestMonitoring = () => {
           <CardContent>
             <div className="space-y-4">
               {filteredRequests.map((request) => (
-                <div key={request.id} className="p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
+                <div
+                  key={request.id}
+                  className="p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                >
                   <div className="flex items-start justify-between mb-3">
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
                         {getStatusIcon(request.status)}
-                        <h3 className="font-medium">{request.title}</h3>
+                        <h3 className="font-medium">
+                          {request.caseInfos?.patientName} (
+                          {request.caseInfos?.tooth})
+                        </h3>
                         {getPriorityBadge(request.priority)}
                       </div>
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <User className="h-3 w-3" />
-                          {request.requestor} ({request.requestorCompany})
+                          {request.requestor?.name} (
+                          {request.requestor?.organization})
                         </span>
                         {request.manufacturer !== "-" && (
                           <span className="flex items-center gap-1">
@@ -274,14 +310,19 @@ export const AdminRequestMonitoring = () => {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                      {getStatusBadge(request.status)}
+                      {getStatusBadge(request.status1, request.status2)}
                       <div className="text-right text-sm">
-                        <p className="font-medium text-primary">{request.amount}</p>
-                        <p className="text-muted-foreground">마감: {request.dueDate}</p>
+                        <p className="font-medium text-primary">
+                          {request.price?.amount?.toLocaleString()}원
+                        </p>
+                        <p className="text-muted-foreground">
+                          의뢰일:{" "}
+                          {new Date(request.createdAt).toLocaleDateString()}
+                        </p>
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Progress Bar */}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
@@ -289,7 +330,7 @@ export const AdminRequestMonitoring = () => {
                       <span className="font-medium">{request.progress}%</span>
                     </div>
                     <div className="w-full bg-muted rounded-full h-2">
-                      <div 
+                      <div
                         className="bg-primary h-2 rounded-full transition-all"
                         style={{ width: `${request.progress}%` }}
                       />

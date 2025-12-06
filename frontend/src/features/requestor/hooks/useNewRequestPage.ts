@@ -20,14 +20,11 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const [aiFileInfos, setAiFileInfos] = useState<
     {
       filename: string;
-      clinicName?: string;
+      clinicName: string;
       patientName: string;
-      teethText: string;
+      tooth: string;
       workType: string;
-      rawSummary: string;
-      brand?: string;
-      systemSpec?: string;
-      abutType?: string;
+      abutType: string;
     }[]
   >([]);
   const [uploadedFiles, setUploadedFiles] = useState<TempUploadedFile[]>([]);
@@ -142,7 +139,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
       const entry = caseMap.get(key)!;
 
-      const teethTokens = info.teethText
+      const teethTokens = (info.tooth || "")
         .split(",")
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
@@ -207,14 +204,17 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         if (typeof req.description === "string") {
           setMessage(req.description);
         }
-        if (typeof req.implantManufacturer === "string") {
-          setImplantManufacturer(req.implantManufacturer);
-        }
-        if (typeof req.implantSystem === "string") {
-          setImplantSystem(req.implantSystem);
-        }
-        if (typeof req.implantType === "string") {
-          setImplantType(req.implantType);
+        if (req.caseInfos) {
+          const { implantSystem, implantType, connectionType } = req.caseInfos;
+          if (typeof implantSystem === "string") {
+            setImplantManufacturer(implantSystem); // Note: schema vs state name mismatch
+          }
+          if (typeof implantType === "string") {
+            setImplantSystem(implantType);
+          }
+          if (typeof connectionType === "string") {
+            setImplantType(connectionType);
+          }
         }
       } catch {
         // no-op
@@ -232,7 +232,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setSelectedPreviewIndex,
     abutDiameters,
     connectionDiameters,
-    handleDiameterComputed,
     isDragOver,
     handleDragOver,
     handleDragLeave,
@@ -250,6 +249,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     handleSubmit,
     handleCancel,
     removeFile,
+    handleDiameterComputed,
     getWorkTypeForFilename,
     aiFileInfos,
     setAiFileInfos,

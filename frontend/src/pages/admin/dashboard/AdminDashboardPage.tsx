@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { WorksheetDiameterCardForDashboard } from "@/pages/requestor/WorkSheet";
+import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import {
@@ -126,9 +126,7 @@ export const AdminDashboardPage = () => {
     <DashboardShell
       title={`안녕하세요, ${user.name}님!`}
       subtitle="시스템 관리 대시보드입니다."
-      topSection={
-        <WorksheetDiameterCardForDashboard stats={diameterStatsFromApi} />
-      }
+      topSection={<WorksheetDiameterCard stats={diameterStatsFromApi} />}
       stats={
         <>
           {data.stats.map((stat: any, index: number) => (

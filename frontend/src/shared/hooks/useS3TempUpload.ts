@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { apiFetch } from "@/lib/apiClient";
 
 export interface TempUploadedFile {
   _id: string;
@@ -27,12 +28,12 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
       });
 
       const headers: Record<string, string> = {};
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-
-      const res = await fetch("/api/files/temp", {
+      // Authorization 헤더는 apiFetch의 token 옵션으로 처리하되,
+      // 필요한 경우 추가 헤더를 headers로 전달한다.
+      const res = await apiFetch<any>({
+        path: "/api/files/temp",
         method: "POST",
+        token,
         headers,
         body: formData,
       });
@@ -41,8 +42,8 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
         throw new Error("파일 업로드에 실패했습니다.");
       }
 
-      const body = await res.json().catch(() => ({}));
-      const data = body?.data;
+      const body = res.data || {};
+      const data = (body as any)?.data;
       if (!Array.isArray(data)) return [];
       return data as TempUploadedFile[];
     },

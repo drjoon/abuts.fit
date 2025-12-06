@@ -2,18 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { type TempUploadedFile } from "@/hooks/useS3TempUpload";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
 import { useToast } from "@/hooks/use-toast";
-
-type AiFileInfo = {
-  filename: string;
-  clinicName?: string;
-  patientName: string;
-  teethText: string;
-  workType: string;
-  rawSummary: string;
-  brand?: string;
-  systemSpec?: string;
-  abutType?: string;
-};
+import { type AiFileInfo } from "./newRequestTypes";
 
 type UseNewRequestFilesParams = {
   token: string | null;
@@ -116,15 +105,18 @@ export const useNewRequestFiles = ({
   }, [uploadedFiles, files.length, token]);
 
   const analyzeFilenamesWithAi = useCallback(
-    async (filenames: string[]) => {
-      if (!filenames || filenames.length === 0) return;
+    async (
+      filenames: string[],
+      fileObjects?: File[]
+    ): Promise<AiFileInfo[]> => {
+      if (!filenames || filenames.length === 0) return [];
 
       try {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
         };
 
-        if (!token) return;
+        if (!token) return [];
 
         headers.Authorization = `Bearer ${token}`;
 
@@ -134,63 +126,59 @@ export const useNewRequestFiles = ({
           body: JSON.stringify({ filenames }),
         });
 
-        if (!res.ok) return;
+        if (!res.ok) return [];
 
         const body = await res.json().catch(() => ({}));
         const items: any[] = Array.isArray(body?.data) ? body.data : [];
-        setAiFileInfos((prev: AiFileInfo[]) => {
-          const map = new Map(prev.map((info) => [info.filename, info]));
+        const newInfos: AiFileInfo[] = [];
 
-          items.forEach((item) => {
-            const filename = item?.filename;
-            if (!filename || typeof filename !== "string") return;
+        const map = new Map<string, AiFileInfo>();
 
-            const teethArr: string[] = Array.isArray(item?.teeth)
-              ? item.teeth.map((t: any) => String(t))
-              : [];
+        items.forEach((item) => {
+          const filename = item?.filename;
+          if (!filename || typeof filename !== "string") return;
 
-            const existing = map.get(filename) || ({} as any);
+          const fileObj = fileObjects?.find((f) => f.name === filename);
 
-            const clinicName =
-              typeof item?.clinicName === "string"
-                ? item.clinicName
-                : existing.clinicName || "";
+          const clinicName: string =
+            typeof item?.clinicName === "string" ? item.clinicName : "";
 
-            const patientName =
-              typeof item?.patientName === "string"
-                ? item.patientName
-                : existing.patientName || "";
+          const patientName: string =
+            typeof item?.patientName === "string" ? item.patientName : "";
 
-            const aiWorkType =
-              typeof item?.workType === "string" ? item.workType : "";
-            const workType = aiWorkType || existing.workType || "";
+          // 파일 크기 기반 workType 결정: 1MB 미만이면 abutment, 이상이면 prosthesis
+          const fileSizeInMB = fileObj ? fileObj.size / (1024 * 1024) : 0;
+          const defaultWorkType = fileSizeInMB < 1 ? "abutment" : "prosthesis";
+          const workType = defaultWorkType;
 
-            const rawSummary =
-              typeof item?.rawSummary === "string"
-                ? item.rawSummary
-                : existing.rawSummary || "";
+          const tooth =
+            typeof item?.tooth === "string" ? item.tooth.trim() : "";
 
-            let teethText = "";
-            if (teethArr.length === 1) {
-              teethText = teethArr[0];
-            } else if (teethArr.length > 1) {
-              teethText = `${teethArr[0]}-${teethArr[teethArr.length - 1]}`;
-            }
+          const info: AiFileInfo = {
+            filename,
+            clinicName,
+            patientName,
+            tooth,
+            workType,
+            abutType: "",
+          };
 
-            map.set(filename, {
-              ...existing,
-              filename,
-              clinicName,
-              patientName,
-              teethText,
-              workType,
-              rawSummary,
-            });
-          });
-
-          return Array.from(map.values());
+          map.set(filename, info);
+          newInfos.push(info);
         });
-      } catch {}
+
+        setAiFileInfos((prev: AiFileInfo[]) => {
+          const prevMap = new Map(prev.map((info) => [info.filename, info]));
+          map.forEach((info, filename) => {
+            prevMap.set(filename, info);
+          });
+          return Array.from(prevMap.values());
+        });
+
+        return newInfos;
+      } catch {
+        return [];
+      }
     },
     [token, setAiFileInfos]
   );
@@ -267,10 +255,11 @@ export const useNewRequestFiles = ({
               } else {
                 next.push({
                   filename,
+                  clinicName: "",
                   patientName: "",
-                  teethText: "",
+                  tooth: "",
                   workType: suggested,
-                  rawSummary: "",
+                  abutType: "",
                 });
               }
             });
@@ -278,7 +267,7 @@ export const useNewRequestFiles = ({
           });
 
           const filenames = unique.map((file) => file.name);
-          await analyzeFilenamesWithAi(filenames);
+          const analyzedInfos = await analyzeFilenamesWithAi(filenames, unique);
 
           const uploaded = await uploadFilesWithToast(unique);
           if (uploaded.length > 0) {
@@ -292,6 +281,53 @@ export const useNewRequestFiles = ({
               return Array.from(map.values());
             });
 
+            // 어벗일 때만 프리셋에서 임플란트 정보 추천
+            const isAbutment = unique[0].size < 1024 * 1024;
+
+            if (
+              isAbutment &&
+              !implantManufacturer &&
+              !implantSystem &&
+              !implantType &&
+              analyzedInfos?.length > 0
+            ) {
+              const firstInfo = analyzedInfos[0];
+              // clinicName이 없으면 빈 문자열 사용
+              const clinicName = firstInfo?.clinicName || "";
+              if (firstInfo?.patientName && firstInfo?.tooth) {
+                try {
+                  const params = new URLSearchParams({
+                    clinicName,
+                    patientName: firstInfo.patientName,
+                    tooth: firstInfo.tooth,
+                  });
+                  const presetRes = await fetch(
+                    `/api/implant-presets/find?${params.toString()}`,
+                    {
+                      headers: { Authorization: `Bearer ${token}` },
+                    }
+                  );
+                  if (presetRes.ok) {
+                    const presetBody = await presetRes.json();
+                    const preset = presetBody.data;
+                    if (preset) {
+                      setImplantManufacturer(preset.manufacturer);
+                      setImplantSystem(preset.system);
+                      setImplantType(preset.type);
+                      syncSelectedConnection(
+                        preset.manufacturer,
+                        preset.system,
+                        preset.type
+                      );
+                    }
+                  }
+                } catch (e) {
+                  console.warn("Failed to fetch implant preset", e);
+                }
+              }
+            }
+
+            // 프리셋이 없으면 기본값 설정
             if (!implantManufacturer && !implantSystem && !implantType) {
               const baseManufacturer = "OSSTEM";
               const baseSystem = "Regular";
@@ -383,10 +419,11 @@ export const useNewRequestFiles = ({
               } else {
                 next.push({
                   filename,
+                  clinicName: "",
                   patientName: "",
-                  teethText: "",
+                  tooth: "",
                   workType: suggested,
-                  rawSummary: "",
+                  abutType: "",
                 });
               }
             });
@@ -394,7 +431,7 @@ export const useNewRequestFiles = ({
           });
 
           const filenames = unique.map((file) => file.name);
-          await analyzeFilenamesWithAi(filenames);
+          const analyzedInfos = await analyzeFilenamesWithAi(filenames, unique);
 
           const uploaded = await uploadFilesWithToast(unique);
           if (uploaded.length > 0) {
@@ -408,6 +445,53 @@ export const useNewRequestFiles = ({
               return Array.from(map.values());
             });
 
+            // 어벗일 때만 프리셋에서 임플란트 정보 추천
+            const isAbutment = unique[0].size < 1024 * 1024;
+
+            if (
+              isAbutment &&
+              !implantManufacturer &&
+              !implantSystem &&
+              !implantType &&
+              analyzedInfos?.length > 0
+            ) {
+              const firstInfo = analyzedInfos[0];
+              // clinicName이 없으면 빈 문자열 사용
+              const clinicName = firstInfo?.clinicName || "";
+              if (firstInfo?.patientName && firstInfo?.tooth) {
+                try {
+                  const params = new URLSearchParams({
+                    clinicName,
+                    patientName: firstInfo.patientName,
+                    tooth: firstInfo.tooth,
+                  });
+                  const presetRes = await fetch(
+                    `/api/implant-presets/find?${params.toString()}`,
+                    {
+                      headers: { Authorization: `Bearer ${token}` },
+                    }
+                  );
+                  if (presetRes.ok) {
+                    const presetBody = await presetRes.json();
+                    const preset = presetBody.data;
+                    if (preset) {
+                      setImplantManufacturer(preset.manufacturer);
+                      setImplantSystem(preset.system);
+                      setImplantType(preset.type);
+                      syncSelectedConnection(
+                        preset.manufacturer,
+                        preset.system,
+                        preset.type
+                      );
+                    }
+                  }
+                } catch (e) {
+                  console.warn("Failed to fetch implant preset", e);
+                }
+              }
+            }
+
+            // 프리셋이 없으면 기본값 설정
             if (!implantManufacturer && !implantSystem && !implantType) {
               const baseManufacturer = "OSSTEM";
               const baseSystem = "Regular";

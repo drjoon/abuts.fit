@@ -177,3 +177,25 @@ pages/admin/
   - DB에는 `Request.lotNumber` 필드로 저장되며, prefix는
     - `patientCases[].files[].workType`에 `abutment`가 포함된 경우 → `AB`
     - 그렇지 않고 `crown`만 포함된 경우 → `CR`
+
+## 12. API 호출 규칙
+
+- **공통 API 유틸 사용 (apiClient)**
+
+  - 프론트엔드에서 HTTP 요청을 보낼 때는 `src/lib/apiClient.ts`의 `apiFetch` (alias: `request`)를 사용합니다.
+  - 새로 작성하는 코드는 `fetch`를 직접 호출하지 않습니다.
+  - `apiFetch`는 다음을 공통으로 처리합니다.
+    - `Authorization: Bearer <token>` 헤더 자동 추가 (옵션으로 전달된 경우)
+    - JSON body(`jsonBody`) 직렬화 및 `Content-Type: application/json` 설정
+    - 응답 JSON 파싱 및 `(ok, status, data, raw)` 형태로 반환
+
+- **기존 코드 마이그레이션 전략**
+
+  - 현재 코드베이스에 남아 있는 `fetch` 직접 호출은 **점진적으로** `apiFetch`로 교체합니다.
+  - 리팩터링 시에는 다음 순서를 권장합니다.
+    - 공통 옵션(토큰, 기본 헤더 등)을 `apiFetch` 호출로 옮긴다.
+    - 에러 처리/토스트 로직은 기존 UX를 유지하되, `apiFetch` 반환값을 기반으로 재구성한다.
+
+- **전역 fetch 가드 유지**
+  - `main.tsx`에서 설치하는 전역 fetch 가드(`installFetchGuard`)는 **마이그레이션 이후에도 유지**합니다.
+  - 과도한 외부 API 호출(예: `/api/ai/parse-filenames`에 대한 무한 루프)을 1차적으로 차단하는 안전 장치로 사용합니다.

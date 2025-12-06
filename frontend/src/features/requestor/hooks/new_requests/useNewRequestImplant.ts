@@ -16,19 +16,18 @@ export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        const baseManufacturer = "OSSTEM";
-        const baseSystem = "Regular";
-        const baseType = "Hex";
-
         const connRes = await fetch("/api/connections");
         if (!connRes.ok) return;
         const connBody = await connRes.json().catch(() => ({}));
         const list: any[] = Array.isArray(connBody.data) ? connBody.data : [];
         setConnections(list);
 
-        const hasDraftImplantValues = Boolean(
-          implantManufacturer || implantSystem || implantType
-        );
+        // NOTE: 자동 임플란트 설정은 useNewRequestFiles에서 처리하므로,
+        // 여기서는 즐겨찾기 또는 기본값으로 초기화만 수행한다.
+        // 단, 이미 값이 있는 경우 (예: draft에서 로드)에는 덮어쓰지 않는다.
+        if (implantManufacturer || implantSystem || implantType) {
+          return;
+        }
 
         let favorite: {
           implantManufacturer?: string;
@@ -40,6 +39,7 @@ export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
           const favRes = await fetch("/api/requests/my/favorite-implant", {
             headers: {
               Authorization: `Bearer ${token}`,
+              "x-mock-role": "requestor",
             },
           });
 
@@ -51,18 +51,9 @@ export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
           }
         }
 
-        if (hasDraftImplantValues) {
-          if (list.length > 0) {
-            const found = list.find(
-              (c) =>
-                c.manufacturer === implantManufacturer &&
-                c.system === implantSystem &&
-                c.type === implantType
-            );
-            setSelectedConnectionId(found ? (found._id as string) : null);
-          }
-          return;
-        }
+        const baseManufacturer = "OSSTEM";
+        const baseSystem = "Regular";
+        const baseType = "Hex";
 
         const nextManufacturer =
           favorite?.implantManufacturer || baseManufacturer;
@@ -80,19 +71,13 @@ export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
               c.system === nextSystem &&
               c.type === nextType
           );
-
-          if (found) {
-            setSelectedConnectionId(found._id as string);
-          } else {
-            const first = list[0];
-            setSelectedConnectionId(first._id as string);
-          }
+          setSelectedConnectionId(found ? (found._id as string) : null);
         }
       } catch {}
     };
 
     loadInitialData();
-  }, [token, implantManufacturer, implantSystem, implantType]);
+  }, [token]);
 
   const syncSelectedConnection = (
     manufacturer: string,

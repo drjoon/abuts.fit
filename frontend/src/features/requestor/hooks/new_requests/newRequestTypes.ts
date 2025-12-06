@@ -9,3 +9,12 @@ export type ClinicPreset = {
   name: string;
   favorite?: ClinicFavoriteImplant;
 };
+
+export type AiFileInfo = {
+  filename: string;
+  clinicName: string;
+  patientName: string;
+  tooth: string;
+  workType: string;
+  abutType: string;
+};

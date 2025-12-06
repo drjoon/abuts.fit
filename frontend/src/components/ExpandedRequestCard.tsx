@@ -150,35 +150,37 @@ export const ExpandedRequestCard = ({
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const getStatusBadge = (status1?: string, status2?: string) => {
+    const statusText =
+      status2 && status2 !== "없음" ? `${status1}(${status2})` : status1;
+
+    switch (status1) {
       case "의뢰접수":
-        return <Badge variant="outline">의뢰접수</Badge>;
-      case "가공전":
-      case "가공후":
-        return <Badge variant="default">{status}</Badge>;
-      case "배송대기":
+        return <Badge variant="outline">{statusText}</Badge>;
+      case "가공":
+        return <Badge variant="default">{statusText}</Badge>;
+      case "세척/검사/포장":
         return (
-          <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-xs">
-            배송대기
+          <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
+            {statusText}
           </Badge>
         );
-      case "배송중":
+      case "배송":
         return (
           <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
-            배송중
+            {statusText}
           </Badge>
         );
       case "완료":
-        return <Badge variant="secondary">완료</Badge>;
+        return <Badge variant="secondary">{statusText}</Badge>;
       case "취소":
         return (
           <Badge className="bg-red-50 text-red-700 border-red-200 text-xs">
-            취소
+            {statusText}
           </Badge>
         );
       default:
-        return <Badge>{status}</Badge>;
+        return <Badge>{statusText || "상태 미지정"}</Badge>;
     }
   };
 
@@ -318,7 +320,10 @@ export const ExpandedRequestCard = ({
                   <Building2 className="h-3 w-3" />
                   {request.manufacturer || request.client || "미배정"}
                 </span>
-                {getStatusBadge(request.status)}
+                {getStatusBadge(
+                  request.status1 || request.status,
+                  request.status2
+                )}
               </div>
               {isDragOver && (
                 <div className="text-sm text-primary font-medium">
@@ -341,9 +346,9 @@ export const ExpandedRequestCard = ({
                   환자 정보
                 </h4>
                 <div className="text-sm font-medium">
-                  {request.patientName}{" "}
+                  {request.caseInfos?.patientName || request.patientName}{" "}
                   <span className="text-muted-foreground font-normal">
-                    (치아 {request.tooth})
+                    (치아 {request.caseInfos?.tooth || request.tooth})
                   </span>
                 </div>
                 {request.dentistName && (
@@ -358,49 +363,38 @@ export const ExpandedRequestCard = ({
                 </h4>
                 <div className="text-sm space-y-1">
                   {(() => {
-                    const spec = (request as any).specifications || {};
+                    const caseInfos = request.caseInfos || {};
+                    const spec = request.specifications || {}; // Legacy
 
                     const implantSystem =
+                      caseInfos.implantSystem ||
                       spec.implantSystem ||
                       spec.implantCompany ||
-                      (request as any).implantManufacturer ||
-                      (request as any).implantSystem ||
-                      (request as any).implantSystemLegacy;
-
+                      request.implantManufacturer;
                     const implantType =
+                      caseInfos.implantType ||
                       spec.implantType ||
                       spec.implantProduct ||
-                      (request as any).implantType ||
-                      (request as any).implantTypeLegacy;
-
+                      request.implantType;
                     const connectionType =
+                      caseInfos.connectionType ||
                       spec.connectionType ||
-                      spec.connection ||
-                      (spec.angle === "직각" || spec.angle
-                        ? spec.angle
-                        : undefined);
-
+                      spec.connection;
                     const maxDiameter =
-                      typeof spec.maxDiameter === "number"
-                        ? `${spec.maxDiameter}mm`
-                        : typeof (request as any).maxDiameter === "number"
-                        ? `${(request as any).maxDiameter}mm`
-                        : spec.diameter;
-
+                      caseInfos.maxDiameter ??
+                      spec.maxDiameter ??
+                      request.maxDiameter;
                     const connectionDiameter =
-                      typeof spec.connectionDiameter === "number"
-                        ? `${spec.connectionDiameter}mm`
-                        : typeof (request as any).connectionDiameter ===
-                          "number"
-                        ? `${(request as any).connectionDiameter}mm`
-                        : spec.implantSize;
+                      caseInfos.connectionDiameter ??
+                      spec.connectionDiameter ??
+                      request.connectionDiameter;
 
                     if (
                       !implantSystem &&
                       !implantType &&
                       !connectionType &&
-                      !maxDiameter &&
-                      !connectionDiameter
+                      maxDiameter == null &&
+                      connectionDiameter == null
                     ) {
                       return null;
                     }
@@ -425,13 +419,21 @@ export const ExpandedRequestCard = ({
                           <span className="text-muted-foreground text-xs w-20">
                             최대 직경
                           </span>
-                          <span>{maxDiameter || "-"}</span>
+                          <span>
+                            {maxDiameter != null
+                              ? `${maxDiameter.toFixed(2)}mm`
+                              : "-"}
+                          </span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground text-xs w-20">
                             커넥션 직경
                           </span>
-                          <span>{connectionDiameter || "-"}</span>
+                          <span>
+                            {connectionDiameter != null
+                              ? `${connectionDiameter.toFixed(2)}mm`
+                              : "-"}
+                          </span>
                         </div>
                       </>
                     );

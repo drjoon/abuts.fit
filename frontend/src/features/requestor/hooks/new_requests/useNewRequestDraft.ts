@@ -5,14 +5,11 @@ const NEW_REQUEST_DRAFT_STORAGE_KEY = "abutsfit:new-request-draft:v1";
 
 type AiFileInfo = {
   filename: string;
-  clinicName?: string;
+  clinicName: string;
   patientName: string;
-  teethText: string;
+  tooth: string;
   workType: string;
-  rawSummary: string;
-  brand?: string;
-  systemSpec?: string;
-  abutType?: string;
+  abutType: string;
 };
 
 type UseNewRequestDraftParams = {
@@ -68,14 +65,17 @@ export const useNewRequestDraft = ({
       if (Array.isArray(saved.uploadedFiles)) {
         setUploadedFiles(saved.uploadedFiles);
       }
-      if (typeof saved.implantManufacturer === "string") {
-        setImplantManufacturer(saved.implantManufacturer);
-      }
-      if (typeof saved.implantSystem === "string") {
-        setImplantSystem(saved.implantSystem);
-      }
-      if (typeof saved.implantType === "string") {
-        setImplantType(saved.implantType);
+      if (saved.caseInfos) {
+        const { implantSystem, implantType, connectionType } = saved.caseInfos;
+        if (typeof implantSystem === "string") {
+          setImplantManufacturer(implantSystem);
+        }
+        if (typeof implantType === "string") {
+          setImplantSystem(implantType);
+        }
+        if (typeof connectionType === "string") {
+          setImplantType(connectionType);
+        }
       }
       if (
         typeof saved.selectedPreviewIndex === "number" ||
@@ -93,9 +93,11 @@ export const useNewRequestDraft = ({
       message,
       aiFileInfos,
       uploadedFiles,
-      implantManufacturer,
-      implantSystem,
-      implantType,
+      caseInfos: {
+        implantSystem: implantManufacturer,
+        implantType: implantSystem,
+        connectionType: implantType,
+      },
       selectedPreviewIndex,
     };
     try {
