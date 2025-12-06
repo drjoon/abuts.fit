@@ -6,21 +6,28 @@ export async function findPreset(req, res) {
     const { clinicName, patientName, tooth } = req.query;
     const requestor = req.user._id;
 
-    if (!clinicName || !patientName || !tooth) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Clinic, patient, and tooth are required.",
-        });
+    // patientName과 tooth는 필수, clinicName은 선택사항
+    if (!patientName || !tooth) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient name and tooth are required.",
+      });
     }
 
-    const preset = await ImplantPreset.findOne({
+    // clinicName이 없거나 빈 문자열이면 null로 처리
+    const query = {
       requestor,
-      clinicName,
       patientName,
       tooth,
-    }).sort({ lastUsedAt: -1 });
+    };
+
+    if (clinicName && clinicName.trim()) {
+      query.clinicName = clinicName;
+    } else {
+      query.clinicName = { $in: [null, ""] };
+    }
+
+    const preset = await ImplantPreset.findOne(query).sort({ lastUsedAt: -1 });
 
     if (preset) {
       res.json({ success: true, data: preset });

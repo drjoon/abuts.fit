@@ -131,13 +131,13 @@ async function createRequest(req, res) {
         await newRequest.save();
         createdRequests.push(newRequest);
 
-        // Save/update implant preset
-        if (hasImplantSystem && caseInfos.clinicName && patientName && tooth) {
+        // Save/update implant preset (clinicName이 없으면 빈 문자열 사용)
+        if (hasImplantSystem && patientName && tooth) {
           try {
             await ImplantPreset.findOneAndUpdate(
               {
                 requestor: req.user._id,
-                clinicName: caseInfos.clinicName,
+                clinicName: caseInfos.clinicName || "",
                 patientName,
                 tooth,
               },

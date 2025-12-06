@@ -8,6 +8,7 @@ import { Upload } from "@aws-sdk/lib-storage";
 import multer from "multer";
 import { extname } from "path";
 import { randomBytes } from "crypto";
+import { shouldBlockExternalCall } from "./rateGuard.js";
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || "ap-northeast-2",
@@ -78,6 +79,17 @@ const s3Upload = multer({
 
 // S3 직접 업로드 함수 (컨트롤러에서 호출)
 export const uploadFileToS3 = async (fileBuffer, key, contentType) => {
+  const guardKey = `s3-upload:${key}`;
+  const { blocked, count } = shouldBlockExternalCall(guardKey);
+  if (blocked) {
+    console.error("[S3] uploadFileToS3: rate guard blocked", {
+      key,
+      count,
+    });
+    throw new Error(
+      "S3 업로드가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요."
+    );
+  }
   const Bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
   const params = {
     Bucket,
@@ -109,6 +121,15 @@ export const uploadFileToS3 = async (fileBuffer, key, contentType) => {
 };
 
 const deleteFileFromS3 = async (key) => {
+  const guardKey = `s3-delete:${key}`;
+  const { blocked, count } = shouldBlockExternalCall(guardKey);
+  if (blocked) {
+    console.error("[S3] deleteFileFromS3: rate guard blocked", {
+      key,
+      count,
+    });
+    return false;
+  }
   try {
     await s3Client.send(
       new DeleteObjectCommand({
@@ -124,6 +145,17 @@ const deleteFileFromS3 = async (key) => {
 };
 
 const getSignedUrl = async (key, expires = 3600) => {
+  const guardKey = `s3-signedUrl:${key}`;
+  const { blocked, count } = shouldBlockExternalCall(guardKey);
+  if (blocked) {
+    console.error("[S3] getSignedUrl: rate guard blocked", {
+      key,
+      count,
+    });
+    throw new Error(
+      "S3 다운로드 URL 생성이 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요."
+    );
+  }
   const command = new GetObjectCommand({
     Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
     Key: key,

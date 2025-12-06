@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { shouldBlockExternalCall } from "../utils/rateGuard.js";
 
 const apiKey = process.env.GOOGLE_API_KEY;
 
@@ -31,15 +32,33 @@ export async function parseFilenames(req, res) {
       });
     }
 
+    // Gemini 호출에 대한 백엔드 레벨 rate guard
+    const clientIp =
+      req.ip ||
+      req.headers["x-forwarded-for"] ||
+      (req.connection && req.connection.remoteAddress) ||
+      "unknown";
+    const guardKey = `gemini-parseFilenames:${clientIp}`;
+    const { blocked, count } = shouldBlockExternalCall(guardKey);
+    if (blocked) {
+      console.error("[AI] parseFilenames: rate guard blocked", {
+        clientIp,
+        count,
+      });
+      return res.status(429).json({
+        success: false,
+        message:
+          "Gemini 외부 API가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
+      });
+    }
+
     if (!genAI) {
       // Gemini 미구성 시에도 API는 살아 있으되, 단순히 기본 파싱만 수행
       const fallback = filenames.map((name) => ({
         filename: name,
         clinicName: null,
         patientName: null,
-        teeth: [],
-        workType: null,
-        rawSummary: null,
+        tooth: "",
       }));
       return res.json({ success: true, data: fallback, provider: "none" });
     }
@@ -54,9 +73,7 @@ export async function parseFilenames(req, res) {
       "이 예시의 해석:\n" +
       "- clinicName: 고운치과\n" +
       "- patientName: 김혜영\n" +
-      '- teeth: ["32", "42"] (FDI 방식 치식 번호 배열)\n' +
-      "- workType: null (파일명에 어벗/크라운/브리지 등 명시가 없는 경우 null)\n" +
-      "- rawSummary: '2025-11-19에 스캔한 고운치과 김혜영 환자 하악 전치부(32-42) 커스텀 어벗먼트 또는 크라운 디자인 파일로 추정' 같은 자연어 설명";
+      "- tooth: '32-42' (FDI 방식 치식 번호들을 사람이 읽기 쉬운 문자열로 표현)";
 
     const prompt =
       "너는 치과 기공소에서 사용하는 STL 파일명을 해석하는 도우미야.\n" +
@@ -68,18 +85,14 @@ export async function parseFilenames(req, res) {
       '    "filename": string,               // 원본 파일명 그대로\n' +
       '    "clinicName": string | null,     // 치과/의원 이름(추정). 없으면 null\n' +
       '    "patientName": string | null,    // 환자 이름(추정). 없으면 null\n' +
-      '    "teeth": string[],               // FDI 또는 Palmer 표기 치식 번호들. 없으면 빈 배열\n' +
-      '    "workType": string | null,       // abutment/crown/bridge 등 작업 타입, 모르면 null\n' +
-      '    "rawSummary": string | null      // 사람이 읽기 쉬운 한국어 한 줄 요약, 모르면 null\n' +
+      '    "tooth": string | null           // 예: "32", "32-42" 등 치식 정보를 나타내는 문자열, 없으면 null\n' +
       "  }\n" +
       "]\n" +
       "\n" +
       "주의사항:\n" +
       "- 반드시 JSON만 반환하고, 설명 문장은 JSON 바깥에 쓰지 마.\n" +
-      '- teeth는 문자열 배열로만. 예: ["26", "27"].\n' +
-      "- workType는 가능하면 'abutment', 'crown', 'bridge' 중 하나로 맞추고, 애매하면 null.\n" +
+      "- tooth는 치식 정보를 사람이 읽기 쉬운 한 줄 문자열로만 표현해줘. 예: '26', '26-27', '13,23'.\n" +
       "- clinicName은 파일명에 '치과', 'dental', '치과의원' 등 패턴이 있으면 그 부분을 기준으로 추론해줘. 없으면 null.\n" +
-      "- 파일명에 날짜(예: 20251119)가 포함되어 있으면, rawSummary에서 자연스럽게 언급해도 좋지만, 날짜 자체를 별도 필드로 만들지는 마.\n" +
       "\n" +
       example +
       "\n\n" +
