@@ -7,6 +7,7 @@ const connectionSchema = new mongoose.Schema(
     type: { type: String, required: true },
     category: { type: String, required: true },
     fileName: { type: String, required: true },
+    diameter: { type: Number },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

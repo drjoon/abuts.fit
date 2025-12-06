@@ -43,4 +43,55 @@ export async function getConnections(req, res) {
   }
 }
 
-export default { getConnections };
+// 직경으로 가장 근사한 커넥션 찾기
+// GET /api/connections/find-by-diameter?diameter=3.3
+export async function findConnectionByDiameter(req, res) {
+  try {
+    const { diameter } = req.query;
+    if (!diameter) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Diameter is required" });
+    }
+
+    const targetDiameter = parseFloat(diameter);
+
+    // 모든 활성 커넥션 조회
+    const connections = await Connection.find({ isActive: true }).lean();
+
+    if (!connections.length) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No active connections found" });
+    }
+
+    // 가장 가까운 커넥션 찾기
+    let closestConnection = null;
+    let minDiff = Infinity;
+
+    for (const conn of connections) {
+      if (conn.diameter == null) continue;
+      const diff = Math.abs(conn.diameter - targetDiameter);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestConnection = conn;
+      }
+    }
+
+    if (closestConnection) {
+      res.json({ success: true, data: closestConnection });
+    } else {
+      res
+        .status(404)
+        .json({ success: false, message: "No suitable connection found" });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error finding connection by diameter",
+      error: error.message,
+    });
+  }
+}
+
+export default { getConnections, findConnectionByDiameter };

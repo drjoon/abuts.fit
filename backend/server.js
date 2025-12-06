@@ -1,4 +1,6 @@
 import app from "./app.js";
+import supportRoutes from "./routes/support.routes.js";
+import implantPresetRoutes from "./routes/implantPreset.routes.js";
 import { config } from "dotenv";
 
 // 환경 변수 로드

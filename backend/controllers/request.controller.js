@@ -1,5 +1,6 @@
 import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
+import ImplantPreset from "../models/implantPreset.model.js";
 import { Types } from "mongoose";
 
 // status(단일 필드)를 status1/status2와 동기화하는 헬퍼
@@ -129,6 +130,31 @@ async function createRequest(req, res) {
         applyStatusMapping(newRequest, newRequest.status);
         await newRequest.save();
         createdRequests.push(newRequest);
+
+        // Save/update implant preset
+        if (hasImplantSystem && caseInfos.clinicName && patientName && tooth) {
+          try {
+            await ImplantPreset.findOneAndUpdate(
+              {
+                requestor: req.user._id,
+                clinicName: caseInfos.clinicName,
+                patientName,
+                tooth,
+              },
+              {
+                $set: {
+                  manufacturer: caseInfos.implantSystem, // Note: frontend manufacturer is backend system
+                  system: caseInfos.implantType,
+                  type: caseInfos.connectionType,
+                  lastUsedAt: new Date(),
+                },
+              },
+              { upsert: true, new: true, setDefaultsOnInsert: true }
+            );
+          } catch (presetError) {
+            console.warn("Could not save implant preset", presetError);
+          }
+        }
       }
 
       // 모든 요청이 저장된 뒤, 같은 환자명 기준으로 requestId를 referenceId에 매핑한다.
