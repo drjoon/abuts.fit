@@ -127,3 +127,23 @@ pages/admin/
   - 결제/청구 금액 필드(예: `amount`)는 기본적으로 **VAT/배송비 제외 금액**으로 해석합니다.
   - 향후 부가세/배송비를 합산한 총 결제금액이 필요할 경우, 별도의 필드(예: `vatAmount`, `shippingFee`, `totalAmount`)로 분리하여 관리합니다.
   - 외부 결제 모듈 연동 시에도 "서비스 금액 + 부가세 + 배송비" 구조가 유지되도록 요청/응답 스키마를 설계합니다.
+
+## 10. 대시보드/워크시트 카드 UI 규칙
+
+- **기준 컴포넌트**: `features/manufacturer/cnc/components/WorksheetCncMachineSection.tsx` 의 `WorksheetCncMachineCard` 스타일을 기본 카드 스타일로 사용합니다.
+- **기본 카드 스타일 (클릭 가능한 카드)**
+  - Tailwind 클래스 기준:
+    - `relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg cursor-pointer`
+  - 의미:
+    - 살짝 둥근 모서리(2xl)와 옅은 그림자(shadow-sm)를 기본으로, hover 시 `shadow-lg`만 강하게 하여 **푸른 글로우 대신 자연스러운 카드 부각**을 사용합니다.
+    - 배경은 `bg-white/80`, 테두리는 `border-gray-200`로 통일합니다.
+- **대시보드용 카드 컴포넌트 규칙**
+  - Requestor/Manufacturer/Admin 대시보드 및 워크시트에서 새로 만드는 카드형 UI는 기본적으로 위 스타일을 따릅니다.
+  - 통계 카드, 최근 리스트 카드, 위험 요약 카드, 배너 카드 등은 모두
+    - `relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg`
+    - 필요 시 `flex-1`, `min-h-[220px]` 등 레이아웃 관련 클래스만 추가합니다.
+  - 특수 테마 카드(예: 경고/배너)는 테두리 색상/배경색만 변형합니다.
+    - 예: 묶음 배송 배너 → `border-orange-300 bg-orange-50/80` + 나머지는 동일.
+- **금지 사항**
+  - 카드 hover 시 임의의 파란색 그림자, box-shadow 커스텀 CSS 등은 사용하지 않습니다.
+  - 동일한 페이지 내에서 카드마다 다른 shadow/rounded 조합을 쓰지 않습니다.

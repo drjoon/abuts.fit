@@ -1,0 +1,78 @@
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+type RiskSummary = {
+  delayedCount?: number;
+  warningCount?: number;
+  onTimeRate?: number;
+  items?: {
+    id: string;
+    title: string;
+    manufacturer?: string;
+    riskLevel?: string;
+    message?: string;
+  }[];
+};
+
+type Props = {
+  riskSummary?: RiskSummary | null;
+};
+
+export const RequestorRiskSummaryCard = ({ riskSummary }: Props) => {
+  const summary = riskSummary || {};
+
+  return (
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-semibold">
+          지연 위험 요약
+        </CardTitle>
+        <CardDescription>
+          예상 출고일 기준으로 지연 가능성이 있는 의뢰를 요약해서 보여드립니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span>지연 가능성 의뢰: {summary.warningCount ?? 0}건</span>
+          <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
+          <span>제때 출고 비율: {summary.onTimeRate ?? 0}%</span>
+        </div>
+        <div className="space-y-2">
+          {summary.items?.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-start justify-between rounded-lg border border-border bg-muted/40 p-3 gap-3"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium truncate">{item.title}</div>
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {item.manufacturer}
+                </div>
+                <div className="mt-1 text-[11px] text-muted-foreground line-clamp-2">
+                  {item.message}
+                </div>
+              </div>
+              <div className="ml-2 flex-shrink-0">
+                {item.riskLevel === "danger" ? (
+                  <Badge variant="destructive" className="text-[10px]">
+                    지연 위험
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px]">
+                    주의
+                  </Badge>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};

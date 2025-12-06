@@ -14,7 +14,7 @@ export type DiameterStats = {
 
 export const WorksheetDiameterCard = ({ stats }: { stats: DiameterStats }) => {
   return (
-    <Card>
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium mb-2">
           커스텀 어벗먼트 최대 직경별 진행 현황
