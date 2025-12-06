@@ -1,15 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -17,17 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import {
-  Upload,
-  FileText,
-  Clock,
-  MessageSquare,
-  Plus,
-  Image,
-  FileIcon,
-  RotateCcw,
-} from "lucide-react";
+import { Upload, Plus } from "lucide-react";
 import { StlPreviewViewer } from "@/components/StlPreviewViewer";
 import { ExpandedRequestCard } from "@/components/ExpandedRequestCard";
 import { useNewRequestPage } from "@/features/requestor/hooks/useNewRequestPage";
@@ -52,8 +34,6 @@ export const NewRequestPage = () => {
     handleDrop,
     handleFileSelect,
     handleFileListWheel,
-    manufacturerOptions,
-    systemOptions,
     typeOptions,
     implantManufacturer,
     setImplantManufacturer,
@@ -70,7 +50,6 @@ export const NewRequestPage = () => {
     setAiFileInfos,
     selectedRequest,
     setSelectedRequest,
-    patientCasesPreview,
     clinicPresets,
     selectedClinicId,
     handleSelectClinic,
@@ -100,50 +79,6 @@ export const NewRequestPage = () => {
     handleAddOrSelectClinic(name);
   }, [selectedPreviewIndex, files, aiFileInfos, handleAddOrSelectClinic]);
 
-  const appendAiSummary = useCallback(
-    (aiItems: any[]) => {
-      if (!Array.isArray(aiItems) || aiItems.length === 0) return;
-
-      const lines = aiItems.map((item) => {
-        const filename = item?.filename ?? "";
-        const patientName = item?.patientName || null;
-        const teeth = Array.isArray(item?.teeth) ? item.teeth : [];
-        const workType = item?.workType || null;
-
-        const parts: string[] = [];
-
-        if (patientName) {
-          parts.push(`환자: ${patientName}`);
-        }
-
-        if (teeth.length > 0) {
-          parts.push(`치식: ${teeth.join(", ")}`);
-        }
-
-        if (workType) {
-          parts.push(`작업: ${workType}`);
-        }
-
-        const detail =
-          parts.length > 0
-            ? parts.join(" / ")
-            : "세부 정보를 추출하지 못했습니다";
-
-        return `[Gemini AI] 파일: ${filename}${detail ? ` / ${detail}` : ""}`;
-      });
-
-      const block = lines.join("\n");
-
-      setMessage((prev) => {
-        if (!prev.trim()) {
-          return block;
-        }
-        return `${prev.trim()}\n\n${block}`;
-      });
-    },
-    [setMessage]
-  );
-
   const patientNameOptions = (() => {
     const map = new Map<string, string>();
     aiFileInfos.forEach((info) => {
@@ -170,14 +105,14 @@ export const NewRequestPage = () => {
     <div className="min-h-screen bg-gradient-subtle p-6">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Main Message Card */}
-        <Card className="shadow-elegant hover:shadow-glow transition-all duration-300">
+        <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
           <CardContent className="space-y-6 mt-6 ">
             {/* File Upload Area */}
             <div
-              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+              className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
                 isDragOver
                   ? "border-primary bg-primary/5"
-                  : "border-border hover:border-primary/50"
+                  : "border-gray-200 hover:border-primary/50 bg-white/40"
               }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -503,13 +438,6 @@ export const NewRequestPage = () => {
                                   <SelectTrigger ref={manufacturerSelectRef}>
                                     <SelectValue placeholder="제조사" />
                                   </SelectTrigger>
-                                  <SelectContent>
-                                    {manufacturerOptions.map((m) => (
-                                      <SelectItem key={m} value={m}>
-                                        {m}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
                                 </Select>
                               </div>
 
@@ -530,13 +458,6 @@ export const NewRequestPage = () => {
                                   <SelectTrigger>
                                     <SelectValue placeholder="시스템" />
                                   </SelectTrigger>
-                                  <SelectContent>
-                                    {systemOptions.map((s) => (
-                                      <SelectItem key={s} value={s}>
-                                        {s}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
                                 </Select>
                               </div>
 

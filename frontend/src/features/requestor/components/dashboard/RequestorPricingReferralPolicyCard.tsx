@@ -81,8 +81,8 @@ export const RequestorPricingReferralPolicyCard = () => {
             </div>
 
             <div className="mt-2 space-y-1.5">
-              <div className="flex items-center justify-between text-md text-muted-foreground mb-4">
-                <span>주문 합계</span>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-md text-muted-foreground">주문 합계</span>
                 <span className="text-lg font-semibold">
                   {totalOrders.toLocaleString()}건
                 </span>
@@ -126,7 +126,11 @@ export const RequestorPricingReferralPolicyCard = () => {
                     1. 기본 가격
                   </h3>
                   <p>커스텀 어벗 1개 주문 건당 기본 가격은 15,000원입니다.</p>
-                  <p>부가가치세(VAT)와 배송비는 별도 청구됩니다.</p>
+                  <p>
+                    동일 환자·동일 치아번호에 대한 재의뢰(리메이크/수정 의뢰)는
+                    건당 10,000원으로 고정 제공되며, 이때도 부가가치세(VAT)와
+                    배송비는 별도 청구됩니다.
+                  </p>
                 </section>
 
                 <section className="space-y-1">

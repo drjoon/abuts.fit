@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -16,7 +22,7 @@ export const NotificationsTab = () => {
     marketingEmails: false,
     newRequests: true,
     statusUpdates: true,
-    payments: true
+    payments: true,
   });
 
   const handleSave = () => {
@@ -27,22 +33,20 @@ export const NotificationsTab = () => {
   };
 
   const toggleNotification = (key: keyof typeof notificationData) => {
-    setNotificationData(prev => ({
+    setNotificationData((prev) => ({
       ...prev,
-      [key]: !prev[key]
+      [key]: !prev[key],
     }));
   };
 
   return (
-    <Card className="shadow-elegant">
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bell className="h-5 w-5" />
           알림 설정
         </CardTitle>
-        <CardDescription>
-          알림 수신 방법과 유형을 관리하세요
-        </CardDescription>
+        <CardDescription>알림 수신 방법과 유형을 관리하세요</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Notification Methods */}
@@ -51,49 +55,65 @@ export const NotificationsTab = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="emailNotifications" className="font-medium">이메일 알림</Label>
-                <p className="text-sm text-muted-foreground">중요 알림을 이메일로 받습니다</p>
+                <Label htmlFor="emailNotifications" className="font-medium">
+                  이메일 알림
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  중요 알림을 이메일로 받습니다
+                </p>
               </div>
-              <Switch 
+              <Switch
                 id="emailNotifications"
                 checked={notificationData.emailNotifications}
-                onCheckedChange={() => toggleNotification('emailNotifications')}
+                onCheckedChange={() => toggleNotification("emailNotifications")}
               />
             </div>
-            
+
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="smsNotifications" className="font-medium">SMS 알림</Label>
-                <p className="text-sm text-muted-foreground">중요 알림을 SMS로 받습니다</p>
+                <Label htmlFor="smsNotifications" className="font-medium">
+                  SMS 알림
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  중요 알림을 SMS로 받습니다
+                </p>
               </div>
-              <Switch 
+              <Switch
                 id="smsNotifications"
                 checked={notificationData.smsNotifications}
-                onCheckedChange={() => toggleNotification('smsNotifications')}
+                onCheckedChange={() => toggleNotification("smsNotifications")}
               />
             </div>
-            
+
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="pushNotifications" className="font-medium">앱 푸시 알림</Label>
-                <p className="text-sm text-muted-foreground">앱에서 푸시 알림을 받습니다</p>
+                <Label htmlFor="pushNotifications" className="font-medium">
+                  앱 푸시 알림
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  앱에서 푸시 알림을 받습니다
+                </p>
               </div>
-              <Switch 
+              <Switch
                 id="pushNotifications"
                 checked={notificationData.pushNotifications}
-                onCheckedChange={() => toggleNotification('pushNotifications')}
+                onCheckedChange={() => toggleNotification("pushNotifications")}
               />
             </div>
-            
+
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="marketingEmails" className="font-medium">마케팅 이메일</Label>
-                <p className="text-sm text-muted-foreground">프로모션 및 마케팅 정보를 받습니다</p>
+                <Label htmlFor="marketingEmails" className="font-medium">
+                  마케팅 이메일
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  프로모션 및 마케팅 정보를 받습니다
+                </p>
               </div>
-              <Switch 
+              <Switch
                 id="marketingEmails"
                 checked={notificationData.marketingEmails}
-                onCheckedChange={() => toggleNotification('marketingEmails')}
+                onCheckedChange={() => toggleNotification("marketingEmails")}
               />
             </div>
           </div>
@@ -105,37 +125,49 @@ export const NotificationsTab = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="newRequests" className="font-medium">새 의뢰 알림</Label>
-                <p className="text-sm text-muted-foreground">새로운 의뢰가 접수되면 알림을 받습니다</p>
+                <Label htmlFor="newRequests" className="font-medium">
+                  새 의뢰 알림
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  새로운 의뢰가 접수되면 알림을 받습니다
+                </p>
               </div>
-              <Switch 
+              <Switch
                 id="newRequests"
                 checked={notificationData.newRequests}
-                onCheckedChange={() => toggleNotification('newRequests')}
+                onCheckedChange={() => toggleNotification("newRequests")}
               />
             </div>
-            
+
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="statusUpdates" className="font-medium">상태 업데이트 알림</Label>
-                <p className="text-sm text-muted-foreground">의뢰 상태가 변경되면 알림을 받습니다</p>
+                <Label htmlFor="statusUpdates" className="font-medium">
+                  상태 업데이트 알림
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  의뢰 상태가 변경되면 알림을 받습니다
+                </p>
               </div>
-              <Switch 
+              <Switch
                 id="statusUpdates"
                 checked={notificationData.statusUpdates}
-                onCheckedChange={() => toggleNotification('statusUpdates')}
+                onCheckedChange={() => toggleNotification("statusUpdates")}
               />
             </div>
-            
+
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="payments" className="font-medium">결제 알림</Label>
-                <p className="text-sm text-muted-foreground">결제 관련 정보를 알림으로 받습니다</p>
+                <Label htmlFor="payments" className="font-medium">
+                  결제 알림
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  결제 관련 정보를 알림으로 받습니다
+                </p>
               </div>
-              <Switch 
+              <Switch
                 id="payments"
                 checked={notificationData.payments}
-                onCheckedChange={() => toggleNotification('payments')}
+                onCheckedChange={() => toggleNotification("payments")}
               />
             </div>
           </div>

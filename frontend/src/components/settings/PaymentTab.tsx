@@ -113,7 +113,7 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
   };
 
   return (
-    <Card className="shadow-elegant">
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Building className="h-5 w-5" />

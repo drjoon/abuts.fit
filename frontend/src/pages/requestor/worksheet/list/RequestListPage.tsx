@@ -896,35 +896,28 @@ export const RequestListPage = () => {
         if (data.success && Array.isArray(data.data.requests)) {
           const mapped: typeof mockRequests = data.data.requests.map(
             (req: any) => {
+              const specs = req.specifications || {};
+
               const diameterValue =
-                (req.specifications && req.specifications.maxDiameter) ??
-                req.maxDiameter;
+                (typeof specs.maxDiameter === "number"
+                  ? specs.maxDiameter
+                  : undefined) ?? req.maxDiameter;
 
               const implantCompanyValue =
-                (req.specifications &&
-                  req.specifications.implantManufacturer) ||
-                (req.specifications && req.specifications.implantSystem) ||
-                req.implantManufacturer ||
-                req.implantSystem ||
-                req.implantSystemLegacy;
+                typeof specs.implantSystem === "string"
+                  ? specs.implantSystem
+                  : "";
 
               const implantProductValue =
-                (req.specifications && req.specifications.implantType) ||
-                req.implantType ||
-                req.implantTypeLegacy;
+                typeof specs.implantType === "string" ? specs.implantType : "";
 
-              const implantSizeValue =
-                (req.specifications && req.specifications.implantSize) ||
-                req.implantSize;
+              const implantSizeValue = implantProductValue || "";
 
               return {
                 id: req.requestId,
                 title: req.title,
                 description: req.description || "",
-                client:
-                  req.manufacturer?.organization ||
-                  req.manufacturer?.name ||
-                  "미배정",
+                client: "미배정",
                 clientContact: "",
                 dentistName: req.dentistName || "",
                 patientName: req.patientName || "",
@@ -939,10 +932,7 @@ export const RequestListPage = () => {
                   implantType: implantProductValue,
                   implantCompany: implantCompanyValue,
                   implantProduct: implantProductValue,
-                  implantSize:
-                    typeof implantSizeValue === "string"
-                      ? implantSizeValue
-                      : "",
+                  implantSize: implantSizeValue,
                   diameter:
                     typeof diameterValue === "number"
                       ? `${diameterValue}mm`

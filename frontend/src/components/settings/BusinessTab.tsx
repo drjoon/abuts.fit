@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,10 +33,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     businessHours: {
       weekday: "09:00 - 18:00",
       saturday: "09:00 - 15:00",
-      sunday: "휴무"
+      sunday: "휴무",
     },
     businessLicense: null as File | null,
-    description: "고품질 치과 기공물 제작 전문"
+    description: "고품질 치과 기공물 제작 전문",
   });
 
   const handleSave = () => {
@@ -41,8 +47,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   const handleFileUpload = (file: File) => {
-    setBusinessData(prev => ({ ...prev, businessLicense: file }));
-    
+    setBusinessData((prev) => ({ ...prev, businessLicense: file }));
+
     toast({
       title: "파일이 업로드되었습니다",
       description: `${file.name}이 성공적으로 업로드되었습니다.`,
@@ -50,7 +56,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   return (
-    <Card className="shadow-elegant">
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Building2 className="h-5 w-5" />
@@ -67,7 +73,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             <Input
               id="companyName"
               value={businessData.companyName}
-              onChange={(e) => setBusinessData(prev => ({ ...prev, companyName: e.target.value }))}
+              onChange={(e) =>
+                setBusinessData((prev) => ({
+                  ...prev,
+                  companyName: e.target.value,
+                }))
+              }
             />
           </div>
           <div className="space-y-2">
@@ -75,7 +86,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             <Input
               id="businessNumber"
               value={businessData.businessNumber}
-              onChange={(e) => setBusinessData(prev => ({ ...prev, businessNumber: e.target.value }))}
+              onChange={(e) =>
+                setBusinessData((prev) => ({
+                  ...prev,
+                  businessNumber: e.target.value,
+                }))
+              }
             />
           </div>
         </div>
@@ -85,7 +101,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           <Input
             id="address"
             value={businessData.address}
-            onChange={(e) => setBusinessData(prev => ({ ...prev, address: e.target.value }))}
+            onChange={(e) =>
+              setBusinessData((prev) => ({ ...prev, address: e.target.value }))
+            }
           />
         </div>
 
@@ -94,7 +112,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           <Input
             id="detailAddress"
             value={businessData.detailAddress}
-            onChange={(e) => setBusinessData(prev => ({ ...prev, detailAddress: e.target.value }))}
+            onChange={(e) =>
+              setBusinessData((prev) => ({
+                ...prev,
+                detailAddress: e.target.value,
+              }))
+            }
           />
         </div>
 
@@ -104,7 +127,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             <Input
               id="businessPhone"
               value={businessData.phone}
-              onChange={(e) => setBusinessData(prev => ({ ...prev, phone: e.target.value }))}
+              onChange={(e) =>
+                setBusinessData((prev) => ({ ...prev, phone: e.target.value }))
+              }
             />
           </div>
           <div className="space-y-2">
@@ -112,7 +137,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             <Input
               id="fax"
               value={businessData.fax}
-              onChange={(e) => setBusinessData(prev => ({ ...prev, fax: e.target.value }))}
+              onChange={(e) =>
+                setBusinessData((prev) => ({ ...prev, fax: e.target.value }))
+              }
             />
           </div>
           <div className="space-y-2">
@@ -120,7 +147,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             <Input
               id="website"
               value={businessData.website}
-              onChange={(e) => setBusinessData(prev => ({ ...prev, website: e.target.value }))}
+              onChange={(e) =>
+                setBusinessData((prev) => ({
+                  ...prev,
+                  website: e.target.value,
+                }))
+              }
             />
           </div>
         </div>
@@ -133,30 +165,45 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
               <Label className="text-sm">평일</Label>
               <Input
                 value={businessData.businessHours.weekday}
-                onChange={(e) => setBusinessData(prev => ({
-                  ...prev,
-                  businessHours: { ...prev.businessHours, weekday: e.target.value }
-                }))}
+                onChange={(e) =>
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    businessHours: {
+                      ...prev.businessHours,
+                      weekday: e.target.value,
+                    },
+                  }))
+                }
               />
             </div>
             <div className="space-y-2">
               <Label className="text-sm">토요일</Label>
               <Input
                 value={businessData.businessHours.saturday}
-                onChange={(e) => setBusinessData(prev => ({
-                  ...prev,
-                  businessHours: { ...prev.businessHours, saturday: e.target.value }
-                }))}
+                onChange={(e) =>
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    businessHours: {
+                      ...prev.businessHours,
+                      saturday: e.target.value,
+                    },
+                  }))
+                }
               />
             </div>
             <div className="space-y-2">
               <Label className="text-sm">일요일</Label>
               <Input
                 value={businessData.businessHours.sunday}
-                onChange={(e) => setBusinessData(prev => ({
-                  ...prev,
-                  businessHours: { ...prev.businessHours, sunday: e.target.value }
-                }))}
+                onChange={(e) =>
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    businessHours: {
+                      ...prev.businessHours,
+                      sunday: e.target.value,
+                    },
+                  }))
+                }
               />
             </div>
           </div>
@@ -167,7 +214,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           <Textarea
             id="description"
             value={businessData.description}
-            onChange={(e) => setBusinessData(prev => ({ ...prev, description: e.target.value }))}
+            onChange={(e) =>
+              setBusinessData((prev) => ({
+                ...prev,
+                description: e.target.value,
+              }))
+            }
             placeholder="회사 소개 및 전문 분야를 입력하세요"
           />
         </div>
@@ -187,7 +239,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                   type="file"
                   className="hidden"
                   accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+                  onChange={(e) =>
+                    e.target.files?.[0] && handleFileUpload(e.target.files[0])
+                  }
                 />
               </label>
               <p className="text-xs text-muted-foreground mt-2">

@@ -6,47 +6,30 @@ const requestSchema = new mongoose.Schema(
       type: String,
       unique: true,
     },
+    referenceIds: {
+      type: [String],
+      index: true,
+    },
     lotNumber: {
       type: String,
       unique: true,
       sparse: true,
-    },
-    title: {
-      type: String,
-      required: [true, "제목은 필수 입력 항목입니다."],
-      trim: true,
-    },
-    description: {
-      type: String,
-    },
-    requirements: {
-      type: String,
     },
     requestor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    manufacturer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
+    caseInfos: {
+      clinicName: String,
+      patientName: String,
+      tooth: String,
+      implantSystem: String, // e.g. OSSTEM, Straumann (implantCompany)
+      implantType: String, // e.g. Regular, Bone Level RC (implantProduct)
+      connectionType: String, // e.g. Hex, Non-hex
+      maxDiameter: Number,
+      connectionDiameter: Number,
     },
-    // 추가된 필드들
-    referenceId: {
-      type: [String],
-      index: true,
-    },
-    dentistName: {
-      type: String,
-    },
-    patientName: {
-      type: String,
-    },
-    tooth: {
-      type: String,
-    },
-
     status: {
       type: String,
       enum: [
@@ -72,46 +55,11 @@ const requestSchema = new mongoose.Schema(
       enum: ["없음", "전", "중", "후"],
       default: "없음",
     },
+
     priority: {
       type: String,
       enum: ["낮음", "보통", "높음"],
       default: "보통",
-    },
-
-    // Specifications 통합
-    specifications: {
-      implantSystem: String, // e.g. OSSTEM, Straumann (implantCompany)
-      implantType: String, // e.g. Regular, Bone Level RC (implantProduct)
-      connectionType: String, // e.g. Hex, Non-hex
-
-      maxDiameter: Number,
-      connectionDiameter: Number,
-
-      implantSize: String, // e.g. 4.3x10mm
-      height: String, // e.g. 5mm
-      angle: String, // e.g. 15도
-      material: String, // e.g. 티타늄
-    },
-
-    // Legacy fields for compatibility (optional to keep or remove, keeping for safety but marking deprecated)
-    implantManufacturer: {
-      type: String,
-      // required: true, -> making optional as we move to specifications
-    },
-    implantSystemLegacy: {
-      // Renamed to avoid conflict if needed, or just remove required
-      type: String,
-      alias: "implantSystem",
-    },
-    implantTypeLegacy: {
-      type: String,
-      alias: "implantType",
-    },
-
-    connection: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Connection",
-      default: null,
     },
     files: [
       {
@@ -125,19 +73,6 @@ const requestSchema = new mongoose.Schema(
           type: Date,
           default: Date.now,
         },
-      },
-    ],
-    patientCases: [
-      {
-        patientName: String,
-        teeth: [String],
-        files: [
-          {
-            filename: String,
-            workType: String,
-          },
-        ],
-        note: String,
       },
     ],
     messages: [
@@ -171,6 +106,7 @@ const requestSchema = new mongoose.Schema(
         },
       },
     ],
+
     price: {
       amount: {
         type: Number,
@@ -210,39 +146,36 @@ const requestSchema = new mongoose.Schema(
       paidAt: Date,
       amount: Number,
     },
-    statusHistory: [
-      {
-        status: { type: String, required: true },
-        note: String,
-        updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-        updatedAt: { type: Date, default: Date.now },
-      },
-    ],
-    feedback: {
-      rating: {
-        type: Number,
-        min: 1,
-        max: 5,
-      },
-      comment: String,
-      givenAt: Date,
-    },
   },
   {
     timestamps: true, // createdAt, updatedAt 자동 생성
   }
 );
 
-// 의뢰 ID 자동 생성 (REQ-001, REQ-002, ...)
+// 의뢰 ID 자동 생성 (YYYYMMDD-000001, YYYYMMDD-000002 ... 날짜별 6자리 숫자 시퀀스)
 requestSchema.pre("save", async function (next) {
-  if (!this.isNew) {
+  if (!this.isNew || this.requestId) {
     return next();
   }
 
   try {
-    const count = await this.constructor.countDocuments({});
-    const paddedCount = String(count + 1).padStart(3, "0");
-    this.requestId = `REQ-${paddedCount}`;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const dateStr = `${year}${month}${day}`;
+
+    const prefix = `${dateStr}-`;
+
+    // 오늘 날짜(prefix)에 대해 이미 발급된 의뢰 수를 기준으로 1-based index 계산
+    const todayCount = await this.constructor.countDocuments({
+      requestId: { $regex: `^${prefix}` },
+    });
+
+    const seqNumber = todayCount + 1; // 1 -> 000001, 2 -> 000002 ...
+    const seqStr = String(seqNumber).padStart(6, "0");
+
+    this.requestId = `${prefix}${seqStr}`;
     next();
   } catch (error) {
     next(error);

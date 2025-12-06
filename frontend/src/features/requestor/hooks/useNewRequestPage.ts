@@ -1,51 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useToast } from "@/hooks/use-toast";
 import { type TempUploadedFile } from "@/hooks/useS3TempUpload";
-import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
+import { useNewRequestClinics } from "./new_requests/useNewRequestClinics";
+import { useNewRequestImplant } from "./new_requests/useNewRequestImplant";
+import { useNewRequestDraft } from "./new_requests/useNewRequestDraft";
+import { useNewRequestFiles } from "./new_requests/useNewRequestFiles";
+import { useNewRequestSubmit } from "./new_requests/useNewRequestSubmit";
 
-const NEW_REQUEST_DRAFT_STORAGE_KEY = "abutsfit:new-request-draft:v1";
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
 
-type ClinicFavoriteImplant = {
-  manufacturer: string;
-  system: string;
-  type: string;
-};
-
-type ClinicPreset = {
-  id: string;
-  name: string;
-  favorite?: ClinicFavoriteImplant;
-};
-
 export const useNewRequestPage = (existingRequestId?: string) => {
   const { user, token } = useAuthStore();
-  const { toast } = useToast();
-  const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const navigate = useNavigate();
 
   const [message, setMessage] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
-  const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<
-    number | null
-  >(null);
-  const [abutDiameters, setAbutDiameters] = useState<Record<string, number>>(
-    {}
-  );
-  const [connectionDiameters, setConnectionDiameters] = useState<
-    Record<string, number>
-  >({});
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [connections, setConnections] = useState<any[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<
-    string | null
-  >(null);
-  const [implantManufacturer, setImplantManufacturer] = useState("");
-  const [implantSystem, setImplantSystem] = useState("");
-  const [implantType, setImplantType] = useState("");
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [aiFileInfos, setAiFileInfos] = useState<
     {
@@ -61,163 +31,94 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     }[]
   >([]);
   const [uploadedFiles, setUploadedFiles] = useState<TempUploadedFile[]>([]);
-  const [clinicPresets, setClinicPresets] = useState<ClinicPreset[]>([]);
-  const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<
+    number | null
+  >(null);
 
   const clinicStorageKey = useMemo(() => {
     const userId = user?.id ? String(user.id) : "guest";
     return `${NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX}${userId}`;
   }, [user?.id]);
 
-  // 신규 의뢰 초안 복원 (수정 모드가 아닐 때만)
-  useEffect(() => {
-    if (existingRequestId) return;
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
+  const {
+    connections,
+    selectedConnectionId,
+    setSelectedConnectionId,
+    implantManufacturer,
+    setImplantManufacturer,
+    implantSystem,
+    setImplantSystem,
+    implantType,
+    setImplantType,
+    syncSelectedConnection,
+    typeOptions,
+  } = useNewRequestImplant({ token });
 
-      if (typeof saved.message === "string") {
-        setMessage(saved.message);
-      }
-      if (Array.isArray(saved.aiFileInfos)) {
-        setAiFileInfos(saved.aiFileInfos);
-      }
-      if (Array.isArray(saved.uploadedFiles)) {
-        setUploadedFiles(saved.uploadedFiles);
-      }
-      if (typeof saved.implantManufacturer === "string") {
-        setImplantManufacturer(saved.implantManufacturer);
-      }
-      if (typeof saved.implantSystem === "string") {
-        setImplantSystem(saved.implantSystem);
-      }
-      if (typeof saved.implantType === "string") {
-        setImplantType(saved.implantType);
-      }
-      if (
-        typeof saved.selectedPreviewIndex === "number" ||
-        saved.selectedPreviewIndex === null
-      ) {
-        setSelectedPreviewIndex(saved.selectedPreviewIndex);
-      }
-    } catch {}
-  }, []);
+  const {
+    clinicPresets,
+    selectedClinicId,
+    handleSelectClinic,
+    handleAddOrSelectClinic,
+    handleRenameClinic,
+    handleDeleteClinic,
+  } = useNewRequestClinics({
+    clinicStorageKey,
+    implant: {
+      manufacturer: implantManufacturer,
+      system: implantSystem,
+      type: implantType,
+    },
+  });
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!clinicStorageKey) return;
-
-    try {
-      const raw = window.localStorage.getItem(clinicStorageKey);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
-
-      if (Array.isArray(saved?.clinicPresets)) {
-        setClinicPresets(saved.clinicPresets);
-      }
-      if (
-        typeof saved?.selectedClinicId === "string" ||
-        saved?.selectedClinicId === null
-      ) {
-        setSelectedClinicId(saved.selectedClinicId);
-      }
-    } catch {}
-  }, [clinicStorageKey]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const draft = {
-      message,
-      aiFileInfos,
-      uploadedFiles,
-      implantManufacturer,
-      implantSystem,
-      implantType,
-      selectedPreviewIndex,
-    };
-    try {
-      window.localStorage.setItem(
-        NEW_REQUEST_DRAFT_STORAGE_KEY,
-        JSON.stringify(draft)
-      );
-    } catch {}
-  }, [
-    message,
-    aiFileInfos,
-    uploadedFiles,
+  const {
+    abutDiameters,
+    connectionDiameters,
+    isDragOver,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleFileSelect,
+    handleFileListWheel,
+    removeFile,
+    handleDiameterComputed,
+    getWorkTypeForFilename,
+  } = useNewRequestFiles({
+    token,
     implantManufacturer,
     implantSystem,
     implantType,
+    setImplantManufacturer,
+    setImplantSystem,
+    setImplantType,
+    syncSelectedConnection,
+    uploadedFiles,
+    setUploadedFiles,
+    aiFileInfos,
+    setAiFileInfos,
+    files,
+    setFiles,
     selectedPreviewIndex,
-  ]);
+    setSelectedPreviewIndex,
+  });
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!clinicStorageKey) return;
-
-    const payload = {
-      clinicPresets,
-      selectedClinicId,
-    };
-
-    try {
-      window.localStorage.setItem(clinicStorageKey, JSON.stringify(payload));
-    } catch {}
-  }, [clinicStorageKey, clinicPresets, selectedClinicId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!uploadedFiles.length) return;
-    if (files.length) return;
-    if (!token) return;
-
-    let cancelled = false;
-
-    const restoreFilesFromUploaded = async () => {
-      try {
-        const restored: File[] = [];
-
-        for (const item of uploadedFiles) {
-          if (!item._id) continue;
-
-          try {
-            const urlRes = await fetch(`/api/files/${item._id}/download-url`, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            });
-
-            if (!urlRes.ok) continue;
-            const urlBody = await urlRes.json().catch(() => ({} as any));
-            const signedUrl: string | undefined = urlBody?.data?.url;
-            if (!signedUrl) continue;
-
-            const fileRes = await fetch(signedUrl);
-            if (!fileRes.ok) continue;
-
-            const blob = await fileRes.blob();
-            const file = new File([blob], item.originalName, {
-              type: item.mimetype || "application/octet-stream",
-              lastModified: Date.now(),
-            });
-            restored.push(file);
-          } catch {}
-        }
-
-        if (!cancelled && restored.length) {
-          setFiles(restored);
-        }
-      } catch {}
-    };
-
-    restoreFilesFromUploaded();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [uploadedFiles, files.length, token]);
+  useNewRequestDraft({
+    existingRequestId,
+    message,
+    setMessage,
+    aiFileInfos,
+    setAiFileInfos,
+    uploadedFiles,
+    setUploadedFiles,
+    implantManufacturer,
+    setImplantManufacturer,
+    implantSystem,
+    setImplantSystem,
+    implantType,
+    setImplantType,
+    selectedPreviewIndex,
+    setSelectedPreviewIndex,
+  });
 
   const patientCasesPreview = useMemo(() => {
     const caseMap = new Map<
@@ -260,529 +161,30 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     }));
   }, [aiFileInfos]);
 
-  const appendAiSummary = useCallback((aiItems: any[]) => {
-    if (!Array.isArray(aiItems) || aiItems.length === 0) return;
-
-    const lines = aiItems.map((item) => {
-      const filename = item?.filename ?? "";
-      const patientName = item?.patientName || null;
-      const teeth = Array.isArray(item?.teeth) ? item.teeth : [];
-      const workType = item?.workType || null;
-
-      const parts: string[] = [];
-
-      if (patientName) {
-        parts.push(`환자: ${patientName}`);
-      }
-
-      if (teeth.length > 0) {
-        parts.push(`치식: ${teeth.join(", ")}`);
-      }
-
-      if (workType) {
-        parts.push(`작업: ${workType}`);
-      }
-
-      const detail =
-        parts.length > 0
-          ? parts.join(" / ")
-          : "세부 정보를 추출하지 못했습니다";
-
-      return `[Gemini AI] 파일: ${filename}${detail ? ` / ${detail}` : ""}`;
-    });
-
-    const block = lines.join("\n");
-
-    setMessage((prev) => {
-      if (!prev.trim()) {
-        return block;
-      }
-      return `${prev.trim()}\n\n${block}`;
-    });
-  }, []);
-
-  const analyzeFilenamesWithAi = useCallback(
-    async (filenames: string[]) => {
-      if (!filenames || filenames.length === 0) return;
-
-      try {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-        };
-
-        if (!token) return;
-
-        headers.Authorization = `Bearer ${token}`;
-
-        const res = await fetch("/api/ai/parse-filenames", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ filenames }),
-        });
-
-        if (!res.ok) return;
-
-        const body = await res.json().catch(() => ({}));
-        const items: any[] = Array.isArray(body?.data) ? body.data : [];
-        setAiFileInfos((prev) => {
-          const map = new Map(prev.map((info) => [info.filename, info]));
-
-          items.forEach((item) => {
-            const filename = item?.filename;
-            if (!filename || typeof filename !== "string") return;
-
-            const teethArr: string[] = Array.isArray(item?.teeth)
-              ? item.teeth.map((t: any) => String(t))
-              : [];
-
-            const existing = map.get(filename) || ({} as any);
-
-            const clinicName =
-              typeof item?.clinicName === "string"
-                ? item.clinicName
-                : existing.clinicName || "";
-
-            const patientName =
-              typeof item?.patientName === "string"
-                ? item.patientName
-                : existing.patientName || "";
-
-            const aiWorkType =
-              typeof item?.workType === "string" ? item.workType : "";
-            const workType = aiWorkType || existing.workType || "";
-
-            const rawSummary =
-              typeof item?.rawSummary === "string"
-                ? item.rawSummary
-                : existing.rawSummary || "";
-
-            let teethText = "";
-            if (teethArr.length === 1) {
-              teethText = teethArr[0];
-            } else if (teethArr.length > 1) {
-              teethText = `${teethArr[0]}-${teethArr[teethArr.length - 1]}`;
-            }
-
-            map.set(filename, {
-              ...existing,
-              filename,
-              clinicName,
-              patientName,
-              teethText,
-              workType,
-              rawSummary,
-            });
-          });
-
-          return Array.from(map.values());
-        });
-      } catch {}
-    },
-    [token]
-  );
-
-  useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        const baseManufacturer = "OSSTEM";
-        const baseSystem = "Regular";
-        const baseType = "Hex";
-
-        const connRes = await fetch("/api/connections");
-        if (!connRes.ok) return;
-        const connBody = await connRes.json().catch(() => ({}));
-        const list: any[] = Array.isArray(connBody.data) ? connBody.data : [];
-        setConnections(list);
-
-        const hasDraftImplantValues = Boolean(
-          implantManufacturer || implantSystem || implantType
-        );
-
-        let favorite: {
-          implantManufacturer?: string;
-          implantSystem?: string;
-          implantType?: string;
-        } | null = null;
-
-        if (token) {
-          const favRes = await fetch("/api/requests/my/favorite-implant", {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-
-          if (favRes.ok) {
-            const favBody = await favRes.json().catch(() => ({}));
-            if (favBody && favBody.data) {
-              favorite = favBody.data;
-            }
-          }
-        }
-
-        if (hasDraftImplantValues) {
-          if (list.length > 0) {
-            const found = list.find(
-              (c) =>
-                c.manufacturer === implantManufacturer &&
-                c.system === implantSystem &&
-                c.type === implantType
-            );
-            setSelectedConnectionId(found ? (found._id as string) : null);
-          }
-          return;
-        }
-
-        const nextManufacturer =
-          favorite?.implantManufacturer || baseManufacturer;
-        const nextSystem = favorite?.implantSystem || baseSystem;
-        const nextType = favorite?.implantType || baseType;
-
-        setImplantManufacturer(nextManufacturer);
-        setImplantSystem(nextSystem);
-        setImplantType(nextType);
-
-        if (list.length > 0) {
-          const found = list.find(
-            (c) =>
-              c.manufacturer === nextManufacturer &&
-              c.system === nextSystem &&
-              c.type === nextType
-          );
-
-          if (found) {
-            setSelectedConnectionId(found._id as string);
-          } else {
-            const first = list[0];
-            setSelectedConnectionId(first._id as string);
-          }
-        }
-      } catch {}
-    };
-
-    loadInitialData();
-  }, [token, implantManufacturer, implantSystem, implantType]);
-
-  useEffect(() => {
-    if (!selectedClinicId) return;
-    if (!implantManufacturer || !implantSystem || !implantType) return;
-
-    setClinicPresets((prev) => {
-      const idx = prev.findIndex((c) => c.id === selectedClinicId);
-      if (idx === -1) return prev;
-
-      const target = prev[idx];
-      const prevFav = target.favorite;
-
-      if (
-        prevFav &&
-        prevFav.manufacturer === implantManufacturer &&
-        prevFav.system === implantSystem &&
-        prevFav.type === implantType
-      ) {
-        return prev;
-      }
-
-      const next = [...prev];
-      next[idx] = {
-        ...target,
-        favorite: {
-          manufacturer: implantManufacturer,
-          system: implantSystem,
-          type: implantType,
-        },
-      };
-      return next;
-    });
-  }, [selectedClinicId, implantManufacturer, implantSystem, implantType]);
-
-  const syncSelectedConnection = (
-    manufacturer: string,
-    system: string,
-    type: string
-  ) => {
-    const found = connections.find(
-      (c) =>
-        c.manufacturer === manufacturer &&
-        c.system === system &&
-        c.type === type
-    );
-    setSelectedConnectionId(found ? (found._id as string) : null);
-  };
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  }, []);
-
-  const handleFileListWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    const container = e.currentTarget;
-    e.preventDefault();
-    const deltaX = e.deltaX;
-    const deltaY = e.deltaY;
-
-    if (Math.abs(deltaX) >= Math.abs(deltaY)) {
-      container.scrollLeft += deltaX;
-    } else {
-      container.scrollLeft += deltaY;
-    }
-  };
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragOver(false);
-
-      const incoming = Array.from(e.dataTransfer.files);
-
-      setFiles((prev) => {
-        const existingKey = new Set(prev.map((f) => `${f.name}__${f.size}`));
-        const unique = incoming.filter(
-          (f) => !existingKey.has(`${f.name}__${f.size}`)
-        );
-
-        if (unique.length === 0) {
-          toast({
-            title: "중복 파일은 제외되었습니다",
-            description: "이미 추가된 파일은 다시 업로드되지 않습니다.",
-          });
-          return prev;
-        }
-
-        setSelectedPreviewIndex((prevIndex) => {
-          if (prevIndex !== null) return prevIndex;
-          return prev.length;
-        });
-
-        return [...prev, ...unique];
-      });
-
-      try {
-        const unique = incoming.filter(
-          (f) => !files.find((p) => p.name === f.name && p.size === f.size)
-        );
-
-        if (unique.length > 0) {
-          // 파일명 기반 기본 workType/AI 슬롯 먼저 세팅
-          setAiFileInfos((prevInfos) => {
-            const next = [...prevInfos];
-            unique.forEach((file) => {
-              const filename = file.name;
-              const idx = next.findIndex((i) => i.filename === filename);
-              const suggested =
-                file.size < 1024 * 1024 ? "abutment" : "prosthesis";
-              if (idx >= 0) {
-                if (!next[idx].workType) {
-                  next[idx] = { ...next[idx], workType: suggested };
-                }
-              } else {
-                next.push({
-                  filename,
-                  patientName: "",
-                  teethText: "",
-                  workType: suggested,
-                  rawSummary: "",
-                });
-              }
-            });
-            return next;
-          });
-
-          const filenames = unique.map((file) => file.name);
-          await analyzeFilenamesWithAi(filenames);
-
-          const uploaded = await uploadFilesWithToast(unique);
-          if (uploaded.length > 0) {
-            setUploadedFiles((prev) => {
-              const map = new Map(
-                prev.map((f) => [`${f.originalName}__${f.size}`, f])
-              );
-              uploaded.forEach((f) => {
-                map.set(`${f.originalName}__${f.size}`, f);
-              });
-              return Array.from(map.values());
-            });
-
-            if (!implantManufacturer && !implantSystem && !implantType) {
-              const baseManufacturer = "OSSTEM";
-              const baseSystem = "Regular";
-              const baseType = "Hex";
-              setImplantManufacturer(baseManufacturer);
-              setImplantSystem(baseSystem);
-              setImplantType(baseType);
-              syncSelectedConnection(baseManufacturer, baseSystem, baseType);
-            }
-
-            setSelectedPreviewIndex(0);
-
-            toast({
-              title: "파일 업로드 완료",
-              description: `${unique.length}개 파일이 추가되었습니다.`,
-            });
-          }
-        }
-      } catch (err: any) {
-        toast({
-          title: "파일 업로드 중 오류가 발생했습니다",
-          description: err?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      }
-    },
-    [
-      toast,
-      analyzeFilenamesWithAi,
-      uploadFilesWithToast,
-      files,
-      implantManufacturer,
-      implantSystem,
-      implantType,
-      setImplantManufacturer,
-      setImplantSystem,
-      setImplantType,
-      syncSelectedConnection,
-    ]
-  );
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-
-    const incoming = Array.from(e.target.files);
-
-    setFiles((prev) => {
-      const existingKey = new Set(prev.map((f) => `${f.name}__${f.size}`));
-      const unique = incoming.filter(
-        (f) => !existingKey.has(`${f.name}__${f.size}`)
-      );
-
-      if (unique.length === 0) {
-        toast({
-          title: "중복 파일은 제외되었습니다",
-          description: "이미 추가된 파일은 다시 업로드되지 않습니다.",
-        });
-        return prev;
-      }
-
-      setSelectedPreviewIndex((prevIndex) => {
-        if (prevIndex !== null) return prevIndex;
-        return prev.length;
-      });
-
-      return [...prev, ...unique];
-    });
-
-    (async () => {
-      try {
-        const unique = incoming.filter(
-          (f) => !files.find((p) => p.name === f.name && p.size === f.size)
-        );
-
-        if (unique.length > 0) {
-          // 파일명 기반 기본 workType/AI 슬롯 먼저 세팅
-          setAiFileInfos((prevInfos) => {
-            const next = [...prevInfos];
-            unique.forEach((file) => {
-              const filename = file.name;
-              const idx = next.findIndex((i) => i.filename === filename);
-              const suggested =
-                file.size < 1024 * 1024 ? "abutment" : "prosthesis";
-              if (idx >= 0) {
-                if (!next[idx].workType) {
-                  next[idx] = { ...next[idx], workType: suggested };
-                }
-              } else {
-                next.push({
-                  filename,
-                  patientName: "",
-                  teethText: "",
-                  workType: suggested,
-                  rawSummary: "",
-                });
-              }
-            });
-            return next;
-          });
-
-          const filenames = unique.map((file) => file.name);
-          await analyzeFilenamesWithAi(filenames);
-
-          const uploaded = await uploadFilesWithToast(unique);
-          if (uploaded.length > 0) {
-            setUploadedFiles((prev) => {
-              const map = new Map(
-                prev.map((f) => [`${f.originalName}__${f.size}`, f])
-              );
-              uploaded.forEach((f) => {
-                map.set(`${f.originalName}__${f.size}`, f);
-              });
-              return Array.from(map.values());
-            });
-
-            if (!implantManufacturer && !implantSystem && !implantType) {
-              const baseManufacturer = "OSSTEM";
-              const baseSystem = "Regular";
-              const baseType = "Hex";
-              setImplantManufacturer(baseManufacturer);
-              setImplantSystem(baseSystem);
-              setImplantType(baseType);
-              syncSelectedConnection(baseManufacturer, baseSystem, baseType);
-            }
-
-            setSelectedPreviewIndex(0);
-
-            toast({
-              title: "파일 업로드 완료",
-              description: `${unique.length}개 파일이 추가되었습니다.`,
-            });
-          }
-        }
-      } catch (err: any) {
-        toast({
-          title: "파일 업로드 중 오류가 발생했습니다",
-          description: err?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      }
-    })();
-  };
-
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    setSelectedPreviewIndex((prev) => (prev === index ? null : prev));
-  };
-
-  const handleCancel = () => {
-    setMessage("");
-    setFiles([]);
-    setAiFileInfos([]);
-    setUploadedFiles([]);
-    setSelectedPreviewIndex(null);
-    setSelectedConnectionId(null);
-    setImplantManufacturer("");
-    setImplantSystem("");
-    setImplantType("");
-
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
-      }
-    } catch {}
-  };
-
-  const handleDiameterComputed = useCallback(
-    (filename: string, maxDiameter: number, connectionDiameter: number) => {
-      setAbutDiameters((prev) => ({ ...prev, [filename]: maxDiameter }));
-      setConnectionDiameters((prev) => ({
-        ...prev,
-        [filename]: connectionDiameter,
-      }));
-    },
-    []
-  );
+  const { handleSubmit, handleCancel } = useNewRequestSubmit({
+    existingRequestId,
+    token,
+    navigate,
+    message,
+    setMessage,
+    files,
+    setFiles,
+    uploadedFiles,
+    setUploadedFiles,
+    aiFileInfos,
+    setAiFileInfos,
+    implantManufacturer,
+    setImplantManufacturer,
+    implantSystem,
+    setImplantSystem,
+    implantType,
+    setImplantType,
+    selectedConnectionId,
+    setSelectedConnectionId,
+    clinicPresets,
+    selectedClinicId,
+    setSelectedPreviewIndex,
+  });
 
   // 수정 모드이면 기존 의뢰 메타데이터를 불러와서 기본값으로 사용
   useEffect(() => {
@@ -820,433 +222,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     })();
   }, [existingRequestId, token]);
 
-  const handleSubmit = async () => {
-    if (!token) {
-      toast({
-        title: "로그인이 필요합니다",
-        description: "의뢰를 등록하려면 먼저 로그인해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 수정 모드: 메타데이터만 업데이트, 파일 재업로드는 요구하지 않음
-    if (existingRequestId) {
-      try {
-        const payload: any = {
-          description: message,
-        };
-
-        if (implantManufacturer)
-          payload.implantManufacturer = implantManufacturer;
-        if (implantSystem) payload.implantSystem = implantSystem;
-        if (implantType) payload.implantType = implantType;
-
-        const res = await fetch(`/api/requests/${existingRequestId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            "x-mock-role": "requestor",
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const body = await res.json().catch(() => ({}));
-
-        if (!res.ok || !body?.success) {
-          toast({
-            title: "의뢰 수정에 실패했습니다",
-            description: body?.message || "잠시 후 다시 시도해주세요.",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        toast({
-          title: "의뢰가 수정되었습니다",
-        });
-
-        navigate("/dashboard");
-      } catch (err: any) {
-        toast({
-          title: "의뢰 수정 중 오류가 발생했습니다",
-          description: err?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      }
-
-      return;
-    }
-
-    // 신규 생성 모드: 파일/AI 정보 존재 여부 검사 (메모만 선택 사항)
-    if (!uploadedFiles.length || !aiFileInfos.length) {
-      toast({
-        title: "파일을 업로드해주세요",
-        description:
-          "최소 1개 이상의 STL 파일을 업로드해야 의뢰를 등록할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 화면에 표시된 STL 카드(files)와 매칭되는 AI 정보만 대상으로 유효성 검사 수행
-    const activeInfos = aiFileInfos.filter((info) =>
-      files.some((f) => f.name === info.filename)
-    );
-
-    if (!activeInfos.length) {
-      toast({
-        title: "커스텀 어벗 STL이 필요합니다",
-        description:
-          "현재 시스템은 커스텀 어벗 STL이 포함된 의뢰만 접수합니다. 최소 1개 이상의 커스텀 어벗 STL 파일을 함께 업로드해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Check if we have any abutment / crown files
-    const hasAbutment = activeInfos.some(
-      (info) => info.workType === "abutment"
-    );
-    const hasCrown = activeInfos.some((info) => info.workType === "prosthesis");
-
-    // 지금은 커스텀 어벗만 실제 의뢰 대상으로 처리.
-    // 크라운만 있는 경우에는 안내 후 의뢰 생성 중단.
-    if (!hasAbutment && hasCrown) {
-      toast({
-        title: "커스텀 어벗 STL 파일이 필요합니다",
-        description:
-          "현재 시스템은 커스텀 어벗 의뢰만 접수합니다. 크라운 STL만 업로드된 경우 어벗 STL을 함께 올려주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 필수 필드: 환자명/치아번호 모두 채워져 있어야 함 (실제 전송 대상 파일 기준)
-    const hasMissingPatient = activeInfos.some(
-      (info) => !info.patientName || !info.patientName.trim()
-    );
-    const hasMissingTeeth = activeInfos.some(
-      (info) => !info.teethText || !info.teethText.trim()
-    );
-
-    if (hasMissingPatient || hasMissingTeeth) {
-      toast({
-        title: "환자 정보가 누락되었습니다",
-        description:
-          "모든 파일에 대해 환자 이름과 치아번호를 입력해야 합니다. 각 파일 카드 우측의 입력란을 확인해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Only validate implant info if there are abutment files
-    if (
-      hasAbutment &&
-      (!implantManufacturer ||
-        !implantSystem ||
-        !implantType ||
-        !selectedConnectionId)
-    ) {
-      toast({
-        title: "임플란트 정보를 모두 선택해주세요",
-        description:
-          "어벗먼트 제작을 위해 제조사, 시스템, 유형을 모두 선택해야 합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Group by Patient (실제 전송 대상 파일만 사용)
-    const patientGroups = new Map<string, typeof activeInfos>();
-    activeInfos.forEach((info) => {
-      const pName = (info.patientName || "미지정").trim();
-      if (!patientGroups.has(pName)) {
-        patientGroups.set(pName, []);
-      }
-      patientGroups.get(pName)!.push(info);
-    });
-
-    const requestItems: any[] = [];
-
-    patientGroups.forEach((infos, pName) => {
-      // Group by Tooth (or teeth set) to create individual requests
-      const toothGroups = new Map<string, typeof aiFileInfos>();
-      infos.forEach((info) => {
-        const tKey = (info.teethText || "Unspecified").trim();
-        if (!toothGroups.has(tKey)) {
-          toothGroups.set(tKey, []);
-        }
-        toothGroups.get(tKey)!.push(info);
-      });
-
-      // 환자 단위로 여러 요청이 동시에 생성될 수 있으므로,
-      // 각 요청별 개별 reference ID를 만들되,
-      // 같은 환자 안의 모든 reference ID 배열을 함께 저장한다.
-      // ref ID는 사람이 읽기 쉬운 형태: 환자이름-치아정보-랜덤코드 형식으로 생성.
-      const toothEntries = Array.from(toothGroups.entries());
-      const basePatientSlug = (pName === "미지정" ? "NO-NAME" : pName)
-        .trim()
-        .replace(/\s+/g, "-")
-        .replace(/[^0-9a-zA-Z가-힣_-]/g, "")
-        .toUpperCase();
-
-      const referenceIdList = toothEntries.length
-        ? toothEntries.map(([tKey]) => {
-            const toothSlug =
-              tKey && tKey !== "Unspecified"
-                ? tKey.replace(/\s+/g, "").replace(/[^0-9,-]/g, "")
-                : "NO-TOOTH";
-            const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-            return `${basePatientSlug}_${toothSlug}_${rand}`;
-          })
-        : [];
-
-      toothEntries.forEach(([tKey, groupInfos], index) => {
-        const selfRefId = referenceIdList[index] || referenceIdList[0];
-        const groupFilenames = new Set(groupInfos.map((i) => i.filename));
-        const groupFiles = uploadedFiles.filter((f) =>
-          groupFilenames.has(f.originalName)
-        );
-
-        const isAbutmentRequest = groupInfos.some(
-          (i) => i.workType === "abutment"
-        );
-
-        const reqPayload: any = {
-          title: isAbutmentRequest
-            ? "커스텀 어벗먼트 의뢰"
-            : "크라운/보철 의뢰",
-          description: message,
-          patientName: pName === "미지정" ? "" : pName,
-          tooth: tKey === "Unspecified" ? "" : tKey,
-          files: groupFiles.map((f) => ({
-            fileName: f.originalName,
-            fileType: f.mimetype,
-            fileSize: f.size,
-            filePath: f.location,
-            s3Key: f.key,
-            s3Url: f.location,
-          })),
-          // 같은 환자 그룹 내의 모든 reference ID 목록과,
-          // 이 요청의 개별 reference ID를 함께 저장
-          referenceId: selfRefId,
-          referenceIds: referenceIdList,
-        };
-
-        if (isAbutmentRequest) {
-          reqPayload.implantManufacturer = implantManufacturer;
-          reqPayload.implantSystem = implantSystem;
-          reqPayload.implantType = implantType;
-          reqPayload.connection = selectedConnectionId;
-
-          // STL 분석에서 계산된 최대 직경 정보
-          const groupDiameters = groupInfos
-            .map((i) => abutDiameters[i.filename])
-            .filter((d) => typeof d === "number");
-
-          if (groupDiameters.length > 0) {
-            reqPayload.maxDiameter = Math.max(...groupDiameters);
-          }
-        }
-
-        // Valid patientCases for backend validation
-        reqPayload.patientCases = [
-          {
-            patientName: pName === "미지정" ? "" : pName,
-            teeth:
-              tKey === "Unspecified"
-                ? []
-                : tKey.split(",").map((t) => t.trim()),
-            files: groupInfos.map((i) => ({
-              filename: i.filename,
-              workType: i.workType,
-            })),
-            note: "",
-          },
-        ];
-
-        requestItems.push(reqPayload);
-      });
-    });
-
-    if (requestItems.length === 0) {
-      toast({
-        title: "등록할 파일이 없습니다",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/requests", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          "x-mock-role": "requestor",
-        },
-        body: JSON.stringify({ items: requestItems }),
-      });
-
-      const body = await res.json().catch(() => ({}));
-
-      if (!res.ok || body?.success === false) {
-        toast({
-          title: "의뢰 등록에 실패했습니다",
-          description: body?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const hasAbutment = aiFileInfos.some(
-        (info) => info.workType === "abutment"
-      );
-      const hasCrown = aiFileInfos.some(
-        (info) => info.workType === "prosthesis"
-      );
-
-      const abutmentRequestCount = requestItems.filter(
-        (item) => item.title === "커스텀 어벗먼트 의뢰"
-      ).length;
-
-      let successDescription = `${abutmentRequestCount}건의 커스텀 어벗 의뢰가 생성되었습니다.`;
-      if (hasAbutment && !hasCrown) {
-        successDescription +=
-          "\n크라운 STL을 함께 올려주시면 디자인과 적합도 검토에 큰 도움이 됩니다.";
-      }
-
-      toast({
-        title: "의뢰가 성공적으로 등록되었습니다",
-        description: successDescription,
-      });
-
-      try {
-        if (typeof window !== "undefined") {
-          window.localStorage.removeItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
-        }
-      } catch {}
-
-      setMessage("");
-      setFiles([]);
-      setSelectedConnectionId(null);
-      setImplantManufacturer("");
-      setImplantSystem("");
-      setImplantType("");
-
-      navigate("/dashboard");
-    } catch (e: any) {
-      toast({
-        title: "의뢰 등록 중 오류가 발생했습니다",
-        description: e?.message || "네트워크 상태를 확인해주세요.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const manufacturerOptions = Array.from(
-    new Set(connections.map((c) => c.manufacturer as string))
-  );
-
-  const systemOptions = connections
-    .filter(
-      (c) => !implantManufacturer || c.manufacturer === implantManufacturer
-    )
-    .map((c) => c.system as string)
-    .filter((v, idx, arr) => arr.indexOf(v) === idx);
-
-  const typeOptions = connections
-    .filter(
-      (c) =>
-        (!implantManufacturer || c.manufacturer === implantManufacturer) &&
-        (!implantSystem || c.system === implantSystem)
-    )
-    .map((c) => c.type as string)
-    .filter((v, idx, arr) => arr.indexOf(v) === idx);
-
-  const getWorkTypeForFilename = (filename: string) => {
-    const info = aiFileInfos.find((i) => i.filename === filename);
-    return info?.workType || "";
-  };
-
-  const handleSelectClinic = (id: string | null) => {
-    setSelectedClinicId(id);
-
-    if (!id) return;
-
-    const clinic = clinicPresets.find((c) => c.id === id);
-    const fav = clinic?.favorite;
-
-    if (!fav) return;
-
-    const { manufacturer, system, type } = fav;
-    if (!manufacturer || !system || !type) return;
-
-    setImplantManufacturer(manufacturer);
-    setImplantSystem(system);
-    setImplantType(type);
-    syncSelectedConnection(manufacturer, system, type);
-  };
-
-  const handleAddOrSelectClinic = (name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-
-    setClinicPresets((prev) => {
-      const existing = prev.find(
-        (c) => c.name.toLowerCase() === trimmed.toLowerCase()
-      );
-      if (existing) {
-        setSelectedClinicId(existing.id);
-        return prev;
-      }
-
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-      const favoriteImplant: ClinicFavoriteImplant | undefined =
-        implantManufacturer && implantSystem && implantType
-          ? {
-              manufacturer: implantManufacturer,
-              system: implantSystem,
-              type: implantType,
-            }
-          : undefined;
-
-      const created: ClinicPreset = {
-        id,
-        name: trimmed,
-        favorite: favoriteImplant,
-      };
-
-      setSelectedClinicId(id);
-      return [...prev, created];
-    });
-  };
-
-  const handleRenameClinic = (id: string, name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-
-    setClinicPresets((prev) => {
-      const idx = prev.findIndex((c) => c.id === id);
-      if (idx === -1) return prev;
-
-      const next = [...prev];
-      next[idx] = {
-        ...next[idx],
-        name: trimmed,
-      };
-      return next;
-    });
-  };
-
-  const handleDeleteClinic = (id: string) => {
-    setClinicPresets((prev) => prev.filter((c) => c.id !== id));
-    setSelectedClinicId((current) => (current === id ? null : current));
-  };
-
   return {
     user,
     message,
@@ -1264,8 +239,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     handleDrop,
     handleFileSelect,
     handleFileListWheel,
-    manufacturerOptions,
-    systemOptions,
     typeOptions,
     implantManufacturer,
     setImplantManufacturer,

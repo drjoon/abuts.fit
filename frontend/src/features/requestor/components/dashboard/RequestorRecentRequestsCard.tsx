@@ -1,5 +1,4 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 import { Badge } from "@/components/ui/badge";
 
@@ -20,7 +19,6 @@ const getStatusBadge = (status: string) => {
 type Props = {
   items: any[];
   onRefresh: () => void;
-  onOpenRecentModal: () => void;
   onEdit: (item: any) => void;
   onCancel: (id: string) => void;
 };
@@ -28,7 +26,6 @@ type Props = {
 export const RequestorRecentRequestsCard = ({
   items,
   onRefresh,
-  onOpenRecentModal,
   onEdit,
   onCancel,
 }: Props) => {
@@ -39,20 +36,9 @@ export const RequestorRecentRequestsCard = ({
     >
       <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
         <CardTitle className="text-base font-semibold m-0">최근 의뢰</CardTitle>
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenRecentModal();
-          }}
-        >
-          전체 보기
-        </Button>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-between pt-0">
-        <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+        <div className="space-y-3 max-h-[240px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {items.map((item: any) => {
             const displayId = item.requestId || item.id || item._id || "";
 
@@ -74,7 +60,32 @@ export const RequestorRecentRequestsCard = ({
                       {item.title || displayId}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {item.manufacturer} • {item.date}
+                      {item.caseInfos?.clinicName && (
+                        <span>{item.caseInfos.clinicName}</span>
+                      )}
+                      {item.caseInfos?.patientName && (
+                        <span className="ml-1">
+                          {item.caseInfos.patientName}
+                        </span>
+                      )}
+                      {item.caseInfos?.tooth && (
+                        <span className="ml-1">{item.caseInfos.tooth}</span>
+                      )}
+                      {item.caseInfos?.implantSystem && (
+                        <span className="ml-1">
+                          {item.caseInfos.implantSystem}
+                        </span>
+                      )}
+                      {item.caseInfos?.implantType && (
+                        <span className="ml-1">
+                          {item.caseInfos.implantType}
+                        </span>
+                      )}
+                      {item.caseInfos?.maxDiameter && (
+                        <span className="ml-1">
+                          {item.caseInfos.maxDiameter.toFixed(1)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 }
@@ -86,10 +97,30 @@ export const RequestorRecentRequestsCard = ({
                     {item.title || displayId}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {item.manufacturer} • {item.date}
+                    {item.caseInfos?.clinicName && (
+                      <span>{item.caseInfos.clinicName}</span>
+                    )}
+                    {item.caseInfos?.patientName && (
+                      <span className="ml-1">{item.caseInfos.patientName}</span>
+                    )}
+                    {item.caseInfos?.tooth && (
+                      <span className="ml-1">{item.caseInfos.tooth}</span>
+                    )}
+                    {item.caseInfos?.implantSystem && (
+                      <span className="ml-1">
+                        {item.caseInfos.implantSystem}
+                      </span>
+                    )}
+                    {item.caseInfos?.implantType && (
+                      <span className="ml-1">{item.caseInfos.implantType}</span>
+                    )}
+                    {item.caseInfos?.maxDiameter && (
+                      <span className="ml-1">
+                        {item.caseInfos.maxDiameter.toFixed(1)}
+                      </span>
+                    )}
                   </div>
                 </div>
-                {getStatusBadge(item.status)}
               </FunctionalItemCard>
             );
           })}

@@ -33,9 +33,6 @@ export const RequestorRiskSummaryCard = ({ riskSummary }: Props) => {
         <CardTitle className="text-base font-semibold">
           지연 위험 요약
         </CardTitle>
-        <CardDescription>
-          예상 출고일 기준으로 지연 가능성이 있는 의뢰를 요약해서 보여드립니다.
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">

@@ -50,54 +50,13 @@ function applyStatusMapping(requestDoc, statusValue) {
 
 // 가공 시작 시점에 로트넘버(lotNumber)를 부여하는 헬퍼
 async function ensureLotNumberForMachining(requestDoc) {
+  // patientCases 필드를 더 이상 사용하지 않으므로, 현재는 lotNumber를 자동 부여하지 않는다.
+  // 기존 데이터에 lotNumber가 이미 있다면 그대로 유지하고, 없다면 변경하지 않는다.
   if (requestDoc.lotNumber) {
     return;
   }
 
-  const patientCases = Array.isArray(requestDoc.patientCases)
-    ? requestDoc.patientCases
-    : [];
-
-  const workTypes = patientCases.flatMap((c) =>
-    Array.isArray(c.files)
-      ? c.files.map((f) => f?.workType).filter(Boolean)
-      : []
-  );
-
-  let prefixBase = null;
-  if (workTypes.includes("abutment")) {
-    prefixBase = "AB";
-  } else if (workTypes.includes("crown")) {
-    prefixBase = "CR";
-  }
-
-  if (!prefixBase) {
-    return;
-  }
-
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const dateStr = `${year}${month}${day}`; // YYYYMMDD
-
-  const prefix = `${prefixBase}${dateStr}-`;
-
-  const todayCount = await Request.countDocuments({
-    lotNumber: { $regex: `^${prefix}` },
-  });
-
-  const index = todayCount; // 0-based index: 0 -> AAA, 1 -> AAB ...
-  const toLetters = (n) => {
-    const A = "A".charCodeAt(0);
-    const first = String.fromCharCode(A + (Math.floor(n / (26 * 26)) % 26));
-    const second = String.fromCharCode(A + (Math.floor(n / 26) % 26));
-    const third = String.fromCharCode(A + (n % 26));
-    return `${first}${second}${third}`;
-  };
-
-  const code = toLetters(index);
-  requestDoc.lotNumber = `${prefix}${code}`;
+  return;
 }
 
 /**
@@ -105,8 +64,6 @@ async function ensureLotNumberForMachining(requestDoc) {
  * @route POST /api/requests
  */
 async function createRequest(req, res) {
-  console.log("createRequest req.user:", req.user);
-  console.log("createRequest req.body:", req.body);
   try {
     // Batch request processing
     if (req.body.items && Array.isArray(req.body.items)) {
@@ -118,54 +75,99 @@ async function createRequest(req, res) {
       // So we just process each item.
 
       for (const item of items) {
-        const patientCases = Array.isArray(item.patientCases)
-          ? item.patientCases
-          : [];
+        const { caseInfos, ...rest } = item;
 
-        // Validate each item
-        const hasValidPatientCases =
-          patientCases.length > 0 &&
-          patientCases.every((c) => {
-            if (!c) return false;
-            const name = (c.patientName || "").trim();
-            const teethArr = Array.isArray(c.teeth) ? c.teeth : [];
-            // batch 모드에서도 단일 요청과 동일하게: 환자명 + 최소 1개 치아번호 필수
-            return name.length > 0 && teethArr.length > 0;
-          });
+        // caseInfos가 필수이며, 환자명/치아번호는 반드시 있어야 한다.
+        if (!caseInfos || typeof caseInfos !== "object") {
+          throw new Error("각 항목에 caseInfos 객체가 필요합니다.");
+        }
 
-        if (!hasValidPatientCases) {
-          // Continue or fail? Let's fail whole batch for integrity or skip?
-          // For now, let's just throw to fail.
+        const patientName = (caseInfos.patientName || "").trim();
+        const tooth = (caseInfos.tooth || "").trim();
+
+        if (!patientName || !tooth) {
           throw new Error(
             `환자 정보가 누락된 항목이 있습니다. (Patient: ${
-              patientCases[0]?.patientName || "Unknown"
+              patientName || "Unknown"
             })`
           );
         }
 
-        const { referenceId, referenceIds, ...rest } = item;
+        let priceAmount = 15000;
+        const hasImplantSystem =
+          typeof caseInfos.implantSystem === "string" &&
+          caseInfos.implantSystem.trim();
 
-        let normalizedReferenceIds = undefined;
-        if (Array.isArray(referenceIds) && referenceIds.length > 0) {
-          normalizedReferenceIds = referenceIds;
-        } else if (
-          typeof referenceId === "string" &&
-          referenceId.trim().length > 0
-        ) {
-          normalizedReferenceIds = [referenceId];
+        if (hasImplantSystem) {
+          const clinicName = (caseInfos.clinicName || "").trim();
+          if (clinicName) {
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 90);
+
+            const existing = await Request.findOne({
+              requestor: req.user._id,
+              "caseInfos.patientName": patientName,
+              "caseInfos.tooth": tooth,
+              "caseInfos.clinicName": clinicName,
+              "caseInfos.implantSystem": { $exists: true, $ne: "" },
+              status: { $ne: "취소" },
+              createdAt: { $gte: cutoff },
+            }).lean();
+
+            if (existing) {
+              priceAmount = 10000;
+            }
+          }
         }
 
         const newRequest = new Request({
           ...rest,
-          ...(normalizedReferenceIds
-            ? { referenceId: normalizedReferenceIds }
-            : {}),
+          caseInfos,
           requestor: req.user._id,
+          price: { amount: priceAmount },
         });
         applyStatusMapping(newRequest, newRequest.status);
         await newRequest.save();
         createdRequests.push(newRequest);
       }
+
+      // 모든 요청이 저장된 뒤, 같은 환자명 기준으로 requestId를 referenceId에 매핑한다.
+      // (예: "김선미"의 27번/37번/크라운 의뢰만 서로 묶이고,
+      //  다른 환자 이름의 의뢰들은 별도 그룹으로 관리)
+
+      // 1) 환자명(normalized) -> requestId[] 맵 구성 (caseInfos.patientName 기준)
+      const groupByPatient = new Map();
+
+      for (const r of createdRequests) {
+        const rawName =
+          typeof r.caseInfos?.patientName === "string"
+            ? r.caseInfos.patientName
+            : "";
+        const key = rawName.trim() || "__NO_NAME__";
+        if (!groupByPatient.has(key)) {
+          groupByPatient.set(key, []);
+        }
+        const arr = groupByPatient.get(key);
+        if (typeof r.requestId === "string" && r.requestId.length > 0) {
+          arr.push(r.requestId);
+        }
+      }
+
+      // 2) 각 의뢰에 대해, 자신의 환자명 그룹에 해당하는 requestId 배열(자기 자신은 제외)을 referenceIds로 설정
+      await Promise.all(
+        createdRequests.map(async (reqDoc) => {
+          const rawName =
+            typeof reqDoc.caseInfos?.patientName === "string"
+              ? reqDoc.caseInfos.patientName
+              : "";
+          const key = rawName.trim() || "__NO_NAME__";
+          const idsForPatient = groupByPatient.get(key) || [];
+          reqDoc.referenceIds = idsForPatient.filter(
+            (id) => id !== reqDoc.requestId
+          );
+          await reqDoc.save();
+        })
+      );
 
       return res.status(201).json({
         success: true,
@@ -174,33 +176,51 @@ async function createRequest(req, res) {
       });
     }
 
-    // 환자 정보(patientCases)는 필수
-    const patientCases = Array.isArray(req.body.patientCases)
-      ? req.body.patientCases
-      : [];
+    const { caseInfos, ...bodyRest } = req.body;
 
-    const hasValidPatientCases =
-      patientCases.length > 0 &&
-      patientCases.every((c) => {
-        if (!c) return false;
-        const name = (c.patientName || "").trim();
-        const teethArr = Array.isArray(c.teeth) ? c.teeth : [];
-        return name.length > 0 && teethArr.length > 0;
-      });
+    if (!caseInfos || typeof caseInfos !== "object") {
+      throw new Error("caseInfos 객체가 필요합니다.");
+    }
 
-    if (!hasValidPatientCases) {
-      return res.status(400).json({
-        success: false,
-        message: "환자 이름과 치아번호는 필수입니다.",
-        errors: [
-          "각 환자 케이스에 patientName과 하나 이상의 teeth가 포함되어야 합니다.",
-        ],
-      });
+    const patientName = (caseInfos.patientName || "").trim();
+    const tooth = (caseInfos.tooth || "").trim();
+
+    if (!patientName || !tooth) {
+      throw new Error("환자명과 치아번호는 필수입니다.");
+    }
+
+    let priceAmount = 15000;
+    const hasImplantSystem =
+      typeof caseInfos.implantSystem === "string" &&
+      caseInfos.implantSystem.trim();
+
+    if (hasImplantSystem) {
+      const clinicName = (caseInfos.clinicName || "").trim();
+      if (clinicName) {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+
+        const existing = await Request.findOne({
+          requestor: req.user._id,
+          "caseInfos.patientName": patientName,
+          "caseInfos.tooth": tooth,
+          "caseInfos.clinicName": clinicName,
+          "caseInfos.implantSystem": { $exists: true, $ne: "" },
+          status: { $ne: "취소" },
+          createdAt: { $gte: cutoff },
+        }).lean();
+
+        if (existing) {
+          priceAmount = 10000;
+        }
+      }
     }
 
     const newRequest = new Request({
-      ...req.body,
+      ...bodyRest,
+      caseInfos,
       requestor: req.user._id,
+      price: { amount: priceAmount },
     });
 
     applyStatusMapping(newRequest, newRequest.status);
@@ -232,6 +252,50 @@ async function createRequest(req, res) {
   }
 }
 
+// 동일 환자/치아 커스텀 어벗 의뢰 존재 여부 확인 (재의뢰 판단용)
+async function hasDuplicateCase(req, res) {
+  try {
+    const requestorId = req.user._id;
+    const patientName = (req.query.patientName || "").trim();
+    const tooth = (req.query.tooth || "").trim();
+    const clinicName = (req.query.clinicName || "").trim();
+
+    if (!patientName || !tooth || !clinicName) {
+      return res.status(400).json({
+        success: false,
+        message: "patientName, tooth, clinicName은 필수입니다.",
+      });
+    }
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 90);
+
+    const existing = await Request.findOne({
+      requestor: requestorId,
+      "caseInfos.patientName": patientName,
+      "caseInfos.tooth": tooth,
+      "caseInfos.clinicName": clinicName,
+      "caseInfos.implantSystem": { $exists: true, $ne: "" },
+      status: { $ne: "취소" },
+      createdAt: { $gte: cutoff },
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: { hasDuplicate: Boolean(existing) },
+    });
+  } catch (error) {
+    console.error("Error in hasDuplicateCase:", error);
+    return res.status(500).json({
+      success: false,
+      message: "중복 의뢰 여부 확인 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 /**
  * 현재 로그인한 의뢰인의 최다 사용 임플란트 조합 조회
  * @route GET /api/requests/my/favorite-implant
@@ -241,13 +305,18 @@ async function getMyFavoriteImplant(req, res) {
     const requestorId = req.user._id;
 
     const [favorite] = await Request.aggregate([
-      { $match: { requestor: requestorId } },
+      {
+        $match: {
+          requestor: requestorId,
+          "specifications.implantSystem": { $type: "string" },
+          "specifications.implantType": { $type: "string" },
+        },
+      },
       {
         $group: {
           _id: {
-            implantManufacturer: "$implantManufacturer",
-            implantSystem: "$implantSystem",
-            implantType: "$implantType",
+            implantSystem: "$specifications.implantSystem",
+            implantType: "$specifications.implantType",
           },
           count: { $sum: 1 },
         },
@@ -263,12 +332,13 @@ async function getMyFavoriteImplant(req, res) {
       });
     }
 
-    const { implantManufacturer, implantSystem, implantType } = favorite._id;
+    const { implantSystem, implantType } = favorite._id;
 
     res.status(200).json({
       success: true,
       data: {
-        implantManufacturer,
+        // manufacturer 필드는 현재 별도 스키마 없이 system과 동일하게 취급
+        implantManufacturer: implantSystem,
         implantSystem,
         implantType,
         count: favorite.count,
@@ -324,7 +394,6 @@ async function getAllRequests(req, res) {
     // 의뢰 조회 (현재 사용자 기준 unreadCount 포함)
     const rawRequests = await Request.find(filter)
       .populate("requestor", "name email organization")
-      .populate("manufacturer", "name email organization")
       .sort(sort)
       .skip(skip)
       .limit(limit)
@@ -408,83 +477,9 @@ async function getMyRequests(req, res) {
     // 의뢰 조회
     const requests = await Request.find(filter)
       .populate("requestor", "name email organization")
-      .populate("manufacturer", "name email organization")
       .sort(sort)
       .skip(skip)
       .limit(limit);
-
-    // 전체 의뢰 수
-    const total = await Request.countDocuments(filter);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        requests,
-        pagination: {
-          total,
-          page,
-          limit,
-          pages: Math.ceil(total / limit),
-        },
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "의뢰 목록 조회 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
- * 제조사에게 할당된 의뢰 목록 조회 (제조사용)
- * @route GET /api/requests/assigned
- */
-async function getAssignedRequests(req, res) {
-  try {
-    // 페이지네이션 파라미터
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
-    // 필터링 파라미터
-    const filter = {
-      $or: [{ manufacturer: req.user._id }, { manufacturer: null }],
-    };
-    if (req.query.status) filter.status = req.query.status;
-    if (req.query.implantType) filter.implantType = req.query.implantType;
-
-    // 정렬 파라미터
-    const sort = {};
-    if (req.query.sortBy) {
-      const sortField = req.query.sortBy;
-      const sortOrder = req.query.sortOrder === "desc" ? -1 : 1;
-      sort[sortField] = sortOrder;
-    } else {
-      sort.createdAt = -1; // 기본 정렬: 최신순
-    }
-
-    // 의뢰 조회 (현재 사용자 기준 unreadCount 포함)
-    const rawRequests = await Request.find(filter)
-      .populate("requestor", "name email organization")
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const requests = rawRequests.map((r) => {
-      const messages = Array.isArray(r.messages) ? r.messages : [];
-      const unreadCount = messages.filter((m) => {
-        if (!m) return false;
-        if (m.isRead) return false;
-        if (!m.sender) return true;
-        const senderId =
-          typeof m.sender === "string" ? m.sender : m.sender.toString();
-        return senderId !== req.user._id.toString();
-      }).length;
-      return { ...r, unreadCount };
-    });
 
     // 전체 의뢰 수
     const total = await Request.countDocuments(filter);
@@ -529,7 +524,6 @@ async function getRequestById(req, res) {
     // 의뢰 조회 (메시지 발신자 정보까지 포함)
     const request = await Request.findById(requestId)
       .populate("requestor", "name email phoneNumber organization role")
-      .populate("manufacturer", "name email phoneNumber organization role")
       .populate("messages.sender", "name email role");
 
     if (!request) {
@@ -539,13 +533,11 @@ async function getRequestById(req, res) {
       });
     }
 
-    // 접근 권한 확인 (의뢰자, 제조사, 관리자만 조회 가능)
+    // 접근 권한 확인 (의뢰자, 관리자만 조회 가능)
     const isRequestor = req.user._id.equals(request.requestor._id);
-    const isManufacturer =
-      request.manufacturer && req.user._id.equals(request.manufacturer._id);
     const isAdmin = req.user.role === "admin";
 
-    if (!isRequestor && !isManufacturer && !isAdmin) {
+    if (!isRequestor && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰에 접근할 권한이 없습니다.",
@@ -684,21 +676,11 @@ async function updateRequestStatus(req, res) {
       });
     }
 
-    // 개발 환경 + MOCK_DEV_TOKEN 여부 확인 (대시보드와 동일한 정책)
-    const authHeader = req.headers.authorization || "";
-    const isMockDevToken =
-      process.env.NODE_ENV !== "production" &&
-      authHeader === "Bearer MOCK_DEV_TOKEN";
-
-    // 접근 권한 확인 (의뢰자, 제조사, 관리자만 상태 변경 가능)
-    const isRequestor = isMockDevToken
-      ? req.user.role === "requestor"
-      : req.user._id.equals(request.requestor._id);
-    const isManufacturer =
-      request.manufacturer && req.user._id.equals(request.manufacturer);
+    // 접근 권한 확인 (의뢰자, 관리자만 상태 변경 가능)
+    const isRequestor = req.user._id.equals(request.requestor._id);
     const isAdmin = req.user.role === "admin";
 
-    if (!isRequestor && !isManufacturer && !isAdmin) {
+    if (!isRequestor && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰의 상태를 변경할 권한이 없습니다.",
@@ -718,26 +700,6 @@ async function updateRequestStatus(req, res) {
       return res.status(400).json({
         success: false,
         message: "의뢰접수 또는 가공전 상태에서만 취소할 수 있습니다.",
-      });
-    }
-
-    // 제조사/관리자만 변경 가능한 상태들 (가공 관련 및 배송 상태)
-    const manufacturerOnlyStatuses = [
-      "가공전",
-      "가공후",
-      "배송대기",
-      "배송중",
-      "완료",
-    ];
-
-    if (
-      manufacturerOnlyStatuses.includes(status) &&
-      !isManufacturer &&
-      !isAdmin
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "제조사 또는 관리자만 이 상태로 변경할 수 있습니다.",
       });
     }
 
@@ -800,13 +762,11 @@ async function addMessage(req, res) {
       });
     }
 
-    // 접근 권한 확인 (의뢰자, 제조사, 관리자만 메시지 추가 가능)
+    // 접근 권한 확인 (의뢰자, 관리자만 메시지 추가 가능)
     const isRequestor = req.user._id.equals(request.requestor._id);
-    const isManufacturer =
-      request.manufacturer && req.user._id.equals(request.manufacturer);
     const isAdmin = req.user.role === "admin";
 
-    if (!isRequestor && !isManufacturer && !isAdmin) {
+    if (!isRequestor && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰에 메시지를 추가할 권한이 없습니다.",
@@ -886,79 +846,6 @@ async function deleteRequest(req, res) {
     res.status(500).json({
       success: false,
       message: "의뢰 삭제 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
- * 의뢰에 제조사 할당
- * @route PATCH /api/requests/:id/assign
- */
-async function assignManufacturer(req, res) {
-  try {
-    const requestId = req.params.id;
-    const { manufacturerId } = req.body;
-
-    // ObjectId 유효성 검사
-    if (
-      !Types.ObjectId.isValid(requestId) ||
-      !Types.ObjectId.isValid(manufacturerId)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "유효하지 않은 ID입니다.",
-      });
-    }
-
-    // 의뢰 조회
-    const request = await Request.findById(requestId);
-
-    if (!request) {
-      return res.status(404).json({
-        success: false,
-        message: "의뢰를 찾을 수 없습니다.",
-      });
-    }
-
-    // 관리자만 제조사 할당 가능
-    if (req.user.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "관리자만 제조사를 할당할 수 있습니다.",
-      });
-    }
-
-    // 제조사 조회
-    const manufacturer = await User.findById(manufacturerId);
-
-    if (!manufacturer) {
-      return res.status(400).json({
-        success: false,
-        message: "존재하지 않는 제조사 ID입니다.",
-      });
-    }
-
-    if (manufacturer.role !== "manufacturer") {
-      return res.status(400).json({
-        success: false,
-        message: "선택한 사용자는 제조사가 아닙니다.",
-      });
-    }
-
-    // 제조사 할당
-    request.manufacturer = manufacturerId;
-    await request.save();
-
-    res.status(200).json({
-      success: true,
-      message: "제조사가 성공적으로 할당되었습니다.",
-      data: request,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "제조사 할당 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1074,17 +961,27 @@ async function getMyDashboardSummary(req, res) {
       : { requestor: requestorId, ...dateFilter };
 
     const requests = await Request.find(requestFilter)
-      .populate("manufacturer", "name organization")
+      .populate("requestor", "name organization")
       .lean();
 
-    const total = requests.length;
-    const inProduction = requests.filter((r) =>
+    // 커스텀 어벗(Request.caseInfos.implantSystem 존재)만 대시보드 통계 대상
+    const abutmentRequests = requests.filter((r) => {
+      const ci = r.caseInfos || {};
+      return typeof ci.implantSystem === "string" && ci.implantSystem.trim();
+    });
+
+    const total = abutmentRequests.length;
+    const inProduction = abutmentRequests.filter((r) =>
       ["가공전", "가공후"].includes(r.status)
     ).length;
-    const completed = requests.filter((r) => r.status === "완료").length;
-    const inShipping = requests.filter((r) => r.status === "배송중").length;
+    const completed = abutmentRequests.filter(
+      (r) => r.status === "완료"
+    ).length;
+    const inShipping = abutmentRequests.filter(
+      (r) => r.status === "배송중"
+    ).length;
 
-    const active = requests.filter((r) =>
+    const active = abutmentRequests.filter((r) =>
       ["의뢰접수", "가공전", "가공후", "배송대기", "배송중"].includes(r.status)
     );
 
@@ -1129,7 +1026,7 @@ async function getMyDashboardSummary(req, res) {
     const delayedItems = [];
     const warningItems = [];
 
-    requests.forEach((r) => {
+    abutmentRequests.forEach((r) => {
       const est = r.timeline?.estimatedCompletion
         ? new Date(r.timeline.estimatedCompletion)
         : null;
@@ -1152,7 +1049,7 @@ async function getMyDashboardSummary(req, res) {
       }
     });
 
-    const totalWithEta = requests.filter(
+    const totalWithEta = abutmentRequests.filter(
       (r) => r.timeline?.estimatedCompletion
     ).length;
     const delayedCount = delayedItems.length;
@@ -1171,7 +1068,7 @@ async function getMyDashboardSummary(req, res) {
     const toRiskItem = (r, level) => ({
       id: r.requestId,
       title: r.title,
-      manufacturer: r.manufacturer?.organization || r.manufacturer?.name || "",
+      manufacturer: "",
       riskLevel: level,
       message:
         level === "danger"
@@ -1191,9 +1088,9 @@ async function getMyDashboardSummary(req, res) {
       items: riskItems,
     };
 
-    const diameterStats = computeDiameterStats(requests);
+    const diameterStats = computeDiameterStats(abutmentRequests);
 
-    const recentRequests = requests
+    const recentRequests = abutmentRequests
       .slice()
       .sort((a, b) => {
         const aDate = new Date(a.createdAt || a.updatedAt || 0).getTime();
@@ -1201,14 +1098,23 @@ async function getMyDashboardSummary(req, res) {
         return bDate - aDate;
       })
       .slice(0, 5)
-      .map((r) => ({
-        id: r.requestId,
-        title: r.title,
-        status: r.status,
-        manufacturer:
-          r.manufacturer?.organization || r.manufacturer?.name || "",
-        date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
-      }));
+      .map((r) => {
+        const ci = r.caseInfos || {};
+        return {
+          // 기본 식별자
+          _id: r._id,
+          requestId: r.requestId,
+          // 표시용 필드
+          title: r.title,
+          status: r.status,
+          date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
+          // 편집 다이얼로그에서 사용할 세부 정보
+          patientName: ci.patientName || "",
+          tooth: ci.tooth || "",
+          caseInfos: ci,
+          requestor: r.requestor || null,
+        };
+      });
 
     return res.status(200).json({
       success: true,
@@ -1230,155 +1136,6 @@ async function getMyDashboardSummary(req, res) {
     return res.status(500).json({
       success: false,
       message: "대시보드 요약 조회 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
- * 제조사용 대시보드 요약 (할당된 의뢰 기준)
- * @route GET /api/requests/assigned/dashboard-summary
- */
-async function getAssignedDashboardSummary(req, res) {
-  try {
-    const manufacturerId = req.user._id;
-
-    const requests = await Request.find({ manufacturer: manufacturerId })
-      .populate("requestor", "name organization")
-      .lean();
-
-    const total = requests.length;
-    const inProduction = requests.filter((r) =>
-      ["가공전", "가공후"].includes(r.status)
-    ).length;
-    const completed = requests.filter((r) => r.status === "완료").length;
-    const inShipping = requests.filter((r) => r.status === "배송중").length;
-
-    const active = requests.filter((r) =>
-      ["의뢰접수", "가공전", "가공후", "배송대기", "배송중"].includes(r.status)
-    );
-
-    const stageCounts = {
-      design: 0,
-      cnc: 0,
-      post: 0,
-      shipping: 0,
-    };
-
-    active.forEach((r) => {
-      if (r.status === "의뢰접수") {
-        stageCounts.design += 1;
-      } else if (r.status === "가공전") {
-        stageCounts.cnc += 1;
-      } else if (r.status === "가공후") {
-        stageCounts.post += 1;
-      } else if (r.status === "배송대기" || r.status === "배송중") {
-        stageCounts.shipping += 1;
-      }
-    });
-
-    const totalActive = active.length || 1;
-    const manufacturingSummary = {
-      totalActive: active.length,
-      stages: [
-        { key: "design", label: "디자인 검토", count: stageCounts.design },
-        { key: "cnc", label: "CNC 가공", count: stageCounts.cnc },
-        { key: "post", label: "후처리/폴리싱", count: stageCounts.post },
-        {
-          key: "shipping",
-          label: "출고/배송 준비",
-          count: stageCounts.shipping,
-        },
-      ].map((s) => ({
-        ...s,
-        percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
-      })),
-    };
-
-    const now = new Date();
-    const delayedItems = [];
-    const warningItems = [];
-
-    requests.forEach((r) => {
-      const est = r.timeline?.estimatedCompletion
-        ? new Date(r.timeline.estimatedCompletion)
-        : null;
-      if (!est) return;
-
-      const shippedAt = r.deliveryInfo?.shippedAt
-        ? new Date(r.deliveryInfo.shippedAt)
-        : null;
-      const deliveredAt = r.deliveryInfo?.deliveredAt
-        ? new Date(r.deliveryInfo.deliveredAt)
-        : null;
-      const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
-
-      const diffDays = (now.getTime() - est.getTime()) / (1000 * 60 * 60 * 24);
-
-      if (!isDone && diffDays >= 1) {
-        delayedItems.push(r);
-      } else if (!isDone && diffDays >= 0 && diffDays < 1) {
-        warningItems.push(r);
-      }
-    });
-
-    const totalWithEta = requests.filter(
-      (r) => r.timeline?.estimatedCompletion
-    ).length;
-    const delayedCount = delayedItems.length;
-    const warningCount = warningItems.length;
-    const onTimeBase = totalWithEta || 1;
-    const onTimeRate = Math.max(
-      0,
-      Math.min(
-        100,
-        Math.round(
-          ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100
-        )
-      )
-    );
-
-    const toRiskItem = (r, level) => ({
-      id: r.requestId,
-      title: r.title,
-      manufacturer: r.requestor?.organization || r.requestor?.name || "",
-      riskLevel: level,
-      message:
-        level === "danger"
-          ? "제조 공정 지연으로 출고일 재조정이 필요할 수 있습니다."
-          : "예상 출고일과 근접해 있어 지연 가능성이 있습니다.",
-    });
-
-    const riskItems = [
-      ...delayedItems.slice(0, 3).map((r) => toRiskItem(r, "danger")),
-      ...warningItems.slice(0, 3).map((r) => toRiskItem(r, "warning")),
-    ];
-
-    const riskSummary = {
-      delayedCount,
-      warningCount,
-      onTimeRate,
-      items: riskItems,
-    };
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        stats: {
-          totalRequests: total,
-          inProduction,
-          inShipping,
-          completed,
-        },
-        manufacturingSummary,
-        riskSummary,
-      },
-    });
-  } catch (error) {
-    console.error("Error in getAssignedDashboardSummary:", error);
-    return res.status(500).json({
-      success: false,
-      message: "제조사 대시보드 요약 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1486,18 +1243,16 @@ async function createMyBulkShipping(req, res) {
 
 export default {
   createRequest,
+  hasDuplicateCase,
+  getMyFavoriteImplant,
   getAllRequests,
   getMyRequests,
-  getAssignedRequests,
   getRequestById,
   updateRequest,
   updateRequestStatus,
   addMessage,
   deleteRequest,
-  assignManufacturer,
-  getMyFavoriteImplant,
   getMyDashboardSummary,
-  getAssignedDashboardSummary,
   getMyBulkShipping,
   createMyBulkShipping,
 };

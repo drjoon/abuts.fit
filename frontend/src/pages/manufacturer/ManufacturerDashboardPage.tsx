@@ -164,7 +164,7 @@ export const ManufacturerDashboardPage = () => {
           {data.stats.map((stat: any, index: number) => (
             <Card
               key={index}
-              className="hover:shadow-elegant transition-shadow"
+              className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
@@ -184,7 +184,7 @@ export const ManufacturerDashboardPage = () => {
         </>
       }
       mainLeft={
-        <Card>
+        <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
           <CardHeader>
             <CardTitle>최근 주문</CardTitle>
             <CardDescription>최근 받은 주문 목록입니다.</CardDescription>
@@ -215,7 +215,7 @@ export const ManufacturerDashboardPage = () => {
         </Card>
       }
       mainRight={
-        <Card>
+        <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
           <CardHeader>
             <CardTitle>빠른 작업</CardTitle>
             <CardDescription>자주 사용하는 기능들입니다.</CardDescription>

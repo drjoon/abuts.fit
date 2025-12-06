@@ -5,7 +5,6 @@ import { WorksheetDiameterCardForDashboard } from "@/pages/requestor/WorkSheet";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
-import { RequestorRecentRequestsDialog } from "@/features/requestor/components/dashboard/RequestorRecentRequestsDialog";
 import {
   RequestorEditRequestDialog,
   type EditingRequestState,
@@ -27,7 +26,6 @@ export const RequestorDashboardPage = () => {
   const [selectedBulkIds, setSelectedBulkIds] = useState<
     Record<string, boolean>
   >({});
-  const [isRecentModalOpen, setIsRecentModalOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);
   const [editingDescription, setEditingDescription] = useState("");
@@ -92,33 +90,7 @@ export const RequestorDashboardPage = () => {
     },
   });
 
-  const { data: myRequestsResponse, isLoading: isMyRequestsLoading } = useQuery(
-    {
-      queryKey: ["requestor-my-requests"],
-      enabled: isRecentModalOpen && !!token,
-      retry: false,
-      queryFn: async () => {
-        const res = await fetch(`/api/requests/my`, {
-          headers: token
-            ? {
-                Authorization: `Bearer ${token}`,
-                "x-mock-role": "requestor",
-              }
-            : undefined,
-        });
-        if (!res.ok) {
-          throw new Error("의뢰 목록 조회에 실패했습니다.");
-        }
-        return res.json();
-      },
-    }
-  );
-
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
-
-  const myRequests = myRequestsResponse?.success
-    ? myRequestsResponse.data?.requests ?? []
-    : [];
 
   const openEditDialogFromRequest = (request: any) => {
     const mongoId = request._id || request.id;
@@ -126,33 +98,39 @@ export const RequestorDashboardPage = () => {
 
     if (!mongoId) return;
 
+    const ci = request.caseInfos || {};
+
     setEditingRequest({
       id: mongoId,
       title: request.title || displayId,
       description: request.description,
-      clinicName: request.clinicName || request.requestor?.organization || "",
-      patientName: request.patientName || "",
-      teethText: request.toothNumber || request.tooth || "",
-      implantManufacturer: request.implantManufacturer ?? "",
-      implantSystem:
-        request.implantSystem ?? request.specifications?.implantSystem ?? "",
-      implantType:
-        request.implantType ?? request.specifications?.implantType ?? "",
+      clinicName:
+        ci.clinicName ||
+        request.clinicName ||
+        request.requestor?.organization ||
+        "",
+      patientName: ci.patientName || request.patientName || "",
+      teethText: ci.tooth || request.toothNumber || request.tooth || "",
+      implantManufacturer:
+        ci.implantSystem || request.implantManufacturer || "",
+      implantSystem: ci.implantType || request.implantSystem || "",
+      implantType: ci.connectionType || request.implantType || "",
     });
 
     setEditingDescription(request.description || "");
     setEditingClinicName(
-      request.clinicName || request.requestor?.organization || ""
+      ci.clinicName ||
+        request.clinicName ||
+        request.requestor?.organization ||
+        ""
     );
-    setEditingPatientName(request.patientName || "");
-    setEditingTeethText(request.toothNumber || request.tooth || "");
-    setEditingImplantManufacturer(request.implantManufacturer || "");
-    setEditingImplantSystem(
-      request.implantSystem || request.specifications?.implantSystem || ""
+    setEditingPatientName(ci.patientName || request.patientName || "");
+    setEditingTeethText(ci.tooth || request.toothNumber || request.tooth || "");
+    setEditingImplantManufacturer(
+      ci.implantSystem || request.implantManufacturer || ""
     );
-    setEditingImplantType(
-      request.implantType || request.specifications?.implantType || ""
-    );
+    setEditingImplantSystem(ci.implantType || request.implantSystem || "");
+    setEditingImplantType(ci.connectionType || request.implantType || "");
   };
 
   const cancelRequest = async (requestId: string) => {
@@ -292,7 +270,6 @@ export const RequestorDashboardPage = () => {
                     refetchSummary();
                     refetchBulk();
                   }}
-                  onOpenRecentModal={() => setIsRecentModalOpen(true)}
                   onEdit={openEditDialogFromRequest}
                   onCancel={cancelRequest}
                 />
@@ -305,15 +282,6 @@ export const RequestorDashboardPage = () => {
             </div>
           </div>
         }
-      />
-
-      <RequestorRecentRequestsDialog
-        open={isRecentModalOpen}
-        onOpenChange={setIsRecentModalOpen}
-        isLoading={isMyRequestsLoading}
-        requests={myRequests}
-        onSelectForEdit={openEditDialogFromRequest}
-        onCancelRequest={cancelRequest}
       />
 
       <RequestorEditRequestDialog

@@ -18,11 +18,10 @@ router.get("/", (req, res) => {
   const { role } = req.user;
   if (role === "admin") {
     return requestController.getAllRequests(req, res);
-  } else if (role === "manufacturer") {
-    return requestController.getAssignedRequests(req, res);
-  } else {
-    return requestController.getMyRequests(req, res);
   }
+
+  // 그 외 역할(의뢰자 등)은 자신의 의뢰만 조회
+  return requestController.getMyRequests(req, res);
 });
 
 // 모든 의뢰 목록 조회 (관리자만 가능)
@@ -40,6 +39,13 @@ router.get(
   "/my/dashboard-summary",
   authorize(["requestor", "admin"]),
   requestController.getMyDashboardSummary
+);
+
+// 동일 환자/치아 커스텀 어벗 의뢰 존재 여부 확인 (재의뢰 판단용)
+router.get(
+  "/my/has-duplicate",
+  authorize(["requestor", "admin"]),
+  requestController.hasDuplicateCase
 );
 
 // 묶음 배송 후보 조회 (의뢰자용)
@@ -63,20 +69,6 @@ router.get(
   requestController.getMyFavoriteImplant
 );
 
-// 할당된 의뢰 목록 조회 (제조사용)
-router.get(
-  "/assigned",
-  authorize(["manufacturer", "admin"]),
-  requestController.getAssignedRequests
-);
-
-// 제조사용 대시보드 요약 (할당된 의뢰 기준)
-router.get(
-  "/assigned/dashboard-summary",
-  authorize(["manufacturer", "admin"]),
-  requestController.getAssignedDashboardSummary
-);
-
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", requestController.getRequestById);
 
@@ -91,12 +83,5 @@ router.post("/:id/messages", requestController.addMessage);
 
 // 의뢰 삭제 (권한 검증은 컨트롤러에서 처리)
 router.delete("/:id", requestController.deleteRequest);
-
-// 의뢰에 제조사 할당 (관리자만 가능)
-router.patch(
-  "/:id/assign",
-  authorize(["admin"]),
-  requestController.assignManufacturer
-);
 
 export default router;

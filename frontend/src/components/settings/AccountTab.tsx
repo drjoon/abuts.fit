@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +28,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     name: userData?.name || "",
     email: userData?.email || "",
     phone: "010-1234-5678",
-    profileImage: null as File | null
+    profileImage: null as File | null,
   });
 
   const handleSave = () => {
@@ -33,8 +39,8 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   };
 
   const handleFileUpload = (file: File) => {
-    setAccountData(prev => ({ ...prev, profileImage: file }));
-    
+    setAccountData((prev) => ({ ...prev, profileImage: file }));
+
     toast({
       title: "파일이 업로드되었습니다",
       description: `${file.name}이 성공적으로 업로드되었습니다.`,
@@ -42,15 +48,13 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   };
 
   return (
-    <Card className="shadow-elegant">
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <User className="h-5 w-5" />
           계정 설정
         </CardTitle>
-        <CardDescription>
-          개인 정보와 로그인 설정을 관리하세요
-        </CardDescription>
+        <CardDescription>개인 정보와 로그인 설정을 관리하세요</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Profile Image */}
@@ -70,7 +74,9 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   type="file"
                   className="hidden"
                   accept="image/*"
-                  onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+                  onChange={(e) =>
+                    e.target.files?.[0] && handleFileUpload(e.target.files[0])
+                  }
                 />
               </label>
               <p className="text-xs text-muted-foreground mt-1">
@@ -86,7 +92,9 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             <Input
               id="name"
               value={accountData.name}
-              onChange={(e) => setAccountData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setAccountData((prev) => ({ ...prev, name: e.target.value }))
+              }
             />
           </div>
           <div className="space-y-2">
@@ -95,7 +103,9 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               id="email"
               type="email"
               value={accountData.email}
-              onChange={(e) => setAccountData(prev => ({ ...prev, email: e.target.value }))}
+              onChange={(e) =>
+                setAccountData((prev) => ({ ...prev, email: e.target.value }))
+              }
             />
           </div>
           <div className="space-y-2">
@@ -103,15 +113,22 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             <Input
               id="phone"
               value={accountData.phone}
-              onChange={(e) => setAccountData(prev => ({ ...prev, phone: e.target.value }))}
+              onChange={(e) =>
+                setAccountData((prev) => ({ ...prev, phone: e.target.value }))
+              }
             />
           </div>
           <div className="space-y-2">
             <Label>사용자 권한</Label>
             <div className="flex items-center gap-2">
-              <Badge variant={userData?.role === 'admin' ? 'destructive' : 'default'}>
-                {userData?.role === 'requestor' ? '의뢰자' : 
-                userData?.role === 'manufacturer' ? '제조사' : '어벗츠.핏'}
+              <Badge
+                variant={userData?.role === "admin" ? "destructive" : "default"}
+              >
+                {userData?.role === "requestor"
+                  ? "의뢰자"
+                  : userData?.role === "manufacturer"
+                  ? "제조사"
+                  : "어벗츠.핏"}
               </Badge>
             </div>
           </div>

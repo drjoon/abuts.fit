@@ -147,17 +147,6 @@ export const RequestorEditRequestDialog = ({
                 />
               </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-md font-medium text-muted-foreground">
-                메모 / 요청 사항
-              </label>
-              <textarea
-                value={editingDescription}
-                onChange={(e) => onChangeDescription(e.target.value)}
-                rows={4}
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              />
-            </div>
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onClose}>
