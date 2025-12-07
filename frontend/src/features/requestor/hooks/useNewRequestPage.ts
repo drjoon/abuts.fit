@@ -11,11 +11,16 @@ import { useNewRequestSubmit } from "./new_requests/useNewRequestSubmit";
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
 
+// 백엔드 DraftRequest와 연동되는 신규 초안용 draftId 저장 키
+const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
+
 export const useNewRequestPage = (existingRequestId?: string) => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
 
   const [message, setMessage] = useState("");
+  const [draftId, setDraftId] = useState<string | undefined>(undefined);
+  const [isDraftHydrated, setIsDraftHydrated] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [aiFileInfos, setAiFileInfos] = useState<
     {
@@ -68,6 +73,140 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     },
   });
 
+  // 신규 의뢰 모드일 때, 백엔드 DraftRequest를 생성/복원하고 기본값을 상태에 주입
+  useEffect(() => {
+    if (existingRequestId) return; // 수정 모드에서는 DraftRequest 사용 안 함
+    if (!token) return;
+
+    let cancelled = false;
+
+    const hydrateFromDraft = async () => {
+      const storageKey = NEW_REQUEST_DRAFT_ID_STORAGE_KEY;
+      let storedId: string | null = null;
+      try {
+        storedId = window.localStorage.getItem(storageKey);
+      } catch {
+        storedId = null;
+      }
+
+      const fetchDraft = async (id: string) => {
+        const res = await fetch(`/api/request-drafts/${id}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            // 개발 환경의 MOCK_DEV_TOKEN 사용 시 요청자 역할로 동작하도록 명시
+            "x-mock-role": "requestor",
+          },
+        });
+        if (!res.ok) {
+          throw new Error("failed to fetch draft");
+        }
+        const body = await res.json().catch(() => ({} as any));
+        return body?.data ?? body;
+      };
+
+      const createDraft = async () => {
+        const res = await fetch(`/api/request-drafts`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            // 개발용 MOCK 토큰 사용 시 의뢰자 권한으로 초안을 생성
+            "x-mock-role": "requestor",
+          },
+          body: JSON.stringify({}),
+        });
+        if (!res.ok) {
+          throw new Error("failed to create draft");
+        }
+        const body = await res.json().catch(() => ({} as any));
+        return body?.data ?? body;
+      };
+
+      try {
+        let draft: any | null = null;
+
+        if (storedId) {
+          try {
+            draft = await fetchDraft(storedId);
+          } catch {
+            draft = null;
+          }
+        }
+
+        if (!draft) {
+          draft = await createDraft();
+        }
+
+        if (cancelled || !draft?._id) return;
+
+        setDraftId(draft._id as string);
+        try {
+          window.localStorage.setItem(storageKey, String(draft._id));
+        } catch {}
+
+        // 초기에만 DraftRequest의 값으로 상태를 채운다.
+        if (!isDraftHydrated) {
+          if (typeof draft.message === "string" && draft.message.length > 0) {
+            setMessage(draft.message);
+          }
+
+          // DraftRequest.caseInfos -> 임플란트 관련 상태 복원
+          if (draft.caseInfos) {
+            const {
+              implantSystem: draftImplantSystem,
+              implantType: draftImplantType,
+              connectionType: draftConnectionType,
+              clinicName: draftClinicName,
+            } = draft.caseInfos;
+
+            if (typeof draftImplantSystem === "string") {
+              setImplantManufacturer(draftImplantSystem);
+            }
+            if (typeof draftImplantType === "string") {
+              setImplantSystem(draftImplantType);
+            }
+            if (typeof draftConnectionType === "string") {
+              setImplantType(draftConnectionType);
+            }
+
+            // 클리닉 프리셋과 연동하고 싶다면 여기서 draftClinicName 등을 활용 가능
+          }
+
+          // DraftRequest.files -> uploadedFiles 초기화
+          if (Array.isArray(draft.files) && draft.files.length > 0) {
+            const nextUploaded: TempUploadedFile[] = draft.files.map(
+              (f: any) => ({
+                _id: f.fileId ?? f._id,
+                originalName: f.originalName,
+                mimetype: f.mimetype,
+                size: f.size,
+                fileType: "3d_model",
+                // DraftRequest에는 S3 key만 있으므로 location/bucket은 생략
+              })
+            );
+            setUploadedFiles(nextUploaded);
+          }
+          setIsDraftHydrated(true);
+        }
+      } catch {
+        // 초안 생성/복원 실패 시에는 조용히 무시 (사용자는 새로 작성 가능)
+      }
+    };
+
+    void hydrateFromDraft();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    existingRequestId,
+    token,
+    isDraftHydrated,
+    setImplantManufacturer,
+    setImplantSystem,
+    setImplantType,
+  ]);
+
   const {
     abutDiameters,
     connectionDiameters,
@@ -81,6 +220,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     handleDiameterComputed,
     getWorkTypeForFilename,
   } = useNewRequestFiles({
+    draftId,
     token,
     implantManufacturer,
     implantSystem,
@@ -115,6 +255,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setImplantType,
     selectedPreviewIndex,
     setSelectedPreviewIndex,
+    draftId,
+    token,
   });
 
   const patientCasesPreview = useMemo(() => {

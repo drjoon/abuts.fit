@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { type TempUploadedFile } from "@/hooks/useS3TempUpload";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
 import { useToast } from "@/hooks/use-toast";
 import { type AiFileInfo } from "./newRequestTypes";
 
 type UseNewRequestFilesParams = {
+  draftId?: string;
   token: string | null;
   implantManufacturer: string;
   implantSystem: string;
@@ -23,7 +24,17 @@ type UseNewRequestFilesParams = {
   setSelectedPreviewIndex: React.Dispatch<React.SetStateAction<number | null>>;
 };
 
+const NEW_REQUEST_DRAFT_STORAGE_KEY = "abutsfit:new-request-draft:v1";
+
+// Attach temporary identifier from uploaded file record onto File objects
+type FileWithTempId = File & { _tempId?: string };
+
+// Normalize Unicode to avoid NFC/NFD mismatches across platforms (e.g., macOS)
+const normalize = (s: string) =>
+  typeof s === "string" ? s.normalize("NFC") : s;
+
 export const useNewRequestFiles = ({
+  draftId,
   token,
   implantManufacturer,
   implantSystem,
@@ -52,6 +63,90 @@ export const useNewRequestFiles = ({
   >({});
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // 최신 상태 추적을 위한 Refs
+  const filesRef = useRef(files);
+  const uploadedFilesRef = useRef(uploadedFiles);
+  const aiFileInfosRef = useRef(aiFileInfos);
+  const selectedPreviewIndexRef = useRef(selectedPreviewIndex);
+  // Track files removed while uploads are in-flight to avoid re-adding them
+  const pendingRemovalRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+  useEffect(() => {
+    uploadedFilesRef.current = uploadedFiles;
+  }, [uploadedFiles]);
+  useEffect(() => {
+    aiFileInfosRef.current = aiFileInfos;
+  }, [aiFileInfos]);
+  useEffect(() => {
+    selectedPreviewIndexRef.current = selectedPreviewIndex;
+  }, [selectedPreviewIndex]);
+
+  // Draft 동기화 헬퍼
+  const syncDraftToStorage = useCallback(
+    (
+      newUploadedFiles: TempUploadedFile[],
+      newAiFileInfos: AiFileInfo[],
+      newSelectedPreviewIndex: number | null
+    ) => {
+      try {
+        const raw = window.localStorage.getItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
+        const draft = raw ? JSON.parse(raw) : {};
+        const updatedDraft = {
+          ...draft,
+          uploadedFiles: newUploadedFiles,
+          aiFileInfos: newAiFileInfos,
+          selectedPreviewIndex: newSelectedPreviewIndex,
+        };
+        window.localStorage.setItem(
+          NEW_REQUEST_DRAFT_STORAGE_KEY,
+          JSON.stringify(updatedDraft)
+        );
+      } catch (e) {
+        console.error("Draft sync failed", e);
+      }
+    },
+    []
+  );
+
+  // 새로 진입했지만 state는 비어 있고, localStorage에는 직전 초안 파일 정보가 남아 있는 경우 복원
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (uploadedFiles.length > 0 || aiFileInfos.length > 0) return;
+
+    try {
+      const raw = window.localStorage.getItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+
+      if (
+        Array.isArray(saved.uploadedFiles) &&
+        saved.uploadedFiles.length > 0
+      ) {
+        setUploadedFiles(saved.uploadedFiles);
+      }
+      if (Array.isArray(saved.aiFileInfos) && saved.aiFileInfos.length > 0) {
+        setAiFileInfos(saved.aiFileInfos);
+      }
+      if (
+        typeof saved.selectedPreviewIndex === "number" ||
+        saved.selectedPreviewIndex === null
+      ) {
+        setSelectedPreviewIndex(saved.selectedPreviewIndex);
+      }
+    } catch {
+      // ignore
+    }
+  }, [
+    uploadedFiles.length,
+    aiFileInfos.length,
+    setUploadedFiles,
+    setAiFileInfos,
+    setSelectedPreviewIndex,
+  ]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!uploadedFiles.length) return;
@@ -63,6 +158,7 @@ export const useNewRequestFiles = ({
     const restoreFilesFromUploaded = async () => {
       try {
         const restored: File[] = [];
+        const restoredUploaded: typeof uploadedFiles = [];
 
         for (const item of uploadedFiles) {
           if (!item._id) continue;
@@ -83,16 +179,25 @@ export const useNewRequestFiles = ({
             if (!fileRes.ok) continue;
 
             const blob = await fileRes.blob();
-            const file = new File([blob], item.originalName, {
+            const file: FileWithTempId = new File([blob], item.originalName, {
               type: item.mimetype || "application/octet-stream",
               lastModified: Date.now(),
             });
+            // link restored File to its uploaded record id for reliable deletion
+            (file as FileWithTempId)._tempId = item._id;
             restored.push(file);
+            restoredUploaded.push(item);
           } catch {}
         }
 
-        if (!cancelled && restored.length) {
-          setFiles(restored);
+        if (!cancelled) {
+          if (restored.length) {
+            setFiles(restored);
+          }
+          // 복원된 파일들로 uploadedFiles 재설정 (유효하지 않은 항목 제거 효과)
+          if (restoredUploaded.length) {
+            setUploadedFiles(restoredUploaded);
+          }
         }
       } catch {}
     };
@@ -104,6 +209,83 @@ export const useNewRequestFiles = ({
     };
   }, [uploadedFiles, files.length, token]);
 
+  // files를 uploadedFiles로부터 재구성하는 헬퍼
+  const refreshFromUploaded = useCallback(
+    async (source?: TempUploadedFile[]) => {
+      if (typeof window === "undefined") return;
+      if (!token) return;
+      const list = (source ?? uploadedFilesRef.current) || [];
+      if (!list.length) {
+        setFiles([]);
+        setSelectedPreviewIndex(null);
+        return;
+      }
+
+      try {
+        const results = await Promise.all(
+          list.map(async (item) => {
+            if (!item?._id) return null;
+            try {
+              const urlRes = await fetch(
+                `/api/files/${item._id}/download-url`,
+                {
+                  headers: { Authorization: `Bearer ${token}` },
+                }
+              );
+              if (!urlRes.ok) return null;
+              const urlBody = await urlRes.json().catch(() => ({} as any));
+              const signedUrl: string | undefined = urlBody?.data?.url;
+              if (!signedUrl) return null;
+              const fileRes = await fetch(signedUrl);
+              if (!fileRes.ok) return null;
+              const blob = await fileRes.blob();
+              const f: FileWithTempId = new File([blob], item.originalName, {
+                type: item.mimetype || "application/octet-stream",
+                lastModified: Date.now(),
+              });
+              (f as FileWithTempId)._tempId = item._id;
+              return { file: f, item } as const;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        const ok = results.filter(Boolean) as {
+          file: File;
+          item: TempUploadedFile;
+        }[];
+        const rebuiltFiles = ok.map((r) => r.file);
+        const validUploaded = ok.map((r) => r.item);
+        setFiles(rebuiltFiles);
+        if (validUploaded.length !== list.length) {
+          setUploadedFiles(validUploaded);
+          syncDraftToStorage(
+            validUploaded,
+            aiFileInfosRef.current,
+            selectedPreviewIndexRef.current
+          );
+        }
+
+        if (rebuiltFiles.length === 0) {
+          setSelectedPreviewIndex(null);
+        } else if (
+          selectedPreviewIndexRef.current == null ||
+          selectedPreviewIndexRef.current >= rebuiltFiles.length
+        ) {
+          setSelectedPreviewIndex(0);
+        }
+      } finally {
+      }
+    },
+    [
+      token,
+      setFiles,
+      setUploadedFiles,
+      setSelectedPreviewIndex,
+      syncDraftToStorage,
+    ]
+  );
   const analyzeFilenamesWithAi = useCallback(
     async (
       filenames: string[],
@@ -270,18 +452,103 @@ export const useNewRequestFiles = ({
           const analyzedInfos = await analyzeFilenamesWithAi(filenames, unique);
 
           const uploaded = await uploadFilesWithToast(unique);
-          if (uploaded.length > 0) {
-            setUploadedFiles((prev: TempUploadedFile[]) => {
+          const uploadedActive = uploaded.filter((u) => {
+            const key = `${normalize(u.originalName)}__${u.size}`;
+            if (pendingRemovalRef.current.has(`id:${u._id}`)) return false;
+            if (pendingRemovalRef.current.has(`key:${key}`)) return false;
+            return true;
+          });
+          const uniqueActive = unique.filter(
+            (f) =>
+              !pendingRemovalRef.current.has(
+                `key:${normalize(f.name)}__${f.size}`
+              )
+          );
+
+          if (uploadedActive.length > 0) {
+            // 백엔드 DraftRequest에도 업로드된 파일 메타를 등록
+            if (draftId && token) {
+              try {
+                await Promise.all(
+                  uploadedActive.map((u) =>
+                    fetch(`/api/request-drafts/${draftId}/files`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                        "x-mock-role": "requestor",
+                      },
+                      body: JSON.stringify({
+                        originalName: u.originalName,
+                        size: u.size,
+                        mimetype: u.mimetype,
+                        fileId: u._id,
+                      }),
+                    }).catch(() => undefined)
+                  )
+                );
+              } catch {
+                // Draft 동기화 실패는 치명적이지 않으므로 조용히 무시 (다음 업로드 시 다시 시도 가능)
+              }
+            }
+
+            const nextUploadedFiles = (() => {
               const map = new Map(
-                prev.map((f) => [`${f.originalName}__${f.size}`, f])
+                uploadedFilesRef.current.map((f) => [
+                  `${f.originalName}__${f.size}`,
+                  f,
+                ])
               );
-              uploaded.forEach((f) => {
+              uploadedActive.forEach((f) => {
                 map.set(`${f.originalName}__${f.size}`, f);
               });
               return Array.from(map.values());
+            })();
+
+            setUploadedFiles(nextUploadedFiles);
+
+            setFiles((prev) => {
+              const byKey = new Map(
+                uploadedActive.map((u) => [
+                  `${normalize(u.originalName)}__${u.size}`,
+                  u,
+                ])
+              );
+              return prev.map((f) => {
+                const key = `${normalize(f.name)}__${f.size}`;
+                const hit = byKey.get(key);
+                if (hit) {
+                  (f as FileWithTempId)._tempId = hit._id;
+                }
+                return f;
+              });
             });
 
-            // 어벗일 때만 프리셋에서 임플란트 정보 추천
+            const nextAiFileInfos = (() => {
+              const prev = aiFileInfosRef.current;
+              const newInfos: AiFileInfo[] = uniqueActive.map((file) => {
+                const found = analyzedInfos?.find(
+                  (i) => i.filename === file.name
+                );
+                if (found) return found;
+                return {
+                  filename: file.name,
+                  clinicName: "",
+                  patientName: "",
+                  tooth: "",
+                  workType: file.size < 1024 * 1024 ? "abutment" : "prosthesis",
+                  abutType: "",
+                };
+              });
+              const map = new Map(prev.map((i) => [i.filename, i]));
+              newInfos.forEach((i) => map.set(i.filename, i));
+              return Array.from(map.values());
+            })();
+
+            syncDraftToStorage(nextUploadedFiles, nextAiFileInfos, 0);
+
+            await refreshFromUploaded(nextUploadedFiles);
+
             const isAbutment = unique[0].size < 1024 * 1024;
 
             if (
@@ -292,7 +559,6 @@ export const useNewRequestFiles = ({
               analyzedInfos?.length > 0
             ) {
               const firstInfo = analyzedInfos[0];
-              // clinicName이 없으면 빈 문자열 사용
               const clinicName = firstInfo?.clinicName || "";
               if (firstInfo?.patientName && firstInfo?.tooth) {
                 try {
@@ -327,7 +593,6 @@ export const useNewRequestFiles = ({
               }
             }
 
-            // 프리셋이 없으면 기본값 설정
             if (!implantManufacturer && !implantSystem && !implantType) {
               const baseManufacturer = "OSSTEM";
               const baseSystem = "Regular";
@@ -368,6 +633,7 @@ export const useNewRequestFiles = ({
       syncSelectedConnection,
       setAiFileInfos,
       setUploadedFiles,
+      syncDraftToStorage,
     ]
   );
 
@@ -434,16 +700,78 @@ export const useNewRequestFiles = ({
           const analyzedInfos = await analyzeFilenamesWithAi(filenames, unique);
 
           const uploaded = await uploadFilesWithToast(unique);
-          if (uploaded.length > 0) {
-            setUploadedFiles((prev: TempUploadedFile[]) => {
+          const uploadedActive = uploaded.filter((u) => {
+            const key = `${normalize(u.originalName)}__${u.size}`;
+            if (pendingRemovalRef.current.has(`id:${u._id}`)) return false;
+            if (pendingRemovalRef.current.has(`key:${key}`)) return false;
+            return true;
+          });
+          const uniqueActive = unique.filter(
+            (f) =>
+              !pendingRemovalRef.current.has(
+                `key:${normalize(f.name)}__${f.size}`
+              )
+          );
+
+          if (uploadedActive.length > 0) {
+            const nextUploadedFiles = (() => {
               const map = new Map(
-                prev.map((f) => [`${f.originalName}__${f.size}`, f])
+                uploadedFilesRef.current.map((f) => [
+                  `${f.originalName}__${f.size}`,
+                  f,
+                ])
               );
-              uploaded.forEach((f) => {
+              uploadedActive.forEach((f) => {
                 map.set(`${f.originalName}__${f.size}`, f);
               });
               return Array.from(map.values());
+            })();
+
+            // 2. 상태 업데이트
+            setUploadedFiles(nextUploadedFiles);
+
+            // 2-1. 업로드된 항목들의 id를 File 객체에 주입
+            setFiles((prev) => {
+              const byKey = new Map(
+                uploadedActive.map((u) => [
+                  `${normalize(u.originalName)}__${u.size}`,
+                  u,
+                ])
+              );
+              return prev.map((f) => {
+                const key = `${normalize(f.name)}__${f.size}`;
+                const hit = byKey.get(key);
+                if (hit) {
+                  (f as FileWithTempId)._tempId = hit._id;
+                }
+                return f;
+              });
             });
+
+            // 3. AI 정보 업데이트 계산
+            const nextAiFileInfos = (() => {
+              const prev = aiFileInfosRef.current;
+              const newInfos: AiFileInfo[] = uniqueActive.map((file) => {
+                const found = analyzedInfos?.find(
+                  (i) => i.filename === file.name
+                );
+                if (found) return found;
+                return {
+                  filename: file.name,
+                  clinicName: "",
+                  patientName: "",
+                  tooth: "",
+                  workType: file.size < 1024 * 1024 ? "abutment" : "prosthesis",
+                  abutType: "",
+                };
+              });
+              const map = new Map(prev.map((i) => [i.filename, i]));
+              newInfos.forEach((i) => map.set(i.filename, i));
+              return Array.from(map.values());
+            })();
+
+            // 4. LocalStorage 즉시 동기화
+            syncDraftToStorage(nextUploadedFiles, nextAiFileInfos, 0);
 
             // 어벗일 때만 프리셋에서 임플란트 정보 추천
             const isAbutment = unique[0].size < 1024 * 1024;
@@ -456,7 +784,6 @@ export const useNewRequestFiles = ({
               analyzedInfos?.length > 0
             ) {
               const firstInfo = analyzedInfos[0];
-              // clinicName이 없으면 빈 문자열 사용
               const clinicName = firstInfo?.clinicName || "";
               if (firstInfo?.patientName && firstInfo?.tooth) {
                 try {
@@ -520,10 +847,66 @@ export const useNewRequestFiles = ({
     })();
   };
 
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    setSelectedPreviewIndex((prev) => (prev === index ? null : prev));
-  };
+  const removeFile = useCallback(
+    (index: number) => {
+      const target = files[index] as FileWithTempId | undefined;
+      if (!target) return;
+
+      const tempId = target._tempId;
+      const normalizedName = normalize(target.name);
+      const nameSizeKey = `${normalizedName}__${target.size}`;
+
+      // Mark as pending removal to guard against in-flight upload completion
+      if (tempId) pendingRemovalRef.current.add(`id:${tempId}`);
+      pendingRemovalRef.current.add(`key:${nameSizeKey}`);
+
+      // 1. 새로운 상태 계산
+      const newFiles = files.filter((_, i) => i !== index);
+      let newUploadedFiles: TempUploadedFile[];
+      if (tempId) {
+        newUploadedFiles = uploadedFiles.filter((f) => f._id !== tempId);
+      } else {
+        newUploadedFiles = uploadedFiles.filter(
+          (f) => `${normalize(f.originalName)}__${f.size}` !== nameSizeKey
+        );
+      }
+
+      const newAiFileInfos = aiFileInfos.filter(
+        (info) => normalize(info.filename) !== normalizedName
+      );
+      const newSelectedPreviewIndex =
+        selectedPreviewIndex === index ? null : selectedPreviewIndex;
+
+      // 최신 ref 값도 즉시 갱신해서 이후 업로드 로직에서 삭제된 항목을 참조하지 않도록 보장
+      uploadedFilesRef.current = newUploadedFiles;
+      aiFileInfosRef.current = newAiFileInfos;
+      selectedPreviewIndexRef.current = newSelectedPreviewIndex;
+
+      // 2. 상태 업데이트
+      setFiles(newFiles);
+      setUploadedFiles(newUploadedFiles);
+      setAiFileInfos(newAiFileInfos);
+      setSelectedPreviewIndex(newSelectedPreviewIndex);
+
+      // 3. LocalStorage 즉시 동기화
+      syncDraftToStorage(
+        newUploadedFiles,
+        newAiFileInfos,
+        newSelectedPreviewIndex
+      );
+    },
+    [
+      files,
+      uploadedFiles,
+      aiFileInfos,
+      selectedPreviewIndex,
+      setFiles,
+      setUploadedFiles,
+      setAiFileInfos,
+      setSelectedPreviewIndex,
+      syncDraftToStorage,
+    ]
+  );
 
   const handleDiameterComputed = useCallback(
     (filename: string, maxDiameter: number, connectionDiameter: number) => {
@@ -537,7 +920,8 @@ export const useNewRequestFiles = ({
   );
 
   const getWorkTypeForFilename = (filename: string) => {
-    const info = aiFileInfos.find((i) => i.filename === filename);
+    const n = normalize(filename);
+    const info = aiFileInfos.find((i) => normalize(i.filename) === n);
     return info?.workType || "";
   };
 

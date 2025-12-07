@@ -1,8 +1,6 @@
 import { useEffect } from "react";
 import { type TempUploadedFile } from "@/hooks/useS3TempUpload";
 
-const NEW_REQUEST_DRAFT_STORAGE_KEY = "abutsfit:new-request-draft:v1";
-
 type AiFileInfo = {
   filename: string;
   clinicName: string;
@@ -28,6 +26,8 @@ type UseNewRequestDraftParams = {
   setImplantType: (v: string) => void;
   selectedPreviewIndex: number | null;
   setSelectedPreviewIndex: (v: number | null) => void;
+  draftId?: string;
+  token?: string | null;
 };
 
 export const useNewRequestDraft = ({
@@ -46,73 +46,42 @@ export const useNewRequestDraft = ({
   setImplantType,
   selectedPreviewIndex,
   setSelectedPreviewIndex,
+  draftId,
+  token,
 }: UseNewRequestDraftParams) => {
-  // 신규 의뢰 초안 복원 (수정 모드가 아닐 때만)
+  // 초안 저장을 백엔드 DraftRequest에 동기화 (파일 관련 데이터는 별도 훅에서 관리)
   useEffect(() => {
-    if (existingRequestId) return;
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
+    if (existingRequestId) return; // 수정 모드에서는 사용하지 않음
+    if (!draftId || !token) return;
 
-      if (typeof saved.message === "string") {
-        setMessage(saved.message);
+    void (async () => {
+      try {
+        await fetch(`/api/request-drafts/${draftId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            message,
+            caseInfos: {
+              implantSystem: implantManufacturer,
+              implantType: implantSystem,
+              connectionType: implantType,
+            },
+          }),
+        });
+      } catch {
+        // 네트워크 오류는 조용히 무시 (다음 변경 시 다시 시도됨)
       }
-      if (Array.isArray(saved.aiFileInfos)) {
-        setAiFileInfos(saved.aiFileInfos);
-      }
-      if (Array.isArray(saved.uploadedFiles)) {
-        setUploadedFiles(saved.uploadedFiles);
-      }
-      if (saved.caseInfos) {
-        const { implantSystem, implantType, connectionType } = saved.caseInfos;
-        if (typeof implantSystem === "string") {
-          setImplantManufacturer(implantSystem);
-        }
-        if (typeof implantType === "string") {
-          setImplantSystem(implantType);
-        }
-        if (typeof connectionType === "string") {
-          setImplantType(connectionType);
-        }
-      }
-      if (
-        typeof saved.selectedPreviewIndex === "number" ||
-        saved.selectedPreviewIndex === null
-      ) {
-        setSelectedPreviewIndex(saved.selectedPreviewIndex);
-      }
-    } catch {}
-  }, [existingRequestId]);
-
-  // 초안 저장
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const draft = {
-      message,
-      aiFileInfos,
-      uploadedFiles,
-      caseInfos: {
-        implantSystem: implantManufacturer,
-        implantType: implantSystem,
-        connectionType: implantType,
-      },
-      selectedPreviewIndex,
-    };
-    try {
-      window.localStorage.setItem(
-        NEW_REQUEST_DRAFT_STORAGE_KEY,
-        JSON.stringify(draft)
-      );
-    } catch {}
+    })();
   }, [
+    existingRequestId,
+    draftId,
+    token,
     message,
-    aiFileInfos,
-    uploadedFiles,
     implantManufacturer,
     implantSystem,
     implantType,
-    selectedPreviewIndex,
   ]);
 };
