@@ -52,6 +52,8 @@ export function useUploadWithProgressToast(
               progress,
               label: "업로드 완료",
             }),
+            // 업로드 완료 토스트는 짧게 표시 후 자동으로 사라지도록 설정
+            duration: 2000,
           });
         }
 

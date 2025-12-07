@@ -51,9 +51,15 @@ export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
           }
         }
 
-        const baseManufacturer = "OSSTEM";
-        const baseSystem = "Regular";
-        const baseType = "Hex";
+        // 기본값은 하드코딩(OSSTEM)이 아니라, 실제 connections 목록의 첫 번째 항목을 기준으로 잡는다.
+        // 즐겨찾기(favorite)가 있으면 그 값을 우선 사용하고, 없으면 첫 커넥션을 기본값으로.
+        const first = list[0] as
+          | { manufacturer?: string; system?: string; type?: string }
+          | undefined;
+
+        const baseManufacturer = first?.manufacturer || "OSSTEM";
+        const baseSystem = first?.system || "Regular";
+        const baseType = first?.type || "Hex";
 
         const nextManufacturer =
           favorite?.implantManufacturer || baseManufacturer;

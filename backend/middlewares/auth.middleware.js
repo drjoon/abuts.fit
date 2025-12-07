@@ -1,5 +1,6 @@
 import { verifyToken } from "../utils/jwt.utils.js";
 import User from "../models/user.model.js";
+import { Types } from "mongoose";
 
 /**
  * 인증 미들웨어
@@ -23,9 +24,18 @@ export const authenticate = async (req, res, next) => {
     // 개발용 MOCK 토큰 우회 (프론트 mock 로그인과 연동)
     if (process.env.NODE_ENV !== "production" && token === "MOCK_DEV_TOKEN") {
       const mockRole = req.headers["x-mock-role"] || "manufacturer";
-      // 최소 필드만 가진 가짜 사용자 객체 (개발 시 제조사 권한으로 동작)
+
+      // 역할별 고정 ObjectId 사용 (Draft 권한 검증을 위해 일관된 ID 필요)
+      const MOCK_USER_IDS = {
+        requestor: "000000000000000000000001",
+        manufacturer: "000000000000000000000002",
+        admin: "000000000000000000000003",
+      };
+
       req.user = {
-        _id: new User({})._id, // 임의 ObjectId
+        _id: new Types.ObjectId(
+          MOCK_USER_IDS[mockRole] || MOCK_USER_IDS.manufacturer
+        ),
         role: mockRole,
         active: true,
       };

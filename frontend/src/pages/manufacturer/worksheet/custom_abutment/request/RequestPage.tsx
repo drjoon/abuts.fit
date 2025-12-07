@@ -31,6 +31,7 @@ type ManufacturerRequest = {
     connectionType?: string;
     maxDiameter?: number;
     connectionDiameter?: number;
+    workType?: string;
   };
   files: any[];
 };
@@ -54,14 +55,31 @@ const WorksheetCardGrid = ({
     {requests.map((request) => {
       const caseInfos = request.caseInfos || {};
       const workType = (() => {
+        // 1순위: caseInfos.workType (신규 필드)
+        const ciWorkType = caseInfos.workType as
+          | "abutment"
+          | "crown"
+          | "prosthesis"
+          | "mixed"
+          | "unknown"
+          | undefined;
+
+        if (ciWorkType === "abutment" || ciWorkType === "crown") {
+          return ciWorkType;
+        }
+        if (ciWorkType === "mixed") return "mixed";
+
+        // 레거시/파일 기반 추론: prosthesis는 crown으로 취급
         const types = new Set(
-          request.files?.map((f) => f.workType).filter(Boolean) || []
+          (request.files?.map((f) => f.workType).filter(Boolean) || []).map(
+            (t: string) => (t === "prosthesis" ? "crown" : t)
+          )
         );
-        if (types.has("abutment") && !types.has("prosthesis"))
-          return "abutment";
-        if (!types.has("abutment") && types.has("prosthesis"))
-          return "prosthesis";
-        return "mixed";
+
+        if (types.has("abutment") && !types.has("crown")) return "abutment";
+        if (!types.has("abutment") && types.has("crown")) return "crown";
+        if (types.has("abutment") && types.has("crown")) return "mixed";
+        return "unknown";
       })();
 
       return (
@@ -97,7 +115,7 @@ const WorksheetCardGrid = ({
                   return (
                     <div className="mb-2">
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                        {workType === "prosthesis" ? "크라운/보철" : "기타"}
+                        {workType === "crown" ? "크라운" : "기타"}
                       </span>
                     </div>
                   );

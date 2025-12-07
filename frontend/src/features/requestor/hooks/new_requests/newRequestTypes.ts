@@ -18,3 +18,12 @@ export type AiFileInfo = {
   workType: string;
   abutType: string;
 };
+
+export type DraftFileMeta = {
+  _id: string; // Draft 내 파일 ID
+  fileId?: string; // 기존 File 도큐먼트 ID
+  originalName: string;
+  size: number;
+  mimetype: string;
+  s3Key?: string;
+};

@@ -2,11 +2,13 @@ import { useToast } from "@/hooks/use-toast";
 import { type TempUploadedFile } from "@/hooks/useS3TempUpload";
 import { type ClinicPreset } from "./newRequestTypes";
 import { type AiFileInfo } from "./newRequestTypes";
+import { clearFileCache } from "@/utils/fileCache";
 
-const NEW_REQUEST_DRAFT_STORAGE_KEY = "abutsfit:new-request-draft:v1";
+const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 
 type UseNewRequestSubmitParams = {
   existingRequestId?: string;
+  draftId?: string; // Draft ID 추가
   token: string | null;
   navigate: (path: string) => void;
   message: string;
@@ -32,6 +34,7 @@ type UseNewRequestSubmitParams = {
 
 export const useNewRequestSubmit = ({
   existingRequestId,
+  draftId,
   token,
   navigate,
   message,
@@ -56,7 +59,23 @@ export const useNewRequestSubmit = ({
 }: UseNewRequestSubmitParams) => {
   const { toast } = useToast();
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
+    // Draft 삭제
+    if (draftId && token && !existingRequestId) {
+      try {
+        await fetch(`/api/request-drafts/${draftId}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "x-mock-role": "requestor",
+          },
+        });
+      } catch {
+        // Draft 삭제 실패는 치명적이지 않으므로 무시
+      }
+    }
+
+    // 상태 초기화
     setMessage("");
     setFiles([]);
     setAiFileInfos([]);
@@ -67,9 +86,11 @@ export const useNewRequestSubmit = ({
     setImplantSystem("");
     setImplantType("");
 
+    // localStorage 및 캐시 정리
     try {
       if (typeof window !== "undefined") {
-        window.localStorage.removeItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
+        window.localStorage.removeItem(NEW_REQUEST_DRAFT_ID_STORAGE_KEY);
+        clearFileCache();
       }
     } catch {}
   };
@@ -170,6 +191,26 @@ export const useNewRequestSubmit = ({
             new Set(patientFiles.map((f) => f.tooth).filter(Boolean))
           ).join(", ");
 
+          const workTypes = Array.from(
+            new Set(
+              patientFiles.map((f) =>
+                f.workType === "prosthesis" ? "crown" : f.workType
+              )
+            )
+          );
+
+          let workType: string;
+          if (workTypes.length === 1) {
+            workType = workTypes[0];
+          } else if (
+            workTypes.includes("abutment") &&
+            workTypes.includes("crown")
+          ) {
+            workType = "mixed";
+          } else {
+            workType = "unknown";
+          }
+
           return {
             description: message,
             files: uploadedFiles
@@ -186,6 +227,7 @@ export const useNewRequestSubmit = ({
               clinicName,
               patientName,
               tooth: teeth,
+              workType,
               implantSystem: implantManufacturer,
               implantType: implantSystem,
               connectionType: implantType,
@@ -213,7 +255,23 @@ export const useNewRequestSubmit = ({
       toast({
         title: `총 ${requestsToCreate.length}건의 의뢰가 성공적으로 접수되었습니다.`,
       });
-      handleCancel(); // 폼 초기화
+
+      // 성공 시 Draft 삭제
+      if (draftId && token) {
+        try {
+          await fetch(`/api/request-drafts/${draftId}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "x-mock-role": "requestor",
+            },
+          });
+        } catch {
+          // Draft 삭제 실패는 치명적이지 않으므로 무시
+        }
+      }
+
+      await handleCancel(); // 폼 초기화
       navigate("/dashboard");
     } catch (err: any) {
       toast({

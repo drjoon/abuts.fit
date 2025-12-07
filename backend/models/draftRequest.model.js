@@ -27,6 +27,18 @@ const draftFileSchema = new mongoose.Schema(
   { _id: true }
 );
 
+const aiFileInfoSchema = new mongoose.Schema(
+  {
+    filename: String,
+    clinicName: String,
+    patientName: String,
+    tooth: String,
+    workType: String,
+    abutType: String,
+  },
+  { _id: false }
+);
+
 const draftCaseSchema = new mongoose.Schema(
   {
     requestor: {
@@ -49,7 +61,7 @@ const draftCaseSchema = new mongoose.Schema(
       tooth: String,
       workType: {
         type: String,
-        enum: ["abutment", "prosthesis"],
+        enum: ["abutment", "crown", "prosthesis"],
       },
       abutType: String,
       implantSystem: String,
@@ -57,6 +69,8 @@ const draftCaseSchema = new mongoose.Schema(
       connectionType: String,
     },
     files: [draftFileSchema],
+    // 파일 이름 기반 AI 분석 정보 (프론트의 AiFileInfo 와 동일 구조)
+    aiFileInfos: [aiFileInfoSchema],
   },
   {
     timestamps: true,

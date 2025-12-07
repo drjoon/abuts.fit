@@ -7,6 +7,7 @@ import { useNewRequestImplant } from "./new_requests/useNewRequestImplant";
 import { useNewRequestDraft } from "./new_requests/useNewRequestDraft";
 import { useNewRequestFiles } from "./new_requests/useNewRequestFiles";
 import { useNewRequestSubmit } from "./new_requests/useNewRequestSubmit";
+import { type DraftFileMeta } from "./new_requests/newRequestTypes";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
@@ -32,6 +33,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       abutType: string;
     }[]
   >([]);
+  const [draftFiles, setDraftFiles] = useState<DraftFileMeta[]>([]); // Draft 파일 메타
   const [uploadedFiles, setUploadedFiles] = useState<TempUploadedFile[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<
@@ -172,8 +174,22 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             // 클리닉 프리셋과 연동하고 싶다면 여기서 draftClinicName 등을 활용 가능
           }
 
-          // DraftRequest.files -> uploadedFiles 초기화
+          // DraftRequest.files -> draftFiles / uploadedFiles 초기화
           if (Array.isArray(draft.files) && draft.files.length > 0) {
+            const nextDraftFiles: DraftFileMeta[] = draft.files.map(
+              (f: any) => ({
+                _id: f._id,
+                fileId: f.fileId,
+                originalName: f.originalName,
+                size: f.size,
+                mimetype: f.mimetype,
+                s3Key: f.s3Key,
+              })
+            );
+            setDraftFiles(nextDraftFiles);
+
+            // useNewRequestFiles 의 restoreFilesFromUploaded 효과가 동작하도록
+            // Draft.files 메타를 TempUploadedFile 형태로도 세팅해준다.
             const nextUploaded: TempUploadedFile[] = draft.files.map(
               (f: any) => ({
                 _id: f.fileId ?? f._id,
@@ -181,10 +197,16 @@ export const useNewRequestPage = (existingRequestId?: string) => {
                 mimetype: f.mimetype,
                 size: f.size,
                 fileType: "3d_model",
-                // DraftRequest에는 S3 key만 있으므로 location/bucket은 생략
               })
             );
             setUploadedFiles(nextUploaded);
+          }
+          // DraftRequest.aiFileInfos -> aiFileInfos 초기화
+          if (
+            Array.isArray(draft.aiFileInfos) &&
+            draft.aiFileInfos.length > 0
+          ) {
+            setAiFileInfos(draft.aiFileInfos);
           }
           setIsDraftHydrated(true);
         }
@@ -205,7 +227,32 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setImplantManufacturer,
     setImplantSystem,
     setImplantType,
+    setDraftFiles,
+    setUploadedFiles,
   ]);
+
+  // draftId가 준비되기 전에는 훅은 동작하지만, 백엔드 동기화는 내부에서 draftId 존재 여부로 가드
+  const fileHookResult = useNewRequestFiles({
+    draftId,
+    token,
+    implantManufacturer,
+    implantSystem,
+    implantType,
+    setImplantManufacturer,
+    setImplantSystem,
+    setImplantType,
+    syncSelectedConnection,
+    draftFiles,
+    setDraftFiles,
+    uploadedFiles,
+    setUploadedFiles,
+    aiFileInfos,
+    setAiFileInfos,
+    files,
+    setFiles,
+    selectedPreviewIndex,
+    setSelectedPreviewIndex,
+  });
 
   const {
     abutDiameters,
@@ -219,25 +266,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     removeFile,
     handleDiameterComputed,
     getWorkTypeForFilename,
-  } = useNewRequestFiles({
-    draftId,
-    token,
-    implantManufacturer,
-    implantSystem,
-    implantType,
-    setImplantManufacturer,
-    setImplantSystem,
-    setImplantType,
-    syncSelectedConnection,
-    uploadedFiles,
-    setUploadedFiles,
-    aiFileInfos,
-    setAiFileInfos,
-    files,
-    setFiles,
-    selectedPreviewIndex,
-    setSelectedPreviewIndex,
-  });
+  } = fileHookResult;
 
   useNewRequestDraft({
     existingRequestId,
@@ -302,6 +331,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
   const { handleSubmit, handleCancel } = useNewRequestSubmit({
     existingRequestId,
+    draftId,
     token,
     navigate,
     message,
@@ -364,6 +394,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     })();
   }, [existingRequestId, token]);
 
+  // draftId가 준비되기 전에는 파일 관련 기능 비활성화
+  const isReady = !!draftId;
+
   return {
     user,
     message,
@@ -372,14 +405,14 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setFiles,
     selectedPreviewIndex,
     setSelectedPreviewIndex,
-    abutDiameters,
-    connectionDiameters,
-    isDragOver,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop,
-    handleFileSelect,
-    handleFileListWheel,
+    abutDiameters: isReady ? abutDiameters : {},
+    connectionDiameters: isReady ? connectionDiameters : {},
+    isDragOver: isReady ? isDragOver : false,
+    handleDragOver: isReady ? handleDragOver : () => {},
+    handleDragLeave: isReady ? handleDragLeave : () => {},
+    handleDrop: isReady ? handleDrop : () => {},
+    handleFileSelect: isReady ? handleFileSelect : () => {},
+    handleFileListWheel: isReady ? handleFileListWheel : () => {},
     typeOptions,
     implantManufacturer,
     setImplantManufacturer,
@@ -390,9 +423,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     syncSelectedConnection,
     handleSubmit,
     handleCancel,
-    removeFile,
-    handleDiameterComputed,
-    getWorkTypeForFilename,
+    removeFile: isReady ? removeFile : () => {},
+    handleDiameterComputed: isReady ? handleDiameterComputed : () => {},
+    getWorkTypeForFilename: isReady ? getWorkTypeForFilename : () => "",
     aiFileInfos,
     setAiFileInfos,
     selectedRequest,
@@ -404,5 +437,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     handleAddOrSelectClinic,
     handleRenameClinic,
     handleDeleteClinic,
+    connections,
   };
 };

@@ -61,6 +61,8 @@ export const useNewRequestDraft = ({
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
+            // dev 환경 MOCK_DEV_TOKEN 사용 시 요청자 권한으로 동작하도록 명시
+            "x-mock-role": "requestor",
           },
           body: JSON.stringify({
             message,
@@ -69,6 +71,8 @@ export const useNewRequestDraft = ({
               implantType: implantSystem,
               connectionType: implantType,
             },
+            // 파일별 AI 분석 메타도 Draft 에 함께 저장
+            aiFileInfos,
           }),
         });
       } catch {
@@ -83,5 +87,6 @@ export const useNewRequestDraft = ({
     implantManufacturer,
     implantSystem,
     implantType,
+    aiFileInfos,
   ]);
 };

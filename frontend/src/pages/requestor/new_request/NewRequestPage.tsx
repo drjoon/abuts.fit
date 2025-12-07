@@ -55,6 +55,7 @@ export const NewRequestPage = () => {
     handleSelectClinic,
     handleAddOrSelectClinic,
     handleDeleteClinic,
+    connections,
   } = useNewRequestPage(existingRequestId);
   const [clinicInput, setClinicInput] = useState("");
   const manufacturerSelectRef = useRef<HTMLButtonElement | null>(null);
@@ -159,7 +160,7 @@ export const NewRequestPage = () => {
                   const isSelected = selectedPreviewIndex === index;
 
                   const isAbutment = workType === "abutment";
-                  const isProsthesis = workType === "prosthesis";
+                  const isCrown = workType === "crown";
 
                   return (
                     <div
@@ -172,8 +173,8 @@ export const NewRequestPage = () => {
                       } ${
                         isAbutment
                           ? "bg-gray-300 text-gray-900" // 어벗: 조금 밝은 회색 카드
-                          : isProsthesis
-                          ? "bg-gray-100 text-gray-900" // 보철: 옅은 회색 카드
+                          : isCrown
+                          ? "bg-gray-100 text-gray-900" // 크라운: 옅은 회색 카드
                           : "bg-gray-50 text-gray-900" // 미지정
                       }`}
                     >
@@ -257,7 +258,7 @@ export const NewRequestPage = () => {
                               if (idx >= 0) {
                                 next[idx] = {
                                   ...next[idx],
-                                  workType: "prosthesis",
+                                  workType: "crown",
                                 };
                               } else {
                                 next.push({
@@ -265,7 +266,7 @@ export const NewRequestPage = () => {
                                   clinicName: "",
                                   patientName: "",
                                   tooth: "",
-                                  workType: "prosthesis",
+                                  workType: "crown",
                                   abutType: "",
                                 });
                               }
@@ -446,6 +447,17 @@ export const NewRequestPage = () => {
                                   <SelectTrigger ref={manufacturerSelectRef}>
                                     <SelectValue placeholder="제조사" />
                                   </SelectTrigger>
+                                  <SelectContent>
+                                    {[
+                                      ...new Set(
+                                        connections.map((c) => c.manufacturer)
+                                      ),
+                                    ].map((m) => (
+                                      <SelectItem key={m} value={m}>
+                                        {m}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
                                 </Select>
                               </div>
 
@@ -466,6 +478,23 @@ export const NewRequestPage = () => {
                                   <SelectTrigger>
                                     <SelectValue placeholder="시스템" />
                                   </SelectTrigger>
+                                  <SelectContent>
+                                    {[
+                                      ...new Set(
+                                        connections
+                                          .filter(
+                                            (c) =>
+                                              c.manufacturer ===
+                                              implantManufacturer
+                                          )
+                                          .map((c) => c.system)
+                                      ),
+                                    ].map((s) => (
+                                      <SelectItem key={s} value={s}>
+                                        {s}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
                                 </Select>
                               </div>
 

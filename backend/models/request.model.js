@@ -29,6 +29,7 @@ const requestSchema = new mongoose.Schema(
       connectionType: String, // e.g. Hex, Non-hex
       maxDiameter: Number,
       connectionDiameter: Number,
+      workType: String
     },
     status: {
       type: String,

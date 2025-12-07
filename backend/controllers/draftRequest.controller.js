@@ -6,12 +6,13 @@ import { ApiError } from "../utils/ApiError.js";
 
 // 새 드래프트 생성
 export const createDraft = asyncHandler(async (req, res) => {
-  const { message = "", caseInfos = {} } = req.body || {};
+  const { message = "", caseInfos = {}, aiFileInfos = [] } = req.body || {};
 
   const draft = await DraftRequest.create({
     requestor: req.user._id,
     message,
     caseInfos,
+    aiFileInfos: Array.isArray(aiFileInfos) ? aiFileInfos : [],
   });
 
   return res
@@ -60,7 +61,7 @@ export const updateDraft = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not allowed to update this draft");
   }
 
-  const { message, caseInfos } = req.body || {};
+  const { message, caseInfos, aiFileInfos } = req.body || {};
 
   if (typeof message === "string") {
     draft.message = message;
@@ -71,6 +72,10 @@ export const updateDraft = asyncHandler(async (req, res) => {
       ...(draft.caseInfos?.toObject?.() || draft.caseInfos || {}),
       ...caseInfos,
     };
+  }
+
+  if (Array.isArray(aiFileInfos)) {
+    draft.aiFileInfos = aiFileInfos;
   }
 
   await draft.save();

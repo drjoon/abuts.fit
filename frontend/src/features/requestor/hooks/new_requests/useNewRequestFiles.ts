@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useState, useRef } from "react";
 import { type TempUploadedFile } from "@/hooks/useS3TempUpload";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
 import { useToast } from "@/hooks/use-toast";
-import { type AiFileInfo } from "./newRequestTypes";
+import { type AiFileInfo, type DraftFileMeta } from "./newRequestTypes";
+import { getCachedUrl, setCachedUrl, removeCachedUrl } from "@/utils/fileCache";
 
 type UseNewRequestFilesParams = {
-  draftId?: string;
+  draftId?: string; // hydrate 전에는 undefined 일 수 있음
   token: string | null;
   implantManufacturer: string;
   implantSystem: string;
@@ -14,6 +15,8 @@ type UseNewRequestFilesParams = {
   setImplantSystem: (v: string) => void;
   setImplantType: (v: string) => void;
   syncSelectedConnection: (m: string, s: string, t: string) => void;
+  draftFiles: DraftFileMeta[]; // Draft 파일 메타 배열
+  setDraftFiles: React.Dispatch<React.SetStateAction<DraftFileMeta[]>>;
   uploadedFiles: TempUploadedFile[];
   setUploadedFiles: React.Dispatch<React.SetStateAction<TempUploadedFile[]>>;
   aiFileInfos: AiFileInfo[];
@@ -24,10 +27,8 @@ type UseNewRequestFilesParams = {
   setSelectedPreviewIndex: React.Dispatch<React.SetStateAction<number | null>>;
 };
 
-const NEW_REQUEST_DRAFT_STORAGE_KEY = "abutsfit:new-request-draft:v1";
-
-// Attach temporary identifier from uploaded file record onto File objects
-type FileWithTempId = File & { _tempId?: string };
+// Attach Draft file ID to File objects for reliable deletion
+type FileWithDraftId = File & { _draftFileId?: string };
 
 // Normalize Unicode to avoid NFC/NFD mismatches across platforms (e.g., macOS)
 const normalize = (s: string) =>
@@ -43,6 +44,8 @@ export const useNewRequestFiles = ({
   setImplantSystem,
   setImplantType,
   syncSelectedConnection,
+  draftFiles,
+  setDraftFiles,
   uploadedFiles,
   setUploadedFiles,
   aiFileInfos,
@@ -65,6 +68,7 @@ export const useNewRequestFiles = ({
 
   // 최신 상태 추적을 위한 Refs
   const filesRef = useRef(files);
+  const draftFilesRef = useRef(draftFiles);
   const uploadedFilesRef = useRef(uploadedFiles);
   const aiFileInfosRef = useRef(aiFileInfos);
   const selectedPreviewIndexRef = useRef(selectedPreviewIndex);
@@ -75,6 +79,9 @@ export const useNewRequestFiles = ({
     filesRef.current = files;
   }, [files]);
   useEffect(() => {
+    draftFilesRef.current = draftFiles;
+  }, [draftFiles]);
+  useEffect(() => {
     uploadedFilesRef.current = uploadedFiles;
   }, [uploadedFiles]);
   useEffect(() => {
@@ -84,68 +91,35 @@ export const useNewRequestFiles = ({
     selectedPreviewIndexRef.current = selectedPreviewIndex;
   }, [selectedPreviewIndex]);
 
-  // Draft 동기화 헬퍼
-  const syncDraftToStorage = useCallback(
-    (
-      newUploadedFiles: TempUploadedFile[],
-      newAiFileInfos: AiFileInfo[],
-      newSelectedPreviewIndex: number | null
-    ) => {
-      try {
-        const raw = window.localStorage.getItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
-        const draft = raw ? JSON.parse(raw) : {};
-        const updatedDraft = {
-          ...draft,
-          uploadedFiles: newUploadedFiles,
-          aiFileInfos: newAiFileInfos,
-          selectedPreviewIndex: newSelectedPreviewIndex,
-        };
-        window.localStorage.setItem(
-          NEW_REQUEST_DRAFT_STORAGE_KEY,
-          JSON.stringify(updatedDraft)
-        );
-      } catch (e) {
-        console.error("Draft sync failed", e);
-      }
-    },
-    []
-  );
-
-  // 새로 진입했지만 state는 비어 있고, localStorage에는 직전 초안 파일 정보가 남아 있는 경우 복원
+  // 파일이 존재하지만 임플란트 정보가 비어 있을 때는
+  // 항상 OSSTEM / Regular / Hex 기본 프리셋을 강제로 세팅해 둔다.
+  // (AI 500, 프리셋 API 실패 등 모든 경우에 안전하게 동작하도록 하는 가드)
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (uploadedFiles.length > 0 || aiFileInfos.length > 0) return;
+    if (!files.length) return;
+    if (implantManufacturer || implantSystem || implantType) return;
 
-    try {
-      const raw = window.localStorage.getItem(NEW_REQUEST_DRAFT_STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
+    const baseManufacturer = "OSSTEM";
+    const baseSystem = "Regular";
+    const baseType = "Hex";
 
-      if (
-        Array.isArray(saved.uploadedFiles) &&
-        saved.uploadedFiles.length > 0
-      ) {
-        setUploadedFiles(saved.uploadedFiles);
-      }
-      if (Array.isArray(saved.aiFileInfos) && saved.aiFileInfos.length > 0) {
-        setAiFileInfos(saved.aiFileInfos);
-      }
-      if (
-        typeof saved.selectedPreviewIndex === "number" ||
-        saved.selectedPreviewIndex === null
-      ) {
-        setSelectedPreviewIndex(saved.selectedPreviewIndex);
-      }
-    } catch {
-      // ignore
-    }
+    setImplantManufacturer(baseManufacturer);
+    setImplantSystem(baseSystem);
+    setImplantType(baseType);
+    syncSelectedConnection(baseManufacturer, baseSystem, baseType);
   }, [
-    uploadedFiles.length,
-    aiFileInfos.length,
-    setUploadedFiles,
-    setAiFileInfos,
-    setSelectedPreviewIndex,
+    files.length,
+    implantManufacturer,
+    implantSystem,
+    implantType,
+    setImplantManufacturer,
+    setImplantSystem,
+    setImplantType,
+    syncSelectedConnection,
   ]);
+
+  // localStorage 동기화는 더 이상 사용하지 않음 (Draft API가 단일 소스)
+
+  // localStorage 복원 로직 제거 - Draft API에서 이미 복원됨
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -179,12 +153,12 @@ export const useNewRequestFiles = ({
             if (!fileRes.ok) continue;
 
             const blob = await fileRes.blob();
-            const file: FileWithTempId = new File([blob], item.originalName, {
+            const file: FileWithDraftId = new File([blob], item.originalName, {
               type: item.mimetype || "application/octet-stream",
               lastModified: Date.now(),
             });
             // link restored File to its uploaded record id for reliable deletion
-            (file as FileWithTempId)._tempId = item._id;
+            (file as FileWithDraftId)._draftFileId = item._id;
             restored.push(file);
             restoredUploaded.push(item);
           } catch {}
@@ -239,11 +213,11 @@ export const useNewRequestFiles = ({
               const fileRes = await fetch(signedUrl);
               if (!fileRes.ok) return null;
               const blob = await fileRes.blob();
-              const f: FileWithTempId = new File([blob], item.originalName, {
+              const f: FileWithDraftId = new File([blob], item.originalName, {
                 type: item.mimetype || "application/octet-stream",
                 lastModified: Date.now(),
               });
-              (f as FileWithTempId)._tempId = item._id;
+              (f as FileWithDraftId)._draftFileId = item._id;
               return { file: f, item } as const;
             } catch {
               return null;
@@ -260,11 +234,6 @@ export const useNewRequestFiles = ({
         setFiles(rebuiltFiles);
         if (validUploaded.length !== list.length) {
           setUploadedFiles(validUploaded);
-          syncDraftToStorage(
-            validUploaded,
-            aiFileInfosRef.current,
-            selectedPreviewIndexRef.current
-          );
         }
 
         if (rebuiltFiles.length === 0) {
@@ -278,13 +247,7 @@ export const useNewRequestFiles = ({
       } finally {
       }
     },
-    [
-      token,
-      setFiles,
-      setUploadedFiles,
-      setSelectedPreviewIndex,
-      syncDraftToStorage,
-    ]
+    [token, setFiles, setUploadedFiles, setSelectedPreviewIndex]
   );
   const analyzeFilenamesWithAi = useCallback(
     async (
@@ -328,9 +291,9 @@ export const useNewRequestFiles = ({
           const patientName: string =
             typeof item?.patientName === "string" ? item.patientName : "";
 
-          // 파일 크기 기반 workType 결정: 1MB 미만이면 abutment, 이상이면 prosthesis
+          // 파일 크기 기반 workType 결정: 1MB 미만이면 abutment, 이상이면 crown
           const fileSizeInMB = fileObj ? fileObj.size / (1024 * 1024) : 0;
-          const defaultWorkType = fileSizeInMB < 1 ? "abutment" : "prosthesis";
+          const defaultWorkType = fileSizeInMB < 1 ? "abutment" : "crown";
           const workType = defaultWorkType;
 
           const tooth =
@@ -428,8 +391,7 @@ export const useNewRequestFiles = ({
             unique.forEach((file) => {
               const filename = file.name;
               const idx = next.findIndex((i) => i.filename === filename);
-              const suggested =
-                file.size < 1024 * 1024 ? "abutment" : "prosthesis";
+              const suggested = file.size < 1024 * 1024 ? "abutment" : "crown";
               if (idx >= 0) {
                 if (!next[idx].workType) {
                   next[idx] = { ...next[idx], workType: suggested };
@@ -452,18 +414,9 @@ export const useNewRequestFiles = ({
           const analyzedInfos = await analyzeFilenamesWithAi(filenames, unique);
 
           const uploaded = await uploadFilesWithToast(unique);
-          const uploadedActive = uploaded.filter((u) => {
-            const key = `${normalize(u.originalName)}__${u.size}`;
-            if (pendingRemovalRef.current.has(`id:${u._id}`)) return false;
-            if (pendingRemovalRef.current.has(`key:${key}`)) return false;
-            return true;
-          });
-          const uniqueActive = unique.filter(
-            (f) =>
-              !pendingRemovalRef.current.has(
-                `key:${normalize(f.name)}__${f.size}`
-              )
-          );
+          // 삭제 예약 상태와 관계없이, 업로드 성공한 파일은 모두 활성으로 취급
+          const uploadedActive = uploaded;
+          const uniqueActive = unique;
 
           if (uploadedActive.length > 0) {
             // 백엔드 DraftRequest에도 업로드된 파일 메타를 등록
@@ -518,7 +471,7 @@ export const useNewRequestFiles = ({
                 const key = `${normalize(f.name)}__${f.size}`;
                 const hit = byKey.get(key);
                 if (hit) {
-                  (f as FileWithTempId)._tempId = hit._id;
+                  (f as FileWithDraftId)._draftFileId = hit._id;
                 }
                 return f;
               });
@@ -536,7 +489,7 @@ export const useNewRequestFiles = ({
                   clinicName: "",
                   patientName: "",
                   tooth: "",
-                  workType: file.size < 1024 * 1024 ? "abutment" : "prosthesis",
+                  workType: file.size < 1024 * 1024 ? "abutment" : "crown",
                   abutType: "",
                 };
               });
@@ -545,7 +498,7 @@ export const useNewRequestFiles = ({
               return Array.from(map.values());
             })();
 
-            syncDraftToStorage(nextUploadedFiles, nextAiFileInfos, 0);
+            // Draft 동기화는 백엔드 API로 처리됨
 
             await refreshFromUploaded(nextUploadedFiles);
 
@@ -593,6 +546,7 @@ export const useNewRequestFiles = ({
               }
             }
 
+            // AI/프리셋이 실패한 경우에도 기본 프리셋은 항상 OSSTEM / Regular / Hex 로 유지
             if (!implantManufacturer && !implantSystem && !implantType) {
               const baseManufacturer = "OSSTEM";
               const baseSystem = "Regular";
@@ -633,7 +587,6 @@ export const useNewRequestFiles = ({
       syncSelectedConnection,
       setAiFileInfos,
       setUploadedFiles,
-      syncDraftToStorage,
     ]
   );
 
@@ -700,20 +653,36 @@ export const useNewRequestFiles = ({
           const analyzedInfos = await analyzeFilenamesWithAi(filenames, unique);
 
           const uploaded = await uploadFilesWithToast(unique);
-          const uploadedActive = uploaded.filter((u) => {
-            const key = `${normalize(u.originalName)}__${u.size}`;
-            if (pendingRemovalRef.current.has(`id:${u._id}`)) return false;
-            if (pendingRemovalRef.current.has(`key:${key}`)) return false;
-            return true;
-          });
-          const uniqueActive = unique.filter(
-            (f) =>
-              !pendingRemovalRef.current.has(
-                `key:${normalize(f.name)}__${f.size}`
-              )
-          );
+          const uploadedActive = uploaded;
+          const uniqueActive = unique;
 
           if (uploadedActive.length > 0) {
+            // 백엔드 DraftRequest에도 업로드된 파일 메타를 등록 (파일 선택 경로)
+            if (draftId && token) {
+              try {
+                await Promise.all(
+                  uploadedActive.map((u) =>
+                    fetch(`/api/request-drafts/${draftId}/files`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                        "x-mock-role": "requestor",
+                      },
+                      body: JSON.stringify({
+                        originalName: u.originalName,
+                        size: u.size,
+                        mimetype: u.mimetype,
+                        fileId: u._id,
+                      }),
+                    })
+                  )
+                );
+              } catch {
+                // Draft 동기화 실패는 치명적이지 않으므로 조용히 무시 (다음 업로드 시 다시 시도 가능)
+              }
+            }
+
             const nextUploadedFiles = (() => {
               const map = new Map(
                 uploadedFilesRef.current.map((f) => [
@@ -742,7 +711,7 @@ export const useNewRequestFiles = ({
                 const key = `${normalize(f.name)}__${f.size}`;
                 const hit = byKey.get(key);
                 if (hit) {
-                  (f as FileWithTempId)._tempId = hit._id;
+                  (f as FileWithDraftId)._draftFileId = hit._id;
                 }
                 return f;
               });
@@ -770,8 +739,7 @@ export const useNewRequestFiles = ({
               return Array.from(map.values());
             })();
 
-            // 4. LocalStorage 즉시 동기화
-            syncDraftToStorage(nextUploadedFiles, nextAiFileInfos, 0);
+            // Draft 동기화는 백엔드 API로 처리됨
 
             // 어벗일 때만 프리셋에서 임플란트 정보 추천
             const isAbutment = unique[0].size < 1024 * 1024;
@@ -843,28 +811,27 @@ export const useNewRequestFiles = ({
           description: err?.message || "잠시 후 다시 시도해주세요.",
           variant: "destructive",
         });
+      } finally {
+        // 동일 파일을 다시 선택해도 onChange가 항상 발생하도록 input 값을 초기화
+        e.target.value = "";
       }
     })();
   };
 
   const removeFile = useCallback(
     (index: number) => {
-      const target = files[index] as FileWithTempId | undefined;
+      const target = files[index] as FileWithDraftId | undefined;
       if (!target) return;
 
-      const tempId = target._tempId;
+      const draftFileId = target._draftFileId;
       const normalizedName = normalize(target.name);
       const nameSizeKey = `${normalizedName}__${target.size}`;
-
-      // Mark as pending removal to guard against in-flight upload completion
-      if (tempId) pendingRemovalRef.current.add(`id:${tempId}`);
-      pendingRemovalRef.current.add(`key:${nameSizeKey}`);
 
       // 1. 새로운 상태 계산
       const newFiles = files.filter((_, i) => i !== index);
       let newUploadedFiles: TempUploadedFile[];
-      if (tempId) {
-        newUploadedFiles = uploadedFiles.filter((f) => f._id !== tempId);
+      if (draftFileId) {
+        newUploadedFiles = uploadedFiles.filter((f) => f._id !== draftFileId);
       } else {
         newUploadedFiles = uploadedFiles.filter(
           (f) => `${normalize(f.originalName)}__${f.size}` !== nameSizeKey
@@ -888,12 +855,7 @@ export const useNewRequestFiles = ({
       setAiFileInfos(newAiFileInfos);
       setSelectedPreviewIndex(newSelectedPreviewIndex);
 
-      // 3. LocalStorage 즉시 동기화
-      syncDraftToStorage(
-        newUploadedFiles,
-        newAiFileInfos,
-        newSelectedPreviewIndex
-      );
+      // Draft 동기화는 백엔드 API로 처리됨
     },
     [
       files,
@@ -904,7 +866,6 @@ export const useNewRequestFiles = ({
       setUploadedFiles,
       setAiFileInfos,
       setSelectedPreviewIndex,
-      syncDraftToStorage,
     ]
   );
 
