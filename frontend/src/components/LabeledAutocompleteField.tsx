@@ -55,6 +55,7 @@ export const LabeledAutocompleteField: React.FC<
             <button
               type="button"
               className="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-muted-foreground hover:bg-muted"
+              tabIndex={-1}
               onClick={handleClear}
             >
               ×
@@ -66,6 +67,7 @@ export const LabeledAutocompleteField: React.FC<
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-muted-foreground"
+              tabIndex={-1}
               onClick={onDelete}
             >
               <Trash2 className="h-3 w-3" />

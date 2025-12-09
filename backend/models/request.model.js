@@ -29,7 +29,19 @@ const requestSchema = new mongoose.Schema(
       connectionType: String, // e.g. Hex, Non-hex
       maxDiameter: Number,
       connectionDiameter: Number,
-      workType: String
+      workType: String,
+      file: {
+        fileName: String,
+        fileType: String,
+        fileSize: Number,
+        filePath: String,
+        s3Key: String,
+        s3Url: String,
+        uploadedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
     },
     status: {
       type: String,
@@ -62,51 +74,14 @@ const requestSchema = new mongoose.Schema(
       enum: ["낮음", "보통", "높음"],
       default: "보통",
     },
-    files: [
-      {
-        fileName: String,
-        fileType: String,
-        fileSize: Number,
-        filePath: String,
-        s3Key: String,
-        s3Url: String,
-        uploadedAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
-    messages: [
-      {
-        sender: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        content: {
-          type: String,
-          required: true,
-        },
-        attachments: [
-          {
-            fileName: String,
-            fileType: String,
-            fileSize: Number,
-            filePath: String,
-            s3Key: String,
-            s3Url: String,
-          },
-        ],
-        createdAt: {
-          type: Date,
-          default: Date.now,
-        },
-        isRead: {
-          type: Boolean,
-          default: false,
-        },
-      },
-    ],
+
+    // 배송 요청 정보
+    shippingMode: {
+      type: String,
+      enum: ["normal", "express"],
+      default: "normal",
+    },
+    requestedShipDate: Date,
 
     price: {
       amount: {

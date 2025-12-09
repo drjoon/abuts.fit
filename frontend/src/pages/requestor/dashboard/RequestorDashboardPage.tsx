@@ -8,7 +8,6 @@ import {
   RequestorEditRequestDialog,
   type EditingRequestState,
 } from "@/features/requestor/components/dashboard/RequestorEditRequestDialog";
-import { RequestorBulkShippingDialog } from "@/features/requestor/components/dashboard/RequestorBulkShippingDialog";
 import { RequestorDashboardStatsCards } from "@/features/requestor/components/dashboard/RequestorDashboardStatsCards";
 import { RequestorBulkShippingBannerCard } from "@/features/requestor/components/dashboard/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "@/features/requestor/components/dashboard/RequestorRecentRequestsCard";
@@ -363,48 +362,6 @@ export const RequestorDashboardPage = () => {
         }}
       />
 
-      <RequestorBulkShippingDialog
-        open={isBulkModalOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsBulkModalOpen(false);
-          } else {
-            setIsBulkModalOpen(true);
-          }
-        }}
-        bulkData={bulkData}
-        selected={selectedBulkIds}
-        setSelected={setSelectedBulkIds}
-        isSubmitting={isBulkLoading}
-        onSubmit={async (selectedIds) => {
-          if (!selectedIds.length) {
-            setIsBulkModalOpen(false);
-            return;
-          }
-
-          try {
-            const res = await apiFetch<any>({
-              path: `/api/requests/my/bulk-shipping`,
-              method: "POST",
-              jsonBody: { requestIds: selectedIds },
-              headers: {
-                "Content-Type": "application/json",
-              },
-            });
-
-            if (!res.ok) {
-              throw new Error("묶음 배송 신청에 실패했습니다.");
-            }
-            await queryClient.invalidateQueries({
-              queryKey: ["requestor-bulk-shipping"],
-            });
-          } catch (e) {
-            console.error(e);
-          } finally {
-            setIsBulkModalOpen(false);
-          }
-        }}
-      />
     </div>
   );
 };

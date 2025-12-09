@@ -14,6 +14,16 @@ const getFileType = (filename) => {
   return "other";
 };
 
+// 클라이언트에서 전달한 원본 파일명을 NFC로만 정규화해서 사용한다.
+const normalizeOriginalName = (name) => {
+  if (typeof name !== "string") return String(name || "");
+  try {
+    return name.normalize("NFC");
+  } catch {
+    return name;
+  }
+};
+
 // 임시 파일 업로드 (의뢰와 아직 연결되지 않은 상태, 사용자별 중복 방지)
 export const uploadTempFiles = asyncHandler(async (req, res) => {
   const files = Array.isArray(req.files) ? req.files : [];
@@ -26,8 +36,21 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
 
   const results = [];
 
-  for (const file of files) {
-    const { originalname, mimetype, size, buffer } = file;
+  for (const [index, file] of files.entries()) {
+    const { mimetype, size, buffer } = file;
+
+    // 클라이언트가 FormData로 보낸 원본 파일명을 우선 사용한다.
+    const bodyNames = req.body?.originalNames;
+    let rawName;
+    if (Array.isArray(bodyNames)) {
+      rawName = bodyNames[index];
+    } else if (typeof bodyNames === "string") {
+      rawName = bodyNames;
+    } else {
+      rawName = file.originalname;
+    }
+
+    const originalname = normalizeOriginalName(rawName);
 
     // 사용자별 파일명+용량 기준 중복 검사
     const existing = await File.findOne({

@@ -4,7 +4,8 @@ const WINDOW_MS = 1000; // 1초
 const MAX_CALLS = 3; // 윈도 내 최대 허용 호출 수
 
 // 과도 호출을 감시할 경로 목록 (부분 문자열 매칭)
-const GUARDED_PATHS = ["/api/ai/parse-filenames"]; // 필요 시 추가
+// 현재는 모든 API 호출을 허용 (무한 루프 방지를 위해 Draft API 등은 제외)
+const GUARDED_PATHS: string[] = []; // 필요 시 추가
 
 const callHistory = new Map<string, number[]>();
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -10,11 +10,20 @@ type Props = {
     maxDiameter: number,
     connectionDiameter: number
   ) => void;
+  showOverlay?: boolean;
 };
 
-export function StlPreviewViewer({ file, onDiameterComputed }: Props) {
+export function StlPreviewViewer({
+  file,
+  onDiameterComputed,
+  showOverlay = true,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const onDiameterComputedRef = useRef(onDiameterComputed);
+  const [maxDiameterState, setMaxDiameterState] = useState<number | null>(null);
+  const [connectionDiameterState, setConnectionDiameterState] = useState<
+    number | null
+  >(null);
 
   useEffect(() => {
     onDiameterComputedRef.current = onDiameterComputed;
@@ -134,6 +143,15 @@ export function StlPreviewViewer({ file, onDiameterComputed }: Props) {
           const connectionDiameter =
             connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
 
+          // 내부 표시용 상태 업데이트 (필요 시에만)
+          if (showOverlay) {
+            setMaxDiameterState(Math.round(maxDiameter * 10) / 10);
+            setConnectionDiameterState(
+              Math.round(connectionDiameter * 10) / 10
+            );
+          }
+
+          // 부모로 콜백 전달 (기존 동작 유지)
           if (onDiameterComputedRef.current) {
             onDiameterComputedRef.current(
               file.name,
@@ -206,7 +224,32 @@ export function StlPreviewViewer({ file, onDiameterComputed }: Props) {
         containerRef.current.innerHTML = "";
       }
     };
-  }, [file]);
+  }, [file, showOverlay]);
 
-  return <div ref={containerRef} className="w-full max-w-full h-[300px]" />;
+  return (
+    <div className="relative w-full max-w-full h-[300px]">
+      <div ref={containerRef} className="w-full h-full" />
+      {showOverlay &&
+        (maxDiameterState !== null || connectionDiameterState !== null) && (
+          <div className="pointer-events-none absolute top-2 left-2 flex flex-wrap gap-2 rounded-md bg-white/85 px-2 py-1 text-[12px] md:text-[13px] text-muted-foreground shadow-sm">
+            {maxDiameterState !== null && (
+              <span>
+                최대 직경:{" "}
+                <span className="font-semibold text-foreground">
+                  {maxDiameterState.toFixed(1)} mm
+                </span>
+              </span>
+            )}
+            {connectionDiameterState !== null && (
+              <span>
+                커넥션 직경:{" "}
+                <span className="font-semibold text-foreground">
+                  {connectionDiameterState.toFixed(1)} mm
+                </span>
+              </span>
+            )}
+          </div>
+        )}
+    </div>
+  );
 }

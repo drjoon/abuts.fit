@@ -7,11 +7,18 @@ import { BusinessTab } from "@/components/settings/BusinessTab";
 import { PricingTab } from "@/components/settings/PricingTab";
 import { PaymentTab } from "@/components/settings/PaymentTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
+import { ShippingTab } from "@/components/settings/ShippingTab";
 
-import { User, Building2, CreditCard, Bell } from "lucide-react";
+import { User, Building2, CreditCard, Bell, Truck } from "lucide-react";
 
 export const SettingsPage = () => {
   const { user } = useAuthStore();
+
+  const isManufacturer = user?.role === "manufacturer";
+  const baseTabs = 4; // account, business, payment, notifications
+  const pricingTabs = isManufacturer ? 1 : 0;
+  const shippingTabs = 1; // 배송 옵션 탭
+  const totalTabs = baseTabs + pricingTabs + shippingTabs;
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
@@ -28,11 +35,7 @@ export const SettingsPage = () => {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="account" className="space-y-6">
-          <TabsList
-            className={`grid w-full ${
-              user?.role === "manufacturer" ? "grid-cols-5" : "grid-cols-4"
-            }`}
-          >
+          <TabsList className={`grid w-full ${`grid-cols-${totalTabs}`}`}>
             <TabsTrigger value="account" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               계정
@@ -40,6 +43,10 @@ export const SettingsPage = () => {
             <TabsTrigger value="business" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               사업자
+            </TabsTrigger>
+            <TabsTrigger value="shipping" className="flex items-center gap-2">
+              <Truck className="h-4 w-4" />
+              배송 옵션
             </TabsTrigger>
             {user?.role === "manufacturer" && (
               <TabsTrigger value="pricing" className="flex items-center gap-2">
@@ -68,6 +75,11 @@ export const SettingsPage = () => {
           {/* Business Settings */}
           <TabsContent value="business">
             <BusinessTab userData={user} />
+          </TabsContent>
+
+          {/* Shipping Settings */}
+          <TabsContent value="shipping">
+            <ShippingTab userData={user} />
           </TabsContent>
 
           {/* Pricing Settings (for manufacturers) */}

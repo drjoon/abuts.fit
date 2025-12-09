@@ -1,6 +1,7 @@
 import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
-import ImplantPreset from "../models/implantPreset.model.js";
+import DraftRequest from "../models/draftRequest.model.js";
+import ClinicImplantPreset from "../models/clinicImplantPreset.model.js";
 import { Types } from "mongoose";
 
 // status(단일 필드)를 status1/status2와 동기화하는 헬퍼
@@ -85,13 +86,34 @@ async function createRequest(req, res) {
 
         const patientName = (caseInfos.patientName || "").trim();
         const tooth = (caseInfos.tooth || "").trim();
+        const clinicName = (caseInfos.clinicName || "").trim();
+        const workType = (caseInfos.workType || "abutment").trim();
 
-        if (!patientName || !tooth) {
-          throw new Error(
-            `환자 정보가 누락된 항목이 있습니다. (Patient: ${
-              patientName || "Unknown"
-            })`
-          );
+        // 현재는 커스텀 어벗먼트 의뢰만 허용
+        if (workType !== "abutment") {
+          return res.status(400).json({
+            success: false,
+            message: "현재는 커스텀 어벗먼트 의뢰만 등록할 수 있습니다.",
+          });
+        }
+
+        const implantSystem = (caseInfos.implantSystem || "").trim();
+        const implantType = (caseInfos.implantType || "").trim();
+        const connectionType = (caseInfos.connectionType || "").trim();
+
+        if (!patientName || !tooth || !clinicName) {
+          return res.status(400).json({
+            success: false,
+            message: "치과이름, 환자이름, 치아번호는 모두 필수입니다.",
+          });
+        }
+
+        if (!implantSystem || !implantType || !connectionType) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "커스텀 어벗 의뢰의 경우 임플란트 시스템/타입/커넥션은 모두 필수입니다.",
+          });
         }
 
         let priceAmount = 15000;
@@ -131,28 +153,25 @@ async function createRequest(req, res) {
         await newRequest.save();
         createdRequests.push(newRequest);
 
-        // Save/update implant preset (clinicName이 없으면 빈 문자열 사용)
-        if (hasImplantSystem && patientName && tooth) {
+        // Save/update clinic-level implant preset (useCount 기반)
+        if (hasImplantSystem) {
           try {
-            await ImplantPreset.findOneAndUpdate(
+            await ClinicImplantPreset.findOneAndUpdate(
               {
                 requestor: req.user._id,
                 clinicName: caseInfos.clinicName || "",
-                patientName,
-                tooth,
+                manufacturer: caseInfos.implantSystem,
+                system: caseInfos.implantType,
+                type: caseInfos.connectionType,
               },
               {
-                $set: {
-                  manufacturer: caseInfos.implantSystem, // Note: frontend manufacturer is backend system
-                  system: caseInfos.implantType,
-                  type: caseInfos.connectionType,
-                  lastUsedAt: new Date(),
-                },
+                $inc: { useCount: 1 },
+                $set: { lastUsedAt: new Date() },
               },
               { upsert: true, new: true, setDefaultsOnInsert: true }
             );
           } catch (presetError) {
-            console.warn("Could not save implant preset", presetError);
+            console.warn("Could not save clinic implant preset", presetError);
           }
         }
       }
@@ -161,34 +180,46 @@ async function createRequest(req, res) {
       // (예: "김선미"의 27번/37번/크라운 의뢰만 서로 묶이고,
       //  다른 환자 이름의 의뢰들은 별도 그룹으로 관리)
 
-      // 1) 환자명(normalized) -> requestId[] 맵 구성 (caseInfos.patientName 기준)
-      const groupByPatient = new Map();
+      // 1) (클리닉명 + 환자명) 조합별 -> requestId[] 맵 구성
+      const groupByClinicAndPatient = new Map();
 
       for (const r of createdRequests) {
         const rawName =
           typeof r.caseInfos?.patientName === "string"
             ? r.caseInfos.patientName
             : "";
-        const key = rawName.trim() || "__NO_NAME__";
-        if (!groupByPatient.has(key)) {
-          groupByPatient.set(key, []);
+        const rawClinic =
+          typeof r.caseInfos?.clinicName === "string"
+            ? r.caseInfos.clinicName
+            : "";
+        const nameKey = rawName.trim() || "__NO_NAME__";
+        const clinicKey = rawClinic.trim() || "__NO_CLINIC__";
+        const key = `${clinicKey}::${nameKey}`;
+        if (!groupByClinicAndPatient.has(key)) {
+          groupByClinicAndPatient.set(key, []);
         }
-        const arr = groupByPatient.get(key);
+        const arr = groupByClinicAndPatient.get(key);
         if (typeof r.requestId === "string" && r.requestId.length > 0) {
           arr.push(r.requestId);
         }
       }
 
-      // 2) 각 의뢰에 대해, 자신의 환자명 그룹에 해당하는 requestId 배열(자기 자신은 제외)을 referenceIds로 설정
+      // 2) 각 의뢰에 대해, 자신의 (클리닉+환자) 그룹에 해당하는 requestId 배열(자기 자신은 제외)을 referenceIds로 설정
       await Promise.all(
         createdRequests.map(async (reqDoc) => {
           const rawName =
             typeof reqDoc.caseInfos?.patientName === "string"
               ? reqDoc.caseInfos.patientName
               : "";
-          const key = rawName.trim() || "__NO_NAME__";
-          const idsForPatient = groupByPatient.get(key) || [];
-          reqDoc.referenceIds = idsForPatient.filter(
+          const rawClinic =
+            typeof reqDoc.caseInfos?.clinicName === "string"
+              ? reqDoc.caseInfos.clinicName
+              : "";
+          const nameKey = rawName.trim() || "__NO_NAME__";
+          const clinicKey = rawClinic.trim() || "__NO_CLINIC__";
+          const key = `${clinicKey}::${nameKey}`;
+          const idsForGroup = groupByClinicAndPatient.get(key) || [];
+          reqDoc.referenceIds = idsForGroup.filter(
             (id) => id !== reqDoc.requestId
           );
           await reqDoc.save();
@@ -210,9 +241,34 @@ async function createRequest(req, res) {
 
     const patientName = (caseInfos.patientName || "").trim();
     const tooth = (caseInfos.tooth || "").trim();
+    const clinicName = (caseInfos.clinicName || "").trim();
+    const workType = (caseInfos.workType || "abutment").trim();
 
-    if (!patientName || !tooth) {
-      throw new Error("환자명과 치아번호는 필수입니다.");
+    // 현재는 커스텀 어벗먼트 의뢰만 허용
+    if (workType !== "abutment") {
+      return res.status(400).json({
+        success: false,
+        message: "현재는 커스텀 어벗먼트 의뢰만 등록할 수 있습니다.",
+      });
+    }
+
+    const implantSystem = (caseInfos.implantSystem || "").trim();
+    const implantType = (caseInfos.implantType || "").trim();
+    const connectionType = (caseInfos.connectionType || "").trim();
+
+    if (!patientName || !tooth || !clinicName) {
+      return res.status(400).json({
+        success: false,
+        message: "치과이름, 환자이름, 치아번호는 모두 필수입니다.",
+      });
+    }
+
+    if (!implantSystem || !implantType || !connectionType) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "커스텀 어벗 의뢰의 경우 임플란트 시스템/타입/커넥션은 모두 필수입니다.",
+      });
     }
 
     let priceAmount = 15000;
@@ -253,6 +309,27 @@ async function createRequest(req, res) {
 
     await newRequest.save();
 
+    if (hasImplantSystem) {
+      try {
+        await ClinicImplantPreset.findOneAndUpdate(
+          {
+            requestor: req.user._id,
+            clinicName: caseInfos.clinicName || "",
+            manufacturer: caseInfos.implantSystem,
+            system: caseInfos.implantType,
+            type: caseInfos.connectionType,
+          },
+          {
+            $inc: { useCount: 1 },
+            $set: { lastUsedAt: new Date() },
+          },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+      } catch (presetError) {
+        console.warn("Could not save clinic implant preset", presetError);
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: "의뢰가 성공적으로 등록되었습니다.",
@@ -275,6 +352,185 @@ async function createRequest(req, res) {
         error: error.message,
       });
     }
+  }
+}
+
+/**
+ * DraftRequest를 실제 Request들로 변환
+ * @route POST /api/requests/from-draft
+ */
+async function createRequestsFromDraft(req, res) {
+  try {
+    const { draftId, clinicId } = req.body || {};
+
+    if (!draftId || !Types.ObjectId.isValid(draftId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 draftId가 필요합니다.",
+      });
+    }
+
+    const draft = await DraftRequest.findById(draftId).lean();
+
+    if (!draft) {
+      return res.status(404).json({
+        success: false,
+        message: "Draft를 찾을 수 없습니다.",
+      });
+    }
+
+    if (draft.requestor.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "이 Draft에 대한 권한이 없습니다.",
+      });
+    }
+
+    const caseInfosArray = Array.isArray(draft.caseInfos)
+      ? draft.caseInfos
+      : [];
+
+    if (!caseInfosArray.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Draft에 caseInfos가 없습니다.",
+      });
+    }
+
+    // 현재는 커스텀 어벗먼트 케이스만 실제 Request 생성 대상으로 사용
+    const abutmentCases = caseInfosArray.filter(
+      (ci) => (ci.workType || "abutment").trim() === "abutment"
+    );
+
+    if (!abutmentCases.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Draft에 커스텀 어벗 케이스가 없습니다.",
+      });
+    }
+
+    const createdRequests = [];
+
+    for (const ci of abutmentCases) {
+      const caseInfos = ci || {};
+
+      const patientName = (caseInfos.patientName || "").trim();
+      const tooth = (caseInfos.tooth || "").trim();
+      const clinicName = (caseInfos.clinicName || "").trim();
+      const workType = (caseInfos.workType || "abutment").trim();
+
+      // 안전장치: 여기까지 온 케이스는 모두 abutment 여야 함
+      if (workType !== "abutment") continue;
+
+      const implantSystem = (caseInfos.implantSystem || "").trim();
+      const implantType = (caseInfos.implantType || "").trim();
+      const connectionType = (caseInfos.connectionType || "").trim();
+
+      // 배송 정보 (없으면 기본값 normal)
+      const shippingMode =
+        caseInfos.shippingMode === "express" ? "express" : "normal";
+      const requestedShipDate = caseInfos.requestedShipDate || undefined;
+
+      if (!patientName || !tooth || !clinicName) {
+        return res.status(400).json({
+          success: false,
+          message: "치과이름, 환자이름, 치아번호는 모두 필수입니다.",
+        });
+      }
+
+      let priceAmount = 15000;
+      const hasImplantSystem =
+        typeof caseInfos.implantSystem === "string" &&
+        caseInfos.implantSystem.trim();
+
+      if (hasImplantSystem) {
+        const clinicNameForPrice = (caseInfos.clinicName || "").trim();
+        if (clinicNameForPrice) {
+          const cutoff = new Date();
+          cutoff.setDate(cutoff.getDate() - 90);
+
+          const existing = await Request.findOne({
+            requestor: req.user._id,
+            "caseInfos.patientName": patientName,
+            "caseInfos.tooth": tooth,
+            "caseInfos.clinicName": clinicNameForPrice,
+            "caseInfos.implantSystem": { $exists: true, $ne: "" },
+            status: { $ne: "취소" },
+            createdAt: { $gte: cutoff },
+          }).lean();
+
+          if (existing) {
+            priceAmount = 10000;
+          }
+        }
+      }
+
+      const caseInfosWithFile = caseInfos.file
+        ? {
+            ...caseInfos,
+            file: {
+              fileName: caseInfos.file.originalName,
+              fileType: caseInfos.file.mimetype,
+              fileSize: caseInfos.file.size,
+              // filePath는 아직 없으므로 undefined 유지
+              filePath: undefined,
+              s3Key: caseInfos.file.s3Key,
+              // s3Url은 나중에 presigned URL 생성 시 채울 수 있으므로 undefined
+              s3Url: undefined,
+            },
+          }
+        : caseInfos;
+
+      const newRequest = new Request({
+        requestor: req.user._id,
+        caseInfos: caseInfosWithFile,
+        price: { amount: priceAmount },
+        shippingMode,
+        requestedShipDate,
+      });
+
+      applyStatusMapping(newRequest, newRequest.status);
+
+      await newRequest.save();
+      createdRequests.push(newRequest);
+
+      if (hasImplantSystem) {
+        try {
+          await ClinicImplantPreset.findOneAndUpdate(
+            {
+              requestor: req.user._id,
+              clinicName: caseInfos.clinicName || "",
+              manufacturer: caseInfos.implantSystem,
+              system: caseInfos.implantType,
+              type: caseInfos.connectionType,
+            },
+            {
+              $inc: { useCount: 1 },
+              $set: { lastUsedAt: new Date() },
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+          );
+        } catch (presetError) {
+          console.warn(
+            "Could not save clinic implant preset from draft",
+            presetError
+          );
+        }
+      }
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `${createdRequests.length}건의 의뢰가 Draft에서 생성되었습니다.`,
+      data: createdRequests,
+    });
+  } catch (error) {
+    console.error("Error in createRequestsFromDraft:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Draft에서 의뢰 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
   }
 }
 
@@ -323,57 +579,36 @@ async function hasDuplicateCase(req, res) {
 }
 
 /**
- * 현재 로그인한 의뢰인의 최다 사용 임플란트 조합 조회
- * @route GET /api/requests/my/favorite-implant
+ * 현재 로그인한 의뢰인의 특정 치과별 임플란트 프리셋 목록 조회
+ * @route GET /api/requests/my/clinic-implants?clinicName=...
  */
-async function getMyFavoriteImplant(req, res) {
+async function getMyClinicImplants(req, res) {
   try {
     const requestorId = req.user._id;
+    const clinicName = (req.query.clinicName || "").trim();
 
-    const [favorite] = await Request.aggregate([
-      {
-        $match: {
-          requestor: requestorId,
-          "specifications.implantSystem": { $type: "string" },
-          "specifications.implantType": { $type: "string" },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            implantSystem: "$specifications.implantSystem",
-            implantType: "$specifications.implantType",
-          },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { count: -1 } },
-      { $limit: 1 },
-    ]);
-
-    if (!favorite) {
-      return res.status(200).json({
-        success: true,
-        data: null,
+    if (!clinicName) {
+      return res.status(400).json({
+        success: false,
+        message: "clinicName 쿼리 파라미터가 필요합니다.",
       });
     }
 
-    const { implantSystem, implantType } = favorite._id;
+    const presets = await ClinicImplantPreset.find({
+      requestor: requestorId,
+      clinicName,
+    })
+      .sort({ useCount: -1, lastUsedAt: -1 })
+      .lean();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      data: {
-        // manufacturer 필드는 현재 별도 스키마 없이 system과 동일하게 취급
-        implantManufacturer: implantSystem,
-        implantSystem,
-        implantType,
-        count: favorite.count,
-      },
+      data: presets,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "선호 임플란트 정보를 조회하는 중 오류가 발생했습니다.",
+      message: "치과별 임플란트 프리셋 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1269,8 +1504,9 @@ async function createMyBulkShipping(req, res) {
 
 export default {
   createRequest,
+  createRequestsFromDraft,
   hasDuplicateCase,
-  getMyFavoriteImplant,
+  getMyClinicImplants,
   getAllRequests,
   getMyRequests,
   getRequestById,

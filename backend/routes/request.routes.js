@@ -13,6 +13,13 @@ router.post(
   requestController.createRequest
 );
 
+// Draft에서 의뢰 생성 (의뢰자만 가능)
+router.post(
+  "/from-draft",
+  authorize(["requestor", "admin"]),
+  requestController.createRequestsFromDraft
+);
+
 // 모든 의뢰 목록 조회 (테스트 코드와 일치시키기 위해 기본 경로 추가)
 router.get("/", (req, res) => {
   const { role } = req.user;
@@ -62,11 +69,11 @@ router.post(
   requestController.createMyBulkShipping
 );
 
-// 내 최다 사용 임플란트 조합 조회 (의뢰자용)
+// 치과별 임플란트 프리셋 목록 조회 (의뢰자용)
 router.get(
-  "/my/favorite-implant",
+  "/my/clinic-implants",
   authorize(["requestor", "admin"]),
-  requestController.getMyFavoriteImplant
+  requestController.getMyClinicImplants
 );
 
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)

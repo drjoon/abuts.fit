@@ -176,6 +176,7 @@ export const LoginPage = () => {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="pl-10"
+                      autoComplete="username"
                       required
                     />
                   </div>
@@ -192,6 +193,7 @@ export const LoginPage = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="pl-10 pr-10"
+                      autoComplete="current-password"
                       required
                     />
                     <button

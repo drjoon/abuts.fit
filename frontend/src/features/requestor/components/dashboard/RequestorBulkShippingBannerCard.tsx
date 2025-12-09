@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -6,30 +7,232 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ChevronRight, ArrowRightLeft } from "lucide-react";
 
 type Props = {
   onOpenBulkModal: () => void;
 };
 
+interface ShippingPolicy {
+  shippingMode: "countBased" | "weeklyBased";
+  autoBatchThreshold?: number;
+  weeklyBatchDays?: string[];
+}
+
+const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
+
+interface ShippingItem {
+  id: string;
+  name: string;
+  count: number;
+}
+
 export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
+  const [policy, setPolicy] = useState<ShippingPolicy | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // 샘플 데이터 (실제로는 API에서 가져올 데이터)
+  const [bulkItems, setBulkItems] = useState<ShippingItem[]>([]);
+  const [expressItems, setExpressItems] = useState<ShippingItem[]>([]);
+
+  useEffect(() => {
+    try {
+      const email = localStorage.getItem("userEmail") || "guest";
+      const storageKey = `${STORAGE_KEY_PREFIX}${email}`;
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setPolicy(parsed);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const getCardMessage = () => {
+    if (!policy) {
+      return "배송 대기중인 묶음/신속 배송 제품을 확인해보세요.";
+    }
+
+    if (policy.shippingMode === "countBased") {
+      return `${
+        policy.autoBatchThreshold || 20
+      }개 이상 모이면 자동 묶음 배송됩니다. 배송비를 절감하고 출고 일정을 관리해 보세요.`;
+    }
+
+    const dayLabels: Record<string, string> = {
+      mon: "월",
+      tue: "화",
+      wed: "수",
+      thu: "목",
+      fri: "금",
+    };
+    const days = (policy.weeklyBatchDays || [])
+      .map((d) => dayLabels[d])
+      .join(", ");
+    return `${days} 오후에 묶음 배송됩니다. 배송비를 절감하고 출고 일정을 관리해 보세요.`;
+  };
+
+  const handleOpenModal = () => {
+    setIsModalOpen(true);
+    onOpenBulkModal();
+  };
+
+  // 아이템 클릭 시 반대쪽으로 이동
+  const handleMoveItem = (itemId: string, fromBulk: boolean) => {
+    if (fromBulk) {
+      const item = bulkItems.find((i) => i.id === itemId);
+      if (item) {
+        setBulkItems((prev) => prev.filter((i) => i.id !== itemId));
+        setExpressItems((prev) => [...prev, item]);
+      }
+    } else {
+      const item = expressItems.find((i) => i.id === itemId);
+      if (item) {
+        setExpressItems((prev) => prev.filter((i) => i.id !== itemId));
+        setBulkItems((prev) => [...prev, item]);
+      }
+    }
+  };
+
+  // 전체 넘김
+  const handleMoveAll = (fromBulk: boolean) => {
+    if (fromBulk) {
+      setExpressItems((prev) => [...prev, ...bulkItems]);
+      setBulkItems([]);
+    } else {
+      setBulkItems((prev) => [...prev, ...expressItems]);
+      setExpressItems([]);
+    }
+  };
+
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-orange-300 bg-orange-50/80 shadow-sm transition-all hover:shadow-lg flex-none">
-      <CardHeader className="pb-0">
-        <CardTitle className="text-base font-semibold"></CardTitle>
-        <CardDescription className="text-md leading-relaxed text-orange-900/90">
-          배송 대기중인 건들을 묶음 배송으로 신청할 수 있습니다. 배송비를
-          절감하고 출고 일정을 관리해 보세요.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="text-right pt-4">
-        <Button
-          variant="default"
-          className="whitespace-nowrap"
-          onClick={onOpenBulkModal}
-        >
-          묶음 배송 신청하기
-        </Button>
-      </CardContent>
-    </Card>
+    <>
+      <Card className="relative flex flex-col rounded-2xl border border-orange-300 bg-orange-50/80 shadow-sm transition-all hover:shadow-lg flex-none">
+        <CardHeader className="pb-0">
+          <CardTitle className="text-base font-semibold"></CardTitle>
+          <CardDescription className="text-md leading-relaxed text-orange-900/90">
+            {getCardMessage()}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="text-right pt-4">
+          <Button
+            variant="default"
+            className="whitespace-nowrap"
+            onClick={handleOpenModal}
+          >
+            배송 대기 내역
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">
+              배송 대기 내역
+            </DialogTitle>
+          </DialogHeader>
+          <div className="relative flex items-stretch gap-6 py-6">
+            {/* 왼쪽: 묶음 배송 */}
+            <div className="flex-1 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-1 w-1 rounded-full bg-blue-600"></div>
+                  <h3 className="font-bold text-lg text-gray-900">묶음 배송</h3>
+                </div>
+                {bulkItems.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleMoveAll(true)}
+                    className="text-xs"
+                  >
+                    전체 넘김
+                  </Button>
+                )}
+              </div>
+              <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-2 max-h-96 overflow-y-auto">
+                {bulkItems.length === 0 ? (
+                  <div className="text-sm text-gray-500 text-center py-8">
+                    묶음 배송 대기 중인 제품이 없습니다.
+                  </div>
+                ) : (
+                  bulkItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleMoveItem(item.id, true)}
+                      className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-all cursor-pointer group"
+                    >
+                      <div className="flex-1 text-left">
+                        <p className="text-sm font-medium text-gray-900">
+                          {item.name}
+                        </p>
+                        <p className="text-xs text-gray-500">{item.count}개</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* 중앙: 화살표 */}
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+              <ArrowRightLeft className="w-5 h-5 text-gray-400" />
+            </div>
+
+            {/* 오른쪽: 신속 배송 */}
+            <div className="flex-1 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-1 w-1 rounded-full bg-red-600"></div>
+                  <h3 className="font-bold text-lg text-gray-900">신속 배송</h3>
+                </div>
+                {expressItems.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleMoveAll(false)}
+                    className="text-xs"
+                  >
+                    전체 넘김
+                  </Button>
+                )}
+              </div>
+              <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-2 max-h-96 overflow-y-auto">
+                {expressItems.length === 0 ? (
+                  <div className="text-sm text-gray-500 text-center py-8">
+                    신속 배송 제품이 없습니다.
+                  </div>
+                ) : (
+                  expressItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleMoveItem(item.id, false)}
+                      className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50 hover:bg-red-50 hover:border-red-300 transition-all cursor-pointer group"
+                    >
+                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-red-600 transition-colors rotate-180" />
+                      <div className="flex-1 text-right">
+                        <p className="text-sm font-medium text-gray-900">
+                          {item.name}
+                        </p>
+                        <p className="text-xs text-gray-500">{item.count}개</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };

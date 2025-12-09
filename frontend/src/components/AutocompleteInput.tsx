@@ -164,6 +164,7 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
                     "flex w-full cursor-pointer items-center px-2 py-1.5 text-left hover:bg-accent hover:text-accent-foreground",
                     index === activeIndex && "bg-accent text-accent-foreground"
                   )}
+                  tabIndex={-1}
                   onMouseDown={(e) => {
                     // 포커스 유지 위해 preventDefault
                     e.preventDefault();

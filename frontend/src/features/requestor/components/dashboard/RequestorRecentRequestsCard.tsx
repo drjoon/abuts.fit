@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
+import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 
 const getStatusBadge = (status: string) => {
@@ -29,6 +30,7 @@ export const RequestorRecentRequestsCard = ({
   onEdit,
   onCancel,
 }: Props) => {
+  const navigate = useNavigate();
   return (
     <Card
       className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg flex-1 min-h-[220px] cursor-pointer"
@@ -47,7 +49,8 @@ export const RequestorRecentRequestsCard = ({
                 key={displayId}
                 className="flex items-center justify-between p-3 border border-border rounded-lg"
                 onClick={(e) => e.stopPropagation()}
-                onUpdate={() => onEdit(item)}
+                // U 버튼: 프로필/배송 옵션 설정 페이지로 이동
+                onUpdate={() => navigate("/dashboard/settings")}
                 onRemove={
                   item._id || item.id
                     ? () => onCancel(item._id || (item.id as string))

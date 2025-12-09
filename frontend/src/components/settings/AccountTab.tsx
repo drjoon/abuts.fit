@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -24,6 +24,9 @@ interface AccountTabProps {
 export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
 
+  const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
+  const storageKey = `${STORAGE_KEY_PREFIX}${userData?.email || "guest"}`;
+
   const [accountData, setAccountData] = useState({
     name: userData?.name || "",
     email: userData?.email || "",
@@ -31,7 +34,42 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     profileImage: null as File | null,
   });
 
+  const [shippingOption, setShippingOption] = useState<"count3" | "monThu">(
+    () => {
+      try {
+        const raw = storageKey ? localStorage.getItem(storageKey) : null;
+        if (!raw) return "count3";
+        const parsed = JSON.parse(raw) as { option?: string };
+        return (parsed.option as "count3" | "monThu") || "count3";
+      } catch {
+        return "count3";
+      }
+    }
+  );
+
+  useEffect(() => {
+    // 이메일이 바뀌는 경우를 대비해 재로딩
+    try {
+      const nextKey = `${STORAGE_KEY_PREFIX}${userData?.email || "guest"}`;
+      const raw = localStorage.getItem(nextKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { option?: string };
+      if (parsed.option === "count3" || parsed.option === "monThu") {
+        setShippingOption(parsed.option);
+      }
+    } catch {
+      // ignore
+    }
+  }, [userData?.email]);
+
   const handleSave = () => {
+    try {
+      const payload = { option: shippingOption };
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch {
+      // ignore localStorage errors
+    }
+
     toast({
       title: "설정이 저장되었습니다",
       description: "계정 설정이 성공적으로 업데이트되었습니다.",
@@ -133,6 +171,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             </div>
           </div>
         </div>
+
 
         <div className="flex justify-end">
           <Button onClick={handleSave}>

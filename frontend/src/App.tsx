@@ -13,7 +13,7 @@ import { DashboardLayout } from "./components/DashboardLayout";
 import { DashboardHome } from "./pages/DashboardHome";
 import { NewRequestPage } from "./pages/requestor/new_request/NewRequestPage";
 import { ManufacturerWorksheetPage } from "./pages/manufacturer/WorkSheet";
-import { SettingsPage } from "./pages/SettingsPage";
+import { SettingsPage } from "./features/requestor/pages/SettingsPage";
 import { AdminUserManagement } from "./pages/admin/users/AdminUserManagement";
 import { AdminRequestMonitoring } from "./pages/admin/monitoring/AdminRequestMonitoring";
 import { AdminChatManagement } from "./pages/admin/support/AdminChatManagement";

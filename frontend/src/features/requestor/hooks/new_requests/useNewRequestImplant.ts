@@ -1,10 +1,23 @@
 import { useEffect, useState } from "react";
 
+const CONNECTIONS_STORAGE_KEY = "abutsfit:connections:v1";
+const CONNECTIONS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
+
 export type UseNewRequestImplantParams = {
   token: string | null;
+  clinicName?: string;
+  onDefaultImplantChange?: (fields: {
+    implantSystem: string;
+    implantType: string;
+    connectionType: string;
+  }) => void;
 };
 
-export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
+export const useNewRequestImplant = ({
+  token,
+  clinicName,
+  onDefaultImplantChange,
+}: UseNewRequestImplantParams) => {
   const [connections, setConnections] = useState<any[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<
     string | null
@@ -13,15 +26,62 @@ export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
   const [implantSystem, setImplantSystem] = useState("");
   const [implantType, setImplantType] = useState("");
 
+  // connections 목록은 토큰 기준으로 한 번만 조회
   useEffect(() => {
-    const loadInitialData = async () => {
+    const loadConnections = async () => {
       try {
+        // 1) localStorage 캐시 확인
+        if (typeof window !== "undefined") {
+          try {
+            const stored = window.localStorage.getItem(CONNECTIONS_STORAGE_KEY);
+            if (stored) {
+              const parsed = JSON.parse(stored) as {
+                data: any[];
+                serverUpdatedAt?: number | null;
+                cachedAt: number;
+              };
+              const age = Date.now() - parsed.cachedAt;
+              if (age <= CONNECTIONS_TTL_MS && Array.isArray(parsed.data)) {
+                setConnections(parsed.data);
+                return;
+              }
+            }
+          } catch {}
+        }
+
+        // 2) 캐시가 없거나 만료된 경우 서버에서 조회 후 캐시 저장
         const connRes = await fetch("/api/connections");
         if (!connRes.ok) return;
         const connBody = await connRes.json().catch(() => ({}));
         const list: any[] = Array.isArray(connBody.data) ? connBody.data : [];
         setConnections(list);
 
+        if (typeof window !== "undefined") {
+          try {
+            const payload = {
+              data: list,
+              serverUpdatedAt:
+                typeof connBody.serverUpdatedAt === "number"
+                  ? connBody.serverUpdatedAt
+                  : null,
+              cachedAt: Date.now(),
+            };
+            window.localStorage.setItem(
+              CONNECTIONS_STORAGE_KEY,
+              JSON.stringify(payload)
+            );
+          } catch {}
+        }
+      } catch {}
+    };
+
+    loadConnections();
+  }, [token]);
+
+  // clinicName / connections 에 따라 기본 임플란트 선택
+  useEffect(() => {
+    const applyDefaults = async () => {
+      try {
         // NOTE: 자동 임플란트 설정은 useNewRequestFiles에서 처리하므로,
         // 여기서는 즐겨찾기 또는 기본값으로 초기화만 수행한다.
         // 단, 이미 값이 있는 경우 (예: draft에서 로드)에는 덮어쓰지 않는다.
@@ -29,42 +89,81 @@ export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
           return;
         }
 
-        let favorite: {
-          implantManufacturer?: string;
-          implantSystem?: string;
-          implantType?: string;
+        if (!clinicName) {
+          return;
+        }
+
+        const list = connections;
+
+        // 치과별 프리셋 조회 (있다면 1순위로 사용)
+        let clinicPreset: {
+          manufacturer?: string;
+          system?: string;
+          type?: string;
         } | null = null;
 
-        if (token) {
-          const favRes = await fetch("/api/requests/my/favorite-implant", {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "x-mock-role": "requestor",
-            },
-          });
+        if (token && clinicName) {
+          const presetRes = await fetch(
+            `/api/requests/my/clinic-implants?clinicName=${encodeURIComponent(
+              clinicName
+            )}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "x-mock-role": "requestor",
+              },
+            }
+          );
 
-          if (favRes.ok) {
-            const favBody = await favRes.json().catch(() => ({}));
-            if (favBody && favBody.data) {
-              favorite = favBody.data;
+          if (presetRes.ok) {
+            const presetBody = await presetRes.json().catch(() => ({}));
+            const presets: any[] = Array.isArray(presetBody.data)
+              ? presetBody.data
+              : [];
+            if (presets.length > 0) {
+              const top = presets[0];
+              clinicPreset = {
+                manufacturer: top.manufacturer,
+                system: top.system,
+                type: top.type,
+              };
             }
           }
         }
 
-        // 기본값은 하드코딩(OSSTEM)이 아니라, 실제 connections 목록의 첫 번째 항목을 기준으로 잡는다.
-        // 즐겨찾기(favorite)가 있으면 그 값을 우선 사용하고, 없으면 첫 커넥션을 기본값으로.
-        const first = list[0] as
+        // 기본값은
+        // 1) 치과별 프리셋 1순위
+        // 2) OSSTEM / Regular / Hex
+        // 3) 전체 목록의 첫 항목
+        const preferred = list.find(
+          (c) =>
+            c.manufacturer === "OSSTEM" &&
+            c.system === "Regular" &&
+            c.type === "Hex"
+        ) as
           | { manufacturer?: string; system?: string; type?: string }
           | undefined;
 
-        const baseManufacturer = first?.manufacturer || "OSSTEM";
-        const baseSystem = first?.system || "Regular";
-        const baseType = first?.type || "Hex";
+        const fallbackFirst = list[0] as
+          | { manufacturer?: string; system?: string; type?: string }
+          | undefined;
 
-        const nextManufacturer =
-          favorite?.implantManufacturer || baseManufacturer;
-        const nextSystem = favorite?.implantSystem || baseSystem;
-        const nextType = favorite?.implantType || baseType;
+        const baseManufacturer =
+          clinicPreset?.manufacturer ||
+          preferred?.manufacturer ||
+          fallbackFirst?.manufacturer ||
+          "OSSTEM";
+        const baseSystem =
+          clinicPreset?.system ||
+          preferred?.system ||
+          fallbackFirst?.system ||
+          "Regular";
+        const baseType =
+          clinicPreset?.type || preferred?.type || fallbackFirst?.type || "Hex";
+
+        const nextManufacturer = baseManufacturer;
+        const nextSystem = baseSystem;
+        const nextType = baseType;
 
         setImplantManufacturer(nextManufacturer);
         setImplantSystem(nextSystem);
@@ -79,11 +178,28 @@ export const useNewRequestImplant = ({ token }: UseNewRequestImplantParams) => {
           );
           setSelectedConnectionId(found ? (found._id as string) : null);
         }
+
+        // 기본 임플란트가 설정되었을 때 caseInfos에도 반영
+        if (onDefaultImplantChange) {
+          onDefaultImplantChange({
+            // backend 스키마 기준: implantSystem = manufacturer, implantType = system, connectionType = type
+            implantSystem: nextManufacturer,
+            implantType: nextSystem,
+            connectionType: nextType,
+          });
+        }
       } catch {}
     };
 
-    loadInitialData();
-  }, [token]);
+    applyDefaults();
+  }, [
+    token,
+    clinicName,
+    connections,
+    implantManufacturer,
+    implantSystem,
+    implantType,
+  ]);
 
   const syncSelectedConnection = (
     manufacturer: string,

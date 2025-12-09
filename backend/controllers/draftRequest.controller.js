@@ -6,13 +6,18 @@ import { ApiError } from "../utils/ApiError.js";
 
 // 새 드래프트 생성
 export const createDraft = asyncHandler(async (req, res) => {
-  const { message = "", caseInfos = {}, aiFileInfos = [] } = req.body || {};
+  const { caseInfos = [] } = req.body || {};
+
+  const normalizedCaseInfos = Array.isArray(caseInfos)
+    ? caseInfos
+    : [caseInfos];
 
   const draft = await DraftRequest.create({
     requestor: req.user._id,
-    message,
-    caseInfos,
-    aiFileInfos: Array.isArray(aiFileInfos) ? aiFileInfos : [],
+    caseInfos: normalizedCaseInfos.map((ci) => ({
+      ...ci,
+      workType: (ci && ci.workType) || "abutment",
+    })),
   });
 
   return res
@@ -61,21 +66,79 @@ export const updateDraft = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not allowed to update this draft");
   }
 
-  const { message, caseInfos, aiFileInfos } = req.body || {};
+  const { caseInfos } = req.body || {};
 
-  if (typeof message === "string") {
-    draft.message = message;
-  }
+  if (caseInfos) {
+    const incomingList = Array.isArray(caseInfos) ? caseInfos : [caseInfos];
 
-  if (caseInfos && typeof caseInfos === "object") {
-    draft.caseInfos = {
-      ...(draft.caseInfos?.toObject?.() || draft.caseInfos || {}),
-      ...caseInfos,
-    };
-  }
+    // 기존 caseInfos 전부 유지
+    const prevCaseInfos = Array.isArray(draft.caseInfos) ? draft.caseInfos : [];
 
-  if (Array.isArray(aiFileInfos)) {
-    draft.aiFileInfos = aiFileInfos;
+    // _id 기준으로 매칭할 수 있도록 맵 생성
+    const incomingById = new Map();
+    const incomingWithoutId = [];
+
+    for (const ci of incomingList) {
+      if (ci && ci._id) {
+        incomingById.set(ci._id.toString(), ci);
+      } else {
+        incomingWithoutId.push(ci);
+      }
+    }
+
+    let anonymousIndex = 0;
+
+    const mergedCaseInfos = prevCaseInfos.map((prev, idx) => {
+      let incoming = null;
+
+      // 1) _id 로 매칭
+      if (prev && prev._id && incomingById.has(prev._id.toString())) {
+        incoming = incomingById.get(prev._id.toString());
+      }
+      // 2) _id 가 없거나 매칭 실패 시, 인덱스 순서대로 anonymous 패치 적용
+      else if (anonymousIndex < incomingWithoutId.length) {
+        incoming = incomingWithoutId[anonymousIndex++];
+      }
+
+      if (!incoming) {
+        // 업데이트 대상이 없으면 기존 값 그대로 유지
+        return prev;
+      }
+
+      const ci = incoming || {};
+
+      return {
+        // 기존 필드 우선
+        ...prev,
+        // 새로 들어온 필드만 덮어씀
+        ...ci,
+        // file 은 명시적으로 새 file 이 전달되지 않는 한 기존 것을 유지
+        file: ci && ci.file ? ci.file : prev.file,
+        // workType 은 새 값이 없으면 기존 값 → 없으면 기본값
+        workType: (ci && ci.workType) || prev.workType || "abutment",
+      };
+    });
+
+    // 3) 기존에 없던 완전히 새로운 caseInfos (예: 새 _id 가 온 경우) 처리
+    //    prev 에서 못 찾은 incoming 들을 뒤에 추가
+    const usedIds = new Set(
+      mergedCaseInfos
+        .filter((ci) => ci && ci._id)
+        .map((ci) => ci._id.toString())
+    );
+
+    const extraIncoming = incomingList.filter((ci) => {
+      if (!ci || !ci._id) return false;
+      return !usedIds.has(ci._id.toString());
+    });
+
+    draft.caseInfos = [
+      ...mergedCaseInfos,
+      ...extraIncoming.map((ci) => ({
+        ...ci,
+        workType: (ci && ci.workType) || "abutment",
+      })),
+    ];
   }
 
   await draft.save();
@@ -85,10 +148,27 @@ export const updateDraft = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, draft, "Draft updated successfully"));
 });
 
-// 파일 추가 (메타데이터 등록)
+// 파일 + 케이스 정보 추가 (caseInfos 요소 생성)
 export const addFileToDraft = asyncHandler(async (req, res) => {
   const { id } = req.params; // draftId
-  const { originalName, size, mimetype, s3Key, fileId } = req.body || {};
+  const {
+    originalName,
+    size,
+    mimetype,
+    s3Key,
+    fileId,
+    clinicName,
+    patientName,
+    tooth,
+    implantSystem,
+    implantType,
+    connectionType,
+    maxDiameter,
+    connectionDiameter,
+    workType,
+    shippingMode,
+    requestedShipDate,
+  } = req.body || {};
 
   if (!Types.ObjectId.isValid(id)) {
     throw new ApiError(400, "Invalid draft ID");
@@ -113,24 +193,43 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not allowed to update this draft");
   }
 
-  draft.files.push({
+  const fileSubdoc = {
     fileId: fileId && Types.ObjectId.isValid(fileId) ? fileId : undefined,
     originalName,
     size,
     mimetype,
     s3Key,
+  };
+
+  draft.caseInfos = Array.isArray(draft.caseInfos) ? draft.caseInfos : [];
+
+  draft.caseInfos.push({
+    file: fileSubdoc,
+    clinicName,
+    patientName,
+    tooth,
+    implantSystem,
+    implantType,
+    connectionType,
+    maxDiameter,
+    connectionDiameter,
+    workType,
+    shippingMode: shippingMode || "normal",
+    requestedShipDate,
   });
 
   await draft.save();
 
-  const addedFile = draft.files[draft.files.length - 1];
+  const addedCaseInfo = draft.caseInfos[draft.caseInfos.length - 1];
 
   return res
     .status(201)
-    .json(new ApiResponse(201, addedFile, "File added to draft"));
+    .json(
+      new ApiResponse(201, addedCaseInfo, "Case (file+info) added to draft")
+    );
 });
 
-// 드래프트에서 파일 삭제
+// 드래프트에서 케이스(파일+정보) 삭제
 export const removeFileFromDraft = asyncHandler(async (req, res) => {
   const { id, fileId } = req.params;
 
@@ -148,18 +247,22 @@ export const removeFileFromDraft = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not allowed to update this draft");
   }
 
-  const beforeLength = draft.files.length;
-  draft.files = draft.files.filter((f) => f._id.toString() !== fileId);
+  draft.caseInfos = Array.isArray(draft.caseInfos) ? draft.caseInfos : [];
 
-  if (draft.files.length === beforeLength) {
-    throw new ApiError(404, "File not found in draft");
+  const beforeLength = draft.caseInfos.length;
+  draft.caseInfos = draft.caseInfos.filter(
+    (ci) => ci._id.toString() !== fileId
+  );
+
+  if (draft.caseInfos.length === beforeLength) {
+    throw new ApiError(404, "CaseInfo not found in draft");
   }
 
   await draft.save();
 
   return res
     .status(200)
-    .json(new ApiResponse(200, draft.files, "File removed from draft"));
+    .json(new ApiResponse(200, draft.caseInfos, "Case removed from draft"));
 });
 
 // 드래프트 삭제 (취소)

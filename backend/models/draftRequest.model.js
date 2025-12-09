@@ -7,34 +7,11 @@ const draftFileSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "File",
     },
-    originalName: {
-      type: String,
-      required: true,
-    },
-    size: {
-      type: Number,
-      required: true,
-    },
-    mimetype: {
-      type: String,
-      required: true,
-    },
+    originalName: String,
+    size: Number,
+    mimetype: String,
     // File 문서를 사용하지 않는 경우를 대비한 S3 key 직접 저장
-    s3Key: {
-      type: String,
-    },
-  },
-  { _id: true }
-);
-
-const aiFileInfoSchema = new mongoose.Schema(
-  {
-    filename: String,
-    clinicName: String,
-    patientName: String,
-    tooth: String,
-    workType: String,
-    abutType: String,
+    s3Key: String,
   },
   { _id: false }
 );
@@ -51,26 +28,31 @@ const draftCaseSchema = new mongoose.Schema(
       enum: ["draft", "submitted", "cancelled"],
       default: "draft",
     },
-    message: {
-      type: String,
-      default: "",
-    },
-    caseInfos: {
-      clinicName: String,
-      patientName: String,
-      tooth: String,
-      workType: {
-        type: String,
-        enum: ["abutment", "crown", "prosthesis"],
+    caseInfos: [
+      {
+        // 이 case 에 연결된 파일 메타정보 (임시 업로드 파일)
+        file: draftFileSchema,
+        clinicName: String,
+        patientName: String,
+        tooth: String,
+        implantSystem: String,
+        implantType: String,
+        connectionType: String,
+        maxDiameter: Number,
+        connectionDiameter: Number,
+        workType: {
+          type: String,
+          enum: ["abutment", "crown"],
+        },
+        // 배송 요청 정보
+        shippingMode: {
+          type: String,
+          enum: ["normal", "express"],
+          default: "normal",
+        },
+        requestedShipDate: Date,
       },
-      abutType: String,
-      implantSystem: String,
-      implantType: String,
-      connectionType: String,
-    },
-    files: [draftFileSchema],
-    // 파일 이름 기반 AI 분석 정보 (프론트의 AiFileInfo 와 동일 구조)
-    aiFileInfos: [aiFileInfoSchema],
+    ],
   },
   {
     timestamps: true,

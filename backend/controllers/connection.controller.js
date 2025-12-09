@@ -33,7 +33,17 @@ export async function getConnections(req, res) {
         return a.type.localeCompare(b.type);
       });
 
-    res.json({ success: true, data: sorted });
+    // 서버 전체 커넥션 기준 최신 업데이트 시각 계산 (serverUpdatedAt)
+    const serverUpdatedAt = all.reduce((max, c) => {
+      const updated = c.updatedAt ? new Date(c.updatedAt).getTime() : 0;
+      return updated > max ? updated : max;
+    }, 0);
+
+    res.json({
+      success: true,
+      data: sorted,
+      serverUpdatedAt: serverUpdatedAt || null,
+    });
   } catch (error) {
     res.status(500).json({
       success: false,

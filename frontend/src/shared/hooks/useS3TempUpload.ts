@@ -24,7 +24,9 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
       const formData = new FormData();
 
       files.forEach((file) => {
+        // 실제 브라우저가 가진 정상 파일명
         formData.append("files", file);
+        formData.append("originalNames", file.name);
       });
 
       const headers: Record<string, string> = {};
