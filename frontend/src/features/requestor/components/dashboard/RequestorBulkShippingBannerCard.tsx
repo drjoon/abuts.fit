@@ -55,6 +55,167 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
     }
   }, []);
 
+  const getNextSummary = () => {
+    const bulkCount = bulkItems.reduce((sum, i) => sum + i.count, 0);
+    const expressCount = expressItems.reduce((sum, i) => sum + i.count, 0);
+    const totalCount = bulkCount + expressCount;
+
+    if (totalCount === 0) {
+      return {
+        modeLabel: "예정 없음",
+        countLabel: "대기 중인 제품이 없습니다.",
+        dateLabel: "-",
+      };
+    }
+
+    const hasExpress = expressItems.length > 0;
+
+    // 신속 배송이 하나라도 있으면: 전체를 신속 기준으로 안내
+    if (hasExpress) {
+      const modeLabel = "신속 배송";
+
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+
+      let nextText = "-";
+
+      if (
+        policy?.shippingMode === "weeklyBased" &&
+        policy.weeklyBatchDays?.length
+      ) {
+        const order: Record<string, number> = {
+          sun: 0,
+          mon: 1,
+          tue: 2,
+          wed: 3,
+          thu: 4,
+          fri: 5,
+          sat: 6,
+        };
+
+        const labels: Record<string, string> = {
+          sun: "일",
+          mon: "월",
+          tue: "화",
+          wed: "수",
+          thu: "목",
+          fri: "금",
+          sat: "토",
+        };
+
+        const sorted = [...policy.weeklyBatchDays].sort(
+          (a, b) => order[a] - order[b]
+        );
+
+        let minDiff = 7;
+        let targetDay: string | null = null;
+
+        for (const d of sorted) {
+          const diff = (order[d] - dayOfWeek + 7) % 7 || 7;
+          if (diff < minDiff) {
+            minDiff = diff;
+            targetDay = d;
+          }
+        }
+
+        if (targetDay) {
+          const next = new Date(today);
+          next.setDate(today.getDate() + minDiff);
+          const month = next.getMonth() + 1;
+          const date = next.getDate();
+          nextText = `${month}/${date}(${labels[targetDay]}) 예정`;
+        }
+      } else {
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        const month = tomorrow.getMonth() + 1;
+        const date = tomorrow.getDate();
+        nextText = `${month}/${date} 예정`;
+      }
+
+      return {
+        modeLabel,
+        countLabel: `총 ${totalCount}개 배송 예정`,
+        dateLabel: nextText,
+      };
+    }
+
+    // 묶음 배송만 있는 경우
+    const modeLabel = "묶음 배송";
+
+    if (policy?.shippingMode === "countBased") {
+      const threshold = policy.autoBatchThreshold || 20;
+      const remaining = Math.max(threshold - bulkCount, 0);
+
+      return {
+        modeLabel,
+        countLabel: `${bulkCount} / ${threshold}개 모임`,
+        dateLabel:
+          remaining === 0 ? "기준 수량 충족" : `기준까지 ${remaining}개 남음`,
+      };
+    }
+
+    if (
+      policy?.shippingMode === "weeklyBased" &&
+      policy.weeklyBatchDays?.length
+    ) {
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+
+      const order: Record<string, number> = {
+        sun: 0,
+        mon: 1,
+        tue: 2,
+        wed: 3,
+        thu: 4,
+        fri: 5,
+        sat: 6,
+      };
+
+      const labels: Record<string, string> = {
+        sun: "일",
+        mon: "월",
+        tue: "화",
+        wed: "수",
+        thu: "목",
+        fri: "금",
+        sat: "토",
+      };
+
+      const sorted = [...policy.weeklyBatchDays].sort(
+        (a, b) => order[a] - order[b]
+      );
+
+      let minDiff = 7;
+      let targetDay: string | null = null;
+
+      for (const d of sorted) {
+        const diff = (order[d] - dayOfWeek + 7) % 7 || 7;
+        if (diff < minDiff) {
+          minDiff = diff;
+          targetDay = d;
+        }
+      }
+
+      if (targetDay) {
+        const dayLabel = labels[targetDay];
+        const diffLabel = minDiff === 0 ? "오늘" : `${minDiff}일 남음`;
+
+        return {
+          modeLabel,
+          countLabel: `총 ${bulkCount}개 묶음 대기`,
+          dateLabel: `${diffLabel} (다음 ${dayLabel})`,
+        };
+      }
+    }
+
+    return {
+      modeLabel,
+      countLabel: `총 ${bulkCount}개 묶음 대기`,
+      dateLabel: "다음 일정 준비 중",
+    };
+  };
+
   const getCardMessage = () => {
     if (!policy) {
       return "배송 대기중인 묶음/신속 배송 제품을 확인해보세요.";
@@ -115,8 +276,24 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
   return (
     <>
       <Card className="relative flex flex-col rounded-2xl border border-orange-300 bg-orange-50/80 shadow-sm transition-all hover:shadow-lg flex-none">
-        <CardHeader className="pb-0">
-          <CardTitle className="text-base font-semibold"></CardTitle>
+        <CardHeader className="pb-0 space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <CardTitle className="text-base font-semibold">
+              다음 배송 안내
+            </CardTitle>
+            {(() => {
+              const { modeLabel, countLabel, dateLabel } = getNextSummary();
+              return (
+                <div className="flex flex-col items-end text-xs text-orange-900/80">
+                  <span className="font-semibold">{modeLabel}</span>
+                  <span>{countLabel}</span>
+                  <span className="text-[11px] text-orange-800/70">
+                    {dateLabel}
+                  </span>
+                </div>
+              );
+            })()}
+          </div>
           <CardDescription className="text-md leading-relaxed text-orange-900/90">
             {getCardMessage()}
           </CardDescription>
