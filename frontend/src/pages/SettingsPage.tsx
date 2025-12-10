@@ -10,6 +10,7 @@ import { NotificationsTab } from "@/components/settings/NotificationsTab";
 import { ShippingTab } from "@/components/settings/ShippingTab";
 
 import { User, Building2, CreditCard, Bell, Truck } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export const SettingsPage = () => {
   const { user } = useAuthStore();
@@ -35,7 +36,14 @@ export const SettingsPage = () => {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="account" className="space-y-6">
-          <TabsList className={`grid w-full ${`grid-cols-${totalTabs}`}`}>
+          <TabsList
+            className={cn(
+              "grid w-full",
+              totalTabs === 4 && "grid-cols-4",
+              totalTabs === 5 && "grid-cols-5",
+              totalTabs === 6 && "grid-cols-6"
+            )}
+          >
             <TabsTrigger value="account" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               계정

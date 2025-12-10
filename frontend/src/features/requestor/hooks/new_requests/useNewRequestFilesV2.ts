@@ -56,10 +56,15 @@ export const useNewRequestFilesV2 = ({
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
 
   const [isDragOver, setIsDragOver] = useState(false);
-  const filesRef = useRef(files);
-  const draftFilesRef = useRef(draftFiles);
+  const filesRef = useRef<FileWithDraftId[]>([]);
+  const draftFilesRef = useRef<DraftCaseInfo[]>(draftFiles);
   const selectedPreviewIndexRef = useRef(selectedPreviewIndex);
   const pendingRemovalRef = useRef<Set<string>>(new Set());
+
+  const draftIdRef = useRef(draftId);
+  useEffect(() => {
+    draftIdRef.current = draftId;
+  }, [draftId]);
 
   useEffect(() => {
     filesRef.current = files;
@@ -87,49 +92,23 @@ export const useNewRequestFilesV2 = ({
 
   // 파일 URL 복원 (Draft.files 기준)
   const restoreFileUrls = useCallback(async () => {
-    // 1) 복원 대상 draftFiles가 비어 있고 draftId가 있으면 서버에서 한 번 더 조회해온다.
-    let sourceDraftFiles = draftFiles;
+    const currentDraftId = draftId; // 이 함수가 시작될 때의 draftId 스냅샷
 
-    if (!sourceDraftFiles.length && draftId && token) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
-          method: "GET",
-          headers: getHeaders(),
-        });
-
-        if (res.ok) {
-          const body = await res.json().catch(() => ({} as any));
-          const draft = (body as any).data || body;
-          const serverCaseInfos: DraftCaseInfo[] = Array.isArray(
-            draft?.caseInfos
-          )
-            ? draft.caseInfos
-            : [];
-
-          // 파일 메타가 있는 케이스만 복원 대상으로 사용
-          sourceDraftFiles = serverCaseInfos.filter((ci) => !!ci.file);
-          if (sourceDraftFiles.length) {
-            setDraftFiles(sourceDraftFiles);
-          } else if (
-            serverCaseInfos.length > 0 &&
-            filesRef.current.length === 0
-          ) {
-            // caseInfos는 있지만 file 메타가 전혀 없으면 STL을 복원할 수 없음을 알림
-            toast({
-              title: "STL 복원 정보 없음",
-              description:
-                "임시 의뢰에는 STL 파일 메타데이터가 없어 자동으로 복원할 수 없습니다. STL 파일을 다시 업로드해주세요.",
-              variant: "destructive",
-              duration: 4000,
-            });
-          }
-        }
-      } catch (err) {
-        console.error("restoreFileUrls: failed to refetch draft", err);
-      }
+    // draftId가 변경되었으면 즉시 중단 (새 Draft로 전환됨)
+    if (draftId !== currentDraftId) {
+      console.log("[restoreFileUrls] draftId changed, aborting restore");
+      return;
     }
 
-    if (!sourceDraftFiles.length) return;
+    // 1) 복원 대상 draftFiles (항상 최신값 Ref 사용)
+    let sourceDraftFiles = draftFilesRef.current;
+
+    // draftFiles가 비어있으면 복원할 파일이 없으므로 즉시 반환
+    // (새 Draft 생성 후 파일이 없는 상태에서 불필요한 서버 조회 방지)
+    if (!sourceDraftFiles.length) {
+      console.log("[restoreFileUrls] no draftFiles to restore, skipping");
+      return;
+    }
 
     const restoredFiles: FileWithDraftId[] = [];
     let hadError = false;
@@ -139,15 +118,20 @@ export const useNewRequestFilesV2 = ({
       if (!fileMeta) continue;
 
       try {
+        // 루프 중간에도 draftId 변경 확인 (빠른 취소 대응)
+        if (draftId !== currentDraftId) {
+          return;
+        }
+
         // 캐시 확인 (fileId 또는 s3Key 기반)
         const cacheKey = fileMeta.fileId || fileMeta.s3Key;
         if (!cacheKey) continue;
 
         // 1) IndexedDB에서 Blob 먼저 시도
-        let blob: Blob | null = await getStlBlob(cacheKey);
+        let blobData: Blob | null = await getStlBlob(cacheKey);
 
         // 2) IndexedDB에 없으면 presigned URL → 네트워크 fetch
-        if (!blob) {
+        if (!blobData) {
           let url = getCachedUrl(cacheKey);
           if (!url) {
             // 캐시 없으면 서버에서 URL 획득
@@ -179,36 +163,24 @@ export const useNewRequestFilesV2 = ({
             setCachedUrl(cacheKey, url, 50 * 60 * 1000); // 50분 TTL
           }
 
-          // Blob 획득
-          const blobRes = await fetch(url);
-          if (!blobRes.ok) {
-            console.warn(
-              `Failed to fetch blob for ${fileMeta.originalName}: ${blobRes.status} ${blobRes.statusText}`,
-              { url }
-            );
+          // URL에서 파일 다운로드
+          const response = await fetch(url);
+          if (!response.ok) {
             hadError = true;
             continue;
           }
 
-          blob = await blobRes.blob();
-
-          // IndexedDB 캐시에 저장 (에러는 앱에 영향을 주지 않도록 무시)
-          try {
-            await setStlBlob(cacheKey, blob);
-          } catch (e) {
-            console.warn("Failed to cache STL blob to IndexedDB", e);
-          }
+          blobData = await response.blob();
         }
 
-        if (!blob) {
+        if (!blobData) {
+          hadError = true;
           continue;
         }
 
-        const file = new File([blob], fileMeta.originalName, {
-          type: fileMeta.mimetype,
-        }) as FileWithDraftId;
-        file._draftCaseInfoId = draftCase._id;
-
+        const file = new File([blobData], fileMeta.originalName, {
+          type: blobData.type,
+        });
         restoredFiles.push(file);
       } catch (err) {
         console.error(`Error restoring file ${fileMeta.originalName}:`, err);
@@ -216,7 +188,16 @@ export const useNewRequestFilesV2 = ({
       }
     }
 
+    // 여기서 한 번 더 체크
+    if (draftId !== currentDraftId) {
+      // Draft가 중간에 바뀌었으면, 이 복원 결과는 무시
+      return;
+    }
+
     if (restoredFiles.length > 0) {
+      console.log("[useNewRequestFilesV2] setFiles from restoreFileUrls", {
+        restoredCount: restoredFiles.length,
+      });
       setFiles(restoredFiles);
       setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
     } else if (hadError && filesRef.current.length === 0) {
@@ -228,21 +209,27 @@ export const useNewRequestFilesV2 = ({
         duration: 4000,
       });
     }
-  }, [
-    draftFiles,
-    draftId,
-    token,
-    getHeaders,
-    setDraftFiles,
-    setFiles,
-    setSelectedPreviewIndex,
-    toast,
-  ]);
+  }, [draftId, token, getHeaders, setFiles, setSelectedPreviewIndex, toast]);
 
-  // 페이지 진입 시 파일 복원
+  // 페이지 최초 진입 시에만 파일 복원
+  // 취소 후 새 Draft로 전환된 경우에는 복원하지 않는다 (완전 리셋 보장)
   useEffect(() => {
+    // draftId 또는 draftFiles가 아직 준비되지 않은 초기 렌더는 스킵
+    if (!draftIdRef.current) {
+      console.log("[useEffect] no draftId yet, skip initial restore");
+      return;
+    }
+
+    if (!draftFilesRef.current.length) {
+      console.log(
+        "[useEffect] draftFilesRef empty on initial mount, skipping restore"
+      );
+      return;
+    }
+
     restoreFileUrls();
-  }, [restoreFileUrls]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 파일 업로드
   const handleUpload = useCallback(
@@ -258,8 +245,26 @@ export const useNewRequestFilesV2 = ({
       }
 
       try {
+        // 0. 이미 업로드된 파일(파일명+사이즈 기준)은 중복 업로드를 방지한다.
+        const existingKeys = new Set(
+          filesRef.current.map((f) => `${f.name}:${f.size}`)
+        );
+        const filesToProcess = filesToUpload.filter((f) => {
+          const key = `${f.name}:${f.size}`;
+          return !existingKeys.has(key);
+        });
+
+        if (filesToProcess.length === 0) {
+          toast({
+            title: "안내",
+            description: "이미 업로드된 파일입니다.",
+            duration: 2000,
+          });
+          return;
+        }
+
         // 1. S3 임시 업로드
-        const tempFiles = await uploadFilesWithToast(filesToUpload);
+        const tempFiles = await uploadFilesWithToast(filesToProcess);
         if (!tempFiles || tempFiles.length === 0) {
           return;
         }
@@ -326,7 +331,7 @@ export const useNewRequestFilesV2 = ({
           // 4. File 객체 생성: 실제 업로드한 원본 File을 그대로 사용해 STL 내용이 보이도록 한다.
           const newFiles: FileWithDraftId[] = newDraftFiles.map(
             (draftCase, idx) => {
-              const originalFile = filesToUpload[idx];
+              const originalFile = filesToProcess[idx];
               const fileMeta = draftCase.file;
               const fileName = normalize(
                 fileMeta?.originalName ?? originalFile.name
@@ -341,13 +346,21 @@ export const useNewRequestFilesV2 = ({
             }
           );
 
-          setFiles((prev) => [...prev, ...newFiles]);
+          setFiles((prev) => {
+            const next = [...prev, ...newFiles];
+            console.log("[useNewRequestFilesV2] setFiles from handleUpload", {
+              prevLength: prev.length,
+              added: newFiles.length,
+              nextLength: next.length,
+            });
+            return next;
+          });
 
           // 5. 업로드 직후 원본 File을 IndexedDB에 즉시 캐싱
           //    (재진입 시에는 IndexedDB → URL 캐시 → S3 순으로 복원)
           newDraftFiles.forEach((draftCase, idx) => {
             const fileMeta = draftCase.file;
-            const originalFile = filesToUpload[idx];
+            const originalFile = filesToProcess[idx];
             if (!fileMeta || !originalFile) return;
 
             const cacheKey = fileMeta.fileId || fileMeta.s3Key;
@@ -397,7 +410,18 @@ export const useNewRequestFilesV2 = ({
       const draftCaseInfoId = (file as FileWithDraftId)._draftCaseInfoId;
       if (!draftCaseInfoId || !draftId || !token) {
         // Draft 파일 ID가 없으면 로컬에서만 제거
-        setFiles((prev) => prev.filter((_, i) => i !== index));
+        setFiles((prev) => {
+          const next = prev.filter((_, i) => i !== index);
+          console.log(
+            "[useNewRequestFilesV2] setFiles from handleRemoveFile (no draftCaseInfoId)",
+            {
+              prevLength: prev.length,
+              index,
+              nextLength: next.length,
+            }
+          );
+          return next;
+        });
         return;
       }
 

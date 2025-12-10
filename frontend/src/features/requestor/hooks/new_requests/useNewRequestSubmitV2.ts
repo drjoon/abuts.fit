@@ -45,32 +45,13 @@ export const useNewRequestSubmitV2 = ({
   };
 
   const handleCancel = async () => {
-    // Draft 삭제
-    if (draftId && token && !existingRequestId) {
-      try {
-        await fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
-          method: "DELETE",
-          headers: getHeaders(),
-        });
-      } catch {
-        // Draft 삭제 실패는 무시
-      }
-    }
-
-    // 상태 초기화
+    // 클라이언트 상태 초기화 (파일 및 선택 인덱스만 리셋)
+    console.log("[useNewRequestSubmitV2] setFiles([]) from handleCancel");
     setFiles([]);
     setSelectedPreviewIndex(null);
 
-    // localStorage 및 캐시 정리
-    try {
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(NEW_REQUEST_DRAFT_ID_STORAGE_KEY);
-        clearFileCache();
-      }
-    } catch {}
-
-    // 대시보드로 이동
-    navigate("/dashboard");
+    // NOTE: 취소 시 서버 Draft는 유지하고, 대시보드로 이동하지도 않는다.
+    // 사용자는 동일 Draft 안에서 파일/정보를 다시 입력할 수 있다.
   };
 
   const handleSubmit = async () => {
@@ -157,6 +138,9 @@ export const useNewRequestSubmitV2 = ({
       }
 
       // 상태 초기화
+      console.log(
+        "[useNewRequestSubmitV2] setFiles([]) from handleSubmit success"
+      );
       setFiles([]);
       setSelectedPreviewIndex(null);
 

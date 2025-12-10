@@ -32,6 +32,13 @@ export function useDraftMeta() {
   // Draft PATCH 디바운스를 위한 타이머 Ref
   const patchTimeoutRef = useRef<number | null>(null);
 
+  // 현재 draftId를 추적하는 Ref (setTimeout 콜백에서 draftId 변경 감지용)
+  const draftIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    draftIdRef.current = draftId;
+  }, [draftId]);
+
   // localStorage 키 생성
   const getDraftMetaKey = useCallback(() => {
     if (!user?.id) return null;
@@ -275,10 +282,20 @@ export function useDraftMeta() {
             window.clearTimeout(patchTimeoutRef.current);
           }
 
+          // 현재 draftId를 스냅샷으로 저장 (클로저 문제 방지)
+          const currentDraftId = draftId;
+
           patchTimeoutRef.current = window.setTimeout(async () => {
+            // PATCH 실행 시점에 draftId가 변경되었으면 요청 취소
+            // draftIdRef를 사용하여 최신 draftId와 비교
+            if (currentDraftId !== draftIdRef.current) {
+              console.log("[updateCaseInfos] draftId changed, skipping PATCH");
+              return;
+            }
+
             try {
               const res = await fetch(
-                `${API_BASE_URL}/requests/drafts/${draftId}`,
+                `${API_BASE_URL}/requests/drafts/${currentDraftId}`,
                 {
                   method: "PATCH",
                   headers: getHeaders(),
@@ -294,7 +311,7 @@ export function useDraftMeta() {
               }
 
               // 캐시 갱신
-              saveDraftMeta(draftId, updated);
+              saveDraftMeta(currentDraftId, updated);
             } catch (err) {
               console.error("updateCaseInfos error:", err);
             }
@@ -316,7 +333,7 @@ export function useDraftMeta() {
     };
   }, []);
 
-  // Draft 삭제
+  // Draft 삭제 (현재 Draft만 정리)
   const deleteDraft = useCallback(async () => {
     if (!draftId || !token) return;
 
@@ -330,7 +347,6 @@ export function useDraftMeta() {
         throw new Error(`Failed to delete draft: ${res.status}`);
       }
 
-      // localStorage 정리
       const metaKey = getDraftMetaKey();
       if (metaKey) {
         localStorage.removeItem(metaKey);
@@ -344,6 +360,80 @@ export function useDraftMeta() {
     }
   }, [draftId, token, getHeaders, getDraftMetaKey]);
 
+  // Draft 완전 리셋: 기존 Draft 정리 후 새 Draft 생성
+  const resetDraft = useCallback(async () => {
+    // 펜딩 중인 PATCH 요청 취소 (이전 draftId로의 업데이트 방지)
+    if (patchTimeoutRef.current !== null) {
+      window.clearTimeout(patchTimeoutRef.current);
+      patchTimeoutRef.current = null;
+    }
+
+    // 기존 Draft 정리 (실패해도 무시하고 계속 진행)
+    try {
+      if (draftId && token) {
+        await fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
+          method: "DELETE",
+          headers: getHeaders(),
+        });
+      }
+    } catch (err) {
+      console.error("resetDraft: delete current draft failed (ignored)", err);
+    }
+
+    // 로컬 캐시 정리
+    try {
+      const metaKey = getDraftMetaKey();
+      if (metaKey) {
+        localStorage.removeItem(metaKey);
+      }
+      localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
+    } catch (err) {
+      console.error("resetDraft: localStorage cleanup failed (ignored)", err);
+    }
+
+    // 완전 초기화된 caseInfos
+    const emptyCaseInfos: CaseInfos = {
+      clinicName: "",
+      patientName: "",
+      tooth: "",
+      implantSystem: "",
+      implantType: "",
+      connectionType: "",
+      maxDiameter: undefined,
+      connectionDiameter: undefined,
+      shippingMode: undefined,
+      requestedShipDate: undefined,
+      workType: "abutment",
+    };
+
+    // 토큰 없으면 클라이언트 상태만 초기화
+    if (!token || !user?.id) {
+      setDraftId(null);
+      setCaseInfos(emptyCaseInfos);
+      return;
+    }
+
+    // 새 Draft 생성
+    const newDraft = await createDraft();
+    if (newDraft) {
+      setDraftId(newDraft._id);
+      setCaseInfos(emptyCaseInfos);
+      saveDraftMeta(newDraft._id, emptyCaseInfos);
+    } else {
+      // 새 Draft 생성 실패 시 최소한 클라이언트 상태만 초기화
+      setDraftId(null);
+      setCaseInfos(emptyCaseInfos);
+    }
+  }, [
+    draftId,
+    token,
+    user?.id,
+    getHeaders,
+    getDraftMetaKey,
+    createDraft,
+    saveDraftMeta,
+  ]);
+
   return {
     draftId,
     caseInfos,
@@ -351,5 +441,6 @@ export function useDraftMeta() {
     status,
     error,
     deleteDraft,
+    resetDraft,
   };
 }

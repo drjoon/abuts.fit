@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNewRequestClinics } from "./new_requests/useNewRequestClinics";
@@ -42,7 +42,30 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setCaseInfos,
     status: draftStatus,
     deleteDraft,
+    resetDraft,
   } = useDraftMeta();
+
+  const prevDraftIdRef = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    // undefined: 초기 마운트 (스킵)
+    // null 또는 string: 이후 변경 (처리)
+    if (
+      prevDraftIdRef.current !== undefined &&
+      prevDraftIdRef.current !== draftId
+    ) {
+      // Draft가 바뀌었으면 파일/케이스 관련 상태를 즉시 비움
+      console.log("[useNewRequestPage] draftId changed, clearing files", {
+        prev: prevDraftIdRef.current,
+        next: draftId,
+      });
+      setFiles([]);
+      setDraftFiles([]);
+      setSelectedPreviewIndex(null);
+    }
+
+    prevDraftIdRef.current = draftId ?? null;
+  }, [draftId]);
 
   // 임플란트 정보 관리
   const {
@@ -227,5 +250,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     handleSubmit,
     handleCancel,
     deleteDraft,
+    resetDraft,
   };
 };

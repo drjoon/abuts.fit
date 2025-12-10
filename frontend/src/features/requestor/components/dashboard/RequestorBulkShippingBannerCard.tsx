@@ -138,6 +138,9 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
             <DialogTitle className="text-2xl font-bold">
               배송 대기 내역
             </DialogTitle>
+            <p className="mt-1 text-mg text-gray-600">
+              신속 배송시 묶음 배송 제품도 동봉합니다.
+            </p>
           </DialogHeader>
           <div className="relative flex items-stretch gap-6 py-6">
             {/* 왼쪽: 묶음 배송 */}
@@ -184,7 +187,7 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
             </div>
 
             {/* 중앙: 화살표 */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 translate-y-1/2 z-10">
               <ArrowRightLeft className="w-5 h-5 text-gray-400" />
             </div>
 

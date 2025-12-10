@@ -231,7 +231,7 @@ export function StlPreviewViewer({
       <div ref={containerRef} className="w-full h-full" />
       {showOverlay &&
         (maxDiameterState !== null || connectionDiameterState !== null) && (
-          <div className="pointer-events-none absolute top-2 left-2 flex flex-wrap gap-2 rounded-md bg-white/85 px-2 py-1 text-[12px] md:text-[13px] text-muted-foreground shadow-sm">
+          <div className="pointer-events-none absolute bottom-2 right-2 flex flex-col items-end gap-1 rounded-md bg-white/85 px-2 py-1 text-[12px] md:text-[13px] text-muted-foreground shadow-sm">
             {maxDiameterState !== null && (
               <span>
                 최대 직경:{" "}

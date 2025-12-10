@@ -71,6 +71,9 @@ export const NewRequestPage = () => {
 
   const { toast } = useToast();
 
+  // hasActiveSession을 상태 대신 files.length로 직접 계산
+  // 상태 동기화 문제를 완전히 제거
+
   const {
     user,
     files,
@@ -100,7 +103,16 @@ export const NewRequestPage = () => {
     handleAddOrSelectClinic,
     handleDeleteClinic,
     connections,
+    resetDraft,
   } = useNewRequestPage(existingRequestId);
+
+  // hasActiveSession은 files.length > 0으로 직접 계산
+  const hasActiveSession = files.length > 0;
+
+  // 디버깅: files.length 변화 추적
+  useEffect(() => {
+    console.log("[NewRequestPage] files.length changed:", files.length);
+  }, [files.length]);
 
   const [clinicInput, setClinicInput] = useState("");
   const [fileWorkTypes, setFileWorkTypes] = useState<
@@ -109,6 +121,38 @@ export const NewRequestPage = () => {
   const [hasUserChosenWorkType, setHasUserChosenWorkType] = useState(false);
   const manufacturerSelectRef = useRef<HTMLButtonElement | null>(null);
   const crownOnlyToastShownRef = useRef(false);
+  const lastRequestedFilenamesRef = useRef<string[] | null>(null);
+
+  const handleCancelAll = async () => {
+    // 1) 서버 Draft + 로컬 Draft 캐시 완전 초기화
+    // resetDraft() 내부에서 setCaseInfos({ workType: "abutment" })를 호출하므로
+    // 여기서 별도로 setCaseInfos를 호출하면 안 됨 (updateCaseInfos가 PATCH를 트리거함)
+    await resetDraft();
+
+    // 2) 클라이언트 상태 초기화 (기존 로직 유지)
+    handleCancel();
+
+    // hasActiveSession은 files.length로 자동 계산되므로 별도 설정 불필요
+
+    setClinicInput("");
+    setFileWorkTypes({});
+    setHasUserChosenWorkType(false);
+    lastRequestedFilenamesRef.current = null;
+
+    // NOTE: setCaseInfos는 resetDraft() 내부에서 이미 초기화됨
+    // 여기서 다시 호출하면 updateCaseInfos가 이전 draftId로 PATCH를 시도함
+
+    setImplantManufacturer("");
+    setImplantSystem("");
+    setImplantType("");
+
+    const fileInput = document.getElementById(
+      "file-input"
+    ) as HTMLInputElement | null;
+    if (fileInput) {
+      fileInput.value = "";
+    }
+  };
 
   // 비즈니스 데이(주말 제외) 더하기
   const addBusinessDays = (startDate: Date, days: number) => {
@@ -215,6 +259,13 @@ export const NewRequestPage = () => {
     }
   }, [files, selectedPreviewIndex, setSelectedPreviewIndex]);
 
+  // files 배열이 완전히 비워지면 AI 파일명 파싱 중복 체크용 캐시도 초기화한다.
+  useEffect(() => {
+    if (files.length === 0) {
+      lastRequestedFilenamesRef.current = null;
+    }
+  }, [files]);
+
   // 파일 크기 기반으로 전체 workType 자동 제안 (사용자가 직접 선택하기 전까지만)
   useEffect(() => {
     if (!files.length) return;
@@ -249,13 +300,28 @@ export const NewRequestPage = () => {
   }, [files, hasUserChosenWorkType, toast]);
 
   // 파일명이 있으면서 아직 환자/치과 정보가 비어 있으면 AI 파일명 파싱 API를 호출해 기본값을 채운다.
+  // files 배열의 파일 목록이 변경될 때마다 1회씩 호출하고, 동일한 파일 목록에 대해서는 중복 호출하지 않는다.
   useEffect(() => {
     if (!files.length) return;
+
     if (caseInfos?.clinicName || caseInfos?.patientName || caseInfos?.tooth) {
       return;
     }
 
     const filenames = files.map((f) => f.name);
+
+    const prev = lastRequestedFilenamesRef.current;
+    const isSameAsPrev =
+      prev &&
+      prev.length === filenames.length &&
+      prev.every((name, idx) => name === filenames[idx]);
+
+    if (isSameAsPrev) {
+      return;
+    }
+
+    lastRequestedFilenamesRef.current = filenames;
+
     (async () => {
       try {
         const res = await request<
@@ -291,147 +357,148 @@ export const NewRequestPage = () => {
     <div className="min-h-screen bg-gradient-subtle p-4 md:p-6">
       <div className="max-w-6xl mx-auto space-y-4">
         {/* ===== RED SECTION: File Selection & Details (Dynamic) ===== */}
-        <div className="relative flex flex-col rounded-2xl border-2 border-gray-300 p-4 md:p-6 space-y-4 transition-shadow hover:shadow-md">
+        <div className="relative flex flex-col rounded-2xl border-2 border-gray-300 p-4 md:p-6  transition-shadow hover:shadow-md">
           {/* File Cards */}
           <div className="flex gap-3 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-gray-100 mb-2">
-            {files.length === 0 && (
+            {!hasActiveSession && (
               <div className="flex items-center justify-center w-full min-h-[120px] rounded-xl border border-dashed border-gray-200 bg-white/60 text-[11px] md:text-sm text-muted-foreground">
                 아직 첨부된 STL 파일이 없습니다. 우측의 드롭 영역에 파일을
                 드롭하거나, 아래 버튼으로 파일을 선택해주세요.
               </div>
             )}
-            {files.map((file, index) => {
-              const filename = file.name;
-              const workType = getFileWorkType(file);
-              const isSelected = selectedPreviewIndex === index;
+            {hasActiveSession &&
+              files.map((file, index) => {
+                const filename = file.name;
+                const workType = getFileWorkType(file);
+                const isSelected = selectedPreviewIndex === index;
 
-              const isAbutment = workType === "abutment";
-              const isCrown = workType === "crown";
+                const isAbutment = workType === "abutment";
+                const isCrown = workType === "crown";
 
-              return (
-                <div
-                  key={index}
-                  onClick={() => {
-                    setSelectedPreviewIndex(index);
-                    const currentWorkType = getFileWorkType(file);
-                    setHasUserChosenWorkType(true);
+                return (
+                  <div
+                    key={index}
+                    onClick={() => {
+                      setSelectedPreviewIndex(index);
+                      const currentWorkType = getFileWorkType(file);
+                      setHasUserChosenWorkType(true);
 
-                    if (caseInfos?.workType !== currentWorkType) {
-                      setCaseInfos({
-                        ...caseInfos,
-                        workType: currentWorkType,
-                      });
-                    }
+                      if (caseInfos?.workType !== currentWorkType) {
+                        setCaseInfos({
+                          ...caseInfos,
+                          workType: currentWorkType,
+                        });
+                      }
 
-                    if (
-                      currentWorkType === "abutment" &&
-                      !implantManufacturer &&
-                      !implantSystem &&
-                      !implantType
-                    ) {
-                      setImplantManufacturer("OSSTEM");
-                      setImplantSystem("Regular");
-                      setImplantType("Hex");
-                      syncSelectedConnection("OSSTEM", "Regular", "Hex");
+                      if (
+                        currentWorkType === "abutment" &&
+                        !implantManufacturer &&
+                        !implantSystem &&
+                        !implantType
+                      ) {
+                        setImplantManufacturer("OSSTEM");
+                        setImplantSystem("Regular");
+                        setImplantType("Hex");
+                        syncSelectedConnection("OSSTEM", "Regular", "Hex");
 
-                      setCaseInfos({
-                        ...caseInfos,
-                        implantSystem: "OSSTEM",
-                        implantType: "Regular",
-                        connectionType: "Hex",
-                      });
-                    }
-                  }}
-                  className={`shrink-0 w-48 md:w-56 p-2 md:p-3 rounded-lg  cursor-pointer text-xs space-y-2 transition-colors ${
-                    isSelected
-                      ? "border-2 border-primary shadow-lg"
-                      : "border border-gray-200 hover:border-primary/40 hover:shadow"
-                  } ${
-                    isAbutment
-                      ? "bg-gray-300 text-gray-900"
-                      : isCrown
-                      ? "bg-gray-100 text-gray-900"
-                      : "bg-gray-50 text-gray-900"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 text-xs md:text-sm">
-                    <span className="truncate flex-1">{filename}</span>
-                    <button
-                      type="button"
-                      className="text-lg leading-none text-muted-foreground hover:text-destructive flex items-center justify-center"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveFile(index);
-                      }}
-                    >
-                      ×
-                    </button>
+                        setCaseInfos({
+                          ...caseInfos,
+                          implantSystem: "OSSTEM",
+                          implantType: "Regular",
+                          connectionType: "Hex",
+                        });
+                      }
+                    }}
+                    className={`shrink-0 w-48 md:w-56 p-2 md:p-3 rounded-lg  cursor-pointer text-xs space-y-2 transition-colors ${
+                      isSelected
+                        ? "border-2 border-primary shadow-lg"
+                        : "border border-gray-200 hover:border-primary/40 hover:shadow"
+                    } ${
+                      isAbutment
+                        ? "bg-gray-300 text-gray-900"
+                        : isCrown
+                        ? "bg-gray-100 text-gray-900"
+                        : "bg-gray-50 text-gray-900"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 text-xs md:text-sm">
+                      <span className="truncate flex-1">{filename}</span>
+                      <button
+                        type="button"
+                        className="text-lg leading-none text-muted-foreground hover:text-destructive flex items-center justify-center"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFile(index);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="flex gap-1 md:gap-2 mt-1">
+                      {/* 어벗 버튼 */}
+                      <button
+                        type="button"
+                        className="flex-1 rounded py-1 border text-[10px] md:text-[11px] bg-gray-300 text-gray-900 border-gray-400"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPreviewIndex(index);
+                          setHasUserChosenWorkType(true);
+                          // 카드별 어벗 선택
+                          const key = `${file.name}:${file.size}`;
+                          setFileWorkTypes((prev) => ({
+                            ...prev,
+                            [key]: "abutment",
+                          }));
+                          // 전체 workType도 어벗으로 설정
+                          if (caseInfos?.workType !== "abutment") {
+                            setCaseInfos({
+                              ...caseInfos,
+                              workType: "abutment",
+                            });
+                          }
+                          // 어벗 선택 시 기본 임플란트 정보 설정
+                          if (
+                            !implantManufacturer &&
+                            !implantSystem &&
+                            !implantType
+                          ) {
+                            setImplantManufacturer("OSSTEM");
+                            setImplantSystem("Regular");
+                            setImplantType("Hex");
+                            syncSelectedConnection("OSSTEM", "Regular", "Hex");
+                          }
+                        }}
+                      >
+                        어벗
+                      </button>
+                      {/* 크라운 버튼 */}
+                      <button
+                        type="button"
+                        className="flex-1 rounded py-1 border text-[10px] md:text-[11px] bg-gray-50 text-gray-900 border-gray-300"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPreviewIndex(index);
+                          setHasUserChosenWorkType(true);
+                          const key = `${file.name}:${file.size}`;
+                          setFileWorkTypes((prev) => ({
+                            ...prev,
+                            [key]: "crown",
+                          }));
+                          // 크라운만 선택된 경우를 위해 workType도 갱신
+                          if (caseInfos?.workType !== "crown") {
+                            setCaseInfos({
+                              ...caseInfos,
+                              workType: "crown",
+                            });
+                          }
+                        }}
+                      >
+                        크라운
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-1 md:gap-2 mt-1">
-                    {/* 어벗 버튼 */}
-                    <button
-                      type="button"
-                      className="flex-1 rounded py-1 border text-[10px] md:text-[11px] bg-gray-300 text-gray-900 border-gray-400"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPreviewIndex(index);
-                        setHasUserChosenWorkType(true);
-                        // 카드별 어벗 선택
-                        const key = `${file.name}:${file.size}`;
-                        setFileWorkTypes((prev) => ({
-                          ...prev,
-                          [key]: "abutment",
-                        }));
-                        // 전체 workType도 어벗으로 설정
-                        if (caseInfos?.workType !== "abutment") {
-                          setCaseInfos({
-                            ...caseInfos,
-                            workType: "abutment",
-                          });
-                        }
-                        // 어벗 선택 시 기본 임플란트 정보 설정
-                        if (
-                          !implantManufacturer &&
-                          !implantSystem &&
-                          !implantType
-                        ) {
-                          setImplantManufacturer("OSSTEM");
-                          setImplantSystem("Regular");
-                          setImplantType("Hex");
-                          syncSelectedConnection("OSSTEM", "Regular", "Hex");
-                        }
-                      }}
-                    >
-                      어벗
-                    </button>
-                    {/* 크라운 버튼 */}
-                    <button
-                      type="button"
-                      className="flex-1 rounded py-1 border text-[10px] md:text-[11px] bg-gray-50 text-gray-900 border-gray-300"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPreviewIndex(index);
-                        setHasUserChosenWorkType(true);
-                        const key = `${file.name}:${file.size}`;
-                        setFileWorkTypes((prev) => ({
-                          ...prev,
-                          [key]: "crown",
-                        }));
-                        // 크라운만 선택된 경우를 위해 workType도 갱신
-                        if (caseInfos?.workType !== "crown") {
-                          setCaseInfos({
-                            ...caseInfos,
-                            workType: "crown",
-                          });
-                        }
-                      }}
-                    >
-                      크라운
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
 
           {/* File Details & Case Info */}
@@ -469,16 +536,16 @@ export const NewRequestPage = () => {
                 })()}
 
               {(!files.length || selectedPreviewIndex === null) && (
-                <div className="flex items-center justify-center h-[260px] md:h-[320px] rounded-2xl border border-dashed border-gray-200 bg-white/60 text-xs md:text-sm text-muted-foreground">
-                  STL 미리보기는 파일을 업로드하고 상단 카드에서 하나를 선택하면
-                  여기에서 확인할 수 있습니다.
+                <div className="px-4 flex items-center justify-center h-[260px] md:h-[320px] rounded-2xl border border-dashed border-gray-200 bg-white/60 text-xs md:text-sm text-muted-foreground">
+                  STL 파일을 업로드하고 상단 파일 카드에서 하나를 선택하면
+                  여기에 프리뷰가 보입니다.
                 </div>
               )}
             </div>
 
             {/* Case Info Form + 드롭박스 (우측) */}
-            <div className="space-y-1 text-xs md:text-sm min-w-0">
-              <div className="space-y-1">
+            <div className="space-y-4 text-xs md:text-sm min-w-0">
+              <div className="">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-foreground ">
                   {/* 치과명 */}
                   <div className="min-w-0">
@@ -572,9 +639,9 @@ export const NewRequestPage = () => {
 
                 return selectedWorkType === "abutment";
               })() && (
-                <div className="space-y-2 mb-4">
+                <div className="space-y-4">
                   {/* 임플란트 선택 */}
-                  <div className="space-y-1 mb-4">
+                  <div className="space-y-1">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] md:text-[11px]">
                       <div className="min-w-0 space-y-1">
                         <Select
@@ -741,9 +808,6 @@ export const NewRequestPage = () => {
             <div className="relative flex flex-col rounded-2xl border-2 border-gray-300 p-4 md:p-6 space-y-4 transition-shadow hover:shadow-md">
               {/* 배송 옵션 */}
               <div className="space-y-2">
-                <label className="text-xs md:text-sm font-medium text-muted-foreground block">
-                  배송 옵션
-                </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {/* 묶음 배송 카드 - FunctionalItemCard 적용 */}
                   <FunctionalItemCard
@@ -824,7 +888,7 @@ export const NewRequestPage = () => {
                     variant="outline"
                     size="lg"
                     className="sm:w-24"
-                    onClick={handleCancel}
+                    onClick={handleCancelAll}
                   >
                     취소하기
                   </Button>
