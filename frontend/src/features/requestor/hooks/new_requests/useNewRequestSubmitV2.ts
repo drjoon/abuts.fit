@@ -206,11 +206,23 @@ export const useNewRequestSubmitV2 = ({
         rawMessage.includes("커스컴 어벗 케이스가 없습니다") ||
         rawMessage.includes("Draft에 커스텀 어벗 케이스가 없습니다");
 
+      const isMissingFieldsError =
+        rawMessage.includes("필수 정보가 누락된 파일");
+
+      let description = rawMessage || "알 수 없는 오류";
+
+      if (isNoAbutmentError) {
+        description = "커스텀 어벗을 하나 이상 의뢰해야 합니다";
+      } else if (isMissingFieldsError) {
+        // 상세 정보가 있으면 표시
+        description =
+          "다음 파일의 필수 정보가 누락되었습니다:\n\n" +
+          (err?.details || "치과이름, 환자이름, 치아번호를 확인해주세요");
+      }
+
       toast({
         title: "의뢰 제출 중 오류",
-        description: isNoAbutmentError
-          ? "커스텀 어벗을 하나 이상 의뢰해야 합니다"
-          : rawMessage || "알 수 없는 오류",
+        description,
         variant: "destructive",
       });
     }

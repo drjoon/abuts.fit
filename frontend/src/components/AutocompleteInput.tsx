@@ -24,6 +24,10 @@ interface AutocompleteInputProps
    * 드롭다운이 열릴지 여부 (기본: 입력값이 있을 때 자동)
    */
   openOnFocus?: boolean;
+  /**
+   * 포커스를 잃었을 때 호출
+   */
+  onBlur?: () => void;
 }
 
 export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
@@ -34,6 +38,7 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   onOptionSelect,
   openOnFocus = true,
   className,
+  onBlur: onBlurProp,
   ...inputProps
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -148,6 +153,11 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
         onChange={handleChange}
         onFocus={() => {
           if (openOnFocus) setIsOpen(true);
+        }}
+        onBlur={() => {
+          setIsOpen(false);
+          setActiveIndex(-1);
+          onBlurProp?.();
         }}
         onKeyDown={handleKeyDown}
         className={className}

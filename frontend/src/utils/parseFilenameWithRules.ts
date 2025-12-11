@@ -79,7 +79,7 @@ function extractByRegex(
       return match[captureGroupIndex];
     }
   } catch (err) {
-    console.warn("[parseFilenameWithRules] Invalid regex:", err);
+    // invalid regex, ignore
   }
 
   return undefined;
@@ -199,7 +199,6 @@ export function parseFilenameWithRules(filename: string): ParsedFilenameInfo {
   if (rule) {
     try {
       const result = parseWithRule(filename, rule);
-      console.log(`[parseFilenameWithRules] Matched rule: ${rule.id}`, result);
 
       // 부분 성공도 괜찮음 (일부만 추출되었어도 반환)
       if (result.clinicName || result.patientName || result.tooth) {
@@ -210,14 +209,10 @@ export function parseFilenameWithRules(filename: string): ParsedFilenameInfo {
         };
       }
     } catch (err) {
-      console.warn(`[parseFilenameWithRules] Rule ${rule.id} failed:`, err);
-      // fallback으로 진행
+      // rule failed, fall back
     }
   }
 
   // 2. Fallback: 기존 parseFilename 로직 사용
-  console.log(
-    `[parseFilenameWithRules] No matching rule or rule failed, using fallback`
-  );
   return fallbackParseFilename(filename);
 }

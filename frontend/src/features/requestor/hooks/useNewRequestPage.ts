@@ -41,6 +41,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     caseInfosMap,
     setCaseInfosMap,
     updateCaseInfos,
+    patchDraftImmediately,
     status: draftStatus,
     deleteDraft,
     resetDraft,
@@ -85,18 +86,25 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     prevDraftIdRef.current = draftId ?? null;
   }, [draftId]);
 
-  // 현재 선택된 파일의 caseInfos (파일별 독립적 관리)
-  const currentCaseInfos = useMemo(() => {
+  // 현재 선택된 파일의 key
+  const currentFileKey = useMemo(() => {
     if (selectedPreviewIndex === null || !files[selectedPreviewIndex]) {
-      return caseInfosMap.__default__ || { workType: "abutment" };
+      return "__default__";
     }
     const file = files[selectedPreviewIndex];
-    const fileKey = `${file.name}:${file.size}`;
+    return `${file.name}:${file.size}`;
+  }, [selectedPreviewIndex, files]);
+
+  // 현재 선택된 파일의 caseInfos (파일별 독립적 관리)
+  const currentCaseInfos = useMemo(() => {
+    if (currentFileKey === "__default__") {
+      return caseInfosMap.__default__ || { workType: "abutment" };
+    }
     return (
-      caseInfosMap[fileKey] ||
+      caseInfosMap[currentFileKey] ||
       caseInfosMap.__default__ || { workType: "abutment" }
     );
-  }, [selectedPreviewIndex, files, caseInfosMap]);
+  }, [currentFileKey, caseInfosMap]);
 
   // 현재 파일의 caseInfos 업데이트 함수
   const setCaseInfos = useCallback(
@@ -140,10 +148,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
   // 클리닉 프리셋 관리
   const {
-    clinicPresets,
-    selectedClinicId,
-    handleSelectClinic,
-    handleAddOrSelectClinic,
+    clinicPresets: rawClinicPresets,
+    selectedClinicId: rawSelectedClinicId,
+    handleSelectClinic: rawHandleSelectClinic,
+    handleAddOrSelectClinic: rawHandleAddOrSelectClinic,
     handleRenameClinic,
     handleDeleteClinic,
   } = useNewRequestClinics({
@@ -154,6 +162,51 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       type: implantType,
     },
   });
+
+  // 클리닉 프리셋 (글로벌)
+  const clinicPresets = rawClinicPresets;
+
+  // 현재 파일의 clinicName에 맞는 clinicId 찾기 (파일별 독립적)
+  const selectedClinicId = useMemo(() => {
+    const currentClinicName = currentCaseInfos.clinicName;
+    if (!currentClinicName) return null;
+
+    // 현재 파일의 clinicName과 일치하는 프리셋 찾기
+    const matchingClinic = rawClinicPresets.find(
+      (c) => c.name === currentClinicName
+    );
+    return matchingClinic?.id || null;
+  }, [currentCaseInfos.clinicName, rawClinicPresets]);
+
+  const handleSelectClinic = useCallback(
+    (id: string | null) => {
+      rawHandleSelectClinic(id);
+
+      // 선택된 클리닉의 이름 찾기
+      const selectedClinic = id
+        ? rawClinicPresets.find((c) => c.id === id)
+        : null;
+      const clinicName = selectedClinic?.name || "";
+
+      // 현재 선택된 파일의 clinicName만 업데이트
+      if (currentFileKey && updateCaseInfos) {
+        updateCaseInfos(currentFileKey, { clinicName });
+      }
+    },
+    [rawHandleSelectClinic, rawClinicPresets, currentFileKey, updateCaseInfos]
+  );
+
+  const handleAddOrSelectClinic = useCallback(
+    (name: string) => {
+      rawHandleAddOrSelectClinic(name);
+
+      // 현재 선택된 파일의 clinicName만 업데이트
+      if (currentFileKey && updateCaseInfos) {
+        updateCaseInfos(currentFileKey, { clinicName: name.trim() });
+      }
+    },
+    [rawHandleAddOrSelectClinic, currentFileKey, updateCaseInfos]
+  );
 
   // 파일 관리 (업로드/삭제/복원)
   const {
@@ -270,6 +323,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setSelectedPreviewIndex,
     caseInfosMap,
     updateCaseInfos,
+    patchDraftImmediately,
 
     // 파일 업로드 핸들러
     isDragOver: isReady ? isDragOver : false,

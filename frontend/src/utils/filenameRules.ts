@@ -133,7 +133,13 @@ export async function loadRulesFromBackend(): Promise<void> {
 
     if (Array.isArray(rules) && rules.length > 0) {
       ACTIVE_FILENAME_RULES = rules;
-      console.log(`[filenameRules] Loaded ${rules.length} rules from backend`);
+      console.log(`[filenameRules] Loaded ${rules.length} rules from backend`, {
+        rules: rules.map((r: any) => ({
+          id: r.ruleId || r.id,
+          pattern: r.pattern,
+          confidence: r.confidence,
+        })),
+      });
     }
   } catch (error) {
     console.warn("[filenameRules] Error loading rules from backend:", error);

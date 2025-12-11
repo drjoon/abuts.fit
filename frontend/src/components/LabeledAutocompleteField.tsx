@@ -3,7 +3,7 @@ import AutocompleteInput, {
   type AutocompleteOption,
 } from "@/components/AutocompleteInput";
 import { Button } from "@/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 export interface LabeledAutocompleteFieldProps {
   value: string;
@@ -18,6 +18,8 @@ export interface LabeledAutocompleteFieldProps {
   onDelete?: () => void;
   /** 인풋 className 확장 */
   inputClassName?: string;
+  /** 포커스를 잃었을 때 호출 (blur 이벤트) */
+  onBlur?: () => void;
 }
 
 export const LabeledAutocompleteField: React.FC<
@@ -31,6 +33,7 @@ export const LabeledAutocompleteField: React.FC<
   onClear,
   onDelete,
   inputClassName,
+  onBlur,
 }) => {
   const handleClear = () => {
     if (onClear) onClear();
@@ -48,6 +51,7 @@ export const LabeledAutocompleteField: React.FC<
         onOptionSelect={(opt) => onOptionSelect?.(opt.label)}
         placeholder={placeholder}
         className={inputClassName ?? "h-8 text-xs w-full pr-10"}
+        onBlur={onBlur}
       />
       {(hasValue || onDelete) && (
         <div className="absolute -top-6 right-0 z-20 inline-flex items-center gap-0.5 rounded-full bg-white/90 px-1 py-0.5 shadow-sm opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">

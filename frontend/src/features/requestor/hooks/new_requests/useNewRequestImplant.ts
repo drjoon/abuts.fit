@@ -95,46 +95,9 @@ export const useNewRequestImplant = ({
 
         const list = connections;
 
-        // 치과별 프리셋 조회 (있다면 1순위로 사용)
-        let clinicPreset: {
-          manufacturer?: string;
-          system?: string;
-          type?: string;
-        } | null = null;
-
-        if (token && clinicName) {
-          const presetRes = await fetch(
-            `/api/requests/my/clinic-implants?clinicName=${encodeURIComponent(
-              clinicName
-            )}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "x-mock-role": "requestor",
-              },
-            }
-          );
-
-          if (presetRes.ok) {
-            const presetBody = await presetRes.json().catch(() => ({}));
-            const presets: any[] = Array.isArray(presetBody.data)
-              ? presetBody.data
-              : [];
-            if (presets.length > 0) {
-              const top = presets[0];
-              clinicPreset = {
-                manufacturer: top.manufacturer,
-                system: top.system,
-                type: top.type,
-              };
-            }
-          }
-        }
-
         // 기본값은
-        // 1) 치과별 프리셋 1순위
-        // 2) OSSTEM / Regular / Hex
-        // 3) 전체 목록의 첫 항목
+        // 1) OSSTEM / Regular / Hex
+        // 2) 전체 목록의 첫 항목
         const preferred = list.find(
           (c) =>
             c.manufacturer === "OSSTEM" &&
@@ -149,17 +112,10 @@ export const useNewRequestImplant = ({
           | undefined;
 
         const baseManufacturer =
-          clinicPreset?.manufacturer ||
-          preferred?.manufacturer ||
-          fallbackFirst?.manufacturer ||
-          "OSSTEM";
+          preferred?.manufacturer || fallbackFirst?.manufacturer || "OSSTEM";
         const baseSystem =
-          clinicPreset?.system ||
-          preferred?.system ||
-          fallbackFirst?.system ||
-          "Regular";
-        const baseType =
-          clinicPreset?.type || preferred?.type || fallbackFirst?.type || "Hex";
+          preferred?.system || fallbackFirst?.system || "Regular";
+        const baseType = preferred?.type || fallbackFirst?.type || "Hex";
 
         const nextManufacturer = baseManufacturer;
         const nextSystem = baseSystem;

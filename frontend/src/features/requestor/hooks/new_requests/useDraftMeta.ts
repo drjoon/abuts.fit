@@ -256,12 +256,44 @@ export function useDraftMeta() {
     })();
   }, [token, user?.id, loadDraftMeta, fetchDraft, createDraft, saveDraftMeta]);
 
+  // 즉시 PATCH 요청 (디바운스 없음)
+  const patchDraftImmediately = useCallback(
+    async (map: Record<string, CaseInfos>) => {
+      if (!draftId || !token) return;
+
+      try {
+        const caseInfosArray = Object.entries(map)
+          .filter(([key]) => key !== "__default__")
+          .map(([, caseInfo]) => caseInfo);
+
+        const res = await fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
+          method: "PATCH",
+          headers: getHeaders(),
+          body: JSON.stringify({
+            caseInfos: caseInfosArray,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Failed to update draft: ${res.status}`);
+        }
+
+        saveDraftMeta(draftId, map);
+      } catch (err) {
+        console.error("patchDraftImmediately error:", err);
+      }
+    },
+    [draftId, token, getHeaders, saveDraftMeta]
+  );
+
   // caseInfos 업데이트 (파일별 독립적 관리)
   // fileKey: 파일의 고유 키 (name:size)
   const updateCaseInfos = useCallback(
     (fileKey: string, newCaseInfos: Partial<CaseInfos>) => {
       setCaseInfosMap((prevMap) => {
         const prev = prevMap[fileKey] || { workType: "abutment" };
+        // clinicName도 사용자가 X 버튼이나 직접 입력으로 비울 수 있어야 하므로
+        // 더 이상 빈 문자열을 강제로 무시하지 않는다.
         const updated: CaseInfos = { ...prev, ...newCaseInfos };
 
         // 변경 사항이 전혀 없으면 상태/패치 모두 스킵
@@ -290,7 +322,6 @@ export function useDraftMeta() {
         }
 
         const newMap = { ...prevMap, [fileKey]: updated };
-
         // 비동기 PATCH 요청 (디바운스 적용)
         if (draftId && token) {
           if (patchTimeoutRef.current !== null) {
@@ -301,18 +332,23 @@ export function useDraftMeta() {
 
           patchTimeoutRef.current = window.setTimeout(async () => {
             if (currentDraftId !== draftIdRef.current) {
-              console.log("[updateCaseInfos] draftId changed, skipping PATCH");
               return;
             }
 
             try {
+              // 전체 caseInfosMap을 배열로 변환해서 보냄
+              // (__default__ 제외, 실제 파일 정보만)
+              const caseInfosArray = Object.entries(newMap)
+                .filter(([key]) => key !== "__default__")
+                .map(([, caseInfo]) => caseInfo);
+
               const res = await fetch(
                 `${API_BASE_URL}/requests/drafts/${currentDraftId}`,
                 {
                   method: "PATCH",
                   headers: getHeaders(),
                   body: JSON.stringify({
-                    caseInfos: [updated],
+                    caseInfos: caseInfosArray,
                   }),
                 }
               );
@@ -453,6 +489,7 @@ export function useDraftMeta() {
     caseInfosMap,
     setCaseInfosMap,
     updateCaseInfos,
+    patchDraftImmediately,
     status,
     error,
     deleteDraft,

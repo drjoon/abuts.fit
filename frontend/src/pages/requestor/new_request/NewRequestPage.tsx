@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,11 @@ import {
 import { Upload, Plus, Truck, Zap, Info } from "lucide-react";
 import { StlPreviewViewer } from "@/components/StlPreviewViewer";
 import { useNewRequestPage } from "@/features/requestor/hooks/useNewRequestPage";
-import ClinicAutocompleteField from "@/components/ClinicAutocompleteField";
 import LabeledAutocompleteField from "@/components/LabeledAutocompleteField";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 import { request } from "@/lib/apiClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePresetStorage } from "@/features/requestor/hooks/new_requests/usePresetStorage";
 
 /**
  * New Request 페이지 (리팩터링 버전)
@@ -97,30 +97,42 @@ export const NewRequestPage = () => {
     handleCancel,
     caseInfos,
     setCaseInfos,
-    clinicPresets,
-    selectedClinicId,
-    handleSelectClinic,
-    handleAddOrSelectClinic,
-    handleDeleteClinic,
     connections,
     resetDraft,
+    caseInfosMap,
+    updateCaseInfos,
+    patchDraftImmediately,
   } = useNewRequestPage(existingRequestId);
 
   // hasActiveSession은 files.length > 0으로 직접 계산
   const hasActiveSession = files.length > 0;
 
-  // 디버깅: files.length 변화 추적
-  useEffect(() => {
-    console.log("[NewRequestPage] files.length changed:", files.length);
-  }, [files.length]);
-
-  const [clinicInput, setClinicInput] = useState("");
   const [fileWorkTypes, setFileWorkTypes] = useState<
     Record<string, "abutment" | "crown">
   >({});
   const [hasUserChosenWorkType, setHasUserChosenWorkType] = useState(false);
   const manufacturerSelectRef = useRef<HTMLButtonElement | null>(null);
   const crownOnlyToastShownRef = useRef(false);
+
+  // 프리셋 관리 (환자명, 치아번호, 치과명)
+  const {
+    presets: patientPresets,
+    addPreset: addPatientPreset,
+    deletePreset: deletePatientPreset,
+    clearAllPresets: clearAllPatientPresets,
+  } = usePresetStorage("patient-names");
+  const {
+    presets: teethPresets,
+    addPreset: addTeethPreset,
+    deletePreset: deleteTeethPreset,
+    clearAllPresets: clearAllTeethPresets,
+  } = usePresetStorage("teeth-numbers");
+  const {
+    presets: clinicPresets,
+    addPreset: addClinicPreset,
+    deletePreset: deleteClinicPreset,
+    clearAllPresets: clearAllClinicPresets,
+  } = usePresetStorage("clinic-names");
 
   const handleCancelAll = async () => {
     // 1) 서버 Draft + 로컬 Draft 캐시 완전 초기화
@@ -133,7 +145,6 @@ export const NewRequestPage = () => {
 
     // hasActiveSession은 files.length로 자동 계산되므로 별도 설정 불필요
 
-    setClinicInput("");
     setFileWorkTypes({});
     setHasUserChosenWorkType(false);
 
@@ -226,31 +237,23 @@ export const NewRequestPage = () => {
 
   const { summary: bulkShippingSummary } = getShippingPolicy(user?.email);
 
-  // 클리닉 프리셋 선택 시 입력값 동기화
-  useEffect(() => {
-    const selected = clinicPresets.find((c) => c.id === selectedClinicId);
-    setClinicInput(selected?.name ?? "");
-  }, [clinicPresets, selectedClinicId]);
+  // 치과명 옵션 (프리셋 기반)
+  const clinicNameOptions = useMemo(
+    () => clinicPresets.map((p) => ({ id: p.id, label: p.label })),
+    [clinicPresets]
+  );
 
-  // 선택된 파일의 clinicName이 있으면 자동으로 클리닉 입력값 설정
-  useEffect(() => {
-    if (selectedPreviewIndex === null || !caseInfos?.clinicName) return;
-    const name = caseInfos.clinicName.trim();
-    if (!name) return;
+  // 환자명 옵션 (프리셋 기반)
+  const patientNameOptions = useMemo(
+    () => patientPresets.map((p) => ({ id: p.id, label: p.label })),
+    [patientPresets]
+  );
 
-    setClinicInput(name);
-    handleAddOrSelectClinic(name);
-  }, [selectedPreviewIndex, caseInfos?.clinicName, handleAddOrSelectClinic]);
-
-  // 환자명 옵션 (현재는 caseInfos의 patientName 하나만 사용)
-  const patientNameOptions = caseInfos?.patientName
-    ? [{ id: caseInfos.patientName, label: caseInfos.patientName }]
-    : [];
-
-  // 치아번호 옵션 (현재는 caseInfos의 tooth 하나만 사용)
-  const teethOptions = caseInfos?.tooth
-    ? [{ id: caseInfos.tooth, label: caseInfos.tooth }]
-    : [];
+  // 치아번호 옵션 (프리셋 기반)
+  const teethOptions = useMemo(
+    () => teethPresets.map((p) => ({ id: p.id, label: p.label })),
+    [teethPresets]
+  );
 
   // 선택된 파일의 workType 결정 (파일 크기 기준 + 사용자 오버라이드)
   const getFileWorkType = (file: File): "abutment" | "crown" => {
@@ -331,16 +334,24 @@ export const NewRequestPage = () => {
                   <div
                     key={index}
                     onClick={() => {
-                      setSelectedPreviewIndex(index);
                       const currentWorkType = getFileWorkType(file);
                       setHasUserChosenWorkType(true);
+                      const fileKey = `${file.name}:${file.size}`;
 
-                      if (caseInfos?.workType !== currentWorkType) {
+                      // 현재 파일의 정보를 caseInfosMap에서 로드
+                      const fileInfoFromMap = caseInfosMap?.[fileKey];
+                      if (fileInfoFromMap) {
+                        setCaseInfos(fileInfoFromMap);
+                      } else {
+                        // caseInfosMap에 없으면 workType만 설정
                         setCaseInfos({
                           ...caseInfos,
                           workType: currentWorkType,
                         });
                       }
+
+                      // 파일 선택 (useEffect에서 이전 파일 정보 저장)
+                      setSelectedPreviewIndex(index);
 
                       if (
                         currentWorkType === "abutment" &&
@@ -354,7 +365,7 @@ export const NewRequestPage = () => {
                         syncSelectedConnection("OSSTEM", "Regular", "Hex");
 
                         setCaseInfos({
-                          ...caseInfos,
+                          ...(fileInfoFromMap || caseInfos),
                           implantSystem: "OSSTEM",
                           implantType: "Regular",
                           connectionType: "Hex",
@@ -501,19 +512,56 @@ export const NewRequestPage = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-foreground ">
                   {/* 치과명 */}
                   <div className="min-w-0">
-                    <ClinicAutocompleteField
-                      value={clinicInput}
+                    <LabeledAutocompleteField
+                      value={caseInfos?.clinicName || ""}
                       onChange={(value) => {
-                        setClinicInput(value);
                         setCaseInfos({
                           clinicName: value,
                         });
                       }}
-                      presets={clinicPresets}
-                      selectedId={selectedClinicId}
-                      onSelectClinic={handleSelectClinic}
-                      onAddOrSelectClinic={handleAddOrSelectClinic}
-                      onDeleteClinic={handleDeleteClinic}
+                      options={clinicNameOptions}
+                      placeholder="치과명"
+                      onOptionSelect={(label) => {
+                        setCaseInfos({
+                          clinicName: label,
+                        });
+                      }}
+                      onClear={() => {
+                        // 현재 입력만 비움 (프리셋은 유지)
+                        setCaseInfos({
+                          clinicName: "",
+                        });
+                      }}
+                      onDelete={() => {
+                        // 치과명 프리셋 히스토리 전체 삭제 + 현재 값도 비움
+                        clearAllClinicPresets();
+                        setCaseInfos({
+                          clinicName: "",
+                        });
+                      }}
+                      onBlur={() => {
+                        // blur 시 프리셋에 자동 저장 + draft에 즉시 저장
+                        if (caseInfos?.clinicName) {
+                          // 프리셋에 자동 추가 (중복 확인은 addPreset에서 처리)
+                          addClinicPreset(caseInfos.clinicName);
+
+                          // draft에 즉시 저장
+                          const fileKey =
+                            selectedPreviewIndex !== null &&
+                            files[selectedPreviewIndex]
+                              ? `${files[selectedPreviewIndex].name}:${files[selectedPreviewIndex].size}`
+                              : "__default__";
+                          const updatedMap = {
+                            ...caseInfosMap,
+                            [fileKey]: {
+                              ...caseInfosMap[fileKey],
+                              clinicName: caseInfos.clinicName,
+                            },
+                          };
+                          patchDraftImmediately(updatedMap);
+                        }
+                      }}
+                      inputClassName="h-8 text-xs w-full pr-10"
                     />
                   </div>
 
@@ -539,9 +587,33 @@ export const NewRequestPage = () => {
                         });
                       }}
                       onDelete={() => {
+                        // 환자명 프리셋 히스토리 전체 삭제 + 현재 값 비움
+                        clearAllPatientPresets();
                         setCaseInfos({
                           patientName: "",
                         });
+                      }}
+                      onBlur={() => {
+                        // blur 시 프리셋에 자동 저장 + draft에 즉시 저장
+                        if (caseInfos?.patientName) {
+                          // 프리셋에 자동 추가 (중복 확인은 addPreset에서 처리)
+                          addPatientPreset(caseInfos.patientName);
+
+                          // draft에 즉시 저장
+                          const fileKey =
+                            selectedPreviewIndex !== null &&
+                            files[selectedPreviewIndex]
+                              ? `${files[selectedPreviewIndex].name}:${files[selectedPreviewIndex].size}`
+                              : "__default__";
+                          const updatedMap = {
+                            ...caseInfosMap,
+                            [fileKey]: {
+                              ...caseInfosMap[fileKey],
+                              patientName: caseInfos.patientName,
+                            },
+                          };
+                          patchDraftImmediately(updatedMap);
+                        }
                       }}
                       inputClassName="h-8 text-xs w-full pr-10"
                     />
@@ -569,9 +641,33 @@ export const NewRequestPage = () => {
                         });
                       }}
                       onDelete={() => {
+                        // 치아번호 프리셋 히스토리 전체 삭제 + 현재 값 비움
+                        clearAllTeethPresets();
                         setCaseInfos({
                           tooth: "",
                         });
+                      }}
+                      onBlur={() => {
+                        // blur 시 프리셋에 자동 저장 + draft에 즉시 저장
+                        if (caseInfos?.tooth) {
+                          // 프리셋에 자동 추가 (중복 확인은 addPreset에서 처리)
+                          addTeethPreset(caseInfos.tooth);
+
+                          // draft에 즉시 저장
+                          const fileKey =
+                            selectedPreviewIndex !== null &&
+                            files[selectedPreviewIndex]
+                              ? `${files[selectedPreviewIndex].name}:${files[selectedPreviewIndex].size}`
+                              : "__default__";
+                          const updatedMap = {
+                            ...caseInfosMap,
+                            [fileKey]: {
+                              ...caseInfosMap[fileKey],
+                              tooth: caseInfos.tooth,
+                            },
+                          };
+                          patchDraftImmediately(updatedMap);
+                        }
                       }}
                       inputClassName="h-8 text-xs w-full pr-10"
                     />
@@ -724,8 +820,8 @@ export const NewRequestPage = () => {
                   파일 선택
                 </Button>
                 <p className="text-xs md:text-sm text-muted-foreground mt-2">
-                  치과이름, 환자이름, 치아번호가 포함된 파일명으로
-                  업로드해주세요.
+                  치과이름, 환자이름, 치아번호가 순서대로 포함된 파일명으로
+                  업로드하시면 환자 정보가 자동 인식됩니다.
                   <br />
                   품질 향상을 위해 커스텀 어벗과 함께 크라운 데이터도 업로드
                   부탁드립니다.

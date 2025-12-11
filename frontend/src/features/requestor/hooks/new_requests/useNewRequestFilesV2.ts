@@ -239,7 +239,7 @@ export const useNewRequestFilesV2 = ({
         });
         restoredFiles.push(file);
       } catch (err) {
-        console.error(`Error restoring file ${fileMeta.originalName}:`, err);
+        // 복원 실패는 조용히 표시만 남기고 계속 진행
         hadError = true;
       }
     }
@@ -251,9 +251,6 @@ export const useNewRequestFilesV2 = ({
     }
 
     if (restoredFiles.length > 0) {
-      console.log("[useNewRequestFilesV2] setFiles from restoreFileUrls", {
-        restoredCount: restoredFiles.length,
-      });
       setFiles(restoredFiles);
       setSelectedPreviewIndex((prev) => (prev === null ? 0 : prev));
     } else if (hadError && filesRef.current.length === 0) {
@@ -290,32 +287,17 @@ export const useNewRequestFilesV2 = ({
   useEffect(() => {
     const currentDraftId = draftIdRef.current;
 
-    console.log("[useEffect restore] trigger", {
-      currentDraftId,
-      draftFilesLen: draftFilesRef.current.length,
-    });
-
     if (!currentDraftId) {
-      console.log("[useEffect] no draftId yet, skip restore");
       return;
     }
 
     // draftId 변경 직후 첫 번째 restore 시도는 스킵 (draftFiles 정리 대기)
     if (draftIdChangedRef.current) {
-      console.log(
-        "[useEffect] draftId just changed, skipping first restore attempt",
-        {
-          draftId: currentDraftId,
-        }
-      );
       draftIdChangedRef.current = false;
       return;
     }
 
     if (restoredDraftIdRef.current === currentDraftId) {
-      console.log("[useEffect] already restored for this draftId, skipping", {
-        draftId: currentDraftId,
-      });
       return;
     }
 
@@ -383,7 +365,6 @@ export const useNewRequestFilesV2 = ({
             if (!res.ok) {
               if (res.status === 404) {
                 // Draft가 삭제되었거나 만료된 경우
-                console.error("Failed to add file to draft: Draft not found");
                 try {
                   if (typeof window !== "undefined") {
                     window.localStorage.removeItem(
@@ -404,7 +385,6 @@ export const useNewRequestFilesV2 = ({
                 return;
               }
 
-              console.error(`Failed to add file to draft: ${res.status}`);
               continue;
             }
 
@@ -412,7 +392,7 @@ export const useNewRequestFilesV2 = ({
             const addedCaseInfo: DraftCaseInfo = data.data || data;
             newDraftFiles.push(addedCaseInfo);
           } catch (err) {
-            console.error("Error adding file to draft:", err);
+            continue;
           }
         }
 
@@ -438,15 +418,7 @@ export const useNewRequestFilesV2 = ({
             }
           );
 
-          setFiles((prev) => {
-            const next = [...prev, ...newFiles];
-            console.log("[useNewRequestFilesV2] setFiles from handleUpload", {
-              prevLength: prev.length,
-              added: newFiles.length,
-              nextLength: next.length,
-            });
-            return next;
-          });
+          setFiles((prev) => [...prev, ...newFiles]);
 
           // 5. 업로드 직후 원본 File을 IndexedDB에 즉시 캐싱
           //    (재진입 시에는 IndexedDB → URL 캐시 → S3 순으로 복원)
@@ -462,7 +434,7 @@ export const useNewRequestFilesV2 = ({
               // File은 Blob 서브타입이므로 그대로 저장 가능
               void setFileBlob(cacheKey, originalFile);
             } catch (e) {
-              console.warn("Failed to cache uploaded file to IndexedDB", e);
+              return;
             }
           });
 
@@ -546,17 +518,12 @@ export const useNewRequestFilesV2 = ({
                   });
                 } catch (error) {
                   // AI 분석 실패는 무시 (빈 상태 유지)
-                  console.error(
-                    "[useNewRequestFilesV2] AI parseFilenames error:",
-                    error
-                  );
                 }
               })();
             }
           }
         }
       } catch (err) {
-        console.error("Upload error:", err);
         toast({
           title: "오류",
           description: "파일 업로드 중 오류가 발생했습니다.",
@@ -585,18 +552,7 @@ export const useNewRequestFilesV2 = ({
       const draftCaseInfoId = (file as FileWithDraftId)._draftCaseInfoId;
       if (!draftCaseInfoId || !draftId || !token) {
         // Draft 파일 ID가 없으면 로컬에서만 제거
-        setFiles((prev) => {
-          const next = prev.filter((_, i) => i !== index);
-          console.log(
-            "[useNewRequestFilesV2] setFiles from handleRemoveFile (no draftCaseInfoId)",
-            {
-              prevLength: prev.length,
-              index,
-              nextLength: next.length,
-            }
-          );
-          return next;
-        });
+        setFiles((prev) => prev.filter((_, i) => i !== index));
         return;
       }
 
