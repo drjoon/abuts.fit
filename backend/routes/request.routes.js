@@ -69,13 +69,6 @@ router.post(
   requestController.createMyBulkShipping
 );
 
-// 치과별 임플란트 프리셋 목록 조회 (의뢰자용)
-router.get(
-  "/my/clinic-implants",
-  authorize(["requestor", "admin"]),
-  requestController.getMyClinicImplants
-);
-
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", requestController.getRequestById);
 

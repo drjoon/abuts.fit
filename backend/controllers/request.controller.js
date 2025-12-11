@@ -1,7 +1,6 @@
 import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
 import DraftRequest from "../models/draftRequest.model.js";
-import ClinicImplantPreset from "../models/clinicImplantPreset.model.js";
 import { Types } from "mongoose";
 
 // status(단일 필드)를 status1/status2와 동기화하는 헬퍼
@@ -152,28 +151,6 @@ async function createRequest(req, res) {
         applyStatusMapping(newRequest, newRequest.status);
         await newRequest.save();
         createdRequests.push(newRequest);
-
-        // Save/update clinic-level implant preset (useCount 기반)
-        if (hasImplantSystem) {
-          try {
-            await ClinicImplantPreset.findOneAndUpdate(
-              {
-                requestor: req.user._id,
-                clinicName: caseInfos.clinicName || "",
-                manufacturer: caseInfos.implantSystem,
-                system: caseInfos.implantType,
-                type: caseInfos.connectionType,
-              },
-              {
-                $inc: { useCount: 1 },
-                $set: { lastUsedAt: new Date() },
-              },
-              { upsert: true, new: true, setDefaultsOnInsert: true }
-            );
-          } catch (presetError) {
-            console.warn("Could not save clinic implant preset", presetError);
-          }
-        }
       }
 
       // 모든 요청이 저장된 뒤, 같은 환자명 기준으로 requestId를 referenceId에 매핑한다.
@@ -500,30 +477,6 @@ async function createRequestsFromDraft(req, res) {
 
       await newRequest.save();
       createdRequests.push(newRequest);
-
-      if (hasImplantSystem) {
-        try {
-          await ClinicImplantPreset.findOneAndUpdate(
-            {
-              requestor: req.user._id,
-              clinicName: clinicName || "",
-              manufacturer: implantSystem,
-              system: implantType,
-              type: connectionType,
-            },
-            {
-              $inc: { useCount: 1 },
-              $set: { lastUsedAt: new Date() },
-            },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
-          );
-        } catch (presetError) {
-          console.warn(
-            "Could not save clinic implant preset from draft",
-            presetError
-          );
-        }
-      }
     }
 
     // 생성된 의뢰가 없으면 에러 반환
@@ -598,42 +551,6 @@ async function hasDuplicateCase(req, res) {
     return res.status(500).json({
       success: false,
       message: "중복 의뢰 여부 확인 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-/**
- * 현재 로그인한 의뢰인의 특정 치과별 임플란트 프리셋 목록 조회
- * @route GET /api/requests/my/clinic-implants?clinicName=...
- */
-async function getMyClinicImplants(req, res) {
-  try {
-    const requestorId = req.user._id;
-    const clinicName = (req.query.clinicName || "").trim();
-
-    if (!clinicName) {
-      return res.status(400).json({
-        success: false,
-        message: "clinicName 쿼리 파라미터가 필요합니다.",
-      });
-    }
-
-    const presets = await ClinicImplantPreset.find({
-      requestor: requestorId,
-      clinicName,
-    })
-      .sort({ useCount: -1, lastUsedAt: -1 })
-      .lean();
-
-    return res.status(200).json({
-      success: true,
-      data: presets,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "치과별 임플란트 프리셋 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1531,7 +1448,6 @@ export default {
   createRequest,
   createRequestsFromDraft,
   hasDuplicateCase,
-  getMyClinicImplants,
   getAllRequests,
   getMyRequests,
   getRequestById,

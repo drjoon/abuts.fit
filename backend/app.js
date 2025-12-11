@@ -82,7 +82,6 @@ import supportRoutes from "./routes/support.routes.js";
 import connectionRoutes from "./routes/connection.routes.js";
 import fileRoutes from "./routes/file.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
-import clinicRoutes from "./routes/clinic.routes.js";
 import parseLogRoutes from "./routes/parseLog.routes.js";
 import filenameRuleRoutes from "./routes/filenameRule.routes.js";
 
@@ -98,7 +97,6 @@ app.use("/api/support", supportRoutes);
 app.use("/api/connections", connectionRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/ai", aiRoutes);
-app.use("/api/clinics", clinicRoutes);
 app.use("/api/parse-logs", parseLogRoutes);
 app.use("/api/filename-rules", filenameRuleRoutes);
 
