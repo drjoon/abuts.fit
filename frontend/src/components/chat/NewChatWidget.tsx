@@ -110,11 +110,12 @@ export const NewChatWidget = () => {
   ): RequestSummary[] => {
     return list.map((r) => {
       const id = getRequestId(r);
+      const legacy: any = r;
       const title =
         r.title ||
-        r.subject ||
-        r.implantType ||
-        r.implantCompany ||
+        legacy.subject ||
+        legacy.implantType ||
+        legacy.implantCompany ||
         "어벗먼트 의뢰";
 
       const createdAt = r.createdAt ? new Date(r.createdAt) : null;
@@ -246,7 +247,7 @@ export const NewChatWidget = () => {
                           (r) => getRequestId(r) === req.id
                         ) || {
                           _id: req.id,
-                          id: req.id,
+                          requestId: req.id,
                           title: req.title,
                           status: req.status,
                         };

@@ -7,13 +7,15 @@ const requestSchema = new mongoose.Schema(
       unique: true,
     },
     referenceIds: {
-      type: [String],
-      index: true,
+      // 동일 치과, 환자에 대해 당일 접수된 의뢰 내역은 같이 묶어서 관리
+      type: [String], // 예를 들어, 향기로운치과-김혜영의 32, 42, 45 커스텀 어벗 내역이 동시에 들어오면
+      index: true, // 32에서는 42,45의 requestId를 referenceIds에 추가
     },
     lotNumber: {
-      type: String,
-      unique: true,
-      sparse: true,
+      // 제조사가 관리하는 로트 넘어
+      type: String, // YYYYMMDD-AAA 형식
+      unique: true, // 년도월날짜-세글자 알파벳 대문자
+      sparse: true, // 마지막 3글자는 26진법 표기법이라 보면 도달할 수 없는 값
     },
     requestor: {
       type: mongoose.Schema.Types.ObjectId,
@@ -31,6 +33,7 @@ const requestSchema = new mongoose.Schema(
       connectionDiameter: Number,
       workType: String,
       file: {
+        // s3에 저장된 파일의 메타 데이터를 DB에서 관리
         fileName: String,
         fileType: String,
         fileSize: Number,
@@ -44,6 +47,7 @@ const requestSchema = new mongoose.Schema(
       },
     },
     status: {
+      // 의뢰인용 상태
       type: String,
       enum: [
         "의뢰접수",
@@ -56,6 +60,7 @@ const requestSchema = new mongoose.Schema(
       ],
       default: "의뢰접수",
     },
+    // 아래 status1, 2는 제조사 및 관리자용 상태
     // 상위 공정 상태 (의뢰접수, 가공, 세척/검사/포장, 배송, 완료, 취소)
     status1: {
       type: String,
@@ -67,12 +72,6 @@ const requestSchema = new mongoose.Schema(
       type: String,
       enum: ["없음", "전", "중", "후"],
       default: "없음",
-    },
-
-    priority: {
-      type: String,
-      enum: ["낮음", "보통", "높음"],
-      default: "보통",
     },
 
     // 배송 요청 정보
@@ -94,27 +93,21 @@ const requestSchema = new mongoose.Schema(
       },
       quotedAt: Date,
     },
+
     timeline: {
       estimatedCompletion: Date,
       actualCompletion: Date,
     },
-    deliveryInfo: {
-      address: {
-        street: String,
-        city: String,
-        state: String,
-        zipCode: String,
-        country: String,
-      },
-      trackingNumber: String,
-      carrier: String,
-      shippedAt: Date,
-      deliveredAt: Date,
+
+    deliveryInfoRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "DeliveryInfo",
     },
+
     paymentStatus: {
       type: String,
-      enum: ["미결제", "결제 대기", "결제 완료", "환불"],
-      default: "미결제",
+      enum: ["결제전", "결제완료", "결제취소"],
+      default: "결제전",
     },
     paymentDetails: {
       method: String,

@@ -11,29 +11,12 @@ import {
   WorksheetDiameterQueueModal,
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
+import type { RequestBase } from "@/types/request";
 
-type ManufacturerRequest = {
-  _id: string;
-  requestId: string;
-  description: string;
-  requestor: { organization?: string; name?: string };
-  createdAt: string;
-  status: string;
+type ManufacturerRequest = RequestBase & {
   status1?: string;
   status2?: string;
   referenceIds?: string[];
-  caseInfos?: {
-    clinicName?: string;
-    patientName?: string;
-    tooth?: string;
-    implantSystem?: string;
-    implantType?: string;
-    connectionType?: string;
-    maxDiameter?: number;
-    connectionDiameter?: number;
-    workType?: string;
-  };
-  files: any[];
 };
 
 const getDiameterBucketIndex = (diameter?: number) => {
@@ -59,7 +42,6 @@ const WorksheetCardGrid = ({
         const ciWorkType = caseInfos.workType as
           | "abutment"
           | "crown"
-          | "prosthesis"
           | "mixed"
           | "unknown"
           | undefined;
@@ -68,17 +50,6 @@ const WorksheetCardGrid = ({
           return ciWorkType;
         }
         if (ciWorkType === "mixed") return "mixed";
-
-        // 레거시/파일 기반 추론: prosthesis는 crown으로 취급
-        const types = new Set(
-          (request.files?.map((f) => f.workType).filter(Boolean) || []).map(
-            (t: string) => (t === "prosthesis" ? "crown" : t)
-          )
-        );
-
-        if (types.has("abutment") && !types.has("crown")) return "abutment";
-        if (!types.has("abutment") && types.has("crown")) return "crown";
-        if (types.has("abutment") && types.has("crown")) return "mixed";
         return "unknown";
       })();
 
@@ -247,7 +218,10 @@ export const RequestPage = ({
 
       try {
         setIsLoading(true);
-        const res = await fetch("/api/requests/assigned", {
+        const url =
+          user?.role === "admin" ? "/api/admin/requests" : "/api/requests";
+
+        const res = await fetch(url, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
