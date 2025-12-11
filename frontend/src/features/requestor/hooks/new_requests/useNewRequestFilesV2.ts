@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { type DraftCaseInfo } from "./newRequestTypes";
 import { getCachedUrl, setCachedUrl, removeCachedUrl } from "@/utils/fileCache";
 import { getStlBlob, setStlBlob, setFileBlob } from "@/utils/fileBlobCache";
+import { request } from "@/lib/apiClient";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
 
@@ -17,6 +18,8 @@ type UseNewRequestFilesV2Params = {
   setFiles: React.Dispatch<React.SetStateAction<File[]>>;
   selectedPreviewIndex: number | null;
   setSelectedPreviewIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  caseInfos?: any;
+  setCaseInfos?: (caseInfos: any) => void;
 };
 
 type FileWithDraftId = File & { _draftCaseInfoId?: string };
@@ -51,6 +54,8 @@ export const useNewRequestFilesV2 = ({
   setFiles,
   selectedPreviewIndex,
   setSelectedPreviewIndex,
+  caseInfos,
+  setCaseInfos,
 }: UseNewRequestFilesV2Params) => {
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
@@ -59,6 +64,7 @@ export const useNewRequestFilesV2 = ({
   const filesRef = useRef<FileWithDraftId[]>([]);
   const draftFilesRef = useRef<DraftCaseInfo[]>(draftFiles);
   const selectedPreviewIndexRef = useRef(selectedPreviewIndex);
+  const aiQuotaExhaustedRef = useRef(false); // 429 쿼터 소진 플래그
   const pendingRemovalRef = useRef<Set<string>>(new Set());
 
   const draftIdRef = useRef(draftId);
@@ -463,6 +469,66 @@ export const useNewRequestFilesV2 = ({
             description: `${newFiles.length}개 파일이 업로드되었습니다.`,
             duration: 2000,
           });
+
+          // 6. 파일 업로드 직후 AI 파일명 분석 (환자정보 자동 채우기)
+          // 429 쿼터 소진 상태면 호출하지 않음
+          if (!aiQuotaExhaustedRef.current && setCaseInfos && caseInfos) {
+            // 아직 환자/치과 정보가 비어 있을 때만 AI 호출
+            if (
+              !caseInfos.clinicName &&
+              !caseInfos.patientName &&
+              !caseInfos.tooth
+            ) {
+              const filenames = filesToProcess.map((f) => f.name);
+              (async () => {
+                try {
+                  const res = await request<
+                    {
+                      filename: string;
+                      clinicName: string | null;
+                      patientName: string | null;
+                      tooth: string | null;
+                    }[]
+                  >({
+                    path: "/api/ai/parse-filenames",
+                    method: "POST",
+                    jsonBody: { filenames },
+                  });
+
+                  // 응답에서 provider 확인 (429 쿼터 소진 여부)
+                  const provider = (res.data as any)?.provider;
+                  if (provider === "fallback-quota-exceeded") {
+                    aiQuotaExhaustedRef.current = true;
+                    toast({
+                      title: "자동 분석 실패",
+                      description:
+                        "환자정보를 직접 입력해주세요. (내일 17:00 이후 자동 분석 재개)",
+                      variant: "destructive",
+                      duration: 4000,
+                    });
+                    return;
+                  }
+
+                  const items = (res.data as any)?.data || res.data;
+                  if (!Array.isArray(items) || !items.length) return;
+
+                  const first = items[0] as any;
+                  setCaseInfos({
+                    ...caseInfos,
+                    clinicName: first.clinicName || "",
+                    patientName: first.patientName || "",
+                    tooth: first.tooth || "",
+                  });
+                } catch (error) {
+                  // AI 분석 실패는 무시 (빈 상태 유지)
+                  console.error(
+                    "[useNewRequestFilesV2] AI parseFilenames error:",
+                    error
+                  );
+                }
+              })();
+            }
+          }
         }
       } catch (err) {
         console.error("Upload error:", err);
@@ -482,6 +548,8 @@ export const useNewRequestFilesV2 = ({
       setDraftFiles,
       setFiles,
       toast,
+      caseInfos,
+      setCaseInfos,
     ]
   );
 

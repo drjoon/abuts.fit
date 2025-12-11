@@ -29,6 +29,36 @@ const buildFallbackFromFilenames = (filenames) =>
     tooth: "",
   }));
 
+// 파일명 분석 결과 캐시 (동일 filenames에 대한 중복 호출 방지)
+// key: JSON.stringify(sorted filenames), value: { data, createdAt }
+const parseFilenamesCache = new Map();
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30분
+
+const getCacheKey = (filenames) => {
+  const sorted = [...filenames].sort();
+  return JSON.stringify(sorted);
+};
+
+const getCachedResult = (filenames) => {
+  const key = getCacheKey(filenames);
+  const cached = parseFilenamesCache.get(key);
+  if (!cached) return null;
+
+  const now = Date.now();
+  if (now - cached.createdAt > CACHE_TTL_MS) {
+    parseFilenamesCache.delete(key);
+    return null;
+  }
+
+  console.log("[AI] parseFilenames: cache hit", { count: filenames.length });
+  return cached.data;
+};
+
+const setCachedResult = (filenames, data) => {
+  const key = getCacheKey(filenames);
+  parseFilenamesCache.set(key, { data, createdAt: Date.now() });
+};
+
 export async function parseFilenames(req, res) {
   try {
     const { filenames } = req.body || {};
@@ -40,7 +70,17 @@ export async function parseFilenames(req, res) {
       });
     }
 
-    // Gemini 호출에 대한 백엔드 레벨 rate guard
+    // 1. 캐시 확인 (동일 filenames에 대한 중복 호출 방지)
+    const cachedResult = getCachedResult(filenames);
+    if (cachedResult) {
+      return res.json({
+        success: true,
+        data: cachedResult,
+        provider: "cache",
+      });
+    }
+
+    // 2. Gemini 호출에 대한 백엔드 레벨 rate guard
     const clientIp =
       req.ip ||
       req.headers["x-forwarded-for"] ||
@@ -153,6 +193,9 @@ export async function parseFilenames(req, res) {
       }
 
       console.log("[AI] parseFilenames: success", { items: parsed.length });
+
+      // 성공 결과를 캐시에 저장
+      setCachedResult(filenames, parsed);
 
       return res.json({ success: true, data: parsed, provider: "gemini" });
     } catch (error) {

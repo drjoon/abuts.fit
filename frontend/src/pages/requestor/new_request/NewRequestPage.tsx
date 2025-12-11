@@ -121,7 +121,6 @@ export const NewRequestPage = () => {
   const [hasUserChosenWorkType, setHasUserChosenWorkType] = useState(false);
   const manufacturerSelectRef = useRef<HTMLButtonElement | null>(null);
   const crownOnlyToastShownRef = useRef(false);
-  const lastRequestedFilenamesRef = useRef<string[] | null>(null);
 
   const handleCancelAll = async () => {
     // 1) 서버 Draft + 로컬 Draft 캐시 완전 초기화
@@ -137,7 +136,6 @@ export const NewRequestPage = () => {
     setClinicInput("");
     setFileWorkTypes({});
     setHasUserChosenWorkType(false);
-    lastRequestedFilenamesRef.current = null;
 
     // 환자/치과/치아 및 임플란트/배송 관련 caseInfos도 모두 초기화
     setCaseInfos({
@@ -274,13 +272,6 @@ export const NewRequestPage = () => {
     }
   }, [files, selectedPreviewIndex, setSelectedPreviewIndex]);
 
-  // files 배열이 완전히 비워지면 AI 파일명 파싱 중복 체크용 캐시도 초기화한다.
-  useEffect(() => {
-    if (files.length === 0) {
-      lastRequestedFilenamesRef.current = null;
-    }
-  }, [files]);
-
   // 파일 크기 기반으로 전체 workType 자동 제안 (사용자가 직접 선택하기 전까지만)
   useEffect(() => {
     if (!files.length) return;
@@ -313,60 +304,6 @@ export const NewRequestPage = () => {
       duration: 3000,
     });
   }, [files, hasUserChosenWorkType, toast]);
-
-  // 파일명이 있으면서 아직 환자/치과 정보가 비어 있으면 AI 파일명 파싱 API를 호출해 기본값을 채운다.
-  // files 배열의 파일 목록이 변경될 때마다 1회씩 호출하고, 동일한 파일 목록에 대해서는 중복 호출하지 않는다.
-  useEffect(() => {
-    if (!files.length) return;
-
-    if (caseInfos?.clinicName || caseInfos?.patientName || caseInfos?.tooth) {
-      return;
-    }
-
-    const filenames = files.map((f) => f.name);
-
-    const prev = lastRequestedFilenamesRef.current;
-    const isSameAsPrev =
-      prev &&
-      prev.length === filenames.length &&
-      prev.every((name, idx) => name === filenames[idx]);
-
-    if (isSameAsPrev) {
-      return;
-    }
-
-    lastRequestedFilenamesRef.current = filenames;
-
-    (async () => {
-      try {
-        const res = await request<
-          {
-            filename: string;
-            clinicName: string | null;
-            patientName: string | null;
-            tooth: string | null;
-          }[]
-        >({
-          path: "/api/ai/parse-filenames",
-          method: "POST",
-          jsonBody: { filenames },
-        });
-
-        const items = (res.data as any)?.data || res.data;
-        if (!Array.isArray(items) || !items.length) return;
-
-        const first = items[0] as any;
-        setCaseInfos({
-          ...caseInfos,
-          clinicName: first.clinicName || "",
-          patientName: first.patientName || "",
-          tooth: first.tooth || "",
-        });
-      } catch {
-        // AI 분석 실패는 무시 (빈 상태 유지)
-      }
-    })();
-  }, [files, caseInfos, setCaseInfos]);
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-4 md:p-6">

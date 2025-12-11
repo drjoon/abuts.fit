@@ -146,6 +146,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setFiles,
     selectedPreviewIndex,
     setSelectedPreviewIndex,
+    caseInfos,
+    setCaseInfos,
   });
 
   // Draft에서 caseInfos 동기화 (임플란트 정보 -> Draft)
