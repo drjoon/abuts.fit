@@ -139,6 +139,21 @@ export const NewRequestPage = () => {
     setHasUserChosenWorkType(false);
     lastRequestedFilenamesRef.current = null;
 
+    // 환자/치과/치아 및 임플란트/배송 관련 caseInfos도 모두 초기화
+    setCaseInfos({
+      clinicName: "",
+      patientName: "",
+      tooth: "",
+      implantSystem: "",
+      implantType: "",
+      connectionType: "",
+      maxDiameter: undefined,
+      connectionDiameter: undefined,
+      shippingMode: undefined,
+      requestedShipDate: undefined,
+      workType: "abutment",
+    });
+
     // NOTE: setCaseInfos는 resetDraft() 내부에서 이미 초기화됨
     // 여기서 다시 호출하면 updateCaseInfos가 이전 draftId로 PATCH를 시도함
 

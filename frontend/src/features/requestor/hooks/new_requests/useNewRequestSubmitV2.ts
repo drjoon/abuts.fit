@@ -45,13 +45,9 @@ export const useNewRequestSubmitV2 = ({
   };
 
   const handleCancel = async () => {
-    // 클라이언트 상태 초기화 (파일 및 선택 인덱스만 리셋)
-    console.log("[useNewRequestSubmitV2] setFiles([]) from handleCancel");
-    setFiles([]);
+    // NOTE: resetDraft() 후 useNewRequestPage의 draftId 변경 effect가
+    // 자동으로 setFiles([])를 호출하므로, 여기서는 setSelectedPreviewIndex만 리셋
     setSelectedPreviewIndex(null);
-
-    // NOTE: 취소 시 서버 Draft는 유지하고, 대시보드로 이동하지도 않는다.
-    // 사용자는 동일 Draft 안에서 파일/정보를 다시 입력할 수 있다.
   };
 
   const handleSubmit = async () => {

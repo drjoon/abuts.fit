@@ -93,6 +93,10 @@ export const useNewRequestFilesV2 = ({
   // 파일 URL 복원 (Draft.files 기준)
   const restoreFileUrls = useCallback(async () => {
     const currentDraftId = draftId; // 이 함수가 시작될 때의 draftId 스냅샷
+    console.log("[restoreFileUrls] start", {
+      currentDraftId,
+      draftFilesLen: draftFilesRef.current.length,
+    });
 
     // draftId가 변경되었으면 즉시 중단 (새 Draft로 전환됨)
     if (draftId !== currentDraftId) {
@@ -103,8 +107,48 @@ export const useNewRequestFilesV2 = ({
     // 1) 복원 대상 draftFiles (항상 최신값 Ref 사용)
     let sourceDraftFiles = draftFilesRef.current;
 
-    // draftFiles가 비어있으면 복원할 파일이 없으므로 즉시 반환
-    // (새 Draft 생성 후 파일이 없는 상태에서 불필요한 서버 조회 방지)
+    // draftFiles가 비어 있는데 draftId는 있는 경우, 서버에서 최신 draft를 한 번 조회해 caseInfos를 채운다.
+    if (!sourceDraftFiles.length && currentDraftId) {
+      try {
+        console.log(
+          "[restoreFileUrls] draftFiles empty, fetching draft from server",
+          {
+            draftId: currentDraftId,
+          }
+        );
+        const res = await fetch(
+          `${API_BASE_URL}/requests/drafts/${currentDraftId}`,
+          {
+            method: "GET",
+            headers: getHeaders(),
+          }
+        );
+
+        if (res.ok) {
+          const data = await res.json();
+          const draft = data.data || data;
+          const draftCaseInfos = Array.isArray(draft.caseInfos)
+            ? draft.caseInfos
+            : [];
+
+          if (draftCaseInfos.length > 0) {
+            console.log("[restoreFileUrls] server draft caseInfos loaded", {
+              len: draftCaseInfos.length,
+            });
+            draftFilesRef.current = draftCaseInfos;
+            setDraftFiles(draftCaseInfos);
+            sourceDraftFiles = draftCaseInfos;
+          }
+        } else {
+          console.warn("[restoreFileUrls] failed to refetch draft", {
+            status: res.status,
+          });
+        }
+      } catch (err) {
+        console.error("[restoreFileUrls] error while refetching draft", err);
+      }
+    }
+
     if (!sourceDraftFiles.length) {
       console.log("[restoreFileUrls] no draftFiles to restore, skipping");
       return;
@@ -115,6 +159,10 @@ export const useNewRequestFilesV2 = ({
 
     for (const draftCase of sourceDraftFiles) {
       const fileMeta = draftCase.file;
+      console.log("[restoreFileUrls] processing case", {
+        caseId: draftCase._id,
+        fileMeta,
+      });
       if (!fileMeta) continue;
 
       try {
@@ -209,27 +257,63 @@ export const useNewRequestFilesV2 = ({
         duration: 4000,
       });
     }
-  }, [draftId, token, getHeaders, setFiles, setSelectedPreviewIndex, toast]);
+  }, [
+    draftId,
+    token,
+    getHeaders,
+    setFiles,
+    setSelectedPreviewIndex,
+    setDraftFiles,
+    toast,
+  ]);
 
-  // 페이지 최초 진입 시에만 파일 복원
-  // 취소 후 새 Draft로 전환된 경우에는 복원하지 않는다 (완전 리셋 보장)
+  // 페이지 최초 진입 시 또는 draftId 변경 후에 파일 복원
+  // 취소 후 새 Draft로 전환된 경우에는 동일 draftId에 대해 한 번만 복원한다 (완전 리셋 보장)
+  const restoredDraftIdRef = useRef<string | null>(null);
+  const draftIdChangedRef = useRef<boolean>(false);
+
+  // draftId가 변경되면 restoredDraftIdRef도 초기화하고, 다음 restore 시도는 스킵 플래그 설정
+  // (draftFiles가 아직 비워지지 않은 상태에서 복원되는 것을 방지)
   useEffect(() => {
-    // draftId 또는 draftFiles가 아직 준비되지 않은 초기 렌더는 스킵
-    if (!draftIdRef.current) {
-      console.log("[useEffect] no draftId yet, skip initial restore");
+    restoredDraftIdRef.current = null;
+    draftIdChangedRef.current = true;
+  }, [draftId]);
+
+  useEffect(() => {
+    const currentDraftId = draftIdRef.current;
+
+    console.log("[useEffect restore] trigger", {
+      currentDraftId,
+      draftFilesLen: draftFilesRef.current.length,
+    });
+
+    if (!currentDraftId) {
+      console.log("[useEffect] no draftId yet, skip restore");
       return;
     }
 
-    if (!draftFilesRef.current.length) {
+    // draftId 변경 직후 첫 번째 restore 시도는 스킵 (draftFiles 정리 대기)
+    if (draftIdChangedRef.current) {
       console.log(
-        "[useEffect] draftFilesRef empty on initial mount, skipping restore"
+        "[useEffect] draftId just changed, skipping first restore attempt",
+        {
+          draftId: currentDraftId,
+        }
       );
+      draftIdChangedRef.current = false;
       return;
     }
 
+    if (restoredDraftIdRef.current === currentDraftId) {
+      console.log("[useEffect] already restored for this draftId, skipping", {
+        draftId: currentDraftId,
+      });
+      return;
+    }
+
+    restoredDraftIdRef.current = currentDraftId;
     restoreFileUrls();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [draftId, draftFiles, restoreFileUrls]);
 
   // 파일 업로드
   const handleUpload = useCallback(

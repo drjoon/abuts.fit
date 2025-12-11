@@ -43,7 +43,24 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     status: draftStatus,
     deleteDraft,
     resetDraft,
+    initialDraftFiles,
   } = useDraftMeta();
+
+  // Draft 최초 로딩 시 서버의 draft.caseInfos를 로컬 draftFiles 상태에 주입
+  useEffect(() => {
+    if (!draftId) return;
+    if (draftStatus !== "ready") return;
+    if (!initialDraftFiles || initialDraftFiles.length === 0) return;
+    if (draftFiles.length > 0) return;
+
+    setDraftFiles(initialDraftFiles);
+  }, [
+    draftId,
+    draftStatus,
+    initialDraftFiles,
+    draftFiles.length,
+    setDraftFiles,
+  ]);
 
   const prevDraftIdRef = useRef<string | null | undefined>(undefined);
 

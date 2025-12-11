@@ -24,6 +24,9 @@ export function useDraftMeta() {
   const [caseInfos, setCaseInfos] = useState<CaseInfos>({
     workType: "abutment",
   });
+  const [initialDraftFiles, setInitialDraftFiles] = useState<DraftCaseInfo[]>(
+    []
+  );
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
     "loading"
   );
@@ -173,6 +176,7 @@ export function useDraftMeta() {
 
             setDraftId(draftFromCache._id);
             setCaseInfos(initialCaseInfos);
+            setInitialDraftFiles(draftCaseInfos);
             saveDraftMeta(draftFromCache._id, initialCaseInfos);
             setStatus("ready");
             return;
@@ -206,6 +210,7 @@ export function useDraftMeta() {
 
             setDraftId(draft._id);
             setCaseInfos(initialCaseInfos);
+            setInitialDraftFiles(draftCaseInfos);
             saveDraftMeta(draft._id, initialCaseInfos);
             setStatus("ready");
             return;
@@ -231,6 +236,7 @@ export function useDraftMeta() {
 
           setDraftId(newDraft._id);
           setCaseInfos(initialCaseInfos);
+          setInitialDraftFiles(draftCaseInfos);
           saveDraftMeta(newDraft._id, initialCaseInfos);
           setStatus("ready");
         } else {
@@ -355,6 +361,7 @@ export function useDraftMeta() {
 
       setDraftId(null);
       setCaseInfos({ workType: "abutment" });
+      setInitialDraftFiles([]);
     } catch (err) {
       console.error("deleteDraft error:", err);
     }
@@ -410,19 +417,21 @@ export function useDraftMeta() {
     if (!token || !user?.id) {
       setDraftId(null);
       setCaseInfos(emptyCaseInfos);
-      return;
-    }
-
-    // 새 Draft 생성
-    const newDraft = await createDraft();
-    if (newDraft) {
-      setDraftId(newDraft._id);
-      setCaseInfos(emptyCaseInfos);
-      saveDraftMeta(newDraft._id, emptyCaseInfos);
+      setInitialDraftFiles([]);
     } else {
-      // 새 Draft 생성 실패 시 최소한 클라이언트 상태만 초기화
-      setDraftId(null);
-      setCaseInfos(emptyCaseInfos);
+      // 새 Draft 생성
+      const newDraft = await createDraft();
+      if (newDraft) {
+        setDraftId(newDraft._id);
+        setCaseInfos(emptyCaseInfos);
+        setInitialDraftFiles([]);
+        saveDraftMeta(newDraft._id, emptyCaseInfos);
+      } else {
+        // 새 Draft 생성 실패 시 최소한 클라이언트 상태만 초기화
+        setDraftId(null);
+        setCaseInfos(emptyCaseInfos);
+        setInitialDraftFiles([]);
+      }
     }
   }, [
     draftId,
@@ -442,5 +451,6 @@ export function useDraftMeta() {
     error,
     deleteDraft,
     resetDraft,
+    initialDraftFiles,
   };
 }
