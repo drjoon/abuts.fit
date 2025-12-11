@@ -1,0 +1,13 @@
+{
+  "name": "dcm2stl-automation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright-based automation to upload DCM files to dcm2stl.appspot.com and download STL output.",
+  "main": "convert.js",
+  "scripts": {
+    "convert": "node convert.js"
+  },
+  "dependencies": {
+    "playwright": "^1.47.0"
+  }
+}
