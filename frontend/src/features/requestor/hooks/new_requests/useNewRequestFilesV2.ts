@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useState, useRef } from "react";
 import { type TempUploadedFile } from "@/hooks/useS3TempUpload";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
 import { useToast } from "@/hooks/use-toast";
-import { type DraftCaseInfo } from "./newRequestTypes";
+import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
 import { getCachedUrl, setCachedUrl, removeCachedUrl } from "@/utils/fileCache";
 import { getStlBlob, setStlBlob, setFileBlob } from "@/utils/fileBlobCache";
+import { parseFilenames } from "@/utils/parseFilename";
 import { request } from "@/lib/apiClient";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
@@ -18,8 +19,8 @@ type UseNewRequestFilesV2Params = {
   setFiles: React.Dispatch<React.SetStateAction<File[]>>;
   selectedPreviewIndex: number | null;
   setSelectedPreviewIndex: React.Dispatch<React.SetStateAction<number | null>>;
-  caseInfos?: any;
-  setCaseInfos?: (caseInfos: any) => void;
+  caseInfosMap?: Record<string, any>;
+  updateCaseInfos?: (fileKey: string, updates: any) => void;
 };
 
 type FileWithDraftId = File & { _draftCaseInfoId?: string };
@@ -54,8 +55,8 @@ export const useNewRequestFilesV2 = ({
   setFiles,
   selectedPreviewIndex,
   setSelectedPreviewIndex,
-  caseInfos,
-  setCaseInfos,
+  caseInfosMap,
+  updateCaseInfos,
 }: UseNewRequestFilesV2Params) => {
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
@@ -470,16 +471,33 @@ export const useNewRequestFilesV2 = ({
             duration: 2000,
           });
 
-          // 6. 파일 업로드 직후 AI 파일명 분석 (환자정보 자동 채우기)
-          // 429 쿼터 소진 상태면 호출하지 않음
-          if (!aiQuotaExhaustedRef.current && setCaseInfos && caseInfos) {
-            // 아직 환자/치과 정보가 비어 있을 때만 AI 호출
-            if (
-              !caseInfos.clinicName &&
-              !caseInfos.patientName &&
-              !caseInfos.tooth
-            ) {
-              const filenames = filesToProcess.map((f) => f.name);
+          // 6. 파일 업로드 직후 파일명 파싱으로 환자정보 자동 채우기
+          //    1차: 파일명 파싱
+          //    2차: 파싱에 실패한 파일만 AI 분석(/api/ai/parse-filenames)으로 보완
+          if (updateCaseInfos) {
+            const filenamesForAi: string[] = [];
+            const fileKeysForAi: string[] = [];
+
+            newFiles.forEach((file) => {
+              const fileKey = `${file.name}:${file.size}`;
+              const parsed = parseFilenames([file.name]);
+
+              if (parsed.clinicName || parsed.patientName || parsed.tooth) {
+                // 파일명에서 정보를 추출한 경우 바로 Draft.caseInfos에 반영
+                updateCaseInfos(fileKey, {
+                  clinicName: parsed.clinicName || "",
+                  patientName: parsed.patientName || "",
+                  tooth: parsed.tooth || "",
+                });
+              } else {
+                // 파일명에서 아무 것도 못 찾은 파일은 AI 분석 대상으로 모은다
+                filenamesForAi.push(file.name);
+                fileKeysForAi.push(fileKey);
+              }
+            });
+
+            // 2차: 파일명 파싱으로도 정보가 안 나온 파일에 대해서만 AI 분석 수행
+            if (filenamesForAi.length > 0 && !aiQuotaExhaustedRef.current) {
               (async () => {
                 try {
                   const res = await request<
@@ -492,7 +510,7 @@ export const useNewRequestFilesV2 = ({
                   >({
                     path: "/api/ai/parse-filenames",
                     method: "POST",
-                    jsonBody: { filenames },
+                    jsonBody: { filenames: filenamesForAi },
                   });
 
                   // 응답에서 provider 확인 (429 쿼터 소진 여부)
@@ -512,12 +530,17 @@ export const useNewRequestFilesV2 = ({
                   const items = (res.data as any)?.data || res.data;
                   if (!Array.isArray(items) || !items.length) return;
 
-                  const first = items[0] as any;
-                  setCaseInfos({
-                    ...caseInfos,
-                    clinicName: first.clinicName || "",
-                    patientName: first.patientName || "",
-                    tooth: first.tooth || "",
+                  // 파일명 기준으로 결과를 매핑하여 Draft.caseInfos에 반영
+                  items.forEach((item: any) => {
+                    const idx = filenamesForAi.indexOf(item.filename);
+                    if (idx === -1) return;
+                    const fileKey = fileKeysForAi[idx];
+
+                    updateCaseInfos(fileKey, {
+                      clinicName: item.clinicName || "",
+                      patientName: item.patientName || "",
+                      tooth: item.tooth || "",
+                    });
                   });
                 } catch (error) {
                   // AI 분석 실패는 무시 (빈 상태 유지)
@@ -548,8 +571,6 @@ export const useNewRequestFilesV2 = ({
       setDraftFiles,
       setFiles,
       toast,
-      caseInfos,
-      setCaseInfos,
     ]
   );
 

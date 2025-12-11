@@ -21,8 +21,9 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
 export function useDraftMeta() {
   const { token, user } = useAuthStore();
   const [draftId, setDraftId] = useState<string | null>(null);
-  const [caseInfos, setCaseInfos] = useState<CaseInfos>({
-    workType: "abutment",
+  // 파일별 독립적인 정보 관리: fileKey -> CaseInfos
+  const [caseInfosMap, setCaseInfosMap] = useState<Record<string, CaseInfos>>({
+    __default__: { workType: "abutment" },
   });
   const [initialDraftFiles, setInitialDraftFiles] = useState<DraftCaseInfo[]>(
     []
@@ -62,16 +63,17 @@ export function useDraftMeta() {
     return headers;
   }, [token]);
 
-  // DraftMeta 저장
+  // DraftMeta 저장 (caseInfosMap 전체 저장)
   const saveDraftMeta = useCallback(
-    (id: string, info: CaseInfos) => {
+    (id: string, infoMap: Record<string, CaseInfos>) => {
       const metaKey = getDraftMetaKey();
       if (!metaKey) return;
 
-      const meta: DraftMeta = {
+      const meta: DraftMeta & { caseInfosMap: Record<string, CaseInfos> } = {
         draftId: id,
         updatedAt: Date.now(),
-        caseInfos: info,
+        caseInfos: infoMap.__default__ || { workType: "abutment" },
+        caseInfosMap: infoMap,
       };
       localStorage.setItem(metaKey, JSON.stringify(meta));
       localStorage.setItem(DRAFT_ID_STORAGE_KEY, id);
@@ -79,8 +81,10 @@ export function useDraftMeta() {
     [getDraftMetaKey]
   );
 
-  // DraftMeta 로드
-  const loadDraftMeta = useCallback((): DraftMeta | null => {
+  // DraftMeta 로드 (caseInfosMap 포함)
+  const loadDraftMeta = useCallback(():
+    | (DraftMeta & { caseInfosMap?: Record<string, CaseInfos> })
+    | null => {
     const metaKey = getDraftMetaKey();
     if (!metaKey) return null;
 
@@ -88,7 +92,9 @@ export function useDraftMeta() {
     if (!stored) return null;
 
     try {
-      const meta = JSON.parse(stored) as DraftMeta;
+      const meta = JSON.parse(stored) as DraftMeta & {
+        caseInfosMap?: Record<string, CaseInfos>;
+      };
       const age = Date.now() - meta.updatedAt;
       if (age > DRAFT_META_TTL_MS) {
         return null; // TTL 만료
@@ -168,16 +174,17 @@ export function useDraftMeta() {
             const draftCaseInfos = Array.isArray(draftFromCache.caseInfos)
               ? draftFromCache.caseInfos
               : [];
-            const firstCase: DraftCaseInfo | undefined = draftCaseInfos[0];
 
-            const initialCaseInfos: CaseInfos = firstCase || {
-              workType: "abutment",
-            };
+            // 캐시된 caseInfosMap 또는 새로 생성
+            const initialMap = cachedMeta.caseInfosMap || {};
+            if (Object.keys(initialMap).length === 0) {
+              initialMap.__default__ = { workType: "abutment" };
+            }
 
             setDraftId(draftFromCache._id);
-            setCaseInfos(initialCaseInfos);
+            setCaseInfosMap(initialMap);
             setInitialDraftFiles(draftCaseInfos);
-            saveDraftMeta(draftFromCache._id, initialCaseInfos);
+            saveDraftMeta(draftFromCache._id, initialMap);
             setStatus("ready");
             return;
           } else {
@@ -202,16 +209,15 @@ export function useDraftMeta() {
             const draftCaseInfos = Array.isArray(draft.caseInfos)
               ? draft.caseInfos
               : [];
-            const firstCase: DraftCaseInfo | undefined = draftCaseInfos[0];
 
-            const initialCaseInfos: CaseInfos = firstCase || {
-              workType: "abutment",
+            const initialMap: Record<string, CaseInfos> = {
+              __default__: { workType: "abutment" },
             };
 
             setDraftId(draft._id);
-            setCaseInfos(initialCaseInfos);
+            setCaseInfosMap(initialMap);
             setInitialDraftFiles(draftCaseInfos);
-            saveDraftMeta(draft._id, initialCaseInfos);
+            saveDraftMeta(draft._id, initialMap);
             setStatus("ready");
             return;
           } else {
@@ -228,16 +234,15 @@ export function useDraftMeta() {
           const draftCaseInfos = Array.isArray(newDraft.caseInfos)
             ? newDraft.caseInfos
             : [];
-          const firstCase: DraftCaseInfo | undefined = draftCaseInfos[0];
 
-          const initialCaseInfos: CaseInfos = firstCase || {
-            workType: "abutment",
+          const initialMap: Record<string, CaseInfos> = {
+            __default__: { workType: "abutment" },
           };
 
           setDraftId(newDraft._id);
-          setCaseInfos(initialCaseInfos);
+          setCaseInfosMap(initialMap);
           setInitialDraftFiles(draftCaseInfos);
-          saveDraftMeta(newDraft._id, initialCaseInfos);
+          saveDraftMeta(newDraft._id, initialMap);
           setStatus("ready");
         } else {
           throw new Error("Failed to create new draft");
@@ -251,13 +256,15 @@ export function useDraftMeta() {
     })();
   }, [token, user?.id, loadDraftMeta, fetchDraft, createDraft, saveDraftMeta]);
 
-  // caseInfos 업데이트 (즉시 상태 반영 + 비동기 PATCH)
+  // caseInfos 업데이트 (파일별 독립적 관리)
+  // fileKey: 파일의 고유 키 (name:size)
   const updateCaseInfos = useCallback(
-    (newCaseInfos: Partial<CaseInfos>) => {
-      setCaseInfos((prev) => {
+    (fileKey: string, newCaseInfos: Partial<CaseInfos>) => {
+      setCaseInfosMap((prevMap) => {
+        const prev = prevMap[fileKey] || { workType: "abutment" };
         const updated: CaseInfos = { ...prev, ...newCaseInfos };
 
-        // 변경 사항이 전혀 없으면 상태/패치 모두 스킵하여 불필요한 리렌더를 방지
+        // 변경 사항이 전혀 없으면 상태/패치 모두 스킵
         let hasDiff = false;
         const keys = new Set<keyof CaseInfos>([
           "clinicName",
@@ -279,8 +286,10 @@ export function useDraftMeta() {
         });
 
         if (!hasDiff) {
-          return prev;
+          return prevMap;
         }
+
+        const newMap = { ...prevMap, [fileKey]: updated };
 
         // 비동기 PATCH 요청 (디바운스 적용)
         if (draftId && token) {
@@ -288,12 +297,9 @@ export function useDraftMeta() {
             window.clearTimeout(patchTimeoutRef.current);
           }
 
-          // 현재 draftId를 스냅샷으로 저장 (클로저 문제 방지)
           const currentDraftId = draftId;
 
           patchTimeoutRef.current = window.setTimeout(async () => {
-            // PATCH 실행 시점에 draftId가 변경되었으면 요청 취소
-            // draftIdRef를 사용하여 최신 draftId와 비교
             if (currentDraftId !== draftIdRef.current) {
               console.log("[updateCaseInfos] draftId changed, skipping PATCH");
               return;
@@ -306,7 +312,6 @@ export function useDraftMeta() {
                   method: "PATCH",
                   headers: getHeaders(),
                   body: JSON.stringify({
-                    // 현재는 대표 caseInfos 하나만 사용하므로 배열 1개로 덮어쓴다.
                     caseInfos: [updated],
                   }),
                 }
@@ -316,15 +321,14 @@ export function useDraftMeta() {
                 throw new Error(`Failed to update draft: ${res.status}`);
               }
 
-              // 캐시 갱신
-              saveDraftMeta(currentDraftId, updated);
+              saveDraftMeta(currentDraftId, newMap);
             } catch (err) {
               console.error("updateCaseInfos error:", err);
             }
           }, 1000);
         }
 
-        return updated;
+        return newMap;
       });
     },
     [draftId, token, getHeaders, saveDraftMeta]
@@ -360,7 +364,7 @@ export function useDraftMeta() {
       localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
 
       setDraftId(null);
-      setCaseInfos({ workType: "abutment" });
+      setCaseInfosMap({ __default__: { workType: "abutment" } });
       setInitialDraftFiles([]);
     } catch (err) {
       console.error("deleteDraft error:", err);
@@ -369,7 +373,7 @@ export function useDraftMeta() {
 
   // Draft 완전 리셋: 기존 Draft 정리 후 새 Draft 생성
   const resetDraft = useCallback(async () => {
-    // 펜딩 중인 PATCH 요청 취소 (이전 draftId로의 업데이트 방지)
+    // 펀딩 중인 PATCH 요청 취소 (이전 draftId로의 업데이트 방지)
     if (patchTimeoutRef.current !== null) {
       window.clearTimeout(patchTimeoutRef.current);
       patchTimeoutRef.current = null;
@@ -398,38 +402,39 @@ export function useDraftMeta() {
       console.error("resetDraft: localStorage cleanup failed (ignored)", err);
     }
 
-    // 완전 초기화된 caseInfos
-    const emptyCaseInfos: CaseInfos = {
-      clinicName: "",
-      patientName: "",
-      tooth: "",
-      implantSystem: "",
-      implantType: "",
-      connectionType: "",
-      maxDiameter: undefined,
-      connectionDiameter: undefined,
-      shippingMode: undefined,
-      requestedShipDate: undefined,
-      workType: "abutment",
+    const emptyMap: Record<string, CaseInfos> = {
+      __default__: {
+        clinicName: "",
+        patientName: "",
+        tooth: "",
+        implantSystem: "",
+        implantType: "",
+        connectionType: "",
+        maxDiameter: undefined,
+        connectionDiameter: undefined,
+        shippingMode: undefined,
+        requestedShipDate: undefined,
+        workType: "abutment",
+      },
     };
 
     // 토큰 없으면 클라이언트 상태만 초기화
     if (!token || !user?.id) {
       setDraftId(null);
-      setCaseInfos(emptyCaseInfos);
+      setCaseInfosMap(emptyMap);
       setInitialDraftFiles([]);
     } else {
       // 새 Draft 생성
       const newDraft = await createDraft();
       if (newDraft) {
         setDraftId(newDraft._id);
-        setCaseInfos(emptyCaseInfos);
+        setCaseInfosMap(emptyMap);
         setInitialDraftFiles([]);
-        saveDraftMeta(newDraft._id, emptyCaseInfos);
+        saveDraftMeta(newDraft._id, emptyMap);
       } else {
         // 새 Draft 생성 실패 시 최소한 클라이언트 상태만 초기화
         setDraftId(null);
-        setCaseInfos(emptyCaseInfos);
+        setCaseInfosMap(emptyMap);
         setInitialDraftFiles([]);
       }
     }
@@ -445,8 +450,9 @@ export function useDraftMeta() {
 
   return {
     draftId,
-    caseInfos,
-    setCaseInfos: updateCaseInfos,
+    caseInfosMap,
+    setCaseInfosMap,
+    updateCaseInfos,
     status,
     error,
     deleteDraft,

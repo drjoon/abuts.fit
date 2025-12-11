@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNewRequestClinics } from "./new_requests/useNewRequestClinics";
@@ -35,11 +35,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     return `${NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX}${userId}`;
   }, [user?.id]);
 
-  // Draft 메타 관리 (caseInfos)
+  // Draft 메타 관리 (caseInfosMap)
   const {
     draftId,
-    caseInfos,
-    setCaseInfos,
+    caseInfosMap,
+    setCaseInfosMap,
+    updateCaseInfos,
     status: draftStatus,
     deleteDraft,
     resetDraft,
@@ -84,6 +85,34 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     prevDraftIdRef.current = draftId ?? null;
   }, [draftId]);
 
+  // 현재 선택된 파일의 caseInfos (파일별 독립적 관리)
+  const currentCaseInfos = useMemo(() => {
+    if (selectedPreviewIndex === null || !files[selectedPreviewIndex]) {
+      return caseInfosMap.__default__ || { workType: "abutment" };
+    }
+    const file = files[selectedPreviewIndex];
+    const fileKey = `${file.name}:${file.size}`;
+    return (
+      caseInfosMap[fileKey] ||
+      caseInfosMap.__default__ || { workType: "abutment" }
+    );
+  }, [selectedPreviewIndex, files, caseInfosMap]);
+
+  // 현재 파일의 caseInfos 업데이트 함수
+  const setCaseInfos = useCallback(
+    (updates: Partial<typeof currentCaseInfos>) => {
+      if (selectedPreviewIndex === null || !files[selectedPreviewIndex]) {
+        // 파일이 선택되지 않았으면 __default__ 업데이트
+        updateCaseInfos("__default__", updates);
+      } else {
+        const file = files[selectedPreviewIndex];
+        const fileKey = `${file.name}:${file.size}`;
+        updateCaseInfos(fileKey, updates);
+      }
+    },
+    [selectedPreviewIndex, files, updateCaseInfos]
+  );
+
   // 임플란트 정보 관리
   const {
     connections,
@@ -99,11 +128,11 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     typeOptions,
   } = useNewRequestImplant({
     token,
-    clinicName: caseInfos.clinicName,
+    clinicName: currentCaseInfos.clinicName,
     onDefaultImplantChange: (fields) => {
-      // 기본 임플란트가 자동 설정될 때 Draft.caseInfos 에도 같이 기록
+      // 기본 임플란트가 자동 설정될 때 현재 파일의 Draft.caseInfos에도 같이 기록
       setCaseInfos({
-        ...caseInfos,
+        ...currentCaseInfos,
         ...fields,
       });
     },
@@ -146,8 +175,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setFiles,
     selectedPreviewIndex,
     setSelectedPreviewIndex,
-    caseInfos,
-    setCaseInfos,
+    caseInfosMap,
+    updateCaseInfos,
   });
 
   // Draft에서 caseInfos 동기화 (임플란트 정보 -> Draft)
@@ -229,8 +258,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     draftId,
     draftStatus,
 
-    // Case 정보 (caseInfos로 통합, aiFileInfos 제거)
-    caseInfos,
+    // Case 정보 (파일별 독립적 관리)
+    caseInfos: currentCaseInfos,
     setCaseInfos,
 
     // 파일 관리
@@ -238,6 +267,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     setFiles,
     selectedPreviewIndex: previewIndex,
     setSelectedPreviewIndex,
+    caseInfosMap,
+    updateCaseInfos,
 
     // 파일 업로드 핸들러
     isDragOver: isReady ? isDragOver : false,
