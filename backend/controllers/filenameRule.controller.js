@@ -15,9 +15,15 @@ export const getActiveRules = async (req, res) => {
       .sort({ confidence: -1, createdAt: -1 })
       .lean();
 
+    // MongoDB의 _id를 id로 매핑 (프론트엔드 호환성)
+    const mappedRules = rules.map((rule) => ({
+      ...rule,
+      id: rule._id?.toString() || rule.ruleId,
+    }));
+
     res.json({
       success: true,
-      data: rules,
+      data: mappedRules,
     });
   } catch (error) {
     console.error("[filenameRule.getActiveRules] Error:", error);

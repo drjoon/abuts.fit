@@ -410,41 +410,48 @@ async function createRequestsFromDraft(req, res) {
     }
 
     const createdRequests = [];
+    const missingFieldsByFile = []; // 필수 정보 누락 파일 추적
 
-    for (const ci of abutmentCases) {
-      const caseInfos = ci || {};
+    for (let idx = 0; idx < abutmentCases.length; idx++) {
+      const ci = abutmentCases[idx] || {};
 
-      const patientName = (caseInfos.patientName || "").trim();
-      const tooth = (caseInfos.tooth || "").trim();
-      const clinicName = (caseInfos.clinicName || "").trim();
-      const workType = (caseInfos.workType || "abutment").trim();
+      const patientName = (ci.patientName || "").trim();
+      const tooth = (ci.tooth || "").trim();
+      const clinicName = (ci.clinicName || "").trim();
+      const workType = (ci.workType || "abutment").trim();
 
       // 안전장치: 여기까지 온 케이스는 모두 abutment 여야 함
       if (workType !== "abutment") continue;
 
-      const implantSystem = (caseInfos.implantSystem || "").trim();
-      const implantType = (caseInfos.implantType || "").trim();
-      const connectionType = (caseInfos.connectionType || "").trim();
+      const implantSystem = (ci.implantSystem || "").trim();
+      const implantType = (ci.implantType || "").trim();
+      const connectionType = (ci.connectionType || "").trim();
 
       // 배송 정보 (없으면 기본값 normal)
-      const shippingMode =
-        caseInfos.shippingMode === "express" ? "express" : "normal";
-      const requestedShipDate = caseInfos.requestedShipDate || undefined;
+      const shippingMode = ci.shippingMode === "express" ? "express" : "normal";
+      const requestedShipDate = ci.requestedShipDate || undefined;
 
-      if (!patientName || !tooth || !clinicName) {
-        return res.status(400).json({
-          success: false,
-          message: "치과이름, 환자이름, 치아번호는 모두 필수입니다.",
+      // 필수 정보 검증
+      const missing = [];
+      if (!clinicName) missing.push("치과이름");
+      if (!patientName) missing.push("환자이름");
+      if (!tooth) missing.push("치아번호");
+
+      if (missing.length > 0) {
+        const fileName = ci.file?.originalName || `파일 ${idx + 1}`;
+        missingFieldsByFile.push({
+          fileName,
+          missingFields: missing,
         });
+        continue; // 이 파일은 건너뛰고 다음 파일 처리
       }
 
       let priceAmount = 15000;
       const hasImplantSystem =
-        typeof caseInfos.implantSystem === "string" &&
-        caseInfos.implantSystem.trim();
+        typeof implantSystem === "string" && implantSystem.trim();
 
       if (hasImplantSystem) {
-        const clinicNameForPrice = (caseInfos.clinicName || "").trim();
+        const clinicNameForPrice = clinicName;
         if (clinicNameForPrice) {
           const cutoff = new Date();
           cutoff.setDate(cutoff.getDate() - 90);
@@ -465,21 +472,21 @@ async function createRequestsFromDraft(req, res) {
         }
       }
 
-      const caseInfosWithFile = caseInfos.file
+      const caseInfosWithFile = ci.file
         ? {
-            ...caseInfos,
+            ...ci,
             file: {
-              fileName: caseInfos.file.originalName,
-              fileType: caseInfos.file.mimetype,
-              fileSize: caseInfos.file.size,
+              fileName: ci.file.originalName,
+              fileType: ci.file.mimetype,
+              fileSize: ci.file.size,
               // filePath는 아직 없으므로 undefined 유지
               filePath: undefined,
-              s3Key: caseInfos.file.s3Key,
+              s3Key: ci.file.s3Key,
               // s3Url은 나중에 presigned URL 생성 시 채울 수 있으므로 undefined
               s3Url: undefined,
             },
           }
-        : caseInfos;
+        : ci;
 
       const newRequest = new Request({
         requestor: req.user._id,
@@ -499,10 +506,10 @@ async function createRequestsFromDraft(req, res) {
           await ClinicImplantPreset.findOneAndUpdate(
             {
               requestor: req.user._id,
-              clinicName: caseInfos.clinicName || "",
-              manufacturer: caseInfos.implantSystem,
-              system: caseInfos.implantType,
-              type: caseInfos.connectionType,
+              clinicName: clinicName || "",
+              manufacturer: implantSystem,
+              system: implantType,
+              type: connectionType,
             },
             {
               $inc: { useCount: 1 },
@@ -519,10 +526,28 @@ async function createRequestsFromDraft(req, res) {
       }
     }
 
+    // 생성된 의뢰가 없으면 에러 반환
+    if (createdRequests.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "필수 정보가 누락된 파일이 있습니다.",
+        missingFiles: missingFieldsByFile,
+        details: missingFieldsByFile
+          .map(
+            (item) => `${item.fileName}: ${item.missingFields.join(", ")} 필수`
+          )
+          .join("\n"),
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: `${createdRequests.length}건의 의뢰가 Draft에서 생성되었습니다.`,
       data: createdRequests,
+      ...(missingFieldsByFile.length > 0 && {
+        warning: `${missingFieldsByFile.length}개 파일은 필수 정보 누락으로 제외되었습니다.`,
+        missingFiles: missingFieldsByFile,
+      }),
     });
   } catch (error) {
     console.error("Error in createRequestsFromDraft:", error);

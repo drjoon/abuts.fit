@@ -34,7 +34,8 @@ const DEFAULT_RULES = [
       },
       tooth: {
         type: "regex",
-        value: "([1-4][1-8])|([1-4][1-8])-([1-4][1-8])",
+        // 단일 치아번호(32) 또는 브리지(32-42, 32=42, 32x42 등)를 허용
+        value: "([1-4][1-8])|([1-4][1-8][\u002D_=xX][1-4][1-8])", // - 또는 = 또는 x/X
       },
     },
     confidence: 0.7,
@@ -45,7 +46,8 @@ const DEFAULT_RULES = [
   {
     ruleId: "pattern_date_patient_tooth",
     description: "날짜_환자_치아_번호 패턴 (예: 20251119김혜영_32_1)",
-    pattern: "^\\d{8}[가-힣]+_\\d+_\\d+",
+    // 구분자는 _, -, =, 공백 등 다양하게 올 수 있다고 가정
+    pattern: "^\\d{8}[가-힣]+[ _\\-=]\\d+[ _\\-=]\\d+",
     extraction: {
       patient: {
         type: "regex",
@@ -54,7 +56,35 @@ const DEFAULT_RULES = [
       },
       tooth: {
         type: "regex",
-        value: "_([1-4][1-8])_",
+        // 앞뒤에 다양한 구분자가 올 수 있으므로, 구분자 또는 문자열 경계를 포함한 패턴
+        // 단일 치아번호 또는 브리지(32-42, 32=42, 32x42 등)
+        value:
+          "(?:^|[ _\\-=])([1-4][1-8](?:[\u002D_=xX][1-4][1-8])?)(?:[ _\\-=]|$)",
+      },
+    },
+    confidence: 0.95,
+    source: "manual",
+    isActive: true,
+  },
+
+  {
+    ruleId: "pattern_clinic_patient_tooth",
+    description: "치과_환자_치아_번호 패턴 (예: 향기로운치과_김하늘_15)",
+    // 구분자는 _, -, =, 공백 등 다양하게 올 수 있다고 가정
+    pattern: "^[가-힣]+[ _\\-=][가-힣]+[ _\\-=]\\d+",
+    extraction: {
+      clinic: {
+        type: "regex",
+        value: "^([가-힣]+)[ _\\-=]",
+      },
+      patient: {
+        type: "regex",
+        value: "[ _\\-=]([가-힣]+)[ _\\-=]",
+      },
+      tooth: {
+        type: "regex",
+        // 확장자 앞 또는 문자열 끝에 오는 단일 치아번호 또는 브리지(32-42, 32=42, 32x42)
+        value: "[ _\\-=]([1-4][1-8](?:[\u002D_=xX][1-4][1-8])?)(?:\\D|$)",
       },
     },
     confidence: 0.95,
@@ -72,16 +102,23 @@ async function seedRules() {
     // await FilenameRule.deleteMany({});
     // console.log("기존 룰 삭제 완료");
 
-    // 초기 룰 저장
-    const result = await FilenameRule.insertMany(DEFAULT_RULES, {
-      ordered: false,
-    });
+    // ruleId 기준 upsert로 기존 룰을 업데이트/추가
+    const ops = DEFAULT_RULES.map((rule) => ({
+      updateOne: {
+        filter: { ruleId: rule.ruleId },
+        update: rule,
+        upsert: true,
+      },
+    }));
 
-    console.log(`✅ ${result.length}개의 초기 룰이 저장되었습니다.`);
-    console.log("저장된 룰:");
-    result.forEach((rule) => {
-      console.log(`  - ${rule.ruleId}: ${rule.description}`);
-    });
+    const result = await FilenameRule.bulkWrite(ops, { ordered: false });
+
+    console.log("✅ 초기 룰 upsert 완료:");
+    console.log(
+      `  matched: ${result.matchedCount}, modified: ${
+        result.modifiedCount
+      }, upserted: ${Object.keys(result.upsertedIds || {}).length}`
+    );
 
     process.exit(0);
   } catch (error) {
