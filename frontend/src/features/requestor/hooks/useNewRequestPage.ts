@@ -238,6 +238,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     clinicPresets,
     selectedClinicId,
     setSelectedPreviewIndex,
+    caseInfosMap,
   });
 
   // 환자 사례 미리보기 (파일 기반)

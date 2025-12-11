@@ -1,6 +1,8 @@
 import { useToast } from "@/hooks/use-toast";
-import { type ClinicPreset } from "./newRequestTypes";
+import { type ClinicPreset, type CaseInfos } from "./newRequestTypes";
 import { clearFileCache } from "@/utils/fileCache";
+import { createParseLog } from "@/services/parseLogService";
+import { parseFilenameWithRules } from "@/utils/parseFilenameWithRules";
 
 const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
@@ -15,6 +17,7 @@ type UseNewRequestSubmitV2Params = {
   clinicPresets: ClinicPreset[];
   selectedClinicId: string | null;
   setSelectedPreviewIndex: (v: number | null) => void;
+  caseInfosMap?: Record<string, CaseInfos>;
 };
 
 export const useNewRequestSubmitV2 = ({
@@ -27,8 +30,48 @@ export const useNewRequestSubmitV2 = ({
   clinicPresets,
   selectedClinicId,
   setSelectedPreviewIndex,
+  caseInfosMap,
 }: UseNewRequestSubmitV2Params) => {
   const { toast } = useToast();
+
+  /**
+   * 파일별 파싱 로그 저장
+   * 파싱 결과 vs 사용자 최종 입력값 비교
+   */
+  const saveParseLogs = async () => {
+    if (!files || files.length === 0 || !caseInfosMap) return;
+
+    for (const file of files) {
+      try {
+        const fileKey = `${file.name}:${file.size}`;
+        const userInput = caseInfosMap[fileKey];
+
+        if (!userInput) continue;
+
+        // 파일명 파싱 결과
+        const parsed = parseFilenameWithRules(file.name);
+
+        // 로그 저장
+        await createParseLog({
+          filename: file.name,
+          parsed: {
+            clinicName: parsed.clinicName,
+            patientName: parsed.patientName,
+            tooth: parsed.tooth,
+          },
+          userInput: {
+            clinicName: userInput.clinicName,
+            patientName: userInput.patientName,
+            tooth: userInput.tooth,
+          },
+          draftId,
+        });
+      } catch (err) {
+        // 로그 저장 실패는 무시 (의뢰 제출에 영향 없음)
+        console.warn("[useNewRequestSubmitV2] Failed to save parse log:", err);
+      }
+    }
+  };
 
   // 헤더 생성 (mock dev 토큰 지원)
   const getHeaders = () => {
@@ -122,6 +165,11 @@ export const useNewRequestSubmitV2 = ({
 
       const data = await res.json();
       const newRequestId = data.data?._id || data._id;
+
+      // 파싱 로그 저장 (비동기, 실패해도 무시)
+      saveParseLogs().catch((err) => {
+        console.warn("[useNewRequestSubmitV2] Failed to save parse logs:", err);
+      });
 
       // Draft 삭제
       try {

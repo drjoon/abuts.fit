@@ -10,7 +10,8 @@
     "test": "NODE_ENV=test jest --detectOpenHandles",
     "test:watch": "NODE_ENV=test jest --watch",
     "test:coverage": "NODE_ENV=test jest --coverage",
-    "seed:connections": "node scripts/seedConnections.js"
+    "seed:connections": "node scripts/seedConnections.js",
+    "seed:filename-rules": "node scripts/seedFilenameRules.js"
   },
   "keywords": [
     "dental",

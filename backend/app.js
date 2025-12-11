@@ -83,6 +83,8 @@ import connectionRoutes from "./routes/connection.routes.js";
 import fileRoutes from "./routes/file.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
 import clinicRoutes from "./routes/clinic.routes.js";
+import parseLogRoutes from "./routes/parseLog.routes.js";
+import filenameRuleRoutes from "./routes/filenameRule.routes.js";
 
 // 라우트 설정
 app.use("/api/auth", authRoutes);
@@ -97,6 +99,8 @@ app.use("/api/connections", connectionRoutes);
 app.use("/api/files", fileRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/clinics", clinicRoutes);
+app.use("/api/parse-logs", parseLogRoutes);
+app.use("/api/filename-rules", filenameRuleRoutes);
 
 // 기본 라우트
 app.get("/", (req, res) => {

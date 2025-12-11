@@ -6,6 +6,7 @@ import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
 import { getCachedUrl, setCachedUrl, removeCachedUrl } from "@/utils/fileCache";
 import { getStlBlob, setStlBlob, setFileBlob } from "@/utils/fileBlobCache";
 import { parseFilenames } from "@/utils/parseFilename";
+import { parseFilenameWithRules } from "@/utils/parseFilenameWithRules";
 import { request } from "@/lib/apiClient";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
@@ -480,7 +481,8 @@ export const useNewRequestFilesV2 = ({
 
             newFiles.forEach((file) => {
               const fileKey = `${file.name}:${file.size}`;
-              const parsed = parseFilenames([file.name]);
+              // 룰 기반 파싱 (fallback으로 기존 parseFilename 포함)
+              const parsed = parseFilenameWithRules(file.name);
 
               if (parsed.clinicName || parsed.patientName || parsed.tooth) {
                 // 파일명에서 정보를 추출한 경우 바로 Draft.caseInfos에 반영
