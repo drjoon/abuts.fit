@@ -413,6 +413,9 @@ async function createRequestsFromDraft(req, res) {
       if (!clinicName) missing.push("치과이름");
       if (!patientName) missing.push("환자이름");
       if (!tooth) missing.push("치아번호");
+      if (!implantSystem) missing.push("임플란트시스템");
+      if (!implantType) missing.push("임플란트타입");
+      if (!connectionType) missing.push("연결타입");
 
       if (missing.length > 0) {
         const fileName = ci.file?.originalName || `파일 ${idx + 1}`;

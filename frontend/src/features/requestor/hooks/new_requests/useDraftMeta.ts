@@ -10,6 +10,7 @@ import {
 const DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const DRAFT_META_KEY_PREFIX = "abutsfit:new-request-draft-meta:v1:";
 const DRAFT_META_TTL_MS = 30 * 60 * 1000; // 30분
+const PATCH_DEBOUNCE_MS = 2000; // 2초 디바운스 (동시성 문제 방지)
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
 
@@ -262,9 +263,25 @@ export function useDraftMeta() {
       if (!draftId || !token) return;
 
       try {
-        const caseInfosArray = Object.entries(map)
+        // __default__를 제외한 파일별 caseInfos 추출
+        const fileBasedCaseInfos = Object.entries(map)
           .filter(([key]) => key !== "__default__")
           .map(([, caseInfo]) => caseInfo);
+
+        // __default__도 포함 (파일이 없는 경우 대비)
+        const caseInfosArray =
+          fileBasedCaseInfos.length > 0
+            ? fileBasedCaseInfos
+            : map.__default__
+            ? [map.__default__]
+            : [];
+
+        console.log("[patchDraftImmediately] Sending caseInfos:", {
+          draftId,
+          mapKeys: Object.keys(map),
+          fileBasedCaseInfos,
+          caseInfosArray,
+        });
 
         const res = await fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
           method: "PATCH",
@@ -275,6 +292,11 @@ export function useDraftMeta() {
         });
 
         if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          console.error("[patchDraftImmediately] Server error:", {
+            status: res.status,
+            errData,
+          });
           throw new Error(`Failed to update draft: ${res.status}`);
         }
 
@@ -361,7 +383,7 @@ export function useDraftMeta() {
             } catch (err) {
               console.error("updateCaseInfos error:", err);
             }
-          }, 1000);
+          }, PATCH_DEBOUNCE_MS);
         }
 
         return newMap;

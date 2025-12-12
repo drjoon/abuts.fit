@@ -160,6 +160,10 @@ export const useNewRequestSubmitV2 = ({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        console.error("[useNewRequestSubmitV2] Server error response:", {
+          status: res.status,
+          errData,
+        });
         throw new Error(errData.message || `서버 오류: ${res.status}`);
       }
 

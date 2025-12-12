@@ -338,20 +338,20 @@ export const NewRequestPage = () => {
                       setHasUserChosenWorkType(true);
                       const fileKey = `${file.name}:${file.size}`;
 
-                      // 현재 파일의 정보를 caseInfosMap에서 로드
+                      // 1단계: 파일 선택 먼저 수행 (currentFileKey 변경)
+                      setSelectedPreviewIndex(index);
+
+                      // 2단계: 선택된 파일의 정보를 caseInfosMap에서 로드
                       const fileInfoFromMap = caseInfosMap?.[fileKey];
                       if (fileInfoFromMap) {
-                        setCaseInfos(fileInfoFromMap);
+                        // 파일별 저장된 정보가 있으면 그대로 사용
+                        updateCaseInfos(fileKey, fileInfoFromMap);
                       } else {
                         // caseInfosMap에 없으면 workType만 설정
-                        setCaseInfos({
-                          ...caseInfos,
+                        updateCaseInfos(fileKey, {
                           workType: currentWorkType,
                         });
                       }
-
-                      // 파일 선택 (useEffect에서 이전 파일 정보 저장)
-                      setSelectedPreviewIndex(index);
 
                       if (
                         currentWorkType === "abutment" &&
@@ -364,8 +364,8 @@ export const NewRequestPage = () => {
                         setImplantType("Hex");
                         syncSelectedConnection("OSSTEM", "Regular", "Hex");
 
-                        setCaseInfos({
-                          ...(fileInfoFromMap || caseInfos),
+                        updateCaseInfos(fileKey, {
+                          ...(fileInfoFromMap || {}),
                           implantSystem: "OSSTEM",
                           implantType: "Regular",
                           connectionType: "Hex",
@@ -404,31 +404,45 @@ export const NewRequestPage = () => {
                         className="flex-1 rounded py-1 border text-[10px] md:text-[11px] bg-gray-300 text-gray-900 border-gray-400"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedPreviewIndex(index);
-                          setHasUserChosenWorkType(true);
-                          // 카드별 어벗 선택
                           const key = `${file.name}:${file.size}`;
+                          setHasUserChosenWorkType(true);
+                          // 1단계: 파일 선택 먼저 수행
+                          setSelectedPreviewIndex(index);
+                          // 2단계: 파일별 workType 업데이트
                           setFileWorkTypes((prev) => ({
                             ...prev,
                             [key]: "abutment",
                           }));
-                          // 전체 workType도 어벗으로 설정
-                          if (caseInfos?.workType !== "abutment") {
-                            setCaseInfos({
-                              ...caseInfos,
-                              workType: "abutment",
-                            });
-                          }
+                          // 3단계: caseInfos에 workType 반영 (파일별)
+                          updateCaseInfos(key, {
+                            workType: "abutment",
+                          });
                           // 어벗 선택 시 기본 임플란트 정보 설정
+                          // 현재 파일의 caseInfos에 임플란트 정보가 없으면 설정
+                          const currentFileInfo = caseInfosMap?.[key];
                           if (
-                            !implantManufacturer &&
-                            !implantSystem &&
-                            !implantType
+                            !currentFileInfo?.implantSystem ||
+                            !currentFileInfo?.implantType ||
+                            !currentFileInfo?.connectionType
                           ) {
                             setImplantManufacturer("OSSTEM");
                             setImplantSystem("Regular");
                             setImplantType("Hex");
                             syncSelectedConnection("OSSTEM", "Regular", "Hex");
+
+                            // 즉시 Draft에 저장 (updateCaseInfos의 디바운스를 우회)
+                            const updatedMap = {
+                              ...caseInfosMap,
+                              [key]: {
+                                ...(caseInfosMap[key] || {
+                                  workType: "abutment",
+                                }),
+                                implantSystem: "OSSTEM",
+                                implantType: "Regular",
+                                connectionType: "Hex",
+                              },
+                            };
+                            patchDraftImmediately(updatedMap);
                           }
                         }}
                       >
@@ -440,20 +454,19 @@ export const NewRequestPage = () => {
                         className="flex-1 rounded py-1 border text-[10px] md:text-[11px] bg-gray-50 text-gray-900 border-gray-300"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedPreviewIndex(index);
-                          setHasUserChosenWorkType(true);
                           const key = `${file.name}:${file.size}`;
+                          setHasUserChosenWorkType(true);
+                          // 1단계: 파일 선택 먼저 수행
+                          setSelectedPreviewIndex(index);
+                          // 2단계: 파일별 workType 업데이트
                           setFileWorkTypes((prev) => ({
                             ...prev,
                             [key]: "crown",
                           }));
-                          // 크라운만 선택된 경우를 위해 workType도 갱신
-                          if (caseInfos?.workType !== "crown") {
-                            setCaseInfos({
-                              ...caseInfos,
-                              workType: "crown",
-                            });
-                          }
+                          // 3단계: caseInfos에 workType 반영 (파일별)
+                          updateCaseInfos(key, {
+                            workType: "crown",
+                          });
                         }}
                       >
                         크라운
@@ -525,6 +538,20 @@ export const NewRequestPage = () => {
                         setCaseInfos({
                           clinicName: label,
                         });
+                        // 옵션 선택 시 즉시 Draft에 저장
+                        const fileKey =
+                          selectedPreviewIndex !== null &&
+                          files[selectedPreviewIndex]
+                            ? `${files[selectedPreviewIndex].name}:${files[selectedPreviewIndex].size}`
+                            : "__default__";
+                        const updatedMap = {
+                          ...caseInfosMap,
+                          [fileKey]: {
+                            ...caseInfosMap[fileKey],
+                            clinicName: label,
+                          },
+                        };
+                        patchDraftImmediately(updatedMap);
                       }}
                       onClear={() => {
                         // 현재 입력만 비움 (프리셋은 유지)
@@ -580,6 +607,20 @@ export const NewRequestPage = () => {
                         setCaseInfos({
                           patientName: label,
                         });
+                        // 옵션 선택 시 즉시 Draft에 저장
+                        const fileKey =
+                          selectedPreviewIndex !== null &&
+                          files[selectedPreviewIndex]
+                            ? `${files[selectedPreviewIndex].name}:${files[selectedPreviewIndex].size}`
+                            : "__default__";
+                        const updatedMap = {
+                          ...caseInfosMap,
+                          [fileKey]: {
+                            ...caseInfosMap[fileKey],
+                            patientName: label,
+                          },
+                        };
+                        patchDraftImmediately(updatedMap);
                       }}
                       onClear={() => {
                         setCaseInfos({
@@ -634,6 +675,20 @@ export const NewRequestPage = () => {
                         setCaseInfos({
                           tooth: label,
                         });
+                        // 옵션 선택 시 즉시 Draft에 저장
+                        const fileKey =
+                          selectedPreviewIndex !== null &&
+                          files[selectedPreviewIndex]
+                            ? `${files[selectedPreviewIndex].name}:${files[selectedPreviewIndex].size}`
+                            : "__default__";
+                        const updatedMap = {
+                          ...caseInfosMap,
+                          [fileKey]: {
+                            ...caseInfosMap[fileKey],
+                            tooth: label,
+                          },
+                        };
+                        patchDraftImmediately(updatedMap);
                       }}
                       onClear={() => {
                         setCaseInfos({

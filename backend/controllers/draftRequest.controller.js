@@ -56,7 +56,8 @@ export const updateDraft = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid draft ID");
   }
 
-  const draft = await DraftRequest.findById(id);
+  // 권한 확인을 위해 먼저 조회
+  const draft = await DraftRequest.findById(id).lean();
 
   if (!draft) {
     throw new ApiError(404, "Draft not found");
@@ -68,84 +69,123 @@ export const updateDraft = asyncHandler(async (req, res) => {
 
   const { caseInfos } = req.body || {};
 
-  if (caseInfos) {
-    const incomingList = Array.isArray(caseInfos) ? caseInfos : [caseInfos];
-
-    // 기존 caseInfos 전부 유지
-    const prevCaseInfos = Array.isArray(draft.caseInfos) ? draft.caseInfos : [];
-
-    // _id 기준으로 매칭할 수 있도록 맵 생성
-    const incomingById = new Map();
-    const incomingWithoutId = [];
-
-    for (const ci of incomingList) {
-      if (ci && ci._id) {
-        incomingById.set(ci._id.toString(), ci);
-      } else {
-        incomingWithoutId.push(ci);
-      }
-    }
-
-    let anonymousIndex = 0;
-
-    const mergedCaseInfos = prevCaseInfos.map((prev, idx) => {
-      let incoming = null;
-
-      // 1) _id 로 매칭
-      if (prev && prev._id && incomingById.has(prev._id.toString())) {
-        incoming = incomingById.get(prev._id.toString());
-      }
-      // 2) _id 가 없거나 매칭 실패 시, 인덱스 순서대로 anonymous 패치 적용
-      else if (anonymousIndex < incomingWithoutId.length) {
-        incoming = incomingWithoutId[anonymousIndex++];
-      }
-
-      if (!incoming) {
-        // 업데이트 대상이 없으면 기존 값 그대로 유지
-        return prev;
-      }
-
-      const ci = incoming || {};
-
-      return {
-        // 기존 필드 우선
-        ...prev,
-        // 새로 들어온 필드만 덮어씀
-        ...ci,
-        // file 은 명시적으로 새 file 이 전달되지 않는 한 기존 것을 유지
-        file: ci && ci.file ? ci.file : prev.file,
-        // workType 은 새 값이 없으면 기존 값 → 없으면 기본값
-        workType: (ci && ci.workType) || prev.workType || "abutment",
-      };
-    });
-
-    // 3) 기존에 없던 완전히 새로운 caseInfos (예: 새 _id 가 온 경우) 처리
-    //    prev 에서 못 찾은 incoming 들을 뒤에 추가
-    const usedIds = new Set(
-      mergedCaseInfos
-        .filter((ci) => ci && ci._id)
-        .map((ci) => ci._id.toString())
-    );
-
-    const extraIncoming = incomingList.filter((ci) => {
-      if (!ci || !ci._id) return false;
-      return !usedIds.has(ci._id.toString());
-    });
-
-    draft.caseInfos = [
-      ...mergedCaseInfos,
-      ...extraIncoming.map((ci) => ({
-        ...ci,
-        workType: (ci && ci.workType) || "abutment",
-      })),
-    ];
+  if (!caseInfos) {
+    // caseInfos가 없으면 그냥 기존 draft 반환
+    return res
+      .status(200)
+      .json(new ApiResponse(200, draft, "Draft updated successfully"));
   }
 
-  await draft.save();
+  // 동시성 문제 해결: findByIdAndUpdate 사용 (원자적 업데이트)
+  // 최대 3회 재시도
+  let retries = 3;
+  let updatedDraft = null;
+
+  while (retries > 0) {
+    try {
+      const incomingList = Array.isArray(caseInfos) ? caseInfos : [caseInfos];
+
+      // 현재 최신 상태 조회
+      const currentDraft = await DraftRequest.findById(id);
+      if (!currentDraft) {
+        throw new ApiError(404, "Draft not found");
+      }
+
+      const prevCaseInfos = Array.isArray(currentDraft.caseInfos)
+        ? currentDraft.caseInfos
+        : [];
+
+      // _id 기준으로 매칭할 수 있도록 맵 생성
+      const incomingById = new Map();
+      const incomingWithoutId = [];
+
+      for (const ci of incomingList) {
+        if (ci && ci._id) {
+          incomingById.set(ci._id.toString(), ci);
+        } else {
+          incomingWithoutId.push(ci);
+        }
+      }
+
+      let anonymousIndex = 0;
+
+      const mergedCaseInfos = prevCaseInfos.map((prev, idx) => {
+        let incoming = null;
+
+        // 1) _id 로 매칭
+        if (prev && prev._id && incomingById.has(prev._id.toString())) {
+          incoming = incomingById.get(prev._id.toString());
+        }
+        // 2) _id 가 없거나 매칭 실패 시, 인덱스 순서대로 anonymous 패치 적용
+        else if (anonymousIndex < incomingWithoutId.length) {
+          incoming = incomingWithoutId[anonymousIndex++];
+        }
+
+        if (!incoming) {
+          // 업데이트 대상이 없으면 기존 값 그대로 유지
+          return prev;
+        }
+
+        const ci = incoming || {};
+
+        return {
+          // 기존 필드 우선
+          ...prev,
+          // 새로 들어온 필드만 덮어씀
+          ...ci,
+          // file 은 명시적으로 새 file 이 전달되지 않는 한 기존 것을 유지
+          file: ci && ci.file ? ci.file : prev.file,
+          // workType 은 새 값이 없으면 기존 값 → 없으면 기본값
+          workType: (ci && ci.workType) || prev.workType || "abutment",
+        };
+      });
+
+      // 3) 기존에 없던 완전히 새로운 caseInfos (예: 새 _id 가 온 경우) 처리
+      //    prev 에서 못 찾은 incoming 들을 뒤에 추가
+      const usedIds = new Set(
+        mergedCaseInfos
+          .filter((ci) => ci && ci._id)
+          .map((ci) => ci._id.toString())
+      );
+
+      const extraIncoming = incomingList.filter((ci) => {
+        if (!ci || !ci._id) return false;
+        return !usedIds.has(ci._id.toString());
+      });
+
+      const newCaseInfos = [
+        ...mergedCaseInfos,
+        ...extraIncoming.map((ci) => ({
+          ...ci,
+          workType: (ci && ci.workType) || "abutment",
+        })),
+      ];
+
+      // findByIdAndUpdate로 원자적 업데이트
+      updatedDraft = await DraftRequest.findByIdAndUpdate(
+        id,
+        { caseInfos: newCaseInfos },
+        { new: true, runValidators: false }
+      );
+
+      if (!updatedDraft) {
+        throw new ApiError(404, "Draft not found");
+      }
+
+      break; // 성공하면 루프 탈출
+    } catch (err) {
+      retries--;
+      if (retries === 0) {
+        throw err;
+      }
+      // 짧은 지연 후 재시도
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
 
   return res
     .status(200)
-    .json(new ApiResponse(200, draft, "Draft updated successfully"));
+    .json(new ApiResponse(200, updatedDraft, "Draft updated successfully"));
 });
 
 // 파일 + 케이스 정보 추가 (caseInfos 요소 생성)
