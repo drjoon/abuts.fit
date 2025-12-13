@@ -285,8 +285,9 @@ export const RequestorDashboardPage = () => {
         topSection={
           <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-              <div>
-                <WorksheetDiameterCard stats={diameterStatsFromApi} />
+              <div className="flex flex-col gap-6 h-full">
+                <RequestorPricingReferralPolicyCard />
+                <RequestorRiskSummaryCard riskSummary={riskSummary} />
               </div>
 
               <div className="flex flex-col gap-6 h-full">
@@ -305,9 +306,8 @@ export const RequestorDashboardPage = () => {
                 />
               </div>
 
-              <div className="flex flex-col gap-6 h-full">
-                <RequestorPricingReferralPolicyCard />
-                <RequestorRiskSummaryCard riskSummary={riskSummary} />
+              <div>
+                <WorksheetDiameterCard stats={diameterStatsFromApi} />
               </div>
             </div>
           </div>
