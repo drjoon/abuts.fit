@@ -2,6 +2,20 @@ import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
 import { Types } from "mongoose";
+import crypto from "crypto";
+
+const createReferralCode = () => {
+  return crypto.randomBytes(9).toString("base64url");
+};
+
+const ensureUniqueReferralCode = async () => {
+  for (let i = 0; i < 5; i += 1) {
+    const code = createReferralCode();
+    const exists = await User.exists({ referralCode: code });
+    if (!exists) return code;
+  }
+  throw new Error("리퍼럴 코드 생성에 실패했습니다.");
+};
 
 // // 회원가입
 // export const signup = async (req, res) => {
@@ -209,6 +223,7 @@ async function register(req, res) {
       phoneNumber,
       organization,
       referredByUserId,
+      referredByReferralCode,
     } = req.body;
 
     // 필수 필드 검증
@@ -249,7 +264,6 @@ async function register(req, res) {
         });
       }
 
-      // 추천인은 의뢰자(requestor)만 허용
       if (refUser.role !== "requestor") {
         return res.status(400).json({
           success: false,
@@ -258,7 +272,37 @@ async function register(req, res) {
       }
 
       referredByObjectId = new Types.ObjectId(referredByUserId);
+    } else if (referredByReferralCode) {
+      const code = String(referredByReferralCode).trim();
+      if (!code) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 추천 코드입니다.",
+        });
+      }
+
+      const refUser = await User.findOne({ referralCode: code })
+        .select({ _id: 1, role: 1, active: 1 })
+        .lean();
+
+      if (!refUser || refUser.active === false) {
+        return res.status(400).json({
+          success: false,
+          message: "추천인을 찾을 수 없습니다.",
+        });
+      }
+
+      if (refUser.role !== "requestor") {
+        return res.status(400).json({
+          success: false,
+          message: "추천인은 의뢰자 계정만 가능합니다.",
+        });
+      }
+
+      referredByObjectId = new Types.ObjectId(refUser._id);
     }
+
+    const referralCode = await ensureUniqueReferralCode();
 
     // 사용자 생성
     const user = new User({
@@ -268,6 +312,7 @@ async function register(req, res) {
       role: role || "requestor", // 기본값은 의뢰자
       phoneNumber,
       organization,
+      referralCode,
       referredByUserId: referredByObjectId,
       approvedAt: new Date(),
     });
@@ -355,8 +400,11 @@ async function login(req, res) {
       });
     }
 
-    // 마지막 로그인 시간 업데이트
+    // 마지막 로그인 시간 업데이트 + 리퍼럴 코드 보장
     user.lastLogin = Date.now();
+    if (!user.referralCode) {
+      user.referralCode = await ensureUniqueReferralCode();
+    }
     await user.save();
 
     // 토큰 생성

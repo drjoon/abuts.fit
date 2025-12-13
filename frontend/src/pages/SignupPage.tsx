@@ -23,10 +23,16 @@ export const SignupPage = () => {
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
 
-  const referredByUserId = useMemo(() => {
+  const referredByReferralCode = useMemo(() => {
     const ref = searchParams.get("ref");
     return ref && ref.trim().length > 0 ? ref.trim() : undefined;
   }, [searchParams]);
+
+  const referredByUserId = useMemo(() => {
+    if (!referredByReferralCode) return undefined;
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(referredByReferralCode);
+    return isObjectId ? referredByReferralCode : undefined;
+  }, [referredByReferralCode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -60,6 +66,8 @@ export const SignupPage = () => {
 
       if (referredByUserId) {
         payload.referredByUserId = referredByUserId;
+      } else if (referredByReferralCode) {
+        payload.referredByReferralCode = referredByReferralCode;
       }
 
       const res = await fetch("/api/auth/register", {

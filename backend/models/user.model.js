@@ -30,6 +30,13 @@ const userSchema = new mongoose.Schema(
       enum: ["requestor", "manufacturer", "admin"],
       default: "requestor",
     },
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+      default: null,
+    },
     referredByUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

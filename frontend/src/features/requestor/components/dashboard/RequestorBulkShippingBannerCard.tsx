@@ -275,7 +275,7 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
 
   return (
     <>
-      <Card className="relative flex flex-col rounded-2xl border border-orange-300 bg-orange-50/80 shadow-sm transition-all hover:shadow-lg flex-none">
+      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg flex-none">
         <CardHeader className="pb-0 space-y-2">
           <div className="flex items-center justify-between gap-4">
             <CardTitle className="text-base font-semibold">
@@ -284,17 +284,17 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
             {(() => {
               const { modeLabel, countLabel, dateLabel } = getNextSummary();
               return (
-                <div className="flex flex-col items-end text-xs text-orange-900/80">
+                <div className="flex flex-col items-end text-xs text-muted-foreground">
                   <span className="font-semibold">{modeLabel}</span>
                   <span>{countLabel}</span>
-                  <span className="text-[11px] text-orange-800/70">
+                  <span className="text-[11px] text-muted-foreground">
                     {dateLabel}
                   </span>
                 </div>
               );
             })()}
           </div>
-          <CardDescription className="text-md leading-relaxed text-orange-900/90">
+          <CardDescription className="text-md leading-relaxed text-muted-foreground">
             {getCardMessage()}
           </CardDescription>
         </CardHeader>

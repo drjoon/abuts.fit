@@ -9,6 +9,7 @@ export interface User {
   role: UserRole;
   avatar?: string;
   companyName?: string;
+  referralCode?: string;
 }
 
 export const mockUsers: User[] = [
@@ -18,6 +19,7 @@ export const mockUsers: User[] = [
     email: "kim@dental-lab.co.kr",
     role: "requestor",
     companyName: "서울치과기공소",
+    referralCode: "mock_requestor",
   },
   {
     id: "2",
@@ -25,6 +27,7 @@ export const mockUsers: User[] = [
     email: "park@abutment-maker.co.kr",
     role: "manufacturer",
     companyName: "프리미엄 어벗먼트",
+    referralCode: "mock_manufacturer",
   },
   {
     id: "3",
@@ -32,6 +35,7 @@ export const mockUsers: User[] = [
     email: "admin@abuts.fit",
     role: "admin",
     companyName: "Abuts.fit",
+    referralCode: "mock_admin",
   },
 ];
 

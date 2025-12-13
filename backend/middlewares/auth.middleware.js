@@ -37,6 +37,7 @@ export const authenticate = async (req, res, next) => {
         _id: new Types.ObjectId(
           MOCK_USER_IDS[mockRole] || MOCK_USER_IDS.manufacturer
         ),
+        referralCode: `mock_${mockRole}`,
         role: mockRole,
         active: true,
         approvedAt: now,

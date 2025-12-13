@@ -26,12 +26,13 @@ export const RequestorPricingReferralPolicyCard = () => {
   const { toast } = useToast();
 
   const userId = (user as any)?._id || (user as any)?.id || "";
+  const referralCode = (user as any)?.referralCode || "";
 
   const referralLink = useMemo(() => {
-    if (!userId) return "";
+    if (!referralCode) return "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}/signup?ref=${userId}`;
-  }, [userId]);
+    return `${origin}/signup?ref=${referralCode}`;
+  }, [referralCode]);
 
   const { data } = useQuery({
     queryKey: ["requestor-pricing-referral-stats"],
