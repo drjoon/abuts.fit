@@ -199,3 +199,11 @@ pages/admin/
 - **전역 fetch 가드 유지**
   - `main.tsx`에서 설치하는 전역 fetch 가드(`installFetchGuard`)는 **마이그레이션 이후에도 유지**합니다.
   - 과도한 외부 API 호출(예: `/api/ai/parse-filenames`에 대한 무한 루프)을 1차적으로 차단하는 안전 장치로 사용합니다.
+
+## 13. 페이지 컴포넌트 라인 수 제한
+
+- 라우팅 단위 페이지 컴포넌트(`src/pages/**`)는 **800줄을 넘기지 않습니다.**
+- 800줄을 초과할 것 같으면 아래 순서로 분리합니다.
+  - UI 섹션 단위: `pages/.../components/`로 분리
+  - 복잡한 상태/계산/이벤트 로직: `pages/.../hooks/` 또는 `features/.../hooks/`로 분리
+  - 페이지 파일에는 **wiring(훅 호출/props 전달/섹션 조립)** 만 남깁니다.
