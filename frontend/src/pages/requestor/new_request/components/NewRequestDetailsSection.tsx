@@ -20,6 +20,275 @@ type ToastFn = (props: {
 
 type Option = { id: string; label: string };
 
+type PatientImplantFieldsProps = {
+  caseInfos?: CaseInfos;
+  setCaseInfos: (updates: Partial<CaseInfos>) => void;
+  showImplantSelect: boolean;
+  connections: Array<{ manufacturer: string; system: string }>;
+  typeOptions: string[];
+  implantManufacturer: string;
+  setImplantManufacturer: (v: string) => void;
+  implantSystem: string;
+  setImplantSystem: (v: string) => void;
+  implantType: string;
+  setImplantType: (v: string) => void;
+  syncSelectedConnection: (
+    manufacturer: string,
+    system: string,
+    type: string
+  ) => void;
+  clinicNameOptions: Option[];
+  patientNameOptions: Option[];
+  teethOptions: Option[];
+  addClinicPreset: (label: string) => void;
+  clearAllClinicPresets: () => void;
+  addPatientPreset: (label: string) => void;
+  clearAllPatientPresets: () => void;
+  addTeethPreset: (label: string) => void;
+  clearAllTeethPresets: () => void;
+  handleAddOrSelectClinic: (label: string) => void;
+};
+
+export function NewRequestPatientImplantFields({
+  caseInfos,
+  setCaseInfos,
+  showImplantSelect,
+  connections,
+  typeOptions,
+  implantManufacturer,
+  setImplantManufacturer,
+  implantSystem,
+  setImplantSystem,
+  implantType,
+  setImplantType,
+  syncSelectedConnection,
+  clinicNameOptions,
+  patientNameOptions,
+  teethOptions,
+  addClinicPreset,
+  clearAllClinicPresets,
+  addPatientPreset,
+  clearAllPatientPresets,
+  addTeethPreset,
+  clearAllTeethPresets,
+  handleAddOrSelectClinic,
+}: PatientImplantFieldsProps) {
+  return (
+    <>
+      <div className="">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-foreground ">
+          <div className="min-w-0">
+            <LabeledAutocompleteField
+              value={caseInfos?.clinicName || ""}
+              onChange={(value) => {
+                setCaseInfos({
+                  clinicName: value,
+                });
+              }}
+              options={clinicNameOptions}
+              placeholder="치과명"
+              onOptionSelect={(label) => {
+                handleAddOrSelectClinic(label);
+                addClinicPreset(label);
+              }}
+              onClear={() => {
+                setCaseInfos({
+                  clinicName: "",
+                });
+              }}
+              onDelete={() => {
+                clearAllClinicPresets();
+                setCaseInfos({
+                  clinicName: "",
+                });
+              }}
+              onBlur={() => {
+                if (caseInfos?.clinicName) {
+                  handleAddOrSelectClinic(caseInfos.clinicName);
+                  addClinicPreset(caseInfos.clinicName);
+                }
+              }}
+              inputClassName="h-8 text-xs w-full pr-10"
+            />
+          </div>
+
+          <div className="min-w-0">
+            <LabeledAutocompleteField
+              value={caseInfos?.patientName || ""}
+              onChange={(value) => {
+                setCaseInfos({
+                  patientName: value,
+                });
+              }}
+              options={patientNameOptions}
+              placeholder="환자명"
+              onOptionSelect={(label) => {
+                setCaseInfos({
+                  patientName: label,
+                });
+                addPatientPreset(label);
+              }}
+              onClear={() => {
+                setCaseInfos({
+                  patientName: "",
+                });
+              }}
+              onDelete={() => {
+                clearAllPatientPresets();
+                setCaseInfos({
+                  patientName: "",
+                });
+              }}
+              onBlur={() => {
+                if (caseInfos?.patientName) {
+                  addPatientPreset(caseInfos.patientName);
+                }
+              }}
+              inputClassName="h-8 text-xs w-full pr-10"
+            />
+          </div>
+
+          <div className="min-w-0">
+            <LabeledAutocompleteField
+              value={caseInfos?.tooth || ""}
+              onChange={(value) => {
+                setCaseInfos({
+                  tooth: value,
+                });
+              }}
+              options={teethOptions}
+              placeholder="치아번호"
+              onOptionSelect={(label) => {
+                setCaseInfos({
+                  tooth: label,
+                });
+                addTeethPreset(label);
+              }}
+              onClear={() => {
+                setCaseInfos({
+                  tooth: "",
+                });
+              }}
+              onDelete={() => {
+                clearAllTeethPresets();
+                setCaseInfos({
+                  tooth: "",
+                });
+              }}
+              onBlur={() => {
+                if (caseInfos?.tooth) {
+                  addTeethPreset(caseInfos.tooth);
+                }
+              }}
+              inputClassName="h-8 text-xs w-full pr-10"
+            />
+          </div>
+        </div>
+      </div>
+
+      {showImplantSelect && (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] md:text-[11px]">
+              <div className="min-w-0 space-y-1">
+                <Select
+                  value={implantManufacturer}
+                  onValueChange={(value) => {
+                    setImplantManufacturer(value);
+                    setImplantSystem("");
+                    setImplantType("");
+                    syncSelectedConnection(value, "", "");
+                    setCaseInfos({
+                      implantSystem: value,
+                      implantType: "",
+                      connectionType: "",
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="제조사" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[...new Set(connections.map((c) => c.manufacturer))].map(
+                      (m) => (
+                        <SelectItem key={m} value={m}>
+                          {m}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <Select
+                  value={implantSystem}
+                  onValueChange={(value) => {
+                    setImplantSystem(value);
+                    setImplantType("");
+                    syncSelectedConnection(implantManufacturer, value, "");
+                    setCaseInfos({
+                      implantType: value,
+                      connectionType: "",
+                    });
+                  }}
+                  disabled={!implantManufacturer}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="시스템" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[
+                      ...new Set(
+                        connections
+                          .filter((c) => c.manufacturer === implantManufacturer)
+                          .map((c) => c.system)
+                      ),
+                    ].map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="min-w-0 space-y-1">
+                <Select
+                  value={implantType}
+                  onValueChange={(value) => {
+                    setImplantType(value);
+                    syncSelectedConnection(
+                      implantManufacturer,
+                      implantSystem,
+                      value
+                    );
+                    setCaseInfos({
+                      connectionType: value,
+                    });
+                  }}
+                  disabled={!implantSystem}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="유형" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {typeOptions.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 type Props = {
   files: File[];
   selectedPreviewIndex: number | null;
@@ -173,218 +442,30 @@ export function NewRequestDetailsSection({
         </div>
 
         <div className="space-y-4 text-xs md:text-sm min-w-0">
-          <div className="">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-foreground ">
-              <div className="min-w-0">
-                <LabeledAutocompleteField
-                  value={caseInfos?.clinicName || ""}
-                  onChange={(value) => {
-                    setCaseInfos({
-                      clinicName: value,
-                    });
-                  }}
-                  options={clinicNameOptions}
-                  placeholder="치과명"
-                  onOptionSelect={(label) => {
-                    handleAddOrSelectClinic(label);
-                    addClinicPreset(label);
-                  }}
-                  onClear={() => {
-                    setCaseInfos({
-                      clinicName: "",
-                    });
-                  }}
-                  onDelete={() => {
-                    clearAllClinicPresets();
-                    setCaseInfos({
-                      clinicName: "",
-                    });
-                  }}
-                  onBlur={() => {
-                    if (caseInfos?.clinicName) {
-                      handleAddOrSelectClinic(caseInfos.clinicName);
-                      addClinicPreset(caseInfos.clinicName);
-                    }
-                  }}
-                  inputClassName="h-8 text-xs w-full pr-10"
-                />
-              </div>
-
-              <div className="min-w-0">
-                <LabeledAutocompleteField
-                  value={caseInfos?.patientName || ""}
-                  onChange={(value) => {
-                    setCaseInfos({
-                      patientName: value,
-                    });
-                  }}
-                  options={patientNameOptions}
-                  placeholder="환자명"
-                  onOptionSelect={(label) => {
-                    setCaseInfos({
-                      patientName: label,
-                    });
-                    addPatientPreset(label);
-                  }}
-                  onClear={() => {
-                    setCaseInfos({
-                      patientName: "",
-                    });
-                  }}
-                  onDelete={() => {
-                    clearAllPatientPresets();
-                    setCaseInfos({
-                      patientName: "",
-                    });
-                  }}
-                  onBlur={() => {
-                    if (caseInfos?.patientName) {
-                      addPatientPreset(caseInfos.patientName);
-                    }
-                  }}
-                  inputClassName="h-8 text-xs w-full pr-10"
-                />
-              </div>
-
-              <div className="min-w-0">
-                <LabeledAutocompleteField
-                  value={caseInfos?.tooth || ""}
-                  onChange={(value) => {
-                    setCaseInfos({
-                      tooth: value,
-                    });
-                  }}
-                  options={teethOptions}
-                  placeholder="치아번호"
-                  onOptionSelect={(label) => {
-                    setCaseInfos({
-                      tooth: label,
-                    });
-                    addTeethPreset(label);
-                  }}
-                  onClear={() => {
-                    setCaseInfos({
-                      tooth: "",
-                    });
-                  }}
-                  onDelete={() => {
-                    clearAllTeethPresets();
-                    setCaseInfos({
-                      tooth: "",
-                    });
-                  }}
-                  onBlur={() => {
-                    if (caseInfos?.tooth) {
-                      addTeethPreset(caseInfos.tooth);
-                    }
-                  }}
-                  inputClassName="h-8 text-xs w-full pr-10"
-                />
-              </div>
-            </div>
-          </div>
-
-          {showImplantSelect && (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] md:text-[11px]">
-                  <div className="min-w-0 space-y-1">
-                    <Select
-                      value={implantManufacturer}
-                      onValueChange={(value) => {
-                        setImplantManufacturer(value);
-                        setImplantSystem("");
-                        setImplantType("");
-                        syncSelectedConnection(value, "", "");
-                        setCaseInfos({
-                          implantSystem: value,
-                          implantType: "",
-                          connectionType: "",
-                        });
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="제조사" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[
-                          ...new Set(connections.map((c) => c.manufacturer)),
-                        ].map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {m}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="min-w-0 space-y-1">
-                    <Select
-                      value={implantSystem}
-                      onValueChange={(value) => {
-                        setImplantSystem(value);
-                        setImplantType("");
-                        syncSelectedConnection(implantManufacturer, value, "");
-                        setCaseInfos({
-                          implantType: value,
-                          connectionType: "",
-                        });
-                      }}
-                      disabled={!implantManufacturer}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="시스템" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {[
-                          ...new Set(
-                            connections
-                              .filter(
-                                (c) => c.manufacturer === implantManufacturer
-                              )
-                              .map((c) => c.system)
-                          ),
-                        ].map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {s}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="min-w-0 space-y-1">
-                    <Select
-                      value={implantType}
-                      onValueChange={(value) => {
-                        setImplantType(value);
-                        syncSelectedConnection(
-                          implantManufacturer,
-                          implantSystem,
-                          value
-                        );
-                        setCaseInfos({
-                          connectionType: value,
-                        });
-                      }}
-                      disabled={!implantSystem}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="유형" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {typeOptions.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {t}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <NewRequestPatientImplantFields
+            caseInfos={caseInfos}
+            setCaseInfos={setCaseInfos}
+            showImplantSelect={showImplantSelect}
+            connections={connections}
+            typeOptions={typeOptions}
+            implantManufacturer={implantManufacturer}
+            setImplantManufacturer={setImplantManufacturer}
+            implantSystem={implantSystem}
+            setImplantSystem={setImplantSystem}
+            implantType={implantType}
+            setImplantType={setImplantType}
+            syncSelectedConnection={syncSelectedConnection}
+            clinicNameOptions={clinicNameOptions}
+            patientNameOptions={patientNameOptions}
+            teethOptions={teethOptions}
+            addClinicPreset={addClinicPreset}
+            clearAllClinicPresets={clearAllClinicPresets}
+            addPatientPreset={addPatientPreset}
+            clearAllPatientPresets={clearAllPatientPresets}
+            addTeethPreset={addTeethPreset}
+            clearAllTeethPresets={clearAllTeethPresets}
+            handleAddOrSelectClinic={handleAddOrSelectClinic}
+          />
 
           <div className="space-y-4">
             <div>

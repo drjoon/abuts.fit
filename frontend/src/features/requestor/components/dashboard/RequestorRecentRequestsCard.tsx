@@ -13,7 +13,9 @@ import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Input } from "@/components/ui/input";
+import { useNewRequestImplant } from "@/features/requestor/hooks/new_requests/useNewRequestImplant";
+import { usePresetStorage } from "@/features/requestor/hooks/new_requests/usePresetStorage";
+import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestDetailsSection";
 
 const EDITABLE_STATUSES = new Set(["의뢰접수", "가공전"]);
 
@@ -57,6 +59,50 @@ export const RequestorRecentRequestsCard = ({
   const [savingEdit, setSavingEdit] = useState(false);
   const [editCaseInfos, setEditCaseInfos] = useState<any>(null);
 
+  const {
+    connections,
+    implantManufacturer,
+    setImplantManufacturer,
+    implantSystem,
+    setImplantSystem,
+    implantType,
+    setImplantType,
+    syncSelectedConnection,
+    typeOptions,
+  } = useNewRequestImplant({
+    token: token || null,
+    clinicName: editCaseInfos?.clinicName,
+  });
+
+  const {
+    presets: clinicPresets,
+    addPreset: addClinicPreset,
+    clearAllPresets: clearAllClinicPresets,
+  } = usePresetStorage("clinic-names");
+  const {
+    presets: patientPresets,
+    addPreset: addPatientPreset,
+    clearAllPresets: clearAllPatientPresets,
+  } = usePresetStorage("patient-names");
+  const {
+    presets: teethPresets,
+    addPreset: addTeethPreset,
+    clearAllPresets: clearAllTeethPresets,
+  } = usePresetStorage("teeth-numbers");
+
+  const clinicNameOptions = useMemo(
+    () => clinicPresets.map((p) => ({ id: p.id, label: p.label })),
+    [clinicPresets]
+  );
+  const patientNameOptions = useMemo(
+    () => patientPresets.map((p) => ({ id: p.id, label: p.label })),
+    [patientPresets]
+  );
+  const teethOptions = useMemo(
+    () => teethPresets.map((p) => ({ id: p.id, label: p.label })),
+    [teethPresets]
+  );
+
   const handleCancelRequest = async (requestId: string) => {
     if (!requestId) return;
     await Promise.resolve(onCancel(requestId));
@@ -97,14 +143,24 @@ export const RequestorRecentRequestsCard = ({
 
     const base = resolveCurrentCaseInfos();
     setEditCaseInfos({
+      clinicName: base.clinicName || "",
       patientName: base.patientName || "",
       tooth: base.tooth || "",
       implantSystem: base.implantSystem || "",
       implantType: base.implantType || "",
       connectionType: base.connectionType || "",
-      maxDiameter: base.maxDiameter,
-      connectionDiameter: base.connectionDiameter,
     });
+
+    // 임플란트 셀렉트 기본값 동기화
+    setImplantManufacturer(base.implantSystem || "");
+    setImplantSystem(base.implantType || "");
+    setImplantType(base.connectionType || "");
+    syncSelectedConnection(
+      base.implantSystem || "",
+      base.implantType || "",
+      base.connectionType || ""
+    );
+
     setEditMode(true);
   };
 
@@ -134,20 +190,16 @@ export const RequestorRecentRequestsCard = ({
       setSavingEdit(true);
 
       const base = resolveCurrentCaseInfos();
+
+      // maxDiameter/connectionDiameter는 모달에서 변경 불가 (기존 값 유지)
+      const cleanedEdit = { ...(editCaseInfos || {}) };
+      delete cleanedEdit.maxDiameter;
+      delete cleanedEdit.connectionDiameter;
+
       const payload = {
         caseInfos: {
           ...base,
-          ...(editCaseInfos || {}),
-          maxDiameter:
-            editCaseInfos?.maxDiameter === "" ||
-            editCaseInfos?.maxDiameter == null
-              ? undefined
-              : Number(editCaseInfos.maxDiameter),
-          connectionDiameter:
-            editCaseInfos?.connectionDiameter === "" ||
-            editCaseInfos?.connectionDiameter == null
-              ? undefined
-              : Number(editCaseInfos.connectionDiameter),
+          ...cleanedEdit,
         },
       };
 
@@ -431,95 +483,55 @@ export const RequestorRecentRequestsCard = ({
 
                     {editMode ? (
                       <div className="pt-4 space-y-3">
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input
-                            value={editCaseInfos?.patientName ?? ""}
-                            onChange={(e) =>
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                patientName: e.target.value,
-                              }))
+                        <NewRequestPatientImplantFields
+                          caseInfos={editCaseInfos || {}}
+                          setCaseInfos={(updates) => {
+                            setEditCaseInfos((prev: any) => ({
+                              ...(prev || {}),
+                              ...updates,
+                            }));
+
+                            // NewRequestPatientImplantFields 내부 매핑을 따라가되,
+                            // 셀렉트 UI state도 같이 동기화해서 UX 일관성 유지
+                            if (typeof updates.implantSystem === "string") {
+                              setImplantManufacturer(updates.implantSystem);
                             }
-                            placeholder="환자명"
-                            disabled={savingEdit || loadingDetail}
-                          />
-                          <Input
-                            value={editCaseInfos?.tooth ?? ""}
-                            onChange={(e) =>
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                tooth: e.target.value,
-                              }))
+                            if (typeof updates.implantType === "string") {
+                              setImplantSystem(updates.implantType);
                             }
-                            placeholder="치아번호"
-                            disabled={savingEdit || loadingDetail}
-                          />
-                          <Input
-                            value={editCaseInfos?.implantSystem ?? ""}
-                            onChange={(e) =>
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                implantSystem: e.target.value,
-                              }))
+                            if (typeof updates.connectionType === "string") {
+                              setImplantType(updates.connectionType);
                             }
-                            placeholder="임플란트 시스템"
-                            disabled={savingEdit || loadingDetail}
-                          />
-                          <Input
-                            value={editCaseInfos?.implantType ?? ""}
-                            onChange={(e) =>
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                implantType: e.target.value,
-                              }))
-                            }
-                            placeholder="임플란트 타입"
-                            disabled={savingEdit || loadingDetail}
-                          />
-                          <Input
-                            value={editCaseInfos?.connectionType ?? ""}
-                            onChange={(e) =>
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                connectionType: e.target.value,
-                              }))
-                            }
-                            placeholder="커넥션"
-                            disabled={savingEdit || loadingDetail}
-                          />
-                          <Input
-                            value={
-                              editCaseInfos?.maxDiameter == null
-                                ? ""
-                                : String(editCaseInfos.maxDiameter)
-                            }
-                            onChange={(e) =>
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                maxDiameter: e.target.value,
-                              }))
-                            }
-                            placeholder="최대 직경"
-                            inputMode="decimal"
-                            disabled={savingEdit || loadingDetail}
-                          />
-                          <Input
-                            value={
-                              editCaseInfos?.connectionDiameter == null
-                                ? ""
-                                : String(editCaseInfos.connectionDiameter)
-                            }
-                            onChange={(e) =>
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                connectionDiameter: e.target.value,
-                              }))
-                            }
-                            placeholder="커넥션 직경"
-                            inputMode="decimal"
-                            disabled={savingEdit || loadingDetail}
-                          />
-                        </div>
+                          }}
+                          showImplantSelect={true}
+                          connections={connections as any}
+                          typeOptions={typeOptions}
+                          implantManufacturer={implantManufacturer}
+                          setImplantManufacturer={setImplantManufacturer}
+                          implantSystem={implantSystem}
+                          setImplantSystem={setImplantSystem}
+                          implantType={implantType}
+                          setImplantType={setImplantType}
+                          syncSelectedConnection={syncSelectedConnection}
+                          clinicNameOptions={clinicNameOptions}
+                          patientNameOptions={patientNameOptions}
+                          teethOptions={teethOptions}
+                          addClinicPreset={addClinicPreset}
+                          clearAllClinicPresets={clearAllClinicPresets}
+                          addPatientPreset={addPatientPreset}
+                          clearAllPatientPresets={clearAllPatientPresets}
+                          addTeethPreset={addTeethPreset}
+                          clearAllTeethPresets={clearAllTeethPresets}
+                          handleAddOrSelectClinic={(label) => {
+                            const next = (label || "").trim();
+                            if (!next) return;
+                            setEditCaseInfos((prev: any) => ({
+                              ...(prev || {}),
+                              clinicName: next,
+                            }));
+                            addClinicPreset(next);
+                          }}
+                        />
 
                         <div className="flex justify-end gap-2">
                           <Button
