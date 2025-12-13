@@ -366,20 +366,23 @@ export const ExpandedRequestCard = ({
                     const caseInfos = request.caseInfos || {};
                     const spec = request.specifications || {}; // Legacy
 
+                    const implantManufacturer =
+                      caseInfos.implantManufacturer ||
+                      spec.implantManufacturer ||
+                      spec.implantCompany ||
+                      request.implantManufacturer;
                     const implantSystem =
                       caseInfos.implantSystem ||
                       spec.implantSystem ||
-                      spec.implantCompany ||
-                      request.implantManufacturer;
+                      spec.implantProduct ||
+                      request.implantSystem;
                     const implantType =
                       caseInfos.implantType ||
                       spec.implantType ||
-                      spec.implantProduct ||
-                      request.implantType;
-                    const connectionType =
-                      caseInfos.connectionType ||
                       spec.connectionType ||
-                      spec.connection;
+                      spec.connection ||
+                      request.implantType;
+
                     const maxDiameter =
                       caseInfos.maxDiameter ??
                       spec.maxDiameter ??
@@ -390,9 +393,9 @@ export const ExpandedRequestCard = ({
                       request.connectionDiameter;
 
                     if (
+                      !implantManufacturer &&
                       !implantSystem &&
                       !implantType &&
-                      !connectionType &&
                       maxDiameter == null &&
                       connectionDiameter == null
                     ) {
@@ -403,17 +406,21 @@ export const ExpandedRequestCard = ({
                       <>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground text-xs w-20">
-                            시스템/타입
+                            제조사
                           </span>
-                          <span>
-                            {implantSystem || ""} / {implantType || ""}
-                          </span>
+                          <span>{implantManufacturer || "-"}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground text-xs w-20">
-                            커넥션
+                            시스템
                           </span>
-                          <span>{connectionType || "-"}</span>
+                          <span>{implantSystem || "-"}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground text-xs w-20">
+                            유형
+                          </span>
+                          <span>{implantType || "-"}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground text-xs w-20">

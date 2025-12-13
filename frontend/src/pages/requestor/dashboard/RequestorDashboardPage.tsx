@@ -116,10 +116,9 @@ export const RequestorDashboardPage = () => {
         "",
       patientName: ci.patientName || request.patientName || "",
       teethText: ci.tooth || request.toothNumber || request.tooth || "",
-      implantManufacturer:
-        ci.implantSystem || request.implantManufacturer || "",
-      implantSystem: ci.implantType || request.implantSystem || "",
-      implantType: ci.connectionType || request.implantType || "",
+      implantManufacturer: request.implantManufacturer || "",
+      implantSystem: request.implantSystem || "",
+      implantType: request.implantType || "",
     });
 
     setEditingDescription(request.description || "");
@@ -132,10 +131,10 @@ export const RequestorDashboardPage = () => {
     setEditingPatientName(ci.patientName || request.patientName || "");
     setEditingTeethText(ci.tooth || request.toothNumber || request.tooth || "");
     setEditingImplantManufacturer(
-      ci.implantSystem || request.implantManufacturer || ""
+      ci.implantManufacturer || request.implantManufacturer || ""
     );
-    setEditingImplantSystem(ci.implantType || request.implantSystem || "");
-    setEditingImplantType(ci.connectionType || request.implantType || "");
+    setEditingImplantSystem(ci.implantSystem || request.implantSystem || "");
+    setEditingImplantType(ci.implantType || request.implantType || "");
   };
 
   const cancelRequest = async (requestId: string) => {

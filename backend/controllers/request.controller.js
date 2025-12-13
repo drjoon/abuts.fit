@@ -2,6 +2,7 @@ import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
 import DraftRequest from "../models/draftRequest.model.js";
 import ClinicImplantPreset from "../models/clinicImplantPreset.model.js";
+import Connection from "../models/connection.model.js";
 import { Types } from "mongoose";
 
 // status(단일 필드)를 status1/status2와 동기화하는 헬퍼
@@ -48,6 +49,85 @@ function applyStatusMapping(requestDoc, statusValue) {
   requestDoc.status = status;
   requestDoc.status1 = status1;
   requestDoc.status2 = status2;
+}
+
+async function normalizeCaseInfosImplantFields(caseInfos) {
+  const ci = caseInfos && typeof caseInfos === "object" ? { ...caseInfos } : {};
+
+  const manufacturer = (ci.implantManufacturer || "").trim();
+  const system = (ci.implantSystem || "").trim();
+  const type = (ci.implantType || "").trim();
+  const legacyConnectionType = (ci.connectionType || "").trim();
+  delete ci.connectionType;
+
+  // 이미 신 스키마가 완성되어 있으면 그대로
+  if (manufacturer && system && type) {
+    return {
+      ...ci,
+      implantManufacturer: manufacturer,
+      implantSystem: system,
+      implantType: type,
+    };
+  }
+
+  // 레거시(밀린 값) 케이스를 최대한 복원
+  // - 과거: implantSystem=제조사, implantType=시스템, connectionType=유형
+  // - 현재 문제 데이터: implantSystem=시스템(Regular), implantType=유형(Hex), connectionType=유형(Hex)
+  const candidateManufacturer = manufacturer || "";
+  const rawA = system; // implantSystem
+  const rawB = type || legacyConnectionType; // implantType 우선
+
+  // 1) 과거 스키마(implantSystem=제조사)로 들어온 경우
+  //    제조사가 비어 있고 connectionType이 있는 경우가 많음
+  if (!candidateManufacturer && system && legacyConnectionType && !type) {
+    return {
+      ...ci,
+      implantManufacturer: system,
+      implantSystem: (ci.implantType || "").trim(),
+      implantType: legacyConnectionType,
+    };
+  }
+
+  // 2) connections DB로 복원 시도 (system/type 조합으로 manufacturer 찾기)
+  //    - (Regular, Hex) 같은 조합이 manufacturer별로 중복될 수 있으나,
+  //      기존 데이터가 밀린 상태라면 manufacturer가 없으므로 첫 매칭을 사용한다.
+  if (!candidateManufacturer && rawA && rawB) {
+    const found = await Connection.findOne({
+      isActive: true,
+      system: rawA,
+      type: rawB,
+    })
+      .select({ manufacturer: 1, system: 1, type: 1 })
+      .lean();
+
+    if (found) {
+      return {
+        ...ci,
+        implantManufacturer: found.manufacturer,
+        implantSystem: found.system,
+        implantType: found.type,
+      };
+    }
+  }
+
+  // 3) 마지막 fallback: 있는 값들을 최대한 채움
+  return {
+    ...ci,
+    implantManufacturer: candidateManufacturer,
+    implantSystem: rawA,
+    implantType: rawB,
+  };
+}
+
+async function normalizeRequestForResponse(requestDoc) {
+  if (!requestDoc) return requestDoc;
+  const obj =
+    typeof requestDoc.toObject === "function"
+      ? requestDoc.toObject()
+      : requestDoc;
+  const ci = obj.caseInfos || {};
+  obj.caseInfos = await normalizeCaseInfosImplantFields(ci);
+  return obj;
 }
 
 // 가공 시작 시점에 로트넘버(lotNumber)를 부여하는 헬퍼
@@ -220,9 +300,14 @@ async function createRequest(req, res) {
           });
         }
 
-        const implantSystem = (caseInfos.implantSystem || "").trim();
-        const implantType = (caseInfos.implantType || "").trim();
-        const connectionType = (caseInfos.connectionType || "").trim();
+        const normalizedCaseInfos = await normalizeCaseInfosImplantFields(
+          caseInfos
+        );
+        const implantManufacturer = (
+          normalizedCaseInfos.implantManufacturer || ""
+        ).trim();
+        const implantSystem = (normalizedCaseInfos.implantSystem || "").trim();
+        const implantType = (normalizedCaseInfos.implantType || "").trim();
 
         if (!patientName || !tooth || !clinicName) {
           return res.status(400).json({
@@ -231,11 +316,11 @@ async function createRequest(req, res) {
           });
         }
 
-        if (!implantSystem || !implantType || !connectionType) {
+        if (!implantManufacturer || !implantSystem || !implantType) {
           return res.status(400).json({
             success: false,
             message:
-              "커스텀 어벗 의뢰의 경우 임플란트 시스템/타입/커넥션은 모두 필수입니다.",
+              "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
           });
         }
 
@@ -248,7 +333,7 @@ async function createRequest(req, res) {
 
         const newRequest = new Request({
           ...rest,
-          caseInfos,
+          caseInfos: normalizedCaseInfos,
           requestor: req.user._id,
           price: computedPrice,
         });
@@ -333,9 +418,14 @@ async function createRequest(req, res) {
       });
     }
 
-    const implantSystem = (caseInfos.implantSystem || "").trim();
-    const implantType = (caseInfos.implantType || "").trim();
-    const connectionType = (caseInfos.connectionType || "").trim();
+    const normalizedCaseInfos = await normalizeCaseInfosImplantFields(
+      caseInfos
+    );
+    const implantManufacturer = (
+      normalizedCaseInfos.implantManufacturer || ""
+    ).trim();
+    const implantSystem = (normalizedCaseInfos.implantSystem || "").trim();
+    const implantType = (normalizedCaseInfos.implantType || "").trim();
 
     if (!patientName || !tooth || !clinicName) {
       return res.status(400).json({
@@ -344,11 +434,11 @@ async function createRequest(req, res) {
       });
     }
 
-    if (!implantSystem || !implantType || !connectionType) {
+    if (!implantManufacturer || !implantSystem || !implantType) {
       return res.status(400).json({
         success: false,
         message:
-          "커스텀 어벗 의뢰의 경우 임플란트 시스템/타입/커넥션은 모두 필수입니다.",
+          "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
       });
     }
 
@@ -361,7 +451,7 @@ async function createRequest(req, res) {
 
     const newRequest = new Request({
       ...bodyRest,
-      caseInfos,
+      caseInfos: normalizedCaseInfos,
       requestor: req.user._id,
       price: computedPrice,
     });
@@ -370,19 +460,19 @@ async function createRequest(req, res) {
 
     await newRequest.save();
 
-    const hasImplantSystem =
-      typeof caseInfos.implantSystem === "string" &&
-      caseInfos.implantSystem.trim();
+    const hasManufacturer =
+      typeof normalizedCaseInfos.implantManufacturer === "string" &&
+      normalizedCaseInfos.implantManufacturer.trim();
 
-    if (hasImplantSystem) {
+    if (hasManufacturer) {
       try {
         await ClinicImplantPreset.findOneAndUpdate(
           {
             requestor: req.user._id,
             clinicName: caseInfos.clinicName || "",
-            manufacturer: caseInfos.implantSystem,
-            system: caseInfos.implantType,
-            type: caseInfos.connectionType,
+            manufacturer: normalizedCaseInfos.implantManufacturer,
+            system: normalizedCaseInfos.implantSystem,
+            type: normalizedCaseInfos.implantType,
           },
           {
             $inc: { useCount: 1 },
@@ -455,6 +545,8 @@ async function cloneRequestToDraft(req, res) {
     const ci = request.caseInfos || {};
     const file = ci.file || {};
 
+    const normalizedCi = await normalizeCaseInfosImplantFields(ci);
+
     const draftCaseInfo = {
       file: file.s3Key
         ? {
@@ -467,9 +559,9 @@ async function cloneRequestToDraft(req, res) {
       clinicName: ci.clinicName,
       patientName: ci.patientName,
       tooth: ci.tooth,
-      implantSystem: ci.implantSystem,
-      implantType: ci.implantType,
-      connectionType: ci.connectionType,
+      implantManufacturer: normalizedCi.implantManufacturer,
+      implantSystem: normalizedCi.implantSystem,
+      implantType: normalizedCi.implantType,
       maxDiameter: ci.maxDiameter,
       connectionDiameter: ci.connectionDiameter,
       workType: ci.workType,
@@ -577,6 +669,8 @@ async function createRequestsFromDraft(req, res) {
     for (let idx = 0; idx < abutmentCases.length; idx++) {
       const ci = abutmentCases[idx] || {};
 
+      const normalizedCi = await normalizeCaseInfosImplantFields(ci);
+
       const patientName = (ci.patientName || "").trim();
       const tooth = (ci.tooth || "").trim();
       const clinicName = (ci.clinicName || "").trim();
@@ -585,9 +679,11 @@ async function createRequestsFromDraft(req, res) {
       // 안전장치: 여기까지 온 케이스는 모두 abutment 여야 함
       if (workType !== "abutment") continue;
 
-      const implantSystem = (ci.implantSystem || "").trim();
-      const implantType = (ci.implantType || "").trim();
-      const connectionType = (ci.connectionType || "").trim();
+      const implantManufacturer = (
+        normalizedCi.implantManufacturer || ""
+      ).trim();
+      const implantSystem = (normalizedCi.implantSystem || "").trim();
+      const implantType = (normalizedCi.implantType || "").trim();
 
       // 배송 정보 (없으면 기본값 normal)
       const shippingMode = ci.shippingMode === "express" ? "express" : "normal";
@@ -598,6 +694,10 @@ async function createRequestsFromDraft(req, res) {
       if (!clinicName) missing.push("치과이름");
       if (!patientName) missing.push("환자이름");
       if (!tooth) missing.push("치아번호");
+
+      if (!implantManufacturer) missing.push("임플란트 제조사");
+      if (!implantSystem) missing.push("임플란트 시스템");
+      if (!implantType) missing.push("임플란트 유형");
 
       if (missing.length > 0) {
         const fileName = ci.file?.originalName || `파일 ${idx + 1}`;
@@ -617,7 +717,7 @@ async function createRequestsFromDraft(req, res) {
 
       const caseInfosWithFile = ci.file
         ? {
-            ...ci,
+            ...normalizedCi,
             file: {
               fileName: ci.file.originalName,
               fileType: ci.file.mimetype,
@@ -913,9 +1013,10 @@ async function getRequestById(req, res) {
       });
     }
 
+    const normalized = await normalizeRequestForResponse(request);
     res.status(200).json({
       success: true,
-      data: request,
+      data: normalized,
     });
   } catch (error) {
     res.status(500).json({
@@ -981,6 +1082,25 @@ async function updateRequest(req, res) {
       });
     }
 
+    if (
+      updateData &&
+      updateData.caseInfos &&
+      typeof updateData.caseInfos === "object"
+    ) {
+      // 레거시 connectionType이 넘어오면 implantType으로 흡수
+      if (
+        typeof updateData.caseInfos.connectionType === "string" &&
+        !updateData.caseInfos.implantType
+      ) {
+        updateData.caseInfos.implantType = updateData.caseInfos.connectionType;
+      }
+      delete updateData.caseInfos.connectionType;
+
+      updateData.caseInfos = await normalizeCaseInfosImplantFields(
+        updateData.caseInfos
+      );
+    }
+
     // 의뢰 수정
     const updatedRequest = await Request.findByIdAndUpdate(
       requestId,
@@ -988,10 +1108,12 @@ async function updateRequest(req, res) {
       { new: true, runValidators: true }
     );
 
+    const normalized = await normalizeRequestForResponse(updatedRequest);
+
     res.status(200).json({
       success: true,
       message: "의뢰가 성공적으로 수정되었습니다.",
-      data: updatedRequest,
+      data: normalized,
     });
   } catch (error) {
     res.status(500).json({
@@ -1462,31 +1584,34 @@ async function getMyDashboardSummary(req, res) {
 
     const diameterStats = computeDiameterStats(abutmentRequests);
 
-    const recentRequests = abutmentRequests
-      .slice()
-      .sort((a, b) => {
-        const aDate = new Date(a.createdAt || a.updatedAt || 0).getTime();
-        const bDate = new Date(b.createdAt || b.updatedAt || 0).getTime();
-        return bDate - aDate;
-      })
-      .slice(0, 5)
-      .map((r) => {
-        const ci = r.caseInfos || {};
-        return {
-          // 기본 식별자
-          _id: r._id,
-          requestId: r.requestId,
-          // 표시용 필드
-          title: r.title,
-          status: r.status,
-          date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
-          // 편집 다이얼로그에서 사용할 세부 정보
-          patientName: ci.patientName || "",
-          tooth: ci.tooth || "",
-          caseInfos: ci,
-          requestor: r.requestor || null,
-        };
-      });
+    const recentRequests = await Promise.all(
+      abutmentRequests
+        .slice()
+        .sort((a, b) => {
+          const aDate = new Date(a.createdAt || a.updatedAt || 0).getTime();
+          const bDate = new Date(b.createdAt || b.updatedAt || 0).getTime();
+          return bDate - aDate;
+        })
+        .slice(0, 5)
+        .map(async (r) => {
+          const ci = r.caseInfos || {};
+          const normalizedCi = await normalizeCaseInfosImplantFields(ci);
+          return {
+            // 기본 식별자
+            _id: r._id,
+            requestId: r.requestId,
+            // 표시용 필드
+            title: r.title,
+            status: r.status,
+            date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
+            // 편집 다이얼로그에서 사용할 세부 정보
+            patientName: ci.patientName || "",
+            tooth: ci.tooth || "",
+            caseInfos: normalizedCi,
+            requestor: r.requestor || null,
+          };
+        })
+    );
 
     return res.status(200).json({
       success: true,

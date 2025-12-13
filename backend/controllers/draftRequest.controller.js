@@ -1,8 +1,58 @@
 import { Types } from "mongoose";
 import DraftRequest from "../models/draftRequest.model.js";
+import Connection from "../models/connection.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
+
+async function normalizeCaseInfosImplantFields(caseInfos) {
+  const ci = caseInfos && typeof caseInfos === "object" ? { ...caseInfos } : {};
+
+  const manufacturer = (ci.implantManufacturer || "").trim();
+  const system = (ci.implantSystem || "").trim();
+  const type = (ci.implantType || "").trim();
+  const legacyConnectionType = (ci.connectionType || "").trim();
+  delete ci.connectionType;
+
+  if (manufacturer && system && type) {
+    return {
+      ...ci,
+      implantManufacturer: manufacturer,
+      implantSystem: system,
+      implantType: type,
+    };
+  }
+
+  const rawA = system;
+  const rawB = type || legacyConnectionType;
+
+  if (!manufacturer && rawA && rawB) {
+    const found = await Connection.findOne({
+      isActive: true,
+      system: rawA,
+      type: rawB,
+    })
+      .select({ manufacturer: 1, system: 1, type: 1 })
+      .lean();
+
+    if (found) {
+      return {
+        ...ci,
+        implantManufacturer: found.manufacturer,
+        implantSystem: found.system,
+        implantType: found.type,
+      };
+    }
+  }
+
+  // fallback
+  return {
+    ...ci,
+    implantManufacturer: manufacturer,
+    implantSystem: rawA,
+    implantType: rawB,
+  };
+}
 
 // 새 드래프트 생성
 export const createDraft = asyncHandler(async (req, res) => {
@@ -14,10 +64,15 @@ export const createDraft = asyncHandler(async (req, res) => {
 
   const draft = await DraftRequest.create({
     requestor: req.user._id,
-    caseInfos: normalizedCaseInfos.map((ci) => ({
-      ...ci,
-      workType: (ci && ci.workType) || "abutment",
-    })),
+    caseInfos: await Promise.all(
+      normalizedCaseInfos.map(async (ci) => {
+        const normalized = await normalizeCaseInfosImplantFields(ci);
+        return {
+          ...normalized,
+          workType: (ci && ci.workType) || "abutment",
+        };
+      })
+    ),
   });
 
   return res
@@ -110,10 +165,20 @@ export const updateDraft = asyncHandler(async (req, res) => {
         };
       });
 
+      const normalizedCaseInfos = await Promise.all(
+        newCaseInfos.map(async (ci) => {
+          const normalized = await normalizeCaseInfosImplantFields(ci);
+          return {
+            ...ci,
+            ...normalized,
+          };
+        })
+      );
+
       // findByIdAndUpdate로 원자적 업데이트
       updatedDraft = await DraftRequest.findByIdAndUpdate(
         id,
-        { caseInfos: newCaseInfos },
+        { caseInfos: normalizedCaseInfos },
         { new: true, runValidators: false }
       );
 
@@ -197,9 +262,12 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     clinicName,
     patientName,
     tooth,
-    implantSystem,
-    implantType,
-    connectionType,
+    ...(await normalizeCaseInfosImplantFields({
+      implantManufacturer: req.body.implantManufacturer,
+      implantSystem,
+      implantType,
+      connectionType,
+    })),
     maxDiameter,
     connectionDiameter,
     workType,

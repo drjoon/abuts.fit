@@ -35,9 +35,9 @@ const draftCaseSchema = new mongoose.Schema(
         clinicName: String,
         patientName: String,
         tooth: String,
+        implantManufacturer: String,
         implantSystem: String,
         implantType: String,
-        connectionType: String,
         maxDiameter: Number,
         connectionDiameter: Number,
         workType: {

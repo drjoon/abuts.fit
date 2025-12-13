@@ -7,9 +7,9 @@ export type UseNewRequestImplantParams = {
   token: string | null;
   clinicName?: string;
   onDefaultImplantChange?: (fields: {
+    implantManufacturer: string;
     implantSystem: string;
     implantType: string;
-    connectionType: string;
   }) => void;
 };
 
@@ -138,10 +138,9 @@ export const useNewRequestImplant = ({
         // 기본 임플란트가 설정되었을 때 caseInfos에도 반영
         if (onDefaultImplantChange) {
           onDefaultImplantChange({
-            // backend 스키마 기준: implantSystem = manufacturer, implantType = system, connectionType = type
-            implantSystem: nextManufacturer,
-            implantType: nextSystem,
-            connectionType: nextType,
+            implantManufacturer: nextManufacturer,
+            implantSystem: nextSystem,
+            implantType: nextType,
           });
         }
       } catch {}

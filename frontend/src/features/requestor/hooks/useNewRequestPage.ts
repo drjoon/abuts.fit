@@ -213,10 +213,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         // clinicName + favorite 임플란트 정보 함께 업데이트
         const updates: any = { clinicName: trimmedName };
         if (favorite) {
+          updates.implantManufacturer = favorite.manufacturer;
           updates.implantSystem = favorite.system;
           updates.implantType = favorite.type;
-          updates.connectionType =
-            favorite.manufacturer === "OSSTEM" ? "Hex" : "Hex"; // TODO: 연결타입 매핑
         }
 
         // updateCaseInfos 호출 (로컬 상태 + 디바운스된 PATCH)

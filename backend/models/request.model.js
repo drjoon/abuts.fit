@@ -26,9 +26,9 @@ const requestSchema = new mongoose.Schema(
       clinicName: String,
       patientName: String,
       tooth: String,
-      implantSystem: String, // e.g. OSSTEM, Straumann (implantCompany)
-      implantType: String, // e.g. Regular, Bone Level RC (implantProduct)
-      connectionType: String, // e.g. Hex, Non-hex
+      implantManufacturer: String, // e.g. OSSTEM, Straumann (manufacturer)
+      implantSystem: String, // e.g. Regular, Bone Level RC (system)
+      implantType: String, // e.g. Hex, Non-hex (type)
       maxDiameter: Number,
       connectionDiameter: Number,
       workType: String,

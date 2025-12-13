@@ -25,6 +25,7 @@ type PatientImplantFieldsProps = {
   setCaseInfos: (updates: Partial<CaseInfos>) => void;
   showImplantSelect: boolean;
   readOnly?: boolean;
+  implantSelectSource?: "hook" | "caseInfos";
   connections: Array<{ manufacturer: string; system: string }>;
   typeOptions: string[];
   implantManufacturer: string;
@@ -55,6 +56,7 @@ export function NewRequestPatientImplantFields({
   setCaseInfos,
   showImplantSelect,
   readOnly,
+  implantSelectSource = "hook",
   connections,
   typeOptions,
   implantManufacturer,
@@ -75,6 +77,37 @@ export function NewRequestPatientImplantFields({
   clearAllTeethPresets,
   handleAddOrSelectClinic,
 }: PatientImplantFieldsProps) {
+  const currentManufacturer =
+    implantSelectSource === "caseInfos"
+      ? caseInfos?.implantManufacturer || ""
+      : implantManufacturer;
+  const currentSystem =
+    implantSelectSource === "caseInfos"
+      ? caseInfos?.implantSystem || ""
+      : implantSystem;
+  const currentType =
+    implantSelectSource === "caseInfos"
+      ? caseInfos?.implantType || ""
+      : implantType;
+
+  const currentTypeOptions = useMemo(() => {
+    if (implantSelectSource !== "caseInfos") return typeOptions;
+    return (connections as any[])
+      .filter(
+        (c) =>
+          (!currentManufacturer || c.manufacturer === currentManufacturer) &&
+          (!currentSystem || c.system === currentSystem)
+      )
+      .map((c) => c.type as string)
+      .filter((v, idx, arr) => arr.indexOf(v) === idx);
+  }, [
+    implantSelectSource,
+    connections,
+    currentManufacturer,
+    currentSystem,
+    typeOptions,
+  ]);
+
   return (
     <>
       <div className="">
@@ -212,74 +245,122 @@ export function NewRequestPatientImplantFields({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px] md:text-[11px]">
               <div className="min-w-0 space-y-1">
                 <Select
-                  value={implantManufacturer}
+                  value={currentManufacturer}
                   onValueChange={(value) => {
                     if (readOnly) return;
+                    if (implantSelectSource === "caseInfos") {
+                      setCaseInfos({
+                        implantManufacturer: value,
+                        implantSystem: "",
+                        implantType: "",
+                      });
+                      syncSelectedConnection(value, "", "");
+                      return;
+                    }
+
                     setImplantManufacturer(value);
                     setImplantSystem("");
                     setImplantType("");
                     syncSelectedConnection(value, "", "");
                     setCaseInfos({
-                      implantSystem: value,
+                      implantManufacturer: value,
+                      implantSystem: "",
                       implantType: "",
-                      connectionType: "",
                     });
                   }}
                 >
                   <SelectTrigger disabled={readOnly}>
-                    <SelectValue placeholder="제조사" />
+                    <SelectValue placeholder="임플란트제조사" />
                   </SelectTrigger>
                   <SelectContent>
-                    {[...new Set(connections.map((c) => c.manufacturer))].map(
-                      (m) => (
+                    {(() => {
+                      const base = [
+                        ...new Set(connections.map((c) => c.manufacturer)),
+                      ];
+                      const list =
+                        currentManufacturer &&
+                        !base.includes(currentManufacturer)
+                          ? [currentManufacturer, ...base]
+                          : base;
+                      return list.map((m) => (
                         <SelectItem key={m} value={m}>
                           {m}
                         </SelectItem>
-                      )
-                    )}
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="min-w-0 space-y-1">
                 <Select
-                  value={implantSystem}
+                  value={currentSystem}
                   onValueChange={(value) => {
                     if (readOnly) return;
+                    if (implantSelectSource === "caseInfos") {
+                      setCaseInfos({
+                        implantSystem: value,
+                        implantType: "",
+                      });
+                      syncSelectedConnection(currentManufacturer, value, "");
+                      return;
+                    }
+
                     setImplantSystem(value);
                     setImplantType("");
                     syncSelectedConnection(implantManufacturer, value, "");
                     setCaseInfos({
-                      implantType: value,
-                      connectionType: "",
+                      implantSystem: value,
+                      implantType: "",
                     });
                   }}
-                  disabled={readOnly || !implantManufacturer}
+                  disabled={readOnly || !currentManufacturer}
                 >
-                  <SelectTrigger disabled={readOnly || !implantManufacturer}>
+                  <SelectTrigger disabled={readOnly || !currentManufacturer}>
                     <SelectValue placeholder="시스템" />
                   </SelectTrigger>
                   <SelectContent>
-                    {[
-                      ...new Set(
-                        connections
-                          .filter((c) => c.manufacturer === implantManufacturer)
-                          .map((c) => c.system)
-                      ),
-                    ].map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
+                    {(() => {
+                      const base = [
+                        ...new Set(
+                          connections
+                            .filter(
+                              (c) => c.manufacturer === currentManufacturer
+                            )
+                            .map((c) => c.system)
+                        ),
+                      ];
+                      const list =
+                        currentSystem && !base.includes(currentSystem)
+                          ? [currentSystem, ...base]
+                          : base;
+                      return list.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="min-w-0 space-y-1">
                 <Select
-                  value={implantType}
+                  value={currentType}
                   onValueChange={(value) => {
                     if (readOnly) return;
+                    if (implantSelectSource === "caseInfos") {
+                      setCaseInfos({
+                        implantType: value,
+                      });
+                      syncSelectedConnection(
+                        currentManufacturer,
+                        currentSystem,
+                        value
+                      );
+                      return;
+                    }
+
                     setImplantType(value);
                     syncSelectedConnection(
                       implantManufacturer,
@@ -287,20 +368,27 @@ export function NewRequestPatientImplantFields({
                       value
                     );
                     setCaseInfos({
-                      connectionType: value,
+                      implantType: value,
                     });
                   }}
-                  disabled={readOnly || !implantSystem}
+                  disabled={readOnly || !currentSystem}
                 >
-                  <SelectTrigger disabled={readOnly || !implantSystem}>
-                    <SelectValue placeholder="타입" />
+                  <SelectTrigger disabled={readOnly || !currentSystem}>
+                    <SelectValue placeholder="유형" />
                   </SelectTrigger>
                   <SelectContent>
-                    {typeOptions.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
-                      </SelectItem>
-                    ))}
+                    {(() => {
+                      const base = currentTypeOptions || [];
+                      const list =
+                        currentType && !base.includes(currentType)
+                          ? [currentType, ...base]
+                          : base;
+                      return list.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t}
+                        </SelectItem>
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
               </div>
@@ -546,9 +634,9 @@ export function NewRequestDetailsSection({
 
                               updateCaseInfos(fileKey, {
                                 ...(fileInfoFromMap || {}),
-                                implantSystem: "OSSTEM",
-                                implantType: "Regular",
-                                connectionType: "Hex",
+                                implantManufacturer: "OSSTEM",
+                                implantSystem: "Regular",
+                                implantType: "Hex",
                               });
                             }
                           }}
@@ -698,9 +786,9 @@ export function NewRequestDetailsSection({
 
                             updateCaseInfos(fileKey, {
                               ...(fileInfoFromMap || {}),
-                              implantSystem: "OSSTEM",
-                              implantType: "Regular",
-                              connectionType: "Hex",
+                              implantManufacturer: "OSSTEM",
+                              implantSystem: "Regular",
+                              implantType: "Hex",
                             });
                           }
                         }}

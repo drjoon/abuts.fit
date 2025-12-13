@@ -14,9 +14,9 @@ export type CaseInfos = {
   clinicName?: string;
   patientName?: string;
   tooth?: string;
+  implantManufacturer?: string;
   implantSystem?: string;
   implantType?: string;
-  connectionType?: string;
   maxDiameter?: number;
   connectionDiameter?: number;
   workType?: string; // "abutment" | "crown" | "prosthesis"

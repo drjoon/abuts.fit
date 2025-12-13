@@ -99,14 +99,14 @@ export const NewRequestPage = () => {
 
     setFileVerificationStatus({});
 
-    // 환자/치과/치아 및 임플란트/배송 관련 caseInfos도 모두 초기화
+    // 환자/치과/치아 및 임플란트/배송
     setCaseInfos({
       clinicName: "",
       patientName: "",
       tooth: "",
+      implantManufacturer: "",
       implantSystem: "",
       implantType: "",
-      connectionType: "",
       maxDiameter: undefined,
       connectionDiameter: undefined,
       shippingMode: undefined,

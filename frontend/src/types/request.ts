@@ -6,6 +6,18 @@ export interface RequestUserSummary {
   organization?: string;
 }
 
+export interface RequestCaseInfos {
+  clinicName?: string;
+  patientName?: string;
+  tooth?: string;
+  implantManufacturer?: string;
+  implantSystem?: string;
+  implantType?: string;
+  maxDiameter?: number;
+  connectionDiameter?: number;
+  workType?: string;
+}
+
 // 프론트에서 공통으로 사용하는 의뢰 타입 (백엔드 Request 모델의 부분집합)
 export interface RequestBase {
   _id?: string; // Mongo ObjectId
@@ -23,17 +35,7 @@ export interface RequestBase {
   requestor?: RequestUserSummary;
 
   // 백엔드 Request.caseInfos 매핑 (단일 케이스 기준)
-  caseInfos?: {
-    clinicName?: string;
-    patientName?: string;
-    tooth?: string;
-    implantSystem?: string;
-    implantType?: string;
-    connectionType?: string;
-    maxDiameter?: number;
-    connectionDiameter?: number;
-    workType?: string;
-  };
+  caseInfos?: RequestCaseInfos;
 
   // 배송 요청 정보
   shippingMode?: "normal" | "express";

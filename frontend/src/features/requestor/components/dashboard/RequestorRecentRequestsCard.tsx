@@ -120,6 +120,88 @@ export const RequestorRecentRequestsCard = ({
     return EDITABLE_STATUSES.has(status);
   };
 
+  const normalizeImplantCaseInfos = (ci: any) => {
+    const rawManufacturer =
+      typeof ci?.implantSystem === "string" ? ci.implantSystem : "";
+    const rawSystem = typeof ci?.implantType === "string" ? ci.implantType : "";
+    const rawType =
+      typeof ci?.connectionType === "string" ? ci.connectionType : "";
+
+    if (!connections || connections.length === 0) {
+      return {
+        manufacturer: rawManufacturer,
+        system: rawSystem,
+        type: rawType,
+      };
+    }
+
+    const manufacturers = new Set(connections.map((c: any) => c.manufacturer));
+    const systems = new Set(connections.map((c: any) => c.system));
+    const types = new Set(connections.map((c: any) => c.type));
+
+    const direct = connections.find(
+      (c: any) =>
+        c.manufacturer === rawManufacturer &&
+        c.system === rawSystem &&
+        c.type === rawType
+    );
+    if (direct) {
+      return {
+        manufacturer: direct.manufacturer,
+        system: direct.system,
+        type: direct.type,
+      };
+    }
+
+    // case1) rawManufacturer 자리에 시스템이 들어간 케이스 (예: Regular / Hex / Hex)
+    if (!manufacturers.has(rawManufacturer) && systems.has(rawManufacturer)) {
+      let candidates = connections.filter(
+        (c: any) => c.system === rawManufacturer
+      );
+      if (rawSystem) {
+        candidates = candidates.filter((c: any) => c.type === rawSystem);
+      } else if (rawType) {
+        candidates = candidates.filter((c: any) => c.type === rawType);
+      }
+
+      const chosen = candidates[0];
+      if (chosen) {
+        return {
+          manufacturer: chosen.manufacturer,
+          system: chosen.system,
+          type: chosen.type,
+        };
+      }
+    }
+
+    // case2) 제조사는 맞는데 시스템/유형이 꼬인 케이스
+    if (manufacturers.has(rawManufacturer)) {
+      let candidates = connections.filter(
+        (c: any) => c.manufacturer === rawManufacturer
+      );
+      if (rawSystem && systems.has(rawSystem)) {
+        candidates = candidates.filter((c: any) => c.system === rawSystem);
+      }
+      if (rawType && types.has(rawType)) {
+        candidates = candidates.filter((c: any) => c.type === rawType);
+      }
+      const chosen = candidates[0];
+      if (chosen) {
+        return {
+          manufacturer: chosen.manufacturer,
+          system: chosen.system,
+          type: chosen.type,
+        };
+      }
+    }
+
+    return {
+      manufacturer: rawManufacturer,
+      system: rawSystem,
+      type: rawType,
+    };
+  };
+
   const handleSaveEditFromDetail = async () => {
     try {
       if (!token) {
@@ -220,26 +302,18 @@ export const RequestorRecentRequestsCard = ({
     if (!open) return;
 
     const ci = resolveCurrentCaseInfos();
+    const normalized = normalizeImplantCaseInfos(ci);
     setEditCaseInfos({
       clinicName: ci?.clinicName || "",
       patientName: ci?.patientName || "",
       tooth: ci?.tooth || "",
-      implantSystem: ci?.implantSystem || "",
-      implantType: ci?.implantType || "",
-      connectionType: ci?.connectionType || "",
+      implantSystem: normalized.manufacturer || "",
+      implantType: normalized.system || "",
+      connectionType: normalized.type || "",
       maxDiameter: ci?.maxDiameter ?? null,
       connectionDiameter: ci?.connectionDiameter ?? null,
     });
-
-    setImplantManufacturer(ci?.implantSystem || "");
-    setImplantSystem(ci?.implantType || "");
-    setImplantType(ci?.connectionType || "");
-    syncSelectedConnection(
-      ci?.implantSystem || "",
-      ci?.implantType || "",
-      ci?.connectionType || ""
-    );
-  }, [open, detail, selectedSummary]);
+  }, [open, detail, selectedSummary, connections]);
 
   useEffect(() => {
     const run = async () => {
@@ -322,6 +396,11 @@ export const RequestorRecentRequestsCard = ({
                       {item.caseInfos?.tooth && (
                         <span className="ml-1">{item.caseInfos.tooth}</span>
                       )}
+                      {item.caseInfos?.implantManufacturer && (
+                        <span className="ml-1">
+                          {item.caseInfos.implantManufacturer}
+                        </span>
+                      )}
                       {item.caseInfos?.implantSystem && (
                         <span className="ml-1">
                           {item.caseInfos.implantSystem}
@@ -360,7 +439,12 @@ export const RequestorRecentRequestsCard = ({
                       <span className="ml-1">{item.caseInfos.patientName}</span>
                     )}
                     {item.caseInfos?.tooth && (
-                      <span className="ml-1">{item.caseInfos.tooth}</span>
+                      <span className="ml-1">#{item.caseInfos.tooth}</span>
+                    )}
+                    {item.caseInfos?.implantManufacturer && (
+                      <span className="ml-1">
+                        {item.caseInfos.implantManufacturer}
+                      </span>
                     )}
                     {item.caseInfos?.implantSystem && (
                       <span className="ml-1">
@@ -410,7 +494,7 @@ export const RequestorRecentRequestsCard = ({
                   <div>불러오는 중...</div>
                 ) : (
                   <>
-                    <div className="flex justify-start">
+                    <div className="absolute right-12 top-4">
                       {getStatusBadge(
                         detail?.status || selectedSummary?.status || "-"
                       )}
@@ -430,19 +514,10 @@ export const RequestorRecentRequestsCard = ({
                                 ...(prev || {}),
                                 ...updates,
                               }));
-
-                              if (typeof updates.implantSystem === "string") {
-                                setImplantManufacturer(updates.implantSystem);
-                              }
-                              if (typeof updates.implantType === "string") {
-                                setImplantSystem(updates.implantType);
-                              }
-                              if (typeof updates.connectionType === "string") {
-                                setImplantType(updates.connectionType);
-                              }
                             }}
                             showImplantSelect={true}
                             readOnly={false}
+                            implantSelectSource="caseInfos"
                             connections={connections as any}
                             typeOptions={typeOptions}
                             implantManufacturer={implantManufacturer}
