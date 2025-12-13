@@ -18,6 +18,7 @@ type UseNewRequestSubmitV2Params = {
   selectedClinicId: string | null;
   setSelectedPreviewIndex: (v: number | null) => void;
   caseInfosMap?: Record<string, CaseInfos>;
+  patchDraftImmediately?: (map: Record<string, CaseInfos>) => Promise<void>;
 };
 
 export const useNewRequestSubmitV2 = ({
@@ -31,6 +32,7 @@ export const useNewRequestSubmitV2 = ({
   selectedClinicId,
   setSelectedPreviewIndex,
   caseInfosMap,
+  patchDraftImmediately,
 }: UseNewRequestSubmitV2Params) => {
   const { toast } = useToast();
 
@@ -146,6 +148,11 @@ export const useNewRequestSubmitV2 = ({
     }
 
     try {
+      // 제출 전 디바운스 대기 중인 변경사항을 즉시 Draft에 저장
+      if (patchDraftImmediately && caseInfosMap) {
+        await patchDraftImmediately(caseInfosMap);
+      }
+
       // Draft를 Request로 전환
       const payload = {
         draftId,

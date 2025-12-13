@@ -60,6 +60,17 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
     }).lean();
 
     if (existing) {
+      // 중복 파일이 이미 존재하면 새로 업로드하지 않고 기존 문서를 그대로 반환한다.
+      // 이렇게 하면 프론트엔드 입장에서는 "업로드 성공"으로 동일하게 처리할 수 있다.
+      console.log(
+        "[uploadTempFiles] Duplicate file detected, returning existing",
+        {
+          uploadedBy: uploadedBy.toString(),
+          originalName: originalname,
+          size,
+          existingFileId: existing._id,
+        }
+      );
       results.push(existing);
       continue;
     }

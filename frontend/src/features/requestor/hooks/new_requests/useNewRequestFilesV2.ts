@@ -236,7 +236,9 @@ export const useNewRequestFilesV2 = ({
 
         const file = new File([blobData], fileMeta.originalName, {
           type: blobData.type,
-        });
+        }) as FileWithDraftId;
+        // 서버 Draft.caseInfos 의 _id 를 파일에 매핑해 두어야, 이후 삭제 시 서버에서도 동일 caseInfo 를 제거할 수 있다.
+        file._draftCaseInfoId = (draftCase as any)._id;
         restoredFiles.push(file);
       } catch (err) {
         // 복원 실패는 조용히 표시만 남기고 계속 진행
@@ -320,9 +322,22 @@ export const useNewRequestFilesV2 = ({
 
       try {
         // 0. 이미 업로드된 파일(파일명+사이즈 기준)은 중복 업로드를 방지한다.
-        const existingKeys = new Set(
-          filesRef.current.map((f) => `${f.name}:${f.size}`)
-        );
+        //    - 화면에 올라와 있는 filesRef (File 객체)
+        //    - Draft.caseInfos 에 이미 등록된 draftFilesRef (file.originalName + size)
+        const existingKeys = new Set<string>();
+
+        // 현재 화면에 보이는 파일들
+        filesRef.current.forEach((f) => {
+          existingKeys.add(`${f.name}:${f.size}`);
+        });
+
+        // 현재 Draft에 이미 연결된 파일들
+        draftFilesRef.current.forEach((ci) => {
+          const fileMeta = ci.file;
+          if (!fileMeta) return;
+          existingKeys.add(`${fileMeta.originalName}:${fileMeta.size}`);
+        });
+
         const filesToProcess = filesToUpload.filter((f) => {
           const key = `${f.name}:${f.size}`;
           return !existingKeys.has(key);
@@ -345,7 +360,22 @@ export const useNewRequestFilesV2 = ({
 
         // 2. Draft API에 파일 메타 추가
         const newDraftFiles: DraftCaseInfo[] = [];
+
+        // Draft에 이미 존재하는 파일 키(파일명+사이즈)
+        const existingDraftKeys = new Set<string>();
+        draftFilesRef.current.forEach((ci) => {
+          const fileMeta = ci.file;
+          if (!fileMeta) return;
+          existingDraftKeys.add(`${fileMeta.originalName}:${fileMeta.size}`);
+        });
+
         for (const tempFile of tempFiles) {
+          const draftKey = `${tempFile.originalName}:${tempFile.size}`;
+          // 같은 Draft 안에서 이미 연결된 파일이면 Draft.caseInfos에 다시 추가하지 않는다.
+          if (existingDraftKeys.has(draftKey)) {
+            continue;
+          }
+
           try {
             const res = await fetch(
               `${API_BASE_URL}/requests/drafts/${draftId}/files`,
@@ -396,9 +426,26 @@ export const useNewRequestFilesV2 = ({
           }
         }
 
+        // tempFiles는 있었지만, 모두 existingDraftKeys 에 걸려서 newDraftFiles 가 비면
+        // 사용자 입장에서는 "이미 업로드된 파일"이므로 안내 토스트를 띄운다.
+        if (newDraftFiles.length === 0) {
+          toast({
+            title: "안내",
+            description: "이미 업로드된 파일입니다.",
+            duration: 2000,
+          });
+          return;
+        }
+
         // 3. Draft.caseInfos로 상태 동기화 (파일이 포함된 케이스들)
         if (newDraftFiles.length > 0) {
-          setDraftFiles((prev) => [...prev, ...newDraftFiles]);
+          // Ref를 즉시 업데이트하여 동시 업로드 시 중복 검사 가능하게 함
+          const updatedDraftFiles = [
+            ...draftFilesRef.current,
+            ...newDraftFiles,
+          ];
+          draftFilesRef.current = updatedDraftFiles;
+          setDraftFiles(updatedDraftFiles);
 
           // 4. File 객체 생성: 실제 업로드한 원본 File을 그대로 사용해 STL 내용이 보이도록 한다.
           const newFiles: FileWithDraftId[] = newDraftFiles.map(
@@ -418,7 +465,23 @@ export const useNewRequestFilesV2 = ({
             }
           );
 
-          setFiles((prev) => [...prev, ...newFiles]);
+          // 기존 files와 합칠 때도 파일명+사이즈 기준으로 한 번 더 중복 제거
+          setFiles((prev) => {
+            const seen = new Set<string>();
+            const deduped: FileWithDraftId[] = [];
+
+            const pushIfNew = (file: File) => {
+              const key = `${file.name}:${file.size}`;
+              if (seen.has(key)) return;
+              seen.add(key);
+              deduped.push(file as FileWithDraftId);
+            };
+
+            prev.forEach(pushIfNew);
+            newFiles.forEach(pushIfNew);
+
+            return deduped;
+          });
 
           // 5. 업로드 직후 원본 File을 IndexedDB에 즉시 캐싱
           //    (재진입 시에는 IndexedDB → URL 캐시 → S3 순으로 복원)

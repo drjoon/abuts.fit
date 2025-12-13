@@ -200,12 +200,35 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     (name: string) => {
       rawHandleAddOrSelectClinic(name);
 
-      // 현재 선택된 파일의 clinicName만 업데이트
+      // 현재 선택된 파일의 clinicName 업데이트
       if (currentFileKey && updateCaseInfos) {
-        updateCaseInfos(currentFileKey, { clinicName: name.trim() });
+        const trimmedName = name.trim();
+
+        // 선택된 치과의 favorite 임플란트 찾기
+        const selectedClinic = rawClinicPresets.find(
+          (c) => c.name === trimmedName
+        );
+        const favorite = selectedClinic?.favorite;
+
+        // clinicName + favorite 임플란트 정보 함께 업데이트
+        const updates: any = { clinicName: trimmedName };
+        if (favorite) {
+          updates.implantSystem = favorite.system;
+          updates.implantType = favorite.type;
+          updates.connectionType =
+            favorite.manufacturer === "OSSTEM" ? "Hex" : "Hex"; // TODO: 연결타입 매핑
+        }
+
+        // updateCaseInfos 호출 (로컬 상태 + 디바운스된 PATCH)
+        updateCaseInfos(currentFileKey, updates);
       }
     },
-    [rawHandleAddOrSelectClinic, currentFileKey, updateCaseInfos]
+    [
+      rawHandleAddOrSelectClinic,
+      rawClinicPresets,
+      currentFileKey,
+      updateCaseInfos,
+    ]
   );
 
   // 파일 관리 (업로드/삭제/복원)
@@ -292,6 +315,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     selectedClinicId,
     setSelectedPreviewIndex,
     caseInfosMap,
+    patchDraftImmediately,
   });
 
   // 환자 사례 미리보기 (파일 기반)

@@ -415,11 +415,9 @@ export function useDraftMeta() {
         throw new Error(`Failed to delete draft: ${res.status}`);
       }
 
-      const metaKey = getDraftMetaKey();
-      if (metaKey) {
-        localStorage.removeItem(metaKey);
-      }
       localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
+      const metaKey = getDraftMetaKey();
+      if (metaKey) localStorage.removeItem(metaKey);
 
       setDraftId(null);
       setCaseInfosMap({ __default__: { workType: "abutment" } });
@@ -450,15 +448,9 @@ export function useDraftMeta() {
     }
 
     // 로컬 캐시 정리
-    try {
-      const metaKey = getDraftMetaKey();
-      if (metaKey) {
-        localStorage.removeItem(metaKey);
-      }
-      localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
-    } catch (err) {
-      console.error("resetDraft: localStorage cleanup failed (ignored)", err);
-    }
+    localStorage.removeItem(DRAFT_ID_STORAGE_KEY);
+    const metaKeyReset = getDraftMetaKey();
+    if (metaKeyReset) localStorage.removeItem(metaKeyReset);
 
     const emptyMap: Record<string, CaseInfos> = {
       __default__: {
