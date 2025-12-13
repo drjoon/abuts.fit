@@ -42,7 +42,7 @@ const mockAssignedRequestsForManufacturer: RequestSummary[] = [
     title: "상악 전치부 임플란트",
     counterpart: "서울치과기공소", // 의뢰인
     date: "2025-07-16",
-    status: "검토중",
+    status: "의뢰접수",
   },
   {
     id: "REQ-102",
@@ -128,12 +128,12 @@ export const NewChatWidget = () => {
         counterpart =
           r.requestor?.organization || r.requestor?.name || "의뢰인 미지정";
       } else {
-        if (typeof r.manufacturer === "string") {
-          counterpart = r.manufacturer || "제작사 미지정";
+        if (typeof legacy.manufacturer === "string") {
+          counterpart = legacy.manufacturer || "제작사 미지정";
         } else {
           counterpart =
-            r.manufacturer?.name ||
-            r.manufacturer?.organization ||
+            legacy.manufacturer?.name ||
+            legacy.manufacturer?.organization ||
             "제작사 미지정";
         }
       }

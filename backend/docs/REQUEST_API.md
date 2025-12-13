@@ -38,7 +38,7 @@
     "implantType": "straumann",
     "implantSpec": "BLX Roxolid SLActive",
     "priority": "보통",
-    "status": "검토중",
+    "status": "의뢰접수",
     "createdAt": "2023-08-05T11:30:00.000Z",
     "updatedAt": "2023-08-05T11:30:00.000Z"
   }
@@ -96,7 +96,7 @@
         "implantType": "straumann",
         "implantSpec": "BLX Roxolid SLActive",
         "priority": "보통",
-        "status": "검토중",
+        "status": "의뢰접수",
         "createdAt": "2023-08-05T11:30:00.000Z",
         "updatedAt": "2023-08-05T11:30:00.000Z"
       }
@@ -153,7 +153,7 @@
         "implantType": "straumann",
         "implantSpec": "BLX Roxolid SLActive",
         "priority": "보통",
-        "status": "검토중",
+        "status": "의뢰접수",
         "createdAt": "2023-08-05T11:30:00.000Z",
         "updatedAt": "2023-08-05T11:30:00.000Z"
       }
@@ -351,7 +351,7 @@
     "implantType": "nobel",
     "implantSpec": "수정된 임플란트 사양",
     "priority": "높음",
-    "status": "검토중",
+    "status": "의뢰접수",
     "createdAt": "2023-08-05T11:30:00.000Z",
     "updatedAt": "2023-08-05T13:00:00.000Z"
   }

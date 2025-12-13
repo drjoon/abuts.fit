@@ -47,7 +47,7 @@ const mockManufacturerData = {
     {
       id: "ORD-003",
       title: "대구치과기공소 - 전치부 어벗먼트",
-      status: "검토중",
+      status: "의뢰접수",
       client: "대구치과기공소",
       date: "2025-07-13",
     },

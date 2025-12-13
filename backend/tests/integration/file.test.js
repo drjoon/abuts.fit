@@ -84,12 +84,12 @@ describe("파일 업로드 API 테스트", () => {
   // 각 테스트 전에 테스트 의뢰 생성
   beforeEach(async () => {
     // 테스트 의뢰 생성
-    const testRequest = await mongoose.model('Request').create({
+    const testRequest = await mongoose.model("Request").create({
       requestId: `REQ-${Date.now()}-TEST`,
       title: "테스트 의뢰",
       description: "테스트 의뢰 설명입니다.",
       requestor: requestorId,
-      status: "검토중",
+      status: "의뢰접수",
       implantType: "nobel",
       implantSpec: "NobelActive 4.3x11.5mm",
     });
@@ -162,32 +162,32 @@ describe("파일 업로드 API 테스트", () => {
 
   // 파일 목록 조회 테스트
   describe("GET /api/files", () => {
-  it("관리자가 전체 파일 목록을 조회할 수 있다", async () => {
-    const response = await request(app)
-      .get("/api/files")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .expect(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
-  });
+    it("관리자가 전체 파일 목록을 조회할 수 있다", async () => {
+      const response = await request(app)
+        .get("/api/files")
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
+    });
 
-  it("일반 사용자는 내 파일 목록만 조회할 수 있다", async () => {
-    const response = await request(app)
-      .get("/api/files/my")
-      .set("Authorization", `Bearer ${requestorToken}`)
-      .expect(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
-  });
+    it("일반 사용자는 내 파일 목록만 조회할 수 있다", async () => {
+      const response = await request(app)
+        .get("/api/files/my")
+        .set("Authorization", `Bearer ${requestorToken}`)
+        .expect(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
+    });
 
-  it("의뢰별 파일 목록을 조회할 수 있다", async () => {
-    const response = await request(app)
-      .get(`/api/files/request/${requestId}`)
-      .set("Authorization", `Bearer ${requestorToken}`)
-      .expect(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
-  });
+    it("의뢰별 파일 목록을 조회할 수 있다", async () => {
+      const response = await request(app)
+        .get(`/api/files/request/${requestId}`)
+        .set("Authorization", `Bearer ${requestorToken}`)
+        .expect(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.files.length).toBeGreaterThanOrEqual(1);
+    });
 
     // 테스트 파일 생성
     beforeEach(async () => {
@@ -200,11 +200,11 @@ describe("파일 업로드 API 테스트", () => {
         location: "https://example.com/test-file.txt",
         uploadedBy: requestorId,
         relatedRequest: requestId, // 생성된 의뢰 ID 사용
-        fileType: "document"
+        fileType: "document",
       });
       testFileId = testFile._id;
     });
-    
+
     it("요청 ID로 파일 목록 조회 성공", async () => {
       const response = await request(app)
         .get("/api/files")

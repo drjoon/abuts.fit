@@ -970,8 +970,9 @@ async function updateRequest(req, res) {
     delete updateData.createdAt;
     delete updateData.updatedAt;
 
-    // 의뢰 상태가 '검토중'일 때만 일부 필드 수정 가능
-    if (request.status !== "검토중" && !isAdmin) {
+    // 의뢰 상태가 '의뢰접수' 또는 '가공전'일 때만 일부 필드 수정 가능
+    // (requestor는 가공 시작 전까지 환자/임플란트 정보를 수정 가능)
+    if (!isAdmin && !["의뢰접수", "가공전"].includes(request.status)) {
       const allowedFields = ["messages"];
       Object.keys(updateData).forEach((key) => {
         if (!allowedFields.includes(key)) {

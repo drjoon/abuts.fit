@@ -62,7 +62,7 @@ describe("관리자 API 테스트", () => {
       title: "테스트 의뢰",
       description: "테스트 의뢰 설명입니다.",
       requestor: userId,
-      status: "검토중",
+      status: "의뢰접수",
       implantType: "nobel",
       implantSpec: "NobelActive 4.3x11.5mm",
     });
@@ -247,14 +247,14 @@ describe("관리자 API 테스트", () => {
     it("상태별 필터링 조회 성공", async () => {
       const response = await request(app)
         .get("/api/admin/requests")
-        .query({ status: "검토중" })
+        .query({ status: "의뢰접수" })
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
 
       // 응답 검증
       expect(response.body.success).toBe(true);
       expect(response.body.data.requests).toHaveLength(1);
-      expect(response.body.data.requests[0].status).toBe("검토중");
+      expect(response.body.data.requests[0].status).toBe("의뢰접수");
     });
   });
 

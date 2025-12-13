@@ -50,7 +50,7 @@ describe.skip("의뢰 API 테스트", () => {
     },
     requirements: "특별한 요구사항은 없습니다.",
     deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 2주 후
-    status: "검토중",
+    status: "의뢰접수",
     implantType: "straumann", // 필수 필드 추가
     implantSpec: "BLX 4.5x10mm", // 필수 필드 추가
   };
@@ -128,7 +128,7 @@ describe.skip("의뢰 API 테스트", () => {
       expect(response.body.data.requestor.toString()).toBe(
         requestorId.toString()
       );
-      expect(response.body.data.status).toBe("검토중"); // 기본 상태
+      expect(response.body.data.status).toBe("의뢰접수"); // 기본 상태
     });
 
     it("필수 필드 누락 시 실패", async () => {
@@ -208,7 +208,7 @@ describe.skip("의뢰 API 테스트", () => {
     it("페이지네이션 및 필터링 적용 조회 성공", async () => {
       const response = await request(app)
         .get("/api/requests")
-        .query({ page: 1, limit: 10, status: "검토중" })
+        .query({ page: 1, limit: 10, status: "의뢰접수" })
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
 

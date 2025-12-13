@@ -942,8 +942,16 @@ async function updateRequestStatus(req, res) {
       });
     }
 
-    // 상태 유효성 검사
-    const validStatuses = ["검토중", "승인", "진행중", "완료", "거절", "취소"];
+    // 상태 유효성 검사 (최신 워크플로우)
+    const validStatuses = [
+      "의뢰접수",
+      "가공전",
+      "가공후",
+      "배송대기",
+      "배송중",
+      "완료",
+      "취소",
+    ];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,

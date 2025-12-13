@@ -12,20 +12,22 @@ import {
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
 
-const DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
-const DRAFT_META_KEY_PREFIX = "abutsfit:new-request-draft-meta:v1:";
+const EDITABLE_STATUSES = new Set(["의뢰접수", "가공전"]);
 
 const getStatusBadge = (status: string) => {
   switch (status) {
-    case "진행중":
-    case "제작중":
+    case "의뢰접수":
+      return <Badge variant="outline">{status}</Badge>;
+    case "가공전":
+    case "가공후":
+    case "배송중":
       return <Badge variant="default">{status}</Badge>;
     case "완료":
       return <Badge variant="secondary">{status}</Badge>;
-    case "검토중":
+    case "배송대기":
       return <Badge variant="outline">{status}</Badge>;
     default:
       return <Badge>{status}</Badge>;
@@ -46,25 +48,67 @@ export const RequestorRecentRequestsCard = ({
   onCancel,
 }: Props) => {
   const { token, user } = useAuthStore();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string>("");
   const [detail, setDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-
-  const getDraftMetaKey = () => {
-    const userId = (user as any)?.id;
-    if (!userId) return null;
-    return `${DRAFT_META_KEY_PREFIX}${String(userId)}`;
-  };
+  const [editMode, setEditMode] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editCaseInfos, setEditCaseInfos] = useState<any>(null);
 
   const handleCancelRequest = async (requestId: string) => {
     if (!requestId) return;
     await Promise.resolve(onCancel(requestId));
   };
 
-  const handleEditFromDetail = async () => {
+  const resolveCurrentCaseInfos = () => {
+    const fromDetail = detail?.caseInfos;
+    const fromSummary = selectedSummary?.caseInfos;
+    return (fromDetail || fromSummary || {}) as any;
+  };
+
+  const canEditRequest = (status?: string | null) => {
+    if (!status) return false;
+    return EDITABLE_STATUSES.has(status);
+  };
+
+  const handleStartEditFromDetail = () => {
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return;
+    }
+
+    const status = detail?.status || selectedSummary?.status;
+    if (status && !canEditRequest(status)) {
+      toast({
+        title: "변경 불가",
+        description:
+          "의뢰접수/가공전 상태에서만 환자/임플란트 정보를 변경할 수 있습니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return;
+    }
+
+    const base = resolveCurrentCaseInfos();
+    setEditCaseInfos({
+      patientName: base.patientName || "",
+      tooth: base.tooth || "",
+      implantSystem: base.implantSystem || "",
+      implantType: base.implantType || "",
+      connectionType: base.connectionType || "",
+      maxDiameter: base.maxDiameter,
+      connectionDiameter: base.connectionDiameter,
+    });
+    setEditMode(true);
+  };
+
+  const handleSaveEditFromDetail = async () => {
     try {
       if (!token) {
         toast({
@@ -74,13 +118,44 @@ export const RequestorRecentRequestsCard = ({
         });
         return;
       }
-
       if (!selectedRequestId) return;
 
+      const status = detail?.status || selectedSummary?.status;
+      if (status && !canEditRequest(status)) {
+        toast({
+          title: "변경 불가",
+          description: "의뢰접수/가공전 상태에서만 변경할 수 있습니다.",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      setSavingEdit(true);
+
+      const base = resolveCurrentCaseInfos();
+      const payload = {
+        caseInfos: {
+          ...base,
+          ...(editCaseInfos || {}),
+          maxDiameter:
+            editCaseInfos?.maxDiameter === "" ||
+            editCaseInfos?.maxDiameter == null
+              ? undefined
+              : Number(editCaseInfos.maxDiameter),
+          connectionDiameter:
+            editCaseInfos?.connectionDiameter === "" ||
+            editCaseInfos?.connectionDiameter == null
+              ? undefined
+              : Number(editCaseInfos.connectionDiameter),
+        },
+      };
+
       const res = await apiFetch<any>({
-        path: `/api/requests/${selectedRequestId}/clone-to-draft`,
-        method: "POST",
+        path: `/api/requests/${selectedRequestId}`,
+        method: "PUT",
         token,
+        jsonBody: payload,
         headers: token
           ? {
               "x-mock-role": "requestor",
@@ -88,54 +163,27 @@ export const RequestorRecentRequestsCard = ({
           : undefined,
       });
 
-      if (!res.ok || !res.data?.data) {
-        throw new Error(res.data?.message || "Draft 생성에 실패했습니다.");
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.data?.message || "의뢰 변경에 실패했습니다.");
       }
 
-      const draft = res.data.data;
-      const draftId = draft?._id || draft?.id;
-      if (!draftId) {
-        throw new Error("Draft ID가 없습니다.");
-      }
+      setDetail(res.data.data);
+      setEditMode(false);
+      toast({
+        title: "의뢰 변경 완료",
+        duration: 3000,
+      });
 
-      try {
-        const metaKey = getDraftMetaKey();
-        if (metaKey && typeof window !== "undefined") {
-          const draftCaseInfos = Array.isArray(draft.caseInfos)
-            ? draft.caseInfos
-            : [];
-          const defaultCaseInfos = draftCaseInfos[0] || {
-            workType: "abutment",
-          };
-          const meta = {
-            draftId,
-            updatedAt: Date.now(),
-            caseInfos: defaultCaseInfos,
-            caseInfosMap: {
-              __default__: {
-                ...(defaultCaseInfos || {}),
-                workType: "abutment",
-              },
-            },
-          };
-          window.localStorage.setItem(metaKey, JSON.stringify(meta));
-          window.localStorage.setItem(DRAFT_ID_STORAGE_KEY, String(draftId));
-        }
-      } catch {
-        // no-op
-      }
-
-      setOpen(false);
-      setSelectedRequestId("");
-      setDetail(null);
-      navigate("/dashboard/new-request");
+      await Promise.resolve(onRefresh());
     } catch (err: any) {
       toast({
-        title: "변경 시작 실패",
+        title: "의뢰 변경 실패",
         description: err?.message || "다시 시도해주세요.",
         variant: "destructive",
         duration: 3000,
       });
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -145,6 +193,8 @@ export const RequestorRecentRequestsCard = ({
     setOpen(false);
     setSelectedRequestId("");
     setDetail(null);
+    setEditMode(false);
+    setEditCaseInfos(null);
   };
 
   const selectedSummary = useMemo(() => {
@@ -179,6 +229,14 @@ export const RequestorRecentRequestsCard = ({
     };
     void run();
   }, [open, selectedRequestId, token]);
+
+  useEffect(() => {
+    if (!open) {
+      setEditMode(false);
+      setEditCaseInfos(null);
+    }
+  }, [open]);
+
   return (
     <Card
       className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg flex-1 min-h-[220px] cursor-pointer"
@@ -371,24 +429,136 @@ export const RequestorRecentRequestsCard = ({
                       </div>
                     )}
 
-                    <div className="pt-4 flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleEditFromDetail}
-                        disabled={loadingDetail}
-                      >
-                        의뢰 변경
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={handleCancelFromDetail}
-                        disabled={loadingDetail}
-                      >
-                        의뢰 취소
-                      </Button>
-                    </div>
+                    {editMode ? (
+                      <div className="pt-4 space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input
+                            value={editCaseInfos?.patientName ?? ""}
+                            onChange={(e) =>
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                patientName: e.target.value,
+                              }))
+                            }
+                            placeholder="환자명"
+                            disabled={savingEdit || loadingDetail}
+                          />
+                          <Input
+                            value={editCaseInfos?.tooth ?? ""}
+                            onChange={(e) =>
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                tooth: e.target.value,
+                              }))
+                            }
+                            placeholder="치아번호"
+                            disabled={savingEdit || loadingDetail}
+                          />
+                          <Input
+                            value={editCaseInfos?.implantSystem ?? ""}
+                            onChange={(e) =>
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                implantSystem: e.target.value,
+                              }))
+                            }
+                            placeholder="임플란트 시스템"
+                            disabled={savingEdit || loadingDetail}
+                          />
+                          <Input
+                            value={editCaseInfos?.implantType ?? ""}
+                            onChange={(e) =>
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                implantType: e.target.value,
+                              }))
+                            }
+                            placeholder="임플란트 타입"
+                            disabled={savingEdit || loadingDetail}
+                          />
+                          <Input
+                            value={editCaseInfos?.connectionType ?? ""}
+                            onChange={(e) =>
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                connectionType: e.target.value,
+                              }))
+                            }
+                            placeholder="커넥션"
+                            disabled={savingEdit || loadingDetail}
+                          />
+                          <Input
+                            value={
+                              editCaseInfos?.maxDiameter == null
+                                ? ""
+                                : String(editCaseInfos.maxDiameter)
+                            }
+                            onChange={(e) =>
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                maxDiameter: e.target.value,
+                              }))
+                            }
+                            placeholder="최대 직경"
+                            inputMode="decimal"
+                            disabled={savingEdit || loadingDetail}
+                          />
+                          <Input
+                            value={
+                              editCaseInfos?.connectionDiameter == null
+                                ? ""
+                                : String(editCaseInfos.connectionDiameter)
+                            }
+                            onChange={(e) =>
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                connectionDiameter: e.target.value,
+                              }))
+                            }
+                            placeholder="커넥션 직경"
+                            inputMode="decimal"
+                            disabled={savingEdit || loadingDetail}
+                          />
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setEditMode(false)}
+                            disabled={savingEdit || loadingDetail}
+                          >
+                            취소
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={handleSaveEditFromDetail}
+                            disabled={savingEdit || loadingDetail}
+                          >
+                            저장
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="pt-4 flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleStartEditFromDetail}
+                          disabled={loadingDetail}
+                        >
+                          의뢰 변경
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          onClick={handleCancelFromDetail}
+                          disabled={loadingDetail}
+                        >
+                          의뢰 취소
+                        </Button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
