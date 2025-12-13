@@ -24,6 +24,7 @@ type PatientImplantFieldsProps = {
   caseInfos?: CaseInfos;
   setCaseInfos: (updates: Partial<CaseInfos>) => void;
   showImplantSelect: boolean;
+  readOnly?: boolean;
   connections: Array<{ manufacturer: string; system: string }>;
   typeOptions: string[];
   implantManufacturer: string;
@@ -53,6 +54,7 @@ export function NewRequestPatientImplantFields({
   caseInfos,
   setCaseInfos,
   showImplantSelect,
+  readOnly,
   connections,
   typeOptions,
   implantManufacturer,
@@ -81,6 +83,7 @@ export function NewRequestPatientImplantFields({
             <LabeledAutocompleteField
               value={caseInfos?.clinicName || ""}
               onChange={(value) => {
+                if (readOnly) return;
                 setCaseInfos({
                   clinicName: value,
                 });
@@ -88,27 +91,32 @@ export function NewRequestPatientImplantFields({
               options={clinicNameOptions}
               placeholder="치과명"
               onOptionSelect={(label) => {
+                if (readOnly) return;
                 handleAddOrSelectClinic(label);
                 addClinicPreset(label);
               }}
               onClear={() => {
+                if (readOnly) return;
                 setCaseInfos({
                   clinicName: "",
                 });
               }}
               onDelete={() => {
+                if (readOnly) return;
                 clearAllClinicPresets();
                 setCaseInfos({
                   clinicName: "",
                 });
               }}
               onBlur={() => {
+                if (readOnly) return;
                 if (caseInfos?.clinicName) {
                   handleAddOrSelectClinic(caseInfos.clinicName);
                   addClinicPreset(caseInfos.clinicName);
                 }
               }}
               inputClassName="h-8 text-xs w-full pr-10"
+              disabled={readOnly}
             />
           </div>
 
@@ -116,6 +124,7 @@ export function NewRequestPatientImplantFields({
             <LabeledAutocompleteField
               value={caseInfos?.patientName || ""}
               onChange={(value) => {
+                if (readOnly) return;
                 setCaseInfos({
                   patientName: value,
                 });
@@ -123,28 +132,33 @@ export function NewRequestPatientImplantFields({
               options={patientNameOptions}
               placeholder="환자명"
               onOptionSelect={(label) => {
+                if (readOnly) return;
                 setCaseInfos({
                   patientName: label,
                 });
                 addPatientPreset(label);
               }}
               onClear={() => {
+                if (readOnly) return;
                 setCaseInfos({
                   patientName: "",
                 });
               }}
               onDelete={() => {
+                if (readOnly) return;
                 clearAllPatientPresets();
                 setCaseInfos({
                   patientName: "",
                 });
               }}
               onBlur={() => {
+                if (readOnly) return;
                 if (caseInfos?.patientName) {
                   addPatientPreset(caseInfos.patientName);
                 }
               }}
               inputClassName="h-8 text-xs w-full pr-10"
+              disabled={readOnly}
             />
           </div>
 
@@ -152,6 +166,7 @@ export function NewRequestPatientImplantFields({
             <LabeledAutocompleteField
               value={caseInfos?.tooth || ""}
               onChange={(value) => {
+                if (readOnly) return;
                 setCaseInfos({
                   tooth: value,
                 });
@@ -159,28 +174,33 @@ export function NewRequestPatientImplantFields({
               options={teethOptions}
               placeholder="치아번호"
               onOptionSelect={(label) => {
+                if (readOnly) return;
                 setCaseInfos({
                   tooth: label,
                 });
                 addTeethPreset(label);
               }}
               onClear={() => {
+                if (readOnly) return;
                 setCaseInfos({
                   tooth: "",
                 });
               }}
               onDelete={() => {
+                if (readOnly) return;
                 clearAllTeethPresets();
                 setCaseInfos({
                   tooth: "",
                 });
               }}
               onBlur={() => {
+                if (readOnly) return;
                 if (caseInfos?.tooth) {
                   addTeethPreset(caseInfos.tooth);
                 }
               }}
               inputClassName="h-8 text-xs w-full pr-10"
+              disabled={readOnly}
             />
           </div>
         </div>
@@ -194,6 +214,7 @@ export function NewRequestPatientImplantFields({
                 <Select
                   value={implantManufacturer}
                   onValueChange={(value) => {
+                    if (readOnly) return;
                     setImplantManufacturer(value);
                     setImplantSystem("");
                     setImplantType("");
@@ -205,7 +226,7 @@ export function NewRequestPatientImplantFields({
                     });
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger disabled={readOnly}>
                     <SelectValue placeholder="제조사" />
                   </SelectTrigger>
                   <SelectContent>
@@ -224,6 +245,7 @@ export function NewRequestPatientImplantFields({
                 <Select
                   value={implantSystem}
                   onValueChange={(value) => {
+                    if (readOnly) return;
                     setImplantSystem(value);
                     setImplantType("");
                     syncSelectedConnection(implantManufacturer, value, "");
@@ -232,9 +254,9 @@ export function NewRequestPatientImplantFields({
                       connectionType: "",
                     });
                   }}
-                  disabled={!implantManufacturer}
+                  disabled={readOnly || !implantManufacturer}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger disabled={readOnly || !implantManufacturer}>
                     <SelectValue placeholder="시스템" />
                   </SelectTrigger>
                   <SelectContent>
@@ -257,6 +279,7 @@ export function NewRequestPatientImplantFields({
                 <Select
                   value={implantType}
                   onValueChange={(value) => {
+                    if (readOnly) return;
                     setImplantType(value);
                     syncSelectedConnection(
                       implantManufacturer,
@@ -267,10 +290,10 @@ export function NewRequestPatientImplantFields({
                       connectionType: value,
                     });
                   }}
-                  disabled={!implantSystem}
+                  disabled={readOnly || !implantSystem}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="유형" />
+                  <SelectTrigger disabled={readOnly || !implantSystem}>
+                    <SelectValue placeholder="타입" />
                   </SelectTrigger>
                   <SelectContent>
                     {typeOptions.map((t) => (

@@ -3,13 +3,14 @@ import AutocompleteInput, {
   type AutocompleteOption,
 } from "@/components/AutocompleteInput";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 export interface LabeledAutocompleteFieldProps {
   value: string;
   onChange: (value: string) => void;
   options: AutocompleteOption[];
   placeholder?: string;
+  disabled?: boolean;
   /** 옵션 하나를 확정 선택했을 때 호출 */
   onOptionSelect?: (label: string) => void;
   /** X 버튼 눌렀을 때 (기본: onChange("")) */
@@ -29,6 +30,7 @@ export const LabeledAutocompleteField: React.FC<
   onChange,
   options,
   placeholder,
+  disabled,
   onOptionSelect,
   onClear,
   onDelete,
@@ -52,8 +54,9 @@ export const LabeledAutocompleteField: React.FC<
         placeholder={placeholder}
         className={inputClassName ?? "h-8 text-xs w-full pr-10"}
         onBlur={onBlur}
+        disabled={disabled}
       />
-      {(hasValue || onDelete) && (
+      {!disabled && (hasValue || onDelete) && (
         <div className="absolute -top-6 right-0 z-20 inline-flex items-center gap-0.5 rounded-full bg-white/90 px-1 py-0.5 shadow-sm opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           {hasValue && (
             <button

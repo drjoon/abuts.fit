@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
@@ -55,9 +56,9 @@ export const RequestorRecentRequestsCard = ({
   const [selectedRequestId, setSelectedRequestId] = useState<string>("");
   const [detail, setDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [editMode, setEditMode] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editCaseInfos, setEditCaseInfos] = useState<any>(null);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   const {
     connections,
@@ -119,51 +120,6 @@ export const RequestorRecentRequestsCard = ({
     return EDITABLE_STATUSES.has(status);
   };
 
-  const handleStartEditFromDetail = () => {
-    if (!token) {
-      toast({
-        title: "로그인이 필요합니다",
-        variant: "destructive",
-        duration: 3000,
-      });
-      return;
-    }
-
-    const status = detail?.status || selectedSummary?.status;
-    if (status && !canEditRequest(status)) {
-      toast({
-        title: "변경 불가",
-        description:
-          "의뢰접수/가공전 상태에서만 환자/임플란트 정보를 변경할 수 있습니다.",
-        variant: "destructive",
-        duration: 3000,
-      });
-      return;
-    }
-
-    const base = resolveCurrentCaseInfos();
-    setEditCaseInfos({
-      clinicName: base.clinicName || "",
-      patientName: base.patientName || "",
-      tooth: base.tooth || "",
-      implantSystem: base.implantSystem || "",
-      implantType: base.implantType || "",
-      connectionType: base.connectionType || "",
-    });
-
-    // 임플란트 셀렉트 기본값 동기화
-    setImplantManufacturer(base.implantSystem || "");
-    setImplantSystem(base.implantType || "");
-    setImplantType(base.connectionType || "");
-    syncSelectedConnection(
-      base.implantSystem || "",
-      base.implantType || "",
-      base.connectionType || ""
-    );
-
-    setEditMode(true);
-  };
-
   const handleSaveEditFromDetail = async () => {
     try {
       if (!token) {
@@ -191,10 +147,7 @@ export const RequestorRecentRequestsCard = ({
 
       const base = resolveCurrentCaseInfos();
 
-      // maxDiameter/connectionDiameter는 모달에서 변경 불가 (기존 값 유지)
       const cleanedEdit = { ...(editCaseInfos || {}) };
-      delete cleanedEdit.maxDiameter;
-      delete cleanedEdit.connectionDiameter;
 
       const payload = {
         caseInfos: {
@@ -220,11 +173,16 @@ export const RequestorRecentRequestsCard = ({
       }
 
       setDetail(res.data.data);
-      setEditMode(false);
+      setEditCaseInfos(res.data.data?.caseInfos || null);
       toast({
         title: "의뢰 변경 완료",
         duration: 3000,
       });
+
+      setOpen(false);
+      setSelectedRequestId("");
+      setDetail(null);
+      setEditCaseInfos(null);
 
       await Promise.resolve(onRefresh());
     } catch (err: any) {
@@ -245,14 +203,43 @@ export const RequestorRecentRequestsCard = ({
     setOpen(false);
     setSelectedRequestId("");
     setDetail(null);
-    setEditMode(false);
     setEditCaseInfos(null);
+  };
+
+  const openCancelConfirmFromDetail = () => {
+    if (!selectedRequestId) return;
+    setCancelConfirmOpen(true);
   };
 
   const selectedSummary = useMemo(() => {
     if (!selectedRequestId) return null;
     return items.find((it) => (it._id || it.id) === selectedRequestId) || null;
   }, [items, selectedRequestId]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const ci = resolveCurrentCaseInfos();
+    setEditCaseInfos({
+      clinicName: ci?.clinicName || "",
+      patientName: ci?.patientName || "",
+      tooth: ci?.tooth || "",
+      implantSystem: ci?.implantSystem || "",
+      implantType: ci?.implantType || "",
+      connectionType: ci?.connectionType || "",
+      maxDiameter: ci?.maxDiameter ?? null,
+      connectionDiameter: ci?.connectionDiameter ?? null,
+    });
+
+    setImplantManufacturer(ci?.implantSystem || "");
+    setImplantSystem(ci?.implantType || "");
+    setImplantType(ci?.connectionType || "");
+    syncSelectedConnection(
+      ci?.implantSystem || "",
+      ci?.implantType || "",
+      ci?.connectionType || ""
+    );
+  }, [open, detail, selectedSummary]);
 
   useEffect(() => {
     const run = async () => {
@@ -284,7 +271,6 @@ export const RequestorRecentRequestsCard = ({
 
   useEffect(() => {
     if (!open) {
-      setEditMode(false);
       setEditCaseInfos(null);
     }
   }, [open]);
@@ -351,6 +337,11 @@ export const RequestorRecentRequestsCard = ({
                           {item.caseInfos.maxDiameter.toFixed(1)}
                         </span>
                       )}
+                      {item.caseInfos?.connectionDiameter && (
+                        <span className="ml-1">
+                          {item.caseInfos.connectionDiameter.toFixed(1)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 }
@@ -384,6 +375,11 @@ export const RequestorRecentRequestsCard = ({
                         {item.caseInfos.maxDiameter.toFixed(1)}
                       </span>
                     )}
+                    {item.caseInfos?.connectionDiameter && (
+                      <span className="ml-1">
+                        {item.caseInfos.connectionDiameter.toFixed(1)}
+                      </span>
+                    )}
                   </div>
                 </div>
               </FunctionalItemCard>
@@ -399,6 +395,7 @@ export const RequestorRecentRequestsCard = ({
           if (!next) {
             setSelectedRequestId("");
             setDetail(null);
+            setCancelConfirmOpen(false);
           }
         }}
       >
@@ -413,164 +410,104 @@ export const RequestorRecentRequestsCard = ({
                   <div>불러오는 중...</div>
                 ) : (
                   <>
-                    <div className="flex items-center justify-between">
-                      <div className="text-foreground font-medium">상태</div>
-                      <div>
-                        {getStatusBadge(
-                          detail?.status || selectedSummary?.status || "-"
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="text-foreground font-medium">
-                        케이스 정보
-                      </div>
-                      <div>
-                        {detail?.caseInfos?.clinicName ||
-                          selectedSummary?.caseInfos?.clinicName ||
-                          "-"}
-                        {detail?.caseInfos?.patientName ||
-                        selectedSummary?.caseInfos?.patientName
-                          ? ` / ${
-                              detail?.caseInfos?.patientName ||
-                              selectedSummary?.caseInfos?.patientName
-                            }`
-                          : ""}
-                        {detail?.caseInfos?.tooth ||
-                        selectedSummary?.caseInfos?.tooth
-                          ? ` / ${
-                              detail?.caseInfos?.tooth ||
-                              selectedSummary?.caseInfos?.tooth
-                            }`
-                          : ""}
-                      </div>
-                      {(detail?.caseInfos?.implantSystem ||
-                        selectedSummary?.caseInfos?.implantSystem) && (
-                        <div>
-                          {detail?.caseInfos?.implantSystem ||
-                            selectedSummary?.caseInfos?.implantSystem}
-                          {detail?.caseInfos?.implantType ||
-                          selectedSummary?.caseInfos?.implantType
-                            ? ` / ${
-                                detail?.caseInfos?.implantType ||
-                                selectedSummary?.caseInfos?.implantType
-                              }`
-                            : ""}
-                        </div>
-                      )}
-                      {(detail?.caseInfos?.maxDiameter ||
-                        selectedSummary?.caseInfos?.maxDiameter) && (
-                        <div>
-                          최대 직경:{" "}
-                          {(
-                            detail?.caseInfos?.maxDiameter ??
-                            selectedSummary?.caseInfos?.maxDiameter
-                          ).toFixed(1)}
-                        </div>
+                    <div className="flex justify-start">
+                      {getStatusBadge(
+                        detail?.status || selectedSummary?.status || "-"
                       )}
                     </div>
 
-                    {detail?.price?.amount != null && (
-                      <div className="space-y-1">
-                        <div className="text-foreground font-medium">가격</div>
-                        <div>
-                          {Number(detail.price.amount || 0).toLocaleString()}원
-                          {detail.price.rule ? ` (${detail.price.rule})` : ""}
+                    {(() => {
+                      const ci = resolveCurrentCaseInfos();
+                      const maxDiameter = ci?.maxDiameter;
+                      const connectionDiameter = ci?.connectionDiameter;
+
+                      return (
+                        <div className="rounded-lg border px-3 py-2 space-y-2">
+                          <NewRequestPatientImplantFields
+                            caseInfos={editCaseInfos || ci || {}}
+                            setCaseInfos={(updates) => {
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                ...updates,
+                              }));
+
+                              if (typeof updates.implantSystem === "string") {
+                                setImplantManufacturer(updates.implantSystem);
+                              }
+                              if (typeof updates.implantType === "string") {
+                                setImplantSystem(updates.implantType);
+                              }
+                              if (typeof updates.connectionType === "string") {
+                                setImplantType(updates.connectionType);
+                              }
+                            }}
+                            showImplantSelect={true}
+                            readOnly={false}
+                            connections={connections as any}
+                            typeOptions={typeOptions}
+                            implantManufacturer={implantManufacturer}
+                            setImplantManufacturer={setImplantManufacturer}
+                            implantSystem={implantSystem}
+                            setImplantSystem={setImplantSystem}
+                            implantType={implantType}
+                            setImplantType={setImplantType}
+                            syncSelectedConnection={syncSelectedConnection}
+                            clinicNameOptions={clinicNameOptions}
+                            patientNameOptions={patientNameOptions}
+                            teethOptions={teethOptions}
+                            addClinicPreset={addClinicPreset}
+                            clearAllClinicPresets={clearAllClinicPresets}
+                            addPatientPreset={addPatientPreset}
+                            clearAllPatientPresets={clearAllPatientPresets}
+                            addTeethPreset={addTeethPreset}
+                            clearAllTeethPresets={clearAllTeethPresets}
+                            handleAddOrSelectClinic={(label) => {
+                              const next = (label || "").trim();
+                              if (!next) return;
+                              setEditCaseInfos((prev: any) => ({
+                                ...(prev || {}),
+                                clinicName: next,
+                              }));
+                              addClinicPreset(next);
+                            }}
+                          />
+
+                          {(maxDiameter != null ||
+                            connectionDiameter != null) && (
+                            <div className="text-xs text-muted-foreground">
+                              직경:
+                              {maxDiameter != null
+                                ? ` 최대 ${Number(maxDiameter).toFixed(1)}`
+                                : ""}
+                              {connectionDiameter != null
+                                ? ` / 커넥션 ${Number(
+                                    connectionDiameter
+                                  ).toFixed(1)}`
+                                : ""}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
-                    {editMode ? (
-                      <div className="pt-4 space-y-3">
-                        <NewRequestPatientImplantFields
-                          caseInfos={editCaseInfos || {}}
-                          setCaseInfos={(updates) => {
-                            setEditCaseInfos((prev: any) => ({
-                              ...(prev || {}),
-                              ...updates,
-                            }));
-
-                            // NewRequestPatientImplantFields 내부 매핑을 따라가되,
-                            // 셀렉트 UI state도 같이 동기화해서 UX 일관성 유지
-                            if (typeof updates.implantSystem === "string") {
-                              setImplantManufacturer(updates.implantSystem);
-                            }
-                            if (typeof updates.implantType === "string") {
-                              setImplantSystem(updates.implantType);
-                            }
-                            if (typeof updates.connectionType === "string") {
-                              setImplantType(updates.connectionType);
-                            }
-                          }}
-                          showImplantSelect={true}
-                          connections={connections as any}
-                          typeOptions={typeOptions}
-                          implantManufacturer={implantManufacturer}
-                          setImplantManufacturer={setImplantManufacturer}
-                          implantSystem={implantSystem}
-                          setImplantSystem={setImplantSystem}
-                          implantType={implantType}
-                          setImplantType={setImplantType}
-                          syncSelectedConnection={syncSelectedConnection}
-                          clinicNameOptions={clinicNameOptions}
-                          patientNameOptions={patientNameOptions}
-                          teethOptions={teethOptions}
-                          addClinicPreset={addClinicPreset}
-                          clearAllClinicPresets={clearAllClinicPresets}
-                          addPatientPreset={addPatientPreset}
-                          clearAllPatientPresets={clearAllPatientPresets}
-                          addTeethPreset={addTeethPreset}
-                          clearAllTeethPresets={clearAllTeethPresets}
-                          handleAddOrSelectClinic={(label) => {
-                            const next = (label || "").trim();
-                            if (!next) return;
-                            setEditCaseInfos((prev: any) => ({
-                              ...(prev || {}),
-                              clinicName: next,
-                            }));
-                            addClinicPreset(next);
-                          }}
-                        />
-
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setEditMode(false)}
-                            disabled={savingEdit || loadingDetail}
-                          >
-                            취소
-                          </Button>
-                          <Button
-                            type="button"
-                            onClick={handleSaveEditFromDetail}
-                            disabled={savingEdit || loadingDetail}
-                          >
-                            저장
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="pt-4 flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={handleStartEditFromDetail}
-                          disabled={loadingDetail}
-                        >
-                          의뢰 변경
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          onClick={handleCancelFromDetail}
-                          disabled={loadingDetail}
-                        >
-                          의뢰 취소
-                        </Button>
-                      </div>
-                    )}
+                    <div className="pt-2 flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSaveEditFromDetail}
+                        disabled={savingEdit || loadingDetail}
+                      >
+                        의뢰 변경
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={openCancelConfirmFromDetail}
+                        disabled={loadingDetail}
+                      >
+                        의뢰 취소
+                      </Button>
+                    </div>
                   </>
                 )}
               </div>
@@ -578,6 +515,55 @@ export const RequestorRecentRequestsCard = ({
           </DialogHeader>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={cancelConfirmOpen}
+        title="이 의뢰를 취소하시겠습니까?"
+        description={
+          <div className="text-md">
+            <div className="font-medium mb-1 truncate">
+              {detail?.title || selectedSummary?.title || selectedRequestId}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {(() => {
+                const ci = resolveCurrentCaseInfos();
+                return (
+                  <>
+                    {ci?.clinicName && <span>{ci.clinicName}</span>}
+                    {ci?.patientName && (
+                      <span className="ml-1">{ci.patientName}</span>
+                    )}
+                    {ci?.tooth && <span className="ml-1">{ci.tooth}</span>}
+                    {ci?.implantSystem && (
+                      <span className="ml-1">{ci.implantSystem}</span>
+                    )}
+                    {ci?.implantType && (
+                      <span className="ml-1">{ci.implantType}</span>
+                    )}
+                    {ci?.maxDiameter != null && (
+                      <span className="ml-1">
+                        {Number(ci.maxDiameter).toFixed(1)}
+                      </span>
+                    )}
+                    {ci?.connectionDiameter != null && (
+                      <span className="ml-1">
+                        {Number(ci.connectionDiameter).toFixed(1)}
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        }
+        confirmLabel="의뢰 취소"
+        cancelLabel="닫기"
+        onConfirm={async () => {
+          setCancelConfirmOpen(false);
+          await handleCancelFromDetail();
+        }}
+        onCancel={() => setCancelConfirmOpen(false)}
+      />
     </Card>
   );
 };
