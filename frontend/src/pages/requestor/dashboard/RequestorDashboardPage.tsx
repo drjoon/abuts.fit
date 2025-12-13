@@ -243,7 +243,9 @@ export const RequestorDashboardPage = () => {
     : null;
 
   const recentRequests = summaryResponse?.success
-    ? summaryResponse.data.recentRequests ?? []
+    ? (summaryResponse.data.recentRequests ?? []).filter(
+        (r: any) => r?.status !== "취소"
+      )
     : [];
 
   const diameterStatsFromApi: DiameterStats | undefined =

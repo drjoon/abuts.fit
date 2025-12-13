@@ -1334,7 +1334,9 @@ async function getMyDashboardSummary(req, res) {
       .lean();
 
     // 커스텀 어벗(Request.caseInfos.implantSystem 존재)만 대시보드 통계 대상
+    // 취소 건은 대시보드(최근 의뢰/통계)에서 제외
     const abutmentRequests = requests.filter((r) => {
+      if (r.status === "취소") return false;
       const ci = r.caseInfos || {};
       return typeof ci.implantSystem === "string" && ci.implantSystem.trim();
     });
@@ -1524,7 +1526,7 @@ async function getMyPricingReferralStats(req, res) {
 
     const myLast30DaysOrders = await Request.countDocuments({
       requestor: requestorId,
-      status: { $ne: "취소" },
+      status: "완료",
       createdAt: { $gte: last30Cutoff },
     });
 
@@ -1540,7 +1542,7 @@ async function getMyPricingReferralStats(req, res) {
     const referralLast30DaysOrders = referredUserIds.length
       ? await Request.countDocuments({
           requestor: { $in: referredUserIds },
-          status: { $ne: "취소" },
+          status: "완료",
           createdAt: { $gte: last30Cutoff },
         })
       : 0;
