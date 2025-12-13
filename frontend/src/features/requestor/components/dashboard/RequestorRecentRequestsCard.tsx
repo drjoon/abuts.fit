@@ -11,6 +11,12 @@ import {
 } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+
+const DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
+const DRAFT_META_KEY_PREFIX = "abutsfit:new-request-draft-meta:v1:";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -36,14 +42,110 @@ type Props = {
 export const RequestorRecentRequestsCard = ({
   items,
   onRefresh,
-  onEdit,
+  onEdit: _onEdit,
   onCancel,
 }: Props) => {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string>("");
   const [detail, setDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  const getDraftMetaKey = () => {
+    const userId = (user as any)?.id;
+    if (!userId) return null;
+    return `${DRAFT_META_KEY_PREFIX}${String(userId)}`;
+  };
+
+  const handleCancelRequest = async (requestId: string) => {
+    if (!requestId) return;
+    await Promise.resolve(onCancel(requestId));
+  };
+
+  const handleEditFromDetail = async () => {
+    try {
+      if (!token) {
+        toast({
+          title: "로그인이 필요합니다",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      if (!selectedRequestId) return;
+
+      const res = await apiFetch<any>({
+        path: `/api/requests/${selectedRequestId}/clone-to-draft`,
+        method: "POST",
+        token,
+        headers: token
+          ? {
+              "x-mock-role": "requestor",
+            }
+          : undefined,
+      });
+
+      if (!res.ok || !res.data?.data) {
+        throw new Error(res.data?.message || "Draft 생성에 실패했습니다.");
+      }
+
+      const draft = res.data.data;
+      const draftId = draft?._id || draft?.id;
+      if (!draftId) {
+        throw new Error("Draft ID가 없습니다.");
+      }
+
+      try {
+        const metaKey = getDraftMetaKey();
+        if (metaKey && typeof window !== "undefined") {
+          const draftCaseInfos = Array.isArray(draft.caseInfos)
+            ? draft.caseInfos
+            : [];
+          const defaultCaseInfos = draftCaseInfos[0] || {
+            workType: "abutment",
+          };
+          const meta = {
+            draftId,
+            updatedAt: Date.now(),
+            caseInfos: defaultCaseInfos,
+            caseInfosMap: {
+              __default__: {
+                ...(defaultCaseInfos || {}),
+                workType: "abutment",
+              },
+            },
+          };
+          window.localStorage.setItem(metaKey, JSON.stringify(meta));
+          window.localStorage.setItem(DRAFT_ID_STORAGE_KEY, String(draftId));
+        }
+      } catch {
+        // no-op
+      }
+
+      setOpen(false);
+      setSelectedRequestId("");
+      setDetail(null);
+      navigate("/dashboard/new-request");
+    } catch (err: any) {
+      toast({
+        title: "변경 시작 실패",
+        description: err?.message || "다시 시도해주세요.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    }
+  };
+
+  const handleCancelFromDetail = async () => {
+    if (!selectedRequestId) return;
+    await handleCancelRequest(selectedRequestId);
+    setOpen(false);
+    setSelectedRequestId("");
+    setDetail(null);
+  };
 
   const selectedSummary = useMemo(() => {
     if (!selectedRequestId) return null;
@@ -103,7 +205,7 @@ export const RequestorRecentRequestsCard = ({
                 }}
                 onRemove={
                   item._id || item.id
-                    ? () => onCancel(item._id || (item.id as string))
+                    ? () => handleCancelRequest(item._id || (item.id as string))
                     : undefined
                 }
                 confirmTitle="이 의뢰를 취소하시겠습니까?"
@@ -268,6 +370,25 @@ export const RequestorRecentRequestsCard = ({
                         </div>
                       </div>
                     )}
+
+                    <div className="pt-4 flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleEditFromDetail}
+                        disabled={loadingDetail}
+                      >
+                        의뢰 변경
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={handleCancelFromDetail}
+                        disabled={loadingDetail}
+                      >
+                        의뢰 취소
+                      </Button>
+                    </div>
                   </>
                 )}
               </div>

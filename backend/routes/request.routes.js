@@ -85,6 +85,13 @@ router.put("/:id", requestController.updateRequest);
 // 의뢰 상태 변경 (권한 검증은 컨트롤러에서 처리)
 router.patch("/:id/status", requestController.updateRequestStatus);
 
+// 의뢰를 Draft로 복제 (의뢰자/관리자)
+router.post(
+  "/:id/clone-to-draft",
+  authorize(["requestor", "admin"]),
+  requestController.cloneRequestToDraft
+);
+
 // 의뢰에 메시지 추가 (권한 검증은 컨트롤러에서 처리)
 router.post("/:id/messages", requestController.addMessage);
 

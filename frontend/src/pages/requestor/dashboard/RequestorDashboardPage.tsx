@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
 import {
@@ -22,6 +23,7 @@ import {
 export const RequestorDashboardPage = () => {
   const { user, token } = useAuthStore();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "all">("30d");
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
@@ -137,7 +139,14 @@ export const RequestorDashboardPage = () => {
   };
 
   const cancelRequest = async (requestId: string) => {
-    if (!token) return;
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return;
+    }
 
     try {
       const res = await apiFetch<any>({
@@ -152,9 +161,22 @@ export const RequestorDashboardPage = () => {
       });
 
       if (!res.ok) {
+        const serverMsg = res.data?.message;
         console.error("의뢰 취소 실패", await res.raw.text().catch(() => ""));
+        toast({
+          title: "의뢰 취소 실패",
+          description:
+            serverMsg || "의뢰접수/가공전 상태에서만 취소할 수 있습니다.",
+          variant: "destructive",
+          duration: 3000,
+        });
         return;
       }
+
+      toast({
+        title: "의뢰가 취소되었습니다",
+        duration: 2000,
+      });
 
       await queryClient.invalidateQueries({
         queryKey: ["requestor-dashboard-summary-page"],
@@ -162,8 +184,18 @@ export const RequestorDashboardPage = () => {
       await queryClient.invalidateQueries({
         queryKey: ["requestor-my-requests"],
       });
+
+      // 화면 반영 보장
+      await refetchSummary();
+      await refetchBulk();
     } catch (error) {
       console.error("의뢰 취소 중 오류", error);
+      toast({
+        title: "의뢰 취소 중 오류",
+        description: "다시 시도해주세요.",
+        variant: "destructive",
+        duration: 3000,
+      });
     }
   };
 
@@ -361,7 +393,6 @@ export const RequestorDashboardPage = () => {
           }
         }}
       />
-
     </div>
   );
 };
