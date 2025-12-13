@@ -684,7 +684,7 @@ export function NewRequestDetailsSection({
                                 type="button"
                                 className={`flex items-center justify-center rounded px-1 py-0.5 border transition-all ${
                                   highlightUnverifiedArrows
-                                    ? "text-primary border-primary bg-primary/10 animate-bounce shadow-sm"
+                                    ? "text-destructive border-destructive bg-destructive/10 animate-bounce shadow-sm"
                                     : "text-primary border-primary/40 bg-primary/5 hover:bg-primary/10"
                                 }`}
                                 onClick={(e) => {

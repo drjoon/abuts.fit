@@ -273,7 +273,7 @@ export const NewRequestPage = () => {
                   setHighlightUnverifiedArrows(true);
                   toast({
                     title: "확인 필요",
-                    description: `디자인과 정보가 맞는지 ${unverifiedCount}개의 파일을 확인해주세요.`,
+                    description: `모든 파일을 확인해서 [확인후]로 변경해주세요.`,
                     duration: 5000,
                   });
                   setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
