@@ -30,6 +30,12 @@ const userSchema = new mongoose.Schema(
       enum: ["requestor", "manufacturer", "admin"],
       default: "requestor",
     },
+    referredByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     phoneNumber: {
       type: String,
       trim: true,
@@ -62,6 +68,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
     preferences: {
       language: {
         type: String,
@@ -69,15 +79,15 @@ const userSchema = new mongoose.Schema(
         default: "ko",
       },
       notifications: {
-  email: {
-    newRequest: { type: Boolean, default: true },
-    newMessage: { type: Boolean, default: true },
-  },
-  push: {
-    newRequest: { type: Boolean, default: true },
-    newMessage: { type: Boolean, default: true },
-  },
-},
+        email: {
+          newRequest: { type: Boolean, default: true },
+          newMessage: { type: Boolean, default: true },
+        },
+        push: {
+          newRequest: { type: Boolean, default: true },
+          newMessage: { type: Boolean, default: true },
+        },
+      },
       theme: {
         type: String,
         enum: ["light", "dark", "system"],
@@ -109,18 +119,20 @@ userSchema.pre("save", async function (next) {
 userSchema.methods.comparePassword = async function (candidatePassword) {
   try {
     if (!this.password) {
-      console.error('비밀번호 필드가 없습니다. select("+password")가 제대로 작동하는지 확인하세요.');
+      console.error(
+        '비밀번호 필드가 없습니다. select("+password")가 제대로 작동하는지 확인하세요.'
+      );
       return false;
     }
-    
+
     if (!candidatePassword) {
-      console.error('비교할 비밀번호가 없습니다.');
+      console.error("비교할 비밀번호가 없습니다.");
       return false;
     }
-    
+
     return await bcrypt.compare(candidatePassword, this.password);
   } catch (error) {
-    console.error('비밀번호 비교 오류:', error);
+    console.error("비밀번호 비교 오류:", error);
     return false;
   }
 };

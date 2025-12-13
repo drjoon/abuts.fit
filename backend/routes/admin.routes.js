@@ -24,6 +24,10 @@ router.patch("/requests/:id/assign", adminController.assignManufacturer); // 제
 // 대시보드 통계
 router.get("/dashboard", adminController.getDashboardStats);
 
+// 가격/리퍼럴 정책 통계
+router.get("/pricing-stats", adminController.getPricingStats);
+router.get("/pricing-stats/users", adminController.getPricingStatsByUser);
+
 // 시스템 로그
 router.get("/logs", adminController.getSystemLogs);
 

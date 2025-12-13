@@ -6,30 +6,91 @@ import { AppLayout } from "@/components/common/AppLayout";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { NewChatWidget } from "@/components/chat/NewChatWidget";
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/utils/filenameRules";
-import Index from "./pages/Index";
-import { LoginPage } from "./pages/LoginPage";
-import { SignupPage } from "./pages/SignupPage";
-import { DashboardLayout } from "./components/DashboardLayout";
-import { DashboardHome } from "./pages/DashboardHome";
-import { NewRequestPage } from "./pages/requestor/new_request/NewRequestPage";
-import { ManufacturerWorksheetPage } from "./pages/manufacturer/WorkSheet";
-import { SettingsPage } from "./features/requestor/pages/SettingsPage";
-import { AdminUserManagement } from "./pages/admin/users/AdminUserManagement";
-import { AdminRequestMonitoring } from "./pages/admin/monitoring/AdminRequestMonitoring";
-import { AdminChatManagement } from "./pages/admin/support/AdminChatManagement";
-import { AdminAnalytics } from "./pages/admin/system/AdminAnalytics";
-import { AdminSecurity } from "./pages/admin/system/AdminSecurity";
-import { CncDashboardPage } from "./pages/manufacturer/CncDashboardPage";
-import { HelpPage } from "./pages/HelpPage";
-import { ContactPage } from "./pages/ContactPage";
-import { TermsPage } from "./pages/TermsPage";
-import { PrivacyPage } from "./pages/PrivacyPage";
-import { SecurityPage } from "./pages/SecurityPage";
-import { CookiesPage } from "./pages/CookiesPage";
-import { BusinessPage } from "./pages/BusinessPage";
-import NotFound from "./pages/NotFound";
+
+const Index = lazy(() => import("./pages/Index"));
+const LoginPage = lazy(() =>
+  import("./pages/LoginPage").then((m) => ({ default: m.LoginPage }))
+);
+const SignupPage = lazy(() =>
+  import("./pages/SignupPage").then((m) => ({ default: m.SignupPage }))
+);
+const DashboardLayout = lazy(() =>
+  import("./components/DashboardLayout").then((m) => ({
+    default: m.DashboardLayout,
+  }))
+);
+const DashboardHome = lazy(() =>
+  import("./pages/DashboardHome").then((m) => ({ default: m.DashboardHome }))
+);
+const NewRequestPage = lazy(() =>
+  import("./pages/requestor/new_request/NewRequestPage").then((m) => ({
+    default: m.NewRequestPage,
+  }))
+);
+const ManufacturerWorksheetPage = lazy(() =>
+  import("./pages/manufacturer/WorkSheet").then((m) => ({
+    default: m.ManufacturerWorksheetPage,
+  }))
+);
+const SettingsPage = lazy(() =>
+  import("./features/requestor/pages/SettingsPage").then((m) => ({
+    default: m.SettingsPage,
+  }))
+);
+const AdminUserManagement = lazy(() =>
+  import("./pages/admin/users/AdminUserManagement").then((m) => ({
+    default: m.AdminUserManagement,
+  }))
+);
+const AdminRequestMonitoring = lazy(() =>
+  import("./pages/admin/monitoring/AdminRequestMonitoring").then((m) => ({
+    default: m.AdminRequestMonitoring,
+  }))
+);
+const AdminChatManagement = lazy(() =>
+  import("./pages/admin/support/AdminChatManagement").then((m) => ({
+    default: m.AdminChatManagement,
+  }))
+);
+const AdminAnalytics = lazy(() =>
+  import("./pages/admin/system/AdminAnalytics").then((m) => ({
+    default: m.AdminAnalytics,
+  }))
+);
+const AdminSecurity = lazy(() =>
+  import("./pages/admin/system/AdminSecurity").then((m) => ({
+    default: m.AdminSecurity,
+  }))
+);
+const CncDashboardPage = lazy(() =>
+  import("./pages/manufacturer/CncDashboardPage").then((m) => ({
+    default: m.CncDashboardPage,
+  }))
+);
+const HelpPage = lazy(() =>
+  import("./pages/HelpPage").then((m) => ({ default: m.HelpPage }))
+);
+const ContactPage = lazy(() =>
+  import("./pages/ContactPage").then((m) => ({ default: m.ContactPage }))
+);
+const TermsPage = lazy(() =>
+  import("./pages/TermsPage").then((m) => ({ default: m.TermsPage }))
+);
+const PrivacyPage = lazy(() =>
+  import("./pages/PrivacyPage").then((m) => ({ default: m.PrivacyPage }))
+);
+const SecurityPage = lazy(() =>
+  import("./pages/SecurityPage").then((m) => ({ default: m.SecurityPage }))
+);
+const CookiesPage = lazy(() =>
+  import("./pages/CookiesPage").then((m) => ({ default: m.CookiesPage }))
+);
+const BusinessPage = lazy(() =>
+  import("./pages/BusinessPage").then((m) => ({ default: m.BusinessPage }))
+);
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
@@ -70,143 +131,72 @@ const App = () => {
           <Toaster />
           <Sonner />
           <AppLayout>
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  <AppLayout>
-                    <Index />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/login"
-                element={
-                  <AppLayout>
-                    <LoginPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/signup"
-                element={
-                  <AppLayout>
-                    <SignupPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/help"
-                element={
-                  <AppLayout>
-                    <HelpPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/contact"
-                element={
-                  <AppLayout>
-                    <ContactPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/terms"
-                element={
-                  <AppLayout>
-                    <TermsPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/privacy"
-                element={
-                  <AppLayout>
-                    <PrivacyPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/security"
-                element={
-                  <AppLayout>
-                    <SecurityPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/cookies"
-                element={
-                  <AppLayout>
-                    <CookiesPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/business"
-                element={
-                  <AppLayout>
-                    <BusinessPage />
-                  </AppLayout>
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={
-                  <AppLayout>
+            <Suspense fallback={<div className="p-6">불러오는 중...</div>}>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/signup" element={<SignupPage />} />
+                <Route path="/help" element={<HelpPage />} />
+                <Route path="/contact" element={<ContactPage />} />
+                <Route path="/terms" element={<TermsPage />} />
+                <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/security" element={<SecurityPage />} />
+                <Route path="/cookies" element={<CookiesPage />} />
+                <Route path="/business" element={<BusinessPage />} />
+                <Route
+                  path="/dashboard"
+                  element={
                     <ProtectedRoute>
                       <DashboardLayout />
                     </ProtectedRoute>
-                  </AppLayout>
-                }
-              >
-                <Route index element={<DashboardHome />} />
-                <Route path="new-request" element={<NewRequestPage />} />
-                <Route path="new-request/:id" element={<NewRequestPage />} />
-                <Route
-                  path="worksheet"
-                  element={
-                    <RoleProtectedRoute roles={["manufacturer"]}>
-                      <ManufacturerWorksheetPage />
-                    </RoleProtectedRoute>
                   }
-                />
-                <Route
-                  path="cnc"
-                  element={
-                    <RoleProtectedRoute roles={["manufacturer"]}>
-                      <CncDashboardPage />
-                    </RoleProtectedRoute>
-                  }
-                />
-                <Route
-                  path="printer"
-                  element={
-                    <RoleProtectedRoute roles={["manufacturer"]}>
-                      <CncDashboardPage />
-                    </RoleProtectedRoute>
-                  }
-                />
-                <Route
-                  path="user-management"
-                  element={<AdminUserManagement />}
-                />
-                <Route
-                  path="request-monitoring"
-                  element={<AdminRequestMonitoring />}
-                />
-                <Route
-                  path="chat-management"
-                  element={<AdminChatManagement />}
-                />
-                <Route path="system-analytics" element={<AdminAnalytics />} />
-                <Route path="security-settings" element={<AdminSecurity />} />
-                <Route path="settings" element={<SettingsPage />} />
-              </Route>
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+                >
+                  <Route index element={<DashboardHome />} />
+                  <Route path="new-request" element={<NewRequestPage />} />
+                  <Route path="new-request/:id" element={<NewRequestPage />} />
+                  <Route
+                    path="worksheet"
+                    element={
+                      <RoleProtectedRoute roles={["manufacturer"]}>
+                        <ManufacturerWorksheetPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="cnc"
+                    element={
+                      <RoleProtectedRoute roles={["manufacturer"]}>
+                        <CncDashboardPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="printer"
+                    element={
+                      <RoleProtectedRoute roles={["manufacturer"]}>
+                        <CncDashboardPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="user-management"
+                    element={<AdminUserManagement />}
+                  />
+                  <Route
+                    path="request-monitoring"
+                    element={<AdminRequestMonitoring />}
+                  />
+                  <Route
+                    path="chat-management"
+                    element={<AdminChatManagement />}
+                  />
+                  <Route path="system-analytics" element={<AdminAnalytics />} />
+                  <Route path="security-settings" element={<AdminSecurity />} />
+                  <Route path="settings" element={<SettingsPage />} />
+                </Route>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
             <NewChatWidget />
           </AppLayout>
         </BrowserRouter>

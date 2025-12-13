@@ -1,7 +1,16 @@
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
-import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -30,7 +39,44 @@ export const RequestorRecentRequestsCard = ({
   onEdit,
   onCancel,
 }: Props) => {
-  const navigate = useNavigate();
+  const { token } = useAuthStore();
+  const [open, setOpen] = useState(false);
+  const [selectedRequestId, setSelectedRequestId] = useState<string>("");
+  const [detail, setDetail] = useState<any>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  const selectedSummary = useMemo(() => {
+    if (!selectedRequestId) return null;
+    return items.find((it) => (it._id || it.id) === selectedRequestId) || null;
+  }, [items, selectedRequestId]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!open || !selectedRequestId) return;
+      setLoadingDetail(true);
+      try {
+        const res = await apiFetch<any>({
+          path: `/api/requests/${selectedRequestId}`,
+          method: "GET",
+          token,
+          headers: token
+            ? {
+                "x-mock-role": "requestor",
+              }
+            : undefined,
+        });
+
+        if (res.ok && res.data?.success) {
+          setDetail(res.data.data);
+        } else {
+          setDetail(null);
+        }
+      } finally {
+        setLoadingDetail(false);
+      }
+    };
+    void run();
+  }, [open, selectedRequestId, token]);
   return (
     <Card
       className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg flex-1 min-h-[220px] cursor-pointer"
@@ -48,9 +94,13 @@ export const RequestorRecentRequestsCard = ({
               <FunctionalItemCard
                 key={displayId}
                 className="flex items-center justify-between p-3 border border-border rounded-lg"
-                onClick={(e) => e.stopPropagation()}
-                // U 버튼: 프로필/배송 옵션 설정 페이지로 이동
-                onUpdate={() => navigate("/dashboard/settings")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const reqId = item._id || item.id;
+                  if (!reqId) return;
+                  setSelectedRequestId(reqId);
+                  setOpen(true);
+                }}
                 onRemove={
                   item._id || item.id
                     ? () => onCancel(item._id || (item.id as string))
@@ -129,6 +179,102 @@ export const RequestorRecentRequestsCard = ({
           })}
         </div>
       </CardContent>
+
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) {
+            setSelectedRequestId("");
+            setDetail(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {detail?.title || selectedSummary?.title || "의뢰 상세"}
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-3 pt-2 text-sm text-muted-foreground">
+                {loadingDetail ? (
+                  <div>불러오는 중...</div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="text-foreground font-medium">상태</div>
+                      <div>
+                        {getStatusBadge(
+                          detail?.status || selectedSummary?.status || "-"
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-foreground font-medium">
+                        케이스 정보
+                      </div>
+                      <div>
+                        {detail?.caseInfos?.clinicName ||
+                          selectedSummary?.caseInfos?.clinicName ||
+                          "-"}
+                        {detail?.caseInfos?.patientName ||
+                        selectedSummary?.caseInfos?.patientName
+                          ? ` / ${
+                              detail?.caseInfos?.patientName ||
+                              selectedSummary?.caseInfos?.patientName
+                            }`
+                          : ""}
+                        {detail?.caseInfos?.tooth ||
+                        selectedSummary?.caseInfos?.tooth
+                          ? ` / ${
+                              detail?.caseInfos?.tooth ||
+                              selectedSummary?.caseInfos?.tooth
+                            }`
+                          : ""}
+                      </div>
+                      {(detail?.caseInfos?.implantSystem ||
+                        selectedSummary?.caseInfos?.implantSystem) && (
+                        <div>
+                          {detail?.caseInfos?.implantSystem ||
+                            selectedSummary?.caseInfos?.implantSystem}
+                          {detail?.caseInfos?.implantType ||
+                          selectedSummary?.caseInfos?.implantType
+                            ? ` / ${
+                                detail?.caseInfos?.implantType ||
+                                selectedSummary?.caseInfos?.implantType
+                              }`
+                            : ""}
+                        </div>
+                      )}
+                      {(detail?.caseInfos?.maxDiameter ||
+                        selectedSummary?.caseInfos?.maxDiameter) && (
+                        <div>
+                          최대 직경:{" "}
+                          {(
+                            detail?.caseInfos?.maxDiameter ??
+                            selectedSummary?.caseInfos?.maxDiameter
+                          ).toFixed(1)}
+                        </div>
+                      )}
+                    </div>
+
+                    {detail?.price?.amount != null && (
+                      <div className="space-y-1">
+                        <div className="text-foreground font-medium">가격</div>
+                        <div>
+                          {Number(detail.price.amount || 0).toLocaleString()}원
+                          {detail.price.rule ? ` (${detail.price.rule})` : ""}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };

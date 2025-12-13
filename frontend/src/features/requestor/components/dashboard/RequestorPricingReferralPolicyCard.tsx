@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -15,12 +16,47 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/hooks/use-toast";
 
 export const RequestorPricingReferralPolicyCard = () => {
   const [open, setOpen] = useState(false);
+  const { user, token } = useAuthStore();
+  const { toast } = useToast();
 
-  const myLast30DaysOrders = 0;
-  const referralLast30DaysOrders = 0;
+  const userId = (user as any)?._id || (user as any)?.id || "";
+
+  const referralLink = useMemo(() => {
+    if (!userId) return "";
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}/signup?ref=${userId}`;
+  }, [userId]);
+
+  const { data } = useQuery({
+    queryKey: ["requestor-pricing-referral-stats"],
+    queryFn: async () => {
+      const res = await apiFetch<any>({
+        path: "/api/requests/my/pricing-referral-stats",
+        method: "GET",
+        token,
+        headers: token
+          ? {
+              "x-mock-role": "requestor",
+            }
+          : undefined,
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error("가격/리퍼럴 통계 조회에 실패했습니다.");
+      }
+      return res.data.data;
+    },
+    enabled: Boolean(token && user && user.role === "requestor"),
+    retry: false,
+  });
+
+  const myLast30DaysOrders = data?.myLast30DaysOrders ?? 0;
+  const referralLast30DaysOrders = data?.referralLast30DaysOrders ?? 0;
 
   const totalOrders = myLast30DaysOrders + referralLast30DaysOrders;
   const targetOrdersForMaxDiscount = 500;
@@ -28,14 +64,60 @@ export const RequestorPricingReferralPolicyCard = () => {
     ? Math.min(100, (totalOrders / targetOrdersForMaxDiscount) * 100)
     : 0;
 
-  const maxDiscountPerUnit = 5000;
-  const discountPerOrder = 10;
-  const totalDiscount = Math.min(
-    totalOrders * discountPerOrder,
-    maxDiscountPerUnit
-  );
-  const baseUnitPrice = 15000;
-  const effectiveUnitPrice = baseUnitPrice - totalDiscount;
+  const maxDiscountPerUnit = data?.maxDiscountPerUnit ?? 5000;
+  const discountPerOrder = data?.discountPerOrder ?? 10;
+  const totalDiscount = data?.discountAmount ?? 0;
+  const baseUnitPrice = data?.baseUnitPrice ?? 15000;
+  const effectiveUnitPrice = data?.effectiveUnitPrice ?? baseUnitPrice;
+
+  const shouldHighlightReferral = data?.rule === "new_user_90days_fixed_10000";
+
+  const copyToClipboardFallback = (text: string) => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return ok;
+  };
+
+  const handleCopyReferralLink = async () => {
+    try {
+      if (!referralLink) return;
+
+      const canUseClipboardApi =
+        typeof window !== "undefined" &&
+        window.isSecureContext &&
+        typeof navigator !== "undefined" &&
+        Boolean(navigator.clipboard?.writeText);
+
+      if (canUseClipboardApi) {
+        await navigator.clipboard.writeText(referralLink);
+      } else {
+        const ok = copyToClipboardFallback(referralLink);
+        if (!ok) {
+          throw new Error("fallback copy failed");
+        }
+      }
+      toast({
+        title: "복사 완료",
+        description: "추천 링크를 클립보드에 복사했습니다.",
+      });
+    } catch {
+      toast({
+        title: "복사 실패",
+        description:
+          "클립보드 복사에 실패했습니다. (브라우저 권한/보안 설정을 확인해주세요)",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <>
@@ -45,15 +127,31 @@ export const RequestorPricingReferralPolicyCard = () => {
             <CardTitle className="text-base font-semibold">
               가격 & 리퍼럴 정책
             </CardTitle>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-gray-300 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
-              onClick={() => setOpen(true)}
-            >
-              정책
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={shouldHighlightReferral ? "default" : "outline"}
+                size="sm"
+                className={
+                  shouldHighlightReferral
+                    ? "text-xs px-2 py-1 h-7 shadow-sm ring-1 ring-primary/40"
+                    : "border-gray-300 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
+                }
+                onClick={handleCopyReferralLink}
+                disabled={!referralLink}
+              >
+                내 추천 링크 복사
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-gray-300 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
+                onClick={() => setOpen(true)}
+              >
+                정책
+              </Button>
+            </div>
           </div>
           <CardDescription className="space-y-1 text-xs text-muted-foreground" />
         </CardHeader>
@@ -100,7 +198,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                     {baseUnitPrice.toLocaleString()}원
                   </span>
                   <span className="text-2xl font-bold text-primary">
-                    10,000원
+                    {effectiveUnitPrice.toLocaleString()}원
                   </span>
                 </div>
               </div>

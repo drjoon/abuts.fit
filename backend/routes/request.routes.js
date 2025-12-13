@@ -48,6 +48,13 @@ router.get(
   requestController.getMyDashboardSummary
 );
 
+// 가격/리퍼럴 통계 (의뢰자용)
+router.get(
+  "/my/pricing-referral-stats",
+  authorize(["requestor", "admin"]),
+  requestController.getMyPricingReferralStats
+);
+
 // 동일 환자/치아 커스텀 어벗 의뢰 존재 여부 확인 (재의뢰 판단용)
 router.get(
   "/my/has-duplicate",

@@ -24,6 +24,7 @@ export const authenticate = async (req, res, next) => {
     // 개발용 MOCK 토큰 우회 (프론트 mock 로그인과 연동)
     if (process.env.NODE_ENV !== "production" && token === "MOCK_DEV_TOKEN") {
       const mockRole = req.headers["x-mock-role"] || "manufacturer";
+      const now = new Date();
 
       // 역할별 고정 ObjectId 사용 (Draft 권한 검증을 위해 일관된 ID 필요)
       const MOCK_USER_IDS = {
@@ -38,6 +39,9 @@ export const authenticate = async (req, res, next) => {
         ),
         role: mockRole,
         active: true,
+        approvedAt: now,
+        createdAt: now,
+        updatedAt: now,
       };
       return next();
     }

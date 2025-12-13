@@ -4,6 +4,215 @@ import File from "../models/file.model.js";
 import { Types } from "mongoose";
 import ActivityLog from "../models/activityLog.model.js";
 
+function getDateRangeFromQuery(req) {
+  const now = new Date();
+  const startDateRaw = req.query.startDate;
+  const endDateRaw = req.query.endDate;
+
+  if (startDateRaw && endDateRaw) {
+    const start = new Date(startDateRaw);
+    const end = new Date(endDateRaw);
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+      return { start, end };
+    }
+  }
+
+  // 기본값: 최근 30일
+  const start = new Date(now);
+  start.setDate(start.getDate() - 30);
+  return { start, end: now };
+}
+
+/**
+ * 가격/할인 통계(요약)
+ * @route GET /api/admin/pricing-stats
+ */
+async function getPricingStats(req, res) {
+  try {
+    const { start, end } = getDateRangeFromQuery(req);
+    const match = {
+      createdAt: { $gte: start, $lte: end },
+      status: { $ne: "취소" },
+    };
+
+    const rows = await Request.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: { $ifNull: ["$price.amount", 0] } },
+          totalBaseAmount: { $sum: { $ifNull: ["$price.baseAmount", 0] } },
+          totalDiscountAmount: {
+            $sum: { $ifNull: ["$price.discountAmount", 0] },
+          },
+        },
+      },
+    ]);
+
+    const summary = rows && rows.length > 0 ? rows[0] : {};
+    const totalOrders = summary.totalOrders || 0;
+    const totalRevenue = summary.totalRevenue || 0;
+    const totalBaseAmount = summary.totalBaseAmount || 0;
+    const totalDiscountAmount = summary.totalDiscountAmount || 0;
+
+    // 추천인(referrer) 기준으로, 추천받은 유저들의 주문을 합산 집계
+    const referralRows = await Request.aggregate([
+      { $match: match },
+      {
+        $lookup: {
+          from: "users",
+          localField: "requestor",
+          foreignField: "_id",
+          as: "requestorUser",
+        },
+      },
+      { $unwind: "$requestorUser" },
+      {
+        $group: {
+          _id: "$requestorUser.referredByUserId",
+          referralOrders: { $sum: 1 },
+        },
+      },
+      { $match: { _id: { $ne: null } } },
+    ]);
+
+    const totalReferralOrders = referralRows.reduce(
+      (acc, r) => acc + (r.referralOrders || 0),
+      0
+    );
+
+    res.status(200).json({
+      success: true,
+      data: {
+        range: { startDate: start, endDate: end },
+        totalOrders,
+        totalReferralOrders,
+        totalRevenue,
+        totalBaseAmount,
+        totalDiscountAmount,
+        avgUnitPrice: totalOrders ? Math.round(totalRevenue / totalOrders) : 0,
+        avgDiscountPerOrder: totalOrders
+          ? Math.round(totalDiscountAmount / totalOrders)
+          : 0,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "가격 통계 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 사용자별 가격/할인 통계
+ * @route GET /api/admin/pricing-stats/users
+ */
+async function getPricingStatsByUser(req, res) {
+  try {
+    const { start, end } = getDateRangeFromQuery(req);
+    const match = {
+      createdAt: { $gte: start, $lte: end },
+      status: { $ne: "취소" },
+    };
+
+    const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
+
+    const rows = await Request.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: "$requestor",
+          orders: { $sum: 1 },
+          revenue: { $sum: { $ifNull: ["$price.amount", 0] } },
+          baseAmount: { $sum: { $ifNull: ["$price.baseAmount", 0] } },
+          discountAmount: {
+            $sum: { $ifNull: ["$price.discountAmount", 0] },
+          },
+        },
+      },
+      { $sort: { orders: -1 } },
+      { $limit: limit },
+    ]);
+
+    // 추천인(referrer) 기준 리퍼럴 주문량 집계(기간 내)
+    const referralRows = await Request.aggregate([
+      { $match: match },
+      {
+        $lookup: {
+          from: "users",
+          localField: "requestor",
+          foreignField: "_id",
+          as: "requestorUser",
+        },
+      },
+      { $unwind: "$requestorUser" },
+      {
+        $group: {
+          _id: "$requestorUser.referredByUserId",
+          referralOrders: { $sum: 1 },
+        },
+      },
+      { $match: { _id: { $ne: null } } },
+    ]);
+    const referralMap = new Map(
+      referralRows.map((r) => [String(r._id), r.referralOrders || 0])
+    );
+
+    const userIds = rows
+      .map((r) => r._id)
+      .filter((id) => Types.ObjectId.isValid(id));
+    const users = await User.find({ _id: { $in: userIds } })
+      .select({ name: 1, email: 1, organization: 1, role: 1, createdAt: 1 })
+      .lean();
+    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+    const data = rows.map((r) => {
+      const user = userMap.get(r._id?.toString?.() || String(r._id));
+      const orders = r.orders || 0;
+      const revenue = r.revenue || 0;
+      const discountAmount = r.discountAmount || 0;
+      const referralLast30DaysOrders = referralMap.get(String(r._id)) || 0;
+      return {
+        user: user
+          ? {
+              _id: user._id,
+              name: user.name,
+              email: user.email,
+              organization: user.organization,
+              role: user.role,
+              createdAt: user.createdAt,
+            }
+          : { _id: r._id },
+        orders,
+        referralLast30DaysOrders,
+        totalOrders: orders + referralLast30DaysOrders,
+        revenue,
+        baseAmount: r.baseAmount || 0,
+        discountAmount,
+        avgUnitPrice: orders ? Math.round(revenue / orders) : 0,
+        avgDiscountPerOrder: orders ? Math.round(discountAmount / orders) : 0,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        range: { startDate: start, endDate: end },
+        items: data,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "사용자별 가격 통계 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 /**
  * 모든 사용자 목록 조회
  * @route GET /api/admin/users
@@ -208,6 +417,11 @@ async function toggleUserActive(req, res) {
 
     // 활성화 상태 토글
     user.active = !user.active;
+
+    // 활성화(=승인)되는 순간 승인일을 기록
+    if (user.active && !user.approvedAt) {
+      user.approvedAt = new Date();
+    }
     await user.save();
 
     res.status(200).json({
@@ -1001,6 +1215,8 @@ export default {
   toggleUserActive,
   changeUserRole,
   getDashboardStats,
+  getPricingStats,
+  getPricingStatsByUser,
   getAllRequests,
   getRequestById,
   updateRequestStatus,

@@ -87,9 +87,27 @@ const requestSchema = new mongoose.Schema(
         type: Number,
         default: 0,
       },
+      baseAmount: {
+        type: Number,
+        default: 0,
+      },
+      discountAmount: {
+        type: Number,
+        default: 0,
+      },
       currency: {
         type: String,
         default: "KRW",
+      },
+      rule: {
+        type: String,
+        default: "",
+      },
+      discountMeta: {
+        last30DaysOrders: Number,
+        referralLast30DaysOrders: Number,
+        discountPerOrder: Number,
+        maxDiscount: Number,
       },
       quotedAt: Date,
     },

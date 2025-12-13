@@ -1,6 +1,7 @@
 import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
 import DraftRequest from "../models/draftRequest.model.js";
+import ClinicImplantPreset from "../models/clinicImplantPreset.model.js";
 import { Types } from "mongoose";
 
 // status(단일 필드)를 status1/status2와 동기화하는 헬퍼
@@ -60,6 +61,129 @@ async function ensureLotNumberForMachining(requestDoc) {
   return;
 }
 
+async function computePriceForRequest({
+  requestorId,
+  clinicName,
+  patientName,
+  tooth,
+}) {
+  const BASE_UNIT_PRICE = 15000;
+  const REMAKE_FIXED_PRICE = 10000;
+  const NEW_USER_FIXED_PRICE = 10000;
+  const DISCOUNT_PER_ORDER = 10;
+  const MAX_DISCOUNT = 5000;
+
+  const now = new Date();
+
+  // 1) 리메이크(재의뢰): 동일 환자/치아/치과, 90일 내 주문 존재 -> 10,000원 고정
+  const remakeCutoff = new Date(now);
+  remakeCutoff.setDate(remakeCutoff.getDate() - 90);
+  const existing = await Request.findOne({
+    requestor: requestorId,
+    "caseInfos.patientName": patientName,
+    "caseInfos.tooth": tooth,
+    "caseInfos.clinicName": clinicName,
+    status: { $ne: "취소" },
+    createdAt: { $gte: remakeCutoff },
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  if (existing) {
+    return {
+      baseAmount: REMAKE_FIXED_PRICE,
+      discountAmount: 0,
+      amount: REMAKE_FIXED_PRICE,
+      currency: "KRW",
+      rule: "remake_fixed_10000",
+      discountMeta: {
+        last30DaysOrders: 0,
+        referralLast30DaysOrders: 0,
+        discountPerOrder: DISCOUNT_PER_ORDER,
+        maxDiscount: MAX_DISCOUNT,
+      },
+      quotedAt: now,
+    };
+  }
+
+  // 2) 신규 90일 고정가: 가입일(createdAt) 기준 90일 내 -> 10,000원 고정
+  const user = await User.findById(requestorId)
+    .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
+    .lean();
+  const baseDate =
+    user?.approvedAt ||
+    (user?.active ? user?.updatedAt : null) ||
+    user?.createdAt;
+  if (baseDate) {
+    const newUserCutoff = new Date(baseDate);
+    newUserCutoff.setDate(newUserCutoff.getDate() + 90);
+    if (now < newUserCutoff) {
+      return {
+        baseAmount: NEW_USER_FIXED_PRICE,
+        discountAmount: 0,
+        amount: NEW_USER_FIXED_PRICE,
+        currency: "KRW",
+        rule: "new_user_90days_fixed_10000",
+        discountMeta: {
+          last30DaysOrders: 0,
+          referralLast30DaysOrders: 0,
+          discountPerOrder: DISCOUNT_PER_ORDER,
+          maxDiscount: MAX_DISCOUNT,
+        },
+        quotedAt: now,
+      };
+    }
+  }
+
+  // 3) 최근 30일 주문량 할인(리퍼럴 합산은 아직 스키마가 없어 0으로 처리)
+  const last30Cutoff = new Date(now);
+  last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+  const last30DaysOrders = await Request.countDocuments({
+    requestor: requestorId,
+    status: { $ne: "취소" },
+    createdAt: { $gte: last30Cutoff },
+  });
+
+  // 추천인 합산: 내가 추천한(=referredByUserId가 나인) 유저들의 최근 30일 주문량을 합산
+  const referredUsers = await User.find({
+    referredByUserId: requestorId,
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  const referredUserIds = referredUsers.map((u) => u._id).filter(Boolean);
+
+  const referralLast30DaysOrders = referredUserIds.length
+    ? await Request.countDocuments({
+        requestor: { $in: referredUserIds },
+        status: { $ne: "취소" },
+        createdAt: { $gte: last30Cutoff },
+      })
+    : 0;
+  const totalOrders = last30DaysOrders + referralLast30DaysOrders;
+  const discountAmount = Math.min(
+    totalOrders * DISCOUNT_PER_ORDER,
+    MAX_DISCOUNT
+  );
+  const amount = Math.max(0, BASE_UNIT_PRICE - discountAmount);
+
+  return {
+    baseAmount: BASE_UNIT_PRICE,
+    discountAmount,
+    amount,
+    currency: "KRW",
+    rule: discountAmount > 0 ? "volume_discount_last30days" : "base_price",
+    discountMeta: {
+      last30DaysOrders,
+      referralLast30DaysOrders,
+      discountPerOrder: DISCOUNT_PER_ORDER,
+      maxDiscount: MAX_DISCOUNT,
+    },
+    quotedAt: now,
+  };
+}
+
 /**
  * 새 의뢰 생성
  * @route POST /api/requests
@@ -115,38 +239,18 @@ async function createRequest(req, res) {
           });
         }
 
-        let priceAmount = 15000;
-        const hasImplantSystem =
-          typeof caseInfos.implantSystem === "string" &&
-          caseInfos.implantSystem.trim();
-
-        if (hasImplantSystem) {
-          const clinicName = (caseInfos.clinicName || "").trim();
-          if (clinicName) {
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - 90);
-
-            const existing = await Request.findOne({
-              requestor: req.user._id,
-              "caseInfos.patientName": patientName,
-              "caseInfos.tooth": tooth,
-              "caseInfos.clinicName": clinicName,
-              "caseInfos.implantSystem": { $exists: true, $ne: "" },
-              status: { $ne: "취소" },
-              createdAt: { $gte: cutoff },
-            }).lean();
-
-            if (existing) {
-              priceAmount = 10000;
-            }
-          }
-        }
+        const computedPrice = await computePriceForRequest({
+          requestorId: req.user._id,
+          clinicName,
+          patientName,
+          tooth,
+        });
 
         const newRequest = new Request({
           ...rest,
           caseInfos,
           requestor: req.user._id,
-          price: { amount: priceAmount },
+          price: computedPrice,
         });
         applyStatusMapping(newRequest, newRequest.status);
         await newRequest.save();
@@ -248,43 +352,27 @@ async function createRequest(req, res) {
       });
     }
 
-    let priceAmount = 15000;
-    const hasImplantSystem =
-      typeof caseInfos.implantSystem === "string" &&
-      caseInfos.implantSystem.trim();
-
-    if (hasImplantSystem) {
-      const clinicName = (caseInfos.clinicName || "").trim();
-      if (clinicName) {
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 90);
-
-        const existing = await Request.findOne({
-          requestor: req.user._id,
-          "caseInfos.patientName": patientName,
-          "caseInfos.tooth": tooth,
-          "caseInfos.clinicName": clinicName,
-          "caseInfos.implantSystem": { $exists: true, $ne: "" },
-          status: { $ne: "취소" },
-          createdAt: { $gte: cutoff },
-        }).lean();
-
-        if (existing) {
-          priceAmount = 10000;
-        }
-      }
-    }
+    const computedPrice = await computePriceForRequest({
+      requestorId: req.user._id,
+      clinicName,
+      patientName,
+      tooth,
+    });
 
     const newRequest = new Request({
       ...bodyRest,
       caseInfos,
       requestor: req.user._id,
-      price: { amount: priceAmount },
+      price: computedPrice,
     });
 
     applyStatusMapping(newRequest, newRequest.status);
 
     await newRequest.save();
+
+    const hasImplantSystem =
+      typeof caseInfos.implantSystem === "string" &&
+      caseInfos.implantSystem.trim();
 
     if (hasImplantSystem) {
       try {
@@ -441,31 +529,12 @@ async function createRequestsFromDraft(req, res) {
         continue; // 이 파일은 건너뛰고 다음 파일 처리
       }
 
-      let priceAmount = 15000;
-      const hasImplantSystem =
-        typeof implantSystem === "string" && implantSystem.trim();
-
-      if (hasImplantSystem) {
-        const clinicNameForPrice = clinicName;
-        if (clinicNameForPrice) {
-          const cutoff = new Date();
-          cutoff.setDate(cutoff.getDate() - 90);
-
-          const existing = await Request.findOne({
-            requestor: req.user._id,
-            "caseInfos.patientName": patientName,
-            "caseInfos.tooth": tooth,
-            "caseInfos.clinicName": clinicNameForPrice,
-            "caseInfos.implantSystem": { $exists: true, $ne: "" },
-            status: { $ne: "취소" },
-            createdAt: { $gte: cutoff },
-          }).lean();
-
-          if (existing) {
-            priceAmount = 10000;
-          }
-        }
-      }
+      const computedPrice = await computePriceForRequest({
+        requestorId: req.user._id,
+        clinicName,
+        patientName,
+        tooth,
+      });
 
       const caseInfosWithFile = ci.file
         ? {
@@ -486,7 +555,7 @@ async function createRequestsFromDraft(req, res) {
       const newRequest = new Request({
         requestor: req.user._id,
         caseInfos: caseInfosWithFile,
-        price: { amount: priceAmount },
+        price: computedPrice,
         shippingMode,
         requestedShipDate,
       });
@@ -1363,6 +1432,149 @@ async function getMyDashboardSummary(req, res) {
 }
 
 /**
+ * 가격/리퍼럴 통계 (의뢰자용)
+ * @route GET /api/requests/my/pricing-referral-stats
+ */
+async function getMyPricingReferralStats(req, res) {
+  try {
+    const requestorId = req.user._id;
+
+    const now = new Date();
+    const last30Cutoff = new Date(now);
+    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+
+    const myLast30DaysOrders = await Request.countDocuments({
+      requestor: requestorId,
+      status: { $ne: "취소" },
+      createdAt: { $gte: last30Cutoff },
+    });
+
+    const referredUsers = await User.find({
+      referredByUserId: requestorId,
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const referredUserIds = referredUsers.map((u) => u._id).filter(Boolean);
+
+    const referralLast30DaysOrders = referredUserIds.length
+      ? await Request.countDocuments({
+          requestor: { $in: referredUserIds },
+          status: { $ne: "취소" },
+          createdAt: { $gte: last30Cutoff },
+        })
+      : 0;
+
+    const totalOrders = myLast30DaysOrders + referralLast30DaysOrders;
+
+    const baseUnitPrice = 15000;
+    const discountPerOrder = 10;
+    const maxDiscountPerUnit = 5000;
+    const discountAmount = Math.min(
+      totalOrders * discountPerOrder,
+      maxDiscountPerUnit
+    );
+
+    const user = await User.findById(requestorId)
+      .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
+      .lean();
+
+    let rule = "volume_discount_last30days";
+    let effectiveUnitPrice = Math.max(0, baseUnitPrice - discountAmount);
+
+    const dateSource = user || req.user;
+
+    const baseDate =
+      dateSource?.approvedAt ||
+      (dateSource?.active ? dateSource?.updatedAt : null) ||
+      dateSource?.createdAt;
+
+    let fixedUntil = null;
+
+    if (baseDate) {
+      fixedUntil = new Date(baseDate);
+      fixedUntil.setDate(fixedUntil.getDate() + 90);
+      if (now < fixedUntil) {
+        rule = "new_user_90days_fixed_10000";
+        effectiveUnitPrice = 10000;
+      }
+    }
+
+    const authHeader = req.headers.authorization || "";
+    const isMockDevToken =
+      process.env.NODE_ENV !== "production" &&
+      authHeader === "Bearer MOCK_DEV_TOKEN";
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[pricing-referral-stats]", {
+        requestorId: String(requestorId),
+        isMockDevToken,
+        now,
+        baseDate,
+        fixedUntil,
+        userDates: user
+          ? {
+              createdAt: user.createdAt,
+              updatedAt: user.updatedAt,
+              approvedAt: user.approvedAt,
+              active: user.active,
+            }
+          : null,
+        myLast30DaysOrders,
+        referralLast30DaysOrders,
+        totalOrders,
+        discountAmount,
+        effectiveUnitPrice,
+        rule,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        last30Cutoff,
+        myLast30DaysOrders,
+        referralLast30DaysOrders,
+        totalOrders,
+        baseUnitPrice,
+        discountPerOrder,
+        maxDiscountPerUnit,
+        discountAmount,
+        effectiveUnitPrice,
+        rule,
+        ...(process.env.NODE_ENV !== "production"
+          ? {
+              debug: {
+                requestorId,
+                isMockDevToken,
+                now,
+                baseDate,
+                fixedUntil,
+                userDates: user
+                  ? {
+                      createdAt: user.createdAt,
+                      updatedAt: user.updatedAt,
+                      approvedAt: user.approvedAt,
+                      active: user.active,
+                    }
+                  : null,
+              },
+            }
+          : {}),
+      },
+    });
+  } catch (error) {
+    console.error("Error in getMyPricingReferralStats:", error);
+    return res.status(500).json({
+      success: false,
+      message: "가격/리퍼럴 통계 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 묶음 배송 후보 조회 (의뢰자용)
  * @route GET /api/requests/my/bulk-shipping
  */
@@ -1474,6 +1686,7 @@ export default {
   addMessage,
   deleteRequest,
   getMyDashboardSummary,
+  getMyPricingReferralStats,
   getMyBulkShipping,
   createMyBulkShipping,
 };

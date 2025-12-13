@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 
 export const SignupPage = () => {
@@ -21,6 +21,12 @@ export const SignupPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+
+  const referredByUserId = useMemo(() => {
+    const ref = searchParams.get("ref");
+    return ref && ref.trim().length > 0 ? ref.trim() : undefined;
+  }, [searchParams]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -43,10 +49,32 @@ export const SignupPage = () => {
 
     setIsLoading(true);
 
-    // TODO: 실제 회원가입 로직 구현
     try {
-      // 임시로 2초 대기
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const payload: any = {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        phoneNumber: formData.phone,
+        organization: formData.company,
+      };
+
+      if (referredByUserId) {
+        payload.referredByUserId = referredByUserId;
+      }
+
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.message || "회원가입에 실패했습니다.");
+      }
 
       toast({
         title: "회원가입 완료",

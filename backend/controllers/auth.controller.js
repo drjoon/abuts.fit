@@ -1,6 +1,7 @@
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
+import { Types } from "mongoose";
 
 // // 회원가입
 // export const signup = async (req, res) => {
@@ -200,7 +201,15 @@ import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
  */
 async function register(req, res) {
   try {
-    const { name, email, password, role, phoneNumber, organization } = req.body;
+    const {
+      name,
+      email,
+      password,
+      role,
+      phoneNumber,
+      organization,
+      referredByUserId,
+    } = req.body;
 
     // 필수 필드 검증
     if (!name || !email || !password) {
@@ -220,6 +229,37 @@ async function register(req, res) {
       });
     }
 
+    let referredByObjectId = null;
+    if (referredByUserId) {
+      if (!Types.ObjectId.isValid(referredByUserId)) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 추천인 ID입니다.",
+        });
+      }
+
+      const refUser = await User.findById(referredByUserId)
+        .select({ _id: 1, role: 1, active: 1 })
+        .lean();
+
+      if (!refUser || refUser.active === false) {
+        return res.status(400).json({
+          success: false,
+          message: "추천인을 찾을 수 없습니다.",
+        });
+      }
+
+      // 추천인은 의뢰자(requestor)만 허용
+      if (refUser.role !== "requestor") {
+        return res.status(400).json({
+          success: false,
+          message: "추천인은 의뢰자 계정만 가능합니다.",
+        });
+      }
+
+      referredByObjectId = new Types.ObjectId(referredByUserId);
+    }
+
     // 사용자 생성
     const user = new User({
       name,
@@ -228,6 +268,8 @@ async function register(req, res) {
       role: role || "requestor", // 기본값은 의뢰자
       phoneNumber,
       organization,
+      referredByUserId: referredByObjectId,
+      approvedAt: new Date(),
     });
 
     await user.save();
@@ -436,9 +478,9 @@ async function changePassword(req, res) {
 
     // 새 비밀번호 설정
     user.password = newPassword;
-    console.log('[changePassword] 저장 전 비밀번호:', user.password);
+    console.log("[changePassword] 저장 전 비밀번호:", user.password);
     await user.save();
-    console.log('[changePassword] 저장 후 비밀번호:', user.password);
+    console.log("[changePassword] 저장 후 비밀번호:", user.password);
 
     res.status(200).json({
       success: true,
@@ -533,9 +575,9 @@ async function resetPassword(req, res) {
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
-    console.log('[resetPassword] 저장 전 비밀번호:', user.password);
+    console.log("[resetPassword] 저장 전 비밀번호:", user.password);
     await user.save();
-    console.log('[resetPassword] 저장 후 비밀번호:', user.password);
+    console.log("[resetPassword] 저장 후 비밀번호:", user.password);
 
     res.status(200).json({
       success: true,
