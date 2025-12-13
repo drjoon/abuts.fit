@@ -363,9 +363,27 @@ async function createRequestsFromDraft(req, res) {
       });
     }
 
-    const caseInfosArray = Array.isArray(draft.caseInfos)
+    const draftCaseInfos = Array.isArray(draft.caseInfos)
       ? draft.caseInfos
       : [];
+
+    // 프론트엔드에서 최신 caseInfos 배열을 함께 보내온 경우, 이를 Draft.caseInfos 와 병합한다.
+    // - 인덱스 기준으로 draft.caseInfos 의 file 서브도큐먼트는 유지
+    // - 텍스트 필드(clinicName, patientName, tooth, implant*, connectionType 등)는
+    //   클라이언트 caseInfos 가 있으면 덮어쓴다.
+    let caseInfosArray = draftCaseInfos;
+    if (Array.isArray(req.body.caseInfos) && req.body.caseInfos.length > 0) {
+      const incoming = req.body.caseInfos;
+      caseInfosArray = draftCaseInfos.map((ci, idx) => {
+        const incomingCi = incoming[idx] || {};
+        return {
+          ...ci,
+          ...incomingCi,
+          file: ci.file, // file 메타는 Draft 기준 유지
+          workType: (incomingCi.workType || ci.workType || "abutment").trim(),
+        };
+      });
+    }
 
     if (!caseInfosArray.length) {
       return res.status(400).json({

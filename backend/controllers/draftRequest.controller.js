@@ -95,71 +95,20 @@ export const updateDraft = asyncHandler(async (req, res) => {
         ? currentDraft.caseInfos
         : [];
 
-      // _id 기준으로 매칭할 수 있도록 맵 생성
-      const incomingById = new Map();
-      const incomingWithoutId = [];
-
-      for (const ci of incomingList) {
-        if (ci && ci._id) {
-          incomingById.set(ci._id.toString(), ci);
-        } else {
-          incomingWithoutId.push(ci);
-        }
-      }
-
-      let anonymousIndex = 0;
-
-      const mergedCaseInfos = prevCaseInfos.map((prev, idx) => {
-        let incoming = null;
-
-        // 1) _id 로 매칭
-        if (prev && prev._id && incomingById.has(prev._id.toString())) {
-          incoming = incomingById.get(prev._id.toString());
-        }
-        // 2) _id 가 없거나 매칭 실패 시, 인덱스 순서대로 anonymous 패치 적용
-        else if (anonymousIndex < incomingWithoutId.length) {
-          incoming = incomingWithoutId[anonymousIndex++];
-        }
-
-        if (!incoming) {
-          // 업데이트 대상이 없으면 기존 값 그대로 유지
-          return prev;
-        }
-
-        const ci = incoming || {};
+      // 단순화된 규칙:
+      // - 인덱스 기준으로 prev.caseInfos 의 file 서브도큐먼트를 유지
+      // - 나머지 텍스트 필드(clinicName, patientName, tooth, implant*, connectionType 등)는
+      //   incoming caseInfos 가 완전히 덮어쓴다.
+      const newCaseInfos = incomingList.map((ci, idx) => {
+        const prev = prevCaseInfos[idx] || {};
+        const incoming = ci || {};
 
         return {
-          // 기존 필드 우선
-          ...prev,
-          // 새로 들어온 필드만 덮어씀
-          ...ci,
-          // file 은 명시적으로 새 file 이 전달되지 않는 한 기존 것을 유지
-          file: ci && ci.file ? ci.file : prev.file,
-          // workType 은 새 값이 없으면 기존 값 → 없으면 기본값
-          workType: (ci && ci.workType) || prev.workType || "abutment",
+          ...incoming,
+          file: incoming.file || prev.file || undefined,
+          workType: (incoming.workType || prev.workType || "abutment").trim(),
         };
       });
-
-      // 3) 기존에 없던 완전히 새로운 caseInfos (예: 새 _id 가 온 경우) 처리
-      //    prev 에서 못 찾은 incoming 들을 뒤에 추가
-      const usedIds = new Set(
-        mergedCaseInfos
-          .filter((ci) => ci && ci._id)
-          .map((ci) => ci._id.toString())
-      );
-
-      const extraIncoming = incomingList.filter((ci) => {
-        if (!ci || !ci._id) return false;
-        return !usedIds.has(ci._id.toString());
-      });
-
-      const newCaseInfos = [
-        ...mergedCaseInfos,
-        ...extraIncoming.map((ci) => ({
-          ...ci,
-          workType: (ci && ci.workType) || "abutment",
-        })),
-      ];
 
       // findByIdAndUpdate로 원자적 업데이트
       updatedDraft = await DraftRequest.findByIdAndUpdate(

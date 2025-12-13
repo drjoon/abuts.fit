@@ -148,16 +148,44 @@ export const useNewRequestSubmitV2 = ({
     }
 
     try {
+      // 현재 파일 기준으로 유효한 fileKey 집합
+      const validFileKeys = new Set(files.map((f) => `${f.name}:${f.size}`));
+
       // 제출 전 디바운스 대기 중인 변경사항을 즉시 Draft에 저장
+      // 이때, 이미 삭제된 파일(현재 files 배열에 없는 파일)의 caseInfos는 제외한다.
+      let filteredMap: Record<string, CaseInfos> | undefined = undefined;
       if (patchDraftImmediately && caseInfosMap) {
-        await patchDraftImmediately(caseInfosMap);
+        filteredMap = {};
+        for (const [key, value] of Object.entries(caseInfosMap)) {
+          if (key === "__default__" || validFileKeys.has(key)) {
+            filteredMap[key] = value;
+          }
+        }
+
+        await patchDraftImmediately(filteredMap);
+      }
+
+      // 서버로도 현재 caseInfos 배열을 함께 보내 Draft.caseInfos 의 빈 필드를 보완한다.
+      let caseInfosForSubmit: CaseInfos[] | undefined = undefined;
+      const sourceMap = filteredMap || caseInfosMap;
+      if (sourceMap) {
+        const fileBased = Object.entries(sourceMap)
+          .filter(([key]) => key !== "__default__" && validFileKeys.has(key))
+          .map(([, ci]) => ci);
+        if (fileBased.length > 0) {
+          caseInfosForSubmit = fileBased;
+        }
       }
 
       // Draft를 Request로 전환
-      const payload = {
+      const payload: any = {
         draftId,
         clinicId: selectedClinicId || undefined,
       };
+
+      if (caseInfosForSubmit) {
+        payload.caseInfos = caseInfosForSubmit;
+      }
 
       const res = await fetch(`${API_BASE_URL}/requests/from-draft`, {
         method: "POST",
@@ -225,10 +253,8 @@ export const useNewRequestSubmitV2 = ({
       if (isNoAbutmentError) {
         description = "커스텀 어벗을 하나 이상 의뢰해야 합니다";
       } else if (isMissingFieldsError) {
-        // 상세 정보가 있으면 표시
-        description =
-          "다음 파일의 필수 정보가 누락되었습니다:\n\n" +
-          (err?.details || "치과이름, 환자이름, 치아번호를 확인해주세요");
+        // 서버에서 필수 정보 누락 에러가 온 경우: 간단한 안내만 표시
+        description = "환자정보 또는 임플란트 정보가 누락되었습니다.";
       }
 
       toast({
