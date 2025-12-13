@@ -28,19 +28,19 @@ export const RequestorRiskSummaryCard = ({ riskSummary }: Props) => {
   const summary = riskSummary || {};
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="relative flex flex-1 flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg h-full">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold">
           지연 위험 요약
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="flex-1 flex flex-col space-y-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span>지연 가능성 의뢰: {summary.warningCount ?? 0}건</span>
+          <span>지연 가능 의뢰: {summary.warningCount ?? 0}건</span>
           <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
-          <span>제때 출고 비율: {summary.onTimeRate ?? 0}%</span>
+          <span>정시 출고 비율: {summary.onTimeRate ?? 0}%</span>
         </div>
-        <div className="space-y-2">
+        <div className="space-y-2 flex-1">
           {summary.items?.map((item) => (
             <div
               key={item.id}

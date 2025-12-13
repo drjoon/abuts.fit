@@ -116,15 +116,33 @@ export const NewRequestPage = () => {
   // hasActiveSession은 files.length > 0으로 직접 계산
   const hasActiveSession = files.length > 0;
 
-  const [fileWorkTypes, setFileWorkTypes] = useState<
-    Record<string, "abutment" | "crown">
-  >({});
-  const [hasUserChosenWorkType, setHasUserChosenWorkType] = useState(false);
   const [fileVerificationStatus, setFileVerificationStatus] = useState<
     Record<string, boolean>
   >({});
   const [highlightUnverifiedArrows, setHighlightUnverifiedArrows] =
     useState(false);
+
+  const unverifiedCount = useMemo(
+    () =>
+      files.filter(
+        (file) => !fileVerificationStatus[`${file.name}:${file.size}`]
+      ).length,
+    [files, fileVerificationStatus]
+  );
+
+  const highlightStep = useMemo<"upload" | "details" | "shipping">(() => {
+    if (!files.length) return "upload";
+    if (unverifiedCount > 0) return "details";
+    return "shipping";
+  }, [files.length, unverifiedCount]);
+
+  const sectionHighlightClass =
+    "ring-2 ring-primary/40 bg-primary/5 shadow-[0_0_0_4px_rgba(59,130,246,0.12)]";
+
+  const [fileWorkTypes, setFileWorkTypes] = useState<
+    Record<string, "abutment" | "crown">
+  >({});
+  const [hasUserChosenWorkType, setHasUserChosenWorkType] = useState(false);
   const manufacturerSelectRef = useRef<HTMLButtonElement | null>(null);
   const crownOnlyToastShownRef = useRef(false);
 
@@ -316,7 +334,11 @@ export const NewRequestPage = () => {
     <div className="min-h-screen bg-gradient-subtle p-4 md:p-6">
       <div className="max-w-6xl mx-auto space-y-4">
         {/* ===== RED SECTION: File Selection & Details (Dynamic) ===== */}
-        <div className="relative flex flex-col rounded-2xl border-2 border-gray-300 p-4 md:p-6  transition-shadow hover:shadow-md">
+        <div
+          className={`relative flex flex-col rounded-2xl border-2 border-gray-300 p-4 md:p-6 transition-shadow hover:shadow-md ${
+            highlightStep === "details" ? sectionHighlightClass : ""
+          }`}
+        >
           {/* File Details & Case Info */}
           <div className="w-full grid gap-4 lg:grid-cols-2 items-start border-gray-200">
             {/* 3D Viewer (좌측) */}
@@ -900,7 +922,6 @@ export const NewRequestPage = () => {
           </div>
         </div>
 
-        {/* ===== GREEN SECTION: Shipping & Action Buttons (Dynamic) ===== */}
         {(() => {
           const hasSelectedFile =
             selectedPreviewIndex !== null && !!files[selectedPreviewIndex];
@@ -908,75 +929,89 @@ export const NewRequestPage = () => {
           return hasSelectedFile || hasCaseInfos;
         })() && (
           <div className="grid grid-cols-1 lg:grid-cols-2 mt-2">
+            {/* ===== GREEN SECTION: File Upload Area (GREEN 섹션 좌측 열로 이동) ===== */}
             <div className="mb-4 lg:mb-0 mr-4">
-              {/* BLUE SECTION: File Upload Area (GREEN 섹션 좌측 열로 이동) */}
               <div
-                className={`border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors ${
-                  isDragOver
-                    ? "border-primary bg-primary/5"
-                    : "border-gray-300 hover:border-primary/50 bg-white"
+                className={`relative flex flex-col rounded-2xl border-2 border-gray-300 p-1 md:p-1 transition-shadow hover:shadow-md ${
+                  highlightStep === "upload" ? sectionHighlightClass : ""
                 }`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
               >
-                커스텀 어벗 STL 파일 드롭
-                <p className="text-base md:text-lg font-medium mb-2"></p>
-                <Button
-                  variant="outline"
-                  className="text-xs md:text-sm"
-                  onClick={() => document.getElementById("file-input")?.click()}
+                <div
+                  className={`border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors ${
+                    isDragOver
+                      ? "border-primary bg-primary/5"
+                      : "border-gray-300 hover:border-primary/50 bg-white"
+                  }`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
                 >
-                  <Upload className="h-6 md:h-8 w-6 md:w-8 mx-auto text-muted-foreground" />{" "}
-                  파일 선택
-                </Button>
-                <p className="text-xs md:text-sm text-muted-foreground mt-2">
-                  치과이름, 환자이름, 치아번호가 순서대로 포함된 파일명으로
-                  업로드하시면 환자 정보가 자동으로 채워집니다.
-                </p>
-                <input
-                  id="file-input"
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const fileList = e.currentTarget.files;
-                    if (fileList) {
-                      const filesToUpload: File[] = [];
-                      const rejectedFiles: string[] = [];
-
-                      Array.from(fileList).forEach((file) => {
-                        const validation = validateFileForUpload(file);
-                        if (validation.valid) {
-                          filesToUpload.push(file);
-                        } else {
-                          rejectedFiles.push(file.name);
-                        }
-                      });
-
-                      if (rejectedFiles.length > 0) {
-                        toast({
-                          title: "파일 업로드 불가",
-                          description: `${rejectedFiles.join(
-                            ", "
-                          )} - 1MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.`,
-                          variant: "destructive",
-                          duration: 4000,
-                        });
-                      }
-
-                      if (filesToUpload.length > 0) {
-                        handleUpload(filesToUpload);
-                      }
+                  커스텀 어벗 STL 파일 드롭
+                  <p className="text-base md:text-lg font-medium mb-2"></p>
+                  <Button
+                    variant="outline"
+                    className="text-xs md:text-sm"
+                    onClick={() =>
+                      document.getElementById("file-input")?.click()
                     }
-                    // 동일 파일을 다시 선택해도 onChange가 항상 호출되도록 value 초기화
-                    e.currentTarget.value = "";
-                  }}
-                  accept=".stl"
-                />
+                  >
+                    <Upload className="h-6 md:h-8 w-6 md:w-8 mx-auto text-muted-foreground" />{" "}
+                    파일 선택
+                  </Button>
+                  <p className="text-xs md:text-sm text-muted-foreground mt-2">
+                    치과이름, 환자이름, 치아번호가 순서대로 포함된 파일명으로
+                    업로드하시면 환자 정보가 자동으로 채워집니다.
+                  </p>
+                  <input
+                    id="file-input"
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const fileList = e.currentTarget.files;
+                      if (fileList) {
+                        const filesToUpload: File[] = [];
+                        const rejectedFiles: string[] = [];
+
+                        Array.from(fileList).forEach((file) => {
+                          const validation = validateFileForUpload(file);
+                          if (validation.valid) {
+                            filesToUpload.push(file);
+                          } else {
+                            rejectedFiles.push(file.name);
+                          }
+                        });
+
+                        if (rejectedFiles.length > 0) {
+                          toast({
+                            title: "파일 업로드 불가",
+                            description: `${rejectedFiles.join(
+                              ", "
+                            )} - 1MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.`,
+                            variant: "destructive",
+                            duration: 4000,
+                          });
+                        }
+
+                        if (filesToUpload.length > 0) {
+                          handleUpload(filesToUpload);
+                        }
+                      }
+                      // 동일 파일을 다시 선택해도 onChange가 항상 호출되도록 value 초기화
+                      e.currentTarget.value = "";
+                    }}
+                    accept=".stl"
+                  />
+                </div>
               </div>
             </div>
-            <div className="relative flex flex-col rounded-2xl border-2 border-gray-300 p-4 md:p-6  transition-shadow hover:shadow-md">
+
+            {/* ===== BLUE SECTION: Shipping & Action Buttons (Dynamic) ===== */}
+            <div
+              className={`relative flex flex-col justify-center gap-2 rounded-2xl border-2 border-gray-300 p-4 md:p-6 transition-shadow hover:shadow-md ${
+                highlightStep === "shipping" ? sectionHighlightClass : ""
+              }`}
+            >
               {/* 배송 옵션 */}
               <div className="space-y-2">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1051,11 +1086,6 @@ export const NewRequestPage = () => {
               {/* Submit & Cancel Buttons */}
               <div className="space-y-3 pt-4 border-gray-200">
                 {(() => {
-                  const unverifiedCount = files.filter(
-                    (file) =>
-                      !fileVerificationStatus[`${file.name}:${file.size}`]
-                  ).length;
-
                   return (
                     <>
                       <div className="flex gap-2 flex-col sm:flex-row">

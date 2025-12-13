@@ -39,8 +39,8 @@ export const RequestorPricingReferralPolicyCard = () => {
 
   return (
     <>
-      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg h-full">
-        <CardHeader className="pb-2">
+      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+        <CardHeader className="pt-6 pb-2">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base font-semibold">
               가격 & 리퍼럴 정책
@@ -57,7 +57,7 @@ export const RequestorPricingReferralPolicyCard = () => {
           </div>
           <CardDescription className="space-y-1 text-xs text-muted-foreground" />
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col justify-between pt-1 gap-3 text-xs text-foreground">
+        <CardContent className="pt-0 pb-6 gap-3 text-xs text-foreground">
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 space-y-1">
@@ -116,7 +116,7 @@ export const RequestorPricingReferralPolicyCard = () => {
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>가격 & 리퍼럴 정책 안내</DialogTitle>
             <DialogDescription asChild>
