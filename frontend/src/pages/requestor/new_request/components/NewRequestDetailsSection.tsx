@@ -248,24 +248,38 @@ export function NewRequestPatientImplantFields({
                   value={currentManufacturer}
                   onValueChange={(value) => {
                     if (readOnly) return;
+                    const firstForManufacturer = (connections as any[]).find(
+                      (c) => c.manufacturer === value
+                    ) as any;
+                    const nextSystem =
+                      typeof firstForManufacturer?.system === "string"
+                        ? firstForManufacturer.system
+                        : "";
+                    const firstForType = (connections as any[]).find(
+                      (c) => c.manufacturer === value && c.system === nextSystem
+                    ) as any;
+                    const nextType =
+                      typeof firstForType?.type === "string"
+                        ? firstForType.type
+                        : "";
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantManufacturer: value,
-                        implantSystem: "",
-                        implantType: "",
+                        implantSystem: nextSystem,
+                        implantType: nextType,
                       });
-                      syncSelectedConnection(value, "", "");
+                      syncSelectedConnection(value, nextSystem, nextType);
                       return;
                     }
 
                     setImplantManufacturer(value);
-                    setImplantSystem("");
-                    setImplantType("");
-                    syncSelectedConnection(value, "", "");
+                    setImplantSystem(nextSystem);
+                    setImplantType(nextType);
+                    syncSelectedConnection(value, nextSystem, nextType);
                     setCaseInfos({
                       implantManufacturer: value,
-                      implantSystem: "",
-                      implantType: "",
+                      implantSystem: nextSystem,
+                      implantType: nextType,
                     });
                   }}
                 >
@@ -297,21 +311,38 @@ export function NewRequestPatientImplantFields({
                   value={currentSystem}
                   onValueChange={(value) => {
                     if (readOnly) return;
+                    const firstForType = (connections as any[]).find(
+                      (c) =>
+                        c.manufacturer === currentManufacturer &&
+                        c.system === value
+                    ) as any;
+                    const nextType =
+                      typeof firstForType?.type === "string"
+                        ? firstForType.type
+                        : "";
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantSystem: value,
-                        implantType: "",
+                        implantType: nextType,
                       });
-                      syncSelectedConnection(currentManufacturer, value, "");
+                      syncSelectedConnection(
+                        currentManufacturer,
+                        value,
+                        nextType
+                      );
                       return;
                     }
 
                     setImplantSystem(value);
-                    setImplantType("");
-                    syncSelectedConnection(implantManufacturer, value, "");
+                    setImplantType(nextType);
+                    syncSelectedConnection(
+                      implantManufacturer,
+                      value,
+                      nextType
+                    );
                     setCaseInfos({
                       implantSystem: value,
-                      implantType: "",
+                      implantType: nextType,
                     });
                   }}
                   disabled={readOnly || !currentManufacturer}

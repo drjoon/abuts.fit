@@ -116,9 +116,10 @@ export const RequestorDashboardPage = () => {
         "",
       patientName: ci.patientName || request.patientName || "",
       teethText: ci.tooth || request.toothNumber || request.tooth || "",
-      implantManufacturer: request.implantManufacturer || "",
-      implantSystem: request.implantSystem || "",
-      implantType: request.implantType || "",
+      implantManufacturer:
+        ci.implantManufacturer || request.implantManufacturer || "",
+      implantSystem: ci.implantSystem || request.implantSystem || "",
+      implantType: ci.implantType || request.implantType || "",
     });
 
     setEditingDescription(request.description || "");
@@ -341,26 +342,32 @@ export const RequestorDashboardPage = () => {
           try {
             const payload: any = {
               description: editingDescription,
+              caseInfos: {},
             };
 
             if (editingClinicName.trim()) {
-              payload.clinicName = editingClinicName.trim();
+              payload.caseInfos.clinicName = editingClinicName.trim();
             }
             if (editingPatientName.trim()) {
-              payload.patientName = editingPatientName.trim();
+              payload.caseInfos.patientName = editingPatientName.trim();
             }
             if (editingTeethText.trim()) {
-              payload.tooth = editingTeethText.trim();
+              payload.caseInfos.tooth = editingTeethText.trim();
             }
 
             if (editingImplantManufacturer.trim()) {
-              payload.implantManufacturer = editingImplantManufacturer.trim();
+              payload.caseInfos.implantManufacturer =
+                editingImplantManufacturer.trim();
             }
             if (editingImplantSystem.trim()) {
-              payload.implantSystem = editingImplantSystem.trim();
+              payload.caseInfos.implantSystem = editingImplantSystem.trim();
             }
             if (editingImplantType.trim()) {
-              payload.implantType = editingImplantType.trim();
+              payload.caseInfos.implantType = editingImplantType.trim();
+            }
+
+            if (Object.keys(payload.caseInfos).length === 0) {
+              delete payload.caseInfos;
             }
 
             const res = await apiFetch<any>({

@@ -379,8 +379,6 @@ export const ExpandedRequestCard = ({
                     const implantType =
                       caseInfos.implantType ||
                       spec.implantType ||
-                      spec.connectionType ||
-                      spec.connection ||
                       request.implantType;
 
                     const maxDiameter =

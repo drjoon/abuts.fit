@@ -729,7 +729,7 @@ async function createRequestsFromDraft(req, res) {
               s3Url: undefined,
             },
           }
-        : ci;
+        : normalizedCi;
 
       const newRequest = new Request({
         requestor: req.user._id,

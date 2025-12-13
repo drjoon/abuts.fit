@@ -162,10 +162,13 @@ const WorksheetCardGrid = ({
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
-                {(caseInfos.implantSystem || caseInfos.implantType) && (
+                {(caseInfos.implantManufacturer ||
+                  caseInfos.implantSystem ||
+                  caseInfos.implantType) && (
                   <span>
-                    임플란트 {caseInfos.implantSystem || ""}/
-                    {caseInfos.implantType || ""}
+                    임플란트 {caseInfos.implantManufacturer || "-"} /{" "}
+                    {caseInfos.implantSystem || "-"} /{" "}
+                    {caseInfos.implantType || "-"}
                   </span>
                 )}
               </div>

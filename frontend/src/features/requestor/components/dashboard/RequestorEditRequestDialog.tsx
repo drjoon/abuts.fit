@@ -136,7 +136,7 @@ export const RequestorEditRequestDialog = ({
               </div>
               <div className="space-y-1">
                 <label className="text-md font-medium text-muted-foreground">
-                  임플란트 타입
+                  임플란트 유형
                 </label>
                 <input
                   type="text"

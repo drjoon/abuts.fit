@@ -336,12 +336,11 @@ const WorksheetCardGrid = ({
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-1">
-              <span>{request.caseInfos?.implantSystem}</span>
+              <span>{request.caseInfos?.implantManufacturer || "-"}</span>
               <span>•</span>
-              <span>{request.caseInfos?.implantType}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-1">
-              <span>{request.caseInfos?.connectionType}</span>
+              <span>{request.caseInfos?.implantSystem || "-"}</span>
+              <span>•</span>
+              <span>{request.caseInfos?.implantType || "-"}</span>
             </div>
           </div>
         </CardContent>

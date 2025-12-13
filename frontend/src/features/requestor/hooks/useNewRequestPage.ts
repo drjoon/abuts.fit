@@ -278,16 +278,54 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
         setSelectedRequest(req);
 
+        if (req.caseInfos && typeof req.caseInfos === "object") {
+          const ci = req.caseInfos as any;
+          setCaseInfosMap({
+            __default__: {
+              clinicName:
+                typeof ci.clinicName === "string" ? ci.clinicName : "",
+              patientName:
+                typeof ci.patientName === "string" ? ci.patientName : "",
+              tooth: typeof ci.tooth === "string" ? ci.tooth : "",
+              implantManufacturer:
+                typeof ci.implantManufacturer === "string"
+                  ? ci.implantManufacturer
+                  : "",
+              implantSystem:
+                typeof ci.implantSystem === "string" ? ci.implantSystem : "",
+              implantType:
+                typeof ci.implantType === "string" ? ci.implantType : "",
+              maxDiameter:
+                typeof ci.maxDiameter === "number" ? ci.maxDiameter : undefined,
+              connectionDiameter:
+                typeof ci.connectionDiameter === "number"
+                  ? ci.connectionDiameter
+                  : undefined,
+              workType:
+                typeof ci.workType === "string" ? ci.workType : "abutment",
+              shippingMode:
+                ci.shippingMode === "normal" || ci.shippingMode === "express"
+                  ? ci.shippingMode
+                  : undefined,
+              requestedShipDate:
+                typeof ci.requestedShipDate === "string"
+                  ? ci.requestedShipDate
+                  : undefined,
+            },
+          });
+        }
+
         if (req.caseInfos) {
-          const { implantSystem, implantType, connectionType } = req.caseInfos;
+          const { implantManufacturer, implantSystem, implantType } =
+            req.caseInfos;
+          if (typeof implantManufacturer === "string") {
+            setImplantManufacturer(implantManufacturer);
+          }
           if (typeof implantSystem === "string") {
-            setImplantManufacturer(implantSystem);
+            setImplantSystem(implantSystem);
           }
           if (typeof implantType === "string") {
-            setImplantSystem(implantType);
-          }
-          if (typeof connectionType === "string") {
-            setImplantType(connectionType);
+            setImplantType(implantType);
           }
         }
       } catch {
@@ -297,6 +335,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   }, [
     existingRequestId,
     token,
+    setCaseInfosMap,
     setImplantManufacturer,
     setImplantSystem,
     setImplantType,

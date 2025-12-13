@@ -122,10 +122,10 @@ export const RequestorRecentRequestsCard = ({
 
   const normalizeImplantCaseInfos = (ci: any) => {
     const rawManufacturer =
+      typeof ci?.implantManufacturer === "string" ? ci.implantManufacturer : "";
+    const rawSystem =
       typeof ci?.implantSystem === "string" ? ci.implantSystem : "";
-    const rawSystem = typeof ci?.implantType === "string" ? ci.implantType : "";
-    const rawType =
-      typeof ci?.connectionType === "string" ? ci.connectionType : "";
+    const rawType = typeof ci?.implantType === "string" ? ci.implantType : "";
 
     if (!connections || connections.length === 0) {
       return {
@@ -307,9 +307,9 @@ export const RequestorRecentRequestsCard = ({
       clinicName: ci?.clinicName || "",
       patientName: ci?.patientName || "",
       tooth: ci?.tooth || "",
-      implantSystem: normalized.manufacturer || "",
-      implantType: normalized.system || "",
-      connectionType: normalized.type || "",
+      implantManufacturer: normalized.manufacturer || "",
+      implantSystem: normalized.system || "",
+      implantType: normalized.type || "",
       maxDiameter: ci?.maxDiameter ?? null,
       connectionDiameter: ci?.connectionDiameter ?? null,
     });
@@ -396,21 +396,15 @@ export const RequestorRecentRequestsCard = ({
                       {item.caseInfos?.tooth && (
                         <span className="ml-1">{item.caseInfos.tooth}</span>
                       )}
-                      {item.caseInfos?.implantManufacturer && (
-                        <span className="ml-1">
-                          {item.caseInfos.implantManufacturer}
-                        </span>
-                      )}
-                      {item.caseInfos?.implantSystem && (
-                        <span className="ml-1">
-                          {item.caseInfos.implantSystem}
-                        </span>
-                      )}
-                      {item.caseInfos?.implantType && (
-                        <span className="ml-1">
-                          {item.caseInfos.implantType}
-                        </span>
-                      )}
+                      <span className="ml-1">
+                        {(() => {
+                          const m = item.caseInfos?.implantManufacturer;
+                          const s = item.caseInfos?.implantSystem;
+                          const t = item.caseInfos?.implantType;
+                          if (!m && !s && !t) return "-";
+                          return `${m || "-"} / ${s || "-"} / ${t || "-"}`;
+                        })()}
+                      </span>
                       {item.caseInfos?.maxDiameter && (
                         <span className="ml-1">
                           {item.caseInfos.maxDiameter.toFixed(1)}
@@ -441,19 +435,15 @@ export const RequestorRecentRequestsCard = ({
                     {item.caseInfos?.tooth && (
                       <span className="ml-1">#{item.caseInfos.tooth}</span>
                     )}
-                    {item.caseInfos?.implantManufacturer && (
-                      <span className="ml-1">
-                        {item.caseInfos.implantManufacturer}
-                      </span>
-                    )}
-                    {item.caseInfos?.implantSystem && (
-                      <span className="ml-1">
-                        {item.caseInfos.implantSystem}
-                      </span>
-                    )}
-                    {item.caseInfos?.implantType && (
-                      <span className="ml-1">{item.caseInfos.implantType}</span>
-                    )}
+                    <span className="ml-1">
+                      {(() => {
+                        const m = item.caseInfos?.implantManufacturer;
+                        const s = item.caseInfos?.implantSystem;
+                        const t = item.caseInfos?.implantType;
+                        if (!m && !s && !t) return "-";
+                        return `${m || "-"} / ${s || "-"} / ${t || "-"}`;
+                      })()}
+                    </span>
                     {item.caseInfos?.maxDiameter && (
                       <span className="ml-1">
                         {item.caseInfos.maxDiameter.toFixed(1)}
@@ -609,11 +599,18 @@ export const RequestorRecentRequestsCard = ({
                       <span className="ml-1">{ci.patientName}</span>
                     )}
                     {ci?.tooth && <span className="ml-1">{ci.tooth}</span>}
-                    {ci?.implantSystem && (
-                      <span className="ml-1">{ci.implantSystem}</span>
-                    )}
-                    {ci?.implantType && (
-                      <span className="ml-1">{ci.implantType}</span>
+                    {(ci?.implantManufacturer ||
+                      ci?.implantSystem ||
+                      ci?.implantType) && (
+                      <span className="ml-1">
+                        {[
+                          ci?.implantManufacturer,
+                          ci?.implantSystem,
+                          ci?.implantType,
+                        ]
+                          .filter(Boolean)
+                          .join(" / ")}
+                      </span>
                     )}
                     {ci?.maxDiameter != null && (
                       <span className="ml-1">

@@ -108,7 +108,35 @@ export const useNewRequestSubmitV2 = ({
     // 의뢰 수정 모드
     if (existingRequestId) {
       try {
-        const payload = {};
+        const base = caseInfosMap?.__default__;
+        const payload: any = {};
+
+        if (base && typeof base === "object") {
+          payload.caseInfos = {
+            clinicName: base.clinicName,
+            patientName: base.patientName,
+            tooth: base.tooth,
+            implantManufacturer: base.implantManufacturer,
+            implantSystem: base.implantSystem,
+            implantType: base.implantType,
+            maxDiameter: base.maxDiameter,
+            connectionDiameter: base.connectionDiameter,
+            workType: base.workType,
+            shippingMode: base.shippingMode,
+            requestedShipDate: base.requestedShipDate,
+          };
+
+          // undefined 값은 굳이 보내지 않도록 정리
+          Object.keys(payload.caseInfos).forEach((k) => {
+            if (payload.caseInfos[k] === undefined) {
+              delete payload.caseInfos[k];
+            }
+          });
+
+          if (Object.keys(payload.caseInfos).length === 0) {
+            delete payload.caseInfos;
+          }
+        }
 
         const res = await fetch(
           `${API_BASE_URL}/requests/${existingRequestId}`,
