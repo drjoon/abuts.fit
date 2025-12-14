@@ -14,9 +14,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ChevronRight, ArrowRightLeft } from "lucide-react";
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
+import { useToast } from "@/hooks/use-toast";
 
 type Props = {
   onOpenBulkModal: () => void;
+  bulkData?: {
+    pre?: ShippingItemApi[];
+    post?: ShippingItemApi[];
+    waiting?: ShippingItemApi[];
+  } | null;
+  onRefresh?: () => void;
 };
 
 interface ShippingPolicy {
@@ -27,19 +36,33 @@ interface ShippingPolicy {
 
 const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
 
-interface ShippingItem {
+type ShippingItemApi = {
   id: string;
-  name: string;
-  count: number;
-}
+  mongoId?: string;
+  title?: string;
+  clinic?: string;
+  patient?: string;
+  tooth?: string;
+  diameter?: string;
+  status?: string;
+  status1?: string;
+  status2?: string;
+  shippingMode?: "normal" | "express";
+  requestedShipDate?: string;
+};
 
-export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
+export const RequestorBulkShippingBannerCard = ({
+  onOpenBulkModal,
+  bulkData,
+  onRefresh,
+}: Props) => {
+  const { token } = useAuthStore();
+  const { toast } = useToast();
   const [policy, setPolicy] = useState<ShippingPolicy | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // 샘플 데이터 (실제로는 API에서 가져올 데이터)
-  const [bulkItems, setBulkItems] = useState<ShippingItem[]>([]);
-  const [expressItems, setExpressItems] = useState<ShippingItem[]>([]);
+  const [items, setItems] = useState<ShippingItemApi[]>([]);
 
   useEffect(() => {
     try {
@@ -55,9 +78,25 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
     }
   }, []);
 
+  useEffect(() => {
+    const next: ShippingItemApi[] = [
+      ...(bulkData?.pre || []),
+      ...(bulkData?.post || []),
+      ...(bulkData?.waiting || []),
+    ].filter(Boolean);
+    setItems(next);
+  }, [bulkData]);
+
+  const bulkItems = items.filter(
+    (i) => (i.shippingMode || "normal") === "normal"
+  );
+  const expressItems = items.filter(
+    (i) => (i.shippingMode || "normal") === "express"
+  );
+
   const getNextSummary = () => {
-    const bulkCount = bulkItems.reduce((sum, i) => sum + i.count, 0);
-    const expressCount = expressItems.reduce((sum, i) => sum + i.count, 0);
+    const bulkCount = bulkItems.length;
+    const expressCount = expressItems.length;
     const totalCount = bulkCount + expressCount;
 
     if (totalCount === 0) {
@@ -245,32 +284,77 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
     onOpenBulkModal();
   };
 
-  // 아이템 클릭 시 반대쪽으로 이동
-  const handleMoveItem = (itemId: string, fromBulk: boolean) => {
-    if (fromBulk) {
-      const item = bulkItems.find((i) => i.id === itemId);
-      if (item) {
-        setBulkItems((prev) => prev.filter((i) => i.id !== itemId));
-        setExpressItems((prev) => [...prev, item]);
-      }
-    } else {
-      const item = expressItems.find((i) => i.id === itemId);
-      if (item) {
-        setExpressItems((prev) => prev.filter((i) => i.id !== itemId));
-        setBulkItems((prev) => [...prev, item]);
-      }
+  const patchShippingMode = async (
+    requestIds: string[],
+    shippingMode: "normal" | "express"
+  ) => {
+    if (!requestIds.length) return true;
+
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return false;
     }
+
+    const res = await apiFetch<any>({
+      path: "/api/requests/my/shipping-mode",
+      method: "PATCH",
+      token,
+      headers: {
+        "Content-Type": "application/json",
+        "x-mock-role": "requestor",
+      },
+      jsonBody: {
+        requestIds,
+        shippingMode,
+      },
+    });
+
+    if (!res.ok) {
+      const serverMsg = res.data?.message;
+      toast({
+        title: "배송 방식 변경 실패",
+        description: serverMsg || "다시 시도해주세요.",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  // 아이템 클릭 시 반대쪽으로 이동
+  const handleMoveItem = async (itemId: string, fromBulk: boolean) => {
+    const nextMode: "normal" | "express" = fromBulk ? "express" : "normal";
+    const ok = await patchShippingMode([itemId], nextMode);
+    if (!ok) return;
+
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === itemId ? { ...it, shippingMode: nextMode } : it
+      )
+    );
+    onRefresh?.();
   };
 
   // 전체 넘김
-  const handleMoveAll = (fromBulk: boolean) => {
-    if (fromBulk) {
-      setExpressItems((prev) => [...prev, ...bulkItems]);
-      setBulkItems([]);
-    } else {
-      setBulkItems((prev) => [...prev, ...expressItems]);
-      setExpressItems([]);
-    }
+  const handleMoveAll = async (fromBulk: boolean) => {
+    const source = fromBulk ? bulkItems : expressItems;
+    const targetMode: "normal" | "express" = fromBulk ? "express" : "normal";
+    const requestIds = source.map((i) => i.id).filter(Boolean);
+    const ok = await patchShippingMode(requestIds, targetMode);
+    if (!ok) return;
+
+    setItems((prev) =>
+      prev.map((it) =>
+        requestIds.includes(it.id) ? { ...it, shippingMode: targetMode } : it
+      )
+    );
+    onRefresh?.();
   };
 
   return (
@@ -321,22 +405,23 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
           </DialogHeader>
           <div className="relative flex items-stretch gap-6 py-6">
             {/* 왼쪽: 묶음 배송 */}
-            <div className="flex-1 space-y-4">
+            <div
+              className="flex-1 space-y-4"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleMoveAll(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleMoveAll(true);
+                }
+              }}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="h-1 w-1 rounded-full bg-blue-600"></div>
                   <h3 className="font-bold text-lg text-gray-900">묶음 배송</h3>
                 </div>
-                {bulkItems.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleMoveAll(true)}
-                    className="text-xs"
-                  >
-                    전체 넘김
-                  </Button>
-                )}
               </div>
               <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-2 max-h-96 overflow-y-auto">
                 {bulkItems.length === 0 ? (
@@ -347,14 +432,23 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
                   bulkItems.map((item) => (
                     <button
                       key={item.id}
-                      onClick={() => handleMoveItem(item.id, true)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMoveItem(item.id, true);
+                      }}
                       className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-all cursor-pointer group"
                     >
                       <div className="flex-1 text-left">
                         <p className="text-sm font-medium text-gray-900">
-                          {item.name}
+                          {item.title || item.id}
                         </p>
-                        <p className="text-xs text-gray-500">{item.count}개</p>
+                        <p className="text-xs text-gray-500">
+                          {item.clinic || ""}
+                          {(item.patient || item.tooth || item.diameter) &&
+                            ` • ${item.patient || "-"} / ${
+                              item.tooth || "-"
+                            } / ${item.diameter || "-"}`}
+                        </p>
                       </div>
                       <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
                     </button>
@@ -369,22 +463,23 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
             </div>
 
             {/* 오른쪽: 신속 배송 */}
-            <div className="flex-1 space-y-4">
+            <div
+              className="flex-1 space-y-4"
+              role="button"
+              tabIndex={0}
+              onClick={() => handleMoveAll(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleMoveAll(false);
+                }
+              }}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="h-1 w-1 rounded-full bg-red-600"></div>
                   <h3 className="font-bold text-lg text-gray-900">신속 배송</h3>
                 </div>
-                {expressItems.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleMoveAll(false)}
-                    className="text-xs"
-                  >
-                    전체 넘김
-                  </Button>
-                )}
               </div>
               <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-2 max-h-96 overflow-y-auto">
                 {expressItems.length === 0 ? (
@@ -395,15 +490,24 @@ export const RequestorBulkShippingBannerCard = ({ onOpenBulkModal }: Props) => {
                   expressItems.map((item) => (
                     <button
                       key={item.id}
-                      onClick={() => handleMoveItem(item.id, false)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMoveItem(item.id, false);
+                      }}
                       className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50 hover:bg-red-50 hover:border-red-300 transition-all cursor-pointer group"
                     >
                       <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-red-600 transition-colors rotate-180" />
                       <div className="flex-1 text-right">
                         <p className="text-sm font-medium text-gray-900">
-                          {item.name}
+                          {item.title || item.id}
                         </p>
-                        <p className="text-xs text-gray-500">{item.count}개</p>
+                        <p className="text-xs text-gray-500">
+                          {item.clinic || ""}
+                          {(item.patient || item.tooth || item.diameter) &&
+                            ` • ${item.patient || "-"} / ${
+                              item.tooth || "-"
+                            } / ${item.diameter || "-"}`}
+                        </p>
                       </div>
                     </button>
                   ))

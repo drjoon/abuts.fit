@@ -76,6 +76,13 @@ router.get(
   requestController.getMyBulkShipping
 );
 
+// 배송 방식 변경 (의뢰자용)
+router.patch(
+  "/my/shipping-mode",
+  authorize(["requestor", "admin"]),
+  requestController.updateMyShippingMode
+);
+
 // 최대 직경별 통계 (공용: 의뢰인=본인, 제조사/관리자=전체)
 router.get(
   "/diameter-stats",

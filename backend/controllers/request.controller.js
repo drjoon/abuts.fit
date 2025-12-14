@@ -22,6 +22,62 @@ function formatEtaLabelFromNow(days) {
   return `${mm}/${dd}`;
 }
 
+/**
+ * 배송 방식 변경 (의뢰자용)
+ * @route PATCH /api/requests/my/shipping-mode
+ */
+async function updateMyShippingMode(req, res) {
+  try {
+    const requestorId = req.user._id;
+    const { requestIds, shippingMode } = req.body || {};
+
+    if (!Array.isArray(requestIds) || requestIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "선택된 의뢰가 없습니다.",
+      });
+    }
+
+    if (!["normal", "express"].includes(shippingMode)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 배송 방식입니다.",
+      });
+    }
+
+    const result = await Request.updateMany(
+      {
+        requestor: requestorId,
+        requestId: { $in: requestIds },
+        status: { $nin: ["취소", "완료"] },
+      },
+      {
+        $set: {
+          shippingMode,
+        },
+      }
+    );
+
+    const modified = result?.modifiedCount ?? result?.nModified ?? 0;
+
+    return res.status(200).json({
+      success: true,
+      message: `${modified}건의 배송 방식이 변경되었습니다.`,
+      data: {
+        updatedIds: requestIds,
+        shippingMode,
+      },
+    });
+  } catch (error) {
+    console.error("Error in updateMyShippingMode:", error);
+    return res.status(500).json({
+      success: false,
+      message: "배송 방식 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 async function getDeliveryEtaLeadDays() {
   try {
     const doc = await SystemSettings.findOneAndUpdate(
@@ -1405,6 +1461,25 @@ async function updateRequestStatus(req, res) {
     // 의뢰 상태 변경 (status1/status2 동기화 포함)
     applyStatusMapping(request, status);
 
+    // 신속 배송이 출고(배송중)로 전환되면, 그동안 쌓인 묶음(일반) 배송대기 건도 함께 출고 처리
+    if (status === "배송중" && request.shippingMode === "express") {
+      await Request.updateMany(
+        {
+          requestor: request.requestor,
+          status: "배송대기",
+          shippingMode: "normal",
+          _id: { $ne: request._id },
+        },
+        {
+          $set: {
+            status: "배송중",
+            status1: "배송",
+            status2: "중",
+          },
+        }
+      );
+    }
+
     // 가공 시작 시점(가공전 진입)에서만 로트넘버 부여
     if (status === "가공전") {
       await ensureLotNumberForMachining(request);
@@ -2077,22 +2152,36 @@ async function getMyBulkShipping(req, res) {
       requestor: requestorId,
       status: { $in: ["가공전", "가공후", "배송대기"] },
     })
+      .populate("requestor", "name organization")
       .sort({ createdAt: -1 })
       .lean();
 
-    const mapItem = (r) => ({
-      id: r.requestId,
-      title: r.title,
-      clinic: r.requestor?.organization || r.requestor?.name || "",
-      patient: r.patientName || "",
-      tooth: r.tooth || "",
-      diameter: r.specifications?.maxDiameter
-        ? `${r.specifications.maxDiameter}mm`
-        : "",
-      status: r.status,
-      status1: r.status1,
-      status2: r.status2,
-    });
+    const mapItem = (r) => {
+      const ci = r.caseInfos || {};
+      const clinic =
+        r.requestor?.organization || r.requestor?.name || req.user?.name || "";
+      const maxDiameter =
+        typeof ci.maxDiameter === "number"
+          ? `${ci.maxDiameter}mm`
+          : ci.maxDiameter != null
+          ? `${Number(ci.maxDiameter)}mm`
+          : "";
+
+      return {
+        id: r.requestId,
+        mongoId: r._id,
+        title: r.title,
+        clinic,
+        patient: ci.patientName || "",
+        tooth: ci.tooth || "",
+        diameter: maxDiameter,
+        status: r.status,
+        status1: r.status1,
+        status2: r.status2,
+        shippingMode: r.shippingMode || "normal",
+        requestedShipDate: r.requestedShipDate,
+      };
+    };
 
     const pre = requests.filter((r) => r.status === "가공전").map(mapItem);
     const post = requests.filter((r) => r.status === "가공후").map(mapItem);
@@ -2175,6 +2264,7 @@ export default {
   getRequestById,
   updateRequest,
   updateRequestStatus,
+  updateMyShippingMode,
   cloneRequestToDraft,
   addMessage,
   deleteRequest,

@@ -290,6 +290,10 @@ export const RequestorDashboardPage = () => {
 
               <div className="flex flex-col gap-6 h-full">
                 <RequestorBulkShippingBannerCard
+                  bulkData={bulkData}
+                  onRefresh={() => {
+                    refetchBulk();
+                  }}
                   onOpenBulkModal={() => {
                     // RequestorBulkShippingBannerCard 내부에서 모달을 직접 관리합니다.
                   }}
