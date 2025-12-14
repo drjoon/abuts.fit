@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/9</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -94,63 +94,63 @@
 <a name='L29'></a><a href='#L29'>29</a>
 <a name='L30'></a><a href='#L30'>30</a>
 <a name='L31'></a><a href='#L31'>31</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Router } from "express";
-const router = <span class="cstat-no" title="statement not covered" >Router();</span>
-import authController from "../controllers/auth.controller";
-import { authenticate } from "../middlewares/auth.middleware";
+const router = Router();
+import authController from "../controllers/auth.controller.js";
+import { authenticate } from "../middlewares/auth.middleware.js";
 &nbsp;
 // 회원가입
-<span class="cstat-no" title="statement not covered" >router.post("/register", authController.register);</span>
+router.post("/register", authController.register);
 &nbsp;
 // 로그인
-<span class="cstat-no" title="statement not covered" >router.post("/login", authController.login);</span>
+router.post("/login", authController.login);
 &nbsp;
 // 토큰 갱신
-<span class="cstat-no" title="statement not covered" >router.post("/refresh-token", authController.refreshToken);</span>
+router.post("/refresh-token", authController.refreshToken);
 &nbsp;
 // 현재 사용자 정보 조회 (인증 필요)
-<span class="cstat-no" title="statement not covered" >router.get("/me", authenticate, authController.getCurrentUser);</span>
+router.get("/me", authenticate, authController.getCurrentUser);
 &nbsp;
 // 비밀번호 변경 (인증 필요)
-<span class="cstat-no" title="statement not covered" >router.put("/change-password", authenticate, authController.changePassword);</span>
+router.put("/change-password", authenticate, authController.changePassword);
 &nbsp;
 // 비밀번호 재설정 요청 (인증 불필요)
-<span class="cstat-no" title="statement not covered" >router.post("/forgot-password", authController.forgotPassword);</span>
+router.post("/forgot-password", authController.forgotPassword);
 &nbsp;
 // 비밀번호 재설정 (인증 불필요)
-<span class="cstat-no" title="statement not covered" >router.post("/reset-password/:token", authController.resetPassword);</span>
+router.post("/reset-password/:token", authController.resetPassword);
 &nbsp;
 // 로그아웃 (인증 필요)
-<span class="cstat-no" title="statement not covered" >router.post("/logout", authenticate, authController.logout);</span>
+router.post("/logout", authenticate, authController.logout);
 &nbsp;
 export default router;
 &nbsp;</pre></td></tr></table></pre>
@@ -160,7 +160,7 @@ export default router;
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-08-05T23:07:20.528Z
+                at 2025-12-14T02:21:21.492Z
             </div>
         <script src="../prettify.js"></script>
         <script>

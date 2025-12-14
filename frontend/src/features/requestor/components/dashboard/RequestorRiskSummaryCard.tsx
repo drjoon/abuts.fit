@@ -12,6 +12,8 @@ type RiskSummary = {
     riskLevel?: string;
     message?: string;
     status?: string;
+    status1?: string;
+    status2?: string;
     dueDate?: string | null;
     daysOverdue?: number;
     daysUntilDue?: number;
@@ -52,6 +54,13 @@ export const RequestorRiskSummaryCard = ({ riskSummary }: Props) => {
                 <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
                   {[
                     item.status,
+                    item.status1
+                      ? `${item.status1}${
+                          item.status2 && item.status2 !== "없음"
+                            ? `/${item.status2}`
+                            : ""
+                        }`
+                      : null,
                     item.dueDate ? `도착예정 ${item.dueDate}` : null,
                   ]
                     .filter(Boolean)

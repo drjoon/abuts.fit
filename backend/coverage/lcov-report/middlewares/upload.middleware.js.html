@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">43.75% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/16</span>
+                <span class='fraction'>7/16</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">25% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/4</span>
+                <span class='fraction'>1/4</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">43.75% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/16</span>
+                <span class='fraction'>7/16</span>
             </div>
         
             
@@ -127,30 +127,30 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -165,15 +165,15 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -186,13 +186,13 @@ import path from "path";
 import fs from "fs";
 &nbsp;
 // uploads 디렉토리가 없으면 생성
-const uploadDir = <span class="cstat-no" title="statement not covered" >"uploads/";</span>
-<span class="cstat-no" title="statement not covered" >if (!fs.existsSync(uploadDir)) {</span>
+const uploadDir = "uploads/";
+<span class="missing-if-branch" title="if path not taken" >I</span>if (!fs.existsSync(uploadDir)) {
 <span class="cstat-no" title="statement not covered" >  fs.mkdirSync(uploadDir, { recursive: true });</span>
 }
 &nbsp;
 // 저장 위치 및 파일명 설정
-const storage = <span class="cstat-no" title="statement not covered" >multer.diskStorage({</span>
+const storage = multer.diskStorage({
   destination: <span class="fstat-no" title="function not covered" >fu</span>nction (req, file, cb) {
 <span class="cstat-no" title="statement not covered" >    cb(null, uploadDir); </span>// uploads 폴더에 저장
   },
@@ -204,7 +204,7 @@ const storage = <span class="cstat-no" title="statement not covered" >multer.dis
 });
 &nbsp;
 // 파일 필터 (이미지, PDF, 문서 파일 허용)
-const fileFilter = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >(r</span>eq, file, cb) =&gt; {</span>
+const fileFilter = <span class="fstat-no" title="function not covered" >(r</span>eq, file, cb) =&gt; {
   const allowedMimeTypes = <span class="cstat-no" title="statement not covered" >[</span>
     // 이미지
     "image/jpeg", "image/png", "image/gif", "image/svg+xml", "image/webp",
@@ -224,15 +224,15 @@ const fileFilter = <span class="cstat-no" title="statement not covered" ><span c
 };
 &nbsp;
 // 용량 제한 (10MB)
-const limits = <span class="cstat-no" title="statement not covered" >{</span>
+const limits = {
   fileSize: 10 * 1024 * 1024, // 10MB
 };
 &nbsp;
 // 기본 multer 인스턴스
-const multerInstance = <span class="cstat-no" title="statement not covered" >multer({ storage, fileFilter, limits });</span>
+const multerInstance = multer({ storage, fileFilter, limits });
 &nbsp;
 // 단일 파일 및 다중 파일 업로드 모두 지원
-export const upload = <span class="cstat-no" title="statement not covered" >{</span>
+export const upload = {
   single: multerInstance.single("file"),
   array: multerInstance.array("files"),
   fields: multerInstance.fields([
@@ -247,7 +247,7 @@ export const upload = <span class="cstat-no" title="statement not covered" >{</s
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-08-05T23:07:20.528Z
+                at 2025-12-14T02:21:21.492Z
             </div>
         <script src="../prettify.js"></script>
         <script>

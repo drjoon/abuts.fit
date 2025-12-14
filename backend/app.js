@@ -20,13 +20,15 @@ const mongoUri =
     : process.env.MONGODB_URI || "mongodb://localhost:27017/abutsFit";
 
 connect(mongoUri)
-  .then(() =>
-    console.log(
-      `MongoDB 연결 성공: ${
-        process.env.NODE_ENV === "test" ? "TEST DB" : "PROD DB"
-      }`
-    )
-  )
+  .then(() => {
+    if (process.env.NODE_ENV !== "test") {
+      console.log(
+        `MongoDB 연결 성공: ${
+          process.env.NODE_ENV === "test" ? "TEST DB" : "PROD DB"
+        }`
+      );
+    }
+  })
   .catch((err) => console.error("MongoDB 연결 실패:", err));
 
 // 기본 미들웨어
