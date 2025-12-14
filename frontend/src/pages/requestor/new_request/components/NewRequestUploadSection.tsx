@@ -31,6 +31,8 @@ export function NewRequestUploadSection({
           className={`border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors ${
             isDragOver
               ? "border-primary bg-primary/5"
+              : highlight
+              ? "border-gray-300 hover:border-primary/50 bg-primary/5"
               : "border-gray-300 hover:border-primary/50 bg-white"
           }`}
           onDragOver={onDragOver}

@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
@@ -60,27 +61,34 @@ export const ManufacturerDashboardPage = () => {
 
   if (!user || user.role !== "manufacturer") return null;
 
-  const { data: assignedSummaryResponse } = useQuery({
-    queryKey: ["manufacturer-dashboard-summary-page"],
-    enabled: false,
+  const { data: diameterStatsResponse } = useQuery({
+    queryKey: ["manufacturer-diameter-stats"],
+    enabled: Boolean(token),
     queryFn: async () => {
-      const res = await fetch("/api/requests/assigned/dashboard-summary", {
+      const res = await apiFetch<any>({
+        path: "/api/requests/diameter-stats",
+        method: "GET",
+        token,
         headers: token
           ? {
-              Authorization: `Bearer ${token}`,
+              "x-mock-role": "manufacturer",
             }
           : undefined,
       });
       if (!res.ok) {
-        throw new Error("제조사 대시보드 요약 조회에 실패했습니다.");
+        throw new Error("직경별 통계 조회에 실패했습니다.");
       }
-      return res.json();
+      return res.data;
     },
+    retry: false,
   });
 
   const baseData = mockManufacturerData;
   let data: any = baseData;
-  let diameterStatsFromApi: DiameterStats | undefined;
+  const diameterStatsFromApi: DiameterStats | undefined =
+    diameterStatsResponse?.success
+      ? diameterStatsResponse.data?.diameterStats
+      : undefined;
   let manufacturingSummaryFromApi:
     | {
         totalActive: number;
@@ -93,52 +101,7 @@ export const ManufacturerDashboardPage = () => {
       }
     | undefined;
 
-  if (assignedSummaryResponse?.success) {
-    const totalRequests = assignedSummaryResponse.data.stats.totalRequests ?? 0;
-    const inProduction = assignedSummaryResponse.data.stats.inProduction ?? 0;
-    const completed = assignedSummaryResponse.data.stats.completed ?? 0;
-    const clientCount = baseData.stats[3]?.value ?? "0";
-
-    data = {
-      ...baseData,
-      stats: [
-        {
-          label: "총 주문",
-          value: String(totalRequests),
-          change: baseData.stats[0]?.change ?? "+0%",
-          icon: Building2,
-        },
-        {
-          label: "제작 중",
-          value: String(inProduction),
-          change: baseData.stats[1]?.change ?? "+0%",
-          icon: Clock,
-        },
-        {
-          label: "완료",
-          value: String(completed),
-          change: baseData.stats[2]?.change ?? "+0%",
-          icon: CheckCircle,
-        },
-        {
-          label: "고객사",
-          value: String(clientCount),
-          change: baseData.stats[3]?.change ?? "+0%",
-          icon: Users,
-        },
-      ],
-    };
-
-    if (assignedSummaryResponse.data.diameterStats) {
-      diameterStatsFromApi = assignedSummaryResponse.data
-        .diameterStats as DiameterStats;
-    }
-
-    if (assignedSummaryResponse.data.manufacturingSummary) {
-      manufacturingSummaryFromApi =
-        assignedSummaryResponse.data.manufacturingSummary;
-    }
-  }
+  void manufacturingSummaryFromApi;
 
   return (
     <DashboardShell

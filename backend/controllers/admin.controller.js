@@ -3,6 +3,40 @@ import Request from "../models/request.model.js";
 import File from "../models/file.model.js";
 import { Types } from "mongoose";
 import ActivityLog from "../models/activityLog.model.js";
+import SystemSettings from "../models/systemSettings.model.js";
+
+const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
+  d6: 2,
+  d8: 2,
+  d10: 5,
+  d10plus: 5,
+};
+
+function formatEtaLabelFromNow(days) {
+  const d = typeof days === "number" && !Number.isNaN(days) ? days : 0;
+  const date = new Date();
+  date.setDate(date.getDate() + d);
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${mm}/${dd}`;
+}
+
+async function getDeliveryEtaLeadDays() {
+  try {
+    const doc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      { $setOnInsert: { key: "global" } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return {
+      ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+      ...(doc?.deliveryEtaLeadDays || {}),
+    };
+  } catch {
+    return DEFAULT_DELIVERY_ETA_LEAD_DAYS;
+  }
+}
 
 function getDateRangeFromQuery(req) {
   const now = new Date();
@@ -510,75 +544,72 @@ async function changeUserRole(req, res) {
   }
 }
 
-// 최대 직경 기준 4개 구간(<6, <8, <10, >=10mm) 통계를 계산하는 헬퍼 (관리자용)
-function computeAdminDiameterStats(requests) {
-  if (!Array.isArray(requests) || requests.length === 0) {
-    const buckets = [6, 8, 10, 11].map((d, index) => ({
-      diameter: d,
-      shipLabel:
-        index === 0
-          ? "모레"
-          : index === 1
-          ? "내일"
-          : index === 2
-          ? "+3일"
-          : "+5일",
-      count: 0,
-      ratio: 0,
-    }));
-    return { total: 0, buckets };
-  }
+// 최대 직경 기준 4개 구간(<=6, <=8, <=10, 10+mm) 통계를 계산하는 헬퍼 (관리자용)
+function computeAdminDiameterStats(requests, leadDays) {
+  const effectiveLeadDays = {
+    ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+    ...(leadDays || {}),
+  };
 
   const bucketDefs = [
-    { id: "lt6", diameter: 6, label: "<6mm", shipLabel: "모레" },
-    { id: "lt8", diameter: 8, label: "<8mm", shipLabel: "내일" },
-    { id: "lt10", diameter: 10, label: "<10mm", shipLabel: "+3일" },
-    { id: "gte10", diameter: 11, label: "10mm 이상", shipLabel: "+5일" },
+    {
+      id: "d6",
+      diameter: 6,
+      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d6),
+    },
+    {
+      id: "d8",
+      diameter: 8,
+      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d8),
+    },
+    {
+      id: "d10",
+      diameter: 10,
+      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d10),
+    },
+    {
+      id: "d10plus",
+      diameter: "10+",
+      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+    },
   ];
 
   const counts = {
-    lt6: 0,
-    lt8: 0,
-    lt10: 0,
-    gte10: 0,
+    d6: 0,
+    d8: 0,
+    d10: 0,
+    d10plus: 0,
   };
 
-  requests.forEach((r) => {
-    const d = typeof r.maxDiameter === "number" ? r.maxDiameter : null;
-    if (d == null || Number.isNaN(d)) return;
+  if (Array.isArray(requests)) {
+    requests.forEach((r) => {
+      const raw = r?.caseInfos?.maxDiameter;
+      const d =
+        typeof raw === "number" ? raw : raw != null ? Number(raw) : null;
+      if (d == null || Number.isNaN(d)) return;
 
-    if (d < 6) counts.lt6 += 1;
-    else if (d >= 6 && d < 8) counts.lt8 += 1;
-    else if (d >= 8 && d < 10) counts.lt10 += 1;
-    else if (d >= 10) counts.gte10 += 1;
-  });
+      if (d <= 6) counts.d6 += 1;
+      else if (d <= 8) counts.d8 += 1;
+      else if (d <= 10) counts.d10 += 1;
+      else counts.d10plus += 1;
+    });
+  }
 
-  const total = counts.lt6 + counts.lt8 + counts.lt10 + counts.gte10;
+  const total = counts.d6 + counts.d8 + counts.d10 + counts.d10plus;
   const maxCount = Math.max(
     1,
-    counts.lt6,
-    counts.lt8,
-    counts.lt10,
-    counts.gte10
+    counts.d6,
+    counts.d8,
+    counts.d10,
+    counts.d10plus
   );
 
-  const buckets = bucketDefs.map((def) => {
-    const count =
-      def.id === "lt6"
-        ? counts.lt6
-        : def.id === "lt8"
-        ? counts.lt8
-        : def.id === "lt10"
-        ? counts.lt10
-        : counts.gte10;
-
-    return {
-      diameter: def.diameter,
-      shipLabel: def.shipLabel,
-      count,
-      ratio: maxCount > 0 ? count / maxCount : 0,
-    };
-  });
+  const buckets = bucketDefs.map((def) => ({
+    diameter: def.diameter,
+    shipLabel: def.shipLabel,
+    count: counts[def.id] || 0,
+    ratio: maxCount > 0 ? (counts[def.id] || 0) / maxCount : 0,
+  }));
 
   return { total, buckets };
 }
@@ -646,13 +677,19 @@ async function getDashboardStats(req, res) {
       },
     ]);
 
-    // 직경 통계 (maxDiameter 기반, 선택 필드)
+    // 직경 통계 (caseInfos.maxDiameter 기반)
+    const leadDays = await getDeliveryEtaLeadDays();
     const requestsForDiameter = await Request.find({
-      maxDiameter: { $ne: null },
+      status: { $ne: "취소" },
+      "caseInfos.implantSystem": { $exists: true, $ne: "" },
+      "caseInfos.maxDiameter": { $ne: null },
     })
-      .select("maxDiameter")
+      .select({ caseInfos: 1 })
       .lean();
-    const diameterStats = computeAdminDiameterStats(requestsForDiameter);
+    const diameterStats = computeAdminDiameterStats(
+      requestsForDiameter,
+      leadDays
+    );
 
     // 응답 데이터 구성
     const dashboardData = {
@@ -720,8 +757,8 @@ async function getSystemLogs(req, res) {
  */
 async function getSystemSettings(req, res) {
   try {
-    // 실제 구현에서는 DB에서 설정을 조회
-    // 여기서는 예시로 하드코딩된 설정 반환
+    const leadDays = await getDeliveryEtaLeadDays();
+
     const settings = {
       fileUpload: {
         maxFileSize: 50 * 1024 * 1024, // 50MB
@@ -749,6 +786,7 @@ async function getSystemSettings(req, res) {
         jwtExpiration: "1d", // 1일
         refreshTokenExpiration: "7d", // 7일
       },
+      deliveryEtaLeadDays: leadDays,
     };
 
     res.status(200).json({
@@ -1143,9 +1181,67 @@ async function getActivityLogs(req, res) {
  */
 async function updateSystemSettings(req, res) {
   try {
-    // 실제 구현에서는 DB에서 설정을 가져와 업데이트
-    // 여기서는 간단한 예시로 요청 바디를 그대로 반환
-    const updatedSettings = req.body;
+    const input = req.body && typeof req.body === "object" ? req.body : {};
+
+    const rawLeadDays =
+      input.deliveryEtaLeadDays && typeof input.deliveryEtaLeadDays === "object"
+        ? input.deliveryEtaLeadDays
+        : null;
+
+    const sanitized = rawLeadDays
+      ? {
+          d6:
+            rawLeadDays.d6 == null
+              ? undefined
+              : Math.max(0, Number(rawLeadDays.d6)),
+          d8:
+            rawLeadDays.d8 == null
+              ? undefined
+              : Math.max(0, Number(rawLeadDays.d8)),
+          d10:
+            rawLeadDays.d10 == null
+              ? undefined
+              : Math.max(0, Number(rawLeadDays.d10)),
+          d10plus:
+            rawLeadDays.d10plus == null
+              ? undefined
+              : Math.max(0, Number(rawLeadDays.d10plus)),
+        }
+      : null;
+
+    const nextLeadDays = {
+      ...(sanitized || {}),
+    };
+
+    Object.keys(nextLeadDays).forEach((k) => {
+      if (Number.isNaN(nextLeadDays[k]) || nextLeadDays[k] == null) {
+        delete nextLeadDays[k];
+      }
+    });
+
+    const currentLeadDays = await getDeliveryEtaLeadDays();
+    const mergedLeadDays = {
+      ...currentLeadDays,
+      ...nextLeadDays,
+    };
+
+    const updatedDoc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      {
+        $setOnInsert: { key: "global" },
+        ...(rawLeadDays
+          ? { $set: { deliveryEtaLeadDays: mergedLeadDays } }
+          : {}),
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    const updatedSettings = {
+      deliveryEtaLeadDays: {
+        ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+        ...(updatedDoc?.deliveryEtaLeadDays || {}),
+      },
+    };
 
     res.status(200).json({
       success: true,

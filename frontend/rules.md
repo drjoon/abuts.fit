@@ -207,3 +207,16 @@ pages/admin/
   - UI 섹션 단위: `pages/.../components/`로 분리
   - 복잡한 상태/계산/이벤트 로직: `pages/.../hooks/` 또는 `features/.../hooks/`로 분리
   - 페이지 파일에는 **wiring(훅 호출/props 전달/섹션 조립)** 만 남깁니다.
+
+## 14. 배송/도착일(ETA) 규칙
+
+- **기준**: 모든 배송 관련 날짜 표기는 **의뢰인이 받는 날짜(도착일)** 기준으로 합니다.
+- **대시보드 표기**: `WorksheetDiameterCard`의 `shipLabel`은 “지금 의뢰 시 예상 도착일(의뢰인이 받는 날짜)”을 표시합니다.
+- **직경별 기본 도착 리드타임(초기값)**
+  - `6mm`, `8mm`: 의뢰접수(오늘) + **2일**
+  - `10mm`, `10+mm`: 의뢰접수(오늘) + **5일**
+- **관리자 설정**
+  - 직경별 리드타임은 admin이 변경 가능하며, 변경 시 모든 역할(의뢰인/제조사/어드민)에서 동일한 기준을 사용합니다.
+  - 기본 API:
+    - 통계: `GET /api/requests/diameter-stats`
+    - 설정 조회/수정: `GET /api/admin/settings`, `PUT /api/admin/settings` (`deliveryEtaLeadDays`)

@@ -69,6 +69,13 @@ router.get(
   requestController.getMyBulkShipping
 );
 
+// 최대 직경별 통계 (공용: 의뢰인=본인, 제조사/관리자=전체)
+router.get(
+  "/diameter-stats",
+  authorize(["requestor", "manufacturer", "admin"]),
+  requestController.getDiameterStats
+);
+
 // 묶음 배송 생성/신청 (의뢰자용)
 router.post(
   "/my/bulk-shipping",

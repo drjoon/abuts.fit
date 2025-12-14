@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
@@ -68,25 +69,141 @@ const getAlertIcon = (type: string) => {
 };
 
 export const AdminDashboardPage = () => {
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
   const navigate = useNavigate();
 
   if (!user || user.role !== "admin") return null;
 
+  const {
+    data: diameterStatsResponse,
+    isError: isDiameterStatsError,
+    error: diameterStatsError,
+    isFetching: isDiameterStatsFetching,
+  } = useQuery({
+    queryKey: ["admin-diameter-stats"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/requests/diameter-stats",
+          method: "GET",
+          token,
+          signal: controller.signal,
+          headers: token
+            ? {
+                "x-mock-role": "admin",
+              }
+            : undefined,
+        });
+        if (!res.ok || !res.data?.success) {
+          throw new Error("직경별 통계 조회에 실패했습니다.");
+        }
+        return res.data;
+      } catch (e: any) {
+        if (e?.name === "AbortError") {
+          throw new Error("요청 시간이 초과되었습니다.");
+        }
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    retry: false,
+  });
+
   const { data: adminDashboardResponse } = useQuery({
     queryKey: ["admin-dashboard-page"],
+    enabled: Boolean(token),
     queryFn: async () => {
-      const res = await fetch("/api/admin/dashboard");
-      if (!res.ok) {
-        throw new Error("관리자 대시보드 조회에 실패했습니다.");
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/admin/dashboard",
+          method: "GET",
+          token,
+          signal: controller.signal,
+          headers: token
+            ? {
+                "x-mock-role": "admin",
+              }
+            : undefined,
+        });
+        if (!res.ok || !res.data?.success) {
+          throw new Error("관리자 대시보드 조회에 실패했습니다.");
+        }
+        return res.data;
+      } catch (e: any) {
+        if (e?.name === "AbortError") {
+          throw new Error("요청 시간이 초과되었습니다.");
+        }
+        throw e;
+      } finally {
+        clearTimeout(timer);
       }
-      return res.json();
     },
+    retry: false,
   });
 
   const baseData = mockAdminData;
   let data: any = baseData;
-  let diameterStatsFromApi: DiameterStats | undefined;
+  const diameterStatsFromApi: DiameterStats | undefined =
+    diameterStatsResponse?.success
+      ? diameterStatsResponse.data?.diameterStats
+      : undefined;
+
+  const diameterTopSection = !token ? (
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium mb-2">
+          커스텀 어벗먼트 최대 직경별 진행 현황
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-center text-muted-foreground text-sm py-10">
+          로그인이 필요합니다.
+        </div>
+      </CardContent>
+    </Card>
+  ) : isDiameterStatsError ? (
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium mb-2">
+          커스텀 어벗먼트 최대 직경별 진행 현황
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-center text-muted-foreground text-sm py-10">
+          직경별 통계 조회에 실패했습니다.
+          {diameterStatsError instanceof Error
+            ? ` (${diameterStatsError.message})`
+            : ""}
+        </div>
+      </CardContent>
+    </Card>
+  ) : !isDiameterStatsFetching && !diameterStatsFromApi ? (
+    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium mb-2">
+          커스텀 어벗먼트 최대 직경별 진행 현황
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-center text-muted-foreground text-sm py-10">
+          통계 데이터를 불러올 수 없습니다.
+        </div>
+      </CardContent>
+    </Card>
+  ) : (
+    <WorksheetDiameterCard
+      stats={diameterStatsFromApi}
+      key={isDiameterStatsFetching ? "fetching" : "idle"}
+    />
+  );
 
   if (adminDashboardResponse?.success) {
     const userStats = adminDashboardResponse.data.userStats;
@@ -116,17 +233,14 @@ export const AdminDashboardPage = () => {
       systemAlerts: baseData.systemAlerts,
     };
 
-    if (adminDashboardResponse.data.diameterStats) {
-      diameterStatsFromApi = adminDashboardResponse.data
-        .diameterStats as DiameterStats;
-    }
+    void adminDashboardResponse;
   }
 
   return (
     <DashboardShell
       title={`안녕하세요, ${user.name}님!`}
       subtitle="시스템 관리 대시보드입니다."
-      topSection={<WorksheetDiameterCard stats={diameterStatsFromApi} />}
+      topSection={diameterTopSection}
       stats={
         <>
           {data.stats.map((stat: any, index: number) => (

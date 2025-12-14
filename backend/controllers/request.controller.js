@@ -3,7 +3,41 @@ import User from "../models/user.model.js";
 import DraftRequest from "../models/draftRequest.model.js";
 import ClinicImplantPreset from "../models/clinicImplantPreset.model.js";
 import Connection from "../models/connection.model.js";
+import SystemSettings from "../models/systemSettings.model.js";
 import { Types } from "mongoose";
+
+const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
+  d6: 2,
+  d8: 2,
+  d10: 5,
+  d10plus: 5,
+};
+
+function formatEtaLabelFromNow(days) {
+  const d = typeof days === "number" && !Number.isNaN(days) ? days : 0;
+  const date = new Date();
+  date.setDate(date.getDate() + d);
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${mm}/${dd}`;
+}
+
+async function getDeliveryEtaLeadDays() {
+  try {
+    const doc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      { $setOnInsert: { key: "global" } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return {
+      ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+      ...(doc?.deliveryEtaLeadDays || {}),
+    };
+  } catch {
+    return DEFAULT_DELIVERY_ETA_LEAD_DAYS;
+  }
+}
 
 // status(단일 필드)를 status1/status2와 동기화하는 헬퍼
 function applyStatusMapping(requestDoc, statusValue) {
@@ -1344,80 +1378,109 @@ async function deleteRequest(req, res) {
 }
 
 // 최대 직경 기준 4개 구간(<6, <8, <10, >=10mm) 통계를 계산하는 헬퍼
-function computeDiameterStats(requests) {
-  if (!Array.isArray(requests) || requests.length === 0) {
-    const buckets = [6, 8, 10, 11].map((d, index) => ({
-      diameter: d,
-      shipLabel:
-        index === 0
-          ? "모레"
-          : index === 1
-          ? "내일"
-          : index === 2
-          ? "+3일"
-          : "+5일",
-      count: 0,
-      ratio: 0,
-    }));
-    return { total: 0, buckets };
-  }
+function computeDiameterStats(requests, leadDays) {
+  const effectiveLeadDays = {
+    ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+    ...(leadDays || {}),
+  };
 
   const bucketDefs = [
-    { id: "lt6", diameter: 6, label: "<6mm", shipLabel: "모레" },
-    { id: "lt8", diameter: 8, label: "<8mm", shipLabel: "내일" },
-    { id: "lt10", diameter: 10, label: "<10mm", shipLabel: "+3일" },
-    { id: "gte10", diameter: 11, label: "10mm 이상", shipLabel: "+5일" },
+    {
+      id: "d6",
+      diameter: 6,
+      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d6),
+    },
+    {
+      id: "d8",
+      diameter: 8,
+      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d8),
+    },
+    {
+      id: "d10",
+      diameter: 10,
+      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d10),
+    },
+    {
+      id: "d10plus",
+      diameter: "10+",
+      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+    },
   ];
 
   const counts = {
-    lt6: 0,
-    lt8: 0,
-    lt10: 0,
-    gte10: 0,
+    d6: 0,
+    d8: 0,
+    d10: 0,
+    d10plus: 0,
   };
 
-  requests.forEach((r) => {
-    const d = typeof r.maxDiameter === "number" ? r.maxDiameter : null;
-    if (d == null || Number.isNaN(d)) return;
+  if (Array.isArray(requests)) {
+    requests.forEach((r) => {
+      const raw = r?.caseInfos?.maxDiameter;
+      const d =
+        typeof raw === "number" ? raw : raw != null ? Number(raw) : null;
+      if (d == null || Number.isNaN(d)) return;
 
-    if (d < 6) counts.lt6 += 1;
-    else if (d >= 6 && d < 8) counts.lt8 += 1;
-    else if (d >= 8 && d < 10) counts.lt10 += 1;
-    else if (d >= 10) counts.gte10 += 1;
-  });
+      if (d <= 6) counts.d6 += 1;
+      else if (d <= 8) counts.d8 += 1;
+      else if (d <= 10) counts.d10 += 1;
+      else counts.d10plus += 1;
+    });
+  }
 
-  const total = counts.lt6 + counts.lt8 + counts.lt10 + counts.gte10;
-
+  const total = counts.d6 + counts.d8 + counts.d10 + counts.d10plus;
   const maxCount = Math.max(
     1,
-    counts.lt6,
-    counts.lt8,
-    counts.lt10,
-    counts.gte10
+    counts.d6,
+    counts.d8,
+    counts.d10,
+    counts.d10plus
   );
 
-  const buckets = bucketDefs.map((def) => {
-    const count =
-      def.id === "lt6"
-        ? counts.lt6
-        : def.id === "lt8"
-        ? counts.lt8
-        : def.id === "lt10"
-        ? counts.lt10
-        : counts.gte10;
+  const buckets = bucketDefs.map((def) => ({
+    diameter: def.diameter,
+    shipLabel: def.shipLabel,
+    count: counts[def.id] || 0,
+    ratio: maxCount > 0 ? (counts[def.id] || 0) / maxCount : 0,
+  }));
 
-    return {
-      diameter: def.diameter,
-      shipLabel: def.shipLabel,
-      count,
-      ratio: maxCount > 0 ? count / maxCount : 0,
+  return { total, buckets };
+}
+
+/**
+ * 최대 직경별 통계 (공용)
+ * @route GET /api/requests/diameter-stats
+ */
+async function getDiameterStats(req, res) {
+  try {
+    const leadDays = await getDeliveryEtaLeadDays();
+    const baseFilter = {
+      status: { $ne: "취소" },
+      "caseInfos.implantSystem": { $exists: true, $ne: "" },
     };
-  });
 
-  return {
-    total,
-    buckets,
-  };
+    const filter =
+      req.user?.role === "requestor"
+        ? { ...baseFilter, requestor: req.user._id }
+        : baseFilter;
+
+    const requests = await Request.find(filter).select({ caseInfos: 1 }).lean();
+
+    const diameterStats = computeDiameterStats(requests, leadDays);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        diameterStats,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "직경별 통계 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 /**
@@ -1582,7 +1645,8 @@ async function getMyDashboardSummary(req, res) {
       items: riskItems,
     };
 
-    const diameterStats = computeDiameterStats(abutmentRequests);
+    const leadDays = await getDeliveryEtaLeadDays();
+    const diameterStats = computeDiameterStats(abutmentRequests, leadDays);
 
     const recentRequests = await Promise.all(
       abutmentRequests
@@ -1887,6 +1951,7 @@ export default {
   hasDuplicateCase,
   getAllRequests,
   getMyRequests,
+  getDiameterStats,
   getRequestById,
   updateRequest,
   updateRequestStatus,
