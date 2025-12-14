@@ -4,6 +4,7 @@ import File from "../models/file.model.js";
 import ActivityLog from "../models/activityLog.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import crypto from "crypto";
+import { SolapiMessageService } from "solapi";
 
 /**
  * 사용자 프로필 조회
@@ -40,10 +41,17 @@ async function sendPhoneVerification(req, res) {
         .json({ success: false, message: "인증이 필요합니다." });
     }
 
-    if (!/^\+\d{7,15}$/.test(phoneNumber)) {
+    if (!/^(\+\d{7,15})$/.test(phoneNumber)) {
       return res.status(400).json({
         success: false,
         message: "전화번호 형식을 확인해주세요.",
+      });
+    }
+
+    if (!phoneNumber.startsWith("+82")) {
+      return res.status(400).json({
+        success: false,
+        message: "현재는 국내(+82) 번호만 지원합니다.",
       });
     }
 
@@ -55,6 +63,22 @@ async function sendPhoneVerification(req, res) {
     }
 
     const now = Date.now();
+    const todayKey = new Date(now).toISOString().slice(0, 10);
+    const prevDailyKey = String(user?.phoneVerification?.dailySendDate || "");
+    const prevDailyCountRaw = user?.phoneVerification?.dailySendCount;
+    const prevDailyCount =
+      typeof prevDailyCountRaw === "number" &&
+      Number.isFinite(prevDailyCountRaw)
+        ? prevDailyCountRaw
+        : 0;
+    const nextDailyCount = prevDailyKey === todayKey ? prevDailyCount : 0;
+    if (nextDailyCount >= 3) {
+      return res.status(429).json({
+        success: false,
+        message:
+          "오늘 인증번호 발송 횟수를 초과했습니다. 내일 다시 시도해주세요.",
+      });
+    }
     const lastSentAt = user?.phoneVerification?.sentAt
       ? new Date(user.phoneVerification.sentAt).getTime()
       : 0;
@@ -70,11 +94,10 @@ async function sendPhoneVerification(req, res) {
     const expiresAt = new Date(now + 5 * 60_000);
     const sentAt = new Date(now);
 
-    if (process.env.NODE_ENV === "production") {
-      console.log("[sms] phone verification", { phoneNumber });
-    } else {
-      console.log("[sms-dev] phone verification", { phoneNumber, code });
-    }
+    const isProd = process.env.NODE_ENV === "production";
+    const devLogCode = !isProd && process.env.SMS_DEV_LOG_CODE !== "false";
+    const devExposeCode =
+      !isProd && process.env.SMS_DEV_EXPOSE_CODE !== "false";
 
     await User.findByIdAndUpdate(
       userId,
@@ -84,6 +107,8 @@ async function sendPhoneVerification(req, res) {
             codeHash,
             expiresAt,
             sentAt,
+            dailySendDate: todayKey,
+            dailySendCount: nextDailyCount + 1,
             attempts: 0,
             pendingPhoneNumber: phoneNumber,
           },
@@ -92,9 +117,68 @@ async function sendPhoneVerification(req, res) {
       { new: false }
     );
 
+    if (isProd) {
+      const apiKey = String(process.env.SOLAPI_API_KEY || "").trim();
+      const apiSecret = String(process.env.SOLAPI_API_SECRET || "").trim();
+      const from = String(process.env.SOLAPI_FROM || "").trim();
+
+      if (!apiKey || !apiSecret || !from) {
+        return res.status(500).json({
+          success: false,
+          message: "문자 발송 설정이 누락되었습니다.",
+        });
+      }
+
+      const to = `0${phoneNumber.slice(3)}`;
+      const text = `[abuts.fit] 인증번호: ${code}`;
+
+      try {
+        const messageService = new SolapiMessageService(apiKey, apiSecret);
+        await messageService.send({
+          to,
+          from,
+          text,
+        });
+      } catch (sendError) {
+        console.error("[sms] phone verification send failed", {
+          userId: String(userId),
+          phoneNumber,
+          message: sendError?.message,
+        });
+        await User.findByIdAndUpdate(
+          userId,
+          {
+            $set: {
+              phoneVerification: {
+                codeHash: null,
+                expiresAt: null,
+                sentAt: null,
+                dailySendDate: todayKey,
+                dailySendCount: nextDailyCount,
+                attempts: 0,
+                pendingPhoneNumber: "",
+              },
+            },
+          },
+          { new: false }
+        );
+
+        return res.status(500).json({
+          success: false,
+          message: "인증번호 발송에 실패했습니다.",
+        });
+      }
+    } else {
+      if (devLogCode) {
+        console.log("[sms-dev] phone verification", { phoneNumber, code });
+      } else {
+        console.log("[sms-dev] phone verification", { phoneNumber });
+      }
+    }
+
     const data = {
       expiresAt,
-      ...(process.env.NODE_ENV === "production" ? {} : { devCode: code }),
+      ...(devExposeCode ? { devCode: code } : {}),
     };
 
     return res.status(200).json({ success: true, data });
@@ -185,6 +269,12 @@ async function verifyPhoneVerification(req, res) {
             codeHash: null,
             expiresAt: null,
             sentAt: null,
+            dailySendDate: String(pv.dailySendDate || ""),
+            dailySendCount:
+              typeof pv.dailySendCount === "number" &&
+              Number.isFinite(pv.dailySendCount)
+                ? pv.dailySendCount
+                : 0,
             attempts: 0,
             pendingPhoneNumber: "",
           },
@@ -225,11 +315,18 @@ async function updateProfile(req, res) {
       const nextPhone = String(updateData.phoneNumber || "").trim();
       const prevPhone = String(req.user?.phoneNumber || "").trim();
       if (nextPhone && nextPhone !== prevPhone) {
+        const prevPv = req.user?.phoneVerification || {};
         updateData.phoneVerifiedAt = null;
         updateData.phoneVerification = {
           codeHash: null,
           expiresAt: null,
           sentAt: null,
+          dailySendDate: String(prevPv.dailySendDate || ""),
+          dailySendCount:
+            typeof prevPv.dailySendCount === "number" &&
+            Number.isFinite(prevPv.dailySendCount)
+              ? prevPv.dailySendCount
+              : 0,
           attempts: 0,
           pendingPhoneNumber: "",
         };

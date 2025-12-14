@@ -54,6 +54,8 @@ const userSchema = new mongoose.Schema(
       codeHash: { type: String, default: null },
       expiresAt: { type: Date, default: null },
       sentAt: { type: Date, default: null },
+      dailySendDate: { type: String, default: "" },
+      dailySendCount: { type: Number, default: 0 },
       attempts: { type: Number, default: 0 },
       pendingPhoneNumber: { type: String, trim: true, default: "" },
     },
