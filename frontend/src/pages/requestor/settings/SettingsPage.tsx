@@ -5,11 +5,11 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { AccountTab } from "@/components/settings/AccountTab";
-import { BusinessTab } from "@/components/settings/BusinessTab";
-import { PaymentTab } from "@/components/settings/PaymentTab";
-import { NotificationsTab } from "@/components/settings/NotificationsTab";
-import { ShippingTab } from "@/components/settings/ShippingTab";
+import { AccountTab } from "./components/AccountTab";
+import { BusinessTab } from "./components/BusinessTab";
+import { PaymentTab } from "./components/PaymentTab";
+import { NotificationsTab } from "./components/NotificationsTab";
+import { ShippingTab } from "./components/ShippingTab";
 import { User, Building2, CreditCard, Bell, Truck } from "lucide-react";
 
 type TabKey = "account" | "business" | "shipping" | "payment" | "notifications";
@@ -28,7 +28,7 @@ export const RequestorSettingsPage = () => {
       },
       {
         key: "business",
-        label: "사업자",
+        label: "기공소",
         icon: Building2,
         content: <BusinessTab userData={user} />,
       },

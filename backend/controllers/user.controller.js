@@ -2,6 +2,8 @@ import User from "../models/user.model.js";
 import Request from "../models/request.model.js";
 import File from "../models/file.model.js";
 import ActivityLog from "../models/activityLog.model.js";
+import RequestorOrganization from "../models/requestorOrganization.model.js";
+import crypto from "crypto";
 
 /**
  * 사용자 프로필 조회
@@ -16,11 +18,189 @@ async function getProfile(req, res) {
         message: "사용자를 찾을 수 없습니다.",
       });
     }
+
     res.status(200).json({ success: true, data: user });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: "프로필 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function sendPhoneVerification(req, res) {
+  try {
+    const userId = req.user?._id;
+    const phoneNumber = String(req.body?.phoneNumber || "").trim();
+
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ success: false, message: "인증이 필요합니다." });
+    }
+
+    if (!/^\+\d{7,15}$/.test(phoneNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: "전화번호 형식을 확인해주세요.",
+      });
+    }
+
+    const user = await User.findById(userId).select("phoneVerification").lean();
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
+    }
+
+    const now = Date.now();
+    const lastSentAt = user?.phoneVerification?.sentAt
+      ? new Date(user.phoneVerification.sentAt).getTime()
+      : 0;
+    if (lastSentAt && now - lastSentAt < 30_000) {
+      return res.status(429).json({
+        success: false,
+        message: "잠시 후 다시 시도해주세요.",
+      });
+    }
+
+    const code = String(crypto.randomInt(100000, 1000000));
+    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+    const expiresAt = new Date(now + 5 * 60_000);
+    const sentAt = new Date(now);
+
+    if (process.env.NODE_ENV === "production") {
+      console.log("[sms] phone verification", { phoneNumber });
+    } else {
+      console.log("[sms-dev] phone verification", { phoneNumber, code });
+    }
+
+    await User.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          phoneVerification: {
+            codeHash,
+            expiresAt,
+            sentAt,
+            attempts: 0,
+            pendingPhoneNumber: phoneNumber,
+          },
+        },
+      },
+      { new: false }
+    );
+
+    const data = {
+      expiresAt,
+      ...(process.env.NODE_ENV === "production" ? {} : { devCode: code }),
+    };
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "인증번호 발송 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function verifyPhoneVerification(req, res) {
+  try {
+    const userId = req.user?._id;
+    const code = String(req.body?.code || "").trim();
+
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ success: false, message: "인증이 필요합니다." });
+    }
+
+    if (!/^\d{4,8}$/.test(code)) {
+      return res.status(400).json({
+        success: false,
+        message: "인증번호를 확인해주세요.",
+      });
+    }
+
+    const user = await User.findById(userId)
+      .select("phoneVerification phoneNumber")
+      .lean();
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "사용자를 찾을 수 없습니다." });
+    }
+
+    const pv = user.phoneVerification || {};
+    const expiresAt = pv.expiresAt ? new Date(pv.expiresAt).getTime() : 0;
+    const now = Date.now();
+    if (!pv.codeHash || !expiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: "인증번호 발송을 먼저 진행해주세요.",
+      });
+    }
+    if (expiresAt < now) {
+      return res.status(400).json({
+        success: false,
+        message: "인증번호가 만료되었습니다. 다시 발송해주세요.",
+      });
+    }
+    const attempts = typeof pv.attempts === "number" ? pv.attempts : 0;
+    if (attempts >= 5) {
+      return res.status(429).json({
+        success: false,
+        message: "시도 횟수를 초과했습니다. 잠시 후 다시 시도해주세요.",
+      });
+    }
+
+    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+    if (codeHash !== pv.codeHash) {
+      await User.findByIdAndUpdate(
+        userId,
+        { $set: { "phoneVerification.attempts": attempts + 1 } },
+        { new: false }
+      );
+      return res.status(400).json({
+        success: false,
+        message: "인증번호가 올바르지 않습니다.",
+      });
+    }
+
+    const verifiedAt = new Date(now);
+    const nextPhone = String(
+      pv.pendingPhoneNumber || user.phoneNumber || ""
+    ).trim();
+
+    await User.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          phoneNumber: nextPhone,
+          phoneVerifiedAt: verifiedAt,
+          phoneVerification: {
+            codeHash: null,
+            expiresAt: null,
+            sentAt: null,
+            attempts: 0,
+            pendingPhoneNumber: "",
+          },
+        },
+      },
+      { new: false }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: { phoneNumber: nextPhone, phoneVerifiedAt: verifiedAt },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "인증번호 확인 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -39,6 +219,57 @@ async function updateProfile(req, res) {
     delete updateData.active;
     delete updateData.createdAt;
     delete updateData.updatedAt;
+    delete updateData.organizationId;
+
+    if (Object.prototype.hasOwnProperty.call(updateData, "phoneNumber")) {
+      const nextPhone = String(updateData.phoneNumber || "").trim();
+      const prevPhone = String(req.user?.phoneNumber || "").trim();
+      if (nextPhone && nextPhone !== prevPhone) {
+        updateData.phoneVerifiedAt = null;
+        updateData.phoneVerification = {
+          codeHash: null,
+          expiresAt: null,
+          sentAt: null,
+          attempts: 0,
+          pendingPhoneNumber: "",
+        };
+      }
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(updateData, "organization") &&
+      req.user?.role === "requestor" &&
+      req.user?.organizationId
+    ) {
+      const nextName = String(updateData.organization || "").trim();
+      const org = await RequestorOrganization.findById(req.user.organizationId);
+      if (!org || String(org.owner) !== String(req.user._id)) {
+        delete updateData.organization;
+      } else {
+        if (nextName && nextName !== org.name) {
+          const exists = await RequestorOrganization.findOne({
+            _id: { $ne: org._id },
+            name: nextName,
+          }).select({ _id: 1 });
+          if (exists) {
+            return res.status(409).json({
+              success: false,
+              message: "이미 동일한 이름의 기공소가 존재합니다.",
+            });
+          }
+
+          org.name = nextName;
+          await org.save();
+
+          await User.updateMany(
+            { organizationId: org._id },
+            { $set: { organization: nextName } }
+          );
+        }
+
+        updateData.organization = nextName || org.name;
+      }
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
@@ -309,6 +540,8 @@ async function getActivityLogs(req, res) {
 export {
   getProfile,
   updateProfile,
+  sendPhoneVerification,
+  verifyPhoneVerification,
   getManufacturers,
   getRequestors,
   getNotificationSettings,

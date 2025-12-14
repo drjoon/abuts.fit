@@ -1,4 +1,5 @@
 import User from "../models/user.model.js";
+import RequestorOrganization from "../models/requestorOrganization.model.js";
 import jwt from "jsonwebtoken";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
 import { Types } from "mongoose";
@@ -319,8 +320,36 @@ async function register(req, res) {
 
     await user.save();
 
+    if (user.role === "requestor") {
+      const orgName = String(user.organization || "").trim();
+      if (orgName) {
+        const existingOrg = await RequestorOrganization.findOne({
+          name: orgName,
+        })
+          .select({ _id: 1 })
+          .lean();
+        if (!existingOrg) {
+          const createdOrg = await RequestorOrganization.create({
+            name: orgName,
+            owner: user._id,
+            members: [user._id],
+            joinRequests: [],
+          });
+          await User.findByIdAndUpdate(user._id, {
+            $set: {
+              organizationId: createdOrg._id,
+              organization: createdOrg.name,
+            },
+          });
+        }
+      }
+    }
+
     // 비밀번호 제외한 사용자 정보 반환
-    const userWithoutPassword = { ...user.toObject() };
+    const freshUser = await User.findById(user._id).select("-password");
+    const userWithoutPassword = {
+      ...(freshUser ? freshUser.toObject() : user.toObject()),
+    };
     delete userWithoutPassword.password;
 
     // 토큰 생성

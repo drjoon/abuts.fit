@@ -46,9 +46,26 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    phoneVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    phoneVerification: {
+      codeHash: { type: String, default: null },
+      expiresAt: { type: Date, default: null },
+      sentAt: { type: Date, default: null },
+      attempts: { type: Number, default: 0 },
+      pendingPhoneNumber: { type: String, trim: true, default: "" },
+    },
     organization: {
       type: String,
       trim: true,
+    },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RequestorOrganization",
+      default: null,
+      index: true,
     },
     profileImage: {
       type: String,

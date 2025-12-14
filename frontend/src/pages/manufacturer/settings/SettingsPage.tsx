@@ -5,8 +5,8 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { AccountTab } from "@/components/settings/AccountTab";
-import { BusinessTab } from "@/components/settings/BusinessTab";
+import { AccountTab } from "./components/AccountTab";
+import { BusinessTab } from "./components/BusinessTab";
 import { PricingTab } from "@/components/settings/PricingTab";
 import { PaymentTab } from "@/components/settings/PaymentTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";

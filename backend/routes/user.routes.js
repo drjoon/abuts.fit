@@ -12,6 +12,15 @@ router.get("/profile", userController.getProfile);
 // 사용자 프로필 수정
 router.put("/profile", userController.updateProfile);
 
+// 전화번호 인증번호 발송
+router.post("/phone-verification/send", userController.sendPhoneVerification);
+
+// 전화번호 인증번호 확인
+router.post(
+  "/phone-verification/verify",
+  userController.verifyPhoneVerification
+);
+
 // 제조사 목록 조회 (의뢰자, 관리자만 접근 가능)
 router.get(
   "/manufacturers",

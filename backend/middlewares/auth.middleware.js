@@ -23,7 +23,24 @@ export const authenticate = async (req, res, next) => {
 
     // 개발용 MOCK 토큰 우회 (프론트 mock 로그인과 연동)
     if (process.env.NODE_ENV !== "production" && token === "MOCK_DEV_TOKEN") {
-      const mockRole = req.headers["x-mock-role"] || "manufacturer";
+      const decodeMockHeader = (value) => {
+        if (typeof value !== "string") return value;
+        try {
+          return decodeURIComponent(value);
+        } catch {
+          return value;
+        }
+      };
+
+      const mockRole =
+        decodeMockHeader(req.headers["x-mock-role"]) || "manufacturer";
+      const mockEmail =
+        decodeMockHeader(req.headers["x-mock-email"]) ||
+        `mock-${mockRole}@abuts.fit`;
+      const mockName = decodeMockHeader(req.headers["x-mock-name"]) || "사용자";
+      const mockOrganization =
+        decodeMockHeader(req.headers["x-mock-organization"]) || "";
+      const mockPhone = decodeMockHeader(req.headers["x-mock-phone"]) || "";
       const now = new Date();
 
       // 역할별 고정 ObjectId 사용 (Draft 권한 검증을 위해 일관된 ID 필요)
@@ -33,10 +50,44 @@ export const authenticate = async (req, res, next) => {
         admin: "000000000000000000000003",
       };
 
-      req.user = {
-        _id: new Types.ObjectId(
-          MOCK_USER_IDS[mockRole] || MOCK_USER_IDS.manufacturer
-        ),
+      const mockId = MOCK_USER_IDS[mockRole] || MOCK_USER_IDS.manufacturer;
+
+      let dbUser = await User.findById(mockId).select("-password");
+
+      if (!dbUser) {
+        const created = new User({
+          _id: new Types.ObjectId(mockId),
+          name: String(mockName),
+          email: String(mockEmail).toLowerCase(),
+          password: "mock_password_1234",
+          role: String(mockRole),
+          phoneNumber: String(mockPhone),
+          organization: String(mockOrganization),
+          referralCode: `mock_${mockRole}`,
+          approvedAt: now,
+          active: true,
+        });
+        await created.save();
+        dbUser = await User.findById(mockId).select("-password");
+      }
+
+      if (dbUser) {
+        const patch = {};
+        if (mockName && dbUser.name !== mockName) patch.name = String(mockName);
+        if (mockOrganization && dbUser.organization !== mockOrganization) {
+          patch.organization = String(mockOrganization);
+        }
+        if (mockPhone && dbUser.phoneNumber !== mockPhone) {
+          patch.phoneNumber = String(mockPhone);
+        }
+        if (Object.keys(patch).length > 0) {
+          await User.findByIdAndUpdate(mockId, { $set: patch }, { new: false });
+          dbUser = await User.findById(mockId).select("-password");
+        }
+      }
+
+      req.user = dbUser || {
+        _id: new Types.ObjectId(mockId),
         referralCode: `mock_${mockRole}`,
         role: mockRole,
         active: true,

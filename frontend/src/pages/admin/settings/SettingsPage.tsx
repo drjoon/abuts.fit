@@ -5,7 +5,7 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { AccountTab } from "@/components/settings/AccountTab";
+import { AccountTab } from "./components/AccountTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
 import { User, Bell } from "lucide-react";
 

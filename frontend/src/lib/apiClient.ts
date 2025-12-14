@@ -34,6 +34,11 @@ export async function apiFetch<T = any>(
   const finalHeaders: HeadersInit = {
     ...(headers || {}),
   };
+  for (const [k, v] of Object.entries(finalHeaders as any)) {
+    if (!k.toLowerCase().startsWith("x-mock-")) continue;
+    if (typeof v !== "string") continue;
+    (finalHeaders as any)[k] = encodeURIComponent(v);
+  }
 
   if (token) {
     (finalHeaders as any)["Authorization"] = `Bearer ${token}`;

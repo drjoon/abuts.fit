@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../utils/rateGuard.js";
+import RequestorOrganization from "../models/requestorOrganization.model.js";
 
 const apiKey = process.env.GOOGLE_API_KEY;
 
@@ -7,6 +8,79 @@ if (!apiKey) {
   console.warn(
     "[AI] GOOGLE_API_KEY is not set. Gemini filename parsing will be disabled."
   );
+}
+
+export async function parseBusinessLicense(req, res) {
+  try {
+    const { fileId, s3Key, originalName } = req.body || {};
+
+    if (!fileId && !s3Key) {
+      return res.status(400).json({
+        success: false,
+        message: "fileId 또는 s3Key가 필요합니다.",
+      });
+    }
+
+    if (!req.user || req.user.role !== "requestor") {
+      return res.status(403).json({
+        success: false,
+        message: "접근 권한이 없습니다.",
+      });
+    }
+
+    if (!req.user.organizationId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const org = await RequestorOrganization.findById(req.user.organizationId)
+      .select({ owner: 1 })
+      .lean();
+    if (!org || String(org.owner) !== String(req.user._id)) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 사업자등록증 업로드가 가능합니다.",
+      });
+    }
+
+    const extracted = {
+      businessNumber: "123-45-67890",
+      address: "서울시 강남구 테헤란로 123",
+      email: "tax@company.com",
+      representativeName: "홍길동",
+      businessType: "치과기공",
+      businessItem: "치과기공소",
+    };
+
+    const verification = {
+      verified: false,
+      provider: "stub",
+      message:
+        "현재는 개발 단계로 검증 API가 연결되지 않았습니다. 추후 외부 검증 API 연동 예정입니다.",
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        input: {
+          fileId: fileId || null,
+          s3Key: s3Key || null,
+          originalName: originalName || null,
+        },
+        extracted,
+        verification,
+      },
+    });
+  } catch (error) {
+    console.error("[AI] parseBusinessLicense error", error);
+    return res.status(500).json({
+      success: false,
+      message: "사업자등록증 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 let genAI = null;
@@ -238,4 +312,4 @@ export async function parseFilenames(req, res) {
   }
 }
 
-export default { parseFilenames };
+export default { parseFilenames, parseBusinessLicense };
