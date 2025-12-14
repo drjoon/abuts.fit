@@ -2066,7 +2066,10 @@ async function getMyDashboardSummary(req, res) {
     };
 
     const leadDays = await getDeliveryEtaLeadDays();
-    const diameterStats = computeDiameterStats(abutmentRequests, leadDays);
+    const diameterStats = await computeDiameterStats(
+      abutmentRequests,
+      leadDays
+    );
 
     const recentRequests = await Promise.all(
       abutmentRequests
@@ -2136,7 +2139,7 @@ async function getMyPricingReferralStats(req, res) {
 
     const myLast30DaysOrders = await Request.countDocuments({
       requestor: requestorId,
-      status: "완료",
+      status: { $ne: "취소" },
       createdAt: { $gte: last30Cutoff },
     });
 
@@ -2152,7 +2155,7 @@ async function getMyPricingReferralStats(req, res) {
     const referralLast30DaysOrders = referredUserIds.length
       ? await Request.countDocuments({
           requestor: { $in: referredUserIds },
-          status: "완료",
+          status: { $ne: "취소" },
           createdAt: { $gte: last30Cutoff },
         })
       : 0;
