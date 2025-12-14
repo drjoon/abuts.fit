@@ -104,13 +104,16 @@ const userSchema = new mongoose.Schema(
         default: "ko",
       },
       notifications: {
-        email: {
-          newRequest: { type: Boolean, default: true },
-          newMessage: { type: Boolean, default: true },
+        methods: {
+          emailNotifications: { type: Boolean, default: true },
+          smsNotifications: { type: Boolean, default: false },
+          pushNotifications: { type: Boolean, default: true },
+          marketingEmails: { type: Boolean, default: false },
         },
-        push: {
-          newRequest: { type: Boolean, default: true },
-          newMessage: { type: Boolean, default: true },
+        types: {
+          newRequests: { type: Boolean, default: true },
+          statusUpdates: { type: Boolean, default: true },
+          payments: { type: Boolean, default: true },
         },
       },
       theme: {

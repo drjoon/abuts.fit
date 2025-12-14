@@ -241,10 +241,10 @@ describe("사용자 API 테스트", () => {
 
       // 응답 검증
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("email");
-      expect(response.body.data).toHaveProperty("push");
-      expect(response.body.data.email).toHaveProperty("newRequest");
-      expect(response.body.data.push).toHaveProperty("newMessage");
+      expect(response.body.data).toHaveProperty("methods");
+      expect(response.body.data).toHaveProperty("types");
+      expect(response.body.data.methods).toHaveProperty("emailNotifications");
+      expect(response.body.data.types).toHaveProperty("newRequests");
     });
   });
 
@@ -252,17 +252,16 @@ describe("사용자 API 테스트", () => {
   describe("PUT /api/users/notification-settings", () => {
     it("알림 설정 수정 성공", async () => {
       const updateSettings = {
-        email: {
-          newRequest: false,
-          statusUpdate: false,
-          newMessage: false,
-          fileUpload: false,
+        methods: {
+          emailNotifications: false,
+          smsNotifications: true,
+          pushNotifications: true,
+          marketingEmails: false,
         },
-        push: {
-          newRequest: true,
-          statusUpdate: false,
-          newMessage: true,
-          fileUpload: false,
+        types: {
+          newRequests: true,
+          statusUpdates: false,
+          payments: true,
         },
       };
 
@@ -279,10 +278,10 @@ describe("사용자 API 테스트", () => {
 
     it("유효하지 않은 설정으로 수정 시 실패", async () => {
       const invalidSettings = {
-        email: {
-          newRequest: false,
+        methods: {
+          emailNotifications: false,
         },
-        // push 누락
+        // types 누락
       };
 
       const response = await request(app)

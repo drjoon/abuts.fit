@@ -481,28 +481,47 @@ async function getNotificationSettings(req, res) {
  */
 async function updateNotificationSettings(req, res) {
   try {
-    const { email, push } = req.body;
-    // email, push 각각에 newRequest, newMessage가 있는지 확인
-    if (
-      !email ||
-      typeof email.newRequest !== "boolean" ||
-      typeof email.newMessage !== "boolean" ||
-      !push ||
-      typeof push.newRequest !== "boolean" ||
-      typeof push.newMessage !== "boolean"
-    ) {
+    const { methods, types } = req.body;
+    if (!methods || !types) {
       return res.status(400).json({
         success: false,
         message:
-          "유효하지 않은 알림 설정입니다. email, push 각각에 newRequest, newMessage boolean 값이 필요합니다.",
+          "유효하지 않은 알림 설정입니다. methods, types 객체가 필요합니다.",
       });
     }
+
+    const methodKeys = [
+      "emailNotifications",
+      "smsNotifications",
+      "pushNotifications",
+      "marketingEmails",
+    ];
+    const typeKeys = ["newRequests", "statusUpdates", "payments"];
+
+    const fillMethods = (obj) => {
+      const filled = {};
+      methodKeys.forEach((key) => {
+        filled[key] = typeof obj?.[key] === "boolean" ? obj[key] : false;
+      });
+      return filled;
+    };
+
+    const fillTypes = (obj) => {
+      const filled = {};
+      typeKeys.forEach((key) => {
+        filled[key] = typeof obj?.[key] === "boolean" ? obj[key] : false;
+      });
+      return filled;
+    };
+
+    const nextMethods = fillMethods(methods);
+    const nextTypes = fillTypes(types);
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
       {
         $set: {
-          "preferences.notifications.email": email,
-          "preferences.notifications.push": push,
+          "preferences.notifications.methods": nextMethods,
+          "preferences.notifications.types": nextTypes,
         },
       },
       { new: true, runValidators: true }
@@ -513,26 +532,14 @@ async function updateNotificationSettings(req, res) {
         message: "사용자를 찾을 수 없습니다.",
       });
     }
-    // 모든 알림 필드가 누락 없이 포함되도록 보장
-    const defaultKeys = [
-      "newRequest",
-      "newMessage",
-      "fileUpload",
-      "statusUpdate",
-    ];
-    const fillAllFields = (obj) => {
-      const filled = {};
-      defaultKeys.forEach((key) => {
-        filled[key] = typeof obj[key] === "boolean" ? obj[key] : false;
-      });
-      return filled;
-    };
     res.status(200).json({
       success: true,
       message: "알림 설정이 성공적으로 수정되었습니다.",
       data: {
-        email: fillAllFields(updatedUser.preferences.notifications.email || {}),
-        push: fillAllFields(updatedUser.preferences.notifications.push || {}),
+        methods: fillMethods(
+          updatedUser.preferences.notifications.methods || {}
+        ),
+        types: fillTypes(updatedUser.preferences.notifications.types || {}),
       },
     });
   } catch (error) {

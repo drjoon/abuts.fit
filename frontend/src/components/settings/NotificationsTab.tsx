@@ -1,41 +1,163 @@
-import { useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Bell, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { request } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
-export const NotificationsTab = () => {
-  const { toast } = useToast();
+type NotificationSettingsV2 = {
+  methods: {
+    emailNotifications: boolean;
+    smsNotifications: boolean;
+    pushNotifications: boolean;
+    marketingEmails: boolean;
+  };
+  types: {
+    newRequests: boolean;
+    statusUpdates: boolean;
+    payments: boolean;
+  };
+};
 
-  const [notificationData, setNotificationData] = useState({
+const defaultSettings: NotificationSettingsV2 = {
+  methods: {
     emailNotifications: true,
     smsNotifications: false,
     pushNotifications: true,
     marketingEmails: false,
+  },
+  types: {
     newRequests: true,
     statusUpdates: true,
     payments: true,
-  });
+  },
+};
 
-  const handleSave = () => {
-    toast({
-      title: "설정이 저장되었습니다",
-      description: "알림 설정이 성공적으로 업데이트되었습니다.",
-    });
+export const NotificationsTab = () => {
+  const { toast } = useToast();
+  const { token } = useAuthStore();
+
+  const [settings, setSettings] =
+    useState<NotificationSettingsV2>(defaultSettings);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const mockHeaders = useMemo(() => {
+    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
+    return {} as Record<string, string>;
+  }, [token]);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!token) return;
+      setIsLoading(true);
+      try {
+        const res = await request<any>({
+          path: "/api/users/notification-settings",
+          method: "GET",
+          token,
+          headers: mockHeaders,
+        });
+        if (!res.ok) {
+          return;
+        }
+        const body: any = res.data || {};
+        const data = body.data || body;
+
+        if (data?.methods && data?.types) {
+          setSettings({
+            methods: {
+              emailNotifications:
+                typeof data.methods.emailNotifications === "boolean"
+                  ? data.methods.emailNotifications
+                  : defaultSettings.methods.emailNotifications,
+              smsNotifications:
+                typeof data.methods.smsNotifications === "boolean"
+                  ? data.methods.smsNotifications
+                  : defaultSettings.methods.smsNotifications,
+              pushNotifications:
+                typeof data.methods.pushNotifications === "boolean"
+                  ? data.methods.pushNotifications
+                  : defaultSettings.methods.pushNotifications,
+              marketingEmails:
+                typeof data.methods.marketingEmails === "boolean"
+                  ? data.methods.marketingEmails
+                  : defaultSettings.methods.marketingEmails,
+            },
+            types: {
+              newRequests:
+                typeof data.types.newRequests === "boolean"
+                  ? data.types.newRequests
+                  : defaultSettings.types.newRequests,
+              statusUpdates:
+                typeof data.types.statusUpdates === "boolean"
+                  ? data.types.statusUpdates
+                  : defaultSettings.types.statusUpdates,
+              payments:
+                typeof data.types.payments === "boolean"
+                  ? data.types.payments
+                  : defaultSettings.types.payments,
+            },
+          });
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    load();
+  }, [mockHeaders, token]);
+
+  const handleSave = async () => {
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        description: "알림 설정을 저장하려면 로그인해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await request<any>({
+        path: "/api/users/notification-settings",
+        method: "PUT",
+        token,
+        headers: mockHeaders,
+        jsonBody: settings,
+      });
+      if (!res.ok) {
+        toast({
+          title: "저장에 실패했습니다",
+          description:
+            (res.data as any)?.message ||
+            "알림 설정 저장 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "설정이 저장되었습니다",
+        description: "알림 설정이 성공적으로 업데이트되었습니다.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const toggleNotification = (key: keyof typeof notificationData) => {
-    setNotificationData((prev) => ({
+  const toggleMethod = (key: keyof NotificationSettingsV2["methods"]) => {
+    setSettings((prev) => ({
       ...prev,
-      [key]: !prev[key],
+      methods: { ...prev.methods, [key]: !prev.methods[key] },
+    }));
+  };
+
+  const toggleType = (key: keyof NotificationSettingsV2["types"]) => {
+    setSettings((prev) => ({
+      ...prev,
+      types: { ...prev.types, [key]: !prev.types[key] },
     }));
   };
 
@@ -48,118 +170,120 @@ export const NotificationsTab = () => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Notification Methods */}
-        <div>
-          <h3 className="text-lg font-medium mb-4">알림 수신 방법</h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="emailNotifications" className="font-medium">
-                  이메일 알림
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  중요 알림을 이메일로 받습니다
-                </p>
+        <div className="grid grid-cols-1 gap-20 lg:grid-cols-2 m-6">
+          {/* Notification Methods */}
+          <div>
+            <h3 className="text-lg font-medium mb-4">알림 수신 방법</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="emailNotifications" className="font-medium">
+                    이메일 알림
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    중요 알림을 이메일로 받습니다
+                  </p>
+                </div>
+                <Switch
+                  id="emailNotifications"
+                  checked={settings.methods.emailNotifications}
+                  onCheckedChange={() => toggleMethod("emailNotifications")}
+                />
               </div>
-              <Switch
-                id="emailNotifications"
-                checked={notificationData.emailNotifications}
-                onCheckedChange={() => toggleNotification("emailNotifications")}
-              />
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="smsNotifications" className="font-medium">
-                  SMS 알림
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  중요 알림을 SMS로 받습니다
-                </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="smsNotifications" className="font-medium">
+                    SMS 알림
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    중요 알림을 SMS로 받습니다
+                  </p>
+                </div>
+                <Switch
+                  id="smsNotifications"
+                  checked={settings.methods.smsNotifications}
+                  onCheckedChange={() => toggleMethod("smsNotifications")}
+                />
               </div>
-              <Switch
-                id="smsNotifications"
-                checked={notificationData.smsNotifications}
-                onCheckedChange={() => toggleNotification("smsNotifications")}
-              />
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="marketingEmails" className="font-medium">
-                  마케팅 이메일
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  프로모션 및 마케팅 정보를 받습니다
-                </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="marketingEmails" className="font-medium">
+                    마케팅 이메일
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    프로모션 및 마케팅 정보를 받습니다
+                  </p>
+                </div>
+                <Switch
+                  id="marketingEmails"
+                  checked={settings.methods.marketingEmails}
+                  onCheckedChange={() => toggleMethod("marketingEmails")}
+                />
               </div>
-              <Switch
-                id="marketingEmails"
-                checked={notificationData.marketingEmails}
-                onCheckedChange={() => toggleNotification("marketingEmails")}
-              />
             </div>
           </div>
-        </div>
 
-        {/* Notification Types */}
-        <div>
-          <h3 className="text-lg font-medium mb-4">알림 유형</h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="newRequests" className="font-medium">
-                  새 의뢰 알림
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  새로운 의뢰가 접수되면 알림을 받습니다
-                </p>
+          {/* Notification Types */}
+          <div>
+            <h3 className="text-lg font-medium mb-4">알림 유형</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="newRequests" className="font-medium">
+                    새 의뢰 알림
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    새로운 의뢰가 접수되면 알림을 받습니다
+                  </p>
+                </div>
+                <Switch
+                  id="newRequests"
+                  checked={settings.types.newRequests}
+                  onCheckedChange={() => toggleType("newRequests")}
+                />
               </div>
-              <Switch
-                id="newRequests"
-                checked={notificationData.newRequests}
-                onCheckedChange={() => toggleNotification("newRequests")}
-              />
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="statusUpdates" className="font-medium">
-                  상태 업데이트 알림
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  의뢰 상태가 변경되면 알림을 받습니다
-                </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="statusUpdates" className="font-medium">
+                    상태 업데이트 알림
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    의뢰 상태가 변경되면 알림을 받습니다
+                  </p>
+                </div>
+                <Switch
+                  id="statusUpdates"
+                  checked={settings.types.statusUpdates}
+                  onCheckedChange={() => toggleType("statusUpdates")}
+                />
               </div>
-              <Switch
-                id="statusUpdates"
-                checked={notificationData.statusUpdates}
-                onCheckedChange={() => toggleNotification("statusUpdates")}
-              />
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="payments" className="font-medium">
-                  결제 알림
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  결제 관련 정보를 알림으로 받습니다
-                </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="payments" className="font-medium">
+                    결제 알림
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    결제 관련 정보를 알림으로 받습니다
+                  </p>
+                </div>
+                <Switch
+                  id="payments"
+                  checked={settings.types.payments}
+                  onCheckedChange={() => toggleType("payments")}
+                />
               </div>
-              <Switch
-                id="payments"
-                checked={notificationData.payments}
-                onCheckedChange={() => toggleNotification("payments")}
-              />
             </div>
           </div>
         </div>
 
         <div className="flex justify-end">
-          <Button onClick={handleSave}>
+          <Button onClick={handleSave} disabled={isLoading}>
             <Save className="mr-2 h-4 w-4" />
-            저장하기
+            {isLoading ? "저장 중..." : "저장하기"}
           </Button>
         </div>
       </CardContent>
