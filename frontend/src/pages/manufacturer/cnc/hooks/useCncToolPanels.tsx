@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { HealthLevel } from "@/features/manufacturer/cnc/components/MachineCard";
+import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
 
 interface UseCncToolPanelsParams {
   workUid: string;

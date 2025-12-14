@@ -6,9 +6,9 @@ import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 import { CncFileCard } from "./CncFileCard";
 import { CncBridgePanel } from "./CncBridgePanel";
 import { parseProgramNoFromName } from "../lib/programNaming";
-import type { Machine } from "@/features/manufacturer/cnc/types";
-import { useBridgeStore } from "@/features/manufacturer/cnc/hooks/useBridgeStore";
-import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
+import type { Machine } from "@/pages/manufacturer/cnc/types";
+import { useBridgeStore } from "@/pages/manufacturer/cnc/hooks/useBridgeStore";
+import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
 import { useToast } from "@/hooks/use-toast";
 
 type CncReservationMode = "immediate" | "reserved";

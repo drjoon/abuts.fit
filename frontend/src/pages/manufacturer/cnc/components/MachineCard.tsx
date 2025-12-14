@@ -8,7 +8,7 @@ import {
   Pause,
   Play,
 } from "lucide-react";
-import { Machine } from "@/features/manufacturer/cnc/types";
+import { Machine } from "@/pages/manufacturer/cnc/types";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
 

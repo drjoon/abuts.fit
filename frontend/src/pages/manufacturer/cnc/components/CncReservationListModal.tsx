@@ -1,9 +1,9 @@
 import React from "react";
 import { X } from "lucide-react";
 
-import type { Machine } from "@/features/manufacturer/cnc/types";
-import type { CncJobItem } from "@/features/manufacturer/cnc/components/CncReservationModal";
-import { CncFileCard } from "@/features/manufacturer/cnc/components/CncFileCard";
+import type { Machine } from "@/pages/manufacturer/cnc/types";
+import type { CncJobItem } from "@/pages/manufacturer/cnc/components/CncReservationModal";
+import { CncFileCard } from "@/pages/manufacturer/cnc/components/CncFileCard";
 
 interface CncReservationListModalProps {
   open: boolean;

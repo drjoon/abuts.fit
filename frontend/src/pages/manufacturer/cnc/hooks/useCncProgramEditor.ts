@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { Machine } from "@/features/manufacturer/cnc/types";
+import type { Machine } from "@/pages/manufacturer/cnc/types";
 import { applyProgramNoToContent } from "../lib/programNaming";
 
 interface UseCncProgramEditorParams {

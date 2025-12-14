@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Machine } from "@/features/manufacturer/cnc/types";
+import { Machine } from "@/pages/manufacturer/cnc/types";
 import { useToast } from "@/hooks/use-toast";
 
 export const useCncWorkBoard = (

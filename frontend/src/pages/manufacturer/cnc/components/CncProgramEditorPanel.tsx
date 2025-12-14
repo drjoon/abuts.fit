@@ -1,6 +1,6 @@
 import React from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
-import { useCncWriteGuard } from "@/features/manufacturer/cnc/hooks/useCncWriteGuard";
+import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
 import { MultiActionDialog } from "@/components/MultiActionDialog";
 
 interface CncProgramEditorPanelProps {

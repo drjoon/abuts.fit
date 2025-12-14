@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 
-import type { Machine } from "@/features/manufacturer/cnc/types";
+import type { Machine } from "@/pages/manufacturer/cnc/types";
 
 interface UseCncDashboardCoreParams {
   machines: Machine[];

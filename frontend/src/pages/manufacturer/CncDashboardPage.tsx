@@ -2,30 +2,30 @@ import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Machine } from "@/features/manufacturer/cnc/types";
-import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
-import { useCncWorkBoard } from "@/features/manufacturer/cnc/hooks/useCncWorkBoard";
-import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
-import { CncMachineGrid } from "@/features/manufacturer/cnc/components/CncMachineGrid";
+import { Machine } from "@/pages/manufacturer/cnc/types";
+import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
+import { useCncWorkBoard } from "@/pages/manufacturer/cnc/hooks/useCncWorkBoard";
+import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
+import { CncMachineGrid } from "@/pages/manufacturer/cnc/components/CncMachineGrid";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Plus, FileText, Clock, CheckCircle, AlertCircle } from "lucide-react";
-import { useCncWriteGuard } from "@/features/manufacturer/cnc/hooks/useCncWriteGuard";
-import { CncProgramEditorPanel } from "@/features/manufacturer/cnc/components/CncProgramEditorPanel";
-import type { HealthLevel } from "@/features/manufacturer/cnc/components/MachineCard";
-import { useCncToolPanels } from "@/features/manufacturer/cnc/hooks/useCncToolPanels";
-import { CncToolStatusModal } from "@/features/manufacturer/cnc/components/CncToolStatusModal";
-import { CncMachineManagerModal } from "@/features/manufacturer/cnc/components/CncMachineManagerModal";
-import { useCncDashboardCore } from "@/features/manufacturer/cnc/hooks/useCncDashboardCore";
-import { useCncTempPanel } from "@/features/manufacturer/cnc/hooks/useCncTempPanel";
-import { CncTempDetailModal } from "@/features/manufacturer/cnc/components/CncTempDetailModal";
-import { CncWorkBoardPanel } from "@/features/manufacturer/cnc/components/CncWorkBoardPanel";
+import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
+import { CncProgramEditorPanel } from "@/pages/manufacturer/cnc/components/CncProgramEditorPanel";
+import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
+import { useCncToolPanels } from "@/pages/manufacturer/cnc/hooks/useCncToolPanels";
+import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
+import { CncMachineManagerModal } from "@/pages/manufacturer/cnc/components/CncMachineManagerModal";
+import { useCncDashboardCore } from "@/pages/manufacturer/cnc/hooks/useCncDashboardCore";
+import { useCncTempPanel } from "@/pages/manufacturer/cnc/hooks/useCncTempPanel";
+import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempDetailModal";
+import { CncWorkBoardPanel } from "@/pages/manufacturer/cnc/components/CncWorkBoardPanel";
 import {
   CncReservationModal,
   type CncJobItem,
-} from "@/features/manufacturer/cnc/components/CncReservationModal";
-import { CncReservationListModal } from "@/features/manufacturer/cnc/components/CncReservationListModal";
-import { useCncProgramEditor } from "@/features/manufacturer/cnc/hooks/useCncProgramEditor";
+} from "@/pages/manufacturer/cnc/components/CncReservationModal";
+import { CncReservationListModal } from "@/pages/manufacturer/cnc/components/CncReservationListModal";
+import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
 
 export const CncDashboardPage = () => {
   const { user, token } = useAuthStore();

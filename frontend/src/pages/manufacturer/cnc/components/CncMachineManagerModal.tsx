@@ -1,4 +1,4 @@
-import type { MachineForm } from "@/features/manufacturer/cnc/types";
+import type { MachineForm } from "@/pages/manufacturer/cnc/types";
 
 interface CncMachineManagerModalProps {
   open: boolean;

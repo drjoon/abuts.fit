@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { Machine, MachineForm } from "@/features/manufacturer/cnc/types";
+import { Machine, MachineForm } from "@/pages/manufacturer/cnc/types";
 
 export const useCncMachines = () => {
   const [machines, setMachines] = useState<Machine[]>([]);

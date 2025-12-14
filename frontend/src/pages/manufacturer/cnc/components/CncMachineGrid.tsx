@@ -1,10 +1,10 @@
 import React from "react";
-import { Machine } from "@/features/manufacturer/cnc/types";
+import { Machine } from "@/pages/manufacturer/cnc/types";
 import {
   MachineCard,
   HealthLevel,
-} from "@/features/manufacturer/cnc/components/MachineCard";
-import type { CncJobItem } from "@/features/manufacturer/cnc/components/CncReservationModal";
+} from "@/pages/manufacturer/cnc/components/MachineCard";
+import type { CncJobItem } from "@/pages/manufacturer/cnc/components/CncReservationModal";
 
 interface CncMachineGridProps {
   machines: Machine[];

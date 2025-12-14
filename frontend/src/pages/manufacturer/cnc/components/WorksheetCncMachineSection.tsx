@@ -6,21 +6,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
-import type { Machine } from "@/features/manufacturer/cnc/types";
-import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
-import { useCncTempPanel } from "@/features/manufacturer/cnc/hooks/useCncTempPanel";
-import { useCncToolPanels } from "@/features/manufacturer/cnc/hooks/useCncToolPanels";
-import { CncTempDetailModal } from "@/features/manufacturer/cnc/components/CncTempDetailModal";
-import { CncToolStatusModal } from "@/features/manufacturer/cnc/components/CncToolStatusModal";
-import { useCncWriteGuard } from "@/features/manufacturer/cnc/hooks/useCncWriteGuard";
+import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
+import type { Machine } from "@/pages/manufacturer/cnc/types";
+import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
+import { useCncTempPanel } from "@/pages/manufacturer/cnc/hooks/useCncTempPanel";
+import { useCncToolPanels } from "@/pages/manufacturer/cnc/hooks/useCncToolPanels";
+import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempDetailModal";
+import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
+import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
 import { useToast } from "@/shared/hooks/use-toast";
 import { WorksheetDiameterQueueBar } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import {
   WorksheetDiameterQueueModal,
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
-import type { HealthLevel } from "@/features/manufacturer/cnc/components/MachineCard";
+import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
 
 const getMachineStatusChip = (status: string) => {
   const s = (status || "").toUpperCase();
