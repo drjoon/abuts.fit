@@ -13,7 +13,10 @@ export type DiameterStats = {
 };
 
 export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
-  if (!stats) {
+  const buckets = Array.isArray(stats?.buckets) ? stats?.buckets : [];
+  const total = typeof stats?.total === "number" ? stats.total : 0;
+
+  if (!stats || buckets.length === 0) {
     return (
       <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
         <CardHeader className="pb-2">
@@ -39,8 +42,8 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
       </CardHeader>
       <CardContent>
         <div className="flex items-end justify-center gap-3 max-w-md mx-auto">
-          {stats.buckets.map((bucket, index) => {
-            const isLast = index === stats.buckets.length - 1;
+          {buckets.map((bucket, index) => {
+            const isLast = index === buckets.length - 1;
             const label = isLast ? "10+mm" : `${bucket.diameter}mm`;
 
             return (
@@ -72,7 +75,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
           })}
         </div>
         <p className="mt-3 text-xs text-muted-foreground text-right">
-          총 {stats.total.toLocaleString()}건 대기중
+          총 {total.toLocaleString()}건 대기중
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground text-right">
           날짜는 오늘 의뢰 시 예상 도착일(의뢰인이 받는 날짜) 기준

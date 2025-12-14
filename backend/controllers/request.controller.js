@@ -5,6 +5,12 @@ import ClinicImplantPreset from "../models/clinicImplantPreset.model.js";
 import Connection from "../models/connection.model.js";
 import SystemSettings from "../models/systemSettings.model.js";
 import { Types } from "mongoose";
+import {
+  addKoreanBusinessDays,
+  getTodayYmdInKst,
+  normalizeKoreanBusinessDay,
+  ymdToMmDd,
+} from "../utils/krBusinessDays.js";
 
 const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d6: 2,
@@ -13,13 +19,49 @@ const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d10plus: 5,
 };
 
-function formatEtaLabelFromNow(days) {
+async function formatEtaLabelFromNow(days) {
   const d = typeof days === "number" && !Number.isNaN(days) ? days : 0;
-  const date = new Date();
-  date.setDate(date.getDate() + d);
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${mm}/${dd}`;
+  const todayYmd = getTodayYmdInKst();
+  const etaYmd = await addKoreanBusinessDays({ startYmd: todayYmd, days: d });
+  return ymdToMmDd(etaYmd);
+}
+
+async function calculateExpressShipYmd({ maxDiameter }) {
+  const todayYmd = getTodayYmdInKst();
+  const d =
+    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
+      ? maxDiameter
+      : null;
+
+  // 기본: 다음 영업일 출고
+  if (d == null || d <= 8) {
+    return addKoreanBusinessDays({ startYmd: todayYmd, days: 1 });
+  }
+
+  // d10 이상: 다음 수요일 출고(기존 정책 유지) + 해당 날짜가 휴일/주말이면 다음 영업일로 보정
+  const today = new Date();
+  const currentDow = today.getDay();
+  const targetDow = 3; // Wed
+
+  let daysToAdd = targetDow - currentDow;
+  if (currentDow > 1) {
+    daysToAdd += 7;
+  }
+  if (daysToAdd <= 0) {
+    daysToAdd += 7;
+  }
+
+  const candidate = new Date(today);
+  candidate.setDate(today.getDate() + daysToAdd);
+  const candidateYmd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(candidate);
+
+  // 수요일이 휴일/주말이면 다음 영업일, 영업일이면 그대로
+  return normalizeKoreanBusinessDay({ ymd: candidateYmd });
 }
 
 /**
@@ -73,6 +115,81 @@ async function updateMyShippingMode(req, res) {
     return res.status(500).json({
       success: false,
       message: "배송 방식 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 배송 도착일/출고일 계산 (공용)
+ * @route GET /api/requests/shipping-estimate
+ */
+async function getShippingEstimate(req, res) {
+  try {
+    const mode = req.query.mode;
+    const shipYmd =
+      typeof req.query.shipYmd === "string" && req.query.shipYmd.trim()
+        ? req.query.shipYmd.trim()
+        : null;
+    const maxDiameterRaw = req.query.maxDiameter;
+    const maxDiameter =
+      typeof maxDiameterRaw === "string" && maxDiameterRaw.trim()
+        ? Number(maxDiameterRaw)
+        : typeof maxDiameterRaw === "number"
+        ? maxDiameterRaw
+        : null;
+
+    if (!mode || !["express", "normal"].includes(mode)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 mode 입니다.",
+      });
+    }
+
+    // 출고일: express는 정책 기반, normal은 기본값(today)
+    const todayYmd = getTodayYmdInKst();
+    const rawShipDateYmd = shipYmd
+      ? shipYmd
+      : mode === "express"
+      ? await calculateExpressShipYmd({ maxDiameter })
+      : todayYmd;
+
+    const shipDateYmd = await normalizeKoreanBusinessDay({
+      ymd: rawShipDateYmd,
+    });
+
+    // 도착일: express는 ship+1 영업일, normal은 직경별 리드타임(영업일) 적용
+    const resolveNormalLeadDays = () => {
+      const d =
+        typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
+          ? maxDiameter
+          : null;
+      if (d == null) return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d10;
+      if (d <= 6) return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d6;
+      if (d <= 8) return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d8;
+      if (d <= 10) return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d10;
+      return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d10plus;
+    };
+
+    const arrivalDateYmd =
+      mode === "express"
+        ? await addKoreanBusinessDays({ startYmd: shipDateYmd, days: 1 })
+        : await addKoreanBusinessDays({
+            startYmd: shipDateYmd,
+            days: resolveNormalLeadDays(),
+          });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        shipDateYmd,
+        arrivalDateYmd,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "배송 도착일 계산 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1626,32 +1743,40 @@ async function deleteRequest(req, res) {
 }
 
 // 최대 직경 기준 4개 구간(<6, <8, <10, >=10mm) 통계를 계산하는 헬퍼
-function computeDiameterStats(requests, leadDays) {
+async function computeDiameterStats(requests, leadDays) {
   const effectiveLeadDays = {
     ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
     ...(leadDays || {}),
   };
 
+  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD10plus] =
+    await Promise.all([
+      formatEtaLabelFromNow(effectiveLeadDays.d6),
+      formatEtaLabelFromNow(effectiveLeadDays.d8),
+      formatEtaLabelFromNow(effectiveLeadDays.d10),
+      formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+    ]);
+
   const bucketDefs = [
     {
       id: "d6",
       diameter: 6,
-      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d6),
+      shipLabel: shipLabelD6,
     },
     {
       id: "d8",
       diameter: 8,
-      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d8),
+      shipLabel: shipLabelD8,
     },
     {
       id: "d10",
       diameter: 10,
-      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d10),
+      shipLabel: shipLabelD10,
     },
     {
       id: "d10plus",
       diameter: "10+",
-      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+      shipLabel: shipLabelD10plus,
     },
   ];
 
@@ -1714,7 +1839,7 @@ async function getDiameterStats(req, res) {
 
     const requests = await Request.find(filter).select({ caseInfos: 1 }).lean();
 
-    const diameterStats = computeDiameterStats(requests, leadDays);
+    const diameterStats = await computeDiameterStats(requests, leadDays);
 
     return res.status(200).json({
       success: true,
@@ -2260,6 +2385,7 @@ export default {
   hasDuplicateCase,
   getAllRequests,
   getMyRequests,
+  getShippingEstimate,
   getDiameterStats,
   getRequestById,
   updateRequest,

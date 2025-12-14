@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/hooks/use-toast";
@@ -6,6 +6,7 @@ import { usePresetStorage } from "./hooks/usePresetStorage";
 import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useExpressShipping } from "./hooks/useExpressShipping";
 import { useFileVerification } from "./hooks/useFileVerification";
+import { apiFetch } from "@/lib/apiClient";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestUploadSection } from "./components/NewRequestUploadSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
@@ -133,6 +134,43 @@ export const NewRequestPage = () => {
   const { calculateExpressDate, expressArrivalDate } =
     useExpressShipping(caseInfos);
 
+  const [normalArrivalDate, setNormalArrivalDate] = useState<
+    string | undefined
+  >(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const maxDiameter = caseInfos?.maxDiameter;
+      if (maxDiameter == null) {
+        if (!cancelled) setNormalArrivalDate(undefined);
+        return;
+      }
+
+      try {
+        const res = await apiFetch<any>({
+          path: `/api/requests/shipping-estimate?mode=normal&maxDiameter=${encodeURIComponent(
+            String(maxDiameter)
+          )}`,
+          method: "GET",
+        });
+
+        const next =
+          res.ok && res.data?.success
+            ? res.data?.data?.arrivalDateYmd
+            : undefined;
+        if (!cancelled) setNormalArrivalDate(next);
+      } catch {
+        if (!cancelled) setNormalArrivalDate(undefined);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [caseInfos?.maxDiameter]);
+
   // 치과명 옵션 (프리셋 기반)
   const clinicNameOptions = useMemo(
     () => clinicPresets.map((p) => ({ id: p.id, label: p.label })),
@@ -255,18 +293,38 @@ export const NewRequestPage = () => {
               highlight={highlightStep === "shipping"}
               sectionHighlightClass={sectionHighlightClass}
               bulkShippingSummary={bulkShippingSummary}
+              normalArrivalDate={normalArrivalDate}
               expressArrivalDate={expressArrivalDate}
               onOpenShippingSettings={() =>
                 navigate("/dashboard/settings?tab=shipping")
               }
-              onSelectExpress={() => {
-                const expressDate = calculateExpressDate(
+              onSelectExpress={async () => {
+                const guessShipDate = calculateExpressDate(
                   caseInfos?.maxDiameter
                 );
-                setCaseInfos({
-                  shippingMode: "express",
-                  requestedShipDate: expressDate,
-                });
+                try {
+                  const res = await apiFetch<any>({
+                    path: `/api/requests/shipping-estimate?mode=express&shipYmd=${encodeURIComponent(
+                      guessShipDate
+                    )}`,
+                    method: "GET",
+                  });
+
+                  const shipDateYmd =
+                    res.ok && res.data?.success
+                      ? res.data?.data?.shipDateYmd
+                      : guessShipDate;
+
+                  setCaseInfos({
+                    shippingMode: "express",
+                    requestedShipDate: shipDateYmd,
+                  });
+                } catch {
+                  setCaseInfos({
+                    shippingMode: "express",
+                    requestedShipDate: guessShipDate,
+                  });
+                }
               }}
               onSubmit={() => {
                 if (unverifiedCount > 0) {

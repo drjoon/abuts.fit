@@ -4,6 +4,11 @@ import File from "../models/file.model.js";
 import { Types } from "mongoose";
 import ActivityLog from "../models/activityLog.model.js";
 import SystemSettings from "../models/systemSettings.model.js";
+import {
+  addKoreanBusinessDays,
+  getTodayYmdInKst,
+  ymdToMmDd,
+} from "../utils/krBusinessDays.js";
 
 const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d6: 2,
@@ -12,13 +17,11 @@ const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d10plus: 5,
 };
 
-function formatEtaLabelFromNow(days) {
+async function formatEtaLabelFromNow(days) {
   const d = typeof days === "number" && !Number.isNaN(days) ? days : 0;
-  const date = new Date();
-  date.setDate(date.getDate() + d);
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${mm}/${dd}`;
+  const todayYmd = getTodayYmdInKst();
+  const etaYmd = await addKoreanBusinessDays({ startYmd: todayYmd, days: d });
+  return ymdToMmDd(etaYmd);
 }
 
 async function getDeliveryEtaLeadDays() {
@@ -545,32 +548,40 @@ async function changeUserRole(req, res) {
 }
 
 // 최대 직경 기준 4개 구간(<=6, <=8, <=10, 10+mm) 통계를 계산하는 헬퍼 (관리자용)
-function computeAdminDiameterStats(requests, leadDays) {
+async function computeAdminDiameterStats(requests, leadDays) {
   const effectiveLeadDays = {
     ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
     ...(leadDays || {}),
   };
 
+  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD10plus] =
+    await Promise.all([
+      formatEtaLabelFromNow(effectiveLeadDays.d6),
+      formatEtaLabelFromNow(effectiveLeadDays.d8),
+      formatEtaLabelFromNow(effectiveLeadDays.d10),
+      formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+    ]);
+
   const bucketDefs = [
     {
       id: "d6",
       diameter: 6,
-      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d6),
+      shipLabel: shipLabelD6,
     },
     {
       id: "d8",
       diameter: 8,
-      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d8),
+      shipLabel: shipLabelD8,
     },
     {
       id: "d10",
       diameter: 10,
-      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d10),
+      shipLabel: shipLabelD10,
     },
     {
       id: "d10plus",
       diameter: "10+",
-      shipLabel: formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+      shipLabel: shipLabelD10plus,
     },
   ];
 
@@ -686,7 +697,7 @@ async function getDashboardStats(req, res) {
     })
       .select({ caseInfos: 1 })
       .lean();
-    const diameterStats = computeAdminDiameterStats(
+    const diameterStats = await computeAdminDiameterStats(
       requestsForDiameter,
       leadDays
     );

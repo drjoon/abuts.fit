@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">43.75% </span>
+                <span class="strong">87.5% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>7/16</span>
+                <span class='fraction'>14/16</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">25% </span>
+                <span class="strong">50% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>1/4</span>
+                <span class='fraction'>2/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/3</span>
+                <span class='fraction'>3/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">43.75% </span>
+                <span class="strong">87.5% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>7/16</span>
+                <span class='fraction'>14/16</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -135,18 +135,18 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -157,8 +157,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -193,19 +193,19 @@ const uploadDir = "uploads/";
 &nbsp;
 // 저장 위치 및 파일명 설정
 const storage = multer.diskStorage({
-  destination: <span class="fstat-no" title="function not covered" >fu</span>nction (req, file, cb) {
-<span class="cstat-no" title="statement not covered" >    cb(null, uploadDir); </span>// uploads 폴더에 저장
+  destination: function (req, file, cb) {
+    cb(null, uploadDir); // uploads 폴더에 저장
   },
-  filename: <span class="fstat-no" title="function not covered" >fu</span>nction (req, file, cb) {
-    const ext = <span class="cstat-no" title="statement not covered" >path.extname(file.originalname);</span>
-    const basename = <span class="cstat-no" title="statement not covered" >path.basename(file.originalname, ext);</span>
-<span class="cstat-no" title="statement not covered" >    cb(null, `${basename}-${Date.now()}${ext}`);</span>
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const basename = path.basename(file.originalname, ext);
+    cb(null, `${basename}-${Date.now()}${ext}`);
   },
 });
 &nbsp;
 // 파일 필터 (이미지, PDF, 문서 파일 허용)
-const fileFilter = <span class="fstat-no" title="function not covered" >(r</span>eq, file, cb) =&gt; {
-  const allowedMimeTypes = <span class="cstat-no" title="statement not covered" >[</span>
+const fileFilter = (req, file, cb) =&gt; {
+  const allowedMimeTypes = [
     // 이미지
     "image/jpeg", "image/png", "image/gif", "image/svg+xml", "image/webp",
     // PDF
@@ -216,9 +216,9 @@ const fileFilter = <span class="fstat-no" title="function not covered" >(r</span
     "text/plain", "application/zip"
   ];
   
-<span class="cstat-no" title="statement not covered" >  if (allowedMimeTypes.includes(file.mimetype)) {</span>
-<span class="cstat-no" title="statement not covered" >    cb(null, true);</span>
-  } else {
+  if (allowedMimeTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else <span class="missing-if-branch" title="else path not taken" >E</span>{
 <span class="cstat-no" title="statement not covered" >    cb(new Error("허용되지 않는 파일 형식입니다."), false);</span>
   }
 };
@@ -247,7 +247,7 @@ export const upload = {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-14T02:21:21.492Z
+                at 2025-12-14T04:38:00.640Z
             </div>
         <script src="../prettify.js"></script>
         <script>

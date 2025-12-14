@@ -1,14 +1,16 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CaseInfos } from "./newRequestTypes";
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
-const addBusinessDays = (startDate: Date, days: number) => {
+const addWeekdays = (startDate: Date, days: number) => {
   let count = 0;
   const current = new Date(startDate);
   while (count < days) {
     current.setDate(current.getDate() + 1);
-    const day = current.getDay();
-    if (day !== 0 && day !== 6) {
-      count++;
+    const dow = current.getDay();
+    if (dow !== 0 && dow !== 6) {
+      count += 1;
     }
   }
   return current;
@@ -18,7 +20,7 @@ const calculateExpressDate = (maxDiameter?: number) => {
   const today = new Date();
 
   if (maxDiameter === undefined || maxDiameter <= 8) {
-    const shipDate = addBusinessDays(today, 1);
+    const shipDate = addWeekdays(today, 1);
     return shipDate.toISOString().split("T")[0];
   }
 
@@ -39,28 +41,86 @@ const calculateExpressDate = (maxDiameter?: number) => {
 };
 
 export function useExpressShipping(caseInfos?: CaseInfos) {
-  return useMemo(() => {
-    const expressShipDate =
-      caseInfos?.shippingMode === "express"
-        ? caseInfos?.requestedShipDate ??
-          calculateExpressDate(caseInfos?.maxDiameter)
-        : calculateExpressDate(caseInfos?.maxDiameter);
+  const { token, user } = useAuthStore();
+  const [expressArrivalDate, setExpressArrivalDate] = useState<
+    string | undefined
+  >(undefined);
+  const [resolvedExpressShipDate, setResolvedExpressShipDate] = useState<
+    string | undefined
+  >(undefined);
 
-    const expressArrivalDate =
-      caseInfos?.maxDiameter && expressShipDate
-        ? addBusinessDays(new Date(expressShipDate), 1)
-            .toISOString()
-            .split("T")[0]
-        : undefined;
-
-    return {
-      calculateExpressDate,
-      expressShipDate,
-      expressArrivalDate,
-    };
+  const expressShipDate = useMemo(() => {
+    // UI용 기본값(백엔드 응답이 오면 resolvedExpressShipDate로 대체)
+    if (caseInfos?.shippingMode === "express" && caseInfos?.requestedShipDate) {
+      return caseInfos.requestedShipDate;
+    }
+    return calculateExpressDate(caseInfos?.maxDiameter);
   }, [
     caseInfos?.maxDiameter,
     caseInfos?.requestedShipDate,
     caseInfos?.shippingMode,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!expressShipDate) {
+        if (!cancelled) setExpressArrivalDate(undefined);
+        return;
+      }
+
+      try {
+        const res = await apiFetch<{
+          success: boolean;
+          data?: any;
+          message?: string;
+        }>({
+          path: `/api/requests/shipping-estimate?mode=express&shipYmd=${encodeURIComponent(
+            expressShipDate
+          )}`,
+          method: "GET",
+          token,
+          headers: token
+            ? {
+                "x-mock-role": user?.role,
+              }
+            : undefined,
+        });
+
+        const nextArrival =
+          res.ok && (res.data as any)?.success
+            ? (res.data as any)?.data?.arrivalDateYmd
+            : undefined;
+        const nextShip =
+          res.ok && (res.data as any)?.success
+            ? (res.data as any)?.data?.shipDateYmd
+            : undefined;
+
+        if (!cancelled) {
+          setExpressArrivalDate(nextArrival);
+          setResolvedExpressShipDate(nextShip);
+        }
+      } catch {
+        if (!cancelled) {
+          setExpressArrivalDate(undefined);
+          setResolvedExpressShipDate(undefined);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [expressShipDate]);
+
+  return useMemo(
+    () => ({
+      calculateExpressDate,
+      expressShipDate: resolvedExpressShipDate || expressShipDate,
+      expressArrivalDate,
+    }),
+    [expressArrivalDate, expressShipDate, resolvedExpressShipDate]
+  );
 }

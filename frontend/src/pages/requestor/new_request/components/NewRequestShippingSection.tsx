@@ -9,6 +9,7 @@ type Props = {
   highlight: boolean;
   sectionHighlightClass: string;
   bulkShippingSummary: string;
+  normalArrivalDate?: string;
   expressArrivalDate?: string;
   onOpenShippingSettings: () => void;
   onSelectExpress: () => void;
@@ -22,6 +23,7 @@ export function NewRequestShippingSection({
   highlight,
   sectionHighlightClass,
   bulkShippingSummary,
+  normalArrivalDate,
   expressArrivalDate,
   onOpenShippingSettings,
   onSelectExpress,
@@ -60,6 +62,17 @@ export function NewRequestShippingSection({
                 <span className="text-[11px] md:text-xs opacity-80 font-normal">
                   {bulkShippingSummary}
                 </span>
+                {normalArrivalDate && (
+                  <span
+                    className={`text-[11px] md:text-xs ${
+                      (caseInfos?.shippingMode || "normal") === "normal"
+                        ? "text-primary"
+                        : "text-gray-500"
+                    }`}
+                  >
+                    도착 예정: {normalArrivalDate}
+                  </span>
+                )}
               </span>
             </button>
           </FunctionalItemCard>

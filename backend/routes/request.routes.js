@@ -76,6 +76,13 @@ router.get(
   requestController.getMyBulkShipping
 );
 
+// 배송 도착일/출고일 계산 (공용)
+router.get(
+  "/shipping-estimate",
+  authorize(["requestor", "manufacturer", "admin"]),
+  requestController.getShippingEstimate
+);
+
 // 배송 방식 변경 (의뢰자용)
 router.patch(
   "/my/shipping-mode",
