@@ -223,6 +223,7 @@ async function register(req, res) {
       role,
       phoneNumber,
       organization,
+      requestorType,
       referredByUserId,
       referredByReferralCode,
     } = req.body;
@@ -305,14 +306,19 @@ async function register(req, res) {
 
     const referralCode = await ensureUniqueReferralCode();
 
+    const normalizedRole = role || "requestor";
+    const normalizedRequestorType = String(requestorType || "").trim();
+    const isRequestorStaff =
+      normalizedRole === "requestor" && normalizedRequestorType === "staff";
+
     // 사용자 생성
     const user = new User({
       name,
       email,
       password,
-      role: role || "requestor", // 기본값은 의뢰자
+      role: normalizedRole, // 기본값은 의뢰자
       phoneNumber,
-      organization,
+      organization: isRequestorStaff ? "" : organization,
       referralCode,
       referredByUserId: referredByObjectId,
       approvedAt: new Date(),
@@ -320,28 +326,22 @@ async function register(req, res) {
 
     await user.save();
 
-    if (user.role === "requestor") {
+    if (user.role === "requestor" && !isRequestorStaff) {
       const orgName = String(user.organization || "").trim();
       if (orgName) {
-        const existingOrg = await RequestorOrganization.findOne({
+        const createdOrg = await RequestorOrganization.create({
           name: orgName,
-        })
-          .select({ _id: 1 })
-          .lean();
-        if (!existingOrg) {
-          const createdOrg = await RequestorOrganization.create({
-            name: orgName,
-            owner: user._id,
-            members: [user._id],
-            joinRequests: [],
-          });
-          await User.findByIdAndUpdate(user._id, {
-            $set: {
-              organizationId: createdOrg._id,
-              organization: createdOrg.name,
-            },
-          });
-        }
+          owner: user._id,
+          coOwners: [],
+          members: [user._id],
+          joinRequests: [],
+        });
+        await User.findByIdAndUpdate(user._id, {
+          $set: {
+            organizationId: createdOrg._id,
+            organization: createdOrg.name,
+          },
+        });
       }
     }
 

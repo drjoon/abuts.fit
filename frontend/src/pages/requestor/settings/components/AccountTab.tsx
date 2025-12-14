@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -57,6 +58,9 @@ interface AccountTabProps {
 export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const nextPath = (searchParams.get("next") || "").trim();
 
   const [avatarNonce, setAvatarNonce] = useState(0);
 
@@ -101,7 +105,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     email: userData?.email || "",
     phoneDialCode: "82",
     phoneNationalNumber: "",
-    organization: userData?.companyName || "",
     profileImage: "",
   });
 
@@ -150,20 +153,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
       "x-mock-name": user?.name || userData?.name || "사용자",
       "x-mock-organization":
-        (user as any)?.organization ||
-        accountData.organization ||
-        userData?.companyName ||
-        "",
+        (user as any)?.organization || userData?.companyName || "",
       "x-mock-phone": (user as any)?.phoneNumber || "",
     };
-  }, [
-    accountData.organization,
-    token,
-    user?.email,
-    user?.name,
-    user?.role,
-    userData,
-  ]);
+  }, [token, user?.email, user?.name, user?.role, userData]);
 
   const avatarOptions = useMemo(() => {
     const seedBase = (accountData.email || accountData.name || "user")
@@ -203,7 +196,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             email: data?.email ?? prev.email,
             phoneDialCode: nextPhone.dialCode,
             phoneNationalNumber: nextPhone.nationalNumber,
-            organization: data?.organization ?? prev.organization,
             profileImage: data?.profileImage ?? prev.profileImage,
           };
         });
@@ -382,6 +374,36 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         title: "전화번호 인증 완료",
         duration: 2000,
       });
+
+      if (nextPath) {
+        try {
+          if (userData?.role === "requestor") {
+            const orgRes = await request<any>({
+              path: "/api/requestor-organizations/me",
+              method: "GET",
+              token,
+              headers: mockHeaders,
+            });
+
+            if (orgRes.ok) {
+              const body: any = orgRes.data || {};
+              const data2 = body.data || body;
+              if (!data2?.hasBusinessNumber) {
+                navigate(
+                  `/dashboard/settings?tab=business&next=${encodeURIComponent(
+                    nextPath
+                  )}`
+                );
+                return;
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        navigate(nextPath);
+      }
     } catch {
       toast({
         title: "인증 실패",
@@ -446,7 +468,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         jsonBody: {
           name: accountData.name,
           phoneNumber: phoneValidation.normalized,
-          organization: accountData.organization,
           profileImage: accountData.profileImage,
         },
       });

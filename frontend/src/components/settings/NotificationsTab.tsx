@@ -46,7 +46,6 @@ export const NotificationsTab = () => {
           <Bell className="h-5 w-5" />
           알림 설정
         </CardTitle>
-        <CardDescription>알림 수신 방법과 유형을 관리하세요</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Notification Methods */}
@@ -82,22 +81,6 @@ export const NotificationsTab = () => {
                 id="smsNotifications"
                 checked={notificationData.smsNotifications}
                 onCheckedChange={() => toggleNotification("smsNotifications")}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="pushNotifications" className="font-medium">
-                  앱 푸시 알림
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  앱에서 푸시 알림을 받습니다
-                </p>
-              </div>
-              <Switch
-                id="pushNotifications"
-                checked={notificationData.pushNotifications}
-                onCheckedChange={() => toggleNotification("pushNotifications")}
               />
             </div>
 

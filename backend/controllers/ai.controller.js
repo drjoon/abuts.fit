@@ -36,9 +36,15 @@ export async function parseBusinessLicense(req, res) {
     }
 
     const org = await RequestorOrganization.findById(req.user.organizationId)
-      .select({ owner: 1 })
+      .select({ owner: 1, coOwners: 1 })
       .lean();
-    if (!org || String(org.owner) !== String(req.user._id)) {
+    const meId = String(req.user._id);
+    const canUpload =
+      org &&
+      (String(org.owner) === meId ||
+        (Array.isArray(org.coOwners) &&
+          org.coOwners.some((c) => String(c) === meId)));
+    if (!canUpload) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 사업자등록증 업로드가 가능합니다.",
@@ -60,6 +66,26 @@ export async function parseBusinessLicense(req, res) {
       message:
         "현재는 개발 단계로 검증 API가 연결되지 않았습니다. 추후 외부 검증 API 연동 예정입니다.",
     };
+
+    await RequestorOrganization.findByIdAndUpdate(
+      req.user.organizationId,
+      {
+        $set: {
+          businessLicense: {
+            fileId: fileId || null,
+            s3Key: s3Key || "",
+            originalName: originalName || "",
+            uploadedAt: new Date(),
+          },
+          extracted,
+          verification: {
+            ...verification,
+            checkedAt: new Date(),
+          },
+        },
+      },
+      { new: false }
+    );
 
     return res.json({
       success: true,

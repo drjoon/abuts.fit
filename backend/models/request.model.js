@@ -25,6 +25,12 @@ const requestSchema = new mongoose.Schema(
       unique: true, // 년도월날짜-세글자 알파벳 대문자
       sparse: true, // 마지막 3글자는 26진법 표기법이라 보면 도달할 수 없는 값
     },
+    requestorOrganizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RequestorOrganization",
+      default: null,
+      index: true,
+    },
     requestor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

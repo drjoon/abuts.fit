@@ -34,6 +34,7 @@ export const authenticate = async (req, res, next) => {
 
       const mockRole =
         decodeMockHeader(req.headers["x-mock-role"]) || "manufacturer";
+      const mockUserIdRaw = decodeMockHeader(req.headers["x-mock-user-id"]);
       const mockEmail =
         decodeMockHeader(req.headers["x-mock-email"]) ||
         `mock-${mockRole}@abuts.fit`;
@@ -50,7 +51,16 @@ export const authenticate = async (req, res, next) => {
         admin: "000000000000000000000003",
       };
 
-      const mockId = MOCK_USER_IDS[mockRole] || MOCK_USER_IDS.manufacturer;
+      const headerId = String(mockUserIdRaw || "").trim();
+      const mockId =
+        headerId && Types.ObjectId.isValid(headerId)
+          ? headerId
+          : MOCK_USER_IDS[mockRole] || MOCK_USER_IDS.manufacturer;
+
+      const isDefaultMockId = mockId === (MOCK_USER_IDS[mockRole] || "");
+      const mockReferralCode = isDefaultMockId
+        ? `mock_${mockRole}`
+        : `mock_${mockRole}_${mockId}`;
 
       let dbUser = await User.findById(mockId).select("-password");
 
@@ -63,7 +73,7 @@ export const authenticate = async (req, res, next) => {
           role: String(mockRole),
           phoneNumber: String(mockPhone),
           organization: String(mockOrganization),
-          referralCode: `mock_${mockRole}`,
+          referralCode: mockReferralCode,
           approvedAt: now,
           active: true,
         });

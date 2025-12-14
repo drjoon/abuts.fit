@@ -8,6 +8,7 @@ import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { request } from "@/lib/apiClient";
 
 export const SignupPage = () => {
   const [formData, setFormData] = useState({
@@ -17,6 +18,7 @@ export const SignupPage = () => {
     confirmPassword: "",
     company: "",
     phone: "",
+    requestorType: "" as "" | "owner" | "staff",
   });
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
@@ -44,6 +46,24 @@ export const SignupPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!formData.requestorType) {
+      toast({
+        title: "오류",
+        description: "대표자/직원을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (formData.requestorType === "owner" && !formData.company.trim()) {
+      toast({
+        title: "오류",
+        description: "기공소명을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (formData.password !== formData.confirmPassword) {
       toast({
         title: "오류",
@@ -61,7 +81,9 @@ export const SignupPage = () => {
         email: formData.email,
         password: formData.password,
         phoneNumber: formData.phone,
-        organization: formData.company,
+        organization:
+          formData.requestorType === "owner" ? formData.company : "",
+        requestorType: formData.requestorType,
       };
 
       if (referredByUserId) {
@@ -70,16 +92,13 @@ export const SignupPage = () => {
         payload.referredByReferralCode = referredByReferralCode;
       }
 
-      const res = await fetch("/api/auth/register", {
+      const res = await request<any>({
+        path: "/api/auth/register",
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+        jsonBody: payload,
       });
 
-      const data = await res.json().catch(() => ({}));
-
+      const data: any = res.data || {};
       if (!res.ok || !data?.success) {
         throw new Error(data?.message || "회원가입에 실패했습니다.");
       }
@@ -209,6 +228,44 @@ export const SignupPage = () => {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
+                  <Label>의뢰자 유형</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <Button
+                      type="button"
+                      variant={
+                        formData.requestorType === "owner"
+                          ? "default"
+                          : "outline"
+                      }
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          requestorType: "owner",
+                        }))
+                      }
+                    >
+                      대표자
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={
+                        formData.requestorType === "staff"
+                          ? "default"
+                          : "outline"
+                      }
+                      onClick={() =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          requestorType: "staff",
+                        }))
+                      }
+                    >
+                      직원
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
                   <Label htmlFor="name">이름</Label>
                   <Input
                     id="name"
@@ -232,17 +289,20 @@ export const SignupPage = () => {
                   />
                 </div>
 
-                <div>
-                  <Label htmlFor="company">회사명</Label>
-                  <Input
-                    id="company"
-                    name="company"
-                    type="text"
-                    value={formData.company}
-                    onChange={handleChange}
-                    placeholder="치과기공소 또는 어벗먼트 제조사"
-                  />
-                </div>
+                {formData.requestorType === "owner" && (
+                  <div>
+                    <Label htmlFor="company">기공소명</Label>
+                    <Input
+                      id="company"
+                      name="company"
+                      type="text"
+                      value={formData.company}
+                      onChange={handleChange}
+                      placeholder="예: 서울치과기공소"
+                      required
+                    />
+                  </div>
+                )}
 
                 <div>
                   <Label htmlFor="phone">전화번호</Label>

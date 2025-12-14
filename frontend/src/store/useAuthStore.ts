@@ -10,6 +10,7 @@ export interface User {
   avatar?: string;
   companyName?: string;
   referralCode?: string;
+  mockUserId?: string;
 }
 
 export const mockUsers: User[] = [
@@ -20,6 +21,16 @@ export const mockUsers: User[] = [
     role: "requestor",
     companyName: "서울치과기공소",
     referralCode: "mock_requestor",
+    mockUserId: "000000000000000000000001",
+  },
+  {
+    id: "4",
+    name: "이직원",
+    email: "staff@dental-lab.co.kr",
+    role: "requestor",
+    companyName: "",
+    referralCode: "mock_requestor_staff",
+    mockUserId: "000000000000000000000004",
   },
   {
     id: "2",
@@ -28,6 +39,7 @@ export const mockUsers: User[] = [
     role: "manufacturer",
     companyName: "프리미엄 어벗먼트",
     referralCode: "mock_manufacturer",
+    mockUserId: "000000000000000000000002",
   },
   {
     id: "3",
@@ -36,6 +48,7 @@ export const mockUsers: User[] = [
     role: "admin",
     companyName: "Abuts.fit",
     referralCode: "mock_admin",
+    mockUserId: "000000000000000000000003",
   },
 ];
 
@@ -55,10 +68,35 @@ export const useAuthStore = create<AuthState>((set) => ({
     const foundUser = mockUsers.find((u) => u.email === email);
     if (foundUser && password === "a64468ff-514b") {
       const mockToken = "MOCK_DEV_TOKEN";
+      try {
+        localStorage.setItem("abuts_mock_role", foundUser.role);
+        localStorage.setItem("abuts_mock_email", foundUser.email);
+        localStorage.setItem("abuts_mock_name", foundUser.name);
+        localStorage.setItem(
+          "abuts_mock_organization",
+          foundUser.companyName || ""
+        );
+        localStorage.setItem("abuts_mock_phone", "");
+        localStorage.setItem("abuts_mock_user_id", foundUser.mockUserId || "");
+      } catch {
+        // ignore
+      }
       set({ user: foundUser, isAuthenticated: true, token: mockToken });
       return true;
     }
     return false;
   },
-  logout: () => set({ user: null, isAuthenticated: false, token: null }),
+  logout: () => {
+    try {
+      localStorage.removeItem("abuts_mock_role");
+      localStorage.removeItem("abuts_mock_email");
+      localStorage.removeItem("abuts_mock_name");
+      localStorage.removeItem("abuts_mock_organization");
+      localStorage.removeItem("abuts_mock_phone");
+      localStorage.removeItem("abuts_mock_user_id");
+    } catch {
+      // ignore
+    }
+    set({ user: null, isAuthenticated: false, token: null });
+  },
 }));

@@ -34,6 +34,34 @@ export async function apiFetch<T = any>(
   const finalHeaders: HeadersInit = {
     ...(headers || {}),
   };
+
+  if (token === "MOCK_DEV_TOKEN") {
+    try {
+      const role = localStorage.getItem("abuts_mock_role") || "";
+      const email = localStorage.getItem("abuts_mock_email") || "";
+      const name = localStorage.getItem("abuts_mock_name") || "";
+      const organization =
+        localStorage.getItem("abuts_mock_organization") || "";
+      const phone = localStorage.getItem("abuts_mock_phone") || "";
+      const userId = localStorage.getItem("abuts_mock_user_id") || "";
+
+      if (!(finalHeaders as any)["x-mock-role"] && role)
+        (finalHeaders as any)["x-mock-role"] = role;
+      if (!(finalHeaders as any)["x-mock-email"] && email)
+        (finalHeaders as any)["x-mock-email"] = email;
+      if (!(finalHeaders as any)["x-mock-name"] && name)
+        (finalHeaders as any)["x-mock-name"] = name;
+      if (!(finalHeaders as any)["x-mock-organization"] && organization)
+        (finalHeaders as any)["x-mock-organization"] = organization;
+      if (!(finalHeaders as any)["x-mock-phone"] && phone)
+        (finalHeaders as any)["x-mock-phone"] = phone;
+      if (!(finalHeaders as any)["x-mock-user-id"] && userId)
+        (finalHeaders as any)["x-mock-user-id"] = userId;
+    } catch {
+      // ignore
+    }
+  }
+
   for (const [k, v] of Object.entries(finalHeaders as any)) {
     if (!k.toLowerCase().startsWith("x-mock-")) continue;
     if (typeof v !== "string") continue;

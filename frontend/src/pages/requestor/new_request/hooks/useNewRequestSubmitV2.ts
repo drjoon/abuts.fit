@@ -36,6 +36,56 @@ export const useNewRequestSubmitV2 = ({
 }: UseNewRequestSubmitV2Params) => {
   const { toast } = useToast();
 
+  const redirectToProfileIfNeeded = async () => {
+    const next = "/dashboard";
+    if (!token) return false;
+
+    try {
+      const profileRes = await fetch(`${API_BASE_URL}/users/profile`, {
+        method: "GET",
+        headers: getHeaders(),
+      });
+      const profileBody: any = profileRes.ok
+        ? await profileRes.json().catch(() => ({}))
+        : {};
+      const profile = profileBody?.data || profileBody;
+      const needsPhone =
+        !String(profile?.phoneNumber || "").trim() || !profile?.phoneVerifiedAt;
+
+      if (needsPhone) {
+        navigate(
+          `/dashboard/settings?tab=account&reason=missing_phone&next=${encodeURIComponent(
+            next
+          )}`
+        );
+        return true;
+      }
+
+      const orgRes = await fetch(`${API_BASE_URL}/requestor-organizations/me`, {
+        method: "GET",
+        headers: getHeaders(),
+      });
+      const orgBody: any = orgRes.ok
+        ? await orgRes.json().catch(() => ({}))
+        : {};
+      const org = orgBody?.data || orgBody;
+      const hasBusinessNumber = org?.hasBusinessNumber === true;
+
+      if (!hasBusinessNumber) {
+        navigate(
+          `/dashboard/settings?tab=business&reason=missing_business&next=${encodeURIComponent(
+            next
+          )}`
+        );
+        return true;
+      }
+    } catch {
+      return false;
+    }
+
+    return false;
+  };
+
   /**
    * 파일별 파싱 로그 저장
    * 파싱 결과 vs 사용자 최종 입력값 비교
@@ -150,7 +200,10 @@ export const useNewRequestSubmitV2 = ({
         if (!res.ok) throw new Error("서버 응답 오류");
 
         toast({ title: "의뢰가 수정되었습니다", duration: 2000 });
-        navigate("/dashboard");
+        const redirected = await redirectToProfileIfNeeded();
+        if (!redirected) {
+          navigate("/dashboard");
+        }
       } catch (err: any) {
         toast({
           title: "의뢰 제출 중 오류",
@@ -264,7 +317,11 @@ export const useNewRequestSubmitV2 = ({
       } catch {}
 
       toast({ title: "의뢰가 제출되었습니다" });
-      navigate(`/dashboard`);
+
+      const redirected = await redirectToProfileIfNeeded();
+      if (!redirected) {
+        navigate(`/dashboard`);
+      }
     } catch (err: any) {
       const rawMessage = err?.message || "";
 

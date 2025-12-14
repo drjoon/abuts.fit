@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -9,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
@@ -18,11 +18,24 @@ import {
   Building2,
   Upload,
   Save,
-  FileText,
-  Search,
   ShieldCheck,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 
 interface BusinessTabProps {
   userData: {
@@ -46,23 +59,50 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const nextPath = (searchParams.get("next") || "").trim();
+  const reason = (searchParams.get("reason") || "").trim();
 
-  const [mode, setMode] = useState<"owner" | "staff">("owner");
   const [membership, setMembership] = useState<
     "none" | "owner" | "member" | "pending"
   >("none");
 
+  const myUserId = useMemo(() => {
+    return String(user?.mockUserId || user?.id || "");
+  }, [user?.id, user?.mockUserId]);
+
+  const [orgOwnerId, setOrgOwnerId] = useState<string>("");
+
   const [orgSearch, setOrgSearch] = useState("");
+  const [orgSearchResults, setOrgSearchResults] = useState<
+    {
+      _id: string;
+      name: string;
+      representativeName?: string;
+      businessNumber?: string;
+      address?: string;
+    }[]
+  >([]);
+  const [selectedOrg, setSelectedOrg] = useState<{
+    _id: string;
+    name: string;
+    representativeName?: string;
+    businessNumber?: string;
+    address?: string;
+  } | null>(null);
   const [myJoinRequests, setMyJoinRequests] = useState<
     { organizationId: string; organizationName: string; status: string }[]
   >([]);
-  const [pendingJoinRequests, setPendingJoinRequests] = useState<
-    {
-      user: { _id: string; name?: string; email?: string } | string;
-      createdAt?: string;
-    }[]
-  >([]);
   const [joinLoading, setJoinLoading] = useState(false);
+  const [cancelLoadingOrgId, setCancelLoadingOrgId] = useState<string>("");
+  const [orgOpen, setOrgOpen] = useState(false);
+
+  const getOrgLabel = (o: { name: string; businessNumber?: string }) => {
+    const name = String(o?.name || "").trim();
+    const bn = String(o?.businessNumber || "").trim();
+    return bn ? `${name} (${bn})` : name;
+  };
 
   const mockHeaders = useMemo(() => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
@@ -79,12 +119,29 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const [licenseFileName, setLicenseFileName] = useState<string>("");
   const [licenseFileId, setLicenseFileId] = useState<string>("");
   const [licenseS3Key, setLicenseS3Key] = useState<string>("");
+  const licenseInputRef = useRef<HTMLInputElement | null>(null);
   const [licenseStatus, setLicenseStatus] = useState<
     "missing" | "uploading" | "uploaded" | "processing" | "ready" | "error"
   >(userData?.companyName ? "missing" : "missing");
 
   const [extracted, setExtracted] = useState<LicenseExtracted>({});
   const [isVerified, setIsVerified] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!reason) return;
+    if (reason === "missing_business") {
+      toast({
+        title: "사업자 정보가 필요합니다",
+        description:
+          "의뢰 제출을 완료하려면 기공소 사업자 정보를 등록해주세요.",
+        duration: 3000,
+      });
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("reason");
+    navigate({ search: `?${nextParams.toString()}` }, { replace: true });
+  }, [navigate, reason, searchParams, toast]);
 
   useEffect(() => {
     const load = async () => {
@@ -105,9 +162,43 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           | "member"
           | "pending";
         setMembership(next);
-        if (next !== "owner") {
-          setMode("staff");
+
+        setOrgOwnerId(String(data?.organization?.owner || "").trim());
+
+        const orgName = String(data?.organization?.name || "").trim();
+        const ex = data?.extracted || {};
+        setBusinessData((prev) => ({
+          ...prev,
+          companyName: orgName || prev.companyName,
+          businessNumber:
+            String(ex?.businessNumber || "").trim() || prev.businessNumber,
+          address: String(ex?.address || "").trim() || prev.address,
+          detailAddress:
+            String(ex?.detailAddress || "").trim() || prev.detailAddress,
+          phone: String(ex?.phoneNumber || "").trim() || prev.phone,
+        }));
+        setExtracted((prev) => ({
+          ...prev,
+          representativeName:
+            String(ex?.representativeName || "").trim() ||
+            prev.representativeName,
+          email: String(ex?.email || "").trim() || prev.email,
+          businessType:
+            String(ex?.businessType || "").trim() || prev.businessType,
+        }));
+
+        const lic = data?.businessLicense || {};
+        const licName = String(lic?.originalName || "").trim();
+        const licFileId = String(lic?.fileId || "").trim();
+        const licS3Key = String(lic?.s3Key || "").trim();
+        if (licName) {
+          setLicenseFileName(licName);
+          setLicenseFileId(licFileId);
+          setLicenseS3Key(licS3Key);
+          setLicenseStatus("ready");
         }
+
+        setIsVerified(!!data?.businessVerified);
       } catch {
         setMembership("none");
       }
@@ -117,26 +208,45 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   }, [mockHeaders, token]);
 
   useEffect(() => {
+    const q = orgSearch.trim();
+    if (!token) return;
+    if (membership !== "none") return;
+    if (!q) {
+      setOrgSearchResults([]);
+      setSelectedOrg(null);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        const res = await request<any>({
+          path: `/api/requestor-organizations/search?q=${encodeURIComponent(
+            q
+          )}`,
+          method: "GET",
+          token,
+          headers: mockHeaders,
+        });
+        if (!res.ok) {
+          setOrgSearchResults([]);
+          return;
+        }
+        const body: any = res.data || {};
+        const data = body.data || body;
+        setOrgSearchResults(Array.isArray(data) ? data : []);
+      } catch {
+        setOrgSearchResults([]);
+      }
+    }, 250);
+
+    return () => clearTimeout(t);
+  }, [membership, mockHeaders, orgSearch, token]);
+
+  useEffect(() => {
     const load = async () => {
       try {
         if (!token) return;
-
-        if (membership === "owner") {
-          const res = await request<any>({
-            path: "/api/requestor-organizations/join-requests/pending",
-            method: "GET",
-            token,
-            headers: mockHeaders,
-          });
-          if (!res.ok) return;
-          const body: any = res.data || {};
-          const data = body.data || body;
-          setPendingJoinRequests(
-            Array.isArray(data?.joinRequests) ? data.joinRequests : []
-          );
-          return;
-        }
-
+        if (membership === "owner") return;
         const res = await request<any>({
           path: "/api/requestor-organizations/join-requests/me",
           method: "GET",
@@ -148,7 +258,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         const data = body.data || body;
         setMyJoinRequests(Array.isArray(data) ? data : []);
       } catch {
-        setPendingJoinRequests([]);
         setMyJoinRequests([]);
       }
     };
@@ -175,6 +284,108 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     setMembership(next);
   };
 
+  const refreshMyJoinRequests = async () => {
+    if (!token) return;
+    const res = await request<any>({
+      path: "/api/requestor-organizations/join-requests/me",
+      method: "GET",
+      token,
+      headers: mockHeaders,
+    });
+    if (!res.ok) return;
+    const body: any = res.data || {};
+    const data = body.data || body;
+    setMyJoinRequests(Array.isArray(data) ? data : []);
+  };
+
+  const getJoinStatusLabel = (status: string) => {
+    const s = String(status || "").trim();
+    if (s === "pending") return "승인대기중";
+    if (s === "approved") return "승인됨";
+    if (s === "rejected") return "거절됨";
+    return s || "-";
+  };
+
+  const handleCancelJoinRequest = async (organizationId: string) => {
+    try {
+      if (!token) {
+        toast({
+          title: "로그인이 필요합니다",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+      const orgId = String(organizationId || "").trim();
+      if (!orgId) return;
+
+      setCancelLoadingOrgId(orgId);
+      const res = await request<any>({
+        path: `/api/requestor-organizations/join-requests/${orgId}/cancel`,
+        method: "POST",
+        token,
+        headers: mockHeaders,
+      });
+
+      if (!res.ok) {
+        const message = String((res.data as any)?.message || "").trim();
+        toast({
+          title: "신청 취소 실패",
+          description: message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      toast({ title: "신청이 취소되었습니다" });
+      await refreshMyJoinRequests();
+      await refreshMembership();
+    } finally {
+      setCancelLoadingOrgId("");
+    }
+  };
+
+  const handleLeaveOrganization = async (organizationId: string) => {
+    try {
+      if (!token) {
+        toast({
+          title: "로그인이 필요합니다",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+      const orgId = String(organizationId || "").trim();
+      if (!orgId) return;
+
+      setCancelLoadingOrgId(orgId);
+      const res = await request<any>({
+        path: `/api/requestor-organizations/join-requests/${orgId}/leave`,
+        method: "POST",
+        token,
+        headers: mockHeaders,
+      });
+
+      if (!res.ok) {
+        const message = String((res.data as any)?.message || "").trim();
+        toast({
+          title: "승인 취소 실패",
+          description: message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      toast({ title: "승인이 취소되었습니다" });
+      await refreshMyJoinRequests();
+      await refreshMembership();
+    } finally {
+      setCancelLoadingOrgId("");
+    }
+  };
+
   const handleJoinRequest = async () => {
     try {
       if (!token) {
@@ -185,10 +396,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         });
         return;
       }
-      const name = orgSearch.trim();
-      if (!name) {
+      if (!selectedOrg?._id) {
         toast({
-          title: "기공소명을 입력해주세요",
+          title: "기공소를 선택해주세요",
           variant: "destructive",
           duration: 3000,
         });
@@ -201,12 +411,14 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         method: "POST",
         token,
         headers: mockHeaders,
-        jsonBody: { organizationName: name },
+        jsonBody: { organizationId: selectedOrg._id },
       });
 
       if (!res.ok) {
+        const message = String((res.data as any)?.message || "").trim();
         toast({
           title: "소속 신청 실패",
+          description: message || "잠시 후 다시 시도해주세요.",
           variant: "destructive",
           duration: 3000,
         });
@@ -215,66 +427,147 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
       toast({ title: "소속 신청이 접수되었습니다" });
       setOrgSearch("");
+      setOrgSearchResults([]);
+      setSelectedOrg(null);
       await refreshMembership();
+      await refreshMyJoinRequests();
+    } catch {
+      toast({
+        title: "소속 신청 실패",
+        description: "네트워크 오류가 발생했습니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
     } finally {
       setJoinLoading(false);
     }
   };
 
-  const handleApprove = async (userId: string) => {
-    if (!token) return;
-    const res = await request<any>({
-      path: `/api/requestor-organizations/join-requests/${userId}/approve`,
-      method: "POST",
-      token,
-      headers: mockHeaders,
-    });
-    if (!res.ok) {
-      toast({ title: "승인 실패", variant: "destructive", duration: 3000 });
-      return;
-    }
-    toast({ title: "승인되었습니다" });
-    await refreshMembership();
-  };
-
-  const handleReject = async (userId: string) => {
-    if (!token) return;
-    const res = await request<any>({
-      path: `/api/requestor-organizations/join-requests/${userId}/reject`,
-      method: "POST",
-      token,
-      headers: mockHeaders,
-    });
-    if (!res.ok) {
-      toast({ title: "거절 실패", variant: "destructive", duration: 3000 });
-      return;
-    }
-    toast({ title: "거절되었습니다" });
-    await refreshMembership();
-  };
-
   const [businessData, setBusinessData] = useState({
     companyName: userData?.companyName || "",
-    businessNumber: "123-45-67890",
-    address: "서울시 강남구 테헤란로 123",
-    detailAddress: "4층 401호",
-    phone: "02-1234-5678",
-    fax: "02-1234-5679",
-    website: "https://company.com",
-    businessHours: {
-      weekday: "09:00 - 18:00",
-      saturday: "09:00 - 15:00",
-      sunday: "휴무",
-    },
-    businessLicense: null as File | null,
-    description: "고품질 치과 기공물 제작 전문",
+    businessNumber: "",
+    address: "",
+    detailAddress: "",
+    phone: "",
   });
 
-  const handleSave = () => {
-    toast({
-      title: "설정이 저장되었습니다",
-      description: "사업자 정보가 성공적으로 업데이트되었습니다.",
-    });
+  const [errors, setErrors] = useState<Record<string, boolean>>({});
+
+  const currentOrgName = useMemo(() => {
+    const fromUser = String((user as any)?.organization || "").trim();
+    const fromState = String(businessData.companyName || "").trim();
+    const fromProps = String(userData?.companyName || "").trim();
+    return fromUser || fromState || fromProps;
+  }, [businessData.companyName, user, userData?.companyName]);
+
+  const isPrimaryOwner = useMemo(() => {
+    if (!orgOwnerId) return false;
+    if (!myUserId) return false;
+    return String(orgOwnerId) === String(myUserId);
+  }, [myUserId, orgOwnerId]);
+
+  const roleBadge = useMemo(() => {
+    if (membership === "owner") return isPrimaryOwner ? "주대표" : "공동대표";
+    if (membership === "member") return "직원";
+    if (membership === "pending") return "승인대기";
+    return "미소속";
+  }, [isPrimaryOwner, membership]);
+
+  const handleSave = async () => {
+    try {
+      if (!token) {
+        toast({
+          title: "로그인이 필요합니다",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      const companyName = String(businessData.companyName || "").trim();
+      const repName = String(extracted.representativeName || "").trim();
+      const phoneNumber = String(businessData.phone || "").trim();
+      const businessNumber = String(businessData.businessNumber || "").trim();
+      const businessType = String(extracted.businessType || "").trim();
+      const taxEmail = String(extracted.email || "").trim();
+      const address = String(businessData.address || "").trim();
+      const detailAddress = String(businessData.detailAddress || "").trim();
+
+      const nextErrors: Record<string, boolean> = {
+        companyName: !companyName,
+        representativeName: !repName,
+        phone: !phoneNumber,
+        businessNumber: !businessNumber,
+        businessType: !businessType,
+        email: !taxEmail,
+        address: !address,
+        detailAddress: !detailAddress,
+      };
+
+      if (Object.values(nextErrors).some(Boolean)) {
+        setErrors(nextErrors);
+        toast({
+          title: "필수 항목을 입력해주세요",
+          variant: "destructive",
+          duration: 3500,
+        });
+        return;
+      }
+
+      const bnDigits = businessNumber.replace(/\D/g, "");
+      if (bnDigits.length !== 10) {
+        setErrors((prev) => ({ ...prev, businessNumber: true }));
+        toast({
+          title: "사업자등록번호 형식이 올바르지 않습니다",
+          variant: "destructive",
+          duration: 3500,
+        });
+        return;
+      }
+
+      const res = await request<any>({
+        path: "/api/requestor-organizations/me",
+        method: "PUT",
+        token,
+        headers: mockHeaders,
+        jsonBody: {
+          name: companyName,
+          representativeName: repName,
+          phoneNumber,
+          businessNumber,
+          businessType,
+          email: taxEmail,
+          address,
+          detailAddress,
+        },
+      });
+
+      if (!res.ok) {
+        toast({
+          title: "저장 실패",
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      setErrors({});
+
+      toast({
+        title: "설정이 저장되었습니다",
+        description: "사업자 정보가 성공적으로 업데이트되었습니다.",
+      });
+
+      if (nextPath) {
+        navigate(nextPath);
+      }
+    } catch {
+      toast({
+        title: "저장 실패",
+        variant: "destructive",
+        duration: 3000,
+      });
+    }
   };
 
   const handleFileUpload = async (file: File) => {
@@ -290,8 +583,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
       if (membership !== "owner") {
         toast({
-          title: "대표자만 업로드할 수 있습니다",
-          description: "사업자등록증 업로드는 기공소 대표자 계정만 가능합니다.",
+          title: "대표자만 업로드할 수 있어요",
+          description:
+            "사업자등록증 업로드/수정은 대표자(주대표/공동대표) 계정에서만 가능합니다.",
           variant: "destructive",
           duration: 3000,
         });
@@ -358,148 +652,500 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Building2 className="h-5 w-5" />
-          사업자 정보
+          <p className="flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            기공소 정보
+          </p>
+          <span className="ml-2 inline-flex items-center rounded-md border bg-white/60 px-2 py-0.5 text-xs text-foreground">
+            {roleBadge}
+          </span>
         </CardTitle>
-        <CardDescription>
-          회사 정보와 사업자 등록증을 관리하세요
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant={mode === "owner" ? "default" : "outline"}
-            onClick={() => setMode("owner")}
-          >
-            대표자
-          </Button>
-          <Button
-            type="button"
-            variant={mode === "staff" ? "default" : "outline"}
-            onClick={() => setMode("staff")}
-          >
-            직원
-          </Button>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <Label>사업자등록증</Label>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {licenseStatus === "ready" && (
-                <span className="inline-flex items-center gap-1">
-                  <ShieldCheck className="h-4 w-4" />
-                  {isVerified ? "검증 완료" : "검증 대기"}
-                </span>
-              )}
+        {membership === "owner" && (
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {licenseStatus === "ready" && (
+                    <span className="inline-flex items-center gap-1">
+                      <ShieldCheck className="h-4 w-4" />
+                      {isVerified ? "검증 완료" : "검증 대기"}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div
+                className={cn(
+                  "border-2 border-dashed rounded-lg p-4",
+                  licenseStatus === "missing"
+                    ? "border-orange-300 bg-orange-50/80"
+                    : "border-border bg-white/60"
+                )}
+              >
+                <div className="text-center">
+                  <Button
+                    type="button"
+                    variant={
+                      licenseStatus === "missing" ? "default" : "outline"
+                    }
+                    disabled={
+                      licenseStatus === "uploading" ||
+                      licenseStatus === "processing" ||
+                      membership !== "owner"
+                    }
+                    onClick={() => {
+                      if (
+                        licenseStatus === "uploading" ||
+                        licenseStatus === "processing" ||
+                        membership !== "owner"
+                      ) {
+                        return;
+                      }
+                      licenseInputRef.current?.click();
+                    }}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    {licenseStatus === "uploading"
+                      ? "업로드 중..."
+                      : licenseStatus === "processing"
+                      ? "분석 중..."
+                      : "사업자등록증 업로드"}
+                  </Button>
+                  <input
+                    ref={licenseInputRef}
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    disabled={membership !== "owner"}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFileUpload(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  {membership !== "owner" && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      사업자등록증 업로드/수정은 대표자(주대표/공동대표)만
+                      가능합니다.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    PDF, JPG, PNG 파일만 가능 (최대 10MB)
+                  </p>
+                  {licenseFileName && (
+                    <p className="text-xs mt-2 text-foreground/80">
+                      업로드됨: {licenseFileName}
+                    </p>
+                  )}
+                  {(licenseFileId || licenseS3Key) && (
+                    <p className="text-xs mt-1 text-muted-foreground">
+                      파일 ID: {licenseFileId || "-"}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-          <div
-            className={cn(
-              "border-2 border-dashed rounded-lg p-4",
-              licenseStatus === "missing"
-                ? "border-orange-300 bg-orange-50/80"
-                : "border-border bg-white/60"
-            )}
-          >
-            <div className="text-center">
-              <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-              <label className="cursor-pointer">
-                <Button
-                  variant={licenseStatus === "missing" ? "default" : "outline"}
-                  disabled={
-                    licenseStatus === "uploading" ||
-                    licenseStatus === "processing" ||
-                    membership !== "owner"
-                  }
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  {licenseStatus === "uploading"
-                    ? "업로드 중..."
-                    : licenseStatus === "processing"
-                    ? "분석 중..."
-                    : "파일 업로드"}
-                </Button>
-                <input
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  disabled={membership !== "owner"}
-                  onChange={(e) =>
-                    e.target.files?.[0] && handleFileUpload(e.target.files[0])
-                  }
-                />
-              </label>
-              {membership !== "owner" && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  사업자등록증 업로드는 대표자 계정만 가능합니다.
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground mt-2">
-                PDF, JPG, PNG 파일만 가능 (최대 10MB)
-              </p>
-              {licenseFileName && (
-                <p className="text-xs mt-2 text-foreground/80">
-                  업로드됨: {licenseFileName}
-                </p>
-              )}
-              {(licenseFileId || licenseS3Key) && (
-                <p className="text-xs mt-1 text-muted-foreground">
-                  파일 ID: {licenseFileId || "-"}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {mode === "staff" && (
-          <div className="space-y-4">
-            <Label>기공소 소속 설정</Label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2 space-y-2">
-                <Label htmlFor="orgSearch">기공소명 검색</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <div className="space-y-2">
+              <Label>기공소 정보</Label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="repName">대표자명</Label>
                   <Input
-                    id="orgSearch"
-                    placeholder="예: 서울치과기공소"
-                    className="pl-9"
-                    value={orgSearch}
-                    onChange={(e) => setOrgSearch(e.target.value)}
+                    id="repName"
+                    className={cn(
+                      errors.representativeName &&
+                        "border-destructive focus-visible:ring-destructive"
+                    )}
+                    value={extracted.representativeName || ""}
+                    onChange={(e) => (
+                      setExtracted((prev) => ({
+                        ...prev,
+                        representativeName: e.target.value,
+                      })),
+                      setErrors((prev) => ({
+                        ...prev,
+                        representativeName: false,
+                      }))
+                    )}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="orgName">기공소명</Label>
+                  <Input
+                    id="orgName"
+                    className={cn(
+                      errors.companyName &&
+                        "border-destructive focus-visible:ring-destructive"
+                    )}
+                    value={businessData.companyName}
+                    onChange={(e) => (
+                      setBusinessData((prev) => ({
+                        ...prev,
+                        companyName: e.target.value,
+                      })),
+                      setErrors((prev) => ({ ...prev, companyName: false }))
+                    )}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="orgPhone">전화번호</Label>
+                  <Input
+                    id="orgPhone"
+                    className={cn(
+                      errors.phone &&
+                        "border-destructive focus-visible:ring-destructive"
+                    )}
+                    value={businessData.phone}
+                    onChange={(e) => (
+                      setBusinessData((prev) => ({
+                        ...prev,
+                        phone: e.target.value,
+                      })),
+                      setErrors((prev) => ({ ...prev, phone: false }))
+                    )}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bizNo">사업자등록번호</Label>
+                  <Input
+                    id="bizNo"
+                    className={cn(
+                      errors.businessNumber &&
+                        "border-destructive focus-visible:ring-destructive"
+                    )}
+                    value={businessData.businessNumber}
+                    onChange={(e) => (
+                      setBusinessData((prev) => ({
+                        ...prev,
+                        businessNumber: e.target.value,
+                      })),
+                      setErrors((prev) => ({
+                        ...prev,
+                        businessNumber: false,
+                      }))
+                    )}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="bizType">업종/업태</Label>
+                  <Input
+                    id="bizType"
+                    className={cn(
+                      errors.businessType &&
+                        "border-destructive focus-visible:ring-destructive"
+                    )}
+                    value={extracted.businessType || ""}
+                    onChange={(e) => (
+                      setExtracted((prev) => ({
+                        ...prev,
+                        businessType: e.target.value,
+                      })),
+                      setErrors((prev) => ({
+                        ...prev,
+                        businessType: false,
+                      }))
+                    )}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="taxEmail">세금계산서 이메일</Label>
+                  <Input
+                    id="taxEmail"
+                    type="email"
+                    className={cn(
+                      errors.email &&
+                        "border-destructive focus-visible:ring-destructive"
+                    )}
+                    value={extracted.email || ""}
+                    onChange={(e) => (
+                      setExtracted((prev) => ({
+                        ...prev,
+                        email: e.target.value,
+                      })),
+                      setErrors((prev) => ({ ...prev, email: false }))
+                    )}
                   />
                 </div>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="opacity-0">신청</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleJoinRequest}
-                  disabled={joinLoading}
-                >
-                  소속 신청
-                </Button>
+                <Label htmlFor="address">주소</Label>
+                <Input
+                  id="address"
+                  className={cn(
+                    errors.address &&
+                      "border-destructive focus-visible:ring-destructive"
+                  )}
+                  value={businessData.address}
+                  onChange={(e) => (
+                    setBusinessData((prev) => ({
+                      ...prev,
+                      address: e.target.value,
+                    })),
+                    setErrors((prev) => ({ ...prev, address: false }))
+                  )}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="detailAddress">세부주소</Label>
+                <Input
+                  id="detailAddress"
+                  className={cn(
+                    errors.detailAddress &&
+                      "border-destructive focus-visible:ring-destructive"
+                  )}
+                  value={businessData.detailAddress}
+                  onChange={(e) => (
+                    setBusinessData((prev) => ({
+                      ...prev,
+                      detailAddress: e.target.value,
+                    })),
+                    setErrors((prev) => ({
+                      ...prev,
+                      detailAddress: false,
+                    }))
+                  )}
+                />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              소속 신청 후 기공소 대표자의 승인이 필요합니다.
-            </p>
+
+            <div className="flex justify-end">
+              <Button type="button" onClick={handleSave}>
+                <Save className="mr-2 h-4 w-4" />
+                저장하기
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {membership !== "owner" && (
+          <div className="space-y-4">
+            {membership === "member" && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-white/60 p-3 text-sm">
+                  현재 소속됨{currentOrgName ? `: ${currentOrgName}` : ""}
+                </div>
+
+                <div className="rounded-lg border bg-white/60 p-3 text-xs text-muted-foreground">
+                  기공소 사업자 정보는 대표자만 수정할 수 있어요. 여기서는
+                  확인만 가능합니다.
+                </div>
+
+                <div className="rounded-lg border bg-white/60 p-4 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium">사업자 식별 정보</div>
+                    <div className="text-xs text-muted-foreground flex items-center gap-1">
+                      <ShieldCheck className="h-4 w-4" />
+                      {licenseStatus === "ready"
+                        ? isVerified
+                          ? "검증 완료"
+                          : "검증 대기"
+                        : "등록 필요"}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>대표자명</Label>
+                      <Input
+                        value={extracted.representativeName || ""}
+                        readOnly
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>기공소명</Label>
+                      <Input value={businessData.companyName || ""} readOnly />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>전화번호</Label>
+                      <Input value={businessData.phone || ""} readOnly />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>사업자등록번호</Label>
+                      <Input
+                        value={businessData.businessNumber || ""}
+                        readOnly
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>업종/업태</Label>
+                      <Input value={extracted.businessType || ""} readOnly />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>세금계산서 이메일</Label>
+                      <Input value={extracted.email || ""} readOnly />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>주소</Label>
+                      <Input value={businessData.address || ""} readOnly />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>세부주소</Label>
+                      <Input
+                        value={businessData.detailAddress || ""}
+                        readOnly
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {membership === "none" && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2 space-y-2">
+                    <Label>기공소 선택</Label>
+                    <Popover open={orgOpen} onOpenChange={setOrgOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={orgOpen}
+                          className="w-full justify-between"
+                          disabled={joinLoading}
+                        >
+                          <span className="truncate">
+                            {selectedOrg
+                              ? getOrgLabel(selectedOrg)
+                              : "기공소를 검색해서 선택하세요"}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[520px] p-0" align="start">
+                        <Command>
+                          <CommandInput
+                            placeholder="기공소명/대표자명/사업자번호/주소 검색..."
+                            value={orgSearch}
+                            onValueChange={(v) => {
+                              setOrgSearch(v);
+                              setSelectedOrg(null);
+                            }}
+                          />
+                          <CommandList>
+                            <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
+                            <CommandGroup>
+                              {orgSearchResults.map((o) => {
+                                const selected = selectedOrg?._id === o._id;
+                                const rep = String(
+                                  o.representativeName || ""
+                                ).trim();
+                                const bn = String(
+                                  o.businessNumber || ""
+                                ).trim();
+                                const addr = String(o.address || "").trim();
+                                const meta = [
+                                  rep ? `대표: ${rep}` : "",
+                                  bn ? `사업자: ${bn}` : "",
+                                  addr ? addr : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ");
+                                const searchValue = [o.name, rep, bn, addr]
+                                  .filter(Boolean)
+                                  .join(" ");
+                                return (
+                                  <CommandItem
+                                    key={o._id}
+                                    value={searchValue}
+                                    onSelect={() => {
+                                      setSelectedOrg(o);
+                                      setOrgOpen(false);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        selected ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    <div className="min-w-0">
+                                      <div className="text-sm truncate">
+                                        {getOrgLabel(o)}
+                                      </div>
+                                      {!!meta && (
+                                        <div className="text-xs text-muted-foreground truncate">
+                                          {meta}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="opacity-0">신청</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleJoinRequest}
+                      disabled={joinLoading || !selectedOrg?._id}
+                    >
+                      {joinLoading ? "신청 중..." : "소속 신청"}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
 
             {Array.isArray(myJoinRequests) && myJoinRequests.length > 0 && (
               <div className="rounded-lg border bg-white/60 p-4">
-                <div className="text-sm font-medium mb-2">내 소속 신청</div>
+                <div className="text-sm font-medium mb-2">내 소속 신청:</div>
                 <div className="space-y-2">
                   {myJoinRequests.map((r) => (
                     <div
                       key={`${r.organizationId}-${r.status}`}
                       className="flex items-center justify-between gap-3"
                     >
-                      <div className="text-sm">{r.organizationName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {r.status}
+                      <div className="text-sm">
+                        {r.organizationName} - {getJoinStatusLabel(r.status)}
                       </div>
+                      {String(r.status) === "pending" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            handleCancelJoinRequest(String(r.organizationId))
+                          }
+                          disabled={cancelLoadingOrgId === r.organizationId}
+                        >
+                          {cancelLoadingOrgId === r.organizationId
+                            ? "취소 중..."
+                            : "신청 취소"}
+                        </Button>
+                      )}
+
+                      {String(r.status) === "approved" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            handleLeaveOrganization(String(r.organizationId))
+                          }
+                          disabled={cancelLoadingOrgId === r.organizationId}
+                        >
+                          {cancelLoadingOrgId === r.organizationId
+                            ? "취소 중..."
+                            : "소속 해제"}
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -507,276 +1153,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             )}
           </div>
         )}
-
-        {mode === "owner" && (
-          <div className="space-y-2">
-            <Label>사업자 정보(추출/수정)</Label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="repName">대표자명</Label>
-                <Input
-                  id="repName"
-                  value={extracted.representativeName || ""}
-                  onChange={(e) =>
-                    setExtracted((prev) => ({
-                      ...prev,
-                      representativeName: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bizEmail">세금계산서 이메일</Label>
-                <Input
-                  id="bizEmail"
-                  type="email"
-                  value={extracted.email || ""}
-                  onChange={(e) =>
-                    setExtracted((prev) => ({ ...prev, email: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bizNo">사업자등록번호</Label>
-                <Input
-                  id="bizNo"
-                  value={businessData.businessNumber}
-                  onChange={(e) =>
-                    setBusinessData((prev) => ({
-                      ...prev,
-                      businessNumber: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bizType">업종/업태</Label>
-                <Input
-                  id="bizType"
-                  value={extracted.businessType || ""}
-                  onChange={(e) =>
-                    setExtracted((prev) => ({
-                      ...prev,
-                      businessType: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-
-            {Array.isArray(pendingJoinRequests) &&
-              pendingJoinRequests.length > 0 && (
-                <div className="mt-4 rounded-lg border bg-white/60 p-4">
-                  <div className="text-sm font-medium mb-2">소속 신청 대기</div>
-                  <div className="space-y-2">
-                    {pendingJoinRequests.map((r, idx) => {
-                      const u: any = (r as any)?.user;
-                      const userId =
-                        typeof u === "string" ? u : String(u?._id || "");
-                      const label =
-                        typeof u === "string"
-                          ? u
-                          : `${u?.name || ""} ${
-                              u?.email ? `(${u.email})` : ""
-                            }`.trim();
-                      return (
-                        <div
-                          key={`${userId}-${idx}`}
-                          className="flex items-center justify-between gap-3"
-                        >
-                          <div className="text-sm truncate">
-                            {label || userId}
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => handleApprove(userId)}
-                              disabled={!userId}
-                            >
-                              승인
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => handleReject(userId)}
-                              disabled={!userId}
-                            >
-                              거절
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="companyName">회사명</Label>
-            <Input
-              id="companyName"
-              value={businessData.companyName}
-              onChange={(e) =>
-                setBusinessData((prev) => ({
-                  ...prev,
-                  companyName: e.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="businessNumber">사업자등록번호</Label>
-            <Input
-              id="businessNumber"
-              value={businessData.businessNumber}
-              onChange={(e) =>
-                setBusinessData((prev) => ({
-                  ...prev,
-                  businessNumber: e.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="address">주소</Label>
-          <Input
-            id="address"
-            value={businessData.address}
-            onChange={(e) =>
-              setBusinessData((prev) => ({ ...prev, address: e.target.value }))
-            }
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="detailAddress">상세주소</Label>
-          <Input
-            id="detailAddress"
-            value={businessData.detailAddress}
-            onChange={(e) =>
-              setBusinessData((prev) => ({
-                ...prev,
-                detailAddress: e.target.value,
-              }))
-            }
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="businessPhone">대표번호</Label>
-            <Input
-              id="businessPhone"
-              value={businessData.phone}
-              onChange={(e) =>
-                setBusinessData((prev) => ({ ...prev, phone: e.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="fax">팩스번호</Label>
-            <Input
-              id="fax"
-              value={businessData.fax}
-              onChange={(e) =>
-                setBusinessData((prev) => ({ ...prev, fax: e.target.value }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="website">웹사이트</Label>
-            <Input
-              id="website"
-              value={businessData.website}
-              onChange={(e) =>
-                setBusinessData((prev) => ({
-                  ...prev,
-                  website: e.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-
-        {/* Business Hours */}
-        <div className="space-y-4">
-          <Label>영업시간</Label>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">평일</Label>
-              <Input
-                value={businessData.businessHours.weekday}
-                onChange={(e) =>
-                  setBusinessData((prev) => ({
-                    ...prev,
-                    businessHours: {
-                      ...prev.businessHours,
-                      weekday: e.target.value,
-                    },
-                  }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm">토요일</Label>
-              <Input
-                value={businessData.businessHours.saturday}
-                onChange={(e) =>
-                  setBusinessData((prev) => ({
-                    ...prev,
-                    businessHours: {
-                      ...prev.businessHours,
-                      saturday: e.target.value,
-                    },
-                  }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm">일요일</Label>
-              <Input
-                value={businessData.businessHours.sunday}
-                onChange={(e) =>
-                  setBusinessData((prev) => ({
-                    ...prev,
-                    businessHours: {
-                      ...prev.businessHours,
-                      sunday: e.target.value,
-                    },
-                  }))
-                }
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="description">회사 소개</Label>
-          <Textarea
-            id="description"
-            value={businessData.description}
-            onChange={(e) =>
-              setBusinessData((prev) => ({
-                ...prev,
-                description: e.target.value,
-              }))
-            }
-            placeholder="회사 소개 및 전문 분야를 입력하세요"
-          />
-        </div>
-
-        <div className="flex justify-end">
-          <Button onClick={handleSave}>
-            <Save className="mr-2 h-4 w-4" />
-            저장하기
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );

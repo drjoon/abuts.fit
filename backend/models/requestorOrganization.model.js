@@ -7,7 +7,6 @@ const requestorOrganizationSchema = new mongoose.Schema(
       required: true,
       trim: true,
       index: true,
-      unique: true,
     },
     owner: {
       type: mongoose.Schema.Types.ObjectId,
@@ -15,6 +14,13 @@ const requestorOrganizationSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    coOwners: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        index: true,
+      },
+    ],
     members: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -53,6 +59,8 @@ const requestorOrganizationSchema = new mongoose.Schema(
     extracted: {
       businessNumber: { type: String, default: "" },
       address: { type: String, default: "" },
+      detailAddress: { type: String, default: "" },
+      phoneNumber: { type: String, default: "" },
       email: { type: String, default: "" },
       representativeName: { type: String, default: "" },
       businessType: { type: String, default: "" },
@@ -71,6 +79,10 @@ const requestorOrganizationSchema = new mongoose.Schema(
 );
 
 requestorOrganizationSchema.index({ owner: 1, name: 1 });
+requestorOrganizationSchema.index(
+  { "extracted.businessNumber": 1 },
+  { unique: true, sparse: true }
+);
 requestorOrganizationSchema.index({
   "joinRequests.user": 1,
   "joinRequests.status": 1,

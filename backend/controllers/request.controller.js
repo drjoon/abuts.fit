@@ -4,6 +4,7 @@ import DraftRequest from "../models/draftRequest.model.js";
 import ClinicImplantPreset from "../models/clinicImplantPreset.model.js";
 import Connection from "../models/connection.model.js";
 import SystemSettings from "../models/systemSettings.model.js";
+import RequestorOrganization from "../models/requestorOrganization.model.js";
 import { Types } from "mongoose";
 import {
   addKoreanBusinessDays,
@@ -18,6 +19,83 @@ const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d10: 5,
   d10plus: 5,
 };
+
+function getRequestorOrgId(req) {
+  const raw = req?.user?.organizationId;
+  return raw ? String(raw) : "";
+}
+
+function buildRequestorOrgFilter(req) {
+  if (req?.user?.role !== "requestor") return {};
+  const orgId = getRequestorOrgId(req);
+  if (orgId && Types.ObjectId.isValid(orgId)) {
+    return { requestorOrganizationId: new Types.ObjectId(orgId) };
+  }
+  return { requestor: req.user._id };
+}
+
+async function buildRequestorOrgScopeFilter(req) {
+  if (req?.user?.role !== "requestor") return {};
+
+  const orgId = getRequestorOrgId(req);
+  if (!orgId || !Types.ObjectId.isValid(orgId)) {
+    return { requestor: req.user._id };
+  }
+
+  const org = await RequestorOrganization.findById(orgId)
+    .select({ members: 1 })
+    .lean();
+
+  const memberIdsRaw = Array.isArray(org?.members) ? org.members : [];
+  const memberIds = memberIdsRaw
+    .map((m) => String(m))
+    .filter((id) => Types.ObjectId.isValid(id));
+
+  const myId = String(req.user._id);
+  if (Types.ObjectId.isValid(myId) && !memberIds.includes(myId)) {
+    memberIds.push(myId);
+  }
+
+  const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
+  const orgObjectId = new Types.ObjectId(orgId);
+
+  // 레거시 데이터(organizationId 저장 전 requestor 기반 저장)까지 조직 단위로 포함
+  return {
+    $or: [
+      { requestorOrganizationId: orgObjectId },
+      { requestor: { $in: memberObjectIds } },
+    ],
+  };
+}
+
+function canAccessRequestAsRequestor(req, requestDoc) {
+  if (!req?.user || req.user.role !== "requestor") return false;
+  if (!requestDoc) return false;
+
+  const myOrgId = getRequestorOrgId(req);
+  const reqOrgId = requestDoc.requestorOrganizationId
+    ? String(requestDoc.requestorOrganizationId)
+    : "";
+
+  if (myOrgId && reqOrgId) {
+    return myOrgId === reqOrgId;
+  }
+
+  const populatedReqUser = requestDoc.requestor || null;
+  const populatedReqUserOrgId = populatedReqUser?.organizationId
+    ? String(populatedReqUser.organizationId)
+    : "";
+  if (myOrgId && populatedReqUserOrgId) {
+    return myOrgId === populatedReqUserOrgId;
+  }
+
+  const reqUserId = populatedReqUser?._id
+    ? String(populatedReqUser._id)
+    : requestDoc.requestor
+    ? String(requestDoc.requestor)
+    : "";
+  return reqUserId && reqUserId === String(req.user._id);
+}
 
 async function formatEtaLabelFromNow(days) {
   const d = typeof days === "number" && !Number.isNaN(days) ? days : 0;
@@ -70,7 +148,7 @@ async function calculateExpressShipYmd({ maxDiameter }) {
  */
 async function updateMyShippingMode(req, res) {
   try {
-    const requestorId = req.user._id;
+    const requestFilter = await buildRequestorOrgScopeFilter(req);
     const { requestIds, shippingMode } = req.body || {};
 
     if (!Array.isArray(requestIds) || requestIds.length === 0) {
@@ -89,14 +167,12 @@ async function updateMyShippingMode(req, res) {
 
     const result = await Request.updateMany(
       {
-        requestor: requestorId,
+        ...requestFilter,
         requestId: { $in: requestIds },
         status: { $nin: ["취소", "완료"] },
       },
       {
-        $set: {
-          shippingMode,
-        },
+        $set: { shippingMode: nextMode },
       }
     );
 
@@ -243,7 +319,10 @@ async function getDashboardRiskSummary(req, res) {
               { manufacturer: { $exists: false } },
             ],
           }
-        : baseFilter;
+        : {
+            ...baseFilter,
+            ...buildRequestorOrgFilter(req),
+          };
 
     const requests = await Request.find(filter)
       .populate("requestor", "name organization")
@@ -385,52 +464,6 @@ async function getDashboardRiskSummary(req, res) {
   }
 }
 
-// status(단일 필드)를 status1/status2와 동기화하는 헬퍼
-function applyStatusMapping(requestDoc, statusValue) {
-  const status = statusValue || requestDoc.status || "의뢰접수";
-
-  let status1 = "의뢰접수";
-  let status2 = "없음";
-
-  switch (status) {
-    case "의뢰접수":
-      status1 = "의뢰접수";
-      status2 = "없음";
-      break;
-    case "가공전":
-      status1 = "가공";
-      status2 = "전";
-      break;
-    case "가공후":
-      status1 = "가공";
-      status2 = "후";
-      break;
-    case "배송대기":
-      status1 = "세척/검사/포장";
-      status2 = "후";
-      break;
-    case "배송중":
-      status1 = "배송";
-      status2 = "중";
-      break;
-    case "완료":
-      status1 = "완료";
-      status2 = "없음";
-      break;
-    case "취소":
-      status1 = "취소";
-      status2 = "없음";
-      break;
-    default:
-      // 알 수 없는 값인 경우 기본값 유지
-      break;
-  }
-
-  requestDoc.status = status;
-  requestDoc.status1 = status1;
-  requestDoc.status2 = status2;
-}
-
 async function normalizeCaseInfosImplantFields(caseInfos) {
   const ci = caseInfos && typeof caseInfos === "object" ? { ...caseInfos } : {};
 
@@ -517,32 +550,39 @@ async function ensureLotNumberForMachining(requestDoc) {
   if (requestDoc.lotNumber) {
     return;
   }
-
-  return;
 }
+
+// ...
 
 async function computePriceForRequest({
   requestorId,
+  requestorOrgId,
   clinicName,
   patientName,
   tooth,
 }) {
+  const now = new Date();
+
+  const scopeFilter =
+    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
+      ? { requestorOrganizationId: new Types.ObjectId(String(requestorOrgId)) }
+      : { requestor: requestorId };
+
   const BASE_UNIT_PRICE = 15000;
   const REMAKE_FIXED_PRICE = 10000;
   const NEW_USER_FIXED_PRICE = 10000;
   const DISCOUNT_PER_ORDER = 10;
   const MAX_DISCOUNT = 5000;
 
-  const now = new Date();
-
-  // 1) 리메이크(재의뢰): 동일 환자/치아/치과, 90일 내 주문 존재 -> 10,000원 고정
+  // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 고정가
   const remakeCutoff = new Date(now);
   remakeCutoff.setDate(remakeCutoff.getDate() - 90);
   const existing = await Request.findOne({
-    requestor: requestorId,
+    ...scopeFilter,
     "caseInfos.patientName": patientName,
     "caseInfos.tooth": tooth,
     "caseInfos.clinicName": clinicName,
+    "caseInfos.implantSystem": { $exists: true, $ne: "" },
     status: { $ne: "취소" },
     createdAt: { $gte: remakeCutoff },
   })
@@ -550,6 +590,7 @@ async function computePriceForRequest({
     .lean();
 
   if (existing) {
+    // ...
     return {
       baseAmount: REMAKE_FIXED_PRICE,
       discountAmount: 0,
@@ -599,7 +640,7 @@ async function computePriceForRequest({
   const last30Cutoff = new Date(now);
   last30Cutoff.setDate(last30Cutoff.getDate() - 30);
   const last30DaysOrders = await Request.countDocuments({
-    requestor: requestorId,
+    ...scopeFilter,
     status: { $ne: "취소" },
     createdAt: { $gte: last30Cutoff },
   });
@@ -650,133 +691,15 @@ async function computePriceForRequest({
  */
 async function createRequest(req, res) {
   try {
-    // Batch request processing
-    if (req.body.items && Array.isArray(req.body.items)) {
-      const createdRequests = [];
-      const items = req.body.items;
-
-      // Generate a common referenceId for the batch if not provided in items
-      // However, items might already have referenceIds grouped by patient
-      // So we just process each item.
-
-      for (const item of items) {
-        const { caseInfos, ...rest } = item;
-
-        // caseInfos가 필수이며, 환자명/치아번호는 반드시 있어야 한다.
-        if (!caseInfos || typeof caseInfos !== "object") {
-          throw new Error("각 항목에 caseInfos 객체가 필요합니다.");
-        }
-
-        const patientName = (caseInfos.patientName || "").trim();
-        const tooth = (caseInfos.tooth || "").trim();
-        const clinicName = (caseInfos.clinicName || "").trim();
-        const workType = (caseInfos.workType || "abutment").trim();
-
-        // 현재는 커스텀 어벗먼트 의뢰만 허용
-        if (workType !== "abutment") {
-          return res.status(400).json({
-            success: false,
-            message: "현재는 커스텀 어벗먼트 의뢰만 등록할 수 있습니다.",
-          });
-        }
-
-        const normalizedCaseInfos = await normalizeCaseInfosImplantFields(
-          caseInfos
-        );
-        const implantManufacturer = (
-          normalizedCaseInfos.implantManufacturer || ""
-        ).trim();
-        const implantSystem = (normalizedCaseInfos.implantSystem || "").trim();
-        const implantType = (normalizedCaseInfos.implantType || "").trim();
-
-        if (!patientName || !tooth || !clinicName) {
-          return res.status(400).json({
-            success: false,
-            message: "치과이름, 환자이름, 치아번호는 모두 필수입니다.",
-          });
-        }
-
-        if (!implantManufacturer || !implantSystem || !implantType) {
-          return res.status(400).json({
-            success: false,
-            message:
-              "커스텀 어벗 의뢰의 경우 임플란트 제조사/시스템/유형은 모두 필수입니다.",
-          });
-        }
-
-        const computedPrice = await computePriceForRequest({
-          requestorId: req.user._id,
-          clinicName,
-          patientName,
-          tooth,
+    if (req.user?.role === "requestor") {
+      const orgId = getRequestorOrgId(req);
+      if (!orgId || !Types.ObjectId.isValid(orgId)) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
         });
-
-        const newRequest = new Request({
-          ...rest,
-          caseInfos: normalizedCaseInfos,
-          requestor: req.user._id,
-          price: computedPrice,
-        });
-        applyStatusMapping(newRequest, newRequest.status);
-        await newRequest.save();
-        createdRequests.push(newRequest);
       }
-
-      // 모든 요청이 저장된 뒤, 같은 환자명 기준으로 requestId를 referenceId에 매핑한다.
-      // (예: "김선미"의 27번/37번/크라운 의뢰만 서로 묶이고,
-      //  다른 환자 이름의 의뢰들은 별도 그룹으로 관리)
-
-      // 1) (클리닉명 + 환자명) 조합별 -> requestId[] 맵 구성
-      const groupByClinicAndPatient = new Map();
-
-      for (const r of createdRequests) {
-        const rawName =
-          typeof r.caseInfos?.patientName === "string"
-            ? r.caseInfos.patientName
-            : "";
-        const rawClinic =
-          typeof r.caseInfos?.clinicName === "string"
-            ? r.caseInfos.clinicName
-            : "";
-        const nameKey = rawName.trim() || "__NO_NAME__";
-        const clinicKey = rawClinic.trim() || "__NO_CLINIC__";
-        const key = `${clinicKey}::${nameKey}`;
-        if (!groupByClinicAndPatient.has(key)) {
-          groupByClinicAndPatient.set(key, []);
-        }
-        const arr = groupByClinicAndPatient.get(key);
-        if (typeof r.requestId === "string" && r.requestId.length > 0) {
-          arr.push(r.requestId);
-        }
-      }
-
-      // 2) 각 의뢰에 대해, 자신의 (클리닉+환자) 그룹에 해당하는 requestId 배열(자기 자신은 제외)을 referenceIds로 설정
-      await Promise.all(
-        createdRequests.map(async (reqDoc) => {
-          const rawName =
-            typeof reqDoc.caseInfos?.patientName === "string"
-              ? reqDoc.caseInfos.patientName
-              : "";
-          const rawClinic =
-            typeof reqDoc.caseInfos?.clinicName === "string"
-              ? reqDoc.caseInfos.clinicName
-              : "";
-          const nameKey = rawName.trim() || "__NO_NAME__";
-          const clinicKey = rawClinic.trim() || "__NO_CLINIC__";
-          const key = `${clinicKey}::${nameKey}`;
-          const idsForGroup = groupByClinicAndPatient.get(key) || [];
-          reqDoc.referenceIds = idsForGroup.filter(
-            (id) => id !== reqDoc.requestId
-          );
-          await reqDoc.save();
-        })
-      );
-
-      return res.status(201).json({
-        success: true,
-        message: `${createdRequests.length}건의 의뢰가 성공적으로 등록되었습니다.`,
-        data: createdRequests,
-      });
     }
 
     const { caseInfos, ...bodyRest } = req.body;
@@ -824,6 +747,7 @@ async function createRequest(req, res) {
 
     const computedPrice = await computePriceForRequest({
       requestorId: req.user._id,
+      requestorOrgId: req.user?.organizationId,
       clinicName,
       patientName,
       tooth,
@@ -833,6 +757,10 @@ async function createRequest(req, res) {
       ...bodyRest,
       caseInfos: normalizedCaseInfos,
       requestor: req.user._id,
+      requestorOrganizationId:
+        req.user?.role === "requestor" && req.user?.organizationId
+          ? req.user.organizationId
+          : null,
       price: computedPrice,
     });
 
@@ -905,7 +833,9 @@ async function cloneRequestToDraft(req, res) {
       });
     }
 
-    const request = await Request.findById(requestId).lean();
+    const request = await Request.findById(requestId)
+      .populate("requestor", "organizationId")
+      .lean();
     if (!request) {
       return res.status(404).json({
         success: false,
@@ -913,7 +843,7 @@ async function cloneRequestToDraft(req, res) {
       });
     }
 
-    const isRequestor = req.user._id.equals(request.requestor);
+    const isRequestor = canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
     if (!isRequestor && !isAdmin) {
       return res.status(403).json({
@@ -1000,6 +930,17 @@ async function createRequestsFromDraft(req, res) {
         success: false,
         message: "이 Draft에 대한 권한이 없습니다.",
       });
+    }
+
+    if (req.user?.role === "requestor") {
+      const orgId = getRequestorOrgId(req);
+      if (!orgId || !Types.ObjectId.isValid(orgId)) {
+        return res.status(403).json({
+          success: false,
+          message:
+            "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
+        });
+      }
     }
 
     const draftCaseInfos = Array.isArray(draft.caseInfos)
@@ -1090,6 +1031,7 @@ async function createRequestsFromDraft(req, res) {
 
       const computedPrice = await computePriceForRequest({
         requestorId: req.user._id,
+        requestorOrgId: req.user?.organizationId,
         clinicName,
         patientName,
         tooth,
@@ -1113,6 +1055,10 @@ async function createRequestsFromDraft(req, res) {
 
       const newRequest = new Request({
         requestor: req.user._id,
+        requestorOrganizationId:
+          req.user?.role === "requestor" && req.user?.organizationId
+            ? req.user.organizationId
+            : null,
         caseInfos: caseInfosWithFile,
         price: computedPrice,
         shippingMode,
@@ -1161,7 +1107,7 @@ async function createRequestsFromDraft(req, res) {
 // 동일 환자/치아 커스텀 어벗 의뢰 존재 여부 확인 (재의뢰 판단용)
 async function hasDuplicateCase(req, res) {
   try {
-    const requestorId = req.user._id;
+    const requestFilter = await buildRequestorOrgScopeFilter(req);
     const patientName = (req.query.patientName || "").trim();
     const tooth = (req.query.tooth || "").trim();
     const clinicName = (req.query.clinicName || "").trim();
@@ -1177,7 +1123,7 @@ async function hasDuplicateCase(req, res) {
     cutoff.setDate(cutoff.getDate() - 90);
 
     const existing = await Request.findOne({
-      requestor: requestorId,
+      ...requestFilter,
       "caseInfos.patientName": patientName,
       "caseInfos.tooth": tooth,
       "caseInfos.clinicName": clinicName,
@@ -1296,22 +1242,10 @@ async function getMyRequests(req, res) {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // 기본 필터: 로그인한 의뢰자 본인
-    let filter = { requestor: req.user._id };
+    // 기본 필터: 로그인한 의뢰자 소속 기공소(조직) 기준
+    const filter = await buildRequestorOrgScopeFilter(req);
     if (req.query.status) filter.status = req.query.status;
     if (req.query.implantType) filter.implantType = req.query.implantType;
-
-    // 개발 환경 + MOCK_DEV_TOKEN 인 경우, 기존 시드 데이터 확인을 위해
-    // requestor 필터를 제거하고 나머지 필터만 적용한다.
-    const authHeader = req.headers.authorization || "";
-    const isMockDevToken =
-      process.env.NODE_ENV !== "production" &&
-      authHeader === "Bearer MOCK_DEV_TOKEN";
-
-    if (isMockDevToken) {
-      const { requestor, ...rest } = filter;
-      filter = rest;
-    }
 
     // 정렬 파라미터
     const sort = {};
@@ -1325,7 +1259,7 @@ async function getMyRequests(req, res) {
 
     // 의뢰 조회
     const requests = await Request.find(filter)
-      .populate("requestor", "name email organization")
+      .populate("requestor", "name email organization organizationId")
       .sort(sort)
       .skip(skip)
       .limit(limit);
@@ -1372,7 +1306,10 @@ async function getRequestById(req, res) {
 
     // 의뢰 조회 (메시지 발신자 정보까지 포함)
     const request = await Request.findById(requestId)
-      .populate("requestor", "name email phoneNumber organization role")
+      .populate(
+        "requestor",
+        "name email phoneNumber organization organizationId role"
+      )
       .populate("messages.sender", "name email role");
 
     if (!request) {
@@ -1383,7 +1320,7 @@ async function getRequestById(req, res) {
     }
 
     // 접근 권한 확인 (의뢰자, 관리자만 조회 가능)
-    const isRequestor = req.user._id.equals(request.requestor._id);
+    const isRequestor = canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
 
     if (!isRequestor && !isAdmin) {
@@ -1425,7 +1362,10 @@ async function updateRequest(req, res) {
     }
 
     // 의뢰 조회
-    const request = await Request.findById(requestId);
+    const request = await Request.findById(requestId).populate(
+      "requestor",
+      "organizationId"
+    );
 
     if (!request) {
       return res.status(404).json({
@@ -1435,7 +1375,7 @@ async function updateRequest(req, res) {
     }
 
     // 접근 권한 확인 (의뢰자, 관리자만 수정 가능)
-    const isRequestor = req.user._id.equals(request.requestor._id);
+    const isRequestor = canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
 
     if (!isRequestor && !isAdmin) {
@@ -1539,7 +1479,10 @@ async function updateRequestStatus(req, res) {
     }
 
     // 의뢰 조회
-    const request = await Request.findById(requestId);
+    const request = await Request.findById(requestId).populate(
+      "requestor",
+      "organizationId"
+    );
 
     if (!request) {
       return res.status(404).json({
@@ -1549,7 +1492,7 @@ async function updateRequestStatus(req, res) {
     }
 
     // 접근 권한 확인 (의뢰자, 관리자만 상태 변경 가능)
-    const isRequestor = req.user._id.equals(request.requestor._id);
+    const isRequestor = canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
 
     if (!isRequestor && !isAdmin) {
@@ -1580,9 +1523,14 @@ async function updateRequestStatus(req, res) {
 
     // 신속 배송이 출고(배송중)로 전환되면, 그동안 쌓인 묶음(일반) 배송대기 건도 함께 출고 처리
     if (status === "배송중" && request.shippingMode === "express") {
+      const groupFilter = request.requestorOrganizationId
+        ? { requestorOrganizationId: request.requestorOrganizationId }
+        : request.requestor?.organizationId
+        ? { requestorOrganizationId: request.requestor.organizationId }
+        : { requestor: request.requestor };
       await Request.updateMany(
         {
-          requestor: request.requestor,
+          ...groupFilter,
           status: "배송대기",
           shippingMode: "normal",
           _id: { $ne: request._id },
@@ -1644,7 +1592,10 @@ async function addMessage(req, res) {
     }
 
     // 의뢰 조회
-    const request = await Request.findById(requestId);
+    const request = await Request.findById(requestId).populate(
+      "requestor",
+      "organizationId"
+    );
 
     if (!request) {
       return res.status(404).json({
@@ -1654,7 +1605,7 @@ async function addMessage(req, res) {
     }
 
     // 접근 권한 확인 (의뢰자, 관리자만 메시지 추가 가능)
-    const isRequestor = req.user._id.equals(request.requestor._id);
+    const isRequestor = canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
 
     if (!isRequestor && !isAdmin) {
@@ -1706,7 +1657,10 @@ async function deleteRequest(req, res) {
     }
 
     // 의뢰 조회
-    const request = await Request.findById(requestId);
+    const request = await Request.findById(requestId).populate(
+      "requestor",
+      "organizationId"
+    );
 
     if (!request) {
       return res.status(404).json({
@@ -1715,11 +1669,9 @@ async function deleteRequest(req, res) {
       });
     }
 
-    // 권한 검증: 관리자이거나 의뢰자 본인만 삭제 가능
-    if (
-      req.user.role !== "admin" &&
-      request.requestor.toString() !== req.user._id.toString()
-    ) {
+    // 권한 검증: 관리자이거나 같은 기공소(조직) 의뢰자만 삭제 가능
+    const isRequestor = canAccessRequestAsRequestor(req, request);
+    if (req.user.role !== "admin" && !isRequestor) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰를 삭제할 권한이 없습니다.",
@@ -1834,7 +1786,7 @@ async function getDiameterStats(req, res) {
 
     const filter =
       req.user?.role === "requestor"
-        ? { ...baseFilter, requestor: req.user._id }
+        ? { ...baseFilter, ...(await buildRequestorOrgScopeFilter(req)) }
         : baseFilter;
 
     const requests = await Request.find(filter).select({ caseInfos: 1 }).lean();
@@ -1862,7 +1814,7 @@ async function getDiameterStats(req, res) {
  */
 async function getMyDashboardSummary(req, res) {
   try {
-    const requestorId = req.user._id;
+    const requestFilter = await buildRequestorOrgScopeFilter(req);
     const { period = "30d" } = req.query;
 
     let dateFilter = {};
@@ -1876,19 +1828,9 @@ async function getMyDashboardSummary(req, res) {
       dateFilter = { createdAt: { $gte: from } };
     }
 
-    // 기본적으로는 로그인한 의뢰자 본인(requestorId)의 데이터만 조회
-    // 단, 개발 환경에서 MOCK_DEV_TOKEN을 사용하는 경우에는
-    // 기존 시드 데이터 확인을 위해 requestor 필터를 생략한다.
-    const authHeader = req.headers.authorization || "";
-    const isMockDevToken =
-      process.env.NODE_ENV !== "production" &&
-      authHeader === "Bearer MOCK_DEV_TOKEN";
+    const requestFilterWithPeriod = { ...requestFilter, ...dateFilter };
 
-    const requestFilter = isMockDevToken
-      ? { ...dateFilter }
-      : { requestor: requestorId, ...dateFilter };
-
-    const requests = await Request.find(requestFilter)
+    const requests = await Request.find(requestFilterWithPeriod)
       .populate("requestor", "name organization")
       .populate("manufacturer", "name organization")
       .populate("deliveryInfoRef")
@@ -2274,14 +2216,15 @@ async function getMyPricingReferralStats(req, res) {
  */
 async function getMyBulkShipping(req, res) {
   try {
-    const requestorId = req.user._id;
+    const requestFilter = await buildRequestorOrgScopeFilter(req);
 
     const requests = await Request.find({
-      requestor: requestorId,
+      ...requestFilter,
       status: { $in: ["가공전", "가공후", "배송대기"] },
     })
       .populate("requestor", "name organization")
-      .sort({ createdAt: -1 })
+      .populate("manufacturer", "name organization")
+      .populate("deliveryInfoRef")
       .lean();
 
     const mapItem = (r) => {
@@ -2337,7 +2280,7 @@ async function getMyBulkShipping(req, res) {
  */
 async function createMyBulkShipping(req, res) {
   try {
-    const requestorId = req.user._id;
+    const requestFilter = await buildRequestorOrgScopeFilter(req);
     const { requestIds } = req.body || {};
 
     if (!Array.isArray(requestIds) || requestIds.length === 0) {
@@ -2348,8 +2291,8 @@ async function createMyBulkShipping(req, res) {
     }
 
     const requests = await Request.find({
+      ...requestFilter,
       requestId: { $in: requestIds },
-      requestor: requestorId,
       status: { $in: ["가공전", "가공후", "배송대기"] },
     });
 
