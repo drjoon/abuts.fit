@@ -48,6 +48,13 @@ router.get(
   requestController.getMyDashboardSummary
 );
 
+// 지연 위험 요약 (제조사/관리자용)
+router.get(
+  "/dashboard-risk-summary",
+  authorize(["manufacturer", "admin"]),
+  requestController.getDashboardRiskSummary
+);
+
 // 가격/리퍼럴 통계 (의뢰자용)
 router.get(
   "/my/pricing-referral-stats",

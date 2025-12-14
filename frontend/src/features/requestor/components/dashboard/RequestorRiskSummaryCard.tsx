@@ -1,10 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 type RiskSummary = {
@@ -17,6 +11,10 @@ type RiskSummary = {
     manufacturer?: string;
     riskLevel?: string;
     message?: string;
+    status?: string;
+    dueDate?: string | null;
+    daysOverdue?: number;
+    daysUntilDue?: number;
   }[];
 };
 
@@ -49,7 +47,15 @@ export const RequestorRiskSummaryCard = ({ riskSummary }: Props) => {
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium truncate">{item.title}</div>
                 <div className="text-[11px] text-muted-foreground truncate">
-                  {item.manufacturer}
+                  {item.manufacturer || "-"}
+                </div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
+                  {[
+                    item.status,
+                    item.dueDate ? `도착예정 ${item.dueDate}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </div>
                 <div className="mt-1 text-[11px] text-muted-foreground line-clamp-2">
                   {item.message}

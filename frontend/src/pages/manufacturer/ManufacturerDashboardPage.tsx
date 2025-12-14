@@ -13,6 +13,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
+import { RequestorRiskSummaryCard } from "@/features/requestor/components/dashboard/RequestorRiskSummaryCard";
 import {
   Clock,
   CheckCircle,
@@ -83,12 +84,38 @@ export const ManufacturerDashboardPage = () => {
     retry: false,
   });
 
+  const { data: riskSummaryResponse } = useQuery({
+    queryKey: ["manufacturer-dashboard-risk-summary"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const res = await apiFetch<any>({
+        path: "/api/requests/dashboard-risk-summary?period=30d",
+        method: "GET",
+        token,
+        headers: token
+          ? {
+              "x-mock-role": "manufacturer",
+            }
+          : undefined,
+      });
+      if (!res.ok) {
+        throw new Error("지연 위험 요약 조회에 실패했습니다.");
+      }
+      return res.data;
+    },
+    retry: false,
+  });
+
   const baseData = mockManufacturerData;
   let data: any = baseData;
   const diameterStatsFromApi: DiameterStats | undefined =
     diameterStatsResponse?.success
       ? diameterStatsResponse.data?.diameterStats
       : undefined;
+
+  const riskSummary = riskSummaryResponse?.success
+    ? riskSummaryResponse.data?.riskSummary ?? null
+    : null;
   let manufacturingSummaryFromApi:
     | {
         totalActive: number;
@@ -109,7 +136,10 @@ export const ManufacturerDashboardPage = () => {
       subtitle="제작 현황을 확인하세요."
       topSection={
         <div className="space-y-3">
-          <WorksheetDiameterCard stats={diameterStatsFromApi} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
+            <WorksheetDiameterCard stats={diameterStatsFromApi} />
+            <RequestorRiskSummaryCard riskSummary={riskSummary} />
+          </div>
           {manufacturingSummaryFromApi && (
             <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-muted-foreground px-1">
               {manufacturingSummaryFromApi.stages.map((s) => (

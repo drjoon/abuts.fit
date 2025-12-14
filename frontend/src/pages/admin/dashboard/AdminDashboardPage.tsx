@@ -13,6 +13,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
+import { RequestorRiskSummaryCard } from "@/features/requestor/components/dashboard/RequestorRiskSummaryCard";
 import {
   Users,
   FileText,
@@ -114,6 +115,41 @@ export const AdminDashboardPage = () => {
     retry: false,
   });
 
+  const { data: riskSummaryResponse } = useQuery({
+    queryKey: ["admin-dashboard-risk-summary"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/requests/dashboard-risk-summary?period=30d",
+          method: "GET",
+          token,
+          signal: controller.signal,
+          headers: token
+            ? {
+                "x-mock-role": "admin",
+              }
+            : undefined,
+        });
+        if (!res.ok || !res.data?.success) {
+          throw new Error("지연 위험 요약 조회에 실패했습니다.");
+        }
+        return res.data;
+      } catch (e: any) {
+        if (e?.name === "AbortError") {
+          throw new Error("요청 시간이 초과되었습니다.");
+        }
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    retry: false,
+  });
+
   const { data: adminDashboardResponse } = useQuery({
     queryKey: ["admin-dashboard-page"],
     enabled: Boolean(token),
@@ -155,6 +191,10 @@ export const AdminDashboardPage = () => {
     diameterStatsResponse?.success
       ? diameterStatsResponse.data?.diameterStats
       : undefined;
+
+  const riskSummary = riskSummaryResponse?.success
+    ? riskSummaryResponse.data?.riskSummary ?? null
+    : null;
 
   const diameterTopSection = !token ? (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
@@ -240,7 +280,12 @@ export const AdminDashboardPage = () => {
     <DashboardShell
       title={`안녕하세요, ${user.name}님!`}
       subtitle="시스템 관리 대시보드입니다."
-      topSection={diameterTopSection}
+      topSection={
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+          {diameterTopSection}
+          <RequestorRiskSummaryCard riskSummary={riskSummary} />
+        </div>
+      }
       stats={
         <>
           {data.stats.map((stat: any, index: number) => (

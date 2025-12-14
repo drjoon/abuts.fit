@@ -6,6 +6,14 @@ const requestSchema = new mongoose.Schema(
       type: String,
       unique: true,
     },
+    title: {
+      type: String,
+      default: "",
+    },
+    description: {
+      type: String,
+      default: "",
+    },
     referenceIds: {
       // 동일 치과, 환자에 대해 당일 접수된 의뢰 내역은 같이 묶어서 관리
       type: [String], // 예를 들어, 향기로운치과-김혜영의 32, 42, 45 커스텀 어벗 내역이 동시에 들어오면
@@ -22,6 +30,11 @@ const requestSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    manufacturer: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    assignedAt: Date,
     caseInfos: {
       clinicName: String,
       patientName: String,
@@ -116,6 +129,21 @@ const requestSchema = new mongoose.Schema(
       estimatedCompletion: Date,
       actualCompletion: Date,
     },
+
+    statusHistory: [
+      {
+        status: String,
+        note: String,
+        updatedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        updatedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
 
     deliveryInfoRef: {
       type: mongoose.Schema.Types.ObjectId,

@@ -39,6 +39,177 @@ async function getDeliveryEtaLeadDays() {
   }
 }
 
+async function getDashboardRiskSummary(req, res) {
+  try {
+    const { period = "30d" } = req.query;
+
+    let dateFilter = {};
+    if (period && period !== "all") {
+      let days = 30;
+      if (period === "7d") days = 7;
+      else if (period === "90d") days = 90;
+
+      const from = new Date();
+      from.setDate(from.getDate() - days);
+      dateFilter = { createdAt: { $gte: from } };
+    }
+
+    const baseFilter = {
+      ...dateFilter,
+      status: { $ne: "취소" },
+      "caseInfos.implantSystem": { $exists: true, $ne: "" },
+    };
+
+    const filter =
+      req.user?.role === "manufacturer"
+        ? {
+            ...baseFilter,
+            $or: [
+              { manufacturer: req.user._id },
+              { manufacturer: null },
+              { manufacturer: { $exists: false } },
+            ],
+          }
+        : baseFilter;
+
+    const requests = await Request.find(filter)
+      .populate("requestor", "name organization")
+      .populate("manufacturer", "name organization")
+      .populate("deliveryInfoRef")
+      .lean();
+
+    const now = new Date();
+    const delayedItems = [];
+    const warningItems = [];
+
+    requests.forEach((r) => {
+      const est = r.timeline?.estimatedCompletion
+        ? new Date(r.timeline.estimatedCompletion)
+        : null;
+      if (!est) return;
+
+      const shippedAt = r.deliveryInfoRef?.shippedAt
+        ? new Date(r.deliveryInfoRef.shippedAt)
+        : null;
+      const deliveredAt = r.deliveryInfoRef?.deliveredAt
+        ? new Date(r.deliveryInfoRef.deliveredAt)
+        : null;
+      const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
+
+      const diffMs = now.getTime() - est.getTime();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      const daysOverdue = diffDays > 0 ? Math.floor(diffDays) : 0;
+      const daysUntilDue = diffDays < 0 ? Math.ceil(-diffDays) : 0;
+
+      if (!isDone && diffDays >= 1) {
+        delayedItems.push({ r, est, daysOverdue, daysUntilDue });
+      } else if (!isDone && diffDays >= 0 && diffDays < 1) {
+        warningItems.push({ r, est, daysOverdue, daysUntilDue });
+      }
+    });
+
+    const totalWithEta = requests.filter(
+      (r) => r.timeline?.estimatedCompletion
+    ).length;
+    const delayedCount = delayedItems.length;
+    const warningCount = warningItems.length;
+    const onTimeBase = totalWithEta || 1;
+    const onTimeRate = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100
+        )
+      )
+    );
+
+    const toRiskItem = (entry, level) => {
+      const r = entry?.r || entry;
+      const est = entry?.est
+        ? entry.est
+        : r?.timeline?.estimatedCompletion
+        ? new Date(r.timeline.estimatedCompletion)
+        : null;
+      const daysOverdue = entry?.daysOverdue || 0;
+      const daysUntilDue = entry?.daysUntilDue || 0;
+
+      const ci = r?.caseInfos || {};
+
+      const requestorText =
+        r?.requestor?.organization || r?.requestor?.name || "";
+      const manufacturerText =
+        r?.manufacturer?.organization || r?.manufacturer?.name || "";
+
+      const secondaryText =
+        req.user?.role === "manufacturer"
+          ? requestorText
+          : [requestorText, manufacturerText].filter(Boolean).join(" → ");
+
+      const title =
+        (r?.title || "").trim() ||
+        [ci.patientName, ci.tooth].filter(Boolean).join(" ") ||
+        r?.requestId ||
+        "";
+
+      const mm = est ? String(est.getMonth() + 1).padStart(2, "0") : "";
+      const dd = est ? String(est.getDate()).padStart(2, "0") : "";
+      const dueLabel = est ? `${mm}/${dd}` : "";
+
+      let message = "";
+      if (level === "danger") {
+        message = `예상 도착일(${dueLabel}) 기준 ${daysOverdue}일 지연 중입니다.`;
+      } else {
+        message = `예상 도착일(${dueLabel})이 임박했습니다. (D-${daysUntilDue})`;
+      }
+
+      return {
+        id: r?.requestId,
+        title,
+        manufacturer: secondaryText,
+        riskLevel: level,
+        status: r?.status,
+        dueDate: est ? est.toISOString().slice(0, 10) : null,
+        daysOverdue,
+        daysUntilDue,
+        message,
+      };
+    };
+
+    const riskItems = [
+      ...delayedItems
+        .slice()
+        .sort((a, b) => (b?.daysOverdue || 0) - (a?.daysOverdue || 0))
+        .slice(0, 3)
+        .map((entry) => toRiskItem(entry, "danger")),
+      ...warningItems
+        .slice()
+        .sort((a, b) => (a?.daysUntilDue || 0) - (b?.daysUntilDue || 0))
+        .slice(0, 3)
+        .map((entry) => toRiskItem(entry, "warning")),
+    ];
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        riskSummary: {
+          delayedCount,
+          warningCount,
+          onTimeRate,
+          items: riskItems,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error in getDashboardRiskSummary:", error);
+    return res.status(500).json({
+      success: false,
+      message: "지연 위험 요약 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 // status(단일 필드)를 status1/status2와 동기화하는 헬퍼
 function applyStatusMapping(requestDoc, statusValue) {
   const status = statusValue || requestDoc.status || "의뢰접수";
@@ -1517,6 +1688,8 @@ async function getMyDashboardSummary(req, res) {
 
     const requests = await Request.find(requestFilter)
       .populate("requestor", "name organization")
+      .populate("manufacturer", "name organization")
+      .populate("deliveryInfoRef")
       .lean();
 
     // 커스텀 어벗(Request.caseInfos.implantSystem 존재)만 대시보드 통계 대상
@@ -1589,20 +1762,23 @@ async function getMyDashboardSummary(req, res) {
         : null;
       if (!est) return;
 
-      const shippedAt = r.deliveryInfo?.shippedAt
-        ? new Date(r.deliveryInfo.shippedAt)
+      const shippedAt = r.deliveryInfoRef?.shippedAt
+        ? new Date(r.deliveryInfoRef.shippedAt)
         : null;
-      const deliveredAt = r.deliveryInfo?.deliveredAt
-        ? new Date(r.deliveryInfo.deliveredAt)
+      const deliveredAt = r.deliveryInfoRef?.deliveredAt
+        ? new Date(r.deliveryInfoRef.deliveredAt)
         : null;
       const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
 
-      const diffDays = (now.getTime() - est.getTime()) / (1000 * 60 * 60 * 24);
+      const diffMs = now.getTime() - est.getTime();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      const daysOverdue = diffDays > 0 ? Math.floor(diffDays) : 0;
+      const daysUntilDue = diffDays < 0 ? Math.ceil(-diffDays) : 0;
 
       if (!isDone && diffDays >= 1) {
-        delayedItems.push(r);
+        delayedItems.push({ r, est, daysOverdue, daysUntilDue });
       } else if (!isDone && diffDays >= 0 && diffDays < 1) {
-        warningItems.push(r);
+        warningItems.push({ r, est, daysOverdue, daysUntilDue });
       }
     });
 
@@ -1622,20 +1798,60 @@ async function getMyDashboardSummary(req, res) {
       )
     );
 
-    const toRiskItem = (r, level) => ({
-      id: r.requestId,
-      title: r.title,
-      manufacturer: "",
-      riskLevel: level,
-      message:
-        level === "danger"
-          ? "제조 공정 지연으로 출고일 재조정이 필요할 수 있습니다."
-          : "예상 출고일과 근접해 있어 지연 가능성이 있습니다.",
-    });
+    const toRiskItem = (entry, level) => {
+      const r = entry?.r || entry;
+      const est = entry?.est
+        ? entry.est
+        : r?.timeline?.estimatedCompletion
+        ? new Date(r.timeline.estimatedCompletion)
+        : null;
+      const daysOverdue = entry?.daysOverdue || 0;
+      const daysUntilDue = entry?.daysUntilDue || 0;
+
+      const ci = r?.caseInfos || {};
+      const manufacturerText =
+        r?.manufacturer?.organization || r?.manufacturer?.name || "";
+      const title =
+        (r?.title || "").trim() ||
+        [ci.patientName, ci.tooth].filter(Boolean).join(" ") ||
+        r?.requestId ||
+        "";
+
+      const mm = est ? String(est.getMonth() + 1).padStart(2, "0") : "";
+      const dd = est ? String(est.getDate()).padStart(2, "0") : "";
+      const dueLabel = est ? `${mm}/${dd}` : "";
+
+      let message = "";
+      if (level === "danger") {
+        message = `예상 도착일(${dueLabel}) 기준 ${daysOverdue}일 지연 중입니다.`;
+      } else {
+        message = `예상 도착일(${dueLabel})이 임박했습니다. (D-${daysUntilDue})`;
+      }
+
+      return {
+        id: r?.requestId,
+        title,
+        manufacturer: manufacturerText,
+        riskLevel: level,
+        status: r?.status,
+        dueDate: est ? est.toISOString().slice(0, 10) : null,
+        daysOverdue,
+        daysUntilDue,
+        message,
+      };
+    };
 
     const riskItems = [
-      ...delayedItems.slice(0, 3).map((r) => toRiskItem(r, "danger")),
-      ...warningItems.slice(0, 3).map((r) => toRiskItem(r, "warning")),
+      ...delayedItems
+        .slice()
+        .sort((a, b) => (b?.daysOverdue || 0) - (a?.daysOverdue || 0))
+        .slice(0, 3)
+        .map((entry) => toRiskItem(entry, "danger")),
+      ...warningItems
+        .slice()
+        .sort((a, b) => (a?.daysUntilDue || 0) - (b?.daysUntilDue || 0))
+        .slice(0, 3)
+        .map((entry) => toRiskItem(entry, "warning")),
     ];
 
     const riskSummary = {
@@ -1959,6 +2175,7 @@ export default {
   addMessage,
   deleteRequest,
   getMyDashboardSummary,
+  getDashboardRiskSummary,
   getMyPricingReferralStats,
   getMyBulkShipping,
   createMyBulkShipping,

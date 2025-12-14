@@ -220,3 +220,19 @@ pages/admin/
   - 기본 API:
     - 통계: `GET /api/requests/diameter-stats`
     - 설정 조회/수정: `GET /api/admin/settings`, `PUT /api/admin/settings` (`deliveryEtaLeadDays`)
+
+## 15. 레거시 제거 원칙
+
+- 기능/필드/타입/응답 스펙을 제거하기로 결정했으면, "남겨두는 레거시"는 두지 않습니다.
+  - 프론트 타입/컴포넌트 props
+  - 백엔드 컨트롤러 계산 로직
+  - API 응답 payload
+  - (해당 시) DB 스키마/테스트/문서
+    위 항목에서 함께 제거하여 단일 소스로 유지합니다.
+
+## 16. 제조사(Manufacturer) 단일 운영 전제
+
+- 현재 제조사 역할은 **애크로덴트 단일 운영**을 전제로 합니다.
+- 제조사 화면에서 의뢰 조회/통계 계산 시에는 다음을 기본으로 포함합니다.
+  - 제조사에게 **할당된 의뢰**
+  - 아직 제조사 지정이 없는 **미할당 의뢰** (`manufacturer=null` 또는 필드 미존재)
