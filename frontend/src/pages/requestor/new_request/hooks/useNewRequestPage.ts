@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useNewRequestClinics } from "./new_requests/useNewRequestClinics";
-import { useNewRequestImplant } from "./new_requests/useNewRequestImplant";
-import { useNewRequestSubmitV2 } from "./new_requests/useNewRequestSubmitV2";
-import { useDraftMeta } from "./new_requests/useDraftMeta";
-import { useNewRequestFilesV2 } from "./new_requests/useNewRequestFilesV2";
-import { type DraftCaseInfo } from "./new_requests/newRequestTypes";
+import { useNewRequestClinics } from "./useNewRequestClinics";
+import { useNewRequestSubmitV2 } from "./useNewRequestSubmitV2";
+import { useDraftMeta } from "./useDraftMeta";
+import { useNewRequestFilesV2 } from "./useNewRequestFilesV2";
+import { useNewRequestImplant } from "./useNewRequestImplant";
+import { type DraftCaseInfo } from "./newRequestTypes";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";

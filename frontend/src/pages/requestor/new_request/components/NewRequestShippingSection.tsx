@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 import { Truck, Zap } from "lucide-react";
-import type { CaseInfos } from "@/features/requestor/hooks/new_requests/newRequestTypes";
+import type { CaseInfos } from "../hooks/newRequestTypes";
 
 type Props = {
   caseInfos?: CaseInfos;

@@ -101,6 +101,7 @@ pages/requestor/
 |-- worksheet/      # 의뢰 관리
 |   `-- list/       # 의뢰 목록 (RequestListPage.tsx)
 |-- dashboard/      # 대시보드 (RequestorDashboardPage.tsx)
+|-- settings/       # 설정 (SettingsPage.tsx)
 ```
 
 ### Admin
@@ -113,6 +114,31 @@ pages/admin/
 |-- system/         # 시스템 분석 및 보안
 |-- dashboard/      # 대시보드
 ```
+
+### Page-local 규칙 (Requestor/Admin/Manufacturer 공통)
+
+- **페이지 전용 컴포넌트**: 특정 페이지(라우트)에서만 사용하는 컴포넌트는 해당 페이지 폴더 하위 `components/`에 둡니다.
+  - 예: `pages/requestor/new_request/components/`
+- **페이지 전용 훅**: 특정 페이지에서만 사용하는 훅은 해당 페이지 폴더 하위 `hooks/`에 둡니다.
+  - 예: `pages/requestor/new_request/hooks/`
+- **pages 간 import 금지**: 다른 페이지 폴더(`pages/**`)의 컴포넌트/훅을 import하여 사용하지 않습니다.
+- **의존 방향**: `pages -> features/shared/components` 방향만 허용합니다. (`features` 또는 `shared`가 `pages`를 import하는 구조는 금지)
+
+### Settings 페이지 구조 규칙
+
+- **역할별 SettingsPage 분리**: `/dashboard/settings`는 단일 파일에서 role 분기하여 UI를 섞지 않고, 역할별 페이지 파일로 분리합니다.
+  - `pages/requestor/settings/SettingsPage.tsx`
+  - `pages/manufacturer/settings/SettingsPage.tsx`
+  - `pages/admin/settings/SettingsPage.tsx`
+  - `pages/SettingsPage.tsx`는 역할 라우터(분기)만 담당합니다.
+- **공통 Settings UI**: Settings의 공통 레이아웃/탭 UI는 `src/features/components/**`에 둡니다.
+  - 예: `features/components/SettingsScaffold.tsx`
+
+### Role 전용 vs 공용 코드 배치
+
+- **role 전용**: 특정 역할에서만 쓰이는 컴포넌트/훅은 `pages/<role>/**` 하위로 이동합니다.
+- **공용**: 여러 역할/여러 페이지에서 재사용되는 컴포넌트/훅은 `src/features/components/**`, `src/features/hooks/**` 또는 `src/shared/**`에 둡니다.
+- **금지**: `features/<role>/**`가 `pages/**`를 import하는 구조는 만들지 않습니다.
 
 ## 9. 요금 및 결제 안내 정책
 

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useAuthStore } from "../../../../store/useAuthStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   CaseInfos,
   DraftCaseInfo,

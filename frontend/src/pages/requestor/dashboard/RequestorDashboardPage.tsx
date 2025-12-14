@@ -8,13 +8,13 @@ import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
 import {
   RequestorEditRequestDialog,
   type EditingRequestState,
-} from "@/features/requestor/components/dashboard/RequestorEditRequestDialog";
-import { RequestorDashboardStatsCards } from "@/features/requestor/components/dashboard/RequestorDashboardStatsCards";
-import { RequestorPricingReferralPolicyCard } from "@/features/requestor/components/dashboard/RequestorPricingReferralPolicyCard";
-import { RequestorRiskSummaryCard } from "@/features/requestor/components/dashboard/RequestorRiskSummaryCard";
-import { RequestorBulkShippingBannerCard } from "@/features/requestor/components/dashboard/RequestorBulkShippingBannerCard";
-import { RequestorRecentRequestsCard } from "@/features/requestor/components/dashboard/RequestorRecentRequestsCard";
-import type { RequestorDashboardStat } from "@/features/requestor/components/dashboard/RequestorDashboardStatsCards";
+} from "./components/RequestorEditRequestDialog";
+import { RequestorDashboardStatsCards } from "./components/RequestorDashboardStatsCards";
+import { RequestorPricingReferralPolicyCard } from "./components/RequestorPricingReferralPolicyCard";
+import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
+import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
+import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
+import type { RequestorDashboardStat } from "./components/RequestorDashboardStatsCards";
 import {
   WorksheetDiameterCard,
   type DiameterStats,

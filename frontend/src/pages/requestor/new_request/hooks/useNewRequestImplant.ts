@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/apiClient";
+import type { Connection } from "./newRequestTypes";
 
 const CONNECTIONS_STORAGE_KEY = "abutsfit:connections:v1";
 const CONNECTIONS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
@@ -18,7 +20,7 @@ export const useNewRequestImplant = ({
   clinicName,
   onDefaultImplantChange,
 }: UseNewRequestImplantParams) => {
-  const [connections, setConnections] = useState<any[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<
     string | null
   >(null);
@@ -50,10 +52,16 @@ export const useNewRequestImplant = ({
         }
 
         // 2) 캐시가 없거나 만료된 경우 서버에서 조회 후 캐시 저장
-        const connRes = await fetch("/api/connections");
-        if (!connRes.ok) return;
-        const connBody = await connRes.json().catch(() => ({}));
-        const list: any[] = Array.isArray(connBody.data) ? connBody.data : [];
+        const res = await apiFetch<any>({
+          path: "/api/connections",
+          method: "GET",
+          token,
+        });
+        if (!res.ok) return;
+        const connBody = res.data || {};
+        const list: Connection[] = Array.isArray(connBody.data)
+          ? (connBody.data as Connection[])
+          : [];
         setConnections(list);
 
         if (typeof window !== "undefined") {
@@ -61,8 +69,8 @@ export const useNewRequestImplant = ({
             const payload = {
               data: list,
               serverUpdatedAt:
-                typeof connBody.serverUpdatedAt === "number"
-                  ? connBody.serverUpdatedAt
+                typeof (connBody as any).serverUpdatedAt === "number"
+                  ? (connBody as any).serverUpdatedAt
                   : null,
               cachedAt: Date.now(),
             };
@@ -132,7 +140,7 @@ export const useNewRequestImplant = ({
               c.system === nextSystem &&
               c.type === nextType
           );
-          setSelectedConnectionId(found ? (found._id as string) : null);
+          setSelectedConnectionId(found?._id ? String(found._id) : null);
         }
 
         // 기본 임플란트가 설정되었을 때 caseInfos에도 반영
@@ -167,7 +175,7 @@ export const useNewRequestImplant = ({
         c.system === system &&
         c.type === type
     );
-    setSelectedConnectionId(found ? (found._id as string) : null);
+    setSelectedConnectionId(found?._id ? String(found._id) : null);
   };
 
   const typeOptions = connections

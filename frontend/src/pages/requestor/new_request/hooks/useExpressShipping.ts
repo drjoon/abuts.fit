@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { CaseInfos } from "@/features/requestor/hooks/new_requests/newRequestTypes";
+import type { CaseInfos } from "./newRequestTypes";
 
 const addBusinessDays = (startDate: Date, days: number) => {
   let count = 0;

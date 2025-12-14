@@ -35,7 +35,7 @@ const ManufacturerWorksheetPage = lazy(() =>
   }))
 );
 const SettingsPage = lazy(() =>
-  import("./features/requestor/pages/SettingsPage").then((m) => ({
+  import("./pages/SettingsPage").then((m) => ({
     default: m.SettingsPage,
   }))
 );

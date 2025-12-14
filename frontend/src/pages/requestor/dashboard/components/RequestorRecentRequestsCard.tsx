@@ -14,9 +14,9 @@ import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useNewRequestImplant } from "@/features/requestor/hooks/new_requests/useNewRequestImplant";
-import { usePresetStorage } from "@/features/requestor/hooks/new_requests/usePresetStorage";
-import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestDetailsSection";
+import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
+import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
+import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 
 const EDITABLE_STATUSES = new Set(["의뢰접수", "가공전"]);
 

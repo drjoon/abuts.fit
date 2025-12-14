@@ -10,6 +10,13 @@ export type ClinicPreset = {
   favorite?: ClinicFavoriteImplant;
 };
 
+export type Connection = {
+  _id?: string;
+  manufacturer: string;
+  system: string;
+  type: string;
+};
+
 export type CaseInfos = {
   clinicName?: string;
   patientName?: string;

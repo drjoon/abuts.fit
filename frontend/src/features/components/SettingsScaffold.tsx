@@ -1,0 +1,77 @@
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+
+import type { ComponentType, ReactNode } from "react";
+
+export type SettingsTabDef = {
+  key: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  content: ReactNode;
+};
+
+type Props = {
+  title: string;
+  subtitle: string;
+  tabs: SettingsTabDef[];
+  activeTab: string;
+  onTabChange: (next: string) => void;
+};
+
+export const SettingsScaffold = ({
+  title,
+  subtitle,
+  tabs,
+  activeTab,
+  onTabChange,
+}: Props) => {
+  const totalTabs = tabs.length;
+
+  return (
+    <div className="min-h-screen bg-gradient-subtle p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+            {title}
+          </h1>
+          <p className="text-muted-foreground text-lg">{subtitle}</p>
+        </div>
+
+        <Tabs
+          value={activeTab}
+          onValueChange={onTabChange}
+          className="space-y-6"
+        >
+          <TabsList
+            className={cn(
+              "grid w-full",
+              totalTabs === 1 && "grid-cols-1",
+              totalTabs === 2 && "grid-cols-2",
+              totalTabs === 3 && "grid-cols-3",
+              totalTabs === 4 && "grid-cols-4",
+              totalTabs === 5 && "grid-cols-5",
+              totalTabs === 6 && "grid-cols-6"
+            )}
+          >
+            {tabs.map((t) => (
+              <TabsTrigger
+                key={t.key}
+                value={t.key}
+                className="flex items-center gap-2"
+              >
+                <t.icon className="h-4 w-4" />
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {tabs.map((t) => (
+            <TabsContent key={t.key} value={t.key}>
+              {t.content}
+            </TabsContent>
+          ))}
+        </Tabs>
+      </div>
+    </div>
+  );
+};

@@ -13,7 +13,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { RequestorRiskSummaryCard } from "@/features/requestor/components/dashboard/RequestorRiskSummaryCard";
+import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import {
   Users,
   FileText,
