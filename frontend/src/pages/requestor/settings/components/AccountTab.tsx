@@ -61,6 +61,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
+  const reason = (searchParams.get("reason") || "").trim();
 
   const [avatarNonce, setAvatarNonce] = useState(0);
 
@@ -69,6 +70,22 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     google: false,
     kakao: false,
   });
+
+  useEffect(() => {
+    if (!reason) return;
+
+    if (reason === "missing_phone") {
+      toast({
+        title: "휴대폰 인증이 필요합니다",
+        description: "파일 업로드 전에 휴대폰 인증을 완료해주세요.",
+        duration: 3000,
+      });
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("reason");
+    navigate({ search: `?${nextParams.toString()}` }, { replace: true });
+  }, [navigate, reason, searchParams, toast]);
 
   const getFriendlySaveError = (status: number, message: string) => {
     if (status === 401) {

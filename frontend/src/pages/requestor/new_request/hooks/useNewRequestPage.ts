@@ -7,6 +7,8 @@ import { useDraftMeta } from "./useDraftMeta";
 import { useNewRequestFilesV2 } from "./useNewRequestFilesV2";
 import { useNewRequestImplant } from "./useNewRequestImplant";
 import { type DraftCaseInfo } from "./newRequestTypes";
+import { useToast } from "@/hooks/use-toast";
+import { request } from "@/lib/apiClient";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
@@ -22,6 +24,7 @@ const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
 export const useNewRequestPage = (existingRequestId?: string) => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -236,7 +239,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     draftFiles: draftFileList,
     isDragOver,
     selectedPreviewIndex: previewIndex,
-    handleUpload,
+    handleUpload: rawHandleUpload,
     handleRemoveFile,
     handleDragOver,
     handleDragLeave,
@@ -253,6 +256,156 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     caseInfosMap,
     updateCaseInfos,
   });
+
+  const setupNextPath = "/dashboard/new-request";
+
+  const mockHeaders = useMemo(() => {
+    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
+    return {
+      "x-mock-role": (user?.role || "requestor") as string,
+      "x-mock-email": user?.email || "mock@abuts.fit",
+      "x-mock-name": user?.name || "사용자",
+      "x-mock-organization": (user as any)?.organization || "",
+      "x-mock-phone": (user as any)?.phoneNumber || "",
+    };
+  }, [token, user]);
+
+  const ensureSetupForUpload = useCallback(async () => {
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+        duration: 3000,
+      });
+      return false;
+    }
+
+    try {
+      const profileRes = await request<any>({
+        path: "/api/users/profile",
+        method: "GET",
+        token,
+        headers: mockHeaders,
+      });
+      const profileBody: any = profileRes.data || {};
+      const profile = profileBody?.data || profileBody;
+      const needsPhone =
+        !String(profile?.phoneNumber || "").trim() || !profile?.phoneVerifiedAt;
+      if (needsPhone) {
+        toast({
+          title: "설정이 필요합니다",
+          description: "계정 설정에서 휴대폰 인증을 완료해주세요.",
+          duration: 3000,
+        });
+        navigate(
+          `/dashboard/settings?tab=account&reason=missing_phone&next=${encodeURIComponent(
+            setupNextPath
+          )}`
+        );
+        return false;
+      }
+
+      const orgRes = await request<any>({
+        path: "/api/requestor-organizations/me",
+        method: "GET",
+        token,
+        headers: mockHeaders,
+      });
+      const orgBody: any = orgRes.data || {};
+      const org = orgBody?.data || orgBody;
+      const membership = String(org?.membership || "none");
+      const hasBusinessNumber = org?.hasBusinessNumber === true;
+      if (!hasBusinessNumber) {
+        toast({
+          title: "설정이 필요합니다",
+          description: "기공소 설정에서 사업자 정보를 등록해주세요.",
+          duration: 3000,
+        });
+        navigate(
+          `/dashboard/settings?tab=business&reason=missing_business&next=${encodeURIComponent(
+            setupNextPath
+          )}`
+        );
+        return false;
+      }
+
+      // 대표자만 배송/결제 탭이 존재하므로 owner만 추가로 체크한다.
+      if (membership === "owner") {
+        const emailKey = String(user?.email || "guest").trim() || "guest";
+        const shippingStorageKey = `abutsfit:shipping-policy:v1:${emailKey}`;
+        const hasShipping = !!localStorage.getItem(shippingStorageKey);
+        if (!hasShipping) {
+          toast({
+            title: "설정이 필요합니다",
+            description: "배송 옵션을 먼저 설정해주세요.",
+            duration: 3000,
+          });
+          navigate(
+            `/dashboard/settings?tab=shipping&reason=missing_shipping&next=${encodeURIComponent(
+              setupNextPath
+            )}`
+          );
+          return false;
+        }
+
+        const paymentId = String(user?.id || emailKey || "guest").trim();
+        const paymentStorageKey = `abutsfit:payment-settings:v1:${paymentId}`;
+        const hasPayment = !!localStorage.getItem(paymentStorageKey);
+        if (!hasPayment) {
+          toast({
+            title: "설정이 필요합니다",
+            description: "결제 설정을 완료해주세요.",
+            duration: 3000,
+          });
+          navigate(
+            `/dashboard/settings?tab=payment&reason=missing_payment&next=${encodeURIComponent(
+              setupNextPath
+            )}`
+          );
+          return false;
+        }
+      }
+    } catch {
+      // 네트워크 오류 등으로 설정 체크가 불가능한 경우에는 업로드를 막지 않는다.
+      return true;
+    }
+
+    try {
+      const toastKey = `abutsfit:setup-complete-toast-shown:v1:${String(
+        user?.id || "guest"
+      )}`;
+      if (!sessionStorage.getItem(toastKey)) {
+        sessionStorage.setItem(toastKey, "1");
+        toast({
+          title: "축하합니다",
+          description:
+            "모든 설정이 완료되었습니다. 이제 서비스 이용이 가능합니다.",
+          duration: 3000,
+        });
+      }
+    } catch {
+      // ignore
+    }
+
+    return true;
+  }, [
+    mockHeaders,
+    navigate,
+    setupNextPath,
+    toast,
+    token,
+    user?.email,
+    user?.id,
+  ]);
+
+  const handleUpload = useCallback(
+    async (filesToUpload: File[]) => {
+      const ok = await ensureSetupForUpload();
+      if (!ok) return;
+      await rawHandleUpload(filesToUpload);
+    },
+    [ensureSetupForUpload, rawHandleUpload]
+  );
 
   // Draft에서 caseInfos 동기화 (임플란트 정보 -> Draft)
   // 주의: 이 동기화는 사용자가 명시적으로 임플란트 정보를 선택할 때만 호출되어야 함

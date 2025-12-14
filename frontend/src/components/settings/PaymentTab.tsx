@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -38,6 +38,14 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
   const { user } = useAuthStore();
   const userRole = userData?.role || "requestor";
 
+  const paymentId = useMemo(() => {
+    return String(userData?.id || user?.id || user?.email || "guest").trim();
+  }, [user?.email, user?.id, userData?.id]);
+
+  const storageKey = useMemo(() => {
+    return `abutsfit:payment-settings:v1:${paymentId || "guest"}`;
+  }, [paymentId]);
+
   // 회원 유형에 따라 다른 초기 상태 설정
   const [paymentData, setPaymentData] = useState({
     // 계좌 정보 (제조사와 관리자만 사용)
@@ -52,7 +60,27 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
     autoTransferAgreement: false,
   });
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setPaymentData((prev) => ({
+        ...prev,
+        ...(parsed as any),
+      }));
+    } catch {
+      // ignore
+    }
+  }, [storageKey]);
+
   const handleSave = () => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(paymentData));
+    } catch {
+      // ignore
+    }
     toast({
       title: "설정이 저장되었습니다",
       description: "결제 설정이 성공적으로 업데이트되었습니다.",
