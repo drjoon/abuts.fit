@@ -2139,7 +2139,7 @@ async function getMyPricingReferralStats(req, res) {
 
     const myLast30DaysOrders = await Request.countDocuments({
       requestor: requestorId,
-      status: { $ne: "취소" },
+      status: "완료",
       createdAt: { $gte: last30Cutoff },
     });
 
@@ -2155,7 +2155,7 @@ async function getMyPricingReferralStats(req, res) {
     const referralLast30DaysOrders = referredUserIds.length
       ? await Request.countDocuments({
           requestor: { $in: referredUserIds },
-          status: { $ne: "취소" },
+          status: "완료",
           createdAt: { $gte: last30Cutoff },
         })
       : 0;

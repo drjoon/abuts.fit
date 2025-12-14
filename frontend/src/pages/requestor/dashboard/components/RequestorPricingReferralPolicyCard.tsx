@@ -154,7 +154,9 @@ export const RequestorPricingReferralPolicyCard = () => {
               </Button>
             </div>
           </div>
-          <CardDescription className="space-y-1 text-xs text-muted-foreground" />
+          <CardDescription className="space-y-1 text-xs text-muted-foreground">
+            최근 30일 집계는 <b>완료</b> 주문 기준입니다.
+          </CardDescription>
         </CardHeader>
         <CardContent className="pt-0 pb-6 gap-3 text-xs text-foreground">
           <div className="space-y-2">
