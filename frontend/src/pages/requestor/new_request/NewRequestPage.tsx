@@ -67,6 +67,13 @@ export const NewRequestPage = () => {
     highlightStep,
   } = useFileVerification({ files });
 
+  const hasVerifiedFile = useMemo(() => {
+    if (!files.length) return false;
+    return files.some(
+      (file) => fileVerificationStatus[`${file.name}:${file.size}`]
+    );
+  }, [fileVerificationStatus, files]);
+
   const sectionHighlightClass =
     "ring-2 ring-primary/40 bg-primary/5 shadow-[0_0_0_4px_rgba(59,130,246,0.12)]";
 
@@ -290,6 +297,7 @@ export const NewRequestPage = () => {
             <NewRequestShippingSection
               caseInfos={caseInfos}
               setCaseInfos={setCaseInfos}
+              disabled={!hasVerifiedFile}
               highlight={highlightStep === "shipping"}
               sectionHighlightClass={sectionHighlightClass}
               bulkShippingSummary={bulkShippingSummary}

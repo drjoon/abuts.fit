@@ -6,6 +6,7 @@ import type { CaseInfos } from "../hooks/newRequestTypes";
 type Props = {
   caseInfos?: CaseInfos;
   setCaseInfos: (updates: Partial<CaseInfos>) => void;
+  disabled?: boolean;
   highlight: boolean;
   sectionHighlightClass: string;
   bulkShippingSummary: string;
@@ -20,6 +21,7 @@ type Props = {
 export function NewRequestShippingSection({
   caseInfos,
   setCaseInfos,
+  disabled,
   highlight,
   sectionHighlightClass,
   bulkShippingSummary,
@@ -30,6 +32,7 @@ export function NewRequestShippingSection({
   onSubmit,
   onCancelAll,
 }: Props) {
+  const isDisabled = !!disabled;
   return (
     <div
       className={`relative flex flex-col justify-center gap-2 rounded-2xl border-2 border-gray-300 p-4 md:p-6 transition-shadow hover:shadow-md ${
@@ -39,11 +42,13 @@ export function NewRequestShippingSection({
       <div className="space-y-2">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <FunctionalItemCard
-            onUpdate={onOpenShippingSettings}
+            onUpdate={isDisabled ? undefined : onOpenShippingSettings}
+            disabled={isDisabled}
             className="col-span-1"
           >
             <button
               type="button"
+              disabled={isDisabled}
               onClick={() =>
                 setCaseInfos({
                   shippingMode: "normal",
@@ -54,6 +59,10 @@ export function NewRequestShippingSection({
                 (caseInfos?.shippingMode || "normal") === "normal"
                   ? "border-primary bg-primary/5 text-primary font-medium"
                   : "border-gray-200 text-gray-600 hover:bg-gray-50"
+              } ${
+                isDisabled
+                  ? "opacity-50 cursor-not-allowed hover:bg-transparent"
+                  : ""
               }`}
             >
               <Truck className="w-4 h-4" />
@@ -79,11 +88,19 @@ export function NewRequestShippingSection({
 
           <button
             type="button"
-            onClick={onSelectExpress}
+            disabled={isDisabled}
+            onClick={() => {
+              if (isDisabled) return;
+              onSelectExpress();
+            }}
             className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm transition-all ${
               caseInfos?.shippingMode === "express"
                 ? "border-orange-500 bg-orange-50 text-orange-600 font-medium"
                 : "border-gray-200 text-gray-600 hover:bg-gray-50"
+            } ${
+              isDisabled
+                ? "opacity-50 cursor-not-allowed hover:bg-transparent"
+                : ""
             }`}
           >
             <Zap className="w-4 h-4" />
@@ -107,7 +124,12 @@ export function NewRequestShippingSection({
 
       <div className="space-y-3 pt-4 border-gray-200">
         <div className="flex gap-2 flex-col sm:flex-row">
-          <Button onClick={onSubmit} size="lg" className="w-full sm:flex-[2]">
+          <Button
+            onClick={onSubmit}
+            size="lg"
+            className="w-full sm:flex-[2]"
+            disabled={isDisabled}
+          >
             의뢰하기
           </Button>
           <Button
@@ -116,6 +138,7 @@ export function NewRequestShippingSection({
             size="lg"
             className="w-full sm:flex-[1]"
             onClick={onCancelAll}
+            disabled={isDisabled}
           >
             취소하기
           </Button>

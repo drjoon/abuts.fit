@@ -123,6 +123,10 @@ export function NewRequestDetailsSection({
   const selectedFile =
     selectedPreviewIndex !== null ? files[selectedPreviewIndex] : null;
 
+  const hasSelectedFile = Boolean(
+    selectedPreviewIndex !== null && files[selectedPreviewIndex]
+  );
+
   const showImplantSelect = useMemo(() => {
     const selectedWorkType = selectedFile
       ? getFileWorkType(selectedFile)
@@ -170,6 +174,7 @@ export function NewRequestDetailsSection({
             caseInfos={caseInfos}
             setCaseInfos={setCaseInfos}
             showImplantSelect={showImplantSelect}
+            readOnly={!hasSelectedFile}
             connections={connections}
             typeOptions={typeOptions}
             implantManufacturer={implantManufacturer}

@@ -68,6 +68,9 @@ export function NewRequestPatientImplantFields({
   clearAllTeethPresets,
   handleAddOrSelectClinic,
 }: Props) {
+  const hasClinicName = Boolean((caseInfos?.clinicName || "").trim());
+  const implantDisabled = Boolean(readOnly || !hasClinicName);
+
   const currentManufacturer =
     implantSelectSource === "caseInfos"
       ? caseInfos?.implantManufacturer || ""
@@ -238,7 +241,7 @@ export function NewRequestPatientImplantFields({
                 <Select
                   value={currentManufacturer}
                   onValueChange={(value) => {
-                    if (readOnly) return;
+                    if (implantDisabled) return;
                     const firstForManufacturer = connections.find(
                       (c) => c.manufacturer === value
                     );
@@ -274,7 +277,7 @@ export function NewRequestPatientImplantFields({
                     });
                   }}
                 >
-                  <SelectTrigger disabled={readOnly}>
+                  <SelectTrigger disabled={implantDisabled}>
                     <SelectValue placeholder="임플란트제조사" />
                   </SelectTrigger>
                   <SelectContent>
@@ -301,7 +304,7 @@ export function NewRequestPatientImplantFields({
                 <Select
                   value={currentSystem}
                   onValueChange={(value) => {
-                    if (readOnly) return;
+                    if (implantDisabled) return;
                     const firstForType = connections.find(
                       (c) =>
                         c.manufacturer === currentManufacturer &&
@@ -336,9 +339,11 @@ export function NewRequestPatientImplantFields({
                       implantType: nextType,
                     });
                   }}
-                  disabled={readOnly || !currentManufacturer}
+                  disabled={implantDisabled || !currentManufacturer}
                 >
-                  <SelectTrigger disabled={readOnly || !currentManufacturer}>
+                  <SelectTrigger
+                    disabled={implantDisabled || !currentManufacturer}
+                  >
                     <SelectValue placeholder="시스템" />
                   </SelectTrigger>
                   <SelectContent>
@@ -370,7 +375,7 @@ export function NewRequestPatientImplantFields({
                 <Select
                   value={currentType}
                   onValueChange={(value) => {
-                    if (readOnly) return;
+                    if (implantDisabled) return;
                     if (implantSelectSource === "caseInfos") {
                       setCaseInfos({
                         implantType: value,
@@ -393,9 +398,9 @@ export function NewRequestPatientImplantFields({
                       implantType: value,
                     });
                   }}
-                  disabled={readOnly || !currentSystem}
+                  disabled={implantDisabled || !currentSystem}
                 >
-                  <SelectTrigger disabled={readOnly || !currentSystem}>
+                  <SelectTrigger disabled={implantDisabled || !currentSystem}>
                     <SelectValue placeholder="유형" />
                   </SelectTrigger>
                   <SelectContent>
