@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Navigation } from "@/features/layout/Navigation";
 import { HeroSection } from "@/features/landing/HeroSection";
 import { FeaturesSection } from "@/features/landing/FeaturesSection";
-import { PricingSection } from "@/features/landing/PricingSection";
 import { AnnouncementSection } from "@/features/landing/AnnouncementSection";
 import { CustomerSupportSection } from "@/features/landing/CustomerSupportSection";
 import { Footer } from "@/features/landing/Footer";
@@ -17,8 +16,6 @@ const Index = () => {
       <HeroSection />
       <AnnouncementSection />
       <FeaturesSection />
-
-      <PricingSection />
       <CustomerSupportSection onOpenGuestChat={() => setShowGuestChat(true)} />
 
       <Footer />

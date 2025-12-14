@@ -1,6 +1,7 @@
 import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { COMPANY_PHONE, PRIVACY_EMAIL } from "@/shared/lib/contactInfo";
 
 export const PrivacyPage = () => {
   return (
@@ -22,7 +23,7 @@ export const PrivacyPage = () => {
               <CardContent>
                 <div className="space-y-4 text-muted-foreground">
                   <p>
-                    메이븐 주식회사는 다음의 목적을 위하여 개인정보를
+                    어벗츠 주식회사는 다음의 목적을 위하여 개인정보를
                     처리합니다:
                   </p>
                   <ul className="list-disc list-inside space-y-2 ml-4">
@@ -153,8 +154,8 @@ export const PrivacyPage = () => {
                     <p>
                       <strong>개인정보보호책임자</strong>
                     </p>
-                    <p>이메일: privacy@abuts.fit</p>
-                    <p>전화번호: 02-1234-5678</p>
+                    <p>이메일: {PRIVACY_EMAIL}</p>
+                    <p>전화번호: {COMPANY_PHONE}</p>
                   </div>
                 </div>
               </CardContent>

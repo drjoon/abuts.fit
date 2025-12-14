@@ -6,66 +6,57 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  MessageSquare,
-  FileImage,
-  BarChart3,
-  Shield,
-  Clock,
-  Users,
-  Upload,
-  CheckCircle,
-  Settings,
-} from "lucide-react";
+import { MessageSquare, BarChart3, Shield, Clock, Upload } from "lucide-react";
 
 export const FeaturesSection = () => {
   const features = [
     {
-      icon: MessageSquare,
-      title: "실시간 3자 채팅",
-      description:
-        "의뢰자, 제조사, 어벗츠.핏이 함께 소통할 수 있는 통합 채팅 시스템",
-      category: "소통",
+      icon: Upload,
+      title: "커스텀 어벗 의뢰",
+      description: "필요한 정보와 파일을 첨부해 커스텀 어벗 제작을 의뢰합니다.",
+      category: "의뢰",
     },
     {
       icon: Upload,
-      title: "드래그앤드롭 파일 업로드",
-      description: "대용량 3D 모델링 파일을 간편하게 업로드하고 관리",
-      category: "파일 관리",
+      title: "간편 파일 업로드",
+      description:
+        "STL 등 의뢰 파일을 업로드하고, 필요한 경우 수정/추가할 수 있습니다.",
+      category: "파일",
     },
     {
       icon: BarChart3,
       title: "실시간 진행 현황",
-      description: "의뢰부터 완성까지 모든 단계를 실시간으로 추적",
-      category: "추적",
+      description: "의뢰 접수부터 제작/출고까지 진행 상태를 확인합니다.",
+      category: "진행",
     },
     {
-      icon: Users,
-      title: "스마트 매칭",
-      description: "AI 기반으로 최적의 제조사를 자동으로 추천",
-      category: "매칭",
+      icon: MessageSquare,
+      title: "문의 남기기 (메일 회신)",
+      description:
+        "실시간 채팅이 아닌 문의 접수 방식이며, 이메일로 답변드립니다.",
+      category: "문의",
     },
     {
       icon: Shield,
       title: "보안 및 품질 관리",
-      description: "의료기기 인증 제조사만 등록, 안전한 데이터 보호",
+      description: "필요한 정보만 안전하게 처리하고, 제작 품질을 관리합니다.",
       category: "보안",
     },
     {
       icon: Clock,
-      title: "24/7 고객 지원",
-      description: "언제든지 문의할 수 있는 전담 고객 지원팀",
-      category: "지원",
+      title: "배송 안내",
+      description: "배송비는 별도이며, 묶음배송을 권장합니다.",
+      category: "배송",
     },
   ];
 
   const categoryColors = {
-    소통: "bg-primary/10 text-primary",
-    "파일 관리": "bg-accent/10 text-accent",
-    추적: "bg-primary/10 text-primary",
-    매칭: "bg-accent/10 text-accent",
+    의뢰: "bg-primary/10 text-primary",
+    파일: "bg-accent/10 text-accent",
+    진행: "bg-primary/10 text-primary",
+    문의: "bg-accent/10 text-accent",
     보안: "bg-primary/10 text-primary",
-    지원: "bg-accent/10 text-accent",
+    배송: "bg-accent/10 text-accent",
   };
 
   return (
@@ -84,7 +75,7 @@ export const FeaturesSection = () => {
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             복잡한 의뢰 과정을 단순화하고, 품질 높은 커스텀 어벗먼트 제작을 위한
-            모든 도구를 제공합니다.
+            핵심 도구를 제공합니다.
           </p>
         </div>
 
@@ -92,7 +83,7 @@ export const FeaturesSection = () => {
           {features.map((feature, index) => (
             <Card
               key={index}
-              className="group hover:shadow-elegant transition-all duration-300 hover:-translate-y-2 border-border/50"
+              className="group relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
             >
               <CardHeader>
                 <div className="flex items-center justify-between mb-4">

@@ -8,6 +8,11 @@ import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
 import { MapPin, Phone, Mail, Clock, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import {
+  COMPANY_ADDRESS,
+  COMPANY_PHONE,
+  CONTACT_EMAIL,
+} from "@/shared/lib/contactInfo";
 
 export const ContactPage = () => {
   const [formData, setFormData] = useState({
@@ -72,23 +77,21 @@ export const ContactPage = () => {
                   <div className="flex items-start gap-4">
                     <MapPin className="h-6 w-6 text-primary mt-1" />
                     <div>
-                      <p className="text-muted-foreground">
-                        경남 김해시 전하로 85번길 5
-                      </p>
+                      <p className="text-muted-foreground">{COMPANY_ADDRESS}</p>
                     </div>
                   </div>
 
                   <div className="flex items-start gap-4">
                     <Phone className="h-6 w-6 text-primary mt-1" />
                     <div>
-                      <p className="text-muted-foreground">055-314-4607</p>
+                      <p className="text-muted-foreground">{COMPANY_PHONE}</p>
                     </div>
                   </div>
 
                   <div className="flex items-start gap-4">
                     <Mail className="h-6 w-6 text-primary mt-1" />
                     <div>
-                      <p className="text-muted-foreground">contact@abuts.fit</p>
+                      <p className="text-muted-foreground">{CONTACT_EMAIL}</p>
                     </div>
                   </div>
 

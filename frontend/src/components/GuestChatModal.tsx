@@ -11,6 +11,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { MessageSquare, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/lib/apiClient";
 
 interface GuestChatModalProps {
   open: boolean;
@@ -39,17 +40,18 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
     const submit = async () => {
       try {
         setLoading(true);
-        const response = await fetch("/api/support/guest-inquiries", {
+        const res = await apiFetch<any>({
+          path: "/api/support/guest-inquiries",
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ name, email, message }),
+          jsonBody: { name, email, message },
         });
 
-        if (!response.ok) {
-          const data = await response.json().catch(() => null);
-          throw new Error(data?.message || "문의 전송 중 오류가 발생했습니다.");
+        if (!res.ok) {
+          const serverMsg = res.data?.message;
+          throw new Error(serverMsg || "문의 전송 중 오류가 발생했습니다.");
         }
 
         toast({
@@ -66,6 +68,7 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
           title: "전송 실패",
           description: error?.message || "문의 저장 중 오류가 발생했습니다.",
           variant: "destructive",
+          duration: 3000,
         });
       } finally {
         setLoading(false);

@@ -1,8 +1,12 @@
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Mail, Phone, MapPin, Instagram, Facebook } from "lucide-react";
 import { Link } from "react-router-dom";
 import logo from "@/assets/logo.png";
+import {
+  COMPANY_ADDRESS,
+  COMPANY_PHONE,
+  CONTACT_EMAIL,
+} from "@/shared/lib/contactInfo";
 
 export const Footer = () => {
   const support = [
@@ -34,33 +38,32 @@ export const Footer = () => {
             </div>
 
             <p className="text-muted-foreground mb-6 leading-relaxed">
-              치과기공소와 커스텀 어벗먼트 제조사를 연결하는 혁신적인
-              플랫폼입니다. 더 빠르고 정확한 의뢰-제작 프로세스로 치과 업계의
-              디지털 전환을 이끌어갑니다.
+              어벗츠 주식회사가 제공하는 커스텀 어벗 의뢰 플랫폼입니다. 커스텀
+              어벗먼트 제조는 애크로덴트가 단독으로 담당합니다.
             </p>
 
             <div className="space-y-3">
               <div className="flex items-center text-muted-foreground">
                 <Mail className="w-4 h-4 mr-2" />
                 <a
-                  href="mailto:contact@abuts.fit"
+                  href={`mailto:${CONTACT_EMAIL}`}
                   className="hover:text-foreground transition-colors"
                 >
-                  contact@abuts.fit
+                  {CONTACT_EMAIL}
                 </a>
               </div>
               <div className="flex items-center text-muted-foreground">
                 <Phone className="w-4 h-4 mr-2" />
                 <a
-                  href="tel:02-1234-5678"
+                  href={`tel:${COMPANY_PHONE}`}
                   className="hover:text-foreground transition-colors"
                 >
-                  055-314-4607
+                  {COMPANY_PHONE}
                 </a>
               </div>
               <div className="flex items-center text-muted-foreground">
                 <MapPin className="w-4 h-4 mr-2" />
-                <span>경남 김해시 전하로 85번길 5</span>
+                <span>{COMPANY_ADDRESS}</span>
               </div>
             </div>
           </div>
@@ -103,7 +106,7 @@ export const Footer = () => {
             <div className="flex items-center space-x-4 mb-4 md:mb-0">
               <Badge variant="secondary">한국어</Badge>
               <span className="text-muted-foreground text-sm">
-                © 2025 Maven Inc. All rights reserved.
+                © 2025 어벗츠 주식회사. All rights reserved.
               </span>
             </div>
 

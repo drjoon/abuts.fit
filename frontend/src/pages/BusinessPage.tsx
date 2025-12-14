@@ -2,6 +2,12 @@ import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Building, MapPin, Phone, Mail, FileText } from "lucide-react";
+import {
+  BUSINESS_EMAIL,
+  COMPANY_ADDRESS,
+  COMPANY_PHONE,
+  SUPPORT_EMAIL,
+} from "@/shared/lib/contactInfo";
 
 export const BusinessPage = () => {
   return (
@@ -30,23 +36,27 @@ export const BusinessPage = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <h4 className="font-medium mb-2">상호명</h4>
-                      <p className="text-muted-foreground">
-                        메이븐 주식회사 (Maven Inc.)
-                      </p>
+                      <p className="text-muted-foreground">어벗츠 주식회사</p>
                     </div>
                     <div>
                       <h4 className="font-medium mb-2">대표자</h4>
-                      <p className="text-muted-foreground">이준호</p>
+                      <p className="text-muted-foreground">배태완</p>
                     </div>
                     <div>
                       <h4 className="font-medium mb-2">사업자등록번호</h4>
-                      <p className="text-muted-foreground">891-86-02941</p>
+                      <p className="text-muted-foreground">358-87-03514</p>
                     </div>
                     <div>
                       <h4 className="font-medium mb-2">통신판매업신고번호</h4>
-                      <p className="text-muted-foreground">
-                        2012-경남김해-0003
-                      </p>
+                      <p className="text-muted-foreground">해당 없음</p>
+                    </div>
+                    <div>
+                      <h4 className="font-medium mb-2">법인등록번호</h4>
+                      <p className="text-muted-foreground">194911-0007687</p>
+                    </div>
+                    <div>
+                      <h4 className="font-medium mb-2">개업연월일</h4>
+                      <p className="text-muted-foreground">2025년 10월 20일</p>
                     </div>
                   </div>
                 </div>
@@ -63,9 +73,7 @@ export const BusinessPage = () => {
               <CardContent>
                 <div className="space-y-4">
                   <div>
-                    <p className="text-muted-foreground">
-                      경남 김해시 전하로 85번길 5
-                    </p>
+                    <p className="text-muted-foreground">{COMPANY_ADDRESS}</p>
                   </div>
                 </div>
               </CardContent>
@@ -83,17 +91,15 @@ export const BusinessPage = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <h4 className="font-medium mb-2">대표 전화</h4>
-                      <p className="text-muted-foreground">055-314-4607</p>
+                      <p className="text-muted-foreground">{COMPANY_PHONE}</p>
                     </div>
                     <div>
                       <h4 className="font-medium mb-2">고객지원</h4>
-                      <p className="text-muted-foreground">support@abuts.fit</p>
+                      <p className="text-muted-foreground">{SUPPORT_EMAIL}</p>
                     </div>
                     <div>
                       <h4 className="font-medium mb-2">사업 문의</h4>
-                      <p className="text-muted-foreground">
-                        business@abuts.fit
-                      </p>
+                      <p className="text-muted-foreground">{BUSINESS_EMAIL}</p>
                     </div>
                   </div>
                 </div>

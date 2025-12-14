@@ -2,6 +2,7 @@ import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Shield, Lock, Eye, FileText } from "lucide-react";
+import { COMPANY_PHONE, SECURITY_EMAIL } from "@/shared/lib/contactInfo";
 
 export const SecurityPage = () => {
   return (
@@ -98,8 +99,8 @@ export const SecurityPage = () => {
                     <p>
                       <strong>보안팀 연락처</strong>
                     </p>
-                    <p>이메일: security@abuts.fit</p>
-                    <p>전화: 055-314-4607</p>
+                    <p>이메일: {SECURITY_EMAIL}</p>
+                    <p>전화: {COMPANY_PHONE}</p>
                   </div>
                 </div>
               </CardContent>

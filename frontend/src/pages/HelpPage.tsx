@@ -10,6 +10,7 @@ import {
   Users,
   Settings,
 } from "lucide-react";
+import { SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
 
 export const HelpPage = () => {
   const faqCategories = [
@@ -130,7 +131,7 @@ export const HelpPage = () => {
                   <FileText className="h-8 w-8 mx-auto mb-3 text-primary" />
                   <h3 className="font-medium mb-2">이메일 문의</h3>
                   <p className="text-sm text-muted-foreground">
-                    support@abuts.fit
+                    {SUPPORT_EMAIL}
                   </p>
                 </div>
                 <div className="text-center p-4 bg-muted/50 rounded-lg">

@@ -21,7 +21,7 @@ export const TermsPage = () => {
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground leading-relaxed">
-                  이 약관은 메이븐 주식회사(이하 "회사")가 제공하는 온라인
+                  이 약관은 어벗츠 주식회사(이하 "회사")가 제공하는 온라인
                   플랫폼 서비스(이하 "서비스")의 이용과 관련하여 회사와 이용자
                   간의 권리, 의무 및 책임사항을 규정함을 목적으로 합니다.
                 </p>
@@ -37,8 +37,8 @@ export const TermsPage = () => {
                   <p>이 약관에서 사용하는 용어의 정의는 다음과 같습니다:</p>
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>
-                      "서비스"란 회사가 제공하는 치과기공소와 어벗먼트 제조사를
-                      연결하는 온라인 플랫폼을 의미합니다.
+                      "서비스"란 회사가 제공하는 커스텀 어벗 의뢰 및 진행 관리
+                      플랫폼을 의미합니다.
                     </li>
                     <li>
                       "이용자"란 이 약관에 따라 회사가 제공하는 서비스를 받는
@@ -101,15 +101,19 @@ export const TermsPage = () => {
                 <div className="space-y-4 text-muted-foreground">
                   <p>회사가 제공하는 서비스는 다음과 같습니다:</p>
                   <ul className="list-disc list-inside space-y-2 ml-4">
-                    <li>치과기공소와 어벗먼트 제조사 간의 매칭 서비스</li>
-                    <li>의뢰 관리 및 진행상황 추적 서비스</li>
-                    <li>실시간 채팅 및 소통 서비스</li>
+                    <li>커스텀 어벗 의뢰 등록 및 파일 업로드 서비스</li>
+                    <li>의뢰 관리 및 진행상황 확인 서비스</li>
+                    <li>문의 접수(문의 남기기) 및 이메일 회신 서비스</li>
                     <li>품질 보증 및 분쟁 조정 서비스</li>
                     <li>
                       기타 회사가 추가 개발하거나 제휴계약 등을 통해 회원들에게
                       제공하는 일체의 서비스
                     </li>
                   </ul>
+                  <p>
+                    * 현재는 커스텀 어벗 의뢰만 제공하며, 크라운은 제공하지
+                    않습니다.
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -120,14 +124,18 @@ export const TermsPage = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 text-muted-foreground">
-                  <p>1. 치과기공소(의뢰자)의 서비스 이용은 무료입니다.</p>
                   <p>
-                    2. 어벗먼트 제조사는 거래 성사 시 별도로 정한 수수료를
-                    지불할 수 있습니다.
+                    1. 제작비(상품 금액)는 서비스 화면에 안내된 기준에 따릅니다.
                   </p>
                   <p>
-                    3. 현재 모든 수수료는 면제되고 있으며, 수수료 부과 시 사전에
-                    공지합니다.
+                    2. 제작비는 <b>부가가치세(VAT)</b> 및 <b>배송비</b>가
+                    포함되지 않은 금액이며, 부가가치세(VAT)와 배송비는 별도
+                    청구됩니다.
+                  </p>
+                  <p>
+                    3. 제조는 애크로덴트가 단독으로 담당하며, 이용자는 서비스
+                    제공사(회사)인 어벗츠 주식회사의 안내에 따라 서비스를
+                    이용합니다.
                   </p>
                 </div>
               </CardContent>

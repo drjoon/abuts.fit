@@ -3,6 +3,9 @@ import { Button } from "@/components/ui/button";
 import { MessageSquare, Phone, Mail } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNavigate } from "react-router-dom";
+import { ToastAction } from "@/components/ui/toast";
+import { useToast } from "@/hooks/use-toast";
+import { COMPANY_PHONE, SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
 
 interface CustomerSupportSectionProps {
   onOpenGuestChat: () => void;
@@ -13,6 +16,7 @@ export const CustomerSupportSection = ({
 }: CustomerSupportSectionProps) => {
   const { isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const handleChatClick = () => {
     if (isAuthenticated) {
@@ -23,12 +27,26 @@ export const CustomerSupportSection = ({
   };
 
   const handlePhoneClick = () => {
-    window.location.href = "tel:02-1234-5678";
+    toast({
+      title: "전화 상담 연결",
+      description: `${COMPANY_PHONE}로 연결할까요?`,
+      duration: 3000,
+      action: (
+        <ToastAction
+          altText="전화 연결"
+          onClick={() => {
+            window.location.href = `tel:${COMPANY_PHONE}`;
+          }}
+        >
+          연결
+        </ToastAction>
+      ),
+    });
   };
 
   const handleEmailClick = () => {
     window.open(
-      "mailto:support@abuts.fit?subject=어벗츠.핏 문의&body=안녕하세요, 어벗츠.핏에 대해 문의드립니다.",
+      `mailto:${SUPPORT_EMAIL}?subject=어벗츠.핏 문의&body=안녕하세요, 어벗츠.핏에 대해 문의드립니다.`,
       "_blank"
     );
   };
@@ -45,7 +63,7 @@ export const CustomerSupportSection = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="text-center hover:shadow-elegant transition-shadow">
+          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg text-center">
             <CardHeader>
               <CardTitle className="flex flex-col items-center gap-3">
                 <MessageSquare className="h-8 w-8 text-primary" />
@@ -62,7 +80,7 @@ export const CustomerSupportSection = ({
             </CardContent>
           </Card>
 
-          <Card className="text-center hover:shadow-elegant transition-shadow">
+          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg text-center">
             <CardHeader>
               <CardTitle className="flex flex-col items-center gap-3">
                 <Phone className="h-8 w-8 text-primary" />
@@ -78,12 +96,12 @@ export const CustomerSupportSection = ({
                 className="w-full font-medium text-lg"
                 onClick={handlePhoneClick}
               >
-                055-314-4607
+                {COMPANY_PHONE}
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="text-center hover:shadow-elegant transition-shadow">
+          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg text-center">
             <CardHeader>
               <CardTitle className="flex flex-col items-center gap-3">
                 <Mail className="h-8 w-8 text-primary" />
@@ -99,7 +117,7 @@ export const CustomerSupportSection = ({
                 className="w-full"
                 onClick={handleEmailClick}
               >
-                support@abuts.fit
+                {SUPPORT_EMAIL}
               </Button>
             </CardContent>
           </Card>

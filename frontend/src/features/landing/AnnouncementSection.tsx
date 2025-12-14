@@ -5,27 +5,24 @@ export const AnnouncementSection = () => {
   const announcements = [
     {
       id: 1,
-      title: "🎉 신규 제작사 파트너 모집",
-      description:
-        "우수한 치과기공소 제작사분들을 모집하고 있습니다. 지금 가입하시고 많은 의뢰를 받아보세요!",
-      type: "new",
-      date: "2025-07-15",
+      title: "커스텀 어벗 제작 서비스",
+      description: "간편하게 STL 파일 업로드하고 의뢰해보세요",
+      type: "notice",
+      date: "안내",
     },
     {
       id: 2,
-      title: "🔥 이달의 HOT 제작사",
-      description:
-        "프리미엄 어벗먼트가 높은 품질과 빠른 납기로 고객 만족도 1위를 달성했습니다!",
-      type: "hot",
-      date: "2025-07-14",
+      title: "높은 품질, 낮은 가격",
+      description: "회원 가입 후 대시보드에서 귀사의 가격을 확인해보세요.",
+      type: "notice",
+      date: "정책",
     },
     {
       id: 3,
-      title: "📢 서비스 수수료 무료 연장",
-      description:
-        "더 많은 분들이 서비스를 이용할 수 있도록 당분간 모든 수수료를 면제합니다.",
-      type: "notice",
-      date: "2025-07-13",
+      title: "묶음배송 권장",
+      description: "배송비 절감을 위해 묶음배송을 권장합니다.",
+      type: "new",
+      date: "배송",
     },
   ];
 
@@ -33,8 +30,6 @@ export const AnnouncementSection = () => {
     switch (type) {
       case "new":
         return "border-green-200 bg-green-50 text-green-800";
-      case "hot":
-        return "border-red-200 bg-red-50 text-red-800";
       case "notice":
         return "border-blue-200 bg-blue-50 text-blue-800";
       default:
@@ -58,7 +53,7 @@ export const AnnouncementSection = () => {
           {announcements.map((announcement) => (
             <Card
               key={announcement.id}
-              className={`transition-all hover:shadow-elegant cursor-pointer ${getAnnouncementStyle(
+              className={`relative flex flex-col rounded-2xl border bg-white/80 shadow-sm transition-all hover:shadow-lg cursor-pointer ${getAnnouncementStyle(
                 announcement.type
               )}`}
             >
