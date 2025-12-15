@@ -2,6 +2,7 @@ import {
   S3Client,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
@@ -76,6 +77,62 @@ const s3Upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter,
 });
+
+const streamToBuffer = async (stream) => {
+  if (!stream) return Buffer.from("");
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+};
+
+export const getObjectBufferFromS3 = async (key) => {
+  const guardKey = `s3-getObject:${key}`;
+  const { blocked, count } = shouldBlockExternalCall(guardKey);
+  if (blocked) {
+    console.error("[S3] getObjectBufferFromS3: rate guard blocked", {
+      key,
+      count,
+    });
+    throw new Error(
+      "S3 파일 조회가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요."
+    );
+  }
+
+  const command = new GetObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+    Key: key,
+  });
+
+  const resp = await s3Client.send(command);
+  const body = resp?.Body;
+  const buffer = await streamToBuffer(body);
+  return buffer;
+};
+
+export const objectExistsInS3 = async (key) => {
+  const guardKey = `s3-headObject:${key}`;
+  const { blocked, count } = shouldBlockExternalCall(guardKey);
+  if (blocked) {
+    console.error("[S3] objectExistsInS3: rate guard blocked", { key, count });
+    return false;
+  }
+
+  try {
+    await s3Client.send(
+      new HeadObjectCommand({
+        Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+        Key: key,
+      })
+    );
+    return true;
+  } catch (e) {
+    const code = String(e?.Code || e?.name || "").trim();
+    if (code === "NotFound" || code === "NoSuchKey") return false;
+    return false;
+  }
+};
 
 // S3 직접 업로드 함수 (컨트롤러에서 호출)
 export const uploadFileToS3 = async (fileBuffer, key, contentType) => {
@@ -171,6 +228,8 @@ export { s3Upload };
 export default {
   s3Upload,
   uploadFileToS3,
+  getObjectBufferFromS3,
+  objectExistsInS3,
   deleteFileFromS3,
   getSignedUrl,
   getFileType,

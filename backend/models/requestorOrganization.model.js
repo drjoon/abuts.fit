@@ -57,9 +57,9 @@ const requestorOrganizationSchema = new mongoose.Schema(
       uploadedAt: { type: Date, default: null },
     },
     extracted: {
+      companyName: { type: String, default: "" },
       businessNumber: { type: String, default: "" },
       address: { type: String, default: "" },
-      detailAddress: { type: String, default: "" },
       phoneNumber: { type: String, default: "" },
       email: { type: String, default: "" },
       representativeName: { type: String, default: "" },

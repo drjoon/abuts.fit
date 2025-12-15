@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../utils/rateGuard.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
+import s3Utils from "../utils/s3.utils.js";
 
 const apiKey = process.env.GOOGLE_API_KEY;
 
@@ -51,48 +52,228 @@ export async function parseBusinessLicense(req, res) {
       });
     }
 
-    const extracted = {
-      businessNumber: "123-45-67890",
-      address: "서울시 강남구 테헤란로 123",
-      email: "tax@company.com",
-      representativeName: "홍길동",
-      businessType: "치과기공",
-      businessItem: "치과기공소",
-    };
+    const key = String(s3Key || "").trim();
+    if (!key) {
+      return res.status(400).json({
+        success: false,
+        message: "s3Key가 필요합니다.",
+      });
+    }
 
-    const verification = {
-      verified: false,
-      provider: "stub",
-      message:
-        "현재는 개발 단계로 검증 API가 연결되지 않았습니다. 추후 외부 검증 API 연동 예정입니다.",
-    };
+    const isImageName = (() => {
+      const name = String(originalName || "").toLowerCase();
+      return (
+        name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png")
+      );
+    })();
+    if (!isImageName) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자등록증은 이미지(JPG/PNG) 파일만 지원합니다.",
+      });
+    }
 
-    await RequestorOrganization.findByIdAndUpdate(
-      req.user.organizationId,
-      {
+    let buffer;
+    try {
+      buffer = await s3Utils.getObjectBufferFromS3(key);
+    } catch (e) {
+      const code = String(e?.Code || e?.name || "").trim();
+      if (code === "NoSuchKey") {
+        return res.status(400).json({
+          success: false,
+          message:
+            "업로드된 파일을 저장소에서 찾을 수 없습니다. 초기화 후 다시 업로드해주세요.",
+        });
+      }
+      throw e;
+    }
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "S3에서 파일을 읽을 수 없습니다.",
+      });
+    }
+
+    if (!genAI) {
+      const extracted = {};
+      const verification = {
+        verified: false,
+        provider: "none",
+        message:
+          "GOOGLE_API_KEY가 설정되지 않아 사업자등록증 자동 인식이 비활성화되어 있습니다.",
+      };
+
+      await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
         $set: {
           businessLicense: {
             fileId: fileId || null,
-            s3Key: s3Key || "",
+            s3Key: key,
             originalName: originalName || "",
             uploadedAt: new Date(),
           },
-          extracted,
           verification: {
             ...verification,
             checkedAt: new Date(),
           },
         },
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          input: {
+            fileId: fileId || null,
+            s3Key: key,
+            originalName: originalName || null,
+          },
+          extracted,
+          verification,
+        },
+      });
+    }
+
+    const clientIp =
+      req.ip ||
+      req.headers["x-forwarded-for"] ||
+      (req.connection && req.connection.remoteAddress) ||
+      "unknown";
+    const guardKey = `gemini-parseBusinessLicense:${clientIp}`;
+    const guard = shouldBlockExternalCall(guardKey);
+    if (guard?.blocked) {
+      return res.status(429).json({
+        success: false,
+        message:
+          "AI 외부 API가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
+      });
+    }
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
       },
-      { new: false }
-    );
+    });
+    const imageBase64 = buffer.toString("base64");
+    const mimeType = String(originalName || "")
+      .toLowerCase()
+      .endsWith(".png")
+      ? "image/png"
+      : "image/jpeg";
+
+    const prompt =
+      "너는 한국 사업자등록증 이미지를 읽어 필요한 정보를 JSON으로만 추출하는 도우미야.\n" +
+      '아래 스키마를 정확히 따르고, 값이 불확실하면 빈 문자열("")로 둬.\n' +
+      "반드시 JSON만 반환하고 다른 설명은 하지 마.\n\n" +
+      "스키마:\n" +
+      "{\n" +
+      '  "companyName": string,\n' +
+      '  "businessNumber": string,\n' +
+      '  "representativeName": string,\n' +
+      '  "address": string,\n' +
+      '  "phoneNumber": string,\n' +
+      '  "email": string,\n' +
+      '  "businessType": string,\n' +
+      '  "businessItem": string\n' +
+      "}";
+
+    const result = await model.generateContent([
+      { text: prompt },
+      {
+        inlineData: {
+          data: imageBase64,
+          mimeType,
+        },
+      },
+    ]);
+
+    const text = result?.response?.text?.() || "";
+
+    let cleaned = String(text || "").trim();
+    if (cleaned.startsWith("```")) {
+      const firstNewline = cleaned.indexOf("\n");
+      const lastFence = cleaned.lastIndexOf("```");
+      if (firstNewline !== -1 && lastFence !== -1 && lastFence > firstNewline) {
+        cleaned = cleaned.slice(firstNewline + 1, lastFence).trim();
+      }
+    }
+
+    const tryParseJsonObject = (input) => {
+      if (!input) return null;
+      const s = String(input).trim();
+      try {
+        return JSON.parse(s);
+      } catch {}
+
+      const firstBrace = s.indexOf("{");
+      const lastBrace = s.lastIndexOf("}");
+      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        return null;
+      }
+      const slice = s.slice(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(slice);
+      } catch {
+        return null;
+      }
+    };
+
+    const parsed = tryParseJsonObject(cleaned);
+    const parseOk =
+      !!parsed && typeof parsed === "object" && !Array.isArray(parsed);
+    if (!parseOk) {
+      console.error("[AI] parseBusinessLicense: JSON parse failed", {
+        originalName,
+        s3Key: key,
+        sample: cleaned.slice(0, 400),
+      });
+    }
+
+    const extracted = {
+      companyName: String((parseOk ? parsed.companyName : "") || "").trim(),
+      businessNumber: String(
+        (parseOk ? parsed.businessNumber : "") || ""
+      ).trim(),
+      address: String((parseOk ? parsed.address : "") || "").trim(),
+      phoneNumber: String((parseOk ? parsed.phoneNumber : "") || "").trim(),
+      email: String((parseOk ? parsed.email : "") || "").trim(),
+      representativeName: String(
+        (parseOk ? parsed.representativeName : "") || ""
+      ).trim(),
+      businessType: String((parseOk ? parsed.businessType : "") || "").trim(),
+      businessItem: String((parseOk ? parsed.businessItem : "") || "").trim(),
+    };
+
+    const verification = {
+      verified: false,
+      provider: "gemini",
+      message: parseOk
+        ? "자동 인식 결과입니다. 저장 후 필요 시 수동으로 수정해주세요."
+        : "자동 인식 결과를 해석하지 못했습니다. 이미지 화질을 높이거나(정면/선명) 다시 업로드 후, 필요 시 수동으로 입력해주세요.",
+    };
+
+    await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
+      $set: {
+        businessLicense: {
+          fileId: fileId || null,
+          s3Key: key,
+          originalName: originalName || "",
+          uploadedAt: new Date(),
+        },
+        extracted,
+        verification: {
+          ...verification,
+          checkedAt: new Date(),
+        },
+      },
+    });
 
     return res.json({
       success: true,
       data: {
         input: {
           fileId: fileId || null,
-          s3Key: s3Key || null,
+          s3Key: key,
           originalName: originalName || null,
         },
         extracted,

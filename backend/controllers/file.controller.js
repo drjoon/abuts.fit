@@ -60,19 +60,65 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
     }).lean();
 
     if (existing) {
-      // 중복 파일이 이미 존재하면 새로 업로드하지 않고 기존 문서를 그대로 반환한다.
-      // 이렇게 하면 프론트엔드 입장에서는 "업로드 성공"으로 동일하게 처리할 수 있다.
-      console.log(
-        "[uploadTempFiles] Duplicate file detected, returning existing",
-        {
-          uploadedBy: uploadedBy.toString(),
-          originalName: originalname,
-          size,
-          existingFileId: existing._id,
+      const existingKey = String(existing?.key || "").trim();
+      let existsInS3 = false;
+      if (existingKey) {
+        try {
+          existsInS3 = await s3Utils.objectExistsInS3(existingKey);
+        } catch {
+          existsInS3 = false;
         }
-      );
-      results.push(existing);
-      continue;
+      }
+
+      if (!existsInS3) {
+        await File.findByIdAndDelete(existing._id);
+        const ext = originalname.includes(".")
+          ? `.${originalname.split(".").pop().toLowerCase()}`
+          : "";
+        const key = `uploads/users/${uploadedBy.toString()}/${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 10)}${ext}`;
+
+        const uploaded = await s3Utils.uploadFileToS3(buffer, key, mimetype);
+
+        if (!uploaded || !uploaded.location) {
+          throw new ApiError(500, "S3 업로드에 실패했습니다.");
+        }
+
+        const fileType =
+          s3Utils.getFileType(originalname) || getFileType(originalname);
+
+        const created = await File.create({
+          originalName: originalname,
+          encoding: file.encoding,
+          mimetype,
+          size,
+          bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+          key: uploaded.key || key,
+          location: uploaded.location,
+          contentType: mimetype,
+          uploadedBy,
+          fileType,
+          isPublic: false,
+        });
+
+        results.push(created.toObject());
+        continue;
+      } else {
+        // 중복 파일이 이미 존재하면 새로 업로드하지 않고 기존 문서를 그대로 반환한다.
+        // 이렇게 하면 프론트엔드 입장에서는 "업로드 성공"으로 동일하게 처리할 수 있다.
+        console.log(
+          "[uploadTempFiles] Duplicate file detected, returning existing",
+          {
+            uploadedBy: uploadedBy.toString(),
+            originalName: originalname,
+            size,
+            existingFileId: existing._id,
+          }
+        );
+        results.push(existing);
+        continue;
+      }
     }
 
     const ext = originalname.includes(".")

@@ -1,6 +1,8 @@
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import User from "../models/user.model.js";
 import { Types } from "mongoose";
+import s3Utils from "../utils/s3.utils.js";
+import File from "../models/file.model.js";
 
 export async function getMyOrganization(req, res) {
   try {
@@ -192,6 +194,42 @@ export async function updateMyOrganization(req, res) {
       });
     }
 
+    const normalizeBusinessNumber = (input) => {
+      const digits = String(input || "").replace(/\D/g, "");
+      if (digits.length !== 10) return "";
+      return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+    };
+
+    const normalizePhoneNumber = (input) => {
+      const digits = String(input || "").replace(/\D/g, "");
+      if (!digits.startsWith("0")) return "";
+      if (digits.startsWith("02")) {
+        if (digits.length === 9)
+          return `02-${digits.slice(2, 5)}-${digits.slice(5)}`;
+        if (digits.length === 10)
+          return `02-${digits.slice(2, 6)}-${digits.slice(6)}`;
+        return "";
+      }
+      if (digits.length === 10) {
+        return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+      }
+      if (digits.length === 11) {
+        return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+      }
+      return "";
+    };
+
+    const isValidEmail = (input) => {
+      const v = String(input || "").trim();
+      if (!v) return false;
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    };
+
+    const isValidAddress = (input) => {
+      const v = String(input || "").trim();
+      return v.length >= 5;
+    };
+
     if (!req.user.organizationId) {
       return res.status(403).json({
         success: false,
@@ -218,12 +256,46 @@ export async function updateMyOrganization(req, res) {
       req.body?.representativeName || ""
     ).trim();
     const businessItem = String(req.body?.businessItem || "").trim();
-    const phoneNumber = String(req.body?.phoneNumber || "").trim();
-    const businessNumber = String(req.body?.businessNumber || "").trim();
+    const phoneNumberRaw = String(req.body?.phoneNumber || "").trim();
+    const businessNumberRaw = String(req.body?.businessNumber || "").trim();
     const businessType = String(req.body?.businessType || "").trim();
     const email = String(req.body?.email || "").trim();
     const address = String(req.body?.address || "").trim();
-    const detailAddress = String(req.body?.detailAddress || "").trim();
+
+    const phoneNumber = phoneNumberRaw
+      ? normalizePhoneNumber(phoneNumberRaw)
+      : "";
+    const businessNumber = businessNumberRaw
+      ? normalizeBusinessNumber(businessNumberRaw)
+      : "";
+
+    if (phoneNumberRaw && !phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "전화번호 형식이 올바르지 않습니다.",
+      });
+    }
+
+    if (businessNumberRaw && !businessNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자등록번호 형식이 올바르지 않습니다.",
+      });
+    }
+
+    if (email && !isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "세금계산서 이메일 형식이 올바르지 않습니다.",
+      });
+    }
+
+    if (address && !isValidAddress(address)) {
+      return res.status(400).json({
+        success: false,
+        message: "주소 형식이 올바르지 않습니다.",
+      });
+    }
 
     const patch = {};
     if (nextName) patch.name = nextName;
@@ -237,7 +309,6 @@ export async function updateMyOrganization(req, res) {
     if (businessType) extractedPatch.businessType = businessType;
     if (email) extractedPatch.email = email;
     if (address) extractedPatch.address = address;
-    if (detailAddress) extractedPatch.detailAddress = detailAddress;
 
     if (Object.keys(extractedPatch).length > 0) {
       patch.extracted = {
@@ -264,6 +335,87 @@ export async function updateMyOrganization(req, res) {
     return res.status(500).json({
       success: false,
       message: "기공소 정보 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function clearMyBusinessLicense(req, res) {
+  try {
+    if (!req.user || req.user.role !== "requestor") {
+      return res.status(403).json({
+        success: false,
+        message: "접근 권한이 없습니다.",
+      });
+    }
+
+    if (!req.user.organizationId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const org = await RequestorOrganization.findById(req.user.organizationId);
+    const meId = String(req.user._id);
+    const canEdit =
+      org &&
+      (String(org.owner) === meId ||
+        (Array.isArray(org.coOwners) &&
+          org.coOwners.some((c) => String(c) === meId)));
+    if (!canEdit) {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 삭제할 수 있습니다.",
+      });
+    }
+
+    const key = String(org?.businessLicense?.s3Key || "").trim();
+    if (key) {
+      try {
+        await s3Utils.deleteFileFromS3(key);
+      } catch {}
+    }
+
+    const fileId = String(org?.businessLicense?.fileId || "").trim();
+    if (fileId) {
+      try {
+        await File.findByIdAndDelete(fileId);
+      } catch {}
+    }
+
+    await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
+      $set: {
+        businessLicense: {
+          fileId: null,
+          s3Key: "",
+          originalName: "",
+          uploadedAt: null,
+        },
+        extracted: {
+          companyName: "",
+          businessNumber: "",
+          address: "",
+          phoneNumber: "",
+          email: "",
+          representativeName: "",
+          businessType: "",
+          businessItem: "",
+        },
+        verification: {
+          verified: false,
+          provider: "",
+          message: "",
+          checkedAt: null,
+        },
+      },
+    });
+
+    return res.json({ success: true, data: { cleared: true } });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "사업자등록증 삭제 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

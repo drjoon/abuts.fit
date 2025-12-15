@@ -12,6 +12,11 @@ router.get("/search", requestorOrganizationController.searchOrganizations);
 
 router.put("/me", requestorOrganizationController.updateMyOrganization);
 
+router.delete(
+  "/me/business-license",
+  requestorOrganizationController.clearMyBusinessLicense
+);
+
 router.get("/co-owners", requestorOrganizationController.getCoOwners);
 router.post("/co-owners", requestorOrganizationController.addCoOwner);
 router.delete(
