@@ -4,6 +4,9 @@ import { Link } from "react-router-dom";
 import logo from "@/assets/logo.png";
 import {
   COMPANY_ADDRESS,
+  COMPANY_BUSINESS_REGISTRATION_NUMBER,
+  COMPANY_CEO_NAME,
+  COMPANY_NAME,
   COMPANY_PHONE,
   CONTACT_EMAIL,
 } from "@/shared/lib/contactInfo";
@@ -144,6 +147,16 @@ export const Footer = () => {
                   <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                 </svg>
               </a>
+            </div>
+          </div>
+
+          <div className="mt-6 text-xs text-muted-foreground leading-relaxed">
+            <div>
+              {COMPANY_NAME} | 대표자: {COMPANY_CEO_NAME} | 사업자등록번호:{" "}
+              {COMPANY_BUSINESS_REGISTRATION_NUMBER}
+            </div>
+            <div>
+              주소: {COMPANY_ADDRESS} | 유선번호: {COMPANY_PHONE}
             </div>
           </div>
         </div>

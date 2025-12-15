@@ -5,6 +5,9 @@ import { Building, MapPin, Phone, Mail, FileText } from "lucide-react";
 import {
   BUSINESS_EMAIL,
   COMPANY_ADDRESS,
+  COMPANY_BUSINESS_REGISTRATION_NUMBER,
+  COMPANY_CEO_NAME,
+  COMPANY_NAME,
   COMPANY_PHONE,
   SUPPORT_EMAIL,
 } from "@/shared/lib/contactInfo";
@@ -36,15 +39,19 @@ export const BusinessPage = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <h4 className="font-medium mb-2">상호명</h4>
-                      <p className="text-muted-foreground">어벗츠 주식회사</p>
+                      <p className="text-muted-foreground">{COMPANY_NAME}</p>
                     </div>
                     <div>
                       <h4 className="font-medium mb-2">대표자</h4>
-                      <p className="text-muted-foreground">배태완</p>
+                      <p className="text-muted-foreground">
+                        {COMPANY_CEO_NAME}
+                      </p>
                     </div>
                     <div>
                       <h4 className="font-medium mb-2">사업자등록번호</h4>
-                      <p className="text-muted-foreground">358-87-03514</p>
+                      <p className="text-muted-foreground">
+                        {COMPANY_BUSINESS_REGISTRATION_NUMBER}
+                      </p>
                     </div>
                     <div>
                       <h4 className="font-medium mb-2">통신판매업신고번호</h4>
