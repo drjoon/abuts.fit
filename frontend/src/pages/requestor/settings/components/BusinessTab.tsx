@@ -185,8 +185,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         const ex = data?.extracted || {};
         setBusinessData((prev) => ({
           ...prev,
-          companyName:
-            next === "owner" ? prev.companyName : orgName || prev.companyName,
+          companyName: companyNameTouched
+            ? prev.companyName
+            : orgName || prev.companyName,
           businessNumber:
             String(ex?.businessNumber || "").trim() || prev.businessNumber,
           address: String(ex?.address || "").trim() || prev.address,
@@ -1011,7 +1012,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             {showLicenseDetails && (
               <>
                 <div className="space-y-2">
-                  <Label>기공소 정보</Label>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="repName">대표자명</Label>
