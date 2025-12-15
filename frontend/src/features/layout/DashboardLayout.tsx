@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { request } from "@/lib/apiClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -97,7 +98,7 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 export const DashboardLayout = () => {
-  const { user, logout } = useAuthStore();
+  const { user, logout, token } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
@@ -109,6 +110,101 @@ export const DashboardLayout = () => {
     navigate("/login");
     return null;
   }
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role === "admin") return;
+
+    const today = new Date();
+    const yyyyMmDd = today.toISOString().slice(0, 10);
+    const storageKey = `abuts_credit_nudge:${String(user.id)}:${yyyyMmDd}`;
+
+    try {
+      if (localStorage.getItem(storageKey) === "1") return;
+    } catch {
+      // ignore
+    }
+
+    const params = new URLSearchParams(location.search);
+    const isOnPaymentTab =
+      location.pathname.startsWith("/dashboard/settings") &&
+      params.get("tab") === "payment";
+
+    if (isOnPaymentTab) {
+      try {
+        localStorage.setItem(storageKey, "1");
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const [balanceRes, insightsRes] = await Promise.all([
+          request<any>({ path: "/api/credits/balance", method: "GET", token }),
+          request<any>({
+            path: "/api/credits/insights/spend",
+            method: "GET",
+            token,
+          }),
+        ]);
+
+        if (cancelled) return;
+        if (!balanceRes.ok || !insightsRes.ok) return;
+
+        const balanceData = (balanceRes.data as any)?.data || balanceRes.data;
+        const insightsData =
+          (insightsRes.data as any)?.data || insightsRes.data;
+
+        const balance = Number(balanceData?.balance || 0);
+        const avgDailySpendSupply = Number(
+          insightsData?.avgDailySpendSupply || 0
+        );
+        const estimatedDaysFor500k = insightsData?.estimatedDaysFor500k;
+        const fallbackDailySpend =
+          typeof estimatedDaysFor500k === "number" && estimatedDaysFor500k > 0
+            ? 500000 / estimatedDaysFor500k
+            : 0;
+
+        const dailySpend =
+          avgDailySpendSupply > 0 ? avgDailySpendSupply : fallbackDailySpend;
+
+        if (balance <= 0) {
+          try {
+            localStorage.setItem(storageKey, "1");
+          } catch {
+            // ignore
+          }
+          navigate("/dashboard/settings?tab=payment");
+          return;
+        }
+
+        if (!(dailySpend > 0)) return;
+
+        const estimatedDaysLeft = balance / dailySpend;
+        if (!(estimatedDaysLeft <= 7)) return;
+
+        try {
+          localStorage.setItem(storageKey, "1");
+        } catch {
+          // ignore
+        }
+
+        navigate("/dashboard/settings?tab=payment");
+      } catch {
+        // ignore
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, location.search, navigate, token, user]);
 
   const menuItems = sidebarItems[user.role as keyof typeof sidebarItems] || [];
 

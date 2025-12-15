@@ -6,6 +6,7 @@ import {
   createCreditOrder,
   listMyCreditOrders,
   getMyCreditBalance,
+  getMyCreditSpendInsights,
   confirmVirtualAccountPayment,
   cancelMyCreditOrder,
   requestCreditRefund,
@@ -14,6 +15,7 @@ import {
 router.use(authenticate);
 
 router.get("/balance", getMyCreditBalance);
+router.get("/insights/spend", getMyCreditSpendInsights);
 router.get("/orders", listMyCreditOrders);
 router.post("/orders", createCreditOrder);
 router.post("/orders/:orderId/cancel", cancelMyCreditOrder);

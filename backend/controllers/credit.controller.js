@@ -12,6 +12,13 @@ function roundVat(amount) {
   return Math.round(amount * 0.1);
 }
 
+function roundUpUnit(amount, unit) {
+  const n = Number(amount);
+  const u = Number(unit);
+  if (!Number.isFinite(n) || !Number.isFinite(u) || u <= 0) return 0;
+  return Math.ceil(n / u) * u;
+}
+
 function validateSupplyAmount(raw) {
   const supplyAmount = Number(raw);
   if (!Number.isFinite(supplyAmount) || supplyAmount <= 0) {
@@ -57,6 +64,55 @@ async function getBalance(userId) {
     { $group: { _id: "$userId", balance: { $sum: "$amount" } } },
   ]);
   return rows?.[0]?.balance || 0;
+}
+
+async function getBalanceBreakdown(userId) {
+  const rows = await CreditLedger.find({ userId })
+    .sort({ createdAt: 1, _id: 1 })
+    .select({ type: 1, amount: 1 })
+    .lean();
+
+  let paid = 0;
+  let bonus = 0;
+
+  for (const r of rows) {
+    const type = String(r?.type || "");
+    const amount = Number(r?.amount || 0);
+
+    if (!Number.isFinite(amount)) continue;
+
+    if (type === "CHARGE") {
+      paid += amount;
+      continue;
+    }
+    if (type === "BONUS") {
+      bonus += amount;
+      continue;
+    }
+    if (type === "REFUND") {
+      paid += amount;
+      continue;
+    }
+    if (type === "ADJUST") {
+      paid += amount;
+      continue;
+    }
+    if (type === "SPEND") {
+      let spend = Math.abs(amount);
+      const fromBonus = Math.min(bonus, spend);
+      bonus -= fromBonus;
+      spend -= fromBonus;
+      paid -= spend;
+    }
+  }
+
+  const paidBalance = Math.max(0, Math.round(paid));
+  const bonusBalance = Math.max(0, Math.round(bonus));
+  return {
+    balance: paidBalance + bonusBalance,
+    paidBalance,
+    bonusBalance,
+  };
 }
 
 export async function createCreditOrder(req, res) {
@@ -121,8 +177,78 @@ export async function listMyCreditOrders(req, res) {
 
 export async function getMyCreditBalance(req, res) {
   const userId = req.user._id;
-  const balance = await getBalance(userId);
-  return res.json({ success: true, data: { balance } });
+  const { balance, paidBalance, bonusBalance } = await getBalanceBreakdown(
+    userId
+  );
+  return res.json({
+    success: true,
+    data: { balance, paidBalance, bonusBalance },
+  });
+}
+
+export async function getMyCreditSpendInsights(req, res) {
+  const userId = req.user._id;
+
+  const MIN = 500000;
+  const MAX = 5000000;
+  const WINDOW_DAYS = 90;
+  const now = new Date();
+  const since = new Date(now.getTime() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+  const rows = await CreditLedger.aggregate([
+    {
+      $match: {
+        userId: new mongoose.Types.ObjectId(userId),
+        type: "SPEND",
+        createdAt: { $gte: since },
+      },
+    },
+    {
+      $group: {
+        _id: "$userId",
+        spentSupply: { $sum: { $abs: "$amount" } },
+      },
+    },
+  ]);
+
+  const spentSupply90 = Number(rows?.[0]?.spentSupply || 0);
+  const avgDailySpendSupply =
+    spentSupply90 > 0 ? spentSupply90 / WINDOW_DAYS : 0;
+  const avgMonthlySpendSupply = spentSupply90 > 0 ? spentSupply90 / 3 : 0;
+
+  const estimatedDaysFor500k =
+    avgDailySpendSupply > 0 ? Math.round(500000 / avgDailySpendSupply) : null;
+
+  const recommendedOneMonthSupply = roundUpUnit(avgMonthlySpendSupply, 500000);
+  const recommendedThreeMonthsSupply = roundUpUnit(
+    avgMonthlySpendSupply * 3,
+    500000
+  );
+
+  const oneMonthSupply = Math.min(
+    MAX,
+    Math.max(MIN, recommendedOneMonthSupply || 0)
+  );
+  const threeMonthsSupply = Math.min(
+    MAX,
+    Math.max(MIN, recommendedThreeMonthsSupply || 0)
+  );
+
+  return res.json({
+    success: true,
+    data: {
+      windowDays: WINDOW_DAYS,
+      spentSupply90,
+      avgDailySpendSupply,
+      avgMonthlySpendSupply,
+      estimatedDaysFor500k,
+      hasUsageData: spentSupply90 > 0,
+      recommended: {
+        oneMonthSupply,
+        threeMonthsSupply,
+      },
+    },
+  });
 }
 
 export async function confirmVirtualAccountPayment(req, res) {
@@ -297,10 +423,10 @@ export async function requestCreditRefund(req, res) {
     });
   }
 
-  const balance = await getBalance(userId);
+  const { paidBalance } = await getBalanceBreakdown(userId);
   const desiredSupply =
     refundSupplyAmount === undefined || refundSupplyAmount === null
-      ? balance
+      ? paidBalance
       : Number(refundSupplyAmount);
 
   if (!Number.isFinite(desiredSupply) || desiredSupply <= 0) {
@@ -309,10 +435,10 @@ export async function requestCreditRefund(req, res) {
       .json({ success: false, message: "유효하지 않은 환불 금액입니다." });
   }
 
-  if (desiredSupply > balance) {
+  if (desiredSupply > paidBalance) {
     return res.status(400).json({
       success: false,
-      message: "환불 금액이 보유 크레딧을 초과합니다.",
+      message: "환불 금액이 보유 유료 크레딧을 초과합니다.",
     });
   }
 

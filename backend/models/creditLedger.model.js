@@ -10,7 +10,7 @@ const creditLedgerSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["CHARGE", "SPEND", "REFUND", "ADJUST"],
+      enum: ["CHARGE", "BONUS", "SPEND", "REFUND", "ADJUST"],
       required: true,
       index: true,
     },
