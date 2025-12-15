@@ -263,12 +263,13 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
     return {
       "x-mock-role": (user?.role || "requestor") as string,
+      "x-mock-position": (user as any)?.position || "staff",
       "x-mock-email": user?.email || "mock@abuts.fit",
       "x-mock-name": user?.name || "사용자",
       "x-mock-organization": (user as any)?.organization || "",
       "x-mock-phone": (user as any)?.phoneNumber || "",
     };
-  }, [token, user]);
+  }, [token, user?.email, user?.name, user?.role]);
 
   const ensureSetupForUpload = useCallback(async () => {
     if (!token) {

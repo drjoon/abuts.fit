@@ -64,6 +64,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
     return {
       "x-mock-role": (user?.role || userData?.role || "requestor") as string,
+      "x-mock-position": (user as any)?.position || "staff",
       "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
       "x-mock-name": user?.name || userData?.name || "사용자",
       "x-mock-organization":

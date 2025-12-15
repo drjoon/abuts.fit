@@ -1180,7 +1180,11 @@ export async function approveJoinRequest(req, res) {
     await org.save();
 
     await User.findByIdAndUpdate(userId, {
-      $set: { organization: org.name, organizationId: org._id },
+      $set: {
+        organization: org.name,
+        organizationId: org._id,
+        position: "staff",
+      },
     });
 
     return res.json({ success: true, data: { status: "approved" } });
