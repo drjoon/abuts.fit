@@ -34,6 +34,8 @@ export const authenticate = async (req, res, next) => {
 
       const mockRole =
         decodeMockHeader(req.headers["x-mock-role"]) || "manufacturer";
+      const mockPosition =
+        decodeMockHeader(req.headers["x-mock-position"]) || "staff";
       const mockUserIdRaw = decodeMockHeader(req.headers["x-mock-user-id"]);
       const mockEmail =
         decodeMockHeader(req.headers["x-mock-email"]) ||
@@ -71,6 +73,7 @@ export const authenticate = async (req, res, next) => {
           email: String(mockEmail).toLowerCase(),
           password: "mock_password_1234",
           role: String(mockRole),
+          position: String(mockPosition),
           phoneNumber: String(mockPhone),
           organization: String(mockOrganization),
           referralCode: mockReferralCode,
@@ -84,6 +87,8 @@ export const authenticate = async (req, res, next) => {
       if (dbUser) {
         const patch = {};
         if (mockName && dbUser.name !== mockName) patch.name = String(mockName);
+        if (mockPosition && dbUser.position !== mockPosition)
+          patch.position = String(mockPosition);
         if (mockOrganization && dbUser.organization !== mockOrganization) {
           patch.organization = String(mockOrganization);
         }
@@ -100,6 +105,7 @@ export const authenticate = async (req, res, next) => {
         _id: new Types.ObjectId(mockId),
         referralCode: `mock_${mockRole}`,
         role: mockRole,
+        position: mockPosition,
         active: true,
         approvedAt: now,
         createdAt: now,
@@ -158,6 +164,30 @@ export const authorize = (roles = []) => {
       return res.status(403).json({
         success: false,
         message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    }
+
+    next();
+  };
+};
+
+/**
+ * 직위 확인 미들웨어
+ * @param {Array} positions - 허용된 직위 배열
+ */
+export const authorizePosition = (positions = []) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "인증이 필요합니다.",
+      });
+    }
+
+    if (positions.length && !positions.includes(req.user.position)) {
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한(직위)이 없습니다.",
       });
     }
 

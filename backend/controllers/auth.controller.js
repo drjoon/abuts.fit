@@ -311,12 +311,18 @@ async function register(req, res) {
     const isRequestorStaff =
       normalizedRole === "requestor" && normalizedRequestorType === "staff";
 
+    let initialPosition = "staff";
+    if (normalizedRole === "requestor" && !isRequestorStaff) {
+      initialPosition = "principal";
+    }
+
     // 사용자 생성
     const user = new User({
       name,
       email,
       password,
       role: normalizedRole, // 기본값은 의뢰자
+      position: initialPosition,
       phoneNumber,
       organization: isRequestorStaff ? "" : organization,
       referralCode,

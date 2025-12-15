@@ -920,7 +920,11 @@ export async function addCoOwner(req, res) {
     await org.save();
 
     await User.findByIdAndUpdate(targetId, {
-      $set: { organizationId: org._id, organization: org.name },
+      $set: {
+        organizationId: org._id,
+        organization: org.name,
+        position: "vice_principal",
+      },
     });
 
     return res.status(201).json({ success: true, data: { added: true } });
@@ -972,6 +976,11 @@ export async function removeCoOwner(req, res) {
     }
 
     await org.save();
+
+    await User.findByIdAndUpdate(userId, {
+      $set: { position: "staff" },
+    });
+
     return res.json({ success: true, data: { removed: true } });
   } catch (error) {
     return res.status(500).json({

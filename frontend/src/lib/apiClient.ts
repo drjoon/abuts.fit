@@ -38,6 +38,7 @@ export async function apiFetch<T = any>(
   if (token === "MOCK_DEV_TOKEN") {
     try {
       const role = localStorage.getItem("abuts_mock_role") || "";
+      const position = localStorage.getItem("abuts_mock_position") || "";
       const email = localStorage.getItem("abuts_mock_email") || "";
       const name = localStorage.getItem("abuts_mock_name") || "";
       const organization =
@@ -47,6 +48,8 @@ export async function apiFetch<T = any>(
 
       if (!(finalHeaders as any)["x-mock-role"] && role)
         (finalHeaders as any)["x-mock-role"] = role;
+      if (!(finalHeaders as any)["x-mock-position"] && position)
+        (finalHeaders as any)["x-mock-position"] = position;
       if (!(finalHeaders as any)["x-mock-email"] && email)
         (finalHeaders as any)["x-mock-email"] = email;
       if (!(finalHeaders as any)["x-mock-name"] && name)
