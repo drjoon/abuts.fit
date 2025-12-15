@@ -88,6 +88,9 @@ import parseLogRoutes from "./routes/parseLog.routes.js";
 import filenameRuleRoutes from "./routes/filenameRule.routes.js";
 import requestorOrganizationRoutes from "./routes/requestorOrganization.routes.js";
 
+import creditRoutes from "./routes/credit.routes.js";
+import webhookRoutes from "./routes/webhook.routes.js";
+
 // 라우트 설정
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -103,6 +106,9 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/parse-logs", parseLogRoutes);
 app.use("/api/filename-rules", filenameRuleRoutes);
 app.use("/api/requestor-organizations", requestorOrganizationRoutes);
+
+app.use("/api/credits", creditRoutes);
+app.use("/api/webhooks", webhookRoutes);
 
 // 기본 라우트
 app.get("/", (req, res) => {

@@ -1,0 +1,25 @@
+import mongoose from "mongoose";
+
+const creditLedgerSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    type: {
+      type: String,
+      enum: ["CHARGE", "SPEND", "REFUND", "ADJUST"],
+      required: true,
+      index: true,
+    },
+    amount: { type: Number, required: true },
+    refType: { type: String, default: "" },
+    refId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    uniqueKey: { type: String, required: true, unique: true, index: true },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model("CreditLedger", creditLedgerSchema);

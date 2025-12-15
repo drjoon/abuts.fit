@@ -1,1 +1,1 @@
-export { PaymentTab } from "@/components/settings/PaymentTab";
+export { PaymentTab } from "@/components/settings/CreditPaymentTab";

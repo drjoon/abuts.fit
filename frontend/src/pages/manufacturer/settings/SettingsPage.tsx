@@ -8,7 +8,7 @@ import {
 import { AccountTab } from "./components/AccountTab";
 import { BusinessTab } from "./components/BusinessTab";
 import { PricingTab } from "@/components/settings/PricingTab";
-import { PaymentTab } from "@/components/settings/PaymentTab";
+import { PaymentTab } from "@/components/settings/CreditPaymentTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
 import { ShippingTab } from "@/components/settings/ShippingTab";
 import { User, Building2, CreditCard, Bell, Truck } from "lucide-react";

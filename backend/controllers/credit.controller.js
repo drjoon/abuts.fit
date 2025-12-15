@@ -1,0 +1,439 @@
+import crypto from "crypto";
+import mongoose from "mongoose";
+import CreditOrder from "../models/creditOrder.model.js";
+import CreditLedger from "../models/creditLedger.model.js";
+import {
+  tossCancelPayment,
+  tossConfirmPayment,
+  makeDeterministicIdempotencyKey,
+} from "../utils/tossPayments.js";
+
+function roundVat(amount) {
+  return Math.round(amount * 0.1);
+}
+
+function validateSupplyAmount(raw) {
+  const supplyAmount = Number(raw);
+  if (!Number.isFinite(supplyAmount) || supplyAmount <= 0) {
+    return { ok: false, message: "유효하지 않은 금액입니다." };
+  }
+
+  const MIN = 500000;
+  const MAX = 5000000;
+  if (supplyAmount < MIN || supplyAmount > MAX) {
+    return {
+      ok: false,
+      message: "크레딧 충전 금액은 50만원 ~ 500만원 범위여야 합니다.",
+    };
+  }
+
+  if (supplyAmount <= 1000000) {
+    if (supplyAmount % 500000 !== 0) {
+      return {
+        ok: false,
+        message: "100만원 이하는 50만원 단위로만 충전할 수 있습니다.",
+      };
+    }
+  } else {
+    if (supplyAmount % 1000000 !== 0) {
+      return {
+        ok: false,
+        message: "100만원 초과는 100만원 단위로만 충전할 수 있습니다.",
+      };
+    }
+  }
+
+  return { ok: true, supplyAmount };
+}
+
+function buildOrderId(userId) {
+  const rand = crypto.randomBytes(6).toString("hex");
+  return `CREDIT_${String(userId)}_${Date.now()}_${rand}`;
+}
+
+async function getBalance(userId) {
+  const rows = await CreditLedger.aggregate([
+    { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+    { $group: { _id: "$userId", balance: { $sum: "$amount" } } },
+  ]);
+  return rows?.[0]?.balance || 0;
+}
+
+export async function createCreditOrder(req, res) {
+  const userId = req.user._id;
+  const { supplyAmount: rawSupply } = req.body;
+
+  const validated = validateSupplyAmount(rawSupply);
+  if (!validated.ok) {
+    return res.status(400).json({ success: false, message: validated.message });
+  }
+
+  const supplyAmount = validated.supplyAmount;
+  const vatAmount = roundVat(supplyAmount);
+  const totalAmount = supplyAmount + vatAmount;
+
+  const order = await CreditOrder.create({
+    userId,
+    orderId: buildOrderId(userId),
+    supplyAmount,
+    vatAmount,
+    totalAmount,
+    status: "CREATED",
+    requestedAt: new Date(),
+  });
+
+  return res.status(201).json({
+    success: true,
+    data: {
+      id: order._id,
+      orderId: order.orderId,
+      status: order.status,
+      supplyAmount: order.supplyAmount,
+      vatAmount: order.vatAmount,
+      totalAmount: order.totalAmount,
+    },
+  });
+}
+
+export async function listMyCreditOrders(req, res) {
+  const userId = req.user._id;
+  const items = await CreditOrder.find({ userId })
+    .sort({ createdAt: -1 })
+    .select({
+      orderId: 1,
+      status: 1,
+      supplyAmount: 1,
+      vatAmount: 1,
+      totalAmount: 1,
+      paymentKey: 1,
+      approvedAt: 1,
+      depositedAt: 1,
+      virtualAccount: 1,
+      refundedSupplyAmount: 1,
+      refundedVatAmount: 1,
+      refundedTotalAmount: 1,
+      createdAt: 1,
+    })
+    .lean();
+
+  return res.json({ success: true, data: items });
+}
+
+export async function getMyCreditBalance(req, res) {
+  const userId = req.user._id;
+  const balance = await getBalance(userId);
+  return res.json({ success: true, data: { balance } });
+}
+
+export async function confirmVirtualAccountPayment(req, res) {
+  const userId = req.user._id;
+  const { paymentKey, orderId, amount } = req.body;
+
+  if (!paymentKey || !orderId || typeof amount !== "number") {
+    return res.status(400).json({
+      success: false,
+      message: "paymentKey, orderId, amount가 필요합니다.",
+    });
+  }
+
+  const order = await CreditOrder.findOne({ userId, orderId });
+  if (!order) {
+    return res
+      .status(404)
+      .json({ success: false, message: "주문을 찾을 수 없습니다." });
+  }
+
+  if (order.totalAmount !== amount) {
+    return res.status(400).json({
+      success: false,
+      message: "결제 금액이 주문 금액과 일치하지 않습니다.",
+    });
+  }
+
+  const payment = await tossConfirmPayment({ paymentKey, orderId, amount });
+
+  const status = String(payment?.status || "");
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await CreditOrder.updateOne(
+        { _id: order._id },
+        {
+          $set: {
+            paymentKey: String(payment.paymentKey || paymentKey),
+            tossSecret: String(payment.secret || ""),
+            approvedAt: new Date(),
+            status:
+              status === "WAITING_FOR_DEPOSIT" ||
+              status === "DONE" ||
+              status === "CANCELED"
+                ? status
+                : "WAITING_FOR_DEPOSIT",
+            virtualAccount: {
+              bank: String(payment?.virtualAccount?.bank || ""),
+              accountNumber: String(
+                payment?.virtualAccount?.accountNumber || ""
+              ),
+              customerName: String(payment?.virtualAccount?.customerName || ""),
+              dueDate: String(payment?.virtualAccount?.dueDate || ""),
+            },
+          },
+        },
+        { session }
+      );
+
+      if (status === "DONE") {
+        const uniqueKey = `toss:${String(
+          payment.paymentKey || paymentKey
+        )}:charge`;
+        await CreditLedger.updateOne(
+          { uniqueKey },
+          {
+            $setOnInsert: {
+              userId,
+              type: "CHARGE",
+              amount: order.supplyAmount,
+              refType: "CREDIT_ORDER",
+              refId: order._id,
+              uniqueKey,
+            },
+          },
+          { upsert: true, session }
+        );
+        await CreditOrder.updateOne(
+          { _id: order._id },
+          { $set: { depositedAt: new Date() } },
+          { session }
+        );
+      }
+    });
+  } finally {
+    session.endSession();
+  }
+
+  const updated = await CreditOrder.findById(order._id).lean();
+  return res.json({ success: true, data: updated });
+}
+
+export async function cancelMyCreditOrder(req, res) {
+  const userId = req.user._id;
+  const orderId = String(req.params.orderId || "").trim();
+
+  if (!orderId) {
+    return res
+      .status(400)
+      .json({ success: false, message: "orderId가 필요합니다." });
+  }
+
+  const order = await CreditOrder.findOne({ userId, orderId });
+  if (!order) {
+    return res
+      .status(404)
+      .json({ success: false, message: "주문을 찾을 수 없습니다." });
+  }
+
+  if (order.status === "CANCELED" || order.status === "EXPIRED") {
+    return res.json({ success: true, data: order });
+  }
+
+  if (order.status === "DONE" || order.status === "REFUNDED") {
+    return res.status(400).json({
+      success: false,
+      message: "입금 완료된 주문은 취소할 수 없습니다.",
+    });
+  }
+
+  if (order.status === "CREATED") {
+    await CreditOrder.updateOne(
+      { _id: order._id, status: "CREATED" },
+      { $set: { status: "CANCELED" } }
+    );
+    const updated = await CreditOrder.findById(order._id).lean();
+    return res.json({ success: true, data: updated });
+  }
+
+  if (order.status !== "WAITING_FOR_DEPOSIT") {
+    return res.status(400).json({
+      success: false,
+      message: "현재 상태에서는 취소할 수 없습니다.",
+    });
+  }
+
+  if (!order.paymentKey) {
+    return res.status(400).json({
+      success: false,
+      message: "결제 정보가 없어 취소할 수 없습니다.",
+    });
+  }
+
+  const idempotencyKey = makeDeterministicIdempotencyKey(
+    "cancel",
+    `${String(order.paymentKey)}:${String(order.orderId)}`
+  );
+
+  await tossCancelPayment({
+    paymentKey: order.paymentKey,
+    cancelReason: "USER_CANCEL",
+    idempotencyKey,
+  });
+
+  await CreditOrder.updateOne(
+    { _id: order._id, status: "WAITING_FOR_DEPOSIT" },
+    { $set: { status: "CANCELED" } }
+  );
+
+  const updated = await CreditOrder.findById(order._id).lean();
+  return res.json({ success: true, data: updated });
+}
+
+export async function requestCreditRefund(req, res) {
+  const userId = req.user._id;
+  const { refundSupplyAmount, refundReceiveAccount } = req.body;
+
+  if (!refundReceiveAccount || typeof refundReceiveAccount !== "object") {
+    return res.status(400).json({
+      success: false,
+      message: "refundReceiveAccount(은행/계좌/예금주)가 필요합니다.",
+    });
+  }
+
+  const balance = await getBalance(userId);
+  const desiredSupply =
+    refundSupplyAmount === undefined || refundSupplyAmount === null
+      ? balance
+      : Number(refundSupplyAmount);
+
+  if (!Number.isFinite(desiredSupply) || desiredSupply <= 0) {
+    return res
+      .status(400)
+      .json({ success: false, message: "유효하지 않은 환불 금액입니다." });
+  }
+
+  if (desiredSupply > balance) {
+    return res.status(400).json({
+      success: false,
+      message: "환불 금액이 보유 크레딧을 초과합니다.",
+    });
+  }
+
+  let remainingSupply = desiredSupply;
+  const totalVat = roundVat(desiredSupply);
+  let remainingVat = totalVat;
+
+  const orders = await CreditOrder.find({
+    userId,
+    status: "DONE",
+    paymentKey: { $ne: null },
+    $expr: {
+      $lt: [{ $ifNull: ["$refundedSupplyAmount", 0] }, "$supplyAmount"],
+    },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (!orders.length) {
+    return res
+      .status(400)
+      .json({ success: false, message: "환불 가능한 충전 내역이 없습니다." });
+  }
+
+  const allocations = [];
+
+  for (let i = 0; i < orders.length && remainingSupply > 0; i += 1) {
+    const o = orders[i];
+    const refundedSupply = Number(o.refundedSupplyAmount || 0);
+    const refundableSupply = Math.max(
+      0,
+      Number(o.supplyAmount) - refundedSupply
+    );
+    if (refundableSupply <= 0) continue;
+
+    const takeSupply = Math.min(refundableSupply, remainingSupply);
+    const isLastChunk = remainingSupply === takeSupply;
+    const takeVat = isLastChunk ? remainingVat : roundVat(takeSupply);
+    const takeTotal = takeSupply + takeVat;
+
+    const idempotencyKey = makeDeterministicIdempotencyKey(
+      "refund",
+      `${String(o.paymentKey)}:${String(refundedSupply)}:${String(takeTotal)}`
+    );
+    const payment = await tossCancelPayment({
+      paymentKey: o.paymentKey,
+      cancelReason: "CREDIT_REFUND",
+      cancelAmount: takeTotal,
+      refundReceiveAccount,
+      idempotencyKey,
+    });
+
+    const cancels = Array.isArray(payment?.cancels) ? payment.cancels : [];
+    const cancelTx = cancels[cancels.length - 1];
+    const txKey = cancelTx?.transactionKey || idempotencyKey;
+
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const nextRefundedSupply = refundedSupply + takeSupply;
+        const nextRefundedVat = Number(o.refundedVatAmount || 0) + takeVat;
+        const nextRefundedTotal =
+          Number(o.refundedTotalAmount || 0) + takeTotal;
+
+        const isFullyRefunded = nextRefundedSupply >= Number(o.supplyAmount);
+
+        await CreditOrder.updateOne(
+          { _id: o._id },
+          {
+            $set: {
+              status: isFullyRefunded ? "REFUNDED" : "DONE",
+              refundedSupplyAmount: nextRefundedSupply,
+              refundedVatAmount: nextRefundedVat,
+              refundedTotalAmount: nextRefundedTotal,
+            },
+          },
+          { session }
+        );
+
+        const uniqueKey = `toss:${String(o.paymentKey)}:refund:${String(
+          txKey
+        )}`;
+        await CreditLedger.updateOne(
+          { uniqueKey },
+          {
+            $setOnInsert: {
+              userId,
+              type: "REFUND",
+              amount: -takeSupply,
+              refType: "CREDIT_ORDER",
+              refId: o._id,
+              uniqueKey,
+            },
+          },
+          { upsert: true, session }
+        );
+      });
+    } finally {
+      session.endSession();
+    }
+
+    allocations.push({
+      creditOrderId: String(o._id),
+      paymentKey: String(o.paymentKey),
+      refundSupply: takeSupply,
+      refundVat: takeVat,
+      refundTotal: takeTotal,
+      transactionKey: String(txKey),
+    });
+
+    remainingSupply -= takeSupply;
+    remainingVat -= takeVat;
+  }
+
+  return res.json({
+    success: true,
+    data: {
+      requestedSupply: desiredSupply,
+      requestedVat: totalVat,
+      requestedTotal: desiredSupply + totalVat,
+      allocations,
+    },
+  });
+}
