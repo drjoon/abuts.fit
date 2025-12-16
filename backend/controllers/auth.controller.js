@@ -1,5 +1,6 @@
 import User from "../models/user.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
+import CreditLedger from "../models/creditLedger.model.js";
 import jwt from "jsonwebtoken";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
 import { Types } from "mongoose";
@@ -17,6 +18,54 @@ const ensureUniqueReferralCode = async () => {
   }
   throw new Error("리퍼럴 코드 생성에 실패했습니다.");
 };
+
+async function getCreditBalanceBreakdown(userId) {
+  const rows = await CreditLedger.find({ userId })
+    .sort({ createdAt: 1, _id: 1 })
+    .select({ type: 1, amount: 1 })
+    .lean();
+
+  let paid = 0;
+  let bonus = 0;
+
+  for (const r of rows) {
+    const type = String(r?.type || "");
+    const amount = Number(r?.amount || 0);
+    if (!Number.isFinite(amount)) continue;
+
+    if (type === "CHARGE") {
+      paid += amount;
+      continue;
+    }
+    if (type === "BONUS") {
+      bonus += amount;
+      continue;
+    }
+    if (type === "REFUND") {
+      paid += amount;
+      continue;
+    }
+    if (type === "ADJUST") {
+      paid += amount;
+      continue;
+    }
+    if (type === "SPEND") {
+      let spend = Math.abs(amount);
+      const fromBonus = Math.min(bonus, spend);
+      bonus -= fromBonus;
+      spend -= fromBonus;
+      paid -= spend;
+    }
+  }
+
+  const paidBalance = Math.max(0, Math.round(paid));
+  const bonusBalance = Math.max(0, Math.round(bonus));
+  return {
+    balance: paidBalance + bonusBalance,
+    paidBalance,
+    bonusBalance,
+  };
+}
 
 // // 회원가입
 // export const signup = async (req, res) => {
@@ -311,9 +360,16 @@ async function register(req, res) {
     const isRequestorStaff =
       normalizedRole === "requestor" && normalizedRequestorType === "staff";
 
+    const isRequestorCoOwner =
+      normalizedRole === "requestor" && normalizedRequestorType === "co_owner";
+
     let initialPosition = "staff";
     if (normalizedRole === "requestor" && !isRequestorStaff) {
       initialPosition = "principal";
+    }
+
+    if (isRequestorCoOwner) {
+      initialPosition = "vice_principal";
     }
 
     // 사용자 생성
@@ -332,7 +388,7 @@ async function register(req, res) {
 
     await user.save();
 
-    if (user.role === "requestor" && !isRequestorStaff) {
+    if (user.role === "requestor" && user.position === "principal") {
       const orgName = String(user.organization || "").trim();
       if (orgName) {
         const createdOrg = await RequestorOrganization.create({
@@ -686,6 +742,42 @@ function logout(req, res) {
     message: "로그아웃 되었습니다.",
   });
 }
+async function withdraw(req, res) {
+  try {
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "인증 정보가 없습니다.",
+      });
+    }
+
+    const { paidBalance } = await getCreditBalanceBreakdown(userId);
+    if (paidBalance > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "잔여 유료 크레딧 환불 완료 후 탈퇴할 수 있습니다.",
+        data: { paidBalance },
+      });
+    }
+
+    await User.updateOne(
+      { _id: userId },
+      { $set: { active: false, deletedAt: new Date() } }
+    );
+
+    return res.json({
+      success: true,
+      message: "탈퇴가 완료되었습니다.",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "탈퇴 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
 
 export default {
   register,
@@ -696,4 +788,5 @@ export default {
   forgotPassword,
   resetPassword,
   logout,
+  withdraw,
 };

@@ -94,6 +94,21 @@ const userSchema = new mongoose.Schema(
     resetPasswordToken: String,
     resetPasswordExpires: Date,
     lastLogin: Date,
+    social: {
+      provider: {
+        type: String,
+        enum: ["google", "kakao"],
+        default: null,
+      },
+      providerUserId: {
+        type: String,
+        default: null,
+      },
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
     active: {
       type: Boolean,
       default: true,

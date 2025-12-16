@@ -75,6 +75,11 @@ const HelpPage = lazy(() =>
 const ContactPage = lazy(() =>
   import("./pages/ContactPage").then((m) => ({ default: m.ContactPage }))
 );
+const OAuthCallbackPage = lazy(() =>
+  import("./pages/OAuthCallbackPage").then((m) => ({
+    default: m.OAuthCallbackPage,
+  }))
+);
 const TermsPage = lazy(() =>
   import("./pages/TermsPage").then((m) => ({ default: m.TermsPage }))
 );
@@ -136,6 +141,7 @@ const App = () => {
                 <Route path="/" element={<Index />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
+                <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
                 <Route path="/help" element={<HelpPage />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/terms" element={<TermsPage />} />

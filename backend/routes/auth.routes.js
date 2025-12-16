@@ -1,6 +1,7 @@
 import { Router } from "express";
 const router = Router();
 import authController from "../controllers/auth.controller.js";
+import oauthController from "../controllers/oauth.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 
 // 회원가입
@@ -26,5 +27,11 @@ router.post("/reset-password/:token", authController.resetPassword);
 
 // 로그아웃 (인증 필요)
 router.post("/logout", authenticate, authController.logout);
+router.post("/withdraw", authenticate, authController.withdraw);
+
+router.get("/oauth/google/start", oauthController.googleStart);
+router.get("/oauth/google/callback", oauthController.googleCallback);
+router.get("/oauth/kakao/start", oauthController.kakaoStart);
+router.get("/oauth/kakao/callback", oauthController.kakaoCallback);
 
 export default router;

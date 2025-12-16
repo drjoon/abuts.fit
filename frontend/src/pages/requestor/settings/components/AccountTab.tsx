@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/lib/utils";
+import { MultiActionDialog } from "@/components/MultiActionDialog";
 import {
   User,
   Save,
@@ -24,6 +25,7 @@ import {
   RefreshCcw,
   Check,
   ChevronsUpDown,
+  UserX,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -57,7 +59,7 @@ interface AccountTabProps {
 
 export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
-  const { token, user } = useAuthStore();
+  const { token, user, logout } = useAuthStore();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
@@ -70,6 +72,16 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     google: false,
     kakao: false,
   });
+
+  const [withdrawForm, setWithdrawForm] = useState({
+    bank: "",
+    accountNumber: "",
+    holderName: "",
+  });
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [paidBalance, setPaidBalance] = useState<number>(0);
+  const [loadingPaidBalance, setLoadingPaidBalance] = useState(false);
+  const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!reason) return;
@@ -175,6 +187,107 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       "x-mock-phone": (user as any)?.phoneNumber || "",
     };
   }, [token, user?.email, user?.name, user?.role, userData]);
+
+  const fetchPaidBalance = useCallback(async () => {
+    if (!token) return 0;
+    setLoadingPaidBalance(true);
+    try {
+      const res = await request<any>({
+        path: "/api/credits/balance",
+        method: "GET",
+        token,
+        headers: mockHeaders,
+      });
+
+      if (!res.ok) {
+        setPaidBalance(0);
+        return 0;
+      }
+
+      const body: any = res.data || {};
+      const data = body.data || body;
+      const next = Number(data?.paidBalance || 0);
+      setPaidBalance(Number.isFinite(next) ? next : 0);
+      return Number.isFinite(next) ? next : 0;
+    } catch {
+      setPaidBalance(0);
+      return 0;
+    } finally {
+      setLoadingPaidBalance(false);
+    }
+  }, [mockHeaders, token]);
+
+  useEffect(() => {
+    void fetchPaidBalance();
+  }, [fetchPaidBalance]);
+
+  const handleWithdraw = async () => {
+    if (!token) return;
+    if (withdrawing) return;
+
+    setWithdrawing(true);
+    try {
+      const currentPaidBalance = await fetchPaidBalance();
+
+      if (currentPaidBalance > 0) {
+        const bank = withdrawForm.bank.trim();
+        const accountNumber = withdrawForm.accountNumber.trim();
+        const holderName = withdrawForm.holderName.trim();
+
+        if (!bank || !accountNumber || !holderName) {
+          toast({
+            title: "환불 계좌 정보를 입력해주세요",
+            description: "은행/계좌번호/예금주가 필요합니다.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const refundRes = await request<any>({
+          path: "/api/credits/refunds",
+          method: "POST",
+          token,
+          headers: mockHeaders,
+          jsonBody: {
+            refundReceiveAccount: {
+              bank,
+              accountNumber,
+              holderName,
+            },
+          },
+        });
+
+        if (!refundRes.ok) {
+          const body: any = refundRes.data || {};
+          throw new Error(body?.message || "환불 신청에 실패했습니다.");
+        }
+      }
+
+      const withdrawRes = await request<any>({
+        path: "/api/auth/withdraw",
+        method: "POST",
+        token,
+        headers: mockHeaders,
+      });
+
+      if (!withdrawRes.ok) {
+        const body: any = withdrawRes.data || {};
+        throw new Error(body?.message || "탈퇴 처리에 실패했습니다.");
+      }
+
+      logout();
+      navigate("/", { replace: true });
+    } catch (e: any) {
+      toast({
+        title: "탈퇴 처리 실패",
+        description: String(e?.message || "탈퇴 처리에 실패했습니다."),
+        variant: "destructive",
+      });
+    } finally {
+      setWithdrawing(false);
+      setWithdrawDialogOpen(false);
+    }
+  };
 
   const avatarOptions = useMemo(() => {
     const seedBase = (accountData.email || accountData.name || "user")
@@ -952,6 +1065,85 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           </div>
         )}
 
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
+            <UserX className="h-4 w-4" />
+            탈퇴
+          </div>
+
+          <div className="text-xs text-muted-foreground">
+            잔여 유료 크레딧이 있는 경우 환불 신청 후 탈퇴가 진행됩니다.
+          </div>
+
+          {loadingPaidBalance ? (
+            <div className="text-xs text-muted-foreground">
+              크레딧 정보를 불러오는 중...
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              잔여 유료 크레딧:{" "}
+              <span className="font-medium">
+                {paidBalance.toLocaleString()}원
+              </span>
+            </div>
+          )}
+
+          {paidBalance > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="withdraw-bank">은행</Label>
+                <Input
+                  id="withdraw-bank"
+                  value={withdrawForm.bank}
+                  onChange={(e) =>
+                    setWithdrawForm((prev) => ({
+                      ...prev,
+                      bank: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="withdraw-account">계좌번호</Label>
+                <Input
+                  id="withdraw-account"
+                  value={withdrawForm.accountNumber}
+                  onChange={(e) =>
+                    setWithdrawForm((prev) => ({
+                      ...prev,
+                      accountNumber: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="withdraw-holder">예금주</Label>
+                <Input
+                  id="withdraw-holder"
+                  value={withdrawForm.holderName}
+                  onChange={(e) =>
+                    setWithdrawForm((prev) => ({
+                      ...prev,
+                      holderName: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => setWithdrawDialogOpen(true)}
+              disabled={withdrawing}
+            >
+              {withdrawing ? "처리 중..." : "탈퇴 신청"}
+            </Button>
+          </div>
+        </div>
+
         <div className="flex justify-end">
           <Button
             onClick={handleSave}
@@ -965,6 +1157,36 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             저장하기
           </Button>
         </div>
+
+        <MultiActionDialog
+          open={withdrawDialogOpen}
+          title="정말 탈퇴하시겠어요?"
+          description={
+            <div className="space-y-2">
+              <div>
+                잔여 유료 크레딧이 있으면 환불 신청 후 탈퇴가 완료됩니다.
+              </div>
+              <div className="text-sm">
+                잔여 유료 크레딧: <b>{paidBalance.toLocaleString()}원</b>
+              </div>
+            </div>
+          }
+          onClose={() => setWithdrawDialogOpen(false)}
+          actions={[
+            {
+              label: "취소",
+              variant: "secondary",
+              onClick: () => setWithdrawDialogOpen(false),
+              disabled: withdrawing,
+            },
+            {
+              label: "탈퇴 진행",
+              variant: "danger",
+              onClick: handleWithdraw,
+              disabled: withdrawing,
+            },
+          ]}
+        />
       </CardContent>
     </Card>
   );
