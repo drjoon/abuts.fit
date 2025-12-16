@@ -435,10 +435,10 @@ export async function updateRequestStatus(req, res) {
 export async function addMessage(req, res) {
   try {
     const requestId = req.params.id;
-    const { content } = req.body;
+    const { content, attachments } = req.body;
 
     // 메시지 내용 유효성 검사
-    if (!content) {
+    if (!content || !content.trim()) {
       return res.status(400).json({
         success: false,
         message: "메시지 내용은 필수입니다.",
@@ -466,11 +466,15 @@ export async function addMessage(req, res) {
       });
     }
 
-    // 접근 권한 확인 (의뢰자, 관리자만 메시지 추가 가능)
+    // 접근 권한 확인 (의뢰자, 제조사, 관리자만 메시지 추가 가능)
     const isRequestor = canAccessRequestAsRequestor(req, request);
+    const isManufacturer =
+      req.user.role === "manufacturer" &&
+      request.manufacturer &&
+      request.manufacturer.toString() === req.user._id.toString();
     const isAdmin = req.user.role === "admin";
 
-    if (!isRequestor && !isAdmin) {
+    if (!isRequestor && !isManufacturer && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰에 메시지를 추가할 권한이 없습니다.",
@@ -480,13 +484,17 @@ export async function addMessage(req, res) {
     // 메시지 추가
     const newMessage = {
       sender: req.user._id,
-      content,
-      createdAt: Date.now(),
+      content: content.trim(),
+      attachments: attachments || [],
       isRead: false,
+      createdAt: Date.now(),
     };
 
     request.messages.push(newMessage);
     const updatedRequest = await request.save();
+
+    // 메시지 sender populate
+    await updatedRequest.populate("messages.sender", "name email role");
 
     res.status(201).json({
       success: true,

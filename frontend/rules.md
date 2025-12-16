@@ -43,14 +43,18 @@
 ## 4. 페이지 및 컴포넌트 구조
 
 ### 4.1 Manufacturer
+
 `pages/manufacturer/worksheet/` 하위에 `custom_abutment`, `crown` 등 제품군별 폴더를 두고, 그 하위에 공정 단계(`request`, `machining` 등)를 둡니다.
 
 ### 4.2 Requestor & Admin
+
 기능 단위로 폴더를 구분합니다.
+
 - Requestor: `new_request`, `worksheet`, `dashboard`, `settings`
 - Admin: `users`, `monitoring`, `support`, `system`, `dashboard`
 
 ### 4.3 공통 규칙
+
 - **페이지 전용 컴포넌트**: 해당 페이지 폴더 하위 `components/`에 위치
 - **Page Import 금지**: 다른 페이지 폴더를 import하지 않음
 - **Settings**: 역할별로 페이지 파일을 분리 (`pages/requestor/settings/SettingsPage.tsx` 등)
@@ -69,3 +73,64 @@
   - 의미:
     - 살짝 둥근 모서리(2xl)와 옅은 그림자(shadow-sm)를 기본으로, hover 시 `shadow-lg`만 강하게 하여 **푸른 글로우 대신 자연스러운 카드 부각**을 사용합니다.
     - 배경은 `bg-white/80`, 테두리는 `border-gray-200`로 통일합니다.
+
+## 7. 채팅 기능 규칙
+
+### 7.1 채팅 타입
+
+- **Request Chat (의뢰 채팅)**: `useRequestChat` 훅 사용
+
+  - 특정 의뢰(Request)에 종속된 채팅
+  - API: `POST /api/requests/:id/messages`
+  - 참여자: Requestor + Manufacturer (할당시) + Admin
+
+- **Direct Chat (독립 채팅)**: `useChatRooms`, `useChatMessages` 훅 사용
+  - 의뢰와 무관한 일반 소통
+  - API: `/api/chats/rooms`, `/api/chats/rooms/:roomId/messages`
+  - Admin은 모든 사용자와 채팅 가능, 일반 사용자는 Admin과만 가능
+
+### 7.2 채팅 훅 사용법
+
+**useRequestChat** (`shared/hooks/useRequestChat.ts`):
+
+```typescript
+const { messages, loading, sendMessage } = useRequestChat({
+  requestId: "...",
+  currentUserId: user?.id,
+  currentUserRole: user?.role,
+  currentUserName: user?.name,
+});
+```
+
+**useChatRooms** (`shared/hooks/useChatRooms.ts`):
+
+```typescript
+const { rooms, loading, fetchRooms, createOrGetChatRoom } = useChatRooms();
+```
+
+**useChatMessages** (`shared/hooks/useChatMessages.ts`):
+
+```typescript
+const { messages, loading, sendMessage } = useChatMessages({ roomId });
+```
+
+**useUserSearch** (`shared/hooks/useUserSearch.ts`):
+
+```typescript
+const { users, searchUsers } = useUserSearch();
+await searchUsers("검색어", "admin"); // 역할 필터링 선택사항
+```
+
+### 7.3 파일 첨부
+
+- 파일은 먼저 `/api/files/upload` 로 S3에 업로드
+- 반환된 메타데이터를 `attachments` 배열에 포함하여 `sendMessage` 호출
+- 기존 `useS3TempUpload` 훅 활용 가능
+
+### 7.4 채팅 UI 컴포넌트
+
+- **ChatWidget** (`components/ChatWidget.tsx`): 전역 채팅 위젯 (기존)
+- **ChatConversation** (`components/chat/ChatConversation.tsx`): 대화 UI
+- **AdminChatManagement** (`pages/admin/support/AdminChatManagement.tsx`): Admin 채팅 관리
+
+새로운 채팅 UI를 추가할 때는 위 훅들을 활용하여 구현하고, 일관된 디자인을 유지합니다.

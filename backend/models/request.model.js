@@ -167,6 +167,41 @@ const requestSchema = new mongoose.Schema(
       paidAt: Date,
       amount: Number,
     },
+
+    messages: [
+      {
+        sender: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        content: {
+          type: String,
+          required: true,
+        },
+        attachments: [
+          {
+            fileName: String,
+            fileType: String,
+            fileSize: Number,
+            s3Key: String,
+            s3Url: String,
+            uploadedAt: {
+              type: Date,
+              default: Date.now,
+            },
+          },
+        ],
+        isRead: {
+          type: Boolean,
+          default: false,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   {
     timestamps: true, // createdAt, updatedAt 자동 생성
