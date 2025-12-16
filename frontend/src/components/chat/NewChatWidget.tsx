@@ -87,10 +87,6 @@ export const NewChatWidget = () => {
     void load();
   }, [user, isAuthenticated, token]);
 
-  if (!isAuthenticated || !user || user.role === "admin") {
-    return null;
-  }
-
   const roomId = room?._id;
   const {
     messages,
@@ -99,14 +95,18 @@ export const NewChatWidget = () => {
     sendMessage,
   } = useChatMessages({ roomId, autoFetch: true });
 
+  const title = useMemo(() => {
+    return "어벗츠.핏 고객지원";
+  }, []);
+
+  if (!isAuthenticated || !user || user.role === "admin") {
+    return null;
+  }
+
   const totalUnread =
     typeof (room as any)?.unreadCount === "number"
       ? (room as any).unreadCount
       : 0;
-
-  const title = useMemo(() => {
-    return "어벗츠.핏 고객지원";
-  }, []);
 
   const handleSend = async () => {
     if (!roomId) return;
