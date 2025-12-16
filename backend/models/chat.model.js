@@ -30,6 +30,11 @@ const chatSchema = new mongoose.Schema(
         },
       },
     ],
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Chat",
+      default: null,
+    },
     readBy: [
       {
         userId: {

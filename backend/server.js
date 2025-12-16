@@ -1,8 +1,10 @@
+import { createServer } from "http";
 import app from "./app.js";
 import supportRoutes from "./routes/support.routes.js";
 import implantPresetRoutes from "./routes/implantPreset.routes.js";
 import { config } from "dotenv";
 import { startCreditJobs } from "./utils/creditJobs.js";
+import { initializeSocket } from "./socket.js";
 
 // 환경 변수 로드
 config();
@@ -10,8 +12,15 @@ config();
 // 포트 설정 (기본값 5001)
 const PORT = process.env.PORT || 5001;
 
+// HTTP 서버 생성
+const server = createServer(app);
+
+// Socket.io 초기화
+initializeSocket(server);
+
 // 서버 시작
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
+  console.log(`Socket.io가 활성화되었습니다.`);
   startCreditJobs();
 });

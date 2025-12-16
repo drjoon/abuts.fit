@@ -192,6 +192,10 @@ const requestSchema = new mongoose.Schema(
             },
           },
         ],
+        replyTo: {
+          type: mongoose.Schema.Types.ObjectId,
+          default: null,
+        },
         isRead: {
           type: Boolean,
           default: false,

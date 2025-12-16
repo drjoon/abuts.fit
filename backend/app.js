@@ -91,6 +91,7 @@ import requestorOrganizationRoutes from "./routes/requestorOrganization.routes.j
 import creditRoutes from "./routes/credit.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
+import notificationRoutes from "./routes/notification.routes.js";
 
 // 라우트 설정
 app.use("/api/auth", authRoutes);
@@ -111,6 +112,7 @@ app.use("/api/requestor-organizations", requestorOrganizationRoutes);
 app.use("/api/credits", creditRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/chats", chatRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // 기본 라우트
 app.get("/", (req, res) => {
