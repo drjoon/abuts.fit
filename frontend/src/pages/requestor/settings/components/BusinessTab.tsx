@@ -18,6 +18,18 @@ import {
   LicenseStatus,
   MembershipStatus,
 } from "./business/types";
+import {
+  normalizeBusinessNumber,
+  normalizePhoneNumber,
+  isValidEmail,
+  isValidAddress,
+} from "./business/validations";
+import {
+  handleSave as handleSaveImpl,
+  handleDeleteLicense as handleDeleteLicenseImpl,
+  handleJoinOrLeave,
+  handleJoinRequest as handleJoinRequestImpl,
+} from "./business/handlers";
 
 interface BusinessTabProps {
   userData: {
@@ -279,208 +291,66 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   const handleCancelJoinRequest = async (organizationId: string) => {
-    try {
-      if (!token) {
-        toast({
-          title: "로그인이 필요합니다",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-      const orgId = String(organizationId || "").trim();
-      if (!orgId) return;
-
-      setCancelLoadingOrgId(orgId);
-      const res = await request<any>({
-        path: `/api/requestor-organizations/join-requests/${orgId}/cancel`,
-        method: "POST",
-        token,
-        headers: mockHeaders,
-      });
-
-      if (!res.ok) {
-        const message = String((res.data as any)?.message || "").trim();
-        toast({
-          title: "신청 취소 실패",
-          description: message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      toast({ title: "신청이 취소되었습니다" });
-      await refreshMyJoinRequests();
-      await refreshMembership();
-    } finally {
-      setCancelLoadingOrgId("");
-    }
+    await handleJoinOrLeave({
+      token,
+      organizationId,
+      action: "cancel",
+      mockHeaders,
+      toast,
+      setCancelLoadingOrgId,
+      refreshMyJoinRequests,
+      refreshMembership,
+    });
   };
 
   const handleDeleteLicense = async () => {
-    try {
-      if (!token) {
-        toast({
-          title: "로그인이 필요합니다",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      if (membership !== "owner") {
-        toast({
-          title: "대표자만 삭제할 수 있어요",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      if (!licenseFileName && !licenseS3Key && !licenseFileId) {
-        return;
-      }
-
-      setLicenseDeleteLoading(true);
-      const res = await request<any>({
-        path: "/api/requestor-organizations/me/business-license",
-        method: "DELETE",
-        token,
-        headers: mockHeaders,
-      });
-
-      if (!res.ok) {
-        const msg = String((res.data as any)?.message || "").trim();
-        toast({
-          title: "삭제 실패",
-          description: msg || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      setLicenseFileName("");
-      setLicenseFileId("");
-      setLicenseS3Key("");
-      setLicenseStatus("missing");
-      setIsVerified(false);
-      setExtracted({});
-      setErrors({});
-      setBusinessData((prev) => ({
-        ...prev,
-        companyName: "",
-        businessNumber: "",
-        address: "",
-        phone: "",
-      }));
-      setCompanyNameTouched(false);
-
-      toast({
-        title: "삭제되었습니다",
-        duration: 2000,
-      });
-    } finally {
-      setLicenseDeleteLoading(false);
-    }
+    await handleDeleteLicenseImpl({
+      token,
+      membership,
+      licenseFileName,
+      licenseS3Key,
+      licenseFileId,
+      mockHeaders,
+      toast,
+      setLicenseDeleteLoading,
+      setLicenseFileName,
+      setLicenseFileId,
+      setLicenseS3Key,
+      setLicenseStatus,
+      setIsVerified,
+      setExtracted,
+      setErrors,
+      setBusinessData,
+      setCompanyNameTouched,
+    });
   };
 
   const handleLeaveOrganization = async (organizationId: string) => {
-    try {
-      if (!token) {
-        toast({
-          title: "로그인이 필요합니다",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-      const orgId = String(organizationId || "").trim();
-      if (!orgId) return;
-
-      setCancelLoadingOrgId(orgId);
-      const res = await request<any>({
-        path: `/api/requestor-organizations/join-requests/${orgId}/leave`,
-        method: "POST",
-        token,
-        headers: mockHeaders,
-      });
-
-      if (!res.ok) {
-        const message = String((res.data as any)?.message || "").trim();
-        toast({
-          title: "승인 취소 실패",
-          description: message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      toast({ title: "승인이 취소되었습니다" });
-      await refreshMyJoinRequests();
-      await refreshMembership();
-    } finally {
-      setCancelLoadingOrgId("");
-    }
+    await handleJoinOrLeave({
+      token,
+      organizationId,
+      action: "leave",
+      mockHeaders,
+      toast,
+      setCancelLoadingOrgId,
+      refreshMyJoinRequests,
+      refreshMembership,
+    });
   };
 
   const handleJoinRequest = async () => {
-    try {
-      if (!token) {
-        toast({
-          title: "로그인이 필요합니다",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-      if (!selectedOrg?._id) {
-        toast({
-          title: "기공소를 선택해주세요",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      setJoinLoading(true);
-      const res = await request<any>({
-        path: "/api/requestor-organizations/join-requests",
-        method: "POST",
-        token,
-        headers: mockHeaders,
-        jsonBody: { organizationId: selectedOrg._id },
-      });
-
-      if (!res.ok) {
-        const message = String((res.data as any)?.message || "").trim();
-        toast({
-          title: "소속 신청 실패",
-          description: message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      toast({ title: "소속 신청이 접수되었습니다" });
-      setOrgSearch("");
-      setOrgSearchResults([]);
-      setSelectedOrg(null);
-      await refreshMembership();
-      await refreshMyJoinRequests();
-    } catch {
-      toast({
-        title: "소속 신청 실패",
-        description: "네트워크 오류가 발생했습니다.",
-        variant: "destructive",
-        duration: 3000,
-      });
-    } finally {
-      setJoinLoading(false);
-    }
+    await handleJoinRequestImpl({
+      token,
+      selectedOrgId: selectedOrg?._id,
+      mockHeaders,
+      toast,
+      setJoinLoading,
+      setOrgSearch,
+      setOrgSearchResults,
+      setSelectedOrg,
+      refreshMembership,
+      refreshMyJoinRequests,
+    });
   };
 
   const currentOrgName = useMemo(() => {
@@ -503,179 +373,18 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     return "미소속";
   }, [isPrimaryOwner, membership]);
 
-  const normalizeBusinessNumber = (input: string) => {
-    const digits = String(input || "").replace(/\D/g, "");
-    if (digits.length !== 10) return "";
-    return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
-  };
-
-  const normalizePhoneNumber = (input: string) => {
-    const digits = String(input || "").replace(/\D/g, "");
-    if (!digits.startsWith("0")) return "";
-    if (digits.startsWith("02")) {
-      if (digits.length === 9)
-        return `02-${digits.slice(2, 5)}-${digits.slice(5)}`;
-      if (digits.length === 10)
-        return `02-${digits.slice(2, 6)}-${digits.slice(6)}`;
-      return "";
-    }
-    if (digits.length === 10) {
-      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-    }
-    if (digits.length === 11) {
-      return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-    }
-    return "";
-  };
-
-  const isValidEmail = (input: string) => {
-    const v = String(input || "").trim();
-    if (!v) return false;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-  };
-
-  const isValidAddress = (input: string) => {
-    const v = String(input || "").trim();
-    return v.length >= 5;
-  };
-
   const handleSave = async () => {
-    try {
-      if (!token) {
-        toast({
-          title: "로그인이 필요합니다",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      const companyName = String(businessData.companyName || "").trim();
-      const repName = String(extracted.representativeName || "").trim();
-      const phoneNumberRaw = String(businessData.phone || "").trim();
-      const businessNumberRaw = String(
-        businessData.businessNumber || ""
-      ).trim();
-      const businessType = String(extracted.businessType || "").trim();
-      const businessItem = String(extracted.businessItem || "").trim();
-      const taxEmail = String(extracted.email || "").trim();
-      const address = String(businessData.address || "").trim();
-
-      const normalizedBusinessNumber =
-        normalizeBusinessNumber(businessNumberRaw);
-      const normalizedPhoneNumber = normalizePhoneNumber(phoneNumberRaw);
-
-      const nextErrors: Record<string, boolean> = {
-        companyName: !companyName,
-        representativeName: !repName,
-        phone: !phoneNumberRaw,
-        businessNumber: !businessNumberRaw,
-        businessType: !businessType,
-        businessItem: !businessItem,
-        email: !taxEmail,
-        address: !address,
-      };
-
-      if (Object.values(nextErrors).some(Boolean)) {
-        setErrors(nextErrors);
-        toast({
-          title: "필수 항목을 입력해주세요",
-          variant: "destructive",
-          duration: 3500,
-        });
-        return;
-      }
-
-      if (!normalizedBusinessNumber) {
-        setErrors((prev) => ({ ...prev, businessNumber: true }));
-        toast({
-          title: "사업자등록번호 형식이 올바르지 않습니다",
-          variant: "destructive",
-          duration: 3500,
-        });
-        return;
-      }
-
-      if (!normalizedPhoneNumber) {
-        setErrors((prev) => ({ ...prev, phone: true }));
-        toast({
-          title: "전화번호 형식이 올바르지 않습니다",
-          description: "숫자만 입력해도 자동으로 형식이 맞춰집니다.",
-          variant: "destructive",
-          duration: 3500,
-        });
-        return;
-      }
-
-      if (!isValidEmail(taxEmail)) {
-        setErrors((prev) => ({ ...prev, email: true }));
-        toast({
-          title: "세금계산서 이메일 형식이 올바르지 않습니다",
-          variant: "destructive",
-          duration: 3500,
-        });
-        return;
-      }
-
-      if (!isValidAddress(address)) {
-        setErrors((prev) => ({ ...prev, address: true }));
-        toast({
-          title: "주소 형식이 올바르지 않습니다",
-          description: "주소를 5자 이상 입력해주세요.",
-          variant: "destructive",
-          duration: 3500,
-        });
-        return;
-      }
-
-      const res = await request<any>({
-        path: "/api/requestor-organizations/me",
-        method: "PUT",
-        token,
-        headers: mockHeaders,
-        jsonBody: {
-          name: companyName,
-          representativeName: repName,
-          phoneNumber: normalizedPhoneNumber,
-          businessNumber: normalizedBusinessNumber,
-          businessType,
-          businessItem,
-          email: taxEmail,
-          address,
-        },
-      });
-
-      if (!res.ok) {
-        toast({
-          title: "저장 실패",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      setErrors({});
-      setBusinessData((prev) => ({
-        ...prev,
-        phone: normalizedPhoneNumber,
-        businessNumber: normalizedBusinessNumber,
-      }));
-
-      toast({
-        title: "설정이 저장되었습니다",
-        description: "사업자 정보가 성공적으로 업데이트되었습니다.",
-      });
-
-      if (nextPath) {
-        navigate(nextPath);
-      }
-    } catch {
-      toast({
-        title: "저장 실패",
-        variant: "destructive",
-        duration: 3000,
-      });
-    }
+    await handleSaveImpl({
+      token,
+      businessData,
+      extracted,
+      mockHeaders,
+      toast,
+      setErrors,
+      setBusinessData,
+      navigate,
+      nextPath,
+    });
   };
 
   const handleFileUpload = async (file: File) => {

@@ -1,0 +1,35 @@
+export const normalizeBusinessNumber = (input: string): string => {
+  const digits = String(input || "").replace(/\D/g, "");
+  if (digits.length !== 10) return "";
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+};
+
+export const normalizePhoneNumber = (input: string): string => {
+  const digits = String(input || "").replace(/\D/g, "");
+  if (!digits.startsWith("0")) return "";
+  if (digits.startsWith("02")) {
+    if (digits.length === 9)
+      return `02-${digits.slice(2, 5)}-${digits.slice(5)}`;
+    if (digits.length === 10)
+      return `02-${digits.slice(2, 6)}-${digits.slice(6)}`;
+    return "";
+  }
+  if (digits.length === 10) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }
+  return "";
+};
+
+export const isValidEmail = (input: string): boolean => {
+  const v = String(input || "").trim();
+  if (!v) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+};
+
+export const isValidAddress = (input: string): boolean => {
+  const v = String(input || "").trim();
+  return v.length >= 5;
+};
