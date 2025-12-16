@@ -21,6 +21,7 @@ export interface ChatMessage {
   };
   content: string;
   attachments?: Array<{
+    fileId?: string;
     fileName: string;
     fileType: string;
     fileSize: number;

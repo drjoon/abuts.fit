@@ -7,11 +7,9 @@ import {
   onNotification,
   SocketNotification,
 } from "@/lib/socket";
-import { useToast } from "./use-toast";
 
 export const useSocket = () => {
-  const { token, user } = useAuthStore();
-  const { toast } = useToast();
+  const { token } = useAuthStore();
   const socketInitialized = useRef(false);
 
   useEffect(() => {
@@ -21,14 +19,7 @@ export const useSocket = () => {
 
       // 알림 수신
       const unsubscribe = onNotification((notification: SocketNotification) => {
-        // 토스트로 알림 표시
-        if (notification.type === "new-message") {
-          toast({
-            title: notification.title || "새 메시지",
-            description:
-              notification.message || "새로운 메시지가 도착했습니다.",
-          });
-        }
+        if (notification.type === "new-message") return;
       });
 
       return () => {
@@ -42,7 +33,7 @@ export const useSocket = () => {
         socketInitialized.current = false;
       }
     };
-  }, [token, toast]);
+  }, [token]);
 
   return {
     socket: getSocket(),

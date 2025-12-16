@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import File from "../models/file.model.js";
 import Request from "../models/request.model.js";
+import ChatRoom from "../models/chatRoom.model.js";
+import Chat from "../models/chat.model.js";
 import s3Utils from "../utils/s3.utils.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -424,10 +426,42 @@ export const getFileDownloadUrl = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid file ID");
   }
 
+  const fileObjectId = new mongoose.Types.ObjectId(id);
   const file = await File.findById(id);
 
   if (!file) {
     throw new ApiError(404, "File not found");
+  }
+
+  const userId = req.user?._id;
+  const isAdmin = req.user?.role === "admin";
+  const isUploader =
+    userId && String(file.uploadedBy || "") === String(userId || "");
+
+  let allowed = !!isAdmin || !!isUploader;
+
+  if (!allowed && userId) {
+    const roomIds = await ChatRoom.find({
+      participants: userId,
+      isArchived: false,
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const ids = Array.isArray(roomIds) ? roomIds.map((r) => r._id) : [];
+    if (ids.length > 0) {
+      const exists = await Chat.findOne({
+        roomId: { $in: ids },
+        attachments: { $elemMatch: { fileId: fileObjectId } },
+      })
+        .select({ _id: 1 })
+        .lean();
+      allowed = !!exists;
+    }
+  }
+
+  if (!allowed) {
+    throw new ApiError(403, "Forbidden");
   }
 
   const signedUrl = await s3Utils.getSignedUrl(file.key);

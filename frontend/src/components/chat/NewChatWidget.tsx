@@ -1,29 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { MessageSquare, X, Minimize2, Send, Paperclip } from "lucide-react";
+import { MessageSquare, X, Minimize2 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/lib/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import type { ChatRoom } from "@/shared/hooks/useChatRooms";
+import { useToast } from "@/shared/hooks/use-toast";
+import {
+  useS3TempUpload,
+  type TempUploadedFile,
+} from "@/shared/hooks/useS3TempUpload";
+import {
+  ChatComposer,
+  type RequestPickItem,
+} from "@/components/chat/ChatComposer";
 
 type ViewMode = "chats";
 
-type RequestPickItem = {
-  requestId: string;
-  patientName: string;
-  tooth: string;
-};
-
 export const NewChatWidget = () => {
   const { user, isAuthenticated, token } = useAuthStore();
+  const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [viewMode] = useState<ViewMode>("chats");
@@ -31,7 +29,11 @@ export const NewChatWidget = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<TempUploadedFile[]>([]);
   const [requestPicks, setRequestPicks] = useState<RequestPickItem[]>([]);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const { uploadFiles } = useS3TempUpload({ token });
 
   useEffect(() => {
     const load = async () => {
@@ -95,6 +97,68 @@ export const NewChatWidget = () => {
     sendMessage,
   } = useChatMessages({ roomId, autoFetch: true });
 
+  useEffect(() => {
+    if (!isOpen || isMinimized) return;
+    const raf = window.requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [isOpen, isMinimized, messages.length, messagesLoading]);
+
+  const myIdCandidates = useMemo(() => {
+    const ids = [user?.mockUserId, user?.id]
+      .map((x) => String(x || "").trim())
+      .filter(Boolean);
+    return new Set(ids);
+  }, [user?.mockUserId, user?.id]);
+
+  useEffect(() => {
+    if (!token || !isAuthenticated) return;
+    if (isOpen) return;
+
+    const tick = async () => {
+      try {
+        const roomRes = await apiFetch<any>({
+          path: "/api/chats/support-room",
+          method: "GET",
+          token,
+        });
+        if (!roomRes.ok) return;
+        const roomBody = roomRes.data || {};
+        const roomData = (roomBody as any)?.data || roomBody;
+        setRoom(roomData as ChatRoom);
+      } catch {
+        // ignore
+      }
+    };
+
+    void tick();
+    const id = window.setInterval(tick, 5000);
+    return () => window.clearInterval(id);
+  }, [token, isAuthenticated, isOpen]);
+
+  useEffect(() => {
+    const refreshRoomUnread = async () => {
+      if (!isOpen || !roomId || !token) return;
+      if (messagesLoading) return;
+      try {
+        const roomRes = await apiFetch<any>({
+          path: "/api/chats/support-room",
+          method: "GET",
+          token,
+        });
+        if (!roomRes.ok) return;
+        const roomBody = roomRes.data || {};
+        const roomData = (roomBody as any)?.data || roomBody;
+        setRoom(roomData as ChatRoom);
+      } catch {
+        // ignore
+      }
+    };
+
+    void refreshRoomUnread();
+  }, [isOpen, roomId, messagesLoading, token]);
+
   const title = useMemo(() => {
     return "어벗츠.핏 고객지원";
   }, []);
@@ -109,11 +173,64 @@ export const NewChatWidget = () => {
       : 0;
 
   const handleSend = async () => {
-    if (!roomId) return;
-    const content = draft.trim();
-    if (!content) return;
-    await sendMessage(content);
-    setDraft("");
+    if (!roomId || isSending) return;
+    const text = draft.trim();
+    const attachments = pendingFiles
+      .map((f) => {
+        const fileId = String(f._id || "").trim();
+        const s3Key = String(f.key || "").trim();
+        const s3Url = String(f.location || "").trim();
+        if (!s3Key || !s3Url) return null;
+        return {
+          fileId,
+          fileName: String(f.originalName || "").trim(),
+          fileType: String(f.mimetype || "").trim(),
+          fileSize: Number(f.size || 0),
+          s3Key,
+          s3Url,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x);
+
+    const content = text || (attachments.length ? "파일 첨부" : "");
+    if (!content.trim()) return;
+
+    setIsSending(true);
+    try {
+      const sent = await sendMessage(content, attachments);
+      if (sent) {
+        setDraft("");
+        setPendingFiles([]);
+        setRoom((prev) => (prev ? { ...prev, unreadCount: 0 } : prev));
+      }
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handlePickFiles = async (files: File[]) => {
+    if (!files.length) return;
+    try {
+      const uploaded = await uploadFiles(files);
+      if (!uploaded.length) return;
+      setPendingFiles((prev) => {
+        const map = new Map<string, TempUploadedFile>();
+        [...prev, ...uploaded].forEach((f) => {
+          map.set(f._id, f);
+        });
+        return Array.from(map.values());
+      });
+    } catch (e: any) {
+      toast({
+        title: "업로드 실패",
+        description: e?.message || "파일 업로드 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const removePendingFile = (fileId: string) => {
+    setPendingFiles((prev) => prev.filter((f) => f._id !== fileId));
   };
 
   const insertRequestId = (requestId: string) => {
@@ -126,8 +243,45 @@ export const NewChatWidget = () => {
     });
   };
 
+  const openAttachment = async (a: any) => {
+    const fileId = String(a?.fileId || "").trim();
+    const direct = String(a?.s3Url || "").trim();
+
+    if (!fileId || !token) {
+      if (direct) window.open(direct, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    try {
+      const res = await apiFetch<any>({
+        path: `/api/files/${fileId}/download-url`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) throw new Error("파일을 열 수 없습니다.");
+      const body = res.data || {};
+      const url = (body as any)?.data?.url || (body as any)?.url;
+      if (!url) throw new Error("파일을 열 수 없습니다.");
+      window.open(String(url), "_blank", "noopener,noreferrer");
+    } catch (e: any) {
+      toast({
+        title: "파일 열기 실패",
+        description: e?.message || "파일을 열 수 없습니다.",
+        variant: "destructive",
+      });
+      if (direct) window.open(direct, "_blank", "noopener,noreferrer");
+    }
+  };
+
   return (
     <>
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/30"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+
       <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50">
         {!isOpen ? (
           <Button
@@ -145,35 +299,34 @@ export const NewChatWidget = () => {
             )}
           </Button>
         ) : (
-          <Card
-            className={`
-            w-[calc(100vw-2rem)] max-w-96 h-[calc(100vh-8rem)] max-h-[600px] sm:w-96 sm:h-[600px]
-            border transition-all duration-300 bg-card overflow-hidden 
-            ${isMinimized ? "h-12" : ""}
-          `}
-          >
-            {/* 헤더 */}
-            <div className="flex items-center justify-between px-3 sm:px-4 py-3 sm:py-4 border-b bg-muted/50">
-              <div className="flex items-center gap-2 sm:gap-4">
-                <div className="text-sm font-medium truncate">{title}</div>
+          <div onClick={(e) => e.stopPropagation()}>
+            <Card
+              className={`
+                w-[calc(100vw-2rem)] max-w-96 h-[calc(100vh-8rem)] max-h-[600px] sm:w-96 sm:h-[600px]
+                border transition-all duration-300 bg-card overflow-hidden 
+                ${isMinimized ? "h-12" : ""}
+              `}
+            >
+              {/* 헤더 */}
+              <div className="flex items-center justify-between px-3 sm:px-4 py-3 sm:py-4 border-b bg-muted/50">
+                <div className="flex items-center gap-2 sm:gap-4">
+                  <div className="text-sm font-medium truncate">{title}</div>
+                </div>
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setIsOpen(false)}
+                    title="닫기"
+                    className="h-8 w-8 p-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-1 sm:gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsOpen(false)}
-                  title="닫기"
-                  className="h-8 w-8 p-0"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {!isMinimized && (
-              <div className="h-[calc(100%-3.5rem)] sm:h-[544px] flex flex-col">
-                <>
+              {!isMinimized && (
+                <div className="h-[calc(100%-3.5rem)] sm:h-[544px] flex flex-col">
                   <div className="flex-1 overflow-y-auto">
                     <ScrollArea className="h-full">
                       <div className="p-3 sm:p-4 space-y-2">
@@ -191,8 +344,8 @@ export const NewChatWidget = () => {
                           )}
 
                         {messages.map((m) => {
-                          const isMine =
-                            m.sender?._id === (user?.mockUserId || user?.id);
+                          const senderId = String(m.sender?._id || "").trim();
+                          const isMine = myIdCandidates.has(senderId);
                           return (
                             <div
                               key={m._id}
@@ -207,7 +360,28 @@ export const NewChatWidget = () => {
                                     : "bg-muted"
                                 }`}
                               >
-                                {m.content}
+                                <div className="whitespace-pre-wrap leading-snug">
+                                  {m.content}
+                                </div>
+                                {Array.isArray(m.attachments) &&
+                                  m.attachments.length > 0 && (
+                                    <div className="mt-2 space-y-1">
+                                      {m.attachments.map((a, idx) => (
+                                        <button
+                                          key={`${m._id}-att-${idx}`}
+                                          type="button"
+                                          onClick={() => void openAttachment(a)}
+                                          className={`block text-xs underline ${
+                                            isMine
+                                              ? "text-primary-foreground/90"
+                                              : "text-foreground"
+                                          }`}
+                                        >
+                                          {a.fileName}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
                               </div>
                             </div>
                           );
@@ -219,79 +393,31 @@ export const NewChatWidget = () => {
                               아직 메시지가 없습니다.
                             </div>
                           )}
+
+                        <div ref={bottomRef} />
                       </div>
                     </ScrollArea>
                   </div>
 
-                  <div className="border-t px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6">
-                    <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
-                      <Textarea
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        placeholder="문의 내용을 입력하세요"
-                        className="resize-none flex-1"
-                        rows={3}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            void handleSend();
-                          }
-                        }}
-                      />
-                      <div className="flex flex-col gap-2">
-                        {user.role === "requestor" ? (
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="shrink-0 h-10 w-10"
-                                disabled={requestPicks.length === 0}
-                              >
-                                <Paperclip className="h-4 w-4" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-80 p-2" align="end">
-                              <div className="space-y-1">
-                                {requestPicks.map((r) => (
-                                  <button
-                                    key={r.requestId}
-                                    type="button"
-                                    className="w-full text-left rounded px-2 py-1 text-xs hover:bg-muted"
-                                    onClick={() => insertRequestId(r.requestId)}
-                                  >
-                                    <div className="font-medium">
-                                      {r.requestId}
-                                    </div>
-                                    <div className="text-muted-foreground truncate">
-                                      {r.patientName}
-                                      {r.tooth ? ` / ${r.tooth}` : ""}
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                        ) : (
-                          <div className="h-10 w-10" />
-                        )}
-                        <Button
-                          type="button"
-                          size="icon"
-                          onClick={() => void handleSend()}
-                          disabled={!draft.trim() || !roomId}
-                          className="shrink-0 h-10 w-10"
-                        >
-                          <Send className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              </div>
-            )}
-          </Card>
+                  <ChatComposer
+                    draft={draft}
+                    onDraftChange={setDraft}
+                    onSend={() => void handleSend()}
+                    placeholder="문의 내용을 입력하세요"
+                    disabled={!roomId}
+                    isSending={isSending}
+                    pendingFiles={pendingFiles}
+                    onPickFiles={(files) => void handlePickFiles(files)}
+                    onRemovePendingFile={removePendingFile}
+                    requestPicks={requestPicks}
+                    onInsertRequestId={
+                      user.role === "requestor" ? insertRequestId : undefined
+                    }
+                  />
+                </div>
+              )}
+            </Card>
+          </div>
         )}
       </div>
     </>

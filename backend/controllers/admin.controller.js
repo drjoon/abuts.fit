@@ -883,6 +883,16 @@ async function getAllRequests(req, res) {
     // 필터링 파라미터
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
+    if (req.query.requestorId) {
+      const requestorId = String(req.query.requestorId || "").trim();
+      if (!Types.ObjectId.isValid(requestorId)) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 requestorId입니다.",
+        });
+      }
+      filter.requestor = new Types.ObjectId(requestorId);
+    }
     if (req.query.search) {
       filter.$or = [
         { title: { $regex: req.query.search, $options: "i" } },

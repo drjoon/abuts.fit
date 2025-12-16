@@ -19,6 +19,11 @@ const chatSchema = new mongoose.Schema(
     },
     attachments: [
       {
+        fileId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "File",
+          default: null,
+        },
         fileName: String,
         fileType: String,
         fileSize: Number,

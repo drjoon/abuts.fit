@@ -1,3 +1,5 @@
+import { useAuthStore } from "@/store/useAuthStore";
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface ApiRequestOptions extends RequestInit {
@@ -37,14 +39,42 @@ export async function apiFetch<T = any>(
 
   if (token === "MOCK_DEV_TOKEN") {
     try {
-      const role = localStorage.getItem("abuts_mock_role") || "";
-      const position = localStorage.getItem("abuts_mock_position") || "";
-      const email = localStorage.getItem("abuts_mock_email") || "";
-      const name = localStorage.getItem("abuts_mock_name") || "";
+      const stateUser = useAuthStore.getState().user;
+
+      const role =
+        stateUser?.role ||
+        sessionStorage.getItem("abuts_mock_role") ||
+        localStorage.getItem("abuts_mock_role") ||
+        "";
+      const position =
+        stateUser?.position ||
+        sessionStorage.getItem("abuts_mock_position") ||
+        localStorage.getItem("abuts_mock_position") ||
+        "";
+      const email =
+        stateUser?.email ||
+        sessionStorage.getItem("abuts_mock_email") ||
+        localStorage.getItem("abuts_mock_email") ||
+        "";
+      const name =
+        stateUser?.name ||
+        sessionStorage.getItem("abuts_mock_name") ||
+        localStorage.getItem("abuts_mock_name") ||
+        "";
       const organization =
-        localStorage.getItem("abuts_mock_organization") || "";
-      const phone = localStorage.getItem("abuts_mock_phone") || "";
-      const userId = localStorage.getItem("abuts_mock_user_id") || "";
+        stateUser?.companyName ||
+        sessionStorage.getItem("abuts_mock_organization") ||
+        localStorage.getItem("abuts_mock_organization") ||
+        "";
+      const phone =
+        sessionStorage.getItem("abuts_mock_phone") ||
+        localStorage.getItem("abuts_mock_phone") ||
+        "";
+      const userId =
+        stateUser?.mockUserId ||
+        sessionStorage.getItem("abuts_mock_user_id") ||
+        localStorage.getItem("abuts_mock_user_id") ||
+        "";
 
       if (!(finalHeaders as any)["x-mock-role"] && role)
         (finalHeaders as any)["x-mock-role"] = role;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -17,6 +17,15 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import type { ChatRoom } from "@/shared/hooks/useChatRooms";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/shared/hooks/use-toast";
+import {
+  useS3TempUpload,
+  type TempUploadedFile,
+} from "@/shared/hooks/useS3TempUpload";
+import {
+  ChatComposer,
+  type RequestPickItem,
+} from "@/components/chat/ChatComposer";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -55,14 +64,20 @@ const formatTime = (iso?: string) => {
 
 export const AdminChatManagement = () => {
   const { token, user } = useAuthStore();
+  const { toast } = useToast();
+  const bottomRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
+  const [requestPicks, setRequestPicks] = useState<RequestPickItem[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [roomsError, setRoomsError] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<TempUploadedFile[]>([]);
+  const { uploadFiles } = useS3TempUpload({ token });
 
   const {
     messages: activeMessages,
@@ -130,6 +145,74 @@ export const AdminChatManagement = () => {
     ? rooms.find((chat) => chat._id === selectedChatId) || null
     : null;
 
+  useEffect(() => {
+    if (!activeChat) return;
+    if (messagesLoading) return;
+    const raf = window.requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [activeChat?._id, messagesLoading, activeMessages?.length]);
+
+  useEffect(() => {
+    const loadPicks = async () => {
+      if (!token || !activeChat) {
+        setRequestPicks([]);
+        return;
+      }
+
+      const requestorId = String(
+        activeChat.participants?.find((p) => p.role === "requestor")?._id || ""
+      ).trim();
+
+      const fallbackRid = String(
+        (activeChat as any)?.relatedRequestId?.requestId || ""
+      ).trim();
+
+      if (!requestorId) {
+        setRequestPicks(fallbackRid ? [{ requestId: fallbackRid }] : []);
+        return;
+      }
+
+      try {
+        const qs = new URLSearchParams();
+        qs.set("page", "1");
+        qs.set("limit", "20");
+        qs.set("requestorId", requestorId);
+        const res = await apiFetch<any>({
+          path: `/api/admin/requests?${qs.toString()}`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok) throw new Error("의뢰 목록을 불러오지 못했습니다.");
+
+        const body = res.data || {};
+        const data = (body as any)?.data || body;
+        const list: any[] = Array.isArray(data?.requests) ? data.requests : [];
+        const picks: RequestPickItem[] = list
+          .map((r) => {
+            const ci = r?.caseInfos || {};
+            return {
+              requestId: String(r?.requestId || "").trim(),
+              patientName: String(ci?.patientName || "").trim(),
+              tooth: String(ci?.tooth || "").trim(),
+            };
+          })
+          .filter((x) => !!x.requestId);
+
+        if (picks.length > 0) {
+          setRequestPicks(picks);
+        } else {
+          setRequestPicks(fallbackRid ? [{ requestId: fallbackRid }] : []);
+        }
+      } catch {
+        setRequestPicks(fallbackRid ? [{ requestId: fallbackRid }] : []);
+      }
+    };
+
+    void loadPicks();
+  }, [token, activeChat]);
+
   const handleUpdateStatus = async (
     status: "active" | "monitored" | "suspended"
   ) => {
@@ -152,10 +235,102 @@ export const AdminChatManagement = () => {
   };
 
   const handleSendAdminMessage = async () => {
-    if (!selectedChatId || !messageInput.trim()) return;
+    if (!selectedChatId || isSending) return;
 
-    await sendMessage(messageInput.trim());
-    setMessageInput("");
+    const text = messageInput.trim();
+    const attachments = pendingFiles
+      .map((f) => {
+        const fileId = String(f._id || "").trim();
+        const s3Key = String(f.key || "").trim();
+        const s3Url = String(f.location || "").trim();
+        if (!s3Key || !s3Url) return null;
+        return {
+          fileId,
+          fileName: String(f.originalName || "").trim(),
+          fileType: String(f.mimetype || "").trim(),
+          fileSize: Number(f.size || 0),
+          s3Key,
+          s3Url,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x);
+
+    const content = text || (attachments.length ? "파일 첨부" : "");
+    if (!content.trim()) return;
+
+    setIsSending(true);
+    try {
+      await sendMessage(content, attachments);
+      setMessageInput("");
+      setPendingFiles([]);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handlePickFiles = async (files: File[]) => {
+    if (!files.length) return;
+    try {
+      const uploaded = await uploadFiles(files);
+      if (!uploaded.length) return;
+      setPendingFiles((prev) => {
+        const map = new Map<string, TempUploadedFile>();
+        [...prev, ...uploaded].forEach((f) => {
+          map.set(f._id, f);
+        });
+        return Array.from(map.values());
+      });
+    } catch (e: any) {
+      toast({
+        title: "업로드 실패",
+        description: e?.message || "파일 업로드 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const removePendingFile = (fileId: string) => {
+    setPendingFiles((prev) => prev.filter((f) => f._id !== fileId));
+  };
+
+  const insertRequestId = (requestId: string) => {
+    const tokenText = `[의뢰ID:${requestId}]`;
+    setMessageInput((prev) => {
+      const base = prev || "";
+      if (!base.trim()) return tokenText;
+      if (base.includes(tokenText)) return base;
+      return `${base.trim()} ${tokenText}`;
+    });
+  };
+
+  const openAttachment = async (a: any) => {
+    const fileId = String(a?.fileId || "").trim();
+    const direct = String(a?.s3Url || "").trim();
+
+    if (!fileId || !token) {
+      if (direct) window.open(direct, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    try {
+      const res = await apiFetch<any>({
+        path: `/api/files/${fileId}/download-url`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) throw new Error("파일을 열 수 없습니다.");
+      const body = res.data || {};
+      const url = (body as any)?.data?.url || (body as any)?.url;
+      if (!url) throw new Error("파일을 열 수 없습니다.");
+      window.open(String(url), "_blank", "noopener,noreferrer");
+    } catch (e: any) {
+      toast({
+        title: "파일 열기 실패",
+        description: e?.message || "파일을 열 수 없습니다.",
+        variant: "destructive",
+      });
+      if (direct) window.open(direct, "_blank", "noopener,noreferrer");
+    }
   };
 
   const leftHeightClass = "h-[calc(100vh-12rem)]";
@@ -290,7 +465,9 @@ export const AdminChatManagement = () => {
             </CardContent>
           </Card>
 
-          <Card className={cn("overflow-hidden", leftHeightClass)}>
+          <Card
+            className={cn("overflow-hidden flex flex-col", leftHeightClass)}
+          >
             <CardHeader className="space-y-2">
               <CardTitle className="text-base">
                 {activeChat
@@ -345,8 +522,8 @@ export const AdminChatManagement = () => {
                 </div>
               )}
             </CardHeader>
-            <CardContent className="p-0 h-[calc(100%-132px)] flex flex-col">
-              <div className="flex-1 border-t">
+            <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+              <div className="flex-1 border-t min-h-0">
                 <ScrollArea className="h-full">
                   <div className="p-4">
                     {!activeChat && (
@@ -399,6 +576,28 @@ export const AdminChatManagement = () => {
                               <p className="whitespace-pre-wrap leading-snug">
                                 {msg.content}
                               </p>
+                              {Array.isArray(msg.attachments) &&
+                                msg.attachments.length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    {msg.attachments.map(
+                                      (a: any, idx: number) => (
+                                        <button
+                                          key={`${msg._id}-att-${idx}`}
+                                          type="button"
+                                          onClick={() => void openAttachment(a)}
+                                          className={cn(
+                                            "block text-xs underline",
+                                            isMine
+                                              ? "text-primary-foreground/90"
+                                              : "text-foreground"
+                                          )}
+                                        >
+                                          {a.fileName}
+                                        </button>
+                                      )
+                                    )}
+                                  </div>
+                                )}
                             </div>
                           </div>
                         );
@@ -408,34 +607,25 @@ export const AdminChatManagement = () => {
                         {messagesError}
                       </p>
                     )}
+
+                    <div ref={bottomRef} />
                   </div>
                 </ScrollArea>
               </div>
 
-              <div className="border-t p-3">
-                <div className="flex gap-2 items-center">
-                  <Input
-                    placeholder="어벗츠.핏 이름으로 메시지를 입력하세요"
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void handleSendAdminMessage();
-                      }
-                    }}
-                    disabled={!activeChat}
-                  />
-                  <Button
-                    size="icon"
-                    variant="default"
-                    onClick={handleSendAdminMessage}
-                    disabled={!activeChat || !messageInput.trim()}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+              <ChatComposer
+                draft={messageInput}
+                onDraftChange={setMessageInput}
+                onSend={() => void handleSendAdminMessage()}
+                placeholder="어벗츠.핏 이름으로 메시지를 입력하세요"
+                disabled={!activeChat}
+                isSending={isSending}
+                pendingFiles={pendingFiles}
+                onPickFiles={(files) => void handlePickFiles(files)}
+                onRemovePendingFile={removePendingFile}
+                requestPicks={requestPicks}
+                onInsertRequestId={insertRequestId}
+              />
             </CardContent>
           </Card>
         </div>

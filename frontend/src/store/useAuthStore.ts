@@ -80,16 +80,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (foundUser && password === "a64468ff-514b") {
       const mockToken = "MOCK_DEV_TOKEN";
       try {
-        localStorage.setItem("abuts_mock_role", foundUser.role);
-        localStorage.setItem("abuts_mock_position", foundUser.position);
-        localStorage.setItem("abuts_mock_email", foundUser.email);
-        localStorage.setItem("abuts_mock_name", foundUser.name);
-        localStorage.setItem(
+        sessionStorage.setItem("abuts_mock_role", foundUser.role);
+        sessionStorage.setItem("abuts_mock_position", foundUser.position);
+        sessionStorage.setItem("abuts_mock_email", foundUser.email);
+        sessionStorage.setItem("abuts_mock_name", foundUser.name);
+        sessionStorage.setItem(
           "abuts_mock_organization",
           foundUser.companyName || ""
         );
-        localStorage.setItem("abuts_mock_phone", "");
-        localStorage.setItem("abuts_mock_user_id", foundUser.mockUserId || "");
+        sessionStorage.setItem("abuts_mock_phone", "");
+        sessionStorage.setItem(
+          "abuts_mock_user_id",
+          foundUser.mockUserId || ""
+        );
       } catch {
         // ignore
       }
@@ -100,6 +103,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   logout: () => {
     try {
+      sessionStorage.removeItem("abuts_mock_role");
+      sessionStorage.removeItem("abuts_mock_position");
+      sessionStorage.removeItem("abuts_mock_email");
+      sessionStorage.removeItem("abuts_mock_name");
+      sessionStorage.removeItem("abuts_mock_organization");
+      sessionStorage.removeItem("abuts_mock_phone");
+      sessionStorage.removeItem("abuts_mock_user_id");
       localStorage.removeItem("abuts_mock_role");
       localStorage.removeItem("abuts_mock_position");
       localStorage.removeItem("abuts_mock_email");

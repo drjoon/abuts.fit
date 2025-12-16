@@ -69,6 +69,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
     async (
       content: string,
       attachments?: Array<{
+        fileId?: string;
         fileName: string;
         fileType: string;
         fileSize: number;
@@ -95,10 +96,6 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
 
         if (res.ok && res.data?.success) {
           setMessages((prev) => [...prev, res.data!.data]);
-          toast({
-            title: "전송 완료",
-            description: "메시지가 전송되었습니다.",
-          });
           return res.data.data;
         } else {
           throw new Error(res.data?.message || "메시지 전송에 실패했습니다.");
