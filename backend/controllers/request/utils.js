@@ -1,0 +1,490 @@
+import { Types } from "mongoose";
+import Request from "../../models/request.model.js";
+import User from "../../models/user.model.js";
+import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Connection from "../../models/connection.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
+import {
+  addKoreanBusinessDays,
+  getTodayYmdInKst,
+  normalizeKoreanBusinessDay,
+  ymdToMmDd,
+} from "../../utils/krBusinessDays.js";
+
+export const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
+  d6: 2,
+  d8: 2,
+  d10: 5,
+  d10plus: 5,
+};
+
+export function getRequestorOrgId(req) {
+  const raw = req?.user?.organizationId;
+  return raw ? String(raw) : "";
+}
+
+export function buildRequestorOrgFilter(req) {
+  if (req?.user?.role !== "requestor") return {};
+  const orgId = getRequestorOrgId(req);
+  if (orgId && Types.ObjectId.isValid(orgId)) {
+    return { requestorOrganizationId: new Types.ObjectId(orgId) };
+  }
+  return { requestor: req.user._id };
+}
+
+export async function buildRequestorOrgScopeFilter(req) {
+  if (req?.user?.role !== "requestor") return {};
+
+  const orgId = getRequestorOrgId(req);
+  if (!orgId || !Types.ObjectId.isValid(orgId)) {
+    return { requestor: req.user._id };
+  }
+
+  const org = await RequestorOrganization.findById(orgId)
+    .select({ members: 1 })
+    .lean();
+
+  const memberIdsRaw = Array.isArray(org?.members) ? org.members : [];
+  const memberIds = memberIdsRaw
+    .map((m) => String(m))
+    .filter((id) => Types.ObjectId.isValid(id));
+
+  const myId = String(req.user._id);
+  if (Types.ObjectId.isValid(myId) && !memberIds.includes(myId)) {
+    memberIds.push(myId);
+  }
+
+  const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
+  const orgObjectId = new Types.ObjectId(orgId);
+
+  // 레거시 데이터(organizationId 저장 전 requestor 기반 저장)까지 조직 단위로 포함
+  return {
+    $or: [
+      { requestorOrganizationId: orgObjectId },
+      { requestor: { $in: memberObjectIds } },
+    ],
+  };
+}
+
+export function canAccessRequestAsRequestor(req, requestDoc) {
+  if (!req?.user || req.user.role !== "requestor") return false;
+  if (!requestDoc) return false;
+
+  const myOrgId = getRequestorOrgId(req);
+  const reqOrgId = requestDoc.requestorOrganizationId
+    ? String(requestDoc.requestorOrganizationId)
+    : "";
+
+  if (myOrgId && reqOrgId) {
+    return myOrgId === reqOrgId;
+  }
+
+  const populatedReqUser = requestDoc.requestor || null;
+  const populatedReqUserOrgId = populatedReqUser?.organizationId
+    ? String(populatedReqUser.organizationId)
+    : "";
+  if (myOrgId && populatedReqUserOrgId) {
+    return myOrgId === populatedReqUserOrgId;
+  }
+
+  const reqUserId = populatedReqUser?._id
+    ? String(populatedReqUser._id)
+    : requestDoc.requestor
+    ? String(requestDoc.requestor)
+    : "";
+  return reqUserId && reqUserId === String(req.user._id);
+}
+
+export async function formatEtaLabelFromNow(days) {
+  const d = typeof days === "number" && !Number.isNaN(days) ? days : 0;
+  const todayYmd = getTodayYmdInKst();
+  const etaYmd = await addKoreanBusinessDays({ startYmd: todayYmd, days: d });
+  return ymdToMmDd(etaYmd);
+}
+
+export async function calculateExpressShipYmd({ maxDiameter }) {
+  const todayYmd = getTodayYmdInKst();
+  const d =
+    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
+      ? maxDiameter
+      : null;
+
+  // 기본: 다음 영업일 출고
+  if (d == null || d <= 8) {
+    return addKoreanBusinessDays({ startYmd: todayYmd, days: 1 });
+  }
+
+  // d10 이상: 다음 수요일 출고(기존 정책 유지) + 해당 날짜가 휴일/주말이면 다음 영업일로 보정
+  const today = new Date();
+  const currentDow = today.getDay();
+  const targetDow = 3; // Wed
+
+  let daysToAdd = targetDow - currentDow;
+  if (currentDow > 1) {
+    daysToAdd += 7;
+  }
+  if (daysToAdd <= 0) {
+    daysToAdd += 7;
+  }
+
+  const candidate = new Date(today);
+  candidate.setDate(today.getDate() + daysToAdd);
+  const candidateYmd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    day: "2-digit",
+  }).format(candidate);
+
+  // 수요일이 휴일/주말이면 다음 영업일, 영업일이면 그대로
+  return normalizeKoreanBusinessDay({ ymd: candidateYmd });
+}
+
+export async function getDeliveryEtaLeadDays() {
+  try {
+    const doc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      { $setOnInsert: { key: "global" } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return {
+      ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+      ...(doc?.deliveryEtaLeadDays || {}),
+    };
+  } catch {
+    return DEFAULT_DELIVERY_ETA_LEAD_DAYS;
+  }
+}
+
+export async function normalizeCaseInfosImplantFields(caseInfos) {
+  const ci = caseInfos && typeof caseInfos === "object" ? { ...caseInfos } : {};
+
+  const manufacturer = (ci.implantManufacturer || "").trim();
+  const system = (ci.implantSystem || "").trim();
+  const type = (ci.implantType || "").trim();
+  const legacyConnectionType = (ci.connectionType || "").trim();
+  delete ci.connectionType;
+
+  // 이미 신 스키마가 완성되어 있으면 그대로
+  if (manufacturer && system && type) {
+    return {
+      ...ci,
+      implantManufacturer: manufacturer,
+      implantSystem: system,
+      implantType: type,
+    };
+  }
+
+  // 레거시(밀린 값) 케이스를 최대한 복원
+  // - 과거: implantSystem=제조사, implantType=시스템, connectionType=유형
+  // - 현재 문제 데이터: implantSystem=시스템(Regular), implantType=유형(Hex), connectionType=유형(Hex)
+  const candidateManufacturer = manufacturer || "";
+  const rawA = system; // implantSystem
+  const rawB = type || legacyConnectionType; // implantType 우선
+
+  // 1) 과거 스키마(implantSystem=제조사)로 들어온 경우
+  //    제조사가 비어 있고 connectionType이 있는 경우가 많음
+  if (!candidateManufacturer && system && legacyConnectionType && !type) {
+    return {
+      ...ci,
+      implantManufacturer: system,
+      implantSystem: (ci.implantType || "").trim(),
+      implantType: legacyConnectionType,
+    };
+  }
+
+  // 2) connections DB로 복원 시도 (system/type 조합으로 manufacturer 찾기)
+  //    - (Regular, Hex) 같은 조합이 manufacturer별로 중복될 수 있으나,
+  //      기존 데이터가 밀린 상태라면 manufacturer가 없으므로 첫 매칭을 사용한다.
+  if (!candidateManufacturer && rawA && rawB) {
+    const found = await Connection.findOne({
+      isActive: true,
+      system: rawA,
+      type: rawB,
+    })
+      .select({ manufacturer: 1, system: 1, type: 1 })
+      .lean();
+
+    if (found) {
+      return {
+        ...ci,
+        implantManufacturer: found.manufacturer,
+        implantSystem: found.system,
+        implantType: found.type,
+      };
+    }
+  }
+
+  // 3) 마지막 fallback: 있는 값들을 최대한 채움
+  return {
+    ...ci,
+    implantManufacturer: candidateManufacturer,
+    implantSystem: rawA,
+    implantType: rawB,
+  };
+}
+
+export async function normalizeRequestForResponse(requestDoc) {
+  if (!requestDoc) return requestDoc;
+  const obj =
+    typeof requestDoc.toObject === "function"
+      ? requestDoc.toObject()
+      : requestDoc;
+  const ci = obj.caseInfos || {};
+  obj.caseInfos = await normalizeCaseInfosImplantFields(ci);
+  return obj;
+}
+
+export async function ensureLotNumberForMachining(requestDoc) {
+  // patientCases 필드를 더 이상 사용하지 않으므로, 현재는 lotNumber를 자동 부여하지 않는다.
+  // 기존 데이터에 lotNumber가 이미 있다면 그대로 유지하고, 없다면 변경하지 않는다.
+  if (requestDoc.lotNumber) {
+    return;
+  }
+}
+
+export async function computePriceForRequest({
+  requestorId,
+  requestorOrgId,
+  clinicName,
+  patientName,
+  tooth,
+}) {
+  const now = new Date();
+
+  const scopeFilter =
+    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
+      ? { requestorOrganizationId: new Types.ObjectId(String(requestorOrgId)) }
+      : { requestor: requestorId };
+
+  const BASE_UNIT_PRICE = 15000;
+  const REMAKE_FIXED_PRICE = 10000;
+  const NEW_USER_FIXED_PRICE = 10000;
+  const DISCOUNT_PER_ORDER = 10;
+  const MAX_DISCOUNT = 5000;
+
+  // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 고정가
+  const remakeCutoff = new Date(now);
+  remakeCutoff.setDate(remakeCutoff.getDate() - 90);
+  const existing = await Request.findOne({
+    ...scopeFilter,
+    "caseInfos.patientName": patientName,
+    "caseInfos.tooth": tooth,
+    "caseInfos.clinicName": clinicName,
+    "caseInfos.implantSystem": { $exists: true, $ne: "" },
+    status: { $ne: "취소" },
+    createdAt: { $gte: remakeCutoff },
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  if (existing) {
+    return {
+      baseAmount: REMAKE_FIXED_PRICE,
+      discountAmount: 0,
+      amount: REMAKE_FIXED_PRICE,
+      currency: "KRW",
+      rule: "remake_fixed_10000",
+      discountMeta: {
+        last30DaysOrders: 0,
+        referralLast30DaysOrders: 0,
+        discountPerOrder: DISCOUNT_PER_ORDER,
+        maxDiscount: MAX_DISCOUNT,
+      },
+      quotedAt: now,
+    };
+  }
+
+  // 2) 신규 90일 고정가: 가입일(createdAt) 기준 90일 내 -> 10,000원 고정
+  const user = await User.findById(requestorId)
+    .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
+    .lean();
+  const baseDate =
+    user?.approvedAt ||
+    (user?.active ? user?.updatedAt : null) ||
+    user?.createdAt;
+  if (baseDate) {
+    const newUserCutoff = new Date(baseDate);
+    newUserCutoff.setDate(newUserCutoff.getDate() + 90);
+    if (now < newUserCutoff) {
+      return {
+        baseAmount: NEW_USER_FIXED_PRICE,
+        discountAmount: 0,
+        amount: NEW_USER_FIXED_PRICE,
+        currency: "KRW",
+        rule: "new_user_90days_fixed_10000",
+        discountMeta: {
+          last30DaysOrders: 0,
+          referralLast30DaysOrders: 0,
+          discountPerOrder: DISCOUNT_PER_ORDER,
+          maxDiscount: MAX_DISCOUNT,
+        },
+        quotedAt: now,
+      };
+    }
+  }
+
+  // 3) 최근 30일 주문량 할인(리퍼럴 합산은 아직 스키마가 없어 0으로 처리)
+  const last30Cutoff = new Date(now);
+  last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+  const last30DaysOrders = await Request.countDocuments({
+    ...scopeFilter,
+    status: { $ne: "취소" },
+    createdAt: { $gte: last30Cutoff },
+  });
+
+  // 추천인 합산: 내가 추천한(=referredByUserId가 나인) 유저들의 최근 30일 주문량을 합산
+  const referredUsers = await User.find({
+    referredByUserId: requestorId,
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  const referredUserIds = referredUsers.map((u) => u._id).filter(Boolean);
+
+  const referralLast30DaysOrders = referredUserIds.length
+    ? await Request.countDocuments({
+        requestor: { $in: referredUserIds },
+        status: { $ne: "취소" },
+        createdAt: { $gte: last30Cutoff },
+      })
+    : 0;
+  const totalOrders = last30DaysOrders + referralLast30DaysOrders;
+  const discountAmount = Math.min(
+    totalOrders * DISCOUNT_PER_ORDER,
+    MAX_DISCOUNT
+  );
+  const amount = Math.max(0, BASE_UNIT_PRICE - discountAmount);
+
+  return {
+    baseAmount: BASE_UNIT_PRICE,
+    discountAmount,
+    amount,
+    currency: "KRW",
+    rule: discountAmount > 0 ? "volume_discount_last30days" : "base_price",
+    discountMeta: {
+      last30DaysOrders,
+      referralLast30DaysOrders,
+      discountPerOrder: DISCOUNT_PER_ORDER,
+      maxDiscount: MAX_DISCOUNT,
+    },
+    quotedAt: now,
+  };
+}
+
+export function applyStatusMapping(request, status) {
+  request.status = status;
+
+  switch (status) {
+    case "의뢰접수":
+      request.status1 = "의뢰접수";
+      request.status2 = "없음";
+      break;
+    case "가공전":
+      request.status1 = "가공";
+      request.status2 = "전";
+      break;
+    case "가공후":
+      request.status1 = "가공";
+      request.status2 = "후";
+      break;
+    case "배송대기":
+      request.status1 = "배송";
+      request.status2 = "전";
+      break;
+    case "배송중":
+      request.status1 = "배송";
+      request.status2 = "중";
+      break;
+    case "완료":
+      request.status1 = "완료";
+      request.status2 = "없음";
+      break;
+    case "취소":
+      request.status1 = "취소";
+      request.status2 = "없음";
+      break;
+    default:
+      break;
+  }
+}
+
+export async function computeDiameterStats(requests, leadDays) {
+  const effectiveLeadDays = {
+    ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+    ...(leadDays || {}),
+  };
+
+  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD10plus] =
+    await Promise.all([
+      formatEtaLabelFromNow(effectiveLeadDays.d6),
+      formatEtaLabelFromNow(effectiveLeadDays.d8),
+      formatEtaLabelFromNow(effectiveLeadDays.d10),
+      formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+    ]);
+
+  const bucketDefs = [
+    {
+      id: "d6",
+      diameter: 6,
+      shipLabel: shipLabelD6,
+    },
+    {
+      id: "d8",
+      diameter: 8,
+      shipLabel: shipLabelD8,
+    },
+    {
+      id: "d10",
+      diameter: 10,
+      shipLabel: shipLabelD10,
+    },
+    {
+      id: "d10plus",
+      diameter: "10+",
+      shipLabel: shipLabelD10plus,
+    },
+  ];
+
+  const counts = {
+    d6: 0,
+    d8: 0,
+    d10: 0,
+    d10plus: 0,
+  };
+
+  if (Array.isArray(requests)) {
+    requests.forEach((r) => {
+      const raw = r?.caseInfos?.maxDiameter;
+      const d =
+        typeof raw === "number" ? raw : raw != null ? Number(raw) : null;
+      if (d == null || Number.isNaN(d)) return;
+
+      if (d <= 6) counts.d6 += 1;
+      else if (d <= 8) counts.d8 += 1;
+      else if (d <= 10) counts.d10 += 1;
+      else counts.d10plus += 1;
+    });
+  }
+
+  const total = counts.d6 + counts.d8 + counts.d10 + counts.d10plus;
+  const maxCount = Math.max(
+    1,
+    counts.d6,
+    counts.d8,
+    counts.d10,
+    counts.d10plus
+  );
+
+  const buckets = bucketDefs.map((def) => ({
+    diameter: def.diameter,
+    shipLabel: def.shipLabel,
+    count: counts[def.id] || 0,
+    ratio: maxCount > 0 ? (counts[def.id] || 0) / maxCount : 0,
+  }));
+
+  return { total, buckets };
+}

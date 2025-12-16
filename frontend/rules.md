@@ -1,7 +1,7 @@
 # Frontend Rules for abuts.fit
 
-이 문서는 `abuts.fit` 프론트엔드 프로젝트의 개발 규칙을 정의합니다.
-전체 프로젝트 공통 규칙(권한, 비즈니스 로직 등)은 프로젝트 루트의 `rules.md`를 참조하세요.
+이 문서는 `abuts.fit` 프론트엔드 프로젝트의 구체적인 개발 규칙을 정의합니다.
+**전체 프로젝트 공통 규칙(권한, 비즈니스 로직, 파일 크기 제한 등)은 프로젝트 루트의 `rules.md`를 반드시 참조하세요.**
 
 ## 1. 기술 스택 (Tech Stack)
 
@@ -43,18 +43,14 @@
 ## 4. 페이지 및 컴포넌트 구조
 
 ### 4.1 Manufacturer
-
 `pages/manufacturer/worksheet/` 하위에 `custom_abutment`, `crown` 등 제품군별 폴더를 두고, 그 하위에 공정 단계(`request`, `machining` 등)를 둡니다.
 
 ### 4.2 Requestor & Admin
-
 기능 단위로 폴더를 구분합니다.
-
 - Requestor: `new_request`, `worksheet`, `dashboard`, `settings`
 - Admin: `users`, `monitoring`, `support`, `system`, `dashboard`
 
 ### 4.3 공통 규칙
-
 - **페이지 전용 컴포넌트**: 해당 페이지 폴더 하위 `components/`에 위치
 - **Page Import 금지**: 다른 페이지 폴더를 import하지 않음
 - **Settings**: 역할별로 페이지 파일을 분리 (`pages/requestor/settings/SettingsPage.tsx` 등)
@@ -64,11 +60,7 @@
 - `src/lib/apiClient.ts`의 `apiFetch`를 사용하여 호출합니다.
 - 직접적인 `fetch` 호출은 지양합니다.
 
-## 6. 페이지 라인 수 제한
-
-- 페이지 컴포넌트는 **800줄**을 넘기지 않도록 분리합니다.
-
-## 7. 대시보드/워크시트 카드 UI 규칙
+## 6. 대시보드/워크시트 카드 UI 규칙
 
 - **기준 컴포넌트**: `features/manufacturer/cnc/components/WorksheetCncMachineSection.tsx` 의 `WorksheetCncMachineCard` 스타일을 기본 카드 스타일로 사용합니다.
 - **기본 카드 스타일 (클릭 가능한 카드)**
@@ -77,12 +69,3 @@
   - 의미:
     - 살짝 둥근 모서리(2xl)와 옅은 그림자(shadow-sm)를 기본으로, hover 시 `shadow-lg`만 강하게 하여 **푸른 글로우 대신 자연스러운 카드 부각**을 사용합니다.
     - 배경은 `bg-white/80`, 테두리는 `border-gray-200`로 통일합니다.
-
-## 8. 레거시 제거 원칙
-
-- 기능/필드/타입/응답 스펙을 제거하기로 결정했으면, "남겨두는 레거시"는 두지 않습니다.
-  - 프론트 타입/컴포넌트 props
-  - 백엔드 컨트롤러 계산 로직
-  - API 응답 payload
-  - (해당 시) DB 스키마/테스트/문서
-    위 항목에서 함께 제거하여 단일 소스로 유지합니다.

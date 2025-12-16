@@ -1,43 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
-import { cn } from "@/lib/utils";
-import {
-  Building2,
-  Upload,
-  Save,
-  ShieldCheck,
-  Check,
-  ChevronsUpDown,
-  RotateCcw,
-  X,
-} from "lucide-react";
+import { Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+import { BusinessLicenseUpload } from "./business/BusinessLicenseUpload";
+import { BusinessForm } from "./business/BusinessForm";
+import { OrganizationSearchSection } from "./business/OrganizationSearchSection";
+import { JoinRequestsSection } from "./business/JoinRequestsSection";
+import { BusinessMemberView } from "./business/BusinessMemberView";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+  LicenseExtracted,
+  BusinessData,
+  LicenseStatus,
+  MembershipStatus,
+} from "./business/types";
 
 interface BusinessTabProps {
   userData: {
@@ -48,17 +28,6 @@ interface BusinessTabProps {
   } | null;
 }
 
-type LicenseExtracted = {
-  companyName?: string;
-  businessNumber?: string;
-  address?: string;
-  phoneNumber?: string;
-  email?: string;
-  representativeName?: string;
-  businessType?: string;
-  businessItem?: string;
-};
-
 export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
@@ -68,9 +37,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
 
-  const [membership, setMembership] = useState<
-    "none" | "owner" | "member" | "pending"
-  >("none");
+  const [membership, setMembership] = useState<MembershipStatus>("none");
 
   const myUserId = useMemo(() => {
     return String(user?.mockUserId || user?.id || "");
@@ -104,12 +71,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
   const [licenseDeleteLoading, setLicenseDeleteLoading] = useState(false);
 
-  const getOrgLabel = (o: { name: string; businessNumber?: string }) => {
-    const name = String(o?.name || "").trim();
-    const bn = String(o?.businessNumber || "").trim();
-    return bn ? `${name} (${bn})` : name;
-  };
-
   const mockHeaders = useMemo(() => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
     return {
@@ -126,10 +87,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const [licenseFileName, setLicenseFileName] = useState<string>("");
   const [licenseFileId, setLicenseFileId] = useState<string>("");
   const [licenseS3Key, setLicenseS3Key] = useState<string>("");
-  const licenseInputRef = useRef<HTMLInputElement | null>(null);
-  const [licenseStatus, setLicenseStatus] = useState<
-    "missing" | "uploading" | "uploaded" | "processing" | "ready" | "error"
-  >(userData?.companyName ? "missing" : "missing");
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>(
+    userData?.companyName ? "missing" : "missing"
+  );
 
   const showLicenseDetails = useMemo(() => {
     if (!licenseFileName) return false;
@@ -143,6 +103,15 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
   const [extracted, setExtracted] = useState<LicenseExtracted>({});
   const [isVerified, setIsVerified] = useState<boolean>(false);
+
+  const [businessData, setBusinessData] = useState<BusinessData>({
+    companyName: "",
+    businessNumber: "",
+    address: "",
+    phone: "",
+  });
+  const [companyNameTouched, setCompanyNameTouched] = useState(false);
+  const [errors, setErrors] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!reason) return;
@@ -173,11 +142,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         if (!res.ok) return;
         const body: any = res.data || {};
         const data = body.data || body;
-        const next = (data?.membership || "none") as
-          | "none"
-          | "owner"
-          | "member"
-          | "pending";
+        const next = (data?.membership || "none") as MembershipStatus;
         setMembership(next);
 
         setOrgOwnerId(String(data?.organization?.owner || "").trim());
@@ -295,11 +260,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     if (!res.ok) return;
     const body: any = res.data || {};
     const data = body.data || body;
-    const next = (data?.membership || "none") as
-      | "none"
-      | "owner"
-      | "member"
-      | "pending";
+    const next = (data?.membership || "none") as MembershipStatus;
     setMembership(next);
   };
 
@@ -315,14 +276,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setMyJoinRequests(Array.isArray(data) ? data : []);
-  };
-
-  const getJoinStatusLabel = (status: string) => {
-    const s = String(status || "").trim();
-    if (s === "pending") return "승인대기중";
-    if (s === "approved") return "승인됨";
-    if (s === "rejected") return "거절됨";
-    return s || "-";
   };
 
   const handleCancelJoinRequest = async (organizationId: string) => {
@@ -529,16 +482,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setJoinLoading(false);
     }
   };
-
-  const [businessData, setBusinessData] = useState({
-    companyName: "",
-    businessNumber: "",
-    address: "",
-    phone: "",
-  });
-  const [companyNameTouched, setCompanyNameTouched] = useState(false);
-
-  const [errors, setErrors] = useState<Record<string, boolean>>({});
 
   const currentOrgName = useMemo(() => {
     const fromUser = String((user as any)?.organization || "").trim();
@@ -916,288 +859,31 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       <CardContent className="space-y-6">
         {membership === "owner" && (
           <div className="space-y-6">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  {licenseStatus === "ready" && (
-                    <span className="inline-flex items-center gap-1">
-                      <ShieldCheck className="h-4 w-4" />
-                      {isVerified ? "검증 완료" : "검증 대기"}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div
-                className={cn(
-                  "border-2 border-dashed rounded-lg p-4",
-                  licenseStatus === "missing"
-                    ? "border-orange-300 bg-orange-50/80"
-                    : "border-border bg-white/60"
-                )}
-              >
-                <div className="text-center">
-                  <Button
-                    type="button"
-                    variant={
-                      licenseStatus === "missing" ? "default" : "outline"
-                    }
-                    disabled={
-                      licenseStatus === "uploading" ||
-                      licenseStatus === "processing" ||
-                      membership !== "owner"
-                    }
-                    onClick={() => {
-                      if (
-                        licenseStatus === "uploading" ||
-                        licenseStatus === "processing" ||
-                        membership !== "owner"
-                      ) {
-                        return;
-                      }
-                      licenseInputRef.current?.click();
-                    }}
-                  >
-                    <Upload className="mr-2 h-4 w-4" />
-                    {licenseStatus === "uploading"
-                      ? "업로드 중..."
-                      : licenseStatus === "processing"
-                      ? "분석 중..."
-                      : "사업자등록증 업로드"}
-                  </Button>
-                  <input
-                    ref={licenseInputRef}
-                    type="file"
-                    className="hidden"
-                    accept=".jpg,.jpeg,.png"
-                    disabled={membership !== "owner"}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleFileUpload(f);
-                      e.target.value = "";
-                    }}
-                  />
-                  {membership !== "owner" && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      사업자등록증 업로드/수정은 대표자(주대표/공동대표)만
-                      가능합니다.
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-2">
-                    JPG, PNG 파일만 가능 (최대 10MB)
-                  </p>
-                  {licenseFileName && (
-                    <div className="mt-2 flex items-center justify-center gap-2">
-                      <p className="text-xs text-foreground/80">
-                        업로드됨: {licenseFileName}
-                      </p>
-                      <button
-                        type="button"
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-md border bg-white/60 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-                        onClick={handleDeleteLicense}
-                        disabled={
-                          licenseDeleteLoading ||
-                          licenseStatus === "uploading" ||
-                          licenseStatus === "processing" ||
-                          membership !== "owner"
-                        }
-                        aria-label="사업자등록증 삭제"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <BusinessLicenseUpload
+              membership={membership}
+              licenseStatus={licenseStatus}
+              isVerified={isVerified}
+              licenseFileName={licenseFileName}
+              licenseDeleteLoading={licenseDeleteLoading}
+              onFileUpload={handleFileUpload}
+              onDeleteLicense={handleDeleteLicense}
+            />
 
             {showLicenseDetails && (
-              <>
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="repName">대표자명</Label>
-                      <Input
-                        id="repName"
-                        className={cn(
-                          errors.representativeName &&
-                            "border-destructive focus-visible:ring-destructive"
-                        )}
-                        value={extracted.representativeName || ""}
-                        onChange={(e) => (
-                          setExtracted((prev) => ({
-                            ...prev,
-                            representativeName: e.target.value,
-                          })),
-                          setErrors((prev) => ({
-                            ...prev,
-                            representativeName: false,
-                          }))
-                        )}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="orgName">기공소명</Label>
-                      <Input
-                        id="orgName"
-                        className={cn(
-                          errors.companyName &&
-                            "border-destructive focus-visible:ring-destructive"
-                        )}
-                        value={businessData.companyName}
-                        onChange={(e) => (
-                          setBusinessData((prev) => ({
-                            ...prev,
-                            companyName: e.target.value,
-                          })),
-                          setCompanyNameTouched(true),
-                          setErrors((prev) => ({ ...prev, companyName: false }))
-                        )}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="orgPhone">전화번호</Label>
-                      <Input
-                        id="orgPhone"
-                        className={cn(
-                          errors.phone &&
-                            "border-destructive focus-visible:ring-destructive"
-                        )}
-                        value={businessData.phone}
-                        onChange={(e) => (
-                          setBusinessData((prev) => ({
-                            ...prev,
-                            phone: e.target.value,
-                          })),
-                          setErrors((prev) => ({ ...prev, phone: false }))
-                        )}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="bizNo">사업자등록번호</Label>
-                      <Input
-                        id="bizNo"
-                        className={cn(
-                          errors.businessNumber &&
-                            "border-destructive focus-visible:ring-destructive"
-                        )}
-                        value={businessData.businessNumber}
-                        onChange={(e) => (
-                          setBusinessData((prev) => ({
-                            ...prev,
-                            businessNumber: e.target.value,
-                          })),
-                          setErrors((prev) => ({
-                            ...prev,
-                            businessNumber: false,
-                          }))
-                        )}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bizType">업태</Label>
-                      <Input
-                        id="bizType"
-                        className={cn(
-                          errors.businessType &&
-                            "border-destructive focus-visible:ring-destructive"
-                        )}
-                        value={extracted.businessType || ""}
-                        onChange={(e) => (
-                          setExtracted((prev) => ({
-                            ...prev,
-                            businessType: e.target.value,
-                          })),
-                          setErrors((prev) => ({
-                            ...prev,
-                            businessType: false,
-                          }))
-                        )}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bizItem">종목</Label>
-                      <Input
-                        id="bizItem"
-                        className={cn(
-                          errors.businessItem &&
-                            "border-destructive focus-visible:ring-destructive"
-                        )}
-                        value={extracted.businessItem || ""}
-                        onChange={(e) => (
-                          setExtracted((prev) => ({
-                            ...prev,
-                            businessItem: e.target.value,
-                          })),
-                          setErrors((prev) => ({
-                            ...prev,
-                            businessItem: false,
-                          }))
-                        )}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="taxEmail">세금계산서 이메일</Label>
-                      <Input
-                        id="taxEmail"
-                        type="email"
-                        className={cn(
-                          errors.email &&
-                            "border-destructive focus-visible:ring-destructive"
-                        )}
-                        value={extracted.email || ""}
-                        onChange={(e) => (
-                          setExtracted((prev) => ({
-                            ...prev,
-                            email: e.target.value,
-                          })),
-                          setErrors((prev) => ({ ...prev, email: false }))
-                        )}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="address">주소</Label>
-                  <Input
-                    id="address"
-                    className={cn(
-                      errors.address &&
-                        "border-destructive focus-visible:ring-destructive"
-                    )}
-                    value={businessData.address}
-                    onChange={(e) => (
-                      setBusinessData((prev) => ({
-                        ...prev,
-                        address: e.target.value,
-                      })),
-                      setErrors((prev) => ({ ...prev, address: false }))
-                    )}
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleDeleteLicense}
-                    disabled={
-                      licenseDeleteLoading ||
-                      licenseStatus === "uploading" ||
-                      licenseStatus === "processing" ||
-                      membership !== "owner"
-                    }
-                  >
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                    초기화
-                  </Button>
-                  <Button type="button" onClick={handleSave}>
-                    <Save className="mr-2 h-4 w-4" />
-                    저장하기
-                  </Button>
-                </div>
-              </>
+              <BusinessForm
+                businessData={businessData}
+                extracted={extracted}
+                errors={errors}
+                licenseStatus={licenseStatus}
+                membership={membership}
+                licenseDeleteLoading={licenseDeleteLoading}
+                setBusinessData={setBusinessData}
+                setExtracted={setExtracted}
+                setErrors={setErrors}
+                setCompanyNameTouched={setCompanyNameTouched}
+                onSave={handleSave}
+                onReset={handleDeleteLicense}
+              />
             )}
           </div>
         )}
@@ -1205,227 +891,35 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         {membership !== "owner" && (
           <div className="space-y-4">
             {membership === "member" && (
-              <div className="space-y-4">
-                <div className="rounded-lg border bg-white/60 p-3 text-sm">
-                  현재 소속됨{currentOrgName ? `: ${currentOrgName}` : ""}
-                </div>
-
-                <div className="rounded-lg border bg-white/60 p-3 text-xs text-muted-foreground">
-                  기공소 사업자 정보는 대표자만 수정할 수 있어요. 여기서는
-                  확인만 가능합니다.
-                </div>
-
-                <div className="rounded-lg border bg-white/60 p-4 space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-medium">사업자 식별 정보</div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-1">
-                      <ShieldCheck className="h-4 w-4" />
-                      {licenseStatus === "ready"
-                        ? isVerified
-                          ? "검증 완료"
-                          : "검증 대기"
-                        : "등록 필요"}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="space-y-2">
-                      <Label>대표자명</Label>
-                      <Input
-                        value={extracted.representativeName || ""}
-                        readOnly
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>기공소명</Label>
-                      <Input value={businessData.companyName || ""} readOnly />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>전화번호</Label>
-                      <Input value={businessData.phone || ""} readOnly />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>사업자등록번호</Label>
-                      <Input
-                        value={businessData.businessNumber || ""}
-                        readOnly
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>업태</Label>
-                      <Input value={extracted.businessType || ""} readOnly />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>종목</Label>
-                      <Input value={extracted.businessItem || ""} readOnly />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>세금계산서 이메일</Label>
-                      <Input value={extracted.email || ""} readOnly />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>주소</Label>
-                    <Input value={businessData.address || ""} readOnly />
-                  </div>
-                </div>
-              </div>
+              <BusinessMemberView
+                currentOrgName={currentOrgName}
+                licenseStatus={licenseStatus}
+                isVerified={isVerified}
+                extracted={extracted}
+                businessData={businessData}
+              />
             )}
 
             {membership === "none" && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="md:col-span-2 space-y-2">
-                    <Label>기공소 선택</Label>
-                    <Popover open={orgOpen} onOpenChange={setOrgOpen}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={orgOpen}
-                          className="w-full justify-between"
-                          disabled={joinLoading}
-                        >
-                          <span className="truncate">
-                            {selectedOrg
-                              ? getOrgLabel(selectedOrg)
-                              : "기공소를 검색해서 선택하세요"}
-                          </span>
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[520px] p-0" align="start">
-                        <Command>
-                          <CommandInput
-                            placeholder="기공소명/대표자명/사업자번호/주소 검색..."
-                            value={orgSearch}
-                            onValueChange={(v) => {
-                              setOrgSearch(v);
-                              setSelectedOrg(null);
-                            }}
-                          />
-                          <CommandList>
-                            <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
-                            <CommandGroup>
-                              {orgSearchResults.map((o) => {
-                                const selected = selectedOrg?._id === o._id;
-                                const rep = String(
-                                  o.representativeName || ""
-                                ).trim();
-                                const bn = String(
-                                  o.businessNumber || ""
-                                ).trim();
-                                const addr = String(o.address || "").trim();
-                                const meta = [
-                                  rep ? `대표: ${rep}` : "",
-                                  bn ? `사업자: ${bn}` : "",
-                                  addr ? addr : "",
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ");
-                                const searchValue = [o.name, rep, bn, addr]
-                                  .filter(Boolean)
-                                  .join(" ");
-                                return (
-                                  <CommandItem
-                                    key={o._id}
-                                    value={searchValue}
-                                    onSelect={() => {
-                                      setSelectedOrg(o);
-                                      setOrgOpen(false);
-                                    }}
-                                  >
-                                    <Check
-                                      className={cn(
-                                        "mr-2 h-4 w-4",
-                                        selected ? "opacity-100" : "opacity-0"
-                                      )}
-                                    />
-                                    <div className="min-w-0">
-                                      <div className="text-sm truncate">
-                                        {getOrgLabel(o)}
-                                      </div>
-                                      {!!meta && (
-                                        <div className="text-xs text-muted-foreground truncate">
-                                          {meta}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </CommandItem>
-                                );
-                              })}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="opacity-0">신청</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      onClick={handleJoinRequest}
-                      disabled={joinLoading || !selectedOrg?._id}
-                    >
-                      {joinLoading ? "신청 중..." : "소속 신청"}
-                    </Button>
-                  </div>
-                </div>
-              </>
+              <OrganizationSearchSection
+                orgSearch={orgSearch}
+                setOrgSearch={setOrgSearch}
+                orgSearchResults={orgSearchResults}
+                selectedOrg={selectedOrg}
+                setSelectedOrg={setSelectedOrg}
+                orgOpen={orgOpen}
+                setOrgOpen={setOrgOpen}
+                joinLoading={joinLoading}
+                onJoinRequest={handleJoinRequest}
+              />
             )}
 
-            {Array.isArray(myJoinRequests) && myJoinRequests.length > 0 && (
-              <div className="rounded-lg border bg-white/60 p-4">
-                <div className="text-sm font-medium mb-2">내 소속 신청:</div>
-                <div className="space-y-2">
-                  {myJoinRequests.map((r) => (
-                    <div
-                      key={`${r.organizationId}-${r.status}`}
-                      className="flex items-center justify-between gap-3"
-                    >
-                      <div className="text-sm">
-                        {r.organizationName} - {getJoinStatusLabel(r.status)}
-                      </div>
-                      {String(r.status) === "pending" && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            handleCancelJoinRequest(String(r.organizationId))
-                          }
-                          disabled={cancelLoadingOrgId === r.organizationId}
-                        >
-                          {cancelLoadingOrgId === r.organizationId
-                            ? "취소 중..."
-                            : "신청 취소"}
-                        </Button>
-                      )}
-
-                      {String(r.status) === "approved" && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            handleLeaveOrganization(String(r.organizationId))
-                          }
-                          disabled={cancelLoadingOrgId === r.organizationId}
-                        >
-                          {cancelLoadingOrgId === r.organizationId
-                            ? "취소 중..."
-                            : "소속 해제"}
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <JoinRequestsSection
+              myJoinRequests={myJoinRequests}
+              cancelLoadingOrgId={cancelLoadingOrgId}
+              onCancelJoinRequest={handleCancelJoinRequest}
+              onLeaveOrganization={handleLeaveOrganization}
+            />
           </div>
         )}
       </CardContent>
