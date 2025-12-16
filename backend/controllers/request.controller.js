@@ -17,7 +17,6 @@ export const {
   getRequestById,
   updateRequest,
   updateRequestStatus,
-  addMessage,
   deleteRequest,
 } = commonController;
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export type ChatSenderRole = "requestor" | "manufacturer" | "admin";
 
@@ -47,6 +48,7 @@ export const useRequestChat = ({
   currentUserName,
 }: UseRequestChatOptions) => {
   const { toast } = useToast();
+  const { token } = useAuthStore();
   const [messages, setMessages] = useState<ChatMessage[]>(fallbackMessages);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,30 +59,10 @@ export const useRequestChat = ({
       return;
     }
 
-    const fetchMessages = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await apiFetch<any>({
-          path: `/api/requests/${requestId}`,
-          method: "GET",
-        });
-        if (!res.ok) {
-          throw new Error("의뢰 메시지 조회에 실패했습니다.");
-        }
-        const body = res.data || {};
-        const requestData = (body as any)?.data || body;
-        const apiMessages = requestData?.messages ?? [];
-        setMessages(mapApiMessagesToChatMessages(apiMessages));
-      } catch (e: any) {
-        setError(e?.message || "메시지 조회 중 오류가 발생했습니다.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void fetchMessages();
-  }, [requestId, fallbackMessages]);
+    // Request.messages 기반 채팅은 정책상/설계상 제거됨
+    setMessages(fallbackMessages);
+    setError("의뢰 기반 채팅은 더 이상 지원되지 않습니다.");
+  }, [requestId, fallbackMessages, token]);
 
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
@@ -96,35 +78,12 @@ export const useRequestChat = ({
         : "어벗츠.핏");
 
     if (requestId) {
-      try {
-        const res = await apiFetch<any>({
-          path: `/api/requests/${requestId}/messages`,
-          method: "POST",
-          jsonBody: { content: content.trim() },
-        });
-
-        const body = (res.data as any) ?? null;
-        if (!res.ok || body?.success === false) {
-          throw new Error(body?.message || "메시지 전송에 실패했습니다.");
-        }
-
-        const updatedRequest = body?.data || body || {};
-        const apiMessages = updatedRequest?.messages ?? [];
-        setMessages(mapApiMessagesToChatMessages(apiMessages));
-
-        toast({
-          title: "메시지가 전송되었습니다",
-          description: "상대방이 곧 응답할 예정입니다.",
-        });
-        return;
-      } catch (e: any) {
-        toast({
-          title: "전송 실패",
-          description: e?.message || "메시지 전송 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
+      toast({
+        title: "전송 불가",
+        description: "의뢰 기반 채팅은 더 이상 지원되지 않습니다.",
+        variant: "destructive",
+      });
+      return;
     }
 
     const newMessage: ChatMessage = {

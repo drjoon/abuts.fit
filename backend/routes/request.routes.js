@@ -120,9 +120,6 @@ router.post(
   requestController.cloneRequestToDraft
 );
 
-// 의뢰에 메시지 추가 (권한 검증은 컨트롤러에서 처리)
-router.post("/:id/messages", requestController.addMessage);
-
 // 의뢰 삭제 (권한 검증은 컨트롤러에서 처리)
 router.delete("/:id", requestController.deleteRequest);
 

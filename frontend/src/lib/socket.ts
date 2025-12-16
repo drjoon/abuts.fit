@@ -93,16 +93,6 @@ export function sendMessage(data: {
   socket?.emit("send-message", data);
 }
 
-// Request 메시지 전송
-export function sendRequestMessage(data: {
-  requestId: string;
-  content: string;
-  attachments?: any[];
-  replyTo?: string;
-}) {
-  socket?.emit("send-request-message", data);
-}
-
 // 타이핑 중 표시
 export function emitTyping(roomId: string, isTyping: boolean) {
   socket?.emit("typing", { roomId, isTyping });
@@ -113,27 +103,13 @@ export function markMessagesAsRead(roomId: string, messageIds: string[]) {
   socket?.emit("mark-as-read", { roomId, messageIds });
 }
 
-// Request 메시지 읽음 처리
-export function markRequestMessagesAsRead(requestId: string) {
-  socket?.emit("mark-request-messages-read", { requestId });
-}
-
 // 이벤트 리스너 등록
 export function onNewMessage(callback: (message: SocketMessage) => void) {
   socket?.on("new-message", callback);
   return () => socket?.off("new-message", callback);
 }
 
-export function onNewRequestMessage(
-  callback: (data: { requestId: string; message: any }) => void
-) {
-  socket?.on("new-request-message", callback);
-  return () => socket?.off("new-request-message", callback);
-}
-
-export function onNotification(
-  callback: (notification: SocketNotification) => void
-) {
+export function onNotification(callback: (data: any) => void) {
   socket?.on("notification", callback);
   return () => socket?.off("notification", callback);
 }
@@ -158,17 +134,6 @@ export function onMessagesRead(
 ) {
   socket?.on("messages-read", callback);
   return () => socket?.off("messages-read", callback);
-}
-
-export function onRequestMessagesRead(
-  callback: (data: {
-    requestId: string;
-    readBy: string;
-    readAt: string;
-  }) => void
-) {
-  socket?.on("request-messages-read", callback);
-  return () => socket?.off("request-messages-read", callback);
 }
 
 export function onUserJoined(

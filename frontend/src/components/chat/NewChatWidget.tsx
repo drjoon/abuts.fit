@@ -1,169 +1,130 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { MessageSquare, X, Minimize2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { MessageSquare, X, Minimize2, Send, Paperclip } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { ExpandedRequestCard } from "@/components/ExpandedRequestCard";
-import { RequestBase, getRequestId } from "@/types/request";
+import { apiFetch } from "@/lib/apiClient";
+import { useChatMessages } from "@/shared/hooks/useChatMessages";
+import type { ChatRoom } from "@/shared/hooks/useChatRooms";
 
 type ViewMode = "chats";
 
-interface RequestSummary {
-  id: string;
-  title: string;
-  counterpart: string; // 상대방 (제작사 또는 의뢰인)
-  date: string;
-  status: string;
-  unreadCount?: number;
-}
-
-// TODO: 이후 실제 API(`/api/requests/me`, `/api/requests/assigned`)로 교체
-const mockMyRequestsForRequestor: RequestSummary[] = [
-  {
-    id: "REQ-001",
-    title: "상악 우측 제1대구치 임플란트",
-    counterpart: "프리미엄 어벗먼트", // 제작사
-    date: "2025-07-15",
-    status: "진행중",
-  },
-  {
-    id: "REQ-002",
-    title: "하악 좌측 제2소구치 임플란트",
-    counterpart: "프리미엄 어벗먼트",
-    date: "2025-07-14",
-    status: "제작중",
-  },
-];
-
-const mockAssignedRequestsForManufacturer: RequestSummary[] = [
-  {
-    id: "REQ-101",
-    title: "상악 전치부 임플란트",
-    counterpart: "서울치과기공소", // 의뢰인
-    date: "2025-07-16",
-    status: "의뢰접수",
-  },
-  {
-    id: "REQ-102",
-    title: "하악 우측 제1대구치 임플란트",
-    counterpart: "부산치과기공소",
-    date: "2025-07-15",
-    status: "진행중",
-  },
-];
+type RequestPickItem = {
+  requestId: string;
+  patientName: string;
+  tooth: string;
+};
 
 export const NewChatWidget = () => {
-  const { user, isAuthenticated } = useAuthStore();
+  const { user, isAuthenticated, token } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [viewMode] = useState<ViewMode>("chats");
-  const [selectedRequest, setSelectedRequest] = useState<RequestBase | null>(
-    null
-  );
-  const [isRequestDialogOpen, setIsRequestDialogOpen] = useState(false);
-  const [backendRequests, setBackendRequests] = useState<RequestBase[]>([]);
+  const [room, setRoom] = useState<ChatRoom | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [requestPicks, setRequestPicks] = useState<RequestPickItem[]>([]);
 
   useEffect(() => {
-    const loadRequests = async () => {
+    const load = async () => {
       if (!user || !isAuthenticated) return;
       setLoading(true);
       setError(null);
 
-      const path =
-        user.role === "manufacturer"
-          ? "/api/requests/assigned"
-          : "/api/requests/my";
-
       try {
-        const res = await fetch(path, {
-          headers: {
-            Authorization: `Bearer ${useAuthStore.getState().token}`,
-            "x-mock-role": user.role,
-          },
+        const roomRes = await apiFetch<any>({
+          path: "/api/chats/support-room",
+          method: "GET",
+          token,
         });
-        if (!res.ok) {
-          throw new Error("의뢰 목록을 불러오지 못했습니다.");
+        if (!roomRes.ok) {
+          throw new Error("지원 채팅방을 불러오지 못했습니다.");
         }
-        const body = await res.json();
-        const data = body?.data;
-        const list = Array.isArray(data?.requests)
-          ? (data.requests as RequestBase[])
-          : [];
-        setBackendRequests(list);
+        const roomBody = roomRes.data || {};
+        const roomData = (roomBody as any)?.data || roomBody;
+        setRoom(roomData as ChatRoom);
+
+        if (user.role === "requestor") {
+          const reqRes = await apiFetch<any>({
+            path: "/api/requests/my?limit=20",
+            method: "GET",
+            token,
+          });
+          const reqBody = reqRes.data || {};
+          const reqData = (reqBody as any)?.data || reqBody;
+          const list: any[] = Array.isArray(reqData?.requests)
+            ? reqData.requests
+            : [];
+          const picks: RequestPickItem[] = list
+            .map((r) => {
+              const ci = r?.caseInfos || {};
+              return {
+                requestId: String(r?.requestId || "").trim(),
+                patientName: String(ci?.patientName || "").trim(),
+                tooth: String(ci?.tooth || "").trim(),
+              };
+            })
+            .filter((x) => !!x.requestId);
+          setRequestPicks(picks);
+        } else {
+          setRequestPicks([]);
+        }
       } catch (e: any) {
-        setError(e?.message || "의뢰 목록 조회 중 오류가 발생했습니다.");
+        setError(e?.message || "지원 채팅을 불러오는 중 오류가 발생했습니다.");
       } finally {
         setLoading(false);
       }
     };
 
-    void loadRequests();
-  }, [user, isAuthenticated]);
+    void load();
+  }, [user, isAuthenticated, token]);
 
-  // 백엔드 의뢰 목록을 요약 형태로 변환
-  const summarizeRequests = (
-    list: RequestBase[],
-    role: typeof user.role
-  ): RequestSummary[] => {
-    return list.map((r) => {
-      const id = getRequestId(r);
-      const legacy: any = r;
-      const title =
-        r.title ||
-        legacy.subject ||
-        legacy.implantType ||
-        legacy.implantCompany ||
-        "어벗먼트 의뢰";
-
-      const createdAt = r.createdAt ? new Date(r.createdAt) : null;
-      const date = createdAt ? createdAt.toISOString().slice(0, 10) : "";
-
-      const status = r.status || "";
-
-      let counterpart: string;
-      if (role === "manufacturer") {
-        counterpart =
-          r.requestor?.organization || r.requestor?.name || "의뢰인 미지정";
-      } else {
-        if (typeof legacy.manufacturer === "string") {
-          counterpart = legacy.manufacturer || "제작사 미지정";
-        } else {
-          counterpart =
-            legacy.manufacturer?.name ||
-            legacy.manufacturer?.organization ||
-            "제작사 미지정";
-        }
-      }
-
-      return {
-        id,
-        title,
-        counterpart,
-        date,
-        status,
-        unreadCount: r.unreadCount ?? 0,
-      } as RequestSummary;
-    });
-  };
-
-  if (!isAuthenticated || !user) {
-    return null; // 로그인하지 않은 사용자에게는 채팅 위젯을 표시하지 않음
+  if (!isAuthenticated || !user || user.role === "admin") {
+    return null;
   }
 
-  const effectiveRequests: RequestSummary[] =
-    backendRequests.length > 0
-      ? summarizeRequests(backendRequests, user.role)
-      : user.role === "manufacturer"
-      ? mockAssignedRequestsForManufacturer
-      : mockMyRequestsForRequestor;
+  const roomId = room?._id;
+  const {
+    messages,
+    loading: messagesLoading,
+    error: messagesError,
+    sendMessage,
+  } = useChatMessages({ roomId, autoFetch: true });
 
-  const totalUnread = effectiveRequests.reduce(
-    (sum, r) => sum + (r.unreadCount ?? 0),
-    0
-  );
+  const totalUnread =
+    typeof (room as any)?.unreadCount === "number"
+      ? (room as any).unreadCount
+      : 0;
+
+  const title = useMemo(() => {
+    return "어벗츠.핏 고객지원";
+  }, []);
+
+  const handleSend = async () => {
+    if (!roomId) return;
+    const content = draft.trim();
+    if (!content) return;
+    await sendMessage(content);
+    setDraft("");
+  };
+
+  const insertRequestId = (requestId: string) => {
+    const tokenText = `[의뢰ID:${requestId}]`;
+    setDraft((prev) => {
+      const base = prev || "";
+      if (!base.trim()) return tokenText;
+      if (base.includes(tokenText)) return base;
+      return `${base.trim()} ${tokenText}`;
+    });
+  };
 
   return (
     <>
@@ -194,21 +155,10 @@ export const NewChatWidget = () => {
             {/* 헤더 */}
             <div className="flex items-center justify-between px-3 sm:px-4 py-3 sm:py-4 border-b bg-muted/50">
               <div className="flex items-center gap-2 sm:gap-4">
-                <div className="text-sm font-medium">
-                  {user.role === "manufacturer" ? "할당 의뢰" : "내 의뢰"}
-                </div>
+                <div className="text-sm font-medium truncate">{title}</div>
               </div>
 
               <div className="flex items-center gap-1 sm:gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsMinimized(!isMinimized)}
-                  title="축소"
-                  className="h-8 w-8 p-0"
-                >
-                  <Minimize2 className="h-4 w-4" />
-                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -222,95 +172,128 @@ export const NewChatWidget = () => {
             </div>
 
             {!isMinimized && (
-              <div className="h-[calc(100%-3.5rem)] sm:h-[544px] overflow-y-auto">
-                <div className="p-3 sm:p-4 space-y-2">
-                  {loading && (
-                    <div className="text-center text-xs text-muted-foreground py-4">
-                      의뢰 목록을 불러오는 중입니다...
-                    </div>
-                  )}
+              <div className="h-[calc(100%-3.5rem)] sm:h-[544px] flex flex-col">
+                <>
+                  <div className="flex-1 overflow-y-auto">
+                    <ScrollArea className="h-full">
+                      <div className="p-3 sm:p-4 space-y-2">
+                        {(loading || messagesLoading) && (
+                          <div className="text-center text-xs text-muted-foreground py-4">
+                            채팅을 불러오는 중입니다...
+                          </div>
+                        )}
 
-                  {error && !loading && (
-                    <div className="text-center text-xs text-destructive py-2">
-                      {error}
-                    </div>
-                  )}
-
-                  {effectiveRequests.map((req) => (
-                    <button
-                      key={req.id}
-                      type="button"
-                      className="w-full text-left p-3 sm:p-3 border border-border rounded-lg hover:bg-muted/60 transition-colors text-xs sm:text-sm"
-                      onClick={() => {
-                        // 백엔드에서 가져온 전체 request 객체 찾기 (없으면 최소 정보만 전달)
-                        const fullRequest: RequestBase = backendRequests.find(
-                          (r) => getRequestId(r) === req.id
-                        ) || {
-                          _id: req.id,
-                          requestId: req.id,
-                          title: req.title,
-                          status: req.status,
-                        };
-
-                        setSelectedRequest(fullRequest);
-                        setIsRequestDialogOpen(true);
-                      }}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="font-medium truncate">{req.title}</div>
-                        <div className="text-[11px] text-muted-foreground ml-2 whitespace-nowrap">
-                          {req.date}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>{req.counterpart}</span>
-                        <span>
-                          {req.status}
-                          {req.unreadCount && req.unreadCount > 0 && (
-                            <span className="ml-1 inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground px-1.5 py-0.5 text-[10px]">
-                              {req.unreadCount > 99 ? "99+" : req.unreadCount}
-                            </span>
+                        {(error || messagesError) &&
+                          !(loading || messagesLoading) && (
+                            <div className="text-center text-xs text-destructive py-2">
+                              {error || messagesError}
+                            </div>
                           )}
-                        </span>
+
+                        {messages.map((m) => {
+                          const isMine =
+                            m.sender?._id === (user?.mockUserId || user?.id);
+                          return (
+                            <div
+                              key={m._id}
+                              className={`flex ${
+                                isMine ? "justify-end" : "justify-start"
+                              }`}
+                            >
+                              <div
+                                className={`max-w-[80%] rounded-lg px-3 py-2 text-xs sm:text-sm ${
+                                  isMine
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted"
+                                }`}
+                              >
+                                {m.content}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {messages.length === 0 &&
+                          !(loading || messagesLoading) && (
+                            <div className="text-center text-xs text-muted-foreground py-6">
+                              아직 메시지가 없습니다.
+                            </div>
+                          )}
                       </div>
-                    </button>
-                  ))}
-                  {effectiveRequests.length === 0 && !loading && (
-                    <div className="text-center text-xs text-muted-foreground py-6">
-                      아직 등록된 의뢰가 없습니다.
+                    </ScrollArea>
+                  </div>
+
+                  <div className="border-t px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6">
+                    <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                      <Textarea
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder="문의 내용을 입력하세요"
+                        className="resize-none flex-1"
+                        rows={3}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void handleSend();
+                          }
+                        }}
+                      />
+                      <div className="flex flex-col gap-2">
+                        {user.role === "requestor" ? (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="shrink-0 h-10 w-10"
+                                disabled={requestPicks.length === 0}
+                              >
+                                <Paperclip className="h-4 w-4" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 p-2" align="end">
+                              <div className="space-y-1">
+                                {requestPicks.map((r) => (
+                                  <button
+                                    key={r.requestId}
+                                    type="button"
+                                    className="w-full text-left rounded px-2 py-1 text-xs hover:bg-muted"
+                                    onClick={() => insertRequestId(r.requestId)}
+                                  >
+                                    <div className="font-medium">
+                                      {r.requestId}
+                                    </div>
+                                    <div className="text-muted-foreground truncate">
+                                      {r.patientName}
+                                      {r.tooth ? ` / ${r.tooth}` : ""}
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        ) : (
+                          <div className="h-10 w-10" />
+                        )}
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={() => void handleSend()}
+                          disabled={!draft.trim() || !roomId}
+                          className="shrink-0 h-10 w-10"
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </>
               </div>
             )}
           </Card>
         )}
       </div>
-
-      {/* 의뢰 상세 + 채팅 (ExpandedRequestCard 재사용) */}
-      <Dialog
-        open={isRequestDialogOpen && !!selectedRequest}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsRequestDialogOpen(false);
-            setSelectedRequest(null);
-          }
-        }}
-      >
-        <DialogContent className="max-w-4xl w-full p-0 overflow-hidden">
-          {selectedRequest && (
-            <ExpandedRequestCard
-              request={selectedRequest}
-              onClose={() => {
-                setIsRequestDialogOpen(false);
-                setSelectedRequest(null);
-              }}
-              currentUserId={user.id}
-              currentUserRole={user.role}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
     </>
   );
 };

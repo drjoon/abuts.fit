@@ -440,69 +440,6 @@ describe.skip("의뢰 API 테스트", () => {
     });
   });
 
-  // 의뢰 메시지 추가 테스트
-  describe("POST /api/requests/:id/messages", () => {
-    it("의뢰자가 메시지 추가 성공", async () => {
-      const messageData = {
-        content: "테스트 메시지입니다.",
-      };
-
-      const response = await request(app)
-        .post(`/api/requests/${requestId}/messages`)
-        .set("Authorization", `Bearer ${requestorToken}`)
-        .send(messageData)
-        .expect(201);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveProperty("messages");
-      expect(response.body.data.messages).toHaveLength(1);
-      expect(response.body.data.messages[0].content).toBe(messageData.content);
-      expect(response.body.data.messages[0].sender.toString()).toBe(
-        requestorId.toString()
-      );
-    });
-
-    it("할당된 제조사가 메시지 추가 성공", async () => {
-      // 먼저 의뢰에 제조사 할당
-      await Request.findByIdAndUpdate(requestId, {
-        manufacturer: manufacturerId,
-      });
-
-      const messageData = {
-        content: "제조사의 테스트 메시지입니다.",
-      };
-
-      const response = await request(app)
-        .post(`/api/requests/${requestId}/messages`)
-        .set("Authorization", `Bearer ${manufacturerToken}`)
-        .send(messageData)
-        .expect(201);
-
-      // 응답 검증
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.messages[0].content).toBe(messageData.content);
-      expect(response.body.data.messages[0].sender.toString()).toBe(
-        manufacturerId.toString()
-      );
-    });
-
-    it("할당되지 않은 제조사가 메시지 추가 시 실패", async () => {
-      const messageData = {
-        content: "권한 없는 메시지 추가 시도",
-      };
-
-      const response = await request(app)
-        .post(`/api/requests/${requestId}/messages`)
-        .set("Authorization", `Bearer ${manufacturerToken}`)
-        .send(messageData)
-        .expect(403);
-
-      // 응답 검증
-      expect(response.body.success).toBe(false);
-    });
-  });
-
   // 의뢰 삭제 테스트
   describe("DELETE /api/requests/:id", () => {
     it("관리자가 의뢰 삭제 성공", async () => {

@@ -9,6 +9,9 @@ router.use(authenticate);
 // 내 채팅방 목록 조회
 router.get("/rooms", chatController.getMyChatRooms);
 
+// 고객지원 채팅방(어벗츠.핏) 조회/생성
+router.get("/support-room", chatController.getSupportRoom);
+
 // 모든 채팅방 조회 (Admin 전용)
 router.get("/rooms/all", authorize(["admin"]), chatController.getAllChatRooms);
 

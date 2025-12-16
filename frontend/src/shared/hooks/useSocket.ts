@@ -22,10 +22,7 @@ export const useSocket = () => {
       // 알림 수신
       const unsubscribe = onNotification((notification: SocketNotification) => {
         // 토스트로 알림 표시
-        if (
-          notification.type === "new-message" ||
-          notification.type === "new-request-message"
-        ) {
+        if (notification.type === "new-message") {
           toast({
             title: notification.title || "새 메시지",
             description:

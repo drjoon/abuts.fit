@@ -48,26 +48,16 @@ export async function getAllRequests(req, res) {
       sort.createdAt = -1; // 기본 정렬: 최신순
     }
 
-    // 의뢰 조회 (현재 사용자 기준 unreadCount 포함)
+    // 의뢰 조회
     const rawRequests = await Request.find(filter)
+      .select("-messages")
       .populate("requestor", "name email organization")
       .sort(sort)
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const requests = rawRequests.map((r) => {
-      const messages = Array.isArray(r.messages) ? r.messages : [];
-      const unreadCount = messages.filter((m) => {
-        if (!m) return false;
-        if (m.isRead) return false;
-        if (!m.sender) return true;
-        const senderId =
-          typeof m.sender === "string" ? m.sender : m.sender.toString();
-        return senderId !== req.user._id.toString();
-      }).length;
-      return { ...r, unreadCount };
-    });
+    const requests = rawRequests;
 
     // 전체 의뢰 수
     const total = await Request.countDocuments(filter);
@@ -120,11 +110,15 @@ export async function getMyRequests(req, res) {
     }
 
     // 의뢰 조회
-    const requests = await Request.find(filter)
+    const rawRequests = await Request.find(filter)
+      .select("-messages")
       .populate("requestor", "name email organization organizationId")
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    const requests = rawRequests;
 
     // 전체 의뢰 수
     const total = await Request.countDocuments(filter);
@@ -166,13 +160,13 @@ export async function getRequestById(req, res) {
       });
     }
 
-    // 의뢰 조회 (메시지 발신자 정보까지 포함)
+    // 의뢰 조회
     const request = await Request.findById(requestId)
+      .select("-messages")
       .populate(
         "requestor",
         "name email phoneNumber organization organizationId role"
-      )
-      .populate("messages.sender", "name email role");
+      );
 
     if (!request) {
       return res.status(404).json({
@@ -224,10 +218,9 @@ export async function updateRequest(req, res) {
     }
 
     // 의뢰 조회
-    const request = await Request.findById(requestId).populate(
-      "requestor",
-      "organizationId"
-    );
+    const request = await Request.findById(requestId)
+      .select("-messages")
+      .populate("requestor", "organizationId");
 
     if (!request) {
       return res.status(404).json({
@@ -427,89 +420,6 @@ export async function updateRequestStatus(req, res) {
     });
   }
 }
-
-/**
- * 의뢰에 메시지 추가
- * @route POST /api/requests/:id/messages
- */
-export async function addMessage(req, res) {
-  try {
-    const requestId = req.params.id;
-    const { content, attachments } = req.body;
-
-    // 메시지 내용 유효성 검사
-    if (!content || !content.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "메시지 내용은 필수입니다.",
-      });
-    }
-
-    // ObjectId 유효성 검사
-    if (!Types.ObjectId.isValid(requestId)) {
-      return res.status(400).json({
-        success: false,
-        message: "유효하지 않은 의뢰 ID입니다.",
-      });
-    }
-
-    // 의뢰 조회
-    const request = await Request.findById(requestId).populate(
-      "requestor",
-      "organizationId"
-    );
-
-    if (!request) {
-      return res.status(404).json({
-        success: false,
-        message: "의뢰를 찾을 수 없습니다.",
-      });
-    }
-
-    // 접근 권한 확인 (의뢰자, 제조사, 관리자만 메시지 추가 가능)
-    const isRequestor = canAccessRequestAsRequestor(req, request);
-    const isManufacturer =
-      req.user.role === "manufacturer" &&
-      request.manufacturer &&
-      request.manufacturer.toString() === req.user._id.toString();
-    const isAdmin = req.user.role === "admin";
-
-    if (!isRequestor && !isManufacturer && !isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: "이 의뢰에 메시지를 추가할 권한이 없습니다.",
-      });
-    }
-
-    // 메시지 추가
-    const newMessage = {
-      sender: req.user._id,
-      content: content.trim(),
-      attachments: attachments || [],
-      isRead: false,
-      createdAt: Date.now(),
-    };
-
-    request.messages.push(newMessage);
-    const updatedRequest = await request.save();
-
-    // 메시지 sender populate
-    await updatedRequest.populate("messages.sender", "name email role");
-
-    res.status(201).json({
-      success: true,
-      message: "메시지가 성공적으로 추가되었습니다.",
-      data: updatedRequest,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "메시지 추가 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
 /**
  * 의뢰 삭제 (관리자 또는 의뢰자 본인만 가능)
  * @route DELETE /api/requests/:id

@@ -3,7 +3,6 @@ import jwt from "jsonwebtoken";
 import User from "./models/user.model.js";
 import ChatRoom from "./models/chatRoom.model.js";
 import Chat from "./models/chat.model.js";
-import Request from "./models/request.model.js";
 
 let io;
 
@@ -149,84 +148,6 @@ export function initializeSocket(server) {
       }
     });
 
-    // Request 메시지 전송
-    socket.on("send-request-message", async (data) => {
-      try {
-        const { requestId, content, attachments, replyTo } = data;
-
-        const request = await Request.findById(requestId).populate(
-          "requestor manufacturer",
-          "name role organizationId"
-        );
-
-        if (!request) {
-          socket.emit("error", { message: "의뢰를 찾을 수 없습니다." });
-          return;
-        }
-
-        // 권한 확인
-        const isRequestor =
-          socket.userRole === "requestor" &&
-          (request.requestor._id.toString() === socket.userId ||
-            (request.requestor.organizationId &&
-              request.requestor.organizationId.toString() ===
-                socket.userId.organizationId));
-
-        const isManufacturer =
-          socket.userRole === "manufacturer" &&
-          request.manufacturer &&
-          request.manufacturer._id.toString() === socket.userId;
-
-        const isAdmin = socket.userRole === "admin";
-
-        if (!isRequestor && !isManufacturer && !isAdmin) {
-          socket.emit("error", { message: "메시지 전송 권한이 없습니다." });
-          return;
-        }
-
-        const newMessage = {
-          sender: socket.userId,
-          content,
-          attachments: attachments || [],
-          replyTo: replyTo || null,
-          isRead: false,
-          createdAt: Date.now(),
-        };
-
-        request.messages.push(newMessage);
-        await request.save();
-
-        await request.populate("messages.sender", "name email role");
-        const savedMessage = request.messages[request.messages.length - 1];
-
-        // Request 관련자들에게 전송
-        const recipients = [request.requestor._id.toString()];
-        if (request.manufacturer) {
-          recipients.push(request.manufacturer._id.toString());
-        }
-
-        recipients.forEach((recipientId) => {
-          io.to(`user:${recipientId}`).emit("new-request-message", {
-            requestId,
-            message: savedMessage,
-          });
-
-          if (recipientId !== socket.userId) {
-            io.to(`user:${recipientId}`).emit("notification", {
-              type: "new-request-message",
-              requestId,
-              message: savedMessage,
-              timestamp: new Date(),
-            });
-          }
-        });
-      } catch (error) {
-        socket.emit("error", {
-          message: "Request 메시지 전송 중 오류가 발생했습니다.",
-        });
-      }
-    });
-
     // 타이핑 중 표시
     socket.on("typing", (data) => {
       const { roomId, isTyping } = data;
@@ -265,43 +186,6 @@ export function initializeSocket(server) {
         });
       } catch (error) {
         console.error("읽음 처리 오류:", error);
-      }
-    });
-
-    // Request 메시지 읽음 처리
-    socket.on("mark-request-messages-read", async (data) => {
-      try {
-        const { requestId } = data;
-
-        const request = await Request.findById(requestId);
-        if (!request) return;
-
-        let updated = false;
-        request.messages.forEach((msg) => {
-          if (msg.sender.toString() !== socket.userId && !msg.isRead) {
-            msg.isRead = true;
-            updated = true;
-          }
-        });
-
-        if (updated) {
-          await request.save();
-
-          // 발신자들에게 읽음 알림
-          const senderIds = [
-            ...new Set(request.messages.map((m) => m.sender.toString())),
-          ].filter((id) => id !== socket.userId);
-
-          senderIds.forEach((senderId) => {
-            io.to(`user:${senderId}`).emit("request-messages-read", {
-              requestId,
-              readBy: socket.userId,
-              readAt: new Date(),
-            });
-          });
-        }
-      } catch (error) {
-        console.error("Request 메시지 읽음 처리 오류:", error);
       }
     });
 

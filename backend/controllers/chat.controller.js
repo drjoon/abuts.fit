@@ -57,6 +57,90 @@ export async function getMyChatRooms(req, res) {
 }
 
 /**
+ * 고객지원 채팅방(어벗츠.핏) 조회/생성
+ * @route GET /api/chats/support-room
+ */
+export async function getSupportRoom(req, res) {
+  try {
+    const userId = req.user._id;
+
+    // 지원 채팅은 admin 계정 중 1명을 사용
+    const admin = await User.findOne({ role: "admin", active: true })
+      .select({ _id: 1 })
+      .lean();
+
+    if (!admin?._id) {
+      return res.status(500).json({
+        success: false,
+        message: "지원 채팅을 위한 관리자 계정을 찾을 수 없습니다.",
+      });
+    }
+
+    const participants = [userId, admin._id];
+
+    // 기존 direct 룸이 있으면 재사용
+    const existing = await ChatRoom.findOne({
+      participants: { $all: participants, $size: 2 },
+      roomType: "direct",
+      isArchived: false,
+    })
+      .populate("participants", "name email role organization")
+      .lean();
+
+    const enrichRoom = async (room) => {
+      const unreadCount = await Chat.countDocuments({
+        roomId: room._id,
+        sender: { $ne: userId },
+        readBy: { $not: { $elemMatch: { userId } } },
+      });
+
+      const lastMessage = await Chat.findOne({ roomId: room._id })
+        .sort({ createdAt: -1 })
+        .populate("sender", "name role")
+        .lean();
+
+      return {
+        ...room,
+        unreadCount,
+        lastMessage,
+      };
+    };
+
+    if (existing) {
+      const enriched = await enrichRoom(existing);
+      return res.status(200).json({
+        success: true,
+        data: enriched,
+      });
+    }
+
+    const room = await ChatRoom.create({
+      participants,
+      roomType: "direct",
+      title: "어벗츠.핏 고객지원",
+      status: "active",
+    });
+
+    const populated = await ChatRoom.findById(room._id)
+      .populate("participants", "name email role organization")
+      .lean();
+
+    const enriched = await enrichRoom(populated);
+
+    return res.status(201).json({
+      success: true,
+      data: enriched,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "지원 채팅방 생성/조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 채팅방 생성 또는 기존 채팅방 조회
  * @route POST /api/chats/rooms
  */
@@ -240,6 +324,7 @@ export async function sendChatMessage(req, res) {
     const { roomId } = req.params;
     const { content, attachments } = req.body;
     const userId = req.user._id;
+    const userRole = req.user.role;
 
     // 메시지 내용 유효성 검사
     if (!content || !content.trim()) {
@@ -270,7 +355,7 @@ export async function sendChatMessage(req, res) {
       (p) => p.toString() === userId.toString()
     );
 
-    if (!isParticipant) {
+    if (!isParticipant && userRole !== "admin") {
       return res.status(403).json({
         success: false,
         message: "이 채팅방에 메시지를 보낼 권한이 없습니다.",
@@ -278,7 +363,7 @@ export async function sendChatMessage(req, res) {
     }
 
     // 채팅방 상태 확인
-    if (room.status === "suspended") {
+    if (room.status === "suspended" && userRole !== "admin") {
       return res.status(403).json({
         success: false,
         message: "이 채팅방은 일시정지 상태입니다.",
@@ -479,101 +564,13 @@ export async function searchUsers(req, res) {
   }
 }
 
-/**
- * Request 채팅에서 파일 첨부하여 메시지 추가
- * @route POST /api/requests/:id/messages/with-files
- */
-export async function addRequestMessageWithFiles(req, res) {
-  try {
-    const requestId = req.params.id;
-    const { content, attachments } = req.body;
-
-    if (!content || !content.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "메시지 내용은 필수입니다.",
-      });
-    }
-
-    if (!Types.ObjectId.isValid(requestId)) {
-      return res.status(400).json({
-        success: false,
-        message: "유효하지 않은 의뢰 ID입니다.",
-      });
-    }
-
-    const Request = (await import("../models/request.model.js")).default;
-    const request = await Request.findById(requestId).populate(
-      "requestor",
-      "organizationId"
-    );
-
-    if (!request) {
-      return res.status(404).json({
-        success: false,
-        message: "의뢰를 찾을 수 없습니다.",
-      });
-    }
-
-    // 접근 권한 확인
-    const isRequestor =
-      req.user.role === "requestor" &&
-      (request.requestor._id.toString() === req.user._id.toString() ||
-        (req.user.organizationId &&
-          request.requestor.organizationId &&
-          request.requestor.organizationId.toString() ===
-            req.user.organizationId.toString()));
-
-    const isManufacturer =
-      req.user.role === "manufacturer" &&
-      request.manufacturer &&
-      request.manufacturer.toString() === req.user._id.toString();
-
-    const isAdmin = req.user.role === "admin";
-
-    if (!isRequestor && !isManufacturer && !isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: "이 의뢰에 메시지를 추가할 권한이 없습니다.",
-      });
-    }
-
-    // 메시지 추가
-    const newMessage = {
-      sender: req.user._id,
-      content: content.trim(),
-      attachments: attachments || [],
-      isRead: false,
-      createdAt: Date.now(),
-    };
-
-    request.messages.push(newMessage);
-    const updatedRequest = await request.save();
-
-    // 메시지 populate
-    await updatedRequest.populate("messages.sender", "name email role");
-
-    res.status(201).json({
-      success: true,
-      message: "메시지가 성공적으로 추가되었습니다.",
-      data: updatedRequest,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "메시지 추가 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
 export default {
   getMyChatRooms,
+  getSupportRoom,
   createOrGetChatRoom,
   getChatMessages,
   sendChatMessage,
   updateChatRoomStatus,
   getAllChatRooms,
   searchUsers,
-  addRequestMessageWithFiles,
 };
