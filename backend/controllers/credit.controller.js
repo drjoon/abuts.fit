@@ -190,6 +190,179 @@ async function getBalanceBreakdown(scope) {
   };
 }
 
+async function executeCreditRefund({
+  organizationId,
+  userId,
+  desiredSupply,
+  refundReceiveAccount,
+}) {
+  if (!refundReceiveAccount || typeof refundReceiveAccount !== "object") {
+    const err = new Error(
+      "refundReceiveAccount(은행/계좌/예금주)가 필요합니다."
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const scope = { organizationId, userIds: userId ? [userId] : [] };
+  const { paidBalance } = await getBalanceBreakdown(scope);
+
+  if (!Number.isFinite(desiredSupply) || desiredSupply <= 0) {
+    const err = new Error("유효하지 않은 환불 금액입니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (desiredSupply > paidBalance) {
+    const err = new Error("환불 금액이 보유 유료 크레딧을 초과합니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let remainingSupply = desiredSupply;
+  const totalVat = roundVat(desiredSupply);
+  let remainingVat = totalVat;
+
+  const orders = await CreditOrder.find({
+    ...buildOrderQuery(scope),
+    status: "DONE",
+    paymentKey: { $ne: null },
+    $expr: {
+      $lt: [{ $ifNull: ["$refundedSupplyAmount", 0] }, "$supplyAmount"],
+    },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (!orders.length) {
+    const err = new Error("환불 가능한 충전 내역이 없습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const allocations = [];
+
+  for (let i = 0; i < orders.length && remainingSupply > 0; i += 1) {
+    const o = orders[i];
+    const refundedSupply = Number(o.refundedSupplyAmount || 0);
+    const refundableSupply = Math.max(
+      0,
+      Number(o.supplyAmount) - refundedSupply
+    );
+    if (refundableSupply <= 0) continue;
+
+    const takeSupply = Math.min(refundableSupply, remainingSupply);
+    const isLastChunk = remainingSupply === takeSupply;
+    const takeVat = isLastChunk ? remainingVat : roundVat(takeSupply);
+    const takeTotal = takeSupply + takeVat;
+
+    const idempotencyKey = makeDeterministicIdempotencyKey(
+      "refund",
+      `${String(o.paymentKey)}:${String(refundedSupply)}:${String(takeTotal)}`
+    );
+    const payment = await cancelPayment({
+      paymentKey: o.paymentKey,
+      cancelReason: "CREDIT_REFUND",
+      cancelAmount: takeTotal,
+      refundReceiveAccount,
+      idempotencyKey,
+    });
+
+    const cancels = Array.isArray(payment?.cancels) ? payment.cancels : [];
+    const cancelTx = cancels[cancels.length - 1];
+    const txKey = cancelTx?.transactionKey || idempotencyKey;
+
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const nextRefundedSupply = refundedSupply + takeSupply;
+        const nextRefundedVat = Number(o.refundedVatAmount || 0) + takeVat;
+        const nextRefundedTotal =
+          Number(o.refundedTotalAmount || 0) + takeTotal;
+
+        const isFullyRefunded = nextRefundedSupply >= Number(o.supplyAmount);
+
+        await CreditOrder.updateOne(
+          { _id: o._id },
+          {
+            $set: {
+              status: isFullyRefunded ? "REFUNDED" : "DONE",
+              refundedSupplyAmount: nextRefundedSupply,
+              refundedVatAmount: nextRefundedVat,
+              refundedTotalAmount: nextRefundedTotal,
+            },
+          },
+          { session }
+        );
+
+        const uniqueKey = `toss:${String(o.paymentKey)}:refund:${String(
+          txKey
+        )}`;
+        await CreditLedger.updateOne(
+          { uniqueKey },
+          {
+            $setOnInsert: {
+              organizationId: o.organizationId,
+              userId,
+              type: "REFUND",
+              amount: -takeSupply,
+              refType: "CREDIT_ORDER",
+              refId: o._id,
+              uniqueKey,
+            },
+          },
+          { upsert: true, session }
+        );
+      });
+    } finally {
+      session.endSession();
+    }
+
+    allocations.push({
+      creditOrderId: String(o._id),
+      paymentKey: String(o.paymentKey),
+      refundSupply: takeSupply,
+      refundVat: takeVat,
+      refundTotal: takeTotal,
+      transactionKey: String(txKey),
+    });
+
+    remainingSupply -= takeSupply;
+    remainingVat -= takeVat;
+  }
+
+  return {
+    requestedSupply: desiredSupply,
+    requestedVat: totalVat,
+    requestedTotal: desiredSupply + totalVat,
+    allocations,
+  };
+}
+
+export async function refundAllPaidCreditForWithdraw({
+  organizationId,
+  userId,
+  refundReceiveAccount,
+}) {
+  const scope = { organizationId, userIds: userId ? [userId] : [] };
+  const { paidBalance } = await getBalanceBreakdown(scope);
+  if (!paidBalance) {
+    return {
+      requestedSupply: 0,
+      requestedVat: 0,
+      requestedTotal: 0,
+      allocations: [],
+    };
+  }
+
+  return executeCreditRefund({
+    organizationId,
+    userId,
+    desiredSupply: paidBalance,
+    refundReceiveAccount,
+  });
+}
+
 export async function createCreditOrder(req, res) {
   const organizationId = req.user?.organizationId;
   const userId = req.user?._id;
@@ -581,172 +754,8 @@ export async function cancelMyCreditOrder(req, res) {
 }
 
 export async function requestCreditRefund(req, res) {
-  const organizationId = req.user?.organizationId;
-  const userId = req.user?._id;
-  const position = String(req.user?.position || "");
-
-  if (!organizationId) {
-    return res.status(403).json({
-      success: false,
-      message: "기공소 정보가 설정되지 않았습니다.",
-    });
-  }
-
-  if (position !== "principal") {
-    return res.status(403).json({
-      success: false,
-      message: "크레딧 환불은 주대표만 가능합니다.",
-    });
-  }
-
-  const { refundSupplyAmount, refundReceiveAccount } = req.body;
-
-  if (!refundReceiveAccount || typeof refundReceiveAccount !== "object") {
-    return res.status(400).json({
-      success: false,
-      message: "refundReceiveAccount(은행/계좌/예금주)가 필요합니다.",
-    });
-  }
-
-  const scope = await getCreditScope(req);
-  const { paidBalance } = await getBalanceBreakdown(scope);
-  const desiredSupply =
-    refundSupplyAmount === undefined || refundSupplyAmount === null
-      ? paidBalance
-      : Number(refundSupplyAmount);
-
-  if (!Number.isFinite(desiredSupply) || desiredSupply <= 0) {
-    return res
-      .status(400)
-      .json({ success: false, message: "유효하지 않은 환불 금액입니다." });
-  }
-
-  if (desiredSupply > paidBalance) {
-    return res.status(400).json({
-      success: false,
-      message: "환불 금액이 보유 유료 크레딧을 초과합니다.",
-    });
-  }
-
-  let remainingSupply = desiredSupply;
-  const totalVat = roundVat(desiredSupply);
-  let remainingVat = totalVat;
-
-  const orders = await CreditOrder.find({
-    ...buildOrderQuery(scope),
-    status: "DONE",
-    paymentKey: { $ne: null },
-    $expr: {
-      $lt: [{ $ifNull: ["$refundedSupplyAmount", 0] }, "$supplyAmount"],
-    },
-  })
-    .sort({ createdAt: -1 })
-    .lean();
-
-  if (!orders.length) {
-    return res
-      .status(400)
-      .json({ success: false, message: "환불 가능한 충전 내역이 없습니다." });
-  }
-
-  const allocations = [];
-
-  for (let i = 0; i < orders.length && remainingSupply > 0; i += 1) {
-    const o = orders[i];
-    const refundedSupply = Number(o.refundedSupplyAmount || 0);
-    const refundableSupply = Math.max(
-      0,
-      Number(o.supplyAmount) - refundedSupply
-    );
-    if (refundableSupply <= 0) continue;
-
-    const takeSupply = Math.min(refundableSupply, remainingSupply);
-    const isLastChunk = remainingSupply === takeSupply;
-    const takeVat = isLastChunk ? remainingVat : roundVat(takeSupply);
-    const takeTotal = takeSupply + takeVat;
-
-    const idempotencyKey = makeDeterministicIdempotencyKey(
-      "refund",
-      `${String(o.paymentKey)}:${String(refundedSupply)}:${String(takeTotal)}`
-    );
-    const payment = await cancelPayment({
-      paymentKey: o.paymentKey,
-      cancelReason: "CREDIT_REFUND",
-      cancelAmount: takeTotal,
-      refundReceiveAccount,
-      idempotencyKey,
-    });
-
-    const cancels = Array.isArray(payment?.cancels) ? payment.cancels : [];
-    const cancelTx = cancels[cancels.length - 1];
-    const txKey = cancelTx?.transactionKey || idempotencyKey;
-
-    const session = await mongoose.startSession();
-    try {
-      await session.withTransaction(async () => {
-        const nextRefundedSupply = refundedSupply + takeSupply;
-        const nextRefundedVat = Number(o.refundedVatAmount || 0) + takeVat;
-        const nextRefundedTotal =
-          Number(o.refundedTotalAmount || 0) + takeTotal;
-
-        const isFullyRefunded = nextRefundedSupply >= Number(o.supplyAmount);
-
-        await CreditOrder.updateOne(
-          { _id: o._id },
-          {
-            $set: {
-              status: isFullyRefunded ? "REFUNDED" : "DONE",
-              refundedSupplyAmount: nextRefundedSupply,
-              refundedVatAmount: nextRefundedVat,
-              refundedTotalAmount: nextRefundedTotal,
-            },
-          },
-          { session }
-        );
-
-        const uniqueKey = `toss:${String(o.paymentKey)}:refund:${String(
-          txKey
-        )}`;
-        await CreditLedger.updateOne(
-          { uniqueKey },
-          {
-            $setOnInsert: {
-              organizationId: o.organizationId,
-              userId,
-              type: "REFUND",
-              amount: -takeSupply,
-              refType: "CREDIT_ORDER",
-              refId: o._id,
-              uniqueKey,
-            },
-          },
-          { upsert: true, session }
-        );
-      });
-    } finally {
-      session.endSession();
-    }
-
-    allocations.push({
-      creditOrderId: String(o._id),
-      paymentKey: String(o.paymentKey),
-      refundSupply: takeSupply,
-      refundVat: takeVat,
-      refundTotal: takeTotal,
-      transactionKey: String(txKey),
-    });
-
-    remainingSupply -= takeSupply;
-    remainingVat -= takeVat;
-  }
-
-  return res.json({
-    success: true,
-    data: {
-      requestedSupply: desiredSupply,
-      requestedVat: totalVat,
-      requestedTotal: desiredSupply + totalVat,
-      allocations,
-    },
+  return res.status(403).json({
+    success: false,
+    message: "크레딧 환불은 회원 탈퇴(계정 해지) 시에만 가능합니다.",
   });
 }

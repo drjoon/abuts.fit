@@ -673,9 +673,9 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
           {paidBalance > 0 && (
             <div className="text-xs text-muted-foreground">
-              환불 안내: 결제 후 임의 환불은 제공하지 않습니다. 단, 회원 탈퇴 시
-              잔여 유료 크레딧이 있는 경우 환불 절차를 안내합니다.
-              (무료/이벤트로 지급된 크레딧은 제외)
+              환불 안내: 회원 탈퇴(계정 해지) 시 잔여 유료 크레딧(공급가)에 한해
+              전액 환불됩니다. VAT는 잔여 공급가 비율에 따라 비례 환불되며,
+              무료/이벤트로 지급된 크레딧은 환불 대상에서 제외됩니다.
             </div>
           )}
 

@@ -229,11 +229,11 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     try {
       const currentPaidBalance = await fetchPaidBalance();
 
-      if (currentPaidBalance > 0) {
-        const bank = withdrawForm.bank.trim();
-        const accountNumber = withdrawForm.accountNumber.trim();
-        const holderName = withdrawForm.holderName.trim();
+      const bank = withdrawForm.bank.trim();
+      const accountNumber = withdrawForm.accountNumber.trim();
+      const holderName = withdrawForm.holderName.trim();
 
+      if (currentPaidBalance > 0) {
         if (!bank || !accountNumber || !holderName) {
           toast({
             title: "환불 계좌 정보를 입력해주세요",
@@ -242,25 +242,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           });
           return;
         }
-
-        const refundRes = await request<any>({
-          path: "/api/credits/refunds",
-          method: "POST",
-          token,
-          headers: mockHeaders,
-          jsonBody: {
-            refundReceiveAccount: {
-              bank,
-              accountNumber,
-              holderName,
-            },
-          },
-        });
-
-        if (!refundRes.ok) {
-          const body: any = refundRes.data || {};
-          throw new Error(body?.message || "환불 신청에 실패했습니다.");
-        }
       }
 
       const withdrawRes = await request<any>({
@@ -268,6 +249,16 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         method: "POST",
         token,
         headers: mockHeaders,
+        jsonBody:
+          currentPaidBalance > 0
+            ? {
+                refundReceiveAccount: {
+                  bank,
+                  accountNumber,
+                  holderName,
+                },
+              }
+            : undefined,
       });
 
       if (!withdrawRes.ok) {

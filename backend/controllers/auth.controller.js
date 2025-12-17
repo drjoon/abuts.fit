@@ -1,6 +1,7 @@
 import User from "../models/user.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
+import { refundAllPaidCreditForWithdraw } from "./credit.controller.js";
 import jwt from "jsonwebtoken";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
 import { Types } from "mongoose";
@@ -889,11 +890,31 @@ async function withdraw(req, res) {
         organizationId
       );
       if (paidBalance > 0) {
-        return res.status(400).json({
-          success: false,
-          message: "잔여 유료 크레딧 환불 완료 후 해지할 수 있습니다.",
-          data: { paidBalance },
-        });
+        const { refundReceiveAccount } = req.body || {};
+        if (!refundReceiveAccount || typeof refundReceiveAccount !== "object") {
+          return res.status(400).json({
+            success: false,
+            message:
+              "회원 탈퇴를 위해 환불 계좌 정보(refundReceiveAccount: 은행/계좌번호/예금주)가 필요합니다.",
+            data: { paidBalance },
+          });
+        }
+
+        try {
+          await refundAllPaidCreditForWithdraw({
+            organizationId,
+            userId,
+            refundReceiveAccount,
+          });
+        } catch (e) {
+          const statusCode = Number(e?.statusCode || 500);
+          return res.status(statusCode).json({
+            success: false,
+            message: String(
+              e?.message || "잔여 유료 크레딧 환불 처리에 실패했습니다."
+            ),
+          });
+        }
       }
     }
 

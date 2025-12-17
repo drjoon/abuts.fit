@@ -95,6 +95,14 @@ const CookiesPage = lazy(() =>
 const BusinessPage = lazy(() =>
   import("./pages/BusinessPage").then((m) => ({ default: m.BusinessPage }))
 );
+const CreditsPage = lazy(() =>
+  import("./pages/CreditsPage").then((m) => ({ default: m.CreditsPage }))
+);
+const RefundPolicyPage = lazy(() =>
+  import("./pages/RefundPolicyPage").then((m) => ({
+    default: m.RefundPolicyPage,
+  }))
+);
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -158,6 +166,8 @@ const App = () => {
                 <Route path="/security" element={<SecurityPage />} />
                 <Route path="/cookies" element={<CookiesPage />} />
                 <Route path="/business" element={<BusinessPage />} />
+                <Route path="/credits" element={<CreditsPage />} />
+                <Route path="/refund-policy" element={<RefundPolicyPage />} />
                 <Route
                   path="/dashboard"
                   element={
