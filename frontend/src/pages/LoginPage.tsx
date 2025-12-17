@@ -32,9 +32,8 @@ export const LoginPage = () => {
     try {
       const success = await login(email, password);
       if (success) {
-        const loggedInUser = mockUsers.find((u) => u.email === email);
-
-        if (loggedInUser?.role === "requestor") {
+        const role = useAuthStore.getState().user?.role;
+        if (role === "requestor") {
           navigate("/dashboard/new-request");
         } else {
           navigate("/dashboard");

@@ -25,6 +25,22 @@ export interface User {
   approvedAt?: string | null;
 }
 
+const normalizeApiUser = (u: any): User | null => {
+  if (!u || typeof u !== "object" || Array.isArray(u)) return null;
+  const id = String(u._id || u.id || "");
+  if (!id) return null;
+  return {
+    id,
+    name: String(u.name || ""),
+    email: String(u.email || ""),
+    role: u.role as UserRole,
+    position: (u.position || "staff") as UserPosition,
+    companyName: String(u.organization || u.companyName || ""),
+    referralCode: String(u.referralCode || ""),
+    approvedAt: u.approvedAt ? String(u.approvedAt) : null,
+  };
+};
+
 export const mockUsers: User[] = [
   {
     id: "1",
@@ -184,7 +200,47 @@ export const useAuthStore = create<AuthState>((set, get) => {
         });
         return true;
       }
-      return false;
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const json: any = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) return false;
+
+        const data = json?.data || {};
+        const token = String(data?.token || "");
+        const refreshToken = data?.refreshToken
+          ? String(data.refreshToken)
+          : null;
+        const normalizedUser = normalizeApiUser(data?.user);
+        if (!token || !normalizedUser) return false;
+
+        try {
+          localStorage.setItem(AUTH_TOKEN_KEY, token);
+          if (refreshToken)
+            localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
+        } catch {
+          // ignore
+        }
+
+        set({
+          user: normalizedUser,
+          isAuthenticated: true,
+          token,
+          refreshToken,
+        });
+
+        return true;
+      } catch {
+        return false;
+      }
     },
     loginWithToken: async (token: string, refreshToken?: string | null) => {
       try {
