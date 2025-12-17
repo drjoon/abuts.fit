@@ -5,6 +5,7 @@ import File from "../../models/file.model.js";
 
 export async function getMyOrganization(req, res) {
   try {
+    res.set("x-abuts-handler", "requestorOrganization.getMyOrganization");
     if (!req.user || req.user.role !== "requestor") {
       return res.status(403).json({
         success: false,
@@ -12,10 +13,11 @@ export async function getMyOrganization(req, res) {
       });
     }
     let org = null;
+    let orgName = "";
     if (req.user.organizationId) {
       org = await RequestorOrganization.findById(req.user.organizationId);
     } else {
-      const orgName = String(req.user.organization || "").trim();
+      orgName = String(req.user.organization || "").trim();
       if (orgName) {
         if (String(req.user.referralCode || "").startsWith("mock_")) {
           org = await RequestorOrganization.findOne({ name: orgName });
@@ -36,14 +38,136 @@ export async function getMyOrganization(req, res) {
             .select({ _id: 1 })
             .limit(2)
             .lean();
-          if (Array.isArray(matches) && matches.length === 1) {
+          if (Array.isArray(matches) && matches.length === 0) {
+            if (String(req.user.position || "") === "principal") {
+              try {
+                org = await RequestorOrganization.create({
+                  name: orgName,
+                  owner: req.user._id,
+                  coOwners: [],
+                  members: [req.user._id],
+                  joinRequests: [],
+                });
+                await User.findByIdAndUpdate(req.user._id, {
+                  $set: { organizationId: org._id, organization: org.name },
+                });
+              } catch {
+                // ignore
+              }
+            }
+          } else if (Array.isArray(matches) && matches.length === 1) {
             org = await RequestorOrganization.findById(matches[0]._id);
+
+            if (org && String(req.user.position || "") === "principal") {
+              const meId = String(req.user._id);
+              const ownerId = String(org.owner);
+              const isCoOwner =
+                Array.isArray(org.coOwners) &&
+                org.coOwners.some((c) => String(c) === meId);
+              const isMember =
+                Array.isArray(org.members) &&
+                org.members.some((m) => String(m) === meId);
+
+              if (ownerId !== meId && !isCoOwner && !isMember) {
+                try {
+                  org = await RequestorOrganization.create({
+                    name: orgName,
+                    owner: req.user._id,
+                    coOwners: [],
+                    members: [req.user._id],
+                    joinRequests: [],
+                  });
+                  await User.findByIdAndUpdate(req.user._id, {
+                    $set: { organizationId: org._id, organization: org.name },
+                  });
+                } catch {
+                  // ignore
+                }
+              }
+            }
           } else {
-            await User.findByIdAndUpdate(req.user._id, {
-              $set: { organization: "", organizationId: null },
-            });
+            const owned = await RequestorOrganization.findOne({
+              name: orgName,
+              $or: [{ owner: req.user._id }, { coOwners: req.user._id }],
+            })
+              .select({ _id: 1 })
+              .lean();
+
+            if (owned?._id) {
+              org = await RequestorOrganization.findById(owned._id);
+            } else {
+              const memberOrg = await RequestorOrganization.findOne({
+                name: orgName,
+                members: req.user._id,
+              })
+                .select({ _id: 1 })
+                .lean();
+
+              if (memberOrg?._id) {
+                org = await RequestorOrganization.findById(memberOrg._id);
+              } else {
+                if (String(req.user.position || "") === "principal") {
+                  try {
+                    org = await RequestorOrganization.create({
+                      name: orgName,
+                      owner: req.user._id,
+                      coOwners: [],
+                      members: [req.user._id],
+                      joinRequests: [],
+                    });
+                    await User.findByIdAndUpdate(req.user._id, {
+                      $set: { organizationId: org._id, organization: org.name },
+                    });
+                  } catch {
+                    // ignore
+                  }
+                } else {
+                  await User.findByIdAndUpdate(req.user._id, {
+                    $set: { organization: "", organizationId: null },
+                  });
+                }
+              }
+            }
+
+            if (org?._id) {
+              const meId2 = String(req.user._id);
+              const ownerId2 = String(org.owner);
+              const isCoOwner2 =
+                Array.isArray(org.coOwners) &&
+                org.coOwners.some((c) => String(c) === meId2);
+              const isMember2 =
+                Array.isArray(org.members) &&
+                org.members.some((m) => String(m) === meId2);
+
+              if (ownerId2 === meId2 || isCoOwner2 || isMember2) {
+                await User.findByIdAndUpdate(req.user._id, {
+                  $set: { organizationId: org._id, organization: org.name },
+                });
+              }
+            }
           }
         }
+      }
+    }
+
+    if (!org && orgName && String(req.user.position || "") === "principal") {
+      try {
+        org = await RequestorOrganization.create({
+          name: orgName,
+          owner: req.user._id,
+          coOwners: [],
+          members: [req.user._id],
+          joinRequests: [],
+        });
+        await User.findByIdAndUpdate(req.user._id, {
+          $set: { organizationId: org._id, organization: org.name },
+        });
+      } catch (error) {
+        return res.status(500).json({
+          success: false,
+          message: "내 기공소 생성 중 오류가 발생했습니다.",
+          error: error?.message || String(error),
+        });
       }
     }
 
@@ -136,6 +260,7 @@ export async function getMyOrganization(req, res) {
       },
     });
   } catch (error) {
+    res.set("x-abuts-handler", "requestorOrganization.getMyOrganization");
     return res.status(500).json({
       success: false,
       message: "내 기공소 조회 중 오류가 발생했습니다.",

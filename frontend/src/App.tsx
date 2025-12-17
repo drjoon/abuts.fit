@@ -124,10 +124,19 @@ const RoleProtectedRoute = ({
 };
 
 const App = () => {
+  const { token, loginWithToken, logout } = useAuthStore();
+
   // 앱 시작 시 백엔드에서 파일명 파싱 룰 로드
   useEffect(() => {
     loadRulesFromBackend();
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    loginWithToken(token).then((ok) => {
+      if (!ok) logout();
+    });
+  }, [loginWithToken, logout, token]);
 
   return (
     <QueryClientProvider client={queryClient}>

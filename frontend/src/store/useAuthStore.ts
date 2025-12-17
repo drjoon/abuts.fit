@@ -22,6 +22,7 @@ export interface User {
   companyName?: string;
   referralCode?: string;
   mockUserId?: string;
+  approvedAt?: string | null;
 }
 
 export const mockUsers: User[] = [
@@ -198,6 +199,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
         if (!res.ok || !json?.success || !json?.data) return false;
 
         const u = json.data;
+        if (!u || typeof u !== "object" || Array.isArray(u)) return false;
+        if (!u._id && !u.id) return false;
         const normalizedUser: User = {
           id: String(u._id || u.id || ""),
           name: String(u.name || ""),
@@ -206,6 +209,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           position: (u.position || "staff") as UserPosition,
           companyName: String(u.organization || u.companyName || ""),
           referralCode: String(u.referralCode || ""),
+          approvedAt: u.approvedAt ? String(u.approvedAt) : null,
         };
 
         try {

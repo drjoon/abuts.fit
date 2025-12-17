@@ -104,6 +104,7 @@ export async function handleTossWebhook(req, res) {
           { uniqueKey },
           {
             $setOnInsert: {
+              organizationId: order.organizationId,
               userId: order.userId,
               type: "CHARGE",
               amount: Number(order.supplyAmount),

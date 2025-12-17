@@ -70,7 +70,7 @@ export async function getSupportRoom(req, res) {
       .lean();
 
     if (!admin?._id) {
-      return res.status(500).json({
+      return res.status(404).json({
         success: false,
         message: "지원 채팅을 위한 관리자 계정을 찾을 수 없습니다.",
       });

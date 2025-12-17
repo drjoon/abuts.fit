@@ -33,5 +33,10 @@ router.get("/oauth/google/start", oauthController.googleStart);
 router.get("/oauth/google/callback", oauthController.googleCallback);
 router.get("/oauth/kakao/start", oauthController.kakaoStart);
 router.get("/oauth/kakao/callback", oauthController.kakaoCallback);
+router.post(
+  "/oauth/complete-signup",
+  authenticate,
+  oauthController.completeSignup
+);
 
 export default router;

@@ -19,8 +19,8 @@ const ensureUniqueReferralCode = async () => {
   throw new Error("리퍼럴 코드 생성에 실패했습니다.");
 };
 
-async function getCreditBalanceBreakdown(userId) {
-  const rows = await CreditLedger.find({ userId })
+async function getOrganizationCreditBalanceBreakdown(organizationId) {
+  const rows = await CreditLedger.find({ organizationId })
     .sort({ createdAt: 1, _id: 1 })
     .select({ type: 1, amount: 1 })
     .lean();
@@ -31,6 +31,7 @@ async function getCreditBalanceBreakdown(userId) {
   for (const r of rows) {
     const type = String(r?.type || "");
     const amount = Number(r?.amount || 0);
+
     if (!Number.isFinite(amount)) continue;
 
     if (type === "CHARGE") {
@@ -275,10 +276,17 @@ async function register(req, res) {
       requestorType,
       referredByUserId,
       referredByReferralCode,
+      socialProvider,
+      socialProviderUserId,
     } = req.body;
 
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+    const normalizedPhoneDigits = String(phoneNumber || "").replace(/\D/g, "");
+
     // 필수 필드 검증
-    if (!name || !email || !password) {
+    if (!name || !normalizedEmail || !password) {
       return res.status(400).json({
         success: false,
         message: "필수 필드가 누락되었습니다.",
@@ -287,12 +295,26 @@ async function register(req, res) {
     }
 
     // 이메일 중복 확인
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({
         success: false,
         message: "이미 등록된 이메일입니다.",
       });
+    }
+
+    // 전화번호 중복 확인
+    if (normalizedPhoneDigits) {
+      const existingPhone = await User.findOne({
+        phoneNumber: normalizedPhoneDigits,
+        active: true,
+      });
+      if (existingPhone) {
+        return res.status(400).json({
+          success: false,
+          message: "이미 등록된 전화번호입니다.",
+        });
+      }
     }
 
     let referredByObjectId = null;
@@ -372,38 +394,102 @@ async function register(req, res) {
       initialPosition = "vice_principal";
     }
 
+    if (normalizedRole === "requestor") {
+      if (!normalizedPhoneDigits) {
+        return res.status(400).json({
+          success: false,
+          message: "휴대폰번호를 입력해주세요.",
+        });
+      }
+      if (!/^\d{10,11}$/.test(normalizedPhoneDigits)) {
+        return res.status(400).json({
+          success: false,
+          message: "휴대폰번호 형식을 확인해주세요.",
+        });
+      }
+    }
+
     // 사용자 생성
-    const user = new User({
+    const userDoc = {
       name,
-      email,
+      email: normalizedEmail,
       password,
-      role: normalizedRole, // 기본값은 의뢰자
+      role: normalizedRole,
       position: initialPosition,
-      phoneNumber,
+      phoneNumber: normalizedPhoneDigits,
       organization: isRequestorStaff ? "" : organization,
       referralCode,
       referredByUserId: referredByObjectId,
       approvedAt: new Date(),
-    });
+    };
 
+    // 소셜 로그인 정보가 있으면 추가
+    if (socialProvider && socialProviderUserId) {
+      userDoc.social = {
+        provider: socialProvider,
+        providerUserId: socialProviderUserId,
+      };
+    }
+
+    const user = new User(userDoc);
     await user.save();
 
     if (user.role === "requestor" && user.position === "principal") {
       const orgName = String(user.organization || "").trim();
       if (orgName) {
-        const createdOrg = await RequestorOrganization.create({
-          name: orgName,
-          owner: user._id,
-          coOwners: [],
-          members: [user._id],
-          joinRequests: [],
-        });
-        await User.findByIdAndUpdate(user._id, {
-          $set: {
-            organizationId: createdOrg._id,
-            organization: createdOrg.name,
-          },
-        });
+        try {
+          const createdOrg = await RequestorOrganization.create({
+            name: orgName,
+            owner: user._id,
+            coOwners: [],
+            members: [user._id],
+            joinRequests: [],
+          });
+          await User.findByIdAndUpdate(user._id, {
+            $set: {
+              organizationId: createdOrg._id,
+              organization: createdOrg.name,
+            },
+          });
+        } catch (e) {
+          console.error("[register] organization create/update failed", e);
+          try {
+            // 생성 실패 시: 동일 owner+name 조직이 있으면 연결
+            let fallbackOrg = await RequestorOrganization.findOne({
+              name: orgName,
+              owner: user._id,
+            })
+              .select({ _id: 1, name: 1 })
+              .lean();
+
+            // owner+name이 없으면 name 단독으로 1개만 존재하는 경우 연결
+            if (!fallbackOrg) {
+              const matches = await RequestorOrganization.find({
+                name: orgName,
+              })
+                .select({ _id: 1, name: 1 })
+                .limit(2)
+                .lean();
+              if (Array.isArray(matches) && matches.length === 1) {
+                fallbackOrg = matches[0];
+              }
+            }
+
+            if (fallbackOrg?._id) {
+              await User.findByIdAndUpdate(user._id, {
+                $set: {
+                  organizationId: fallbackOrg._id,
+                  organization: fallbackOrg.name,
+                },
+              });
+            }
+          } catch (fallbackError) {
+            console.error(
+              "[register] organization fallback failed",
+              fallbackError
+            );
+          }
+        }
       }
     }
 
@@ -428,6 +514,7 @@ async function register(req, res) {
       },
     });
   } catch (error) {
+    console.error("[register] failed", error);
     res.status(500).json({
       success: false,
       message: "회원가입 중 오류가 발생했습니다.",
@@ -579,13 +666,30 @@ async function refreshToken(req, res) {
  */
 async function getCurrentUser(req, res) {
   try {
+    res.set("x-abuts-handler", "auth.getCurrentUser");
+
     const user = req.user;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "인증이 필요합니다.",
+      });
+    }
+
+    if (Array.isArray(user)) {
+      return res.status(500).json({
+        success: false,
+        message: "인증 사용자 정보 형식이 올바르지 않습니다.",
+      });
+    }
 
     res.status(200).json({
       success: true,
       data: user,
     });
   } catch (error) {
+    res.set("x-abuts-handler", "auth.getCurrentUser");
     res.status(500).json({
       success: false,
       message: "사용자 정보 조회 중 오류가 발생했습니다.",
@@ -752,23 +856,67 @@ async function withdraw(req, res) {
       });
     }
 
-    const { paidBalance } = await getCreditBalanceBreakdown(userId);
-    if (paidBalance > 0) {
-      return res.status(400).json({
+    const user = await User.findById(userId)
+      .select({
+        email: 1,
+        originalEmail: 1,
+        role: 1,
+        position: 1,
+        organizationId: 1,
+      })
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: "잔여 유료 크레딧 환불 완료 후 탈퇴할 수 있습니다.",
-        data: { paidBalance },
+        message: "사용자를 찾을 수 없습니다.",
       });
     }
 
+    const isPrincipal =
+      user.role === "requestor" && user.position === "principal";
+
+    if (isPrincipal) {
+      const organizationId = user.organizationId;
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: "기공소 정보가 없는 사용자는 탈퇴할 수 없습니다.",
+        });
+      }
+
+      const { paidBalance } = await getOrganizationCreditBalanceBreakdown(
+        organizationId
+      );
+      if (paidBalance > 0) {
+        return res.status(400).json({
+          success: false,
+          message: "잔여 유료 크레딧 환불 완료 후 해지할 수 있습니다.",
+          data: { paidBalance },
+        });
+      }
+    }
+
+    const originalEmail = String(user.originalEmail || user.email || "")
+      .trim()
+      .toLowerCase();
+    const tombstoneEmail = `deleted+${String(userId)}.${Date.now()}@abuts.fit`;
+
     await User.updateOne(
       { _id: userId },
-      { $set: { active: false, deletedAt: new Date() } }
+      {
+        $set: {
+          active: false,
+          deletedAt: new Date(),
+          originalEmail: originalEmail || null,
+          email: tombstoneEmail,
+        },
+      }
     );
 
     return res.json({
       success: true,
-      message: "탈퇴가 완료되었습니다.",
+      message: "해지가 완료되었습니다.",
     });
   } catch (error) {
     return res.status(500).json({

@@ -20,7 +20,15 @@ async function getProfile(req, res) {
       });
     }
 
-    res.status(200).json({ success: true, data: user });
+    const data = typeof user.toObject === "function" ? user.toObject() : user;
+    const provider = data?.social?.provider;
+    data.authMethods = {
+      email: !provider,
+      google: provider === "google",
+      kakao: provider === "kakao",
+    };
+
+    res.status(200).json({ success: true, data });
   } catch (error) {
     res.status(500).json({
       success: false,

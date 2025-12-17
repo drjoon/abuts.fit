@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import User from "../models/user.model.js";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
+import RequestorOrganization from "../models/requestorOrganization.model.js";
 
 const FRONTEND_URL = process.env.OAUTH_FRONTEND_URL || "http://localhost:8080";
 
@@ -40,6 +41,184 @@ function generateRandomPassword() {
   return crypto.randomBytes(18).toString("base64url");
 }
 
+async function completeSignup(req, res) {
+  try {
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "인증 정보가 없습니다.",
+      });
+    }
+
+    const user = await User.findById(userId).select("-password");
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    if (!user.social?.provider) {
+      return res.status(400).json({
+        success: false,
+        message: "소셜 로그인 사용자만 가입 완료 처리가 가능합니다.",
+      });
+    }
+
+    if (user.approvedAt) {
+      return res.status(200).json({
+        success: true,
+        message: "이미 가입이 완료된 계정입니다.",
+        data: user,
+      });
+    }
+
+    const { requestorType, organization, phoneNumber } = req.body || {};
+    const normalizedPhoneDigits = String(phoneNumber || "").replace(/\D/g, "");
+    const normalizedRequestorType = String(requestorType || "").trim();
+
+    if (!normalizedPhoneDigits) {
+      return res.status(400).json({
+        success: false,
+        message: "휴대폰번호를 입력해주세요.",
+      });
+    }
+
+    if (!/^\d{10,11}$/.test(normalizedPhoneDigits)) {
+      return res.status(400).json({
+        success: false,
+        message: "휴대폰번호 형식을 확인해주세요.",
+      });
+    }
+
+    if (!normalizedRequestorType) {
+      return res.status(400).json({
+        success: false,
+        message: "주대표/공동대표/직원을 선택해주세요.",
+      });
+    }
+
+    const isStaff = normalizedRequestorType === "staff";
+    const isCoOwner = normalizedRequestorType === "co_owner";
+    const orgName = String(organization || "").trim();
+
+    if (!isStaff && !orgName) {
+      return res.status(400).json({
+        success: false,
+        message: "기공소명을 입력해주세요.",
+      });
+    }
+
+    let nextPosition = "staff";
+    if (!isStaff) nextPosition = "principal";
+    if (isCoOwner) nextPosition = "vice_principal";
+
+    user.role = "requestor";
+    user.position = nextPosition;
+    user.phoneNumber = normalizedPhoneDigits;
+    user.organization = isStaff ? "" : orgName;
+    user.approvedAt = new Date();
+
+    await user.save();
+
+    if (user.role === "requestor" && user.position === "principal") {
+      const trimmed = String(user.organization || "").trim();
+      if (trimmed) {
+        try {
+          const createdOrg = await RequestorOrganization.create({
+            name: trimmed,
+            owner: user._id,
+            coOwners: [],
+            members: [user._id],
+            joinRequests: [],
+          });
+          user.organizationId = createdOrg._id;
+          user.organization = createdOrg.name;
+          await user.save();
+        } catch (e) {
+          console.error(
+            "[completeSignup] organization create/update failed",
+            e
+          );
+
+          try {
+            let fallbackOrg = await RequestorOrganization.findOne({
+              name: trimmed,
+              $or: [{ owner: user._id }, { coOwners: user._id }],
+            })
+              .select({ _id: 1, name: 1 })
+              .lean();
+
+            if (!fallbackOrg) {
+              const matches = await RequestorOrganization.find({
+                name: trimmed,
+              })
+                .select({ _id: 1, name: 1, owner: 1, coOwners: 1, members: 1 })
+                .limit(10)
+                .lean();
+
+              if (Array.isArray(matches)) {
+                const meId = String(user._id);
+                const owned = matches.find(
+                  (m) =>
+                    String(m.owner) === meId ||
+                    (Array.isArray(m.coOwners) &&
+                      m.coOwners.some((c) => String(c) === meId))
+                );
+                const member = matches.find(
+                  (m) =>
+                    Array.isArray(m.members) &&
+                    m.members.some((x) => String(x) === meId)
+                );
+                fallbackOrg = owned || member || null;
+              }
+            }
+
+            if (!fallbackOrg?._id) {
+              const created2 = await RequestorOrganization.create({
+                name: trimmed,
+                owner: user._id,
+                coOwners: [],
+                members: [user._id],
+                joinRequests: [],
+              });
+              fallbackOrg = { _id: created2._id, name: created2.name };
+            }
+
+            if (fallbackOrg?._id) {
+              await User.findByIdAndUpdate(user._id, {
+                $set: {
+                  organizationId: fallbackOrg._id,
+                  organization: trimmed,
+                },
+              });
+            }
+          } catch (fallbackError) {
+            console.error(
+              "[completeSignup] organization fallback failed",
+              fallbackError
+            );
+          }
+        }
+      }
+    }
+
+    const fresh = await User.findById(user._id).select("-password");
+    return res.status(200).json({
+      success: true,
+      message: "가입이 완료되었습니다.",
+      data: fresh,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "가입 완료 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 async function findOrCreateUserFromSocial({
   email,
   name,
@@ -53,8 +232,86 @@ async function findOrCreateUserFromSocial({
     throw new Error("소셜 계정에서 이메일을 가져올 수 없습니다.");
   }
 
-  let user = await User.findOne({ email: normalizedEmail }).select("-password");
+  let user = await User.findOne({
+    "social.provider": provider,
+    "social.providerUserId": providerUserId,
+    active: true,
+  }).select("-password");
   if (user) return user;
+
+  user = await User.findOne({ email: normalizedEmail, active: true }).select(
+    "-password"
+  );
+  if (user) return user;
+
+  const inactive = await User.findOne({
+    active: false,
+    $or: [
+      { email: normalizedEmail },
+      { originalEmail: normalizedEmail },
+      {
+        "social.provider": provider,
+        "social.providerUserId": providerUserId,
+      },
+    ],
+  })
+    .select({ _id: 1, email: 1, originalEmail: 1 })
+    .lean();
+
+  if (inactive) {
+    const prevOriginalEmail = String(inactive.originalEmail || normalizedEmail)
+      .trim()
+      .toLowerCase();
+
+    if (
+      String(inactive.email || "")
+        .trim()
+        .toLowerCase() === normalizedEmail
+    ) {
+      const tombstoneEmail = `deleted+${String(
+        inactive._id
+      )}.${Date.now()}@abuts.fit`;
+      await User.updateOne(
+        { _id: inactive._id, email: inactive.email },
+        {
+          $set: {
+            email: tombstoneEmail,
+            originalEmail: prevOriginalEmail || null,
+          },
+        }
+      );
+    }
+
+    const referralCode = await ensureUniqueReferralCode();
+
+    const newUser = new User({
+      name: String(name || "사용자"),
+      email: normalizedEmail,
+      password: generateRandomPassword(),
+      role: "requestor",
+      position: "staff",
+      referralCode,
+      approvedAt: null,
+      active: true,
+      organization: "",
+      phoneNumber: "",
+      preferences: { language: "ko" },
+      social: {
+        provider,
+        providerUserId,
+      },
+      replacesUserId: inactive._id,
+    });
+
+    await newUser.save();
+    await User.updateOne(
+      { _id: inactive._id },
+      { $set: { replacedByUserId: newUser._id } }
+    );
+
+    user = await User.findById(newUser._id).select("-password");
+    return user;
+  }
 
   const referralCode = await ensureUniqueReferralCode();
 
@@ -63,9 +320,9 @@ async function findOrCreateUserFromSocial({
     email: normalizedEmail,
     password: generateRandomPassword(),
     role: "requestor",
-    position: "principal",
+    position: "staff",
     referralCode,
-    approvedAt: new Date(),
+    approvedAt: null,
     active: true,
     organization: "",
     phoneNumber: "",
@@ -163,20 +420,53 @@ async function googleCallback(req, res) {
       });
     }
 
-    const user = await findOrCreateUserFromSocial({
+    // 기존 계정 확인 (생성하지 않음)
+    const normalizedEmail = String(profile.email || "")
+      .trim()
+      .toLowerCase();
+    let existingUser = await User.findOne({
+      "social.provider": "google",
+      "social.providerUserId": String(profile.sub || ""),
+      active: true,
+    }).select("-password");
+
+    if (!existingUser) {
+      existingUser = await User.findOne({
+        email: normalizedEmail,
+        active: true,
+      }).select("-password");
+    }
+
+    // 기존 계정이 있으면 로그인
+    if (existingUser) {
+      const token = generateToken({
+        userId: existingUser._id,
+        role: existingUser.role,
+      });
+      const refreshToken = generateRefreshToken(existingUser._id);
+      const needsSignup = existingUser?.approvedAt ? "0" : "1";
+
+      return redirectToFrontend(res, {
+        token,
+        refreshToken,
+        provider: "google",
+        needsSignup,
+      });
+    }
+
+    // 신규 사용자: 소셜 정보를 JWT에 담아 회원가입 페이지로
+    const socialInfoToken = generateToken({
+      type: "social_signup",
       email: profile.email,
       name: profile.name,
       provider: "google",
       providerUserId: String(profile.sub || ""),
     });
 
-    const token = generateToken({ userId: user._id, role: user.role });
-    const refreshToken = generateRefreshToken(user._id);
-
     return redirectToFrontend(res, {
-      token,
-      refreshToken,
+      socialToken: socialInfoToken,
       provider: "google",
+      needsSignup: "1",
     });
   } catch (error) {
     return redirectToFrontend(res, {
@@ -276,20 +566,53 @@ async function kakaoCallback(req, res) {
       profile?.properties?.nickname ||
       "사용자";
 
-    const user = await findOrCreateUserFromSocial({
+    // 기존 계정 확인 (생성하지 않음)
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+    let existingUser = await User.findOne({
+      "social.provider": "kakao",
+      "social.providerUserId": String(profile.id || ""),
+      active: true,
+    }).select("-password");
+
+    if (!existingUser) {
+      existingUser = await User.findOne({
+        email: normalizedEmail,
+        active: true,
+      }).select("-password");
+    }
+
+    // 기존 계정이 있으면 로그인
+    if (existingUser) {
+      const token = generateToken({
+        userId: existingUser._id,
+        role: existingUser.role,
+      });
+      const refreshToken = generateRefreshToken(existingUser._id);
+      const needsSignup = existingUser?.approvedAt ? "0" : "1";
+
+      return redirectToFrontend(res, {
+        token,
+        refreshToken,
+        provider: "kakao",
+        needsSignup,
+      });
+    }
+
+    // 신규 사용자: 소셜 정보를 JWT에 담아 회원가입 페이지로
+    const socialInfoToken = generateToken({
+      type: "social_signup",
       email,
       name,
       provider: "kakao",
       providerUserId: String(profile.id || ""),
     });
 
-    const token = generateToken({ userId: user._id, role: user.role });
-    const refreshToken = generateRefreshToken(user._id);
-
     return redirectToFrontend(res, {
-      token,
-      refreshToken,
+      socialToken: socialInfoToken,
       provider: "kakao",
+      needsSignup: "1",
     });
   } catch (error) {
     return redirectToFrontend(res, {
@@ -304,4 +627,5 @@ export default {
   googleCallback,
   kakaoStart,
   kakaoCallback,
+  completeSignup,
 };

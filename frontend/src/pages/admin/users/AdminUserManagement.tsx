@@ -1,19 +1,25 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { 
-  Search, 
-  Filter, 
+import {
+  Search,
+  Filter,
   MoreHorizontal,
   UserCheck,
   UserX,
   Shield,
   Building2,
   FileText,
-  Eye
+  Eye,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -21,7 +27,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { request } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 // Mock users data
 const mockUsers = [
@@ -35,7 +49,7 @@ const mockUsers = [
     joinDate: "2024-01-15",
     lastLogin: "2024-01-20",
     totalRequests: 24,
-    profileComplete: 95
+    profileComplete: 95,
   },
   {
     id: "2",
@@ -47,7 +61,7 @@ const mockUsers = [
     joinDate: "2024-01-10",
     lastLogin: "2024-01-19",
     totalRequests: 47,
-    profileComplete: 100
+    profileComplete: 100,
   },
   {
     id: "3",
@@ -59,7 +73,7 @@ const mockUsers = [
     joinDate: "2024-01-18",
     lastLogin: "2024-01-18",
     totalRequests: 0,
-    profileComplete: 60
+    profileComplete: 60,
   },
   {
     id: "4",
@@ -71,35 +85,119 @@ const mockUsers = [
     joinDate: "2024-01-05",
     lastLogin: "2024-01-16",
     totalRequests: 32,
-    profileComplete: 85
-  }
+    profileComplete: 85,
+  },
 ];
 
 const getRoleLabel = (role: string) => {
   switch (role) {
-    case 'requestor': return '의뢰자';
-    case 'manufacturer': return '제조사';
-    case 'admin': return '어벗츠.핏';
-    default: return '사용자';
+    case "requestor":
+      return "의뢰자";
+    case "manufacturer":
+      return "제조사";
+    case "admin":
+      return "어벗츠.핏";
+    default:
+      return "사용자";
   }
 };
 
 const getRoleBadgeVariant = (role: string) => {
   switch (role) {
-    case 'requestor': return 'default';
-    case 'manufacturer': return 'secondary';
-    case 'admin': return 'destructive';
-    default: return 'outline';
+    case "requestor":
+      return "default";
+    case "manufacturer":
+      return "secondary";
+    case "admin":
+      return "destructive";
+    default:
+      return "outline";
   }
+};
+
+type UiUserStatus = "active" | "pending" | "inactive";
+
+type ApiUser = {
+  _id: string;
+  name?: string;
+  email?: string;
+  originalEmail?: string | null;
+  role?: string;
+  organization?: string;
+  active?: boolean;
+  approvedAt?: string | null;
+  createdAt?: string;
+  lastLogin?: string;
+  replacesUserId?: string | null;
+  replacedByUserId?: string | null;
+};
+
+type UiUserRow = {
+  id: string;
+  name: string;
+  email: string;
+  originalEmail: string;
+  role: string;
+  companyName: string;
+  status: UiUserStatus;
+  joinDate: string;
+  lastLogin: string;
+  totalRequests?: number | null;
+  replacesUserId?: string | null;
+  replacedByUserId?: string | null;
+};
+
+const formatDate = (input?: string) => {
+  if (!input) return "-";
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return "-";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const toUiUser = (u: ApiUser): UiUserRow => {
+  const active = Boolean(u.active);
+  const approved = Boolean(u.approvedAt);
+  const status: UiUserStatus = !active
+    ? "inactive"
+    : !approved
+    ? "pending"
+    : "active";
+  const email = String(u.email || "");
+  const originalEmail = String(u.originalEmail || "");
+  return {
+    id: String(u._id || ""),
+    name: String(u.name || ""),
+    email,
+    originalEmail,
+    role: String(u.role || ""),
+    companyName: String(u.organization || ""),
+    status,
+    joinDate: formatDate(u.createdAt),
+    lastLogin: formatDate(u.lastLogin),
+    totalRequests: null,
+    replacesUserId: u.replacesUserId || null,
+    replacedByUserId: u.replacedByUserId || null,
+  };
 };
 
 const getStatusBadge = (status: string) => {
   switch (status) {
-    case 'active':
-      return <Badge className="bg-green-100 text-green-700 border-green-200">활성</Badge>;
-    case 'pending':
-      return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">승인 대기</Badge>;
-    case 'suspended':
+    case "active":
+      return (
+        <Badge className="bg-green-100 text-green-700 border-green-200">
+          활성
+        </Badge>
+      );
+    case "pending":
+      return (
+        <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
+          승인 대기
+        </Badge>
+      );
+    case "suspended":
       return <Badge variant="destructive">일시정지</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
@@ -108,22 +206,99 @@ const getStatusBadge = (status: string) => {
 
 export const AdminUserManagement = () => {
   const { toast } = useToast();
+  const { token } = useAuthStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRole, setSelectedRole] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
-  const filteredUsers = mockUsers.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         user.companyName.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesRole = selectedRole === "all" || user.role === selectedRole;
-    const matchesStatus = selectedStatus === "all" || user.status === selectedStatus;
-    
-    return matchesSearch && matchesRole && matchesStatus;
-  });
+  const [users, setUsers] = useState<UiUserRow[] | null>(null);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UiUserRow | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
-  const handleUserAction = (action: string, userId: string, userName: string) => {
+  const fetchUsers = useCallback(async () => {
+    if (!token) return;
+
+    setLoadingUsers(true);
+    try {
+      const res = await request<any>({
+        path: "/api/admin/users?page=1&limit=200",
+        method: "GET",
+        token,
+      });
+
+      if (!res.ok) return;
+
+      const body: any = res.data || {};
+      const data = body.data || {};
+      const rawUsers: ApiUser[] = Array.isArray(data.users) ? data.users : [];
+      setUsers(rawUsers.map(toUiUser));
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, [token]);
+
+  const fetchUserDetail = useCallback(
+    async (userId: string) => {
+      if (!token) return;
+      setSelectedUserId(userId);
+      setDetailOpen(true);
+      setLoadingDetail(true);
+      try {
+        const res = await request<any>({
+          path: `/api/admin/users/${encodeURIComponent(userId)}`,
+          method: "GET",
+          token,
+        });
+
+        if (!res.ok) return;
+        const body: any = res.data || {};
+        const data = body.data || body;
+        if (!data?._id) return;
+        setSelectedUser(toUiUser(data));
+      } finally {
+        setLoadingDetail(false);
+      }
+    },
+    [token]
+  );
+
+  useEffect(() => {
+    void fetchUsers();
+  }, [fetchUsers]);
+
+  const sourceUsers = users || mockUsers;
+
+  const filteredUsers = useMemo(() => {
+    return sourceUsers.filter((user: any) => {
+      const q = searchQuery.trim().toLowerCase();
+      const hay = [
+        String(user.name || "").toLowerCase(),
+        String(user.email || "").toLowerCase(),
+        String(user.companyName || "").toLowerCase(),
+        String((user as any).originalEmail || "").toLowerCase(),
+      ].join(" ");
+
+      const matchesSearch = !q || hay.includes(q);
+      const matchesRole = selectedRole === "all" || user.role === selectedRole;
+      const matchesStatus =
+        selectedStatus === "all" || user.status === selectedStatus;
+
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+  }, [searchQuery, selectedRole, selectedStatus, sourceUsers]);
+
+  const handleUserAction = (
+    action: string,
+    userId: string,
+    userName: string
+  ) => {
+    if (action === "상세보기") {
+      void fetchUserDetail(userId);
+      return;
+    }
     toast({
       title: `사용자 ${action} 완료`,
       description: `${userName}님의 상태가 변경되었습니다.`,
@@ -141,7 +316,7 @@ export const AdminUserManagement = () => {
           <p className="text-muted-foreground text-lg">
             플랫폼 사용자들을 관리하고 모니터링하세요
           </p>
-          
+
           {/* Search and Filter */}
           <div className="flex gap-4 flex-wrap">
             <div className="relative flex-1 min-w-[300px]">
@@ -169,7 +344,9 @@ export const AdminUserManagement = () => {
                 의뢰자
               </Button>
               <Button
-                variant={selectedRole === "manufacturer" ? "default" : "outline"}
+                variant={
+                  selectedRole === "manufacturer" ? "default" : "outline"
+                }
                 onClick={() => setSelectedRole("manufacturer")}
                 size="sm"
               >
@@ -267,12 +444,22 @@ export const AdminUserManagement = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {loadingUsers && (
+              <div className="text-sm text-muted-foreground pb-4">
+                불러오는 중...
+              </div>
+            )}
             <div className="space-y-4">
               {filteredUsers.map((user) => (
-                <div key={user.id} className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
+                <div
+                  key={user.id}
+                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                >
                   <div className="flex items-center gap-4">
                     <Avatar>
-                      <AvatarFallback>{user.name[0]}</AvatarFallback>
+                      <AvatarFallback>
+                        {String(user.name || "?")[0]}
+                      </AvatarFallback>
                     </Avatar>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -282,18 +469,33 @@ export const AdminUserManagement = () => {
                         </Badge>
                         {getStatusBadge(user.status)}
                       </div>
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
-                      <p className="text-sm text-muted-foreground">{user.companyName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {user.email}
+                      </p>
+                      {!!(user as any).originalEmail && (
+                        <p className="text-xs text-muted-foreground">
+                          원본 이메일: {(user as any).originalEmail}
+                        </p>
+                      )}
+                      <p className="text-sm text-muted-foreground">
+                        {user.companyName}
+                      </p>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-4">
                     <div className="text-right text-sm">
-                      <p className="text-muted-foreground">가입일: {user.joinDate}</p>
-                      <p className="text-muted-foreground">최종접속: {user.lastLogin}</p>
-                      <p className="text-muted-foreground">의뢰수: {user.totalRequests}건</p>
+                      <p className="text-muted-foreground">
+                        가입일: {user.joinDate}
+                      </p>
+                      <p className="text-muted-foreground">
+                        최종접속: {user.lastLogin}
+                      </p>
+                      <p className="text-muted-foreground">
+                        의뢰수: {user.totalRequests ?? "-"}
+                      </p>
                     </div>
-                    
+
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="sm">
@@ -301,24 +503,40 @@ export const AdminUserManagement = () => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleUserAction("상세보기", user.id, user.name)}>
+                        <DropdownMenuItem
+                          onClick={() =>
+                            handleUserAction("상세보기", user.id, user.name)
+                          }
+                        >
                           <Eye className="mr-2 h-4 w-4" />
                           상세보기
                         </DropdownMenuItem>
                         {user.status === "pending" && (
-                          <DropdownMenuItem onClick={() => handleUserAction("승인", user.id, user.name)}>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              handleUserAction("승인", user.id, user.name)
+                            }
+                          >
                             <UserCheck className="mr-2 h-4 w-4" />
                             승인하기
                           </DropdownMenuItem>
                         )}
                         {user.status === "active" && (
-                          <DropdownMenuItem onClick={() => handleUserAction("일시정지", user.id, user.name)}>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              handleUserAction("일시정지", user.id, user.name)
+                            }
+                          >
                             <UserX className="mr-2 h-4 w-4" />
                             일시정지
                           </DropdownMenuItem>
                         )}
                         {user.status === "suspended" && (
-                          <DropdownMenuItem onClick={() => handleUserAction("활성화", user.id, user.name)}>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              handleUserAction("활성화", user.id, user.name)
+                            }
+                          >
                             <UserCheck className="mr-2 h-4 w-4" />
                             활성화
                           </DropdownMenuItem>
@@ -331,6 +549,93 @@ export const AdminUserManagement = () => {
             </div>
           </CardContent>
         </Card>
+
+        <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>사용자 상세</DialogTitle>
+            </DialogHeader>
+
+            {loadingDetail || !selectedUser ? (
+              <div className="text-sm text-muted-foreground">
+                불러오는 중...
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-muted-foreground">이름</div>
+                    <div className="font-medium">{selectedUser.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">역할</div>
+                    <div className="font-medium">
+                      {getRoleLabel(selectedUser.role)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">이메일</div>
+                    <div className="font-medium break-all">
+                      {selectedUser.email}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">원본 이메일</div>
+                    <div className="font-medium break-all">
+                      {selectedUser.originalEmail || "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">조직</div>
+                    <div className="font-medium">
+                      {selectedUser.companyName || "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">상태</div>
+                    <div className="font-medium">
+                      {getStatusBadge(selectedUser.status)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 justify-end">
+                  {!!selectedUser.replacesUserId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        fetchUserDetail(String(selectedUser.replacesUserId))
+                      }
+                      disabled={loadingDetail}
+                    >
+                      이전 계정
+                    </Button>
+                  )}
+                  {!!selectedUser.replacedByUserId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        fetchUserDetail(String(selectedUser.replacedByUserId))
+                      }
+                      disabled={loadingDetail}
+                    >
+                      새 계정
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setDetailOpen(false)}
+                  >
+                    닫기
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

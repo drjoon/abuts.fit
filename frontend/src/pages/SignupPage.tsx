@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +9,10 @@ import { Footer } from "@/features/landing/Footer";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { request } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export const SignupPage = () => {
+  const { token, user, loginWithToken } = useAuthStore();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -24,6 +26,15 @@ export const SignupPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
+  const mode = (searchParams.get("mode") || "").trim();
+  const isSocialCompleteMode = mode === "social_complete";
+  const isSocialNewMode = mode === "social_new";
+  const [socialInfo, setSocialInfo] = useState<{
+    email: string;
+    name: string;
+    provider: string;
+    providerUserId: string;
+  } | null>(null);
 
   const referredByReferralCode = useMemo(() => {
     const ref = searchParams.get("ref");
@@ -36,7 +47,53 @@ export const SignupPage = () => {
     return isObjectId ? referredByReferralCode : undefined;
   }, [referredByReferralCode]);
 
+  const formatKrPhone = useCallback((raw: string) => {
+    const digits = String(raw || "")
+      .replace(/\D/g, "")
+      .slice(0, 11);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }, []);
+
+  const normalizePhoneDigits = useCallback((raw: string) => {
+    return String(raw || "").replace(/\D/g, "");
+  }, []);
+
+  // social_new 모드: sessionStorage에서 socialToken 디코딩
+  useEffect(() => {
+    if (!isSocialNewMode) return;
+    const socialToken = sessionStorage.getItem("socialToken");
+    if (!socialToken) return;
+    try {
+      const base64Url = socialToken.split(".")[1] || "";
+      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+      const payload = JSON.parse(atob(base64));
+      setSocialInfo({
+        email: payload.email || "",
+        name: payload.name || "",
+        provider: payload.provider || "",
+        providerUserId: payload.providerUserId || "",
+      });
+      setFormData((prev) => ({
+        ...prev,
+        name: payload.name || "",
+        email: payload.email || "",
+      }));
+    } catch (e) {
+      console.error("socialToken 디코딩 실패:", e);
+    }
+  }, [isSocialNewMode]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.name === "phone") {
+      const formatted = formatKrPhone(e.target.value);
+      setFormData({
+        ...formData,
+        phone: formatted,
+      });
+      return;
+    }
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -45,6 +102,25 @@ export const SignupPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const phoneDigits = normalizePhoneDigits(formData.phone);
+    if (!phoneDigits) {
+      toast({
+        title: "오류",
+        description: "휴대폰번호를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!/^\d{10,11}$/.test(phoneDigits)) {
+      toast({
+        title: "오류",
+        description: "휴대폰번호 형식을 확인해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     if (!formData.requestorType) {
       toast({
@@ -68,7 +144,11 @@ export const SignupPage = () => {
       return;
     }
 
-    if (formData.password !== formData.confirmPassword) {
+    if (
+      !isSocialCompleteMode &&
+      !isSocialNewMode &&
+      formData.password !== formData.confirmPassword
+    ) {
       toast({
         title: "오류",
         description: "비밀번호가 일치하지 않습니다.",
@@ -80,13 +160,105 @@ export const SignupPage = () => {
     setIsLoading(true);
 
     try {
+      // social_new 모드: 소셜 정보로 신규 계정 생성
+      if (isSocialNewMode) {
+        if (!socialInfo) {
+          toast({
+            title: "오류",
+            description: "소셜 로그인 정보가 없습니다.",
+            variant: "destructive",
+          });
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        const res = await request<any>({
+          path: "/api/auth/register",
+          method: "POST",
+          jsonBody: {
+            name: formData.name,
+            email: formData.email,
+            password: Math.random().toString(36).slice(-12), // 임시 비밀번호
+            phoneNumber: normalizePhoneDigits(formData.phone),
+            organization:
+              formData.requestorType === "owner" ||
+              formData.requestorType === "co_owner"
+                ? formData.company
+                : "",
+            requestorType: formData.requestorType,
+            socialProvider: socialInfo.provider,
+            socialProviderUserId: socialInfo.providerUserId,
+          },
+        });
+
+        const data: any = res.data || {};
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.message || "회원가입에 실패했습니다.");
+        }
+
+        const authToken = data?.data?.token;
+        const authRefreshToken = data?.data?.refreshToken;
+
+        if (authToken) {
+          sessionStorage.removeItem("socialToken");
+          await loginWithToken(authToken, authRefreshToken);
+          navigate("/dashboard/new-request", { replace: true });
+        } else {
+          toast({
+            title: "회원가입 완료",
+            description: "로그인 페이지로 이동합니다.",
+          });
+          navigate("/login");
+        }
+        return;
+      }
+
+      if (isSocialCompleteMode) {
+        if (!token || !user) {
+          toast({
+            title: "오류",
+            description: "로그인이 필요합니다.",
+            variant: "destructive",
+          });
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        const res = await request<any>({
+          path: "/api/auth/oauth/complete-signup",
+          method: "POST",
+          token,
+          jsonBody: {
+            requestorType: formData.requestorType,
+            organization:
+              formData.requestorType === "owner" ||
+              formData.requestorType === "co_owner"
+                ? formData.company
+                : "",
+            phoneNumber: normalizePhoneDigits(formData.phone),
+          },
+        });
+
+        const data: any = res.data || {};
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.message || "가입 완료 처리에 실패했습니다.");
+        }
+
+        await loginWithToken(token);
+        navigate("/dashboard/new-request", { replace: true });
+        return;
+      }
+
       const payload: any = {
         name: formData.name,
         email: formData.email,
         password: formData.password,
-        phoneNumber: formData.phone,
+        phoneNumber: normalizePhoneDigits(formData.phone),
         organization:
-          formData.requestorType === "owner" ? formData.company : "",
+          formData.requestorType === "owner" ||
+          formData.requestorType === "co_owner"
+            ? formData.company
+            : "",
         requestorType: formData.requestorType,
       };
 
@@ -107,16 +279,23 @@ export const SignupPage = () => {
         throw new Error(data?.message || "회원가입에 실패했습니다.");
       }
 
-      toast({
-        title: "회원가입 완료",
-        description: "성공적으로 가입되었습니다. 로그인 페이지로 이동합니다.",
-      });
+      const authToken = data?.data?.token;
+      const authRefreshToken = data?.data?.refreshToken;
 
-      navigate("/login");
+      if (authToken) {
+        await loginWithToken(authToken, authRefreshToken);
+        navigate("/dashboard/new-request", { replace: true });
+      } else {
+        toast({
+          title: "회원가입 완료",
+          description: "성공적으로 가입되었습니다. 로그인 페이지로 이동합니다.",
+        });
+        navigate("/login");
+      }
     } catch (error) {
       toast({
-        title: "회원가입 실패",
-        description: "다시 시도해주세요.",
+        title: isSocialCompleteMode ? "가입 완료 실패" : "회원가입 실패",
+        description: (error as any)?.message || "다시 시도해주세요.",
         variant: "destructive",
       });
     } finally {
@@ -195,6 +374,14 @@ export const SignupPage = () => {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                {isSocialCompleteMode && (
+                  <div className="space-y-2">
+                    <Label>소셜 계정</Label>
+                    <div className="text-sm text-muted-foreground break-all">
+                      {user?.email || ""}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <Label>의뢰자 유형</Label>
                   <div className="grid grid-cols-3 gap-2 mt-2">
@@ -255,9 +442,12 @@ export const SignupPage = () => {
                     id="name"
                     name="name"
                     type="text"
-                    value={formData.name}
+                    value={
+                      isSocialCompleteMode ? user?.name || "" : formData.name
+                    }
                     onChange={handleChange}
-                    required
+                    required={!isSocialCompleteMode}
+                    readOnly={isSocialCompleteMode}
                   />
                 </div>
 
@@ -267,9 +457,12 @@ export const SignupPage = () => {
                     id="email"
                     name="email"
                     type="email"
-                    value={formData.email}
+                    value={
+                      isSocialCompleteMode ? user?.email || "" : formData.email
+                    }
                     onChange={handleChange}
-                    required
+                    required={!isSocialCompleteMode}
+                    readOnly={isSocialCompleteMode}
                   />
                 </div>
 
@@ -301,31 +494,35 @@ export const SignupPage = () => {
                   />
                 </div>
 
-                <div>
-                  <Label htmlFor="password">비밀번호</Label>
-                  <Input
-                    id="password"
-                    name="password"
-                    type="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                    minLength={8}
-                  />
-                </div>
+                {!isSocialCompleteMode && !isSocialNewMode && (
+                  <>
+                    <div>
+                      <Label htmlFor="password">비밀번호</Label>
+                      <Input
+                        id="password"
+                        name="password"
+                        type="password"
+                        value={formData.password}
+                        onChange={handleChange}
+                        required
+                        minLength={8}
+                      />
+                    </div>
 
-                <div>
-                  <Label htmlFor="confirmPassword">비밀번호 확인</Label>
-                  <Input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type="password"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    required
-                    minLength={8}
-                  />
-                </div>
+                    <div>
+                      <Label htmlFor="confirmPassword">비밀번호 확인</Label>
+                      <Input
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        type="password"
+                        value={formData.confirmPassword}
+                        onChange={handleChange}
+                        required
+                        minLength={8}
+                      />
+                    </div>
+                  </>
+                )}
 
                 <Button
                   type="submit"
@@ -333,7 +530,11 @@ export const SignupPage = () => {
                   disabled={isLoading}
                   variant="hero"
                 >
-                  {isLoading ? "가입 중..." : "회원가입"}
+                  {isLoading
+                    ? "처리 중..."
+                    : isSocialCompleteMode
+                    ? "가입 완료"
+                    : "회원가입"}
                 </Button>
 
                 <div className="text-center text-sm text-muted-foreground">

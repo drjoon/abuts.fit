@@ -270,6 +270,7 @@ async function getAllUsers(req, res) {
       filter.$or = [
         { name: { $regex: req.query.search, $options: "i" } },
         { email: { $regex: req.query.search, $options: "i" } },
+        { originalEmail: { $regex: req.query.search, $options: "i" } },
         { organization: { $regex: req.query.search, $options: "i" } },
       ];
     }

@@ -28,6 +28,7 @@ export const NewChatWidget = () => {
   const [room, setRoom] = useState<ChatRoom | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [supportRoomDisabled, setSupportRoomDisabled] = useState(false);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<TempUploadedFile[]>([]);
@@ -38,6 +39,7 @@ export const NewChatWidget = () => {
   useEffect(() => {
     const load = async () => {
       if (!user || !isAuthenticated) return;
+      if (supportRoomDisabled) return;
       setLoading(true);
       setError(null);
 
@@ -48,7 +50,14 @@ export const NewChatWidget = () => {
           token,
         });
         if (!roomRes.ok) {
-          throw new Error("지원 채팅방을 불러오지 못했습니다.");
+          const body: any = roomRes.data || {};
+          const message = String(
+            body?.message || "지원 채팅방을 불러오지 못했습니다."
+          );
+          if ([401, 403, 404].includes(roomRes.status)) {
+            setSupportRoomDisabled(true);
+          }
+          throw new Error(message);
         }
         const roomBody = roomRes.data || {};
         const roomData = (roomBody as any)?.data || roomBody;
@@ -87,7 +96,7 @@ export const NewChatWidget = () => {
     };
 
     void load();
-  }, [user, isAuthenticated, token]);
+  }, [supportRoomDisabled, user, isAuthenticated, token]);
 
   const roomId = room?._id;
   const {
@@ -115,6 +124,7 @@ export const NewChatWidget = () => {
   useEffect(() => {
     if (!token || !isAuthenticated) return;
     if (isOpen) return;
+    if (supportRoomDisabled) return;
 
     const tick = async () => {
       try {
@@ -123,7 +133,12 @@ export const NewChatWidget = () => {
           method: "GET",
           token,
         });
-        if (!roomRes.ok) return;
+        if (!roomRes.ok) {
+          if ([401, 403, 404].includes(roomRes.status)) {
+            setSupportRoomDisabled(true);
+          }
+          return;
+        }
         const roomBody = roomRes.data || {};
         const roomData = (roomBody as any)?.data || roomBody;
         setRoom(roomData as ChatRoom);
@@ -135,12 +150,13 @@ export const NewChatWidget = () => {
     void tick();
     const id = window.setInterval(tick, 5000);
     return () => window.clearInterval(id);
-  }, [token, isAuthenticated, isOpen]);
+  }, [token, isAuthenticated, isOpen, supportRoomDisabled]);
 
   useEffect(() => {
     const refreshRoomUnread = async () => {
       if (!isOpen || !roomId || !token) return;
       if (messagesLoading) return;
+      if (supportRoomDisabled) return;
       try {
         const roomRes = await apiFetch<any>({
           path: "/api/chats/support-room",
@@ -157,7 +173,7 @@ export const NewChatWidget = () => {
     };
 
     void refreshRoomUnread();
-  }, [isOpen, roomId, messagesLoading, token]);
+  }, [isOpen, roomId, messagesLoading, supportRoomDisabled, token]);
 
   const title = useMemo(() => {
     return "어벗츠.핏 고객지원";

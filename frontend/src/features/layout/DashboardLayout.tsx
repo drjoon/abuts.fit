@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/lib/apiClient";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -98,18 +99,66 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 export const DashboardLayout = () => {
-  const { user, logout, token } = useAuthStore();
+  const { user, logout, token, loginWithToken } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [worksheetSearch, setWorksheetSearch] = useState("");
   const [showCompleted, setShowCompleted] = useState(false);
+  const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
+  const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
 
-  if (!user) {
-    navigate("/login");
+  useEffect(() => {
+    if (bootstrappedOnce) return;
+    if (!token) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (!user || !user.id) {
+      setBootstrappingAuth(true);
+      loginWithToken(token)
+        .then((ok) => {
+          if (!ok) {
+            logout();
+            navigate("/login", { replace: true });
+          }
+        })
+        .finally(() => {
+          setBootstrappingAuth(false);
+          setBootstrappedOnce(true);
+        });
+      return;
+    }
+
+    setBootstrappedOnce(true);
+    if (user.role === "admin") return;
+    loginWithToken(token).then((ok) => {
+      if (!ok) {
+        logout();
+        navigate("/login", { replace: true });
+      }
+    });
+  }, [bootstrappedOnce, loginWithToken, logout, navigate, token, user]);
+
+  if (bootstrappingAuth) {
     return null;
   }
+
+  if (!token || !user || !user.id) {
+    return null;
+  }
+
+  useEffect(() => {
+    if (!user) return;
+    if (user.role !== "requestor") return;
+    if ((user as any).approvedAt) return;
+    if (location.pathname.startsWith("/dashboard")) {
+      navigate("/signup?mode=social_complete", { replace: true });
+    }
+  }, [location.pathname, navigate, user]);
 
   useEffect(() => {
     if (!token) return;
@@ -178,6 +227,68 @@ export const DashboardLayout = () => {
           } catch {
             // ignore
           }
+
+          // 주대표가 아니면 주대표에게 요청하도록 안내
+          if (user.role === "requestor" && user.position !== "principal") {
+            toast({
+              title: "크레딧 부족",
+              description: "주대표님께 크레딧 충전을 요청해주세요.",
+              variant: "destructive",
+              duration: 5000,
+            });
+            return;
+          }
+
+          // 주대표인 경우: 사업장/직원/배송정보 확인
+          try {
+            const [orgRes, profileRes] = await Promise.all([
+              request<any>({
+                path: "/api/requestor-organizations/me",
+                method: "GET",
+                token,
+              }),
+              request<any>({
+                path: "/api/users/profile",
+                method: "GET",
+                token,
+              }),
+            ]);
+
+            const orgData = orgRes.ok ? (orgRes.data as any)?.data : null;
+            const userData = profileRes.ok
+              ? (profileRes.data as any)?.data
+              : null;
+
+            const hasOrg = !!orgData?.organization?.name;
+            const hasEmployee = !!userData?.name && !!userData?.phoneNumber;
+            let hasShipping = true;
+            try {
+              const key = `abutsfit:shipping-policy:v1:${String(
+                user?.email || "guest"
+              )}`;
+              hasShipping = !!localStorage.getItem(key);
+            } catch {
+              hasShipping = true;
+            }
+
+            if (!hasOrg) {
+              navigate("/dashboard/settings?tab=business");
+              return;
+            }
+
+            if (!hasEmployee) {
+              navigate("/dashboard/settings?tab=profile");
+              return;
+            }
+
+            if (!hasShipping) {
+              navigate("/dashboard/settings?tab=shipping");
+              return;
+            }
+          } catch {
+            // 정보 확인 실패 시 결제 페이지로 이동
+          }
+
           navigate("/dashboard/settings?tab=payment");
           return;
         }
@@ -204,7 +315,7 @@ export const DashboardLayout = () => {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, location.search, navigate, token, user]);
+  }, [location.pathname, location.search, navigate, toast, token, user]);
 
   const menuItems = sidebarItems[user.role as keyof typeof sidebarItems] || [];
 

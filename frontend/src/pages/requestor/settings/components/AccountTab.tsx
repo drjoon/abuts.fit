@@ -68,7 +68,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const [avatarNonce, setAvatarNonce] = useState(0);
 
   const [authMethods, setAuthMethods] = useState({
-    email: true,
+    email: false,
     google: false,
     kakao: false,
   });
@@ -272,15 +272,23 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
       if (!withdrawRes.ok) {
         const body: any = withdrawRes.data || {};
-        throw new Error(body?.message || "탈퇴 처리에 실패했습니다.");
+        throw new Error(body?.message || "해지 처리에 실패했습니다.");
       }
 
-      logout();
-      navigate("/", { replace: true });
+      toast({
+        title: "해지 완료",
+        description: "해지가 완료되었습니다.",
+        duration: 3000,
+      });
+
+      setTimeout(() => {
+        logout();
+        navigate("/", { replace: true });
+      }, 500);
     } catch (e: any) {
       toast({
-        title: "탈퇴 처리 실패",
-        description: String(e?.message || "탈퇴 처리에 실패했습니다."),
+        title: "해지 처리 실패",
+        description: String(e?.message || "해지 처리에 실패했습니다."),
         variant: "destructive",
       });
     } finally {
@@ -702,6 +710,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     );
   }, [accountData.phoneDialCode]);
 
+  const hasAnyAuthMethod = useMemo(() => {
+    return !!(authMethods.email || authMethods.google || authMethods.kakao);
+  }, [authMethods.email, authMethods.google, authMethods.kakao]);
+
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
@@ -969,7 +981,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           </p>
         )}
 
-        {authMethods.email && (
+        {hasAnyAuthMethod && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-3">
               <Label>로그인 방식</Label>
@@ -998,20 +1010,11 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   )}
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="currentPassword">현재 비밀번호</Label>
-              <Input
-                id="currentPassword"
-                type="password"
-                value={passwordData.currentPassword}
-                onChange={(e) =>
-                  setPasswordData((prev) => ({
-                    ...prev,
-                    currentPassword: e.target.value,
-                  }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter") return;
+
+            {authMethods.email && (
+              <form
+                className="contents"
+                onSubmit={(e) => {
                   e.preventDefault();
                   if (
                     !passwordData.currentPassword ||
@@ -1020,156 +1023,99 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                     return;
                   handleChangePassword();
                 }}
-                autoComplete="current-password"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="newPassword">새 비밀번호</Label>
-              <Input
-                id="newPassword"
-                type="password"
-                value={passwordData.newPassword}
-                onChange={(e) =>
-                  setPasswordData((prev) => ({
-                    ...prev,
-                    newPassword: e.target.value,
-                  }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter") return;
-                  e.preventDefault();
-                  if (
-                    !passwordData.currentPassword ||
-                    !passwordData.newPassword
-                  )
-                    return;
-                  handleChangePassword();
-                }}
-                autoComplete="new-password"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="opacity-0">변경</Label>
-              <Button
-                variant="outline"
-                className="w-full h-10"
-                onClick={handleChangePassword}
-                disabled={
-                  !passwordData.currentPassword || !passwordData.newPassword
-                }
               >
-                <KeyRound className="mr-2 h-4 w-4" />
-                비밀번호 변경
-              </Button>
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="currentPassword">현재 비밀번호</Label>
+                  <Input
+                    id="currentPassword"
+                    type="password"
+                    value={passwordData.currentPassword}
+                    onChange={(e) =>
+                      setPasswordData((prev) => ({
+                        ...prev,
+                        currentPassword: e.target.value,
+                      }))
+                    }
+                    autoComplete="current-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="newPassword">새 비밀번호</Label>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    value={passwordData.newPassword}
+                    onChange={(e) =>
+                      setPasswordData((prev) => ({
+                        ...prev,
+                        newPassword: e.target.value,
+                      }))
+                    }
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="opacity-0">변경</Label>
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="w-full h-10"
+                    disabled={
+                      !passwordData.currentPassword || !passwordData.newPassword
+                    }
+                  >
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    비밀번호 변경
+                  </Button>
+                </div>
+              </form>
+            )}
           </div>
         )}
 
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
-            <UserX className="h-4 w-4" />
-            탈퇴
-          </div>
-
-          <div className="text-xs text-muted-foreground">
-            잔여 유료 크레딧이 있는 경우 환불 신청 후 탈퇴가 진행됩니다.
-          </div>
-
-          {loadingPaidBalance ? (
-            <div className="text-xs text-muted-foreground">
-              크레딧 정보를 불러오는 중...
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground">
-              잔여 유료 크레딧:{" "}
-              <span className="font-medium">
-                {paidBalance.toLocaleString()}원
-              </span>
-            </div>
-          )}
-
-          {paidBalance > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="withdraw-bank">은행</Label>
-                <Input
-                  id="withdraw-bank"
-                  value={withdrawForm.bank}
-                  onChange={(e) =>
-                    setWithdrawForm((prev) => ({
-                      ...prev,
-                      bank: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="withdraw-account">계좌번호</Label>
-                <Input
-                  id="withdraw-account"
-                  value={withdrawForm.accountNumber}
-                  onChange={(e) =>
-                    setWithdrawForm((prev) => ({
-                      ...prev,
-                      accountNumber: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="withdraw-holder">예금주</Label>
-                <Input
-                  id="withdraw-holder"
-                  value={withdrawForm.holderName}
-                  onChange={(e) =>
-                    setWithdrawForm((prev) => ({
-                      ...prev,
-                      holderName: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-          )}
-
+        <div className="flex justify-between">
           <div className="flex justify-end">
             <Button
               type="button"
-              variant="destructive"
+              variant="outline"
+              className="border-red-400 text-red-400 hover:bg-red-50 hover:text-red-700"
               onClick={() => setWithdrawDialogOpen(true)}
               disabled={withdrawing}
             >
-              {withdrawing ? "처리 중..." : "탈퇴 신청"}
+              <UserX className="h-4 w-4" />
+              {withdrawing ? "처리 중..." : "해지 신청"}
+            </Button>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSave}
+              disabled={
+                !accountData.name.trim() ||
+                !accountData.phoneNationalNumber.trim() ||
+                !phoneValidation.ok
+              }
+            >
+              <Save className="mr-2 h-4 w-4" />
+              저장하기
             </Button>
           </div>
         </div>
 
-        <div className="flex justify-end">
-          <Button
-            onClick={handleSave}
-            disabled={
-              !accountData.name.trim() ||
-              !accountData.phoneNationalNumber.trim() ||
-              !phoneValidation.ok
-            }
-          >
-            <Save className="mr-2 h-4 w-4" />
-            저장하기
-          </Button>
-        </div>
-
         <MultiActionDialog
           open={withdrawDialogOpen}
-          title="정말 탈퇴하시겠어요?"
+          title="정말 해지하시겠어요?"
           description={
-            <div className="space-y-2">
-              <div>
-                잔여 유료 크레딧이 있으면 환불 신청 후 탈퇴가 완료됩니다.
+            user?.position === "principal" ? (
+              <div className="space-y-2">
+                <div>잔여 유료 크레딧이 있으면 환불 신청 후 접수됩니다.</div>
+                <div className="text-sm">
+                  잔여 유료 크레딧: <b>{paidBalance.toLocaleString()}원</b>
+                </div>
               </div>
-              <div className="text-sm">
-                잔여 유료 크레딧: <b>{paidBalance.toLocaleString()}원</b>
-              </div>
-            </div>
+            ) : (
+              <div>해지하시겠습니까?</div>
+            )
           }
           onClose={() => setWithdrawDialogOpen(false)}
           actions={[
@@ -1180,7 +1126,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               disabled: withdrawing,
             },
             {
-              label: "탈퇴 진행",
+              label: "해지 신청",
               variant: "danger",
               onClick: handleWithdraw,
               disabled: withdrawing,

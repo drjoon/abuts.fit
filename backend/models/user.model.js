@@ -105,6 +105,23 @@ const userSchema = new mongoose.Schema(
         default: null,
       },
     },
+    originalEmail: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    replacesUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    replacedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     deletedAt: {
       type: Date,
       default: null,

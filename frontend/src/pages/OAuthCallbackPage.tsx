@@ -16,6 +16,8 @@ export const OAuthCallbackPage = () => {
       const error = searchParams.get("error");
       const token = searchParams.get("token");
       const refreshToken = searchParams.get("refreshToken");
+      const socialToken = searchParams.get("socialToken");
+      const needsSignup = searchParams.get("needsSignup");
 
       if (error) {
         toast({
@@ -24,6 +26,13 @@ export const OAuthCallbackPage = () => {
           variant: "destructive",
         });
         navigate("/login", { replace: true });
+        return;
+      }
+
+      // 신규 소셜 사용자: socialToken만 있고 token이 없음
+      if (socialToken && !token) {
+        sessionStorage.setItem("socialToken", socialToken);
+        navigate("/signup?mode=social_new", { replace: true });
         return;
       }
 
@@ -47,6 +56,11 @@ export const OAuthCallbackPage = () => {
           variant: "destructive",
         });
         navigate("/login", { replace: true });
+        return;
+      }
+
+      if (needsSignup === "1") {
+        navigate("/signup?mode=social_complete", { replace: true });
         return;
       }
 

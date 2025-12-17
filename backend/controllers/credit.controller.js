@@ -2,6 +2,7 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import CreditOrder from "../models/creditOrder.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
+import User from "../models/user.model.js";
 import {
   tossCancelPayment,
   tossConfirmPayment,
@@ -58,16 +59,35 @@ function buildOrderId(userId) {
   return `CREDIT_${String(userId)}_${Date.now()}_${rand}`;
 }
 
-async function getBalance(userId) {
-  const rows = await CreditLedger.aggregate([
-    { $match: { userId: new mongoose.Types.ObjectId(userId) } },
-    { $group: { _id: "$userId", balance: { $sum: "$amount" } } },
-  ]);
-  return rows?.[0]?.balance || 0;
+async function getCreditScope(req) {
+  const organizationId = req.user?.organizationId;
+  if (!organizationId) {
+    throw new Error("기공소 정보가 설정되지 않았습니다.");
+  }
+
+  const members = await User.find({ organizationId }).select({ _id: 1 }).lean();
+  const userIds = (members || []).map((m) => m?._id).filter(Boolean);
+  if (
+    req.user?._id &&
+    !userIds.some((id) => String(id) === String(req.user._id))
+  ) {
+    userIds.push(req.user._id);
+  }
+
+  return { organizationId, userIds };
 }
 
-async function getBalanceBreakdown(userId) {
-  const rows = await CreditLedger.find({ userId })
+function buildLedgerQuery(scope) {
+  return { organizationId: scope.organizationId };
+}
+
+function buildOrderQuery(scope) {
+  return { organizationId: scope.organizationId };
+}
+
+async function getBalanceBreakdown(scope) {
+  const ledgerQuery = buildLedgerQuery(scope);
+  const rows = await CreditLedger.find(ledgerQuery)
     .sort({ createdAt: 1, _id: 1 })
     .select({ type: 1, amount: 1 })
     .lean();
@@ -116,7 +136,14 @@ async function getBalanceBreakdown(userId) {
 }
 
 export async function createCreditOrder(req, res) {
-  const userId = req.user._id;
+  const organizationId = req.user?.organizationId;
+  const userId = req.user?._id;
+  if (!organizationId) {
+    return res.status(403).json({
+      success: false,
+      message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
   const { supplyAmount: rawSupply } = req.body;
 
   const validated = validateSupplyAmount(rawSupply);
@@ -129,8 +156,9 @@ export async function createCreditOrder(req, res) {
   const totalAmount = supplyAmount + vatAmount;
 
   const order = await CreditOrder.create({
+    organizationId,
     userId,
-    orderId: buildOrderId(userId),
+    orderId: buildOrderId(organizationId),
     supplyAmount,
     vatAmount,
     totalAmount,
@@ -152,8 +180,16 @@ export async function createCreditOrder(req, res) {
 }
 
 export async function listMyCreditOrders(req, res) {
-  const userId = req.user._id;
-  const items = await CreditOrder.find({ userId })
+  const organizationId = req.user?.organizationId;
+  if (!organizationId) {
+    return res.status(403).json({
+      success: false,
+      message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
+
+  const scope = await getCreditScope(req);
+  const items = await CreditOrder.find(buildOrderQuery(scope))
     .sort({ createdAt: -1 })
     .select({
       orderId: 1,
@@ -176,9 +212,17 @@ export async function listMyCreditOrders(req, res) {
 }
 
 export async function getMyCreditBalance(req, res) {
-  const userId = req.user._id;
+  const organizationId = req.user?.organizationId;
+  if (!organizationId) {
+    return res.status(403).json({
+      success: false,
+      message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
+
+  const scope = await getCreditScope(req);
   const { balance, paidBalance, bonusBalance } = await getBalanceBreakdown(
-    userId
+    scope
   );
   return res.json({
     success: true,
@@ -187,7 +231,16 @@ export async function getMyCreditBalance(req, res) {
 }
 
 export async function getMyCreditSpendInsights(req, res) {
-  const userId = req.user._id;
+  const organizationId = req.user?.organizationId;
+  if (!organizationId) {
+    return res.status(403).json({
+      success: false,
+      message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
+
+  const scope = await getCreditScope(req);
+  const ledgerQuery = buildLedgerQuery(scope);
 
   const MIN = 500000;
   const MAX = 5000000;
@@ -195,17 +248,19 @@ export async function getMyCreditSpendInsights(req, res) {
   const now = new Date();
   const since = new Date(now.getTime() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
+  const match = {
+    ...ledgerQuery,
+    type: "SPEND",
+    createdAt: { $gte: since },
+  };
+
   const rows = await CreditLedger.aggregate([
     {
-      $match: {
-        userId: new mongoose.Types.ObjectId(userId),
-        type: "SPEND",
-        createdAt: { $gte: since },
-      },
+      $match: match,
     },
     {
       $group: {
-        _id: "$userId",
+        _id: null,
         spentSupply: { $sum: { $abs: "$amount" } },
       },
     },
@@ -252,7 +307,14 @@ export async function getMyCreditSpendInsights(req, res) {
 }
 
 export async function confirmVirtualAccountPayment(req, res) {
-  const userId = req.user._id;
+  const organizationId = req.user?.organizationId;
+  const userId = req.user?._id;
+  if (!organizationId) {
+    return res.status(403).json({
+      success: false,
+      message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
   const { paymentKey, orderId, amount } = req.body;
 
   if (!paymentKey || !orderId || typeof amount !== "number") {
@@ -262,7 +324,11 @@ export async function confirmVirtualAccountPayment(req, res) {
     });
   }
 
-  const order = await CreditOrder.findOne({ userId, orderId });
+  const scope = await getCreditScope(req);
+  const order = await CreditOrder.findOne({
+    ...buildOrderQuery(scope),
+    orderId,
+  });
   if (!order) {
     return res
       .status(404)
@@ -316,6 +382,7 @@ export async function confirmVirtualAccountPayment(req, res) {
           { uniqueKey },
           {
             $setOnInsert: {
+              organizationId: order.organizationId,
               userId,
               type: "CHARGE",
               amount: order.supplyAmount,
@@ -342,7 +409,13 @@ export async function confirmVirtualAccountPayment(req, res) {
 }
 
 export async function cancelMyCreditOrder(req, res) {
-  const userId = req.user._id;
+  const organizationId = req.user?.organizationId;
+  if (!organizationId) {
+    return res.status(403).json({
+      success: false,
+      message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
   const orderId = String(req.params.orderId || "").trim();
 
   if (!orderId) {
@@ -351,7 +424,11 @@ export async function cancelMyCreditOrder(req, res) {
       .json({ success: false, message: "orderId가 필요합니다." });
   }
 
-  const order = await CreditOrder.findOne({ userId, orderId });
+  const scope = await getCreditScope(req);
+  const order = await CreditOrder.findOne({
+    ...buildOrderQuery(scope),
+    orderId,
+  });
   if (!order) {
     return res
       .status(404)
@@ -413,7 +490,14 @@ export async function cancelMyCreditOrder(req, res) {
 }
 
 export async function requestCreditRefund(req, res) {
-  const userId = req.user._id;
+  const organizationId = req.user?.organizationId;
+  const userId = req.user?._id;
+  if (!organizationId) {
+    return res.status(403).json({
+      success: false,
+      message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
   const { refundSupplyAmount, refundReceiveAccount } = req.body;
 
   if (!refundReceiveAccount || typeof refundReceiveAccount !== "object") {
@@ -423,7 +507,8 @@ export async function requestCreditRefund(req, res) {
     });
   }
 
-  const { paidBalance } = await getBalanceBreakdown(userId);
+  const scope = await getCreditScope(req);
+  const { paidBalance } = await getBalanceBreakdown(scope);
   const desiredSupply =
     refundSupplyAmount === undefined || refundSupplyAmount === null
       ? paidBalance
@@ -447,7 +532,7 @@ export async function requestCreditRefund(req, res) {
   let remainingVat = totalVat;
 
   const orders = await CreditOrder.find({
-    userId,
+    ...buildOrderQuery(scope),
     status: "DONE",
     paymentKey: { $ne: null },
     $expr: {
@@ -525,6 +610,7 @@ export async function requestCreditRefund(req, res) {
           { uniqueKey },
           {
             $setOnInsert: {
+              organizationId: o.organizationId,
               userId,
               type: "REFUND",
               amount: -takeSupply,

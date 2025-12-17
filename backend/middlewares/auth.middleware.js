@@ -117,8 +117,16 @@ export const authenticate = async (req, res, next) => {
     // 토큰 검증
     const decoded = verifyToken(token);
 
+    const userId = decoded?.userId;
+    if (!userId || Array.isArray(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "인증에 실패했습니다.",
+      });
+    }
+
     // 사용자 정보 조회
-    const user = await User.findById(decoded.userId).select("-password");
+    const user = await User.findById(userId).select("-password");
 
     if (!user) {
       return res.status(404).json({
