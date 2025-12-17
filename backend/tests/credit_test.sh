@@ -89,6 +89,10 @@ echo "PR_EMAIL=${PR_EMAIL}"
 echo "CO_EMAIL=${CO_EMAIL}"
 echo
 
+echo "== cleanup test DB =="
+mongosh abuts_fit_test --eval "db.creditorders.deleteMany({})" --quiet 2>/dev/null || echo "[WARN] Could not clean creditorders collection"
+echo
+
 echo "== register principal =="
 curl -sS "${BASE_URL}/api/auth/register" \
   -H 'Content-Type: application/json' \
@@ -245,11 +249,129 @@ expect_status "${PR_BAL_STATUS4}" "200" "principal balance after refund"
 PR_BALANCE3="$(printf '%s' "${PR_BAL_BODY4}" | json_get_number "data.balance")"
 echo "principal balance(after refund)=${PR_BALANCE3}"
 
+CO_BAL_RAW4="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/balance" -H "Authorization: Bearer ${CO_TOKEN}")"
+CO_BAL_STATUS4="${CO_BAL_RAW4##*$'\n'}"
+CO_BAL_BODY4="${CO_BAL_RAW4%$'\n'*}"
+expect_status "${CO_BAL_STATUS4}" "200" "co-owner balance after refund"
+CO_BALANCE3="$(printf '%s' "${CO_BAL_BODY4}" | json_get_number "data.balance")"
+echo "co-owner balance(after refund)=${CO_BALANCE3}"
+
 if [ -n "${PR_BALANCE2}" ] && [ -n "${PR_BALANCE3}" ] && [ "${PR_BALANCE3}" -ge "${PR_BALANCE2}" ]; then
   echo "[FAIL] balance did not decrease after refund"
   exit 1
 fi
-echo "[OK] balance decreased after refund"
+if [ "${PR_BALANCE3}" != "${CO_BALANCE3}" ]; then
+  echo "[FAIL] shared credit balance mismatch after refund: principal=${PR_BALANCE3}, co-owner=${CO_BALANCE3}"
+  exit 1
+fi
+echo "[OK] balance decreased after refund and matches between principal/co-owner"
+echo
+
+echo "== verify VAT calculation (totalAmount should be supplyAmount * 1.1) =="
+EXPECTED_TOTAL=$((500000 * 110 / 100))
+if [ "${TOTAL_AMOUNT}" -ne "${EXPECTED_TOTAL}" ]; then
+  echo "[FAIL] VAT calculation error: expected=${EXPECTED_TOTAL}, got=${TOTAL_AMOUNT}"
+  exit 1
+fi
+echo "[OK] VAT calculation correct: ${TOTAL_AMOUNT} = ${EXPECTED_TOTAL}"
+echo
+
+echo "== co-owner try to create order (expect 403) =="
+CO_ORDER_RAW="$(curl_json POST /api/credits/orders "${CO_TOKEN}" '{"supplyAmount":500000}')"
+CO_ORDER_STATUS="${CO_ORDER_RAW##*$'\n'}"
+CO_ORDER_BODY="${CO_ORDER_RAW%$'\n'*}"
+echo "${CO_ORDER_BODY}"
+expect_status "${CO_ORDER_STATUS}" "403" "co-owner order creation (forbidden)"
+echo
+
+echo "== co-owner try to refund (expect 403) =="
+CO_REFUND_RAW="$(curl_json POST /api/credits/refunds "${CO_TOKEN}" '{
+  "refundSupplyAmount": 10000,
+  "refundReceiveAccount": {
+    "bank": "국민",
+    "accountNumber": "999-999-9999",
+    "holderName": "공동대표"
+  }
+}')"
+CO_REFUND_STATUS="${CO_REFUND_RAW##*$'\n'}"
+CO_REFUND_BODY="${CO_REFUND_RAW%$'\n'*}"
+echo "${CO_REFUND_BODY}"
+expect_status "${CO_REFUND_STATUS}" "403" "co-owner refund (forbidden)"
+echo
+
+echo "== get transaction history (principal) =="
+HISTORY_RAW="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/transactions" -H "Authorization: Bearer ${PR_TOKEN}")"
+HISTORY_STATUS="${HISTORY_RAW##*$'\n'}"
+HISTORY_BODY="${HISTORY_RAW%$'\n'*}"
+echo "${HISTORY_BODY}"
+expect_status "${HISTORY_STATUS}" "200" "transaction history"
+echo
+
+echo "== error case: invalid amount for payment confirm =="
+INVALID_PAY_RAW="$(curl_json POST /api/credits/payments/confirm "${PR_TOKEN}" "{\"orderId\":\"${ORDER_ID}\",\"amount\":1000}")"
+INVALID_PAY_STATUS="${INVALID_PAY_RAW##*$'\n'}"
+INVALID_PAY_BODY="${INVALID_PAY_RAW%$'\n'*}"
+echo "${INVALID_PAY_BODY}"
+if [ "${INVALID_PAY_STATUS}" != "400" ]; then
+  echo "[WARN] invalid payment amount status=${INVALID_PAY_STATUS} (expected 400)"
+else
+  echo "[OK] invalid payment amount rejected"
+fi
+echo
+
+echo "== error case: non-existent order ID =="
+FAKE_ORDER_RAW="$(curl_json POST /api/credits/payments/confirm "${PR_TOKEN}" '{"orderId":"ORD_FAKE_12345","amount":100000}')"
+FAKE_ORDER_STATUS="${FAKE_ORDER_RAW##*$'\n'}"
+FAKE_ORDER_BODY="${FAKE_ORDER_RAW%$'\n'*}"
+echo "${FAKE_ORDER_BODY}"
+if [ "${FAKE_ORDER_STATUS}" != "404" ] && [ "${FAKE_ORDER_STATUS}" != "400" ]; then
+  echo "[WARN] fake order status=${FAKE_ORDER_STATUS} (expected 404 or 400)"
+else
+  echo "[OK] fake order rejected"
+fi
+echo
+
+echo "== error case: negative amount order =="
+NEG_ORDER_RAW="$(curl_json POST /api/credits/orders "${PR_TOKEN}" '{"supplyAmount":-10000}')"
+NEG_ORDER_STATUS="${NEG_ORDER_RAW##*$'\n'}"
+NEG_ORDER_BODY="${NEG_ORDER_RAW%$'\n'*}"
+echo "${NEG_ORDER_BODY}"
+if [ "${NEG_ORDER_STATUS}" != "400" ]; then
+  echo "[WARN] negative amount order status=${NEG_ORDER_STATUS} (expected 400)"
+else
+  echo "[OK] negative amount order rejected"
+fi
+echo
+
+echo "== error case: zero amount order =="
+ZERO_ORDER_RAW="$(curl_json POST /api/credits/orders "${PR_TOKEN}" '{"supplyAmount":0}')"
+ZERO_ORDER_STATUS="${ZERO_ORDER_RAW##*$'\n'}"
+ZERO_ORDER_BODY="${ZERO_ORDER_RAW%$'\n'*}"
+echo "${ZERO_ORDER_BODY}"
+if [ "${ZERO_ORDER_STATUS}" != "400" ]; then
+  echo "[WARN] zero amount order status=${ZERO_ORDER_STATUS} (expected 400)"
+else
+  echo "[OK] zero amount order rejected"
+fi
+echo
+
+echo "== error case: refund more than balance =="
+OVER_REFUND_RAW="$(curl_json POST /api/credits/refunds "${PR_TOKEN}" '{
+  "refundSupplyAmount": 999999999,
+  "refundReceiveAccount": {
+    "bank": "국민",
+    "accountNumber": "123-456-7890",
+    "holderName": "홍길동"
+  }
+}')"
+OVER_REFUND_STATUS="${OVER_REFUND_RAW##*$'\n'}"
+OVER_REFUND_BODY="${OVER_REFUND_RAW%$'\n'*}"
+echo "${OVER_REFUND_BODY}"
+if [ "${OVER_REFUND_STATUS}" != "400" ]; then
+  echo "[WARN] over-refund status=${OVER_REFUND_STATUS} (expected 400)"
+else
+  echo "[OK] over-refund rejected"
+fi
 echo
 
 echo "== withdraw principal (expect 400 if paidBalance remains) =="
@@ -264,4 +386,51 @@ else
 fi
 echo
 
-echo "[DONE] credit checklist script finished"
+echo "== full refund remaining balance =="
+REMAINING_SUPPLY=$((PR_BALANCE3))
+FULL_REFUND_RAW="$(curl_json POST /api/credits/refunds "${PR_TOKEN}" "{
+  \"refundSupplyAmount\": ${REMAINING_SUPPLY},
+  \"refundReceiveAccount\": {
+    \"bank\": \"국민\",
+    \"accountNumber\": \"123-456-7890\",
+    \"holderName\": \"홍길동\"
+  }
+}")"
+FULL_REFUND_STATUS="${FULL_REFUND_RAW##*$'\n'}"
+FULL_REFUND_BODY="${FULL_REFUND_RAW%$'\n'*}"
+echo "${FULL_REFUND_BODY}"
+expect_status "${FULL_REFUND_STATUS}" "200" "full refund"
+echo
+
+echo "== balance after full refund (should be 0) =="
+PR_BAL_RAW5="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/balance" -H "Authorization: Bearer ${PR_TOKEN}")"
+PR_BAL_STATUS5="${PR_BAL_RAW5##*$'\n'}"
+PR_BAL_BODY5="${PR_BAL_RAW5%$'\n'*}"
+expect_status "${PR_BAL_STATUS5}" "200" "principal balance after full refund"
+PR_BALANCE_FINAL="$(printf '%s' "${PR_BAL_BODY5}" | json_get_number "data.balance")"
+echo "principal balance(after full refund)=${PR_BALANCE_FINAL}"
+
+CO_BAL_RAW5="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/balance" -H "Authorization: Bearer ${CO_TOKEN}")"
+CO_BAL_STATUS5="${CO_BAL_RAW5##*$'\n'}"
+CO_BAL_BODY5="${CO_BAL_RAW5%$'\n'*}"
+expect_status "${CO_BAL_STATUS5}" "200" "co-owner balance after full refund"
+CO_BALANCE_FINAL="$(printf '%s' "${CO_BAL_BODY5}" | json_get_number "data.balance")"
+echo "co-owner balance(after full refund)=${CO_BALANCE_FINAL}"
+
+if [ "${PR_BALANCE_FINAL}" != "0" ] || [ "${CO_BALANCE_FINAL}" != "0" ]; then
+  echo "[FAIL] balance should be 0 after full refund: principal=${PR_BALANCE_FINAL}, co-owner=${CO_BALANCE_FINAL}"
+  exit 1
+fi
+echo "[OK] balance is 0 after full refund"
+echo
+
+echo "== withdraw principal after full refund (should succeed) =="
+WITHDRAW_RAW2="$(curl -sS -w "\n%{http_code}" -X POST "${BASE_URL}/api/auth/withdraw" -H "Authorization: Bearer ${PR_TOKEN}")"
+WITHDRAW_STATUS2="${WITHDRAW_RAW2##*$'\n'}"
+WITHDRAW_BODY2="${WITHDRAW_RAW2%$'\n'*}"
+echo "${WITHDRAW_BODY2}"
+expect_status "${WITHDRAW_STATUS2}" "200" "principal withdraw after full refund"
+echo "[OK] principal withdrawal succeeded after full refund"
+echo
+
+echo "[DONE] credit checklist script finished successfully"

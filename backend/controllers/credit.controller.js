@@ -193,12 +193,22 @@ async function getBalanceBreakdown(scope) {
 export async function createCreditOrder(req, res) {
   const organizationId = req.user?.organizationId;
   const userId = req.user?._id;
+  const position = String(req.user?.position || "");
+
   if (!organizationId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 설정되지 않았습니다.",
     });
   }
+
+  if (position !== "principal") {
+    return res.status(403).json({
+      success: false,
+      message: "크레딧 충전은 주대표만 가능합니다.",
+    });
+  }
+
   const { supplyAmount: rawSupply } = req.body;
 
   const validated = validateSupplyAmount(rawSupply);
@@ -557,12 +567,22 @@ export async function cancelMyCreditOrder(req, res) {
 export async function requestCreditRefund(req, res) {
   const organizationId = req.user?.organizationId;
   const userId = req.user?._id;
+  const position = String(req.user?.position || "");
+
   if (!organizationId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 설정되지 않았습니다.",
     });
   }
+
+  if (position !== "principal") {
+    return res.status(403).json({
+      success: false,
+      message: "크레딧 환불은 주대표만 가능합니다.",
+    });
+  }
+
   const { refundSupplyAmount, refundReceiveAccount } = req.body;
 
   if (!refundReceiveAccount || typeof refundReceiveAccount !== "object") {
