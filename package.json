@@ -1,0 +1,18 @@
+{
+  "name": "abuts-fit",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently -k -n backend,frontend \"npm --prefix web/backend run dev\" \"npm --prefix web/frontend run dev\"",
+    "dev:backend": "npm --prefix web/backend run dev",
+    "dev:frontend": "npm --prefix web/frontend run dev",
+    "build": "npm --prefix web/frontend run build",
+    "build:dev": "npm --prefix web/frontend run build:dev",
+    "start": "npm --prefix web/backend start",
+    "test": "npm --prefix web/backend test",
+    "install:all": "npm --prefix web/backend install && npm --prefix web/frontend install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
