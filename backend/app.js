@@ -6,6 +6,7 @@ import morgan from "morgan";
 import { config } from "dotenv";
 import { join } from "path";
 import rateLimit from "express-rate-limit";
+import CreditOrder from "./models/creditOrder.model.js";
 
 // 환경 변수 로드
 config();
@@ -19,8 +20,8 @@ const mongoUri =
     ? process.env.MONGODB_URI_TEST || "mongodb://localhost:27017/abutsFitTest"
     : process.env.MONGODB_URI || "mongodb://localhost:27017/abutsFit";
 
-connect(mongoUri)
-  .then(() => {
+const dbReady = connect(mongoUri)
+  .then(async () => {
     if (process.env.NODE_ENV !== "test") {
       console.log(
         `MongoDB 연결 성공: ${
@@ -28,8 +29,19 @@ connect(mongoUri)
         }`
       );
     }
+
+    if (process.env.NODE_ENV !== "production") {
+      try {
+        await CreditOrder.syncIndexes();
+      } catch (err) {
+        console.error("[CreditOrder] syncIndexes failed:", err);
+      }
+    }
   })
-  .catch((err) => console.error("MongoDB 연결 실패:", err));
+  .catch((err) => {
+    console.error("MongoDB 연결 실패:", err);
+    throw err;
+  });
 
 // 기본 미들웨어
 // CNC/브리지 업로드에서 비교적 큰 텍스트 파일을 주고받기 위해 바디 용량 제한을 완화한다.
@@ -134,3 +146,5 @@ app.use((err, req, res, next) => {
 });
 
 export default app;
+
+export { dbReady };

@@ -374,10 +374,18 @@ export async function getMyCreditSpendInsights(req, res) {
 export async function confirmVirtualAccountPayment(req, res) {
   const organizationId = req.user?.organizationId;
   const userId = req.user?._id;
+  const position = String(req.user?.position || "");
   if (!organizationId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
+
+  if (position !== "principal") {
+    return res.status(403).json({
+      success: false,
+      message: "크레딧 충전은 주대표만 가능합니다.",
     });
   }
   const { paymentKey, orderId, amount } = req.body;
@@ -485,10 +493,18 @@ export async function confirmVirtualAccountPayment(req, res) {
 
 export async function cancelMyCreditOrder(req, res) {
   const organizationId = req.user?.organizationId;
+  const position = String(req.user?.position || "");
   if (!organizationId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 설정되지 않았습니다.",
+    });
+  }
+
+  if (position !== "principal") {
+    return res.status(403).json({
+      success: false,
+      message: "크레딧 충전은 주대표만 가능합니다.",
     });
   }
   const orderId = String(req.params.orderId || "").trim();

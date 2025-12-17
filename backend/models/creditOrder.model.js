@@ -43,8 +43,8 @@ const creditOrderSchema = new mongoose.Schema(
     refundedVatAmount: { type: Number, default: 0, min: 0 },
     refundedTotalAmount: { type: Number, default: 0, min: 0 },
 
-    paymentKey: { type: String, default: null, unique: true, sparse: true },
-    tossSecret: { type: String, default: null },
+    paymentKey: { type: String },
+    tossSecret: { type: String },
 
     method: { type: String, default: "VIRTUAL_ACCOUNT" },
     requestedAt: { type: Date, default: null },
@@ -59,6 +59,14 @@ const creditOrderSchema = new mongoose.Schema(
     },
   },
   { timestamps: true }
+);
+
+creditOrderSchema.index(
+  { paymentKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { paymentKey: { $type: "string", $ne: "" } },
+  }
 );
 
 export default mongoose.model("CreditOrder", creditOrderSchema);

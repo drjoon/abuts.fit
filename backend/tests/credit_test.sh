@@ -89,9 +89,17 @@ echo "PR_EMAIL=${PR_EMAIL}"
 echo "CO_EMAIL=${CO_EMAIL}"
 echo
 
-echo "== cleanup test DB =="
-mongosh abuts_fit_test --eval "db.creditorders.deleteMany({})" --quiet 2>/dev/null || echo "[WARN] Could not clean creditorders collection"
-echo
+if [ "${CREDIT_TEST_CLEAN_DB:-0}" = "1" ]; then
+  echo "== cleanup test DB =="
+  if command -v mongosh >/dev/null 2>&1; then
+    mongosh abuts_fit_test --eval "db.creditorders.deleteMany({})" --quiet 2>/dev/null || echo "[WARN] Could not clean creditorders collection"
+  elif command -v mongo >/dev/null 2>&1; then
+    mongo abuts_fit_test --eval "db.creditorders.deleteMany({})" --quiet 2>/dev/null || echo "[WARN] Could not clean creditorders collection"
+  else
+    echo "[SKIP] mongo shell not found (set CREDIT_TEST_CLEAN_DB=0 to hide)"
+  fi
+  echo
+fi
 
 echo "== register principal =="
 curl -sS "${BASE_URL}/api/auth/register" \
@@ -148,11 +156,16 @@ expect_status "${CO_BAL_STATUS}" "403" "co-owner balance without organizationId"
 echo
 
 echo "== attach co-owner to principal organization =="
-curl -sS "${BASE_URL}/api/requestor-organizations/co-owners" \
-  -H "Authorization: Bearer ${PR_TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "{\"email\":\"${CO_EMAIL}\"}"
-echo; echo
+CO_ATTACH_RAW="$(curl_json POST /api/requestor-organizations/co-owners "${PR_TOKEN}" "{\"email\":\"${CO_EMAIL}\"}")"
+CO_ATTACH_STATUS="${CO_ATTACH_RAW##*$'\n'}"
+CO_ATTACH_BODY="${CO_ATTACH_RAW%$'\n'*}"
+echo "${CO_ATTACH_BODY}"
+if [ "${CO_ATTACH_STATUS}" != "200" ] && [ "${CO_ATTACH_STATUS}" != "201" ]; then
+  echo "[FAIL] attach co-owner: expected status=200/201, got=${CO_ATTACH_STATUS}"
+  exit 1
+fi
+echo "[OK] attach co-owner: status=${CO_ATTACH_STATUS}"
+echo
 
 echo "== credits balance AFTER org link (principal/co-owner should match) =="
 PR_BAL_RAW="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/balance" -H "Authorization: Bearer ${PR_TOKEN}")"
@@ -160,28 +173,44 @@ PR_BAL_STATUS="${PR_BAL_RAW##*$'\n'}"
 PR_BAL_BODY="${PR_BAL_RAW%$'\n'*}"
 expect_status "${PR_BAL_STATUS}" "200" "principal balance"
 PR_BALANCE="$(printf '%s' "${PR_BAL_BODY}" | json_get_number "data.balance")"
+PR_PAID_BALANCE="$(printf '%s' "${PR_BAL_BODY}" | json_get_number "data.paidBalance")"
+PR_BONUS_BALANCE="$(printf '%s' "${PR_BAL_BODY}" | json_get_number "data.bonusBalance")"
 echo "principal balance=${PR_BALANCE}"
+echo "principal paidBalance=${PR_PAID_BALANCE}"
+echo "principal bonusBalance=${PR_BONUS_BALANCE}"
 
 CO_BAL_RAW2="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/balance" -H "Authorization: Bearer ${CO_TOKEN}")"
 CO_BAL_STATUS2="${CO_BAL_RAW2##*$'\n'}"
 CO_BAL_BODY2="${CO_BAL_RAW2%$'\n'*}"
 expect_status "${CO_BAL_STATUS2}" "200" "co-owner balance"
 CO_BALANCE="$(printf '%s' "${CO_BAL_BODY2}" | json_get_number "data.balance")"
+CO_PAID_BALANCE="$(printf '%s' "${CO_BAL_BODY2}" | json_get_number "data.paidBalance")"
+CO_BONUS_BALANCE="$(printf '%s' "${CO_BAL_BODY2}" | json_get_number "data.bonusBalance")"
 echo "co-owner balance=${CO_BALANCE}"
+echo "co-owner paidBalance=${CO_PAID_BALANCE}"
+echo "co-owner bonusBalance=${CO_BONUS_BALANCE}"
 
 if [ "${PR_BALANCE}" != "${CO_BALANCE}" ]; then
   echo "[FAIL] shared credit balance mismatch: principal=${PR_BALANCE}, co-owner=${CO_BALANCE}"
+  exit 1
+fi
+if [ "${PR_PAID_BALANCE}" != "${CO_PAID_BALANCE}" ]; then
+  echo "[FAIL] shared paidBalance mismatch: principal=${PR_PAID_BALANCE}, co-owner=${CO_PAID_BALANCE}"
+  exit 1
+fi
+if [ "${PR_BONUS_BALANCE}" != "${CO_BONUS_BALANCE}" ]; then
+  echo "[FAIL] shared bonusBalance mismatch: principal=${PR_BONUS_BALANCE}, co-owner=${CO_BONUS_BALANCE}"
   exit 1
 fi
 echo "[OK] shared credit balance matches"
 echo
 
 echo "== create credit order =="
-ORDER_JSON="$(curl -sS "${BASE_URL}/api/credits/orders" \
-  -H "Authorization: Bearer ${PR_TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d '{"supplyAmount":500000}')"
+ORDER_RAW="$(curl_json POST /api/credits/orders "${PR_TOKEN}" '{"supplyAmount":500000}')"
+ORDER_STATUS="${ORDER_RAW##*$'\n'}"
+ORDER_JSON="${ORDER_RAW%$'\n'*}"
 echo "${ORDER_JSON}"
+expect_status "${ORDER_STATUS}" "201" "create credit order"
 echo
 
 ORDER_ID="$(python - <<PY
@@ -198,11 +227,12 @@ if [ -z "${TOTAL_AMOUNT}" ]; then
 fi
 
 echo "== confirm payment (mock) =="
-curl -sS "${BASE_URL}/api/credits/payments/confirm" \
-  -H "Authorization: Bearer ${PR_TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "{\"orderId\":\"${ORDER_ID}\",\"amount\":${TOTAL_AMOUNT}}"
-echo; echo
+CONFIRM_RAW="$(curl_json POST /api/credits/payments/confirm "${PR_TOKEN}" "{\"orderId\":\"${ORDER_ID}\",\"amount\":${TOTAL_AMOUNT}}")"
+CONFIRM_STATUS="${CONFIRM_RAW##*$'\n'}"
+CONFIRM_BODY="${CONFIRM_RAW%$'\n'*}"
+echo "${CONFIRM_BODY}"
+expect_status "${CONFIRM_STATUS}" "200" "confirm payment"
+echo
 
 echo "== balance AFTER charge (principal/co-owner should match) =="
 PR_BAL_RAW3="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/balance" -H "Authorization: Bearer ${PR_TOKEN}")"
@@ -210,17 +240,33 @@ PR_BAL_STATUS3="${PR_BAL_RAW3##*$'\n'}"
 PR_BAL_BODY3="${PR_BAL_RAW3%$'\n'*}"
 expect_status "${PR_BAL_STATUS3}" "200" "principal balance after charge"
 PR_BALANCE2="$(printf '%s' "${PR_BAL_BODY3}" | json_get_number "data.balance")"
+PR_PAID_BALANCE2="$(printf '%s' "${PR_BAL_BODY3}" | json_get_number "data.paidBalance")"
+PR_BONUS_BALANCE2="$(printf '%s' "${PR_BAL_BODY3}" | json_get_number "data.bonusBalance")"
 echo "principal balance(after)=${PR_BALANCE2}"
+echo "principal paidBalance(after)=${PR_PAID_BALANCE2}"
+echo "principal bonusBalance(after)=${PR_BONUS_BALANCE2}"
 
 CO_BAL_RAW3="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/balance" -H "Authorization: Bearer ${CO_TOKEN}")"
 CO_BAL_STATUS3="${CO_BAL_RAW3##*$'\n'}"
 CO_BAL_BODY3="${CO_BAL_RAW3%$'\n'*}"
 expect_status "${CO_BAL_STATUS3}" "200" "co-owner balance after charge"
 CO_BALANCE2="$(printf '%s' "${CO_BAL_BODY3}" | json_get_number "data.balance")"
+CO_PAID_BALANCE2="$(printf '%s' "${CO_BAL_BODY3}" | json_get_number "data.paidBalance")"
+CO_BONUS_BALANCE2="$(printf '%s' "${CO_BAL_BODY3}" | json_get_number "data.bonusBalance")"
 echo "co-owner balance(after)=${CO_BALANCE2}"
+echo "co-owner paidBalance(after)=${CO_PAID_BALANCE2}"
+echo "co-owner bonusBalance(after)=${CO_BONUS_BALANCE2}"
 
 if [ "${PR_BALANCE2}" != "${CO_BALANCE2}" ]; then
   echo "[FAIL] shared credit balance mismatch after charge: principal=${PR_BALANCE2}, co-owner=${CO_BALANCE2}"
+  exit 1
+fi
+if [ "${PR_PAID_BALANCE2}" != "${CO_PAID_BALANCE2}" ]; then
+  echo "[FAIL] shared paidBalance mismatch after charge: principal=${PR_PAID_BALANCE2}, co-owner=${CO_PAID_BALANCE2}"
+  exit 1
+fi
+if [ "${PR_BONUS_BALANCE2}" != "${CO_BONUS_BALANCE2}" ]; then
+  echo "[FAIL] shared bonusBalance mismatch after charge: principal=${PR_BONUS_BALANCE2}, co-owner=${CO_BONUS_BALANCE2}"
   exit 1
 fi
 echo "[OK] shared credit balance matches after charge"
@@ -247,21 +293,37 @@ PR_BAL_STATUS4="${PR_BAL_RAW4##*$'\n'}"
 PR_BAL_BODY4="${PR_BAL_RAW4%$'\n'*}"
 expect_status "${PR_BAL_STATUS4}" "200" "principal balance after refund"
 PR_BALANCE3="$(printf '%s' "${PR_BAL_BODY4}" | json_get_number "data.balance")"
+PR_PAID_BALANCE3="$(printf '%s' "${PR_BAL_BODY4}" | json_get_number "data.paidBalance")"
+PR_BONUS_BALANCE3="$(printf '%s' "${PR_BAL_BODY4}" | json_get_number "data.bonusBalance")"
 echo "principal balance(after refund)=${PR_BALANCE3}"
+echo "principal paidBalance(after refund)=${PR_PAID_BALANCE3}"
+echo "principal bonusBalance(after refund)=${PR_BONUS_BALANCE3}"
 
 CO_BAL_RAW4="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/balance" -H "Authorization: Bearer ${CO_TOKEN}")"
 CO_BAL_STATUS4="${CO_BAL_RAW4##*$'\n'}"
 CO_BAL_BODY4="${CO_BAL_RAW4%$'\n'*}"
 expect_status "${CO_BAL_STATUS4}" "200" "co-owner balance after refund"
 CO_BALANCE3="$(printf '%s' "${CO_BAL_BODY4}" | json_get_number "data.balance")"
+CO_PAID_BALANCE3="$(printf '%s' "${CO_BAL_BODY4}" | json_get_number "data.paidBalance")"
+CO_BONUS_BALANCE3="$(printf '%s' "${CO_BAL_BODY4}" | json_get_number "data.bonusBalance")"
 echo "co-owner balance(after refund)=${CO_BALANCE3}"
+echo "co-owner paidBalance(after refund)=${CO_PAID_BALANCE3}"
+echo "co-owner bonusBalance(after refund)=${CO_BONUS_BALANCE3}"
 
-if [ -n "${PR_BALANCE2}" ] && [ -n "${PR_BALANCE3}" ] && [ "${PR_BALANCE3}" -ge "${PR_BALANCE2}" ]; then
-  echo "[FAIL] balance did not decrease after refund"
+if [ -n "${PR_PAID_BALANCE2}" ] && [ -n "${PR_PAID_BALANCE3}" ] && [ "${PR_PAID_BALANCE3}" -ge "${PR_PAID_BALANCE2}" ]; then
+  echo "[FAIL] paidBalance did not decrease after refund"
   exit 1
 fi
 if [ "${PR_BALANCE3}" != "${CO_BALANCE3}" ]; then
   echo "[FAIL] shared credit balance mismatch after refund: principal=${PR_BALANCE3}, co-owner=${CO_BALANCE3}"
+  exit 1
+fi
+if [ "${PR_PAID_BALANCE3}" != "${CO_PAID_BALANCE3}" ]; then
+  echo "[FAIL] shared paidBalance mismatch after refund: principal=${PR_PAID_BALANCE3}, co-owner=${CO_PAID_BALANCE3}"
+  exit 1
+fi
+if [ "${PR_BONUS_BALANCE3}" != "${CO_BONUS_BALANCE3}" ]; then
+  echo "[FAIL] shared bonusBalance mismatch after refund: principal=${PR_BONUS_BALANCE3}, co-owner=${CO_BONUS_BALANCE3}"
   exit 1
 fi
 echo "[OK] balance decreased after refund and matches between principal/co-owner"
@@ -299,12 +361,52 @@ echo "${CO_REFUND_BODY}"
 expect_status "${CO_REFUND_STATUS}" "403" "co-owner refund (forbidden)"
 echo
 
-echo "== get transaction history (principal) =="
-HISTORY_RAW="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/transactions" -H "Authorization: Bearer ${PR_TOKEN}")"
+echo "== list credit orders (principal) =="
+HISTORY_RAW="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/orders" -H "Authorization: Bearer ${PR_TOKEN}")"
 HISTORY_STATUS="${HISTORY_RAW##*$'\n'}"
 HISTORY_BODY="${HISTORY_RAW%$'\n'*}"
 echo "${HISTORY_BODY}"
-expect_status "${HISTORY_STATUS}" "200" "transaction history"
+expect_status "${HISTORY_STATUS}" "200" "credit orders list"
+echo
+
+echo "== list credit orders (co-owner, should be allowed) =="
+CO_HISTORY_RAW="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/credits/orders" -H "Authorization: Bearer ${CO_TOKEN}")"
+CO_HISTORY_STATUS="${CO_HISTORY_RAW##*$'\n'}"
+CO_HISTORY_BODY="${CO_HISTORY_RAW%$'\n'*}"
+echo "${CO_HISTORY_BODY}"
+expect_status "${CO_HISTORY_STATUS}" "200" "co-owner credit orders list"
+echo
+
+echo "== create another order (to test cancel) =="
+CANCEL_ORDER_RAW="$(curl_json POST /api/credits/orders "${PR_TOKEN}" '{"supplyAmount":500000}')"
+CANCEL_ORDER_STATUS="${CANCEL_ORDER_RAW##*$'\n'}"
+CANCEL_ORDER_BODY="${CANCEL_ORDER_RAW%$'\n'*}"
+echo "${CANCEL_ORDER_BODY}"
+expect_status "${CANCEL_ORDER_STATUS}" "201" "create cancel-test order"
+
+CANCEL_ORDER_ID="$(python - <<PY
+import json
+obj=json.loads('''$CANCEL_ORDER_BODY''')
+print(((obj.get("data") or {}).get("orderId")) or "")
+PY
+)"
+[ -n "${CANCEL_ORDER_ID}" ] || { echo "cancel-test orderId 생성 실패"; exit 1; }
+echo
+
+echo "== cancel the order (principal) =="
+CANCEL_RAW="$(curl -sS -w "\n%{http_code}" -X POST "${BASE_URL}/api/credits/orders/${CANCEL_ORDER_ID}/cancel" -H "Authorization: Bearer ${PR_TOKEN}")"
+CANCEL_STATUS="${CANCEL_RAW##*$'\n'}"
+CANCEL_BODY="${CANCEL_RAW%$'\n'*}"
+echo "${CANCEL_BODY}"
+expect_status "${CANCEL_STATUS}" "200" "cancel order (principal)"
+echo
+
+echo "== cancel the order (co-owner should be forbidden) =="
+CO_CANCEL_RAW="$(curl -sS -w "\n%{http_code}" -X POST "${BASE_URL}/api/credits/orders/${CANCEL_ORDER_ID}/cancel" -H "Authorization: Bearer ${CO_TOKEN}")"
+CO_CANCEL_STATUS="${CO_CANCEL_RAW##*$'\n'}"
+CO_CANCEL_BODY="${CO_CANCEL_RAW%$'\n'*}"
+echo "${CO_CANCEL_BODY}"
+expect_status "${CO_CANCEL_STATUS}" "403" "cancel order (co-owner forbidden)"
 echo
 
 echo "== error case: invalid amount for payment confirm =="
@@ -387,7 +489,7 @@ fi
 echo
 
 echo "== full refund remaining balance =="
-REMAINING_SUPPLY=$((PR_BALANCE3))
+REMAINING_SUPPLY=$((PR_PAID_BALANCE3))
 FULL_REFUND_RAW="$(curl_json POST /api/credits/refunds "${PR_TOKEN}" "{
   \"refundSupplyAmount\": ${REMAINING_SUPPLY},
   \"refundReceiveAccount\": {

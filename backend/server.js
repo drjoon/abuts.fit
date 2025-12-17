@@ -1,5 +1,5 @@
 import { createServer } from "http";
-import app from "./app.js";
+import app, { dbReady } from "./app.js";
 import supportRoutes from "./routes/support.routes.js";
 import implantPresetRoutes from "./routes/implantPreset.routes.js";
 import { config } from "dotenv";
@@ -19,8 +19,16 @@ const server = createServer(app);
 initializeSocket(server);
 
 // 서버 시작
-server.listen(PORT, () => {
-  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-  console.log(`Socket.io가 활성화되었습니다.`);
-  startCreditJobs();
-});
+(async () => {
+  try {
+    await dbReady;
+    server.listen(PORT, () => {
+      console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
+      console.log(`Socket.io가 활성화되었습니다.`);
+      startCreditJobs();
+    });
+  } catch (err) {
+    console.error("서버 시작 실패:", err);
+    process.exit(1);
+  }
+})();
