@@ -3,7 +3,18 @@ import User from "../models/user.model.js";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 
-const FRONTEND_URL = process.env.OAUTH_FRONTEND_URL || "http://localhost:8080";
+function getFrontendBaseUrl(req) {
+  const configured = String(
+    process.env.OAUTH_FRONTEND_URL || process.env.FRONTEND_PUBLIC_URL || ""
+  ).trim();
+  if (configured) return configured;
+
+  const proto = (req.headers["x-forwarded-proto"] || req.protocol || "http")
+    .toString()
+    .split(",")[0]
+    .trim();
+  return `${proto}://${req.get("host")}`;
+}
 
 function getBackendBaseUrl(req) {
   const configured = String(process.env.BACKEND_PUBLIC_URL || "").trim();
@@ -15,8 +26,8 @@ function getBackendBaseUrl(req) {
   return `${proto}://${req.get("host")}`;
 }
 
-function redirectToFrontend(res, params) {
-  const url = new URL("/oauth/callback", FRONTEND_URL);
+function redirectToFrontend(req, res, params) {
+  const url = new URL("/oauth/callback", getFrontendBaseUrl(req));
   for (const [k, v] of Object.entries(params || {})) {
     if (v === undefined || v === null) continue;
     url.searchParams.set(k, String(v));
@@ -341,7 +352,7 @@ async function findOrCreateUserFromSocial({
 async function googleStart(req, res) {
   const clientId = String(process.env.GOOGLE_CLIENT_ID || "").trim();
   if (!clientId) {
-    return redirectToFrontend(res, {
+    return redirectToFrontend(req, res, {
       error: "GOOGLE_CLIENT_ID가 설정되지 않았습니다.",
       provider: "google",
     });
@@ -365,7 +376,7 @@ async function googleCallback(req, res) {
     const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
 
     if (!clientId || !clientSecret) {
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         error: "구글 OAuth 환경변수가 설정되지 않았습니다.",
         provider: "google",
       });
@@ -373,7 +384,7 @@ async function googleCallback(req, res) {
 
     const code = String(req.query.code || "");
     if (!code) {
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         error: "구글 인증 코드가 없습니다.",
         provider: "google",
       });
@@ -398,7 +409,7 @@ async function googleCallback(req, res) {
     const accessToken = tokenJson?.access_token;
 
     if (!tokenRes.ok || !accessToken) {
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         error: "구글 토큰 발급에 실패했습니다.",
         provider: "google",
       });
@@ -414,7 +425,7 @@ async function googleCallback(req, res) {
 
     const profile = await profileRes.json().catch(() => null);
     if (!profileRes.ok || !profile) {
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         error: "구글 사용자 정보를 가져오지 못했습니다.",
         provider: "google",
       });
@@ -446,7 +457,7 @@ async function googleCallback(req, res) {
       const refreshToken = generateRefreshToken(existingUser._id);
       const needsSignup = existingUser?.approvedAt ? "0" : "1";
 
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         token,
         refreshToken,
         provider: "google",
@@ -463,13 +474,13 @@ async function googleCallback(req, res) {
       providerUserId: String(profile.sub || ""),
     });
 
-    return redirectToFrontend(res, {
+    return redirectToFrontend(req, res, {
       socialToken: socialInfoToken,
       provider: "google",
       needsSignup: "1",
     });
   } catch (error) {
-    return redirectToFrontend(res, {
+    return redirectToFrontend(req, res, {
       error: error?.message || "구글 로그인 중 오류가 발생했습니다.",
       provider: "google",
     });
@@ -479,7 +490,7 @@ async function googleCallback(req, res) {
 async function kakaoStart(req, res) {
   const clientId = String(process.env.KAKAO_CLIENT_ID || "").trim();
   if (!clientId) {
-    return redirectToFrontend(res, {
+    return redirectToFrontend(req, res, {
       error: "KAKAO_CLIENT_ID가 설정되지 않았습니다.",
       provider: "kakao",
     });
@@ -503,7 +514,7 @@ async function kakaoCallback(req, res) {
     const clientSecret = String(process.env.KAKAO_CLIENT_SECRET || "").trim();
 
     if (!clientId) {
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         error: "카카오 OAuth 환경변수가 설정되지 않았습니다.",
         provider: "kakao",
       });
@@ -511,7 +522,7 @@ async function kakaoCallback(req, res) {
 
     const code = String(req.query.code || "");
     if (!code) {
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         error: "카카오 인증 코드가 없습니다.",
         provider: "kakao",
       });
@@ -541,7 +552,7 @@ async function kakaoCallback(req, res) {
     const accessToken = tokenJson?.access_token;
 
     if (!tokenRes.ok || !accessToken) {
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         error: "카카오 토큰 발급에 실패했습니다.",
         provider: "kakao",
       });
@@ -554,7 +565,7 @@ async function kakaoCallback(req, res) {
 
     const profile = await profileRes.json().catch(() => null);
     if (!profileRes.ok || !profile) {
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         error: "카카오 사용자 정보를 가져오지 못했습니다.",
         provider: "kakao",
       });
@@ -592,7 +603,7 @@ async function kakaoCallback(req, res) {
       const refreshToken = generateRefreshToken(existingUser._id);
       const needsSignup = existingUser?.approvedAt ? "0" : "1";
 
-      return redirectToFrontend(res, {
+      return redirectToFrontend(req, res, {
         token,
         refreshToken,
         provider: "kakao",
@@ -609,13 +620,13 @@ async function kakaoCallback(req, res) {
       providerUserId: String(profile.id || ""),
     });
 
-    return redirectToFrontend(res, {
+    return redirectToFrontend(req, res, {
       socialToken: socialInfoToken,
       provider: "kakao",
       needsSignup: "1",
     });
   } catch (error) {
-    return redirectToFrontend(res, {
+    return redirectToFrontend(req, res, {
       error: error?.message || "카카오 로그인 중 오류가 발생했습니다.",
       provider: "kakao",
     });

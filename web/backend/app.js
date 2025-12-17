@@ -4,12 +4,40 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import { config } from "dotenv";
-import { join } from "path";
+import { existsSync } from "fs";
+import { dirname, isAbsolute, join, resolve } from "path";
+import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
 import CreditOrder from "./models/creditOrder.model.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 // 환경 변수 로드
-config();
+const envFile = String(process.env.ENV_FILE || "").trim();
+if (envFile) {
+  const candidates = isAbsolute(envFile)
+    ? [envFile]
+    : [
+        resolve(process.cwd(), envFile),
+        resolve(__dirname, envFile),
+        resolve(__dirname, "../../", envFile),
+      ];
+  const found = candidates.find((p) => existsSync(p));
+
+  if (found) {
+    config({ path: found });
+  } else {
+    console.warn(
+      `[dotenv] ENV_FILE not found. ENV_FILE=${envFile}. Tried: ${candidates.join(
+        ", "
+      )}`
+    );
+    config();
+  }
+} else {
+  config();
+}
 
 // Express 앱 초기화
 const app = express();
@@ -18,19 +46,34 @@ const app = express();
 const mongoUri =
   process.env.NODE_ENV === "test"
     ? process.env.MONGODB_URI_TEST || "mongodb://localhost:27017/abutsFitTest"
-    : process.env.MONGODB_URI || "mongodb://localhost:27017/abutsFit";
+    : process.env.NODE_ENV === "production"
+    ? process.env.MONGODB_URI || "mongodb://localhost:27017/abutsFit"
+    : process.env.MONGODB_URI_TEST ||
+      process.env.MONGODB_URI ||
+      "mongodb://localhost:27017/abutsFit";
+
+const mongoSource =
+  process.env.NODE_ENV === "test"
+    ? "TEST DB"
+    : process.env.NODE_ENV === "production"
+    ? process.env.MONGODB_URI
+      ? "PROD DB"
+      : "LOCAL DB"
+    : process.env.MONGODB_URI_TEST
+    ? "TEST DB"
+    : process.env.MONGODB_URI
+    ? "PROD DB"
+    : "LOCAL DB";
 
 const dbReady = connect(mongoUri)
   .then(async () => {
     if (process.env.NODE_ENV !== "test") {
-      console.log(
-        `MongoDB 연결 성공: ${
-          process.env.NODE_ENV === "test" ? "TEST DB" : "PROD DB"
-        }`
-      );
+      console.log(`MongoDB 연결 성공: ${mongoSource}`);
     }
 
-    if (process.env.NODE_ENV !== "production") {
+    if (
+      String(process.env.ENABLE_SYNC_INDEXES || "").toLowerCase() === "true"
+    ) {
       try {
         await CreditOrder.syncIndexes();
       } catch (err) {
@@ -81,8 +124,7 @@ const limiter = rateLimit({
 app.use("/api", limiter);
 
 // 정적 파일 제공 (업로드된 파일 등)
-// ESM 환경에서는 __dirname이 없으므로 process.cwd()를 기준으로 업로드 경로를 지정
-app.use("/uploads", staticMiddleware(join(process.cwd(), "uploads")));
+app.use("/uploads", staticMiddleware(resolve(__dirname, "uploads")));
 
 // 라우트 모듈 가져오기
 import authRoutes from "./routes/auth.routes.js";
@@ -126,14 +168,37 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 
+const FRONTEND_DIST_PATH = resolve(__dirname, "../frontend/dist");
+const hasFrontendDist = existsSync(FRONTEND_DIST_PATH);
+
+if (hasFrontendDist) {
+  app.use(staticMiddleware(FRONTEND_DIST_PATH));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) {
+      return next();
+    }
+    if (req.path.startsWith("/uploads/")) {
+      return next();
+    }
+    res.sendFile(join(FRONTEND_DIST_PATH, "index.html"));
+  });
+}
+
 // 기본 라우트
-app.get("/", (req, res) => {
-  res.send("어벗츠.핏 API 서버에 오신 것을 환영합니다.");
-});
+if (!hasFrontendDist) {
+  app.get("/", (req, res) => {
+    res.send("어벗츠.핏 API 서버에 오신 것을 환영합니다.");
+  });
+}
 
 // 404 에러 처리
 app.use((req, res) => {
-  res.status(404).json({ message: "요청한 리소스를 찾을 수 없습니다." });
+  if (req.path.startsWith("/api/")) {
+    return res
+      .status(404)
+      .json({ message: "요청한 리소스를 찾을 수 없습니다." });
+  }
+  res.status(404).send("Not Found");
 });
 
 // 에러 핸들러
