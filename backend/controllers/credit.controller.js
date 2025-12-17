@@ -9,6 +9,61 @@ import {
   makeDeterministicIdempotencyKey,
 } from "../utils/tossPayments.js";
 
+function isMockPaymentsEnabled() {
+  return (
+    String(process.env.PAYMENTS_MODE || "").toLowerCase() === "mock" &&
+    String(process.env.NODE_ENV || "").toLowerCase() !== "production"
+  );
+}
+
+async function confirmPayment({ paymentKey, orderId, amount }) {
+  if (!isMockPaymentsEnabled()) {
+    return tossConfirmPayment({ paymentKey, orderId, amount });
+  }
+
+  return {
+    paymentKey: String(paymentKey || "MOCK_PAYMENT_KEY"),
+    orderId: String(orderId || ""),
+    status: "DONE",
+    secret: `mock_${crypto.randomBytes(12).toString("hex")}`,
+    virtualAccount: {
+      bank: "",
+      accountNumber: "",
+      customerName: "",
+      dueDate: "",
+    },
+  };
+}
+
+async function cancelPayment({
+  paymentKey,
+  cancelReason,
+  cancelAmount,
+  refundReceiveAccount,
+  idempotencyKey,
+}) {
+  if (!isMockPaymentsEnabled()) {
+    return tossCancelPayment({
+      paymentKey,
+      cancelReason,
+      cancelAmount,
+      refundReceiveAccount,
+      idempotencyKey,
+    });
+  }
+
+  return {
+    paymentKey: String(paymentKey || "MOCK_PAYMENT_KEY"),
+    cancels: [
+      {
+        transactionKey: String(idempotencyKey || "mock_cancel"),
+        cancelReason: String(cancelReason || ""),
+        cancelAmount: typeof cancelAmount === "number" ? cancelAmount : null,
+      },
+    ],
+  };
+}
+
 function roundVat(amount) {
   return Math.round(amount * 0.1);
 }
@@ -317,7 +372,11 @@ export async function confirmVirtualAccountPayment(req, res) {
   }
   const { paymentKey, orderId, amount } = req.body;
 
-  if (!paymentKey || !orderId || typeof amount !== "number") {
+  if (
+    (!isMockPaymentsEnabled() && !paymentKey) ||
+    !orderId ||
+    typeof amount !== "number"
+  ) {
     return res.status(400).json({
       success: false,
       message: "paymentKey, orderId, amount가 필요합니다.",
@@ -342,7 +401,13 @@ export async function confirmVirtualAccountPayment(req, res) {
     });
   }
 
-  const payment = await tossConfirmPayment({ paymentKey, orderId, amount });
+  const resolvedPaymentKey =
+    paymentKey || (isMockPaymentsEnabled() ? `MOCK_${String(orderId)}` : "");
+  const payment = await confirmPayment({
+    paymentKey: resolvedPaymentKey,
+    orderId,
+    amount,
+  });
 
   const status = String(payment?.status || "");
   const session = await mongoose.startSession();
@@ -474,7 +539,7 @@ export async function cancelMyCreditOrder(req, res) {
     `${String(order.paymentKey)}:${String(order.orderId)}`
   );
 
-  await tossCancelPayment({
+  await cancelPayment({
     paymentKey: order.paymentKey,
     cancelReason: "USER_CANCEL",
     idempotencyKey,
@@ -568,7 +633,7 @@ export async function requestCreditRefund(req, res) {
       "refund",
       `${String(o.paymentKey)}:${String(refundedSupply)}:${String(takeTotal)}`
     );
-    const payment = await tossCancelPayment({
+    const payment = await cancelPayment({
       paymentKey: o.paymentKey,
       cancelReason: "CREDIT_REFUND",
       cancelAmount: takeTotal,
