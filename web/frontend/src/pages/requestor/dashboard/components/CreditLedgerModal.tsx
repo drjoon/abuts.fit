@@ -86,6 +86,27 @@ const formatShortCode = (value: string) => {
   return s || "-";
 };
 
+const hashToBase36 = (input: string) => {
+  const str = String(input || "");
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36).toUpperCase();
+};
+
+const formatRequestIdSafe = (requestId?: string, seed?: string) => {
+  const raw = String(requestId || "").trim();
+  const m = raw.match(/^(\d{8})-(\d{6})$/);
+  if (!m) return raw;
+  const datePart = m[1];
+  const code = hashToBase36(`${String(seed || raw)}|abuts|requestId`)
+    .padStart(6, "0")
+    .slice(-6);
+  return `${datePart}-${code}`;
+};
+
 export const CreditLedgerModal = ({
   open,
   onOpenChange,
@@ -188,7 +209,21 @@ export const CreditLedgerModal = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg">크레딧 사용 내역</DialogTitle>
+          <div className="flex items-center justify-start gap-2">
+            <DialogTitle className="text-lg">크레딧 사용 내역</DialogTitle>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8"
+              onClick={() => {
+                onOpenChange(false);
+                navigate("/dashboard/settings?tab=payment");
+              }}
+              disabled={loading}
+            >
+              충전하기
+            </Button>
+          </div>
         </DialogHeader>
 
         {!canAccess ? (
@@ -231,28 +266,6 @@ export const CreditLedgerModal = ({
                     초기화
                   </Button>
                 </div>
-
-                <div className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8"
-                      onClick={() => {
-                        onOpenChange(false);
-                        navigate("/dashboard/settings?tab=payment");
-                      }}
-                      disabled={loading}
-                    >
-                      충전하기
-                    </Button>
-                    <span>
-                      {loading
-                        ? "불러오는 중..."
-                        : `${total.toLocaleString()}건`}
-                    </span>
-                  </div>
-                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 py-0.5">
@@ -293,6 +306,12 @@ export const CreditLedgerModal = ({
                   {rows.map((r) => {
                     const amount = Number(r.amount || 0);
                     const isMinus = amount < 0;
+                    const safeRef = r.refRequestId
+                      ? formatRequestIdSafe(
+                          r.refRequestId,
+                          r.refId || r.uniqueKey
+                        )
+                      : "";
                     return (
                       <TableRow key={r._id}>
                         <TableCell className="text-xs">
@@ -312,7 +331,7 @@ export const CreditLedgerModal = ({
                         <TableCell className="text-xs">
                           <div className="flex flex-col leading-4">
                             <span className="font-mono text-xs font-semibold">
-                              {String(r.refRequestId || "").trim() ||
+                              {safeRef ||
                                 formatShortCode(String(r.uniqueKey || ""))}
                             </span>
                             <span className="text-[11px] text-muted-foreground">

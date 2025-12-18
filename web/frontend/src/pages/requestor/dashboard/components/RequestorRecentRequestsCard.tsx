@@ -20,6 +20,27 @@ import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/co
 
 const EDITABLE_STATUSES = new Set(["의뢰접수", "가공전"]);
 
+const hashToBase36 = (input: string) => {
+  const str = String(input || "");
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36).toUpperCase();
+};
+
+const formatRequestIdSafe = (requestId?: string, seed?: string) => {
+  const raw = String(requestId || "").trim();
+  const m = raw.match(/^(\d{8})-(\d{6})$/);
+  if (!m) return raw;
+  const datePart = m[1];
+  const code = hashToBase36(`${String(seed || raw)}|abuts|requestId`)
+    .padStart(6, "0")
+    .slice(-6);
+  return `${datePart}-${code}`;
+};
+
 const getStatusBadge = (status: string) => {
   switch (status) {
     case "의뢰접수":
@@ -360,11 +381,15 @@ export const RequestorRecentRequestsCard = ({
       <CardContent className="flex-1 flex flex-col justify-between pt-0">
         <div className="space-y-3 max-h-[240px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {items.map((item: any) => {
-            const displayId = item.requestId || item.id || item._id || "";
+            const rawRequestId = String(item.requestId || "").trim();
+            const stableKey = item._id || item.id || rawRequestId || "";
+            const displayId = rawRequestId
+              ? formatRequestIdSafe(rawRequestId, stableKey)
+              : String(item.id || item._id || "");
 
             return (
               <FunctionalItemCard
-                key={displayId}
+                key={stableKey || displayId}
                 className="flex items-center justify-between p-3 border border-border rounded-lg"
                 onClick={(e) => {
                   e.stopPropagation();
