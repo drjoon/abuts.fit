@@ -42,6 +42,9 @@ if (envFile) {
 // Express 앱 초기화
 const app = express();
 
+// 프록시(CloudFront/ELB) 뒤에서 원래 프로토콜(https)을 인식하도록 설정
+app.set("trust proxy", 1);
+
 // 데이터베이스 연결
 const mongoUri =
   process.env.NODE_ENV === "test"

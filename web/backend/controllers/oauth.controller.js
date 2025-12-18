@@ -9,7 +9,12 @@ function getFrontendBaseUrl(req) {
   ).trim();
   if (configured) return configured;
 
-  const proto = (req.headers["x-forwarded-proto"] || req.protocol || "http")
+  const proto = (
+    req.headers["cloudfront-forwarded-proto"] ||
+    req.headers["x-forwarded-proto"] ||
+    req.protocol ||
+    "http"
+  )
     .toString()
     .split(",")[0]
     .trim();
@@ -19,7 +24,12 @@ function getFrontendBaseUrl(req) {
 function getBackendBaseUrl(req) {
   const configured = String(process.env.BACKEND_PUBLIC_URL || "").trim();
   if (configured) return configured;
-  const proto = (req.headers["x-forwarded-proto"] || req.protocol || "http")
+  const proto = (
+    req.headers["cloudfront-forwarded-proto"] ||
+    req.headers["x-forwarded-proto"] ||
+    req.protocol ||
+    "http"
+  )
     .toString()
     .split(",")[0]
     .trim();
