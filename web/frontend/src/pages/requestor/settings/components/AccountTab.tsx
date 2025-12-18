@@ -759,7 +759,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   >
                     <img
                       src={url}
-                      alt="avatar"
+                      alt=""
                       className="h-10 w-10 rounded-full bg-slate-100"
                     />
                   </button>

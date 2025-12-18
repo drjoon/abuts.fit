@@ -1,43 +1,17 @@
 import express, { json, urlencoded, static as staticMiddleware } from "express";
+import "./bootstrap/env.js";
 import { connect } from "mongoose";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
-import { config } from "dotenv";
 import { existsSync } from "fs";
-import { dirname, isAbsolute, join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
 import CreditOrder from "./models/creditOrder.model.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-// 환경 변수 로드
-const envFile = String(process.env.ENV_FILE || "").trim();
-if (envFile) {
-  const candidates = isAbsolute(envFile)
-    ? [envFile]
-    : [
-        resolve(process.cwd(), envFile),
-        resolve(__dirname, envFile),
-        resolve(__dirname, "../../", envFile),
-      ];
-  const found = candidates.find((p) => existsSync(p));
-
-  if (found) {
-    config({ path: found });
-  } else {
-    console.warn(
-      `[dotenv] ENV_FILE not found. ENV_FILE=${envFile}. Tried: ${candidates.join(
-        ", "
-      )}`
-    );
-    config();
-  }
-} else {
-  config();
-}
 
 // Express 앱 초기화
 const app = express();
@@ -98,7 +72,16 @@ const dbReady = connect(mongoUri)
 app.use(json({ limit: "10mb" }));
 app.use(urlencoded({ extended: true, limit: "10mb" }));
 app.use(cors());
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "img-src": ["'self'", "data:", "https://robohash.org"],
+      },
+    },
+  })
+);
 app.use(morgan("dev"));
 
 // Rate Limiting 설정

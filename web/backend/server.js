@@ -1,38 +1,10 @@
 import { createServer } from "http";
+import "./bootstrap/env.js";
 import app, { dbReady } from "./app.js";
 import supportRoutes from "./routes/support.routes.js";
 import implantPresetRoutes from "./routes/implantPreset.routes.js";
-import { config } from "dotenv";
-import { existsSync } from "fs";
-import { isAbsolute, resolve } from "path";
 import { startCreditJobs } from "./utils/creditJobs.js";
 import { initializeSocket } from "./socket.js";
-
-// 환경 변수 로드
-const envFile = String(process.env.ENV_FILE || "").trim();
-if (envFile) {
-  const candidates = isAbsolute(envFile)
-    ? [envFile]
-    : [
-        resolve(process.cwd(), envFile),
-        resolve(process.cwd(), "..", envFile),
-        resolve(process.cwd(), "..", "..", envFile),
-      ];
-  const found = candidates.find((p) => existsSync(p));
-
-  if (found) {
-    config({ path: found });
-  } else {
-    console.warn(
-      `[dotenv] ENV_FILE not found. ENV_FILE=${envFile}. Tried: ${candidates.join(
-        ", "
-      )}`
-    );
-    config();
-  }
-} else {
-  config();
-}
 
 // 포트 설정 (기본값 5001)
 const PORT = process.env.PORT || 5001;

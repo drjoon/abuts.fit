@@ -513,6 +513,21 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         setLicenseStatus("ready");
         processingToast.dismiss();
 
+        if (
+          String((verification as any)?.reason || "").trim() ===
+          "duplicate_business_number"
+        ) {
+          const msg = String((verification as any)?.message || "").trim();
+          toast({
+            title: "이미 등록된 사업자등록증입니다",
+            description:
+              msg ||
+              "사업자등록번호가 이미 등록되어 있어 자동 등록을 진행할 수 없습니다.",
+            variant: "destructive",
+            duration: 4500,
+          });
+        }
+
         if (!hasAnyExtracted) {
           const msg = String(verification?.message || "").trim();
           toast({

@@ -139,8 +139,23 @@ export const handleSave = async (params: HandleSaveParams) => {
     });
 
     if (!res.ok) {
+      const body: any = res.data || {};
+      const reason = String(body?.reason || "").trim();
+      const serverMessage = String(body?.message || "").trim();
+      if (res.status === 409 && reason === "duplicate_business_number") {
+        setErrors((prev) => ({ ...prev, businessNumber: true }));
+        toast({
+          title: "이미 등록된 사업자등록번호입니다",
+          description:
+            serverMessage || "기존 기공소에 가입 요청을 진행해주세요.",
+          variant: "destructive",
+          duration: 4000,
+        });
+        return;
+      }
       toast({
         title: "저장 실패",
+        description: serverMessage || undefined,
         variant: "destructive",
         duration: 3000,
       });

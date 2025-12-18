@@ -1,10 +1,8 @@
 import mongoose from "mongoose";
-import dotenv from "dotenv";
+import "../bootstrap/env.js";
 import User from "../models/user.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
-
-dotenv.config();
 
 async function fixTestAccounts() {
   try {

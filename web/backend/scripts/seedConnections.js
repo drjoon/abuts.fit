@@ -1,8 +1,6 @@
 import mongoose from "mongoose";
-import { config } from "dotenv";
+import "../bootstrap/env.js";
 import Connection from "../models/connection.model.js";
-
-config();
 
 const mongoUri =
   process.env.MONGODB_URI_TEST || "mongodb://localhost:27017/abutsFit";

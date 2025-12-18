@@ -318,6 +318,15 @@ export async function updateMyOrganization(req, res) {
       });
     }
 
+    const isDuplicateKeyError = (err) => {
+      const code = err?.code;
+      const name = String(err?.name || "");
+      const msg = String(err?.message || "");
+      return (
+        code === 11000 || name === "MongoServerError" || msg.includes("E11000")
+      );
+    };
+
     const normalizeBusinessNumber = (input) => {
       const digits = String(input || "").replace(/\D/g, "");
       if (digits.length !== 10) return "";
@@ -434,6 +443,26 @@ export async function updateMyOrganization(req, res) {
     if (email) extractedPatch.email = email;
     if (address) extractedPatch.address = address;
 
+    if (businessNumber) {
+      const current = String(org?.extracted?.businessNumber || "").trim();
+      if (businessNumber !== current) {
+        const dup = await RequestorOrganization.findOne({
+          _id: { $ne: org._id },
+          "extracted.businessNumber": businessNumber,
+        })
+          .select({ _id: 1 })
+          .lean();
+        if (dup) {
+          return res.status(409).json({
+            success: false,
+            reason: "duplicate_business_number",
+            message:
+              "이미 등록된 사업자등록번호입니다. 기존 기공소에 가입 요청을 진행해주세요.",
+          });
+        }
+      }
+    }
+
     if (Object.keys(extractedPatch).length > 0) {
       patch.extracted = {
         ...(org.extracted ? org.extracted.toObject?.() || org.extracted : {}),
@@ -445,7 +474,22 @@ export async function updateMyOrganization(req, res) {
       return res.json({ success: true, data: { updated: false } });
     }
 
-    await RequestorOrganization.findByIdAndUpdate(org._id, { $set: patch });
+    try {
+      await RequestorOrganization.findByIdAndUpdate(org._id, { $set: patch });
+    } catch (e) {
+      if (isDuplicateKeyError(e)) {
+        const msg = String(e?.message || "");
+        if (msg.includes("extracted.businessNumber")) {
+          return res.status(409).json({
+            success: false,
+            reason: "duplicate_business_number",
+            message:
+              "이미 등록된 사업자등록번호입니다. 기존 기공소에 가입 요청을 진행해주세요.",
+          });
+        }
+      }
+      throw e;
+    }
 
     if (nextName && String(req.user.organization || "") !== nextName) {
       await User.updateMany(
@@ -509,6 +553,9 @@ export async function clearMyBusinessLicense(req, res) {
     }
 
     await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
+      $unset: {
+        "extracted.businessNumber": 1,
+      },
       $set: {
         businessLicense: {
           fileId: null,
@@ -518,7 +565,6 @@ export async function clearMyBusinessLicense(req, res) {
         },
         extracted: {
           companyName: "",
-          businessNumber: "",
           address: "",
           phoneNumber: "",
           email: "",

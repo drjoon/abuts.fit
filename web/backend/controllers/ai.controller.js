@@ -264,6 +264,17 @@ export async function parseBusinessLicense(req, res) {
       businessItem: String((parseOk ? parsed.businessItem : "") || "").trim(),
     };
 
+    const normalizeBusinessNumber = (input) => {
+      const raw = String(input || "").trim();
+      if (!raw) return "";
+      const digits = raw.replace(/\D/g, "");
+      return digits;
+    };
+
+    const normalizedBusinessNumber = normalizeBusinessNumber(
+      extracted.businessNumber
+    );
+
     const verification = {
       verified: false,
       provider: "gemini",
@@ -272,21 +283,90 @@ export async function parseBusinessLicense(req, res) {
         : "자동 인식 결과를 해석하지 못했습니다. 이미지 화질을 높이거나(정면/선명) 다시 업로드 후, 필요 시 수동으로 입력해주세요.",
     };
 
-    await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
-      $set: {
-        businessLicense: {
-          fileId: fileId || null,
-          s3Key: key,
-          originalName: originalName || "",
-          uploadedAt: new Date(),
-        },
-        extracted,
-        verification: {
-          ...verification,
-          checkedAt: new Date(),
-        },
+    const isDuplicateKeyError = (err) => {
+      const code = err?.code;
+      const name = String(err?.name || "");
+      const msg = String(err?.message || "");
+      return (
+        code === 11000 || name === "MongoServerError" || msg.includes("E11000")
+      );
+    };
+
+    const baseSet = {
+      businessLicense: {
+        fileId: fileId || null,
+        s3Key: key,
+        originalName: originalName || "",
+        uploadedAt: new Date(),
       },
-    });
+      extracted: {
+        companyName: extracted.companyName,
+        address: extracted.address,
+        phoneNumber: extracted.phoneNumber,
+        email: extracted.email,
+        representativeName: extracted.representativeName,
+        businessType: extracted.businessType,
+        businessItem: extracted.businessItem,
+      },
+      verification: {
+        ...verification,
+        checkedAt: new Date(),
+      },
+    };
+
+    const setWithBusinessNumber = {
+      ...baseSet,
+      extracted: {
+        ...baseSet.extracted,
+        ...(normalizedBusinessNumber
+          ? { businessNumber: normalizedBusinessNumber }
+          : {}),
+      },
+    };
+
+    try {
+      await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
+        $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
+      });
+    } catch (e) {
+      if (normalizedBusinessNumber && isDuplicateKeyError(e)) {
+        const verificationOverride = {
+          ...verification,
+          reason: "duplicate_business_number",
+          message:
+            "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
+        };
+
+        await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
+          $set: {
+            ...baseSet,
+            verification: {
+              ...verificationOverride,
+              checkedAt: new Date(),
+            },
+          },
+        });
+
+        return res.json({
+          success: true,
+          data: {
+            input: {
+              fileId: fileId || null,
+              s3Key: key,
+              originalName: originalName || null,
+            },
+            extracted: {
+              ...baseSet.extracted,
+              businessNumber: "",
+            },
+            verification: {
+              ...verificationOverride,
+            },
+          },
+        });
+      }
+      throw e;
+    }
 
     return res.json({
       success: true,
@@ -296,7 +376,10 @@ export async function parseBusinessLicense(req, res) {
           s3Key: key,
           originalName: originalName || null,
         },
-        extracted,
+        extracted: {
+          ...extracted,
+          businessNumber: normalizedBusinessNumber || "",
+        },
         verification,
       },
     });

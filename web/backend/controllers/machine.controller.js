@@ -1,5 +1,4 @@
-import { config } from "dotenv";
-config(); // .env 로드
+import "../bootstrap/env.js";
 
 // 브리지 서비스 기본 URL 및 Hi-Link CNC 엔드포인트
 const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://1.217.31.227:4005";

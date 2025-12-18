@@ -1,5 +1,4 @@
-import { config } from "dotenv";
-config();
+import "../bootstrap/env.js";
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://1.217.31.227:4005";
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;

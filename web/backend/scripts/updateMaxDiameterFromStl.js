@@ -9,7 +9,7 @@
 //   예) npm install stl
 
 import mongoose from "mongoose";
-import dotenv from "dotenv";
+import "../bootstrap/env.js";
 import fs from "fs";
 import path from "path";
 // STL 파서 예시 (필요에 따라 다른 라이브러리 사용 가능)
@@ -17,8 +17,6 @@ import path from "path";
 
 import Request from "../models/request.model.js";
 import File from "../models/file.model.js";
-
-dotenv.config();
 
 async function connectDb() {
   const uri = process.env.MONGODB_URI || process.env.DATABASE_URL;

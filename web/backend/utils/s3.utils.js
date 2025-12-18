@@ -11,13 +11,39 @@ import { extname } from "path";
 import { randomBytes } from "crypto";
 import { shouldBlockExternalCall } from "./rateGuard.js";
 
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION || "ap-northeast-2",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
+let _s3Client = null;
+
+const getS3Client = () => {
+  if (_s3Client) return _s3Client;
+
+  const accessKeyId = String(process.env.AWS_ACCESS_KEY_ID || "").trim();
+  const secretAccessKey = String(
+    process.env.AWS_SECRET_ACCESS_KEY || ""
+  ).trim();
+  const sessionToken = String(process.env.AWS_SESSION_TOKEN || "").trim();
+
+  if ((accessKeyId && !secretAccessKey) || (!accessKeyId && secretAccessKey)) {
+    throw new Error(
+      "S3 업로드 설정(AWS 자격증명)이 불완전합니다. AWS_ACCESS_KEY_ID와 AWS_SECRET_ACCESS_KEY를 둘 다 설정하거나, 둘 다 제거한 뒤 AWS_PROFILE(~/.aws/credentials)을 사용해주세요."
+    );
+  }
+
+  const resolvedCredentials =
+    accessKeyId && secretAccessKey
+      ? {
+          accessKeyId,
+          secretAccessKey,
+          ...(sessionToken ? { sessionToken } : {}),
+        }
+      : undefined;
+
+  _s3Client = new S3Client({
+    region: process.env.AWS_REGION || "ap-northeast-2",
+    ...(resolvedCredentials ? { credentials: resolvedCredentials } : {}),
+  });
+
+  return _s3Client;
+};
 
 const fileFilter = (req, file, cb) => {
   const allowedFileTypes = [
@@ -105,7 +131,7 @@ export const getObjectBufferFromS3 = async (key) => {
     Key: key,
   });
 
-  const resp = await s3Client.send(command);
+  const resp = await getS3Client().send(command);
   const body = resp?.Body;
   const buffer = await streamToBuffer(body);
   return buffer;
@@ -120,7 +146,7 @@ export const objectExistsInS3 = async (key) => {
   }
 
   try {
-    await s3Client.send(
+    await getS3Client().send(
       new HeadObjectCommand({
         Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
         Key: key,
@@ -156,17 +182,31 @@ export const uploadFileToS3 = async (fileBuffer, key, contentType) => {
     // ACL: "public-read",
   };
   try {
-    const upload = new Upload({ client: s3Client, params });
+    const upload = new Upload({ client: getS3Client(), params });
     const result = await upload.done();
     return { key, location: result.Location };
   } catch (error) {
+    const msg = String(error?.message || "");
+    if (
+      msg.toLowerCase().includes("could not load credentials") ||
+      msg.toLowerCase().includes("missing credentials")
+    ) {
+      throw new Error(
+        "S3 업로드 설정(AWS 자격증명)을 찾을 수 없습니다. backend/local.env에 AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY를 설정하거나, 로컬 AWS 프로파일(~/.aws/credentials)을 설정해주세요."
+      );
+    }
+    if (msg.includes("Resolved credential object is not valid")) {
+      throw new Error(
+        "S3 업로드 설정(AWS 자격증명)이 올바르지 않습니다. AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY 또는 로컬 AWS 프로파일 설정을 확인해주세요."
+      );
+    }
     // 버킷이 존재하지 않을 경우 자동 생성 후 재시도
     if (error.Code === "NoSuchBucket") {
       const { CreateBucketCommand } = await import("@aws-sdk/client-s3");
       try {
-        await s3Client.send(new CreateBucketCommand({ Bucket }));
+        await getS3Client().send(new CreateBucketCommand({ Bucket }));
         // 버킷 생성 후 재시도
-        const upload = new Upload({ client: s3Client, params });
+        const upload = new Upload({ client: getS3Client(), params });
         const result = await upload.done();
         return { key, location: result.Location };
       } catch (createErr) {
@@ -188,7 +228,7 @@ const deleteFileFromS3 = async (key) => {
     return false;
   }
   try {
-    await s3Client.send(
+    await getS3Client().send(
       new DeleteObjectCommand({
         Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
         Key: key,
@@ -220,7 +260,7 @@ const getSignedUrl = async (key, expires = 3600) => {
   const { getSignedUrl: getSignedUrlV3 } = await import(
     "@aws-sdk/s3-request-presigner"
   );
-  return getSignedUrlV3(s3Client, command, { expiresIn: expires });
+  return getSignedUrlV3(getS3Client(), command, { expiresIn: expires });
 };
 
 export { s3Upload };

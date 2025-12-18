@@ -6,10 +6,8 @@
  */
 
 import { connect } from "mongoose";
-import { config } from "dotenv";
+import "../bootstrap/env.js";
 import FilenameRule from "../models/filenameRule.model.js";
-
-config();
 
 const mongoUri =
   process.env.NODE_ENV === "test"
