@@ -3,10 +3,13 @@ set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 TS="$(date +%s)"
 RAND="$RANDOM"
 
-PR_EMAIL="toss.test@abuts.fit"
+PR_EMAIL="test.primary@abuts.fit"
 PR_PW="Password1234!"
 PR_NAME="테스트주대표"
 
@@ -70,8 +73,18 @@ echo "BASE_URL=${BASE_URL}"
 echo "PR_EMAIL=${PR_EMAIL}"
 echo
 
+if [ "${WITHDRAW_TEST_CLEAN_DB:-0}" = "1" ]; then
+  echo "== cleanup test DB =="
+  (
+    cd "${BACKEND_ROOT}" || exit 1
+    npm run db:reset >/dev/null
+    npm run db:seed:core >/dev/null
+  )
+  echo
+fi
+
 echo "== register principal =="
-curl -sS "${BASE_URL}/api/auth/register" \
+PR_REG_RAW="$(curl -sS -w "\n%{http_code}" "${BASE_URL}/api/auth/register" \
   -H 'Content-Type: application/json' \
   -d "{
     \"name\":\"${PR_NAME}\",
@@ -80,7 +93,13 @@ curl -sS "${BASE_URL}/api/auth/register" \
     \"role\":\"requestor\",
     \"phoneNumber\":\"${PR_PHONE}\",
     \"organization\":\"${PR_ORG}\"
-  }"
+  }")"
+PR_REG_STATUS="${PR_REG_RAW##*$'\n'}"
+PR_REG_BODY="${PR_REG_RAW%$'\n'*}"
+echo "${PR_REG_BODY}"
+if [ "${PR_REG_STATUS}" != "200" ] && [ "${PR_REG_STATUS}" != "201" ]; then
+  echo "[WARN] register principal status=${PR_REG_STATUS} (continuing to login)"
+fi
 echo; echo
 
 echo "== login principal =="

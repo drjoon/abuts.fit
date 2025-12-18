@@ -116,16 +116,14 @@ async function getCreditScope(req) {
 2. 조직의 paidBalance 조회
 3. 잔액이 있으면 탈퇴 불가
 
-## 테스트 스크립트
+## 개발/테스트용 데이터 준비
 
-### addTestCredit.js
+- 샘플 계정/조직/테스트 크레딧/임플란트 프리셋은 `scripts/db/seed.dev.js`에서 관리합니다.
+- DB 초기화 + core + dev를 한번에 하려면 아래를 실행합니다.
 
-- organizationId 기반으로 테스트 크레딧 추가
-- RequestorOrganization 조회 후 CreditLedger 생성
-
-### fixTestAccounts.js, fixTestAccountsSimple.js
-
-- 테스트 계정 수정 시 organizationId 기반으로 처리
+```bash
+npm run db:reset-and-seed
+```
 
 ## 주의사항
 
@@ -153,6 +151,7 @@ async function getCreditScope(req) {
 
 ### 스크립트
 
-- `backend/scripts/addTestCredit.js`
-- `backend/scripts/fixTestAccounts.js`
-- `backend/scripts/fixTestAccountsSimple.js`
+- `backend/scripts/db/reset.js`
+- `backend/scripts/db/seed.core.js`
+- `backend/scripts/db/seed.dev.js`
+- `backend/scripts/db/reset-and-seed.js`

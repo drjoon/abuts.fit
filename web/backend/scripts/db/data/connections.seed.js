@@ -1,12 +1,4 @@
-import mongoose from "mongoose";
-import "../bootstrap/env.js";
-import Connection from "../models/connection.model.js";
-
-const mongoUri =
-  process.env.MONGODB_URI_TEST || "mongodb://localhost:27017/abutsFit";
-
-const seedData = [
-  // 한화prc - Connection
+export const CONNECTIONS_SEED = [
   {
     manufacturer: "NEOBIOTECH",
     system: "Regular",
@@ -232,7 +224,6 @@ const seedData = [
     isActive: true,
   },
 
-  // 스타prc - Connection (향후 장비 확장 대비, 기본은 비활성으로 둠)
   {
     manufacturer: "DENTIS",
     system: "Standard",
@@ -394,32 +385,3 @@ const seedData = [
     isActive: false,
   },
 ];
-
-async function run() {
-  try {
-    await mongoose.connect(mongoUri);
-    console.log("MongoDB connected");
-
-    for (const item of seedData) {
-      await Connection.findOneAndUpdate(
-        {
-          manufacturer: item.manufacturer,
-          system: item.system,
-          type: item.type,
-          category: item.category,
-        },
-        item,
-        { upsert: true, new: true }
-      );
-    }
-
-    console.log("Connection seed completed");
-  } catch (err) {
-    console.error("Seed error", err);
-  } finally {
-    await mongoose.disconnect();
-    process.exit(0);
-  }
-}
-
-run();

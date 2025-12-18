@@ -16,7 +16,7 @@
   공급가 최대 5,000,000원 + VAT 10% 500,000원 = 총 5,500,000원
 
 비회원 결제는 제공하지 않으며, 결제는 회원(로그인) 후 가능합니다.로그인 URL: https://abuts.fit/login테스트 계정(의뢰자 주대표)
-  ID: toss.test@abuts.fit
+  ID: test.primary@abuts.fit
   PW: Password1234!
 
 
