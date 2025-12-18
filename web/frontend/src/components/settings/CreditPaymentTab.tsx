@@ -6,7 +6,10 @@ import { useToast } from "@/hooks/use-toast";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 
 import { loadPaymentWidget } from "@tosspayments/payment-widget-sdk";
 
@@ -74,6 +77,33 @@ function roundVat(supply: number) {
   return Math.round(supply * 0.1);
 }
 
+function normalizeSupplyAmount(supply: number) {
+  const MIN = 500000;
+  const MAX = 5000000;
+  if (!Number.isFinite(supply)) return MIN;
+
+  const clamped = Math.min(MAX, Math.max(MIN, Math.round(supply)));
+  return Math.round(clamped / 500000) * 500000;
+}
+
+function formatOrderShortId(orderId: string) {
+  const raw = String(orderId || "");
+  if (!raw) return "";
+  const tail = raw.replace(/[^a-zA-Z0-9]/g, "");
+  return tail.slice(-4).toUpperCase();
+}
+
+function formatKoreanDate(value?: string | null) {
+  if (!value) return "";
+  const t = new Date(String(value)).getTime();
+  if (!Number.isFinite(t)) return "";
+  const d = new Date(t);
+  const yyyy = String(d.getFullYear());
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}.${mm}.${dd}`;
+}
+
 function validateSupplyAmount(supply: number) {
   if (!Number.isFinite(supply) || supply <= 0)
     return "유효하지 않은 금액입니다.";
@@ -84,13 +114,8 @@ function validateSupplyAmount(supply: number) {
     return "크레딧 충전 금액은 50만원 ~ 500만원 범위여야 합니다.";
   }
 
-  if (supply <= 1000000) {
-    if (supply % 500000 !== 0)
-      return "100만원 이하는 50만원 단위로만 충전할 수 있습니다.";
-  } else {
-    if (supply % 1000000 !== 0)
-      return "100만원 초과는 100만원 단위로만 충전할 수 있습니다.";
-  }
+  if (supply % 500000 !== 0)
+    return "크레딧 충전 금액은 50만원 단위로만 충전할 수 있습니다.";
 
   return null;
 }
@@ -132,6 +157,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
   const [orders, setOrders] = useState<CreditOrderItem[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [ordersPeriod, setOrdersPeriod] = useState<PeriodFilterValue>("30d");
 
   const [spendInsights, setSpendInsights] = useState<
     CreditSpendInsightsResponse["data"] | null
@@ -159,12 +185,72 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   };
 
   const [selectedSupply, setSelectedSupply] = useState<number>(500000);
+  const [selectedPlan, setSelectedPlan] = useState<"1m" | "3m">("1m");
   const supplyAmount = useMemo(() => selectedSupply, [selectedSupply]);
+
+  const oneMonthSupply = useMemo(() => {
+    return normalizeSupplyAmount(
+      Number(spendInsights?.recommended?.oneMonthSupply || 500000)
+    );
+  }, [spendInsights?.recommended?.oneMonthSupply]);
+
+  const threeMonthsSupply = useMemo(() => {
+    return normalizeSupplyAmount(oneMonthSupply * 3);
+  }, [oneMonthSupply]);
+
+  useEffect(() => {
+    setSelectedSupply(
+      selectedPlan === "3m" ? threeMonthsSupply : oneMonthSupply
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlan, oneMonthSupply, threeMonthsSupply]);
 
   const totalAmount = useMemo(
     () => supplyAmount + roundVat(supplyAmount),
     [supplyAmount]
   );
+
+  const filteredOrders = useMemo(() => {
+    const now = Date.now();
+    const daysMap: Record<Exclude<PeriodFilterValue, "all">, number> = {
+      "7d": 7,
+      "30d": 30,
+      "90d": 90,
+    };
+
+    const items = Array.isArray(orders) ? orders : [];
+    if (ordersPeriod === "all") {
+      return [...items].sort((a, b) => {
+        const ta = new Date(
+          String(a.createdAt || a.approvedAt || a.depositedAt || 0)
+        ).getTime();
+        const tb = new Date(
+          String(b.createdAt || b.approvedAt || b.depositedAt || 0)
+        ).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
+    }
+
+    const days = daysMap[ordersPeriod];
+    const cutoff = now - days * 24 * 60 * 60 * 1000;
+    return items
+      .filter((o) => {
+        const t = new Date(
+          String(o.createdAt || o.approvedAt || o.depositedAt || "")
+        ).getTime();
+        if (!Number.isFinite(t)) return true;
+        return t >= cutoff;
+      })
+      .sort((a, b) => {
+        const ta = new Date(
+          String(a.createdAt || a.approvedAt || a.depositedAt || 0)
+        ).getTime();
+        const tb = new Date(
+          String(b.createdAt || b.approvedAt || b.depositedAt || 0)
+        ).getTime();
+        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+      });
+  }, [orders, ordersPeriod]);
 
   const [creatingOrder, setCreatingOrder] = useState(false);
 
@@ -498,39 +584,60 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       <CardContent className="space-y-6">
         {!isFirstCharge && (
           <>
-            <div className="space-y-2">
-              <div className="text-sm text-muted-foreground">
-                보유 크레딧(공급가)
-              </div>
-              <div className="text-2xl font-semibold">
-                {loadingBalance ? "..." : `${balance.toLocaleString()}원`}
-              </div>
-              {bonusBalance > 0 && (
-                <div className="text-sm text-muted-foreground">
-                  무료/이벤트 크레딧: {bonusBalance.toLocaleString()}원
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="text-sm text-muted-foreground">보유 크레딧</div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    총 보유(공급가)
+                  </div>
+                  <div className="text-2xl font-semibold">
+                    {loadingBalance ? "..." : `${balance.toLocaleString()}원`}
+                  </div>
                 </div>
-              )}
-              <div className="text-sm text-muted-foreground">
-                결제는 크레딧 차감으로 진행되며, 부가세는 크레딧 충전 시점에
-                포함되어 결제됩니다.
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    구매 크레딧(공급가)
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {loadingBalance
+                      ? "..."
+                      : `${paidBalance.toLocaleString()}원`}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    무료 크레딧(공급가)
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {loadingBalance
+                      ? "..."
+                      : `${bonusBalance.toLocaleString()}원`}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-muted-foreground">
+                결제는 크레딧 차감으로 진행되며, 부가세는 충전 시점에 포함되어
+                결제됩니다.
               </div>
             </div>
 
-            <Separator />
-
             <div className="space-y-3">
-              <div className="text-lg font-medium">충전 내역</div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-lg font-medium">충전 내역</div>
+                <PeriodFilter value={ordersPeriod} onChange={setOrdersPeriod} />
+              </div>
               {loadingOrders ? (
                 <div className="text-sm text-muted-foreground">
                   불러오는 중...
                 </div>
-              ) : orders.length === 0 ? (
+              ) : filteredOrders.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
-                  충전 내역이 없습니다.
+                  해당 기간에 충전 내역이 없습니다.
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {orders.slice(0, 5).map((o) => {
+                  {filteredOrders.slice(0, 10).map((o) => {
                     const bank = o.virtualAccount?.bank || "";
                     const acc = o.virtualAccount?.accountNumber || "";
                     const due = o.virtualAccount?.dueDate || "";
@@ -539,13 +646,24 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                       o.status === "WAITING_FOR_DEPOSIT" ||
                       o.status === "CREATED";
 
+                    const orderDate = formatKoreanDate(
+                      o.createdAt || o.approvedAt || o.depositedAt || null
+                    );
+                    const shortId = formatOrderShortId(o.orderId);
+
                     return (
                       <div
                         key={o.orderId}
                         className="rounded-lg border border-gray-200 bg-white p-3"
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm font-medium">{o.orderId}</div>
+                          <div className="space-y-0.5">
+                            <div className="text-sm font-medium">
+                              크레딧 충전
+                              {orderDate ? ` · ${orderDate}` : ""}
+                              {shortId ? ` · 참조 ${shortId}` : ""}
+                            </div>
+                          </div>
                           <div className="text-sm text-muted-foreground">
                             {o.status}
                           </div>
@@ -590,103 +708,112 @@ export const CreditPaymentTab = ({ userData }: Props) => {
           <div className="text-lg font-medium">크레딧 충전</div>
 
           {isFirstCharge ? (
-            <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-3">
-              <div className="text-sm font-medium">첫 충전</div>
-              <div className="text-sm text-muted-foreground">
-                가입 후 첫 충전은 50만원(공급가)으로 진행됩니다.
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-4">
+                <div className="text-sm font-medium">첫 충전</div>
+                <div className="text-sm text-muted-foreground">
+                  가입 후 첫 충전은 50만원(공급가)으로 진행됩니다.
+                </div>
+                <div className="text-sm">
+                  충전 크레딧(공급가):{" "}
+                  <span className="font-semibold">50만원</span>
+                </div>
+                <div className="text-sm">
+                  결제금액(부가세 포함):{" "}
+                  <span className="font-semibold">55만원</span>
+                </div>
               </div>
-              <div className="text-sm">
-                충전 크레딧(공급가):{" "}
-                <span className="font-semibold">50만원</span>
-              </div>
-              <div className="text-sm">
-                결제금액(부가세 포함):{" "}
-                <span className="font-semibold">55만원</span>
+
+              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+                <div className="text-xs text-muted-foreground">결제금액</div>
+                <div className="text-3xl font-bold text-primary">55만원</div>
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={handleCharge}
+                  disabled={creatingOrder}
+                >
+                  {creatingOrder ? "요청 중..." : "충전하기"}
+                </Button>
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
-              <div className="text-sm text-muted-foreground">
-                최근 3개월 사용량을 기반으로 1개월/3개월 추천 충전액을
-                제안합니다.
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+                <div className="text-sm text-muted-foreground">
+                  최근 3개월 사용량 기반 추천 충전액입니다.
+                </div>
+
+                <RadioGroup
+                  value={selectedPlan}
+                  onValueChange={(v) => {
+                    if (v === "3m" || v === "1m") setSelectedPlan(v);
+                  }}
+                  className="grid gap-2"
+                >
+                  <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
+                    <RadioGroupItem value="1m" id="credit-plan-1m" />
+                    <Label
+                      htmlFor="credit-plan-1m"
+                      className="flex w-full items-baseline justify-between"
+                    >
+                      <span>1개월 추천</span>
+                      <span className="font-semibold">
+                        {oneMonthSupply.toLocaleString()}원
+                      </span>
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
+                    <RadioGroupItem value="3m" id="credit-plan-3m" />
+                    <Label
+                      htmlFor="credit-plan-3m"
+                      className="flex w-full items-baseline justify-between"
+                    >
+                      <span>3개월 추천</span>
+                      <span className="font-semibold">
+                        {threeMonthsSupply.toLocaleString()}원
+                      </span>
+                    </Label>
+                  </div>
+                </RadioGroup>
+
+                <div className="text-xs text-muted-foreground">
+                  {loadingInsights
+                    ? "추천 정보를 계산하는 중..."
+                    : spendInsights?.estimatedDaysFor500k
+                    ? `50만원(공급가) 예상 소진: 약 ${spendInsights.estimatedDaysFor500k}일`
+                    : "사용 내역이 부족하여 50만원 기준으로 안내합니다."}
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant={
-                    selectedSupply ===
-                    Number(spendInsights?.recommended?.oneMonthSupply || 500000)
-                      ? "default"
-                      : "outline"
-                  }
-                  onClick={() =>
-                    setSelectedSupply(
-                      Number(
-                        spendInsights?.recommended?.oneMonthSupply || 500000
-                      )
-                    )
-                  }
-                  disabled={loadingInsights}
-                >
-                  1개월 추천
-                </Button>
-                <Button
-                  type="button"
-                  variant={
-                    selectedSupply ===
-                    Number(
-                      spendInsights?.recommended?.threeMonthsSupply || 500000
-                    )
-                      ? "default"
-                      : "outline"
-                  }
-                  onClick={() =>
-                    setSelectedSupply(
-                      Number(
-                        spendInsights?.recommended?.threeMonthsSupply || 500000
-                      )
-                    )
-                  }
-                  disabled={loadingInsights}
-                >
-                  3개월 추천
-                </Button>
-              </div>
+              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+                <div className="text-xs text-muted-foreground">결제금액</div>
+                <div className="text-3xl font-bold text-primary">
+                  {totalAmount.toLocaleString()}원
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  공급가 {supplyAmount.toLocaleString()}원 + VAT
+                  {roundVat(supplyAmount).toLocaleString()}원
+                </div>
 
-              <div className="text-sm text-muted-foreground">
-                {loadingInsights
-                  ? "추천 정보를 계산하는 중..."
-                  : spendInsights?.estimatedDaysFor500k
-                  ? `50만원(공급가) 예상 소진: 약 ${spendInsights.estimatedDaysFor500k}일`
-                  : "사용 내역이 부족하여 50만원 기준으로 안내합니다."}
+                {paidBalance > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    환불: 계좌해지시 잔여 구매 크레딧(공급가)만 환불되며, VAT는
+                    잔액 비율대로 비례 환불됩니다.
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={handleCharge}
+                  disabled={creatingOrder}
+                >
+                  {creatingOrder ? "요청 중..." : "충전하기"}
+                </Button>
               </div>
             </div>
           )}
-
-          <div className="text-sm">
-            결제금액(부가세 포함):{" "}
-            <span className="font-semibold">
-              {totalAmount.toLocaleString()}원
-            </span>
-          </div>
-
-          {paidBalance > 0 && (
-            <div className="text-xs text-muted-foreground">
-              환불 안내: 회원 탈퇴(계정 해지) 시 잔여 유료 크레딧(공급가)에 한해
-              전액 환불됩니다. VAT는 잔여 공급가 비율에 따라 비례 환불되며,
-              무료/이벤트로 지급된 크레딧은 환불 대상에서 제외됩니다.
-            </div>
-          )}
-
-          <Button
-            type="button"
-            className="w-full"
-            onClick={handleCharge}
-            disabled={creatingOrder}
-          >
-            {creatingOrder ? "요청 중..." : "충전하기"}
-          </Button>
 
           {pendingOrder && (
             <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">

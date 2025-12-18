@@ -15,6 +15,7 @@ import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSum
 import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
 import type { RequestorDashboardStat } from "./components/RequestorDashboardStatsCards";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import {
   WorksheetDiameterCard,
   type DiameterStats,
@@ -252,33 +253,7 @@ export const RequestorDashboardPage = () => {
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
         subtitle="의뢰 현황을 확인하세요."
-        headerRight={
-          <div className="inline-flex items-center gap-1 rounded-lg border bg-muted p-1 text-xs">
-            <span className="px-2 text-muted-foreground">기간</span>
-            {(["7d", "30d", "90d", "all"] as const).map((value) => {
-              const labelMap: Record<string, string> = {
-                "7d": "최근 7일",
-                "30d": "최근 30일",
-                "90d": "최근 90일",
-                all: "전체",
-              };
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setPeriod(value)}
-                  className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
-                    period === value
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {labelMap[value]}
-                </button>
-              );
-            })}
-          </div>
-        }
+        headerRight={<PeriodFilter value={period} onChange={setPeriod} />}
         stats={<RequestorDashboardStatsCards stats={stats} />}
         topSection={
           <div className="space-y-6">

@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "ENV_FILE=backend/local.env concurrently -k -n backend,frontend \"npm --prefix backend run dev\" \"npm --prefix frontend run build:dev:watch\"",
-    "dev:backend": "npm --prefix backend run dev",
-    "dev:frontend": "npm --prefix frontend run build:watch",
+    "dev:backend": "ENV_FILE=backend/local.env npm --prefix backend run dev",
+    "dev:frontend": "ENV_FILE=backend/local.env npm --prefix frontend run build:watch",
     "build": "npm --prefix frontend run build",
     "build:dev": "npm --prefix frontend run build:dev",
     "test": "npm --prefix backend test",
