@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { X } from "lucide-react";
 
 interface DialogAction {
   label: string;
@@ -47,6 +48,16 @@ export const MultiActionDialog = ({
         className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all"
         onClick={(e) => e.stopPropagation()}
       >
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            aria-label="닫기"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
         <h2 className="text-xl font-bold mb-4 text-gray-900">{title}</h2>
         {description && (
           <div className="text-gray-700 mb-6 text-sm sm:text-base">

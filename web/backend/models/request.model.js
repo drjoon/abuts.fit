@@ -1,5 +1,17 @@
 import mongoose from "mongoose";
 
+const requestIdCounterSchema = new mongoose.Schema(
+  {
+    _id: { type: String },
+    seq: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+const RequestIdCounter =
+  mongoose.models.RequestIdCounter ||
+  mongoose.model("RequestIdCounter", requestIdCounterSchema);
+
 const requestSchema = new mongoose.Schema(
   {
     requestId: {
@@ -186,17 +198,16 @@ requestSchema.pre("save", async function (next) {
     const day = String(now.getDate()).padStart(2, "0");
     const dateStr = `${year}${month}${day}`;
 
-    const prefix = `${dateStr}-`;
+    const session = this.$session?.() || null;
+    const counter = await RequestIdCounter.findOneAndUpdate(
+      { _id: dateStr },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true, session }
+    );
 
-    // 오늘 날짜(prefix)에 대해 이미 발급된 의뢰 수를 기준으로 1-based index 계산
-    const todayCount = await this.constructor.countDocuments({
-      requestId: { $regex: `^${prefix}` },
-    });
-
-    const seqNumber = todayCount + 1; // 1 -> 000001, 2 -> 000002 ...
+    const seqNumber = Number(counter?.seq || 0);
     const seqStr = String(seqNumber).padStart(6, "0");
-
-    this.requestId = `${prefix}${seqStr}`;
+    this.requestId = `${dateStr}-${seqStr}`;
     next();
   } catch (error) {
     next(error);

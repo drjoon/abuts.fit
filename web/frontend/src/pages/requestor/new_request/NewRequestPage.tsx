@@ -7,6 +7,7 @@ import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useExpressShipping } from "./hooks/useExpressShipping";
 import { useFileVerification } from "./hooks/useFileVerification";
 import { apiFetch } from "@/lib/apiClient";
+import { MultiActionDialog } from "@/components/MultiActionDialog";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestUploadSection } from "./components/NewRequestUploadSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
@@ -56,6 +57,9 @@ export const NewRequestPage = () => {
     updateCaseInfos,
     patchDraftImmediately,
     handleAddOrSelectClinic,
+    duplicatePrompt,
+    setDuplicatePrompt,
+    handleSubmitWithDuplicateResolution,
   } = useNewRequestPage(existingRequestId);
 
   const {
@@ -213,6 +217,87 @@ export const NewRequestPage = () => {
   return (
     <div className="min-h-screen bg-gradient-subtle p-4 md:p-6">
       <div className="max-w-6xl mx-auto space-y-4">
+        <MultiActionDialog
+          open={!!duplicatePrompt}
+          title={
+            duplicatePrompt?.mode === "completed"
+              ? "완료된 의뢰가 이미 있습니다"
+              : "진행 중인 의뢰가 이미 있습니다"
+          }
+          description={
+            <div className="space-y-2">
+              <div className="text-sm text-gray-700">
+                동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다.
+              </div>
+              {Array.isArray(duplicatePrompt?.duplicates) &&
+                duplicatePrompt!.duplicates.length > 0 && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+                    <div className="font-semibold mb-1">중복된 의뢰</div>
+                    {duplicatePrompt!.duplicates.slice(0, 3).map((d: any) => (
+                      <div
+                        key={String(
+                          d?.existingRequest?._id || d?.caseId || Math.random()
+                        )}
+                        className="flex flex-col gap-0.5"
+                      >
+                        <span className="truncate">
+                          의뢰번호:{" "}
+                          {String(d?.existingRequest?.requestId || "")}
+                        </span>
+                        <span className="truncate">
+                          상태: {String(d?.existingRequest?.status || "")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </div>
+          }
+          actions={(() => {
+            const first =
+              Array.isArray(duplicatePrompt?.duplicates) &&
+              duplicatePrompt!.duplicates.length > 0
+                ? duplicatePrompt!.duplicates[0]
+                : null;
+            const existingRequestMongoId = String(
+              first?.existingRequest?._id || ""
+            );
+
+            const actions: any[] = [
+              {
+                label: "새의뢰 취소",
+                variant: "secondary",
+                onClick: async () => {
+                  setDuplicatePrompt(null);
+                  await handleCancelAll();
+                },
+              },
+            ];
+
+            if (!existingRequestMongoId) {
+              return actions;
+            }
+
+            actions.unshift({
+              label: "재의뢰",
+              variant: "primary",
+              onClick: async () => {
+                setDuplicatePrompt(null);
+                await handleSubmitWithDuplicateResolution({
+                  strategy:
+                    duplicatePrompt?.mode === "completed"
+                      ? "remake"
+                      : "replace",
+                  existingRequestId: existingRequestMongoId,
+                });
+              },
+            });
+
+            return actions;
+          })()}
+          onClose={() => setDuplicatePrompt(null)}
+        />
+
         <NewRequestDetailsSection
           files={files}
           selectedPreviewIndex={selectedPreviewIndex}

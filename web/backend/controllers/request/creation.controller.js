@@ -64,6 +64,15 @@ async function getOrganizationCreditBalanceBreakdown({
   };
 }
 
+const isDuplicateKeyError = (err) => {
+  const code = err?.code;
+  const name = String(err?.name || "");
+  const msg = String(err?.message || "");
+  return (
+    code === 11000 || name === "MongoServerError" || msg.includes("E11000")
+  );
+};
+
 /**
  * 새 의뢰 생성
  * @route POST /api/requests
@@ -287,6 +296,11 @@ export async function cloneRequestToDraft(req, res) {
 export async function createRequestsFromDraft(req, res) {
   try {
     const { draftId, clinicId } = req.body || {};
+    const duplicateResolution =
+      req.body?.duplicateResolution &&
+      typeof req.body.duplicateResolution === "object"
+        ? req.body.duplicateResolution
+        : null;
 
     if (!draftId || !Types.ObjectId.isValid(draftId)) {
       return res.status(400).json({
@@ -434,6 +448,9 @@ export async function createRequestsFromDraft(req, res) {
         shippingMode,
         requestedShipDate,
         computedPrice,
+        clinicName,
+        patientName,
+        tooth,
       });
     }
 
@@ -460,6 +477,56 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    // 중복 의뢰(동일 치과/환자/치아) 감지
+    // - duplicateResolution이 없으면 409로 사용자에게 선택지를 제공한다.
+    // - duplicateResolution이 있으면 정책에 따라 replace/remake 처리한다.
+    const requestFilter = await buildRequestorOrgScopeFilter(req);
+    const duplicates = [];
+    for (const item of preparedCases) {
+      const existing = await Request.findOne({
+        ...requestFilter,
+        "caseInfos.patientName": item.patientName,
+        "caseInfos.tooth": item.tooth,
+        "caseInfos.clinicName": item.clinicName,
+        status: { $ne: "취소" },
+      })
+        .select({ _id: 1, requestId: 1, status: 1, createdAt: 1, price: 1 })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (existing) {
+        duplicates.push({
+          caseId: item.caseId,
+          fileName: item.caseInfosWithFile?.file?.fileName || undefined,
+          existingRequest: {
+            _id: String(existing._id),
+            requestId: String(existing.requestId || ""),
+            status: String(existing.status || ""),
+            price: existing.price || null,
+            createdAt: existing.createdAt || null,
+          },
+        });
+      }
+    }
+
+    if (duplicates.length > 0 && !duplicateResolution) {
+      const first = duplicates[0];
+      const st = String(first?.existingRequest?.status || "");
+      const mode = st === "완료" ? "completed" : "active";
+      return res.status(409).json({
+        success: false,
+        code: "DUPLICATE_REQUEST",
+        message:
+          st === "완료"
+            ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
+            : "동일한 정보의 의뢰가 이미 진행 중입니다. 기존 의뢰를 취소하고 다시 의뢰할까요?",
+        data: {
+          mode,
+          duplicates,
+        },
+      });
+    }
+
     const totalSpendSupply = preparedCases.reduce((acc, item) => {
       const n = Number(item?.computedPrice?.amount || 0);
       return acc + (Number.isFinite(n) ? n : 0);
@@ -468,6 +535,91 @@ export async function createRequestsFromDraft(req, res) {
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
+        // duplicateResolution 처리 (단일 existingRequestId에 대해서만 처리)
+        if (duplicateResolution) {
+          const strategy = String(duplicateResolution.strategy || "").trim();
+          const existingRequestId = String(
+            duplicateResolution.existingRequestId || ""
+          ).trim();
+
+          if (
+            !existingRequestId ||
+            !Types.ObjectId.isValid(existingRequestId)
+          ) {
+            const err = new Error("유효한 existingRequestId가 필요합니다.");
+            err.statusCode = 400;
+            throw err;
+          }
+
+          const existingDoc = await Request.findById(existingRequestId).session(
+            session
+          );
+          if (!existingDoc) {
+            const err = new Error("기존 의뢰를 찾을 수 없습니다.");
+            err.statusCode = 404;
+            throw err;
+          }
+          if (!canAccessRequestAsRequestor(req, existingDoc)) {
+            const err = new Error("기존 의뢰에 접근 권한이 없습니다.");
+            err.statusCode = 403;
+            throw err;
+          }
+
+          const existingStatus = String(existingDoc.status || "");
+          if (strategy === "replace") {
+            if (existingStatus === "완료") {
+              const err = new Error(
+                "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요."
+              );
+              err.statusCode = 400;
+              throw err;
+            }
+
+            // 기존 의뢰 취소
+            if (existingDoc.status !== "취소") {
+              applyStatusMapping(existingDoc, "취소");
+              await existingDoc.save({ session });
+            }
+
+            // 중복 차감 방지: 기존 의뢰의 가격만큼 환불(REFUND)로 상쇄
+            const refundAmount = Number(existingDoc?.price?.amount || 0);
+            if (refundAmount > 0) {
+              const refundKey = `request:${String(
+                existingDoc._id
+              )}:replace_refund`;
+              await CreditLedger.updateOne(
+                { uniqueKey: refundKey },
+                {
+                  $setOnInsert: {
+                    organizationId,
+                    userId: req.user?._id || null,
+                    type: "REFUND",
+                    amount: refundAmount,
+                    refType: "REQUEST",
+                    refId: existingDoc._id,
+                    uniqueKey: refundKey,
+                  },
+                },
+                { upsert: true, session }
+              );
+            }
+          } else if (strategy === "remake") {
+            if (existingStatus !== "완료") {
+              const err = new Error(
+                "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요."
+              );
+              err.statusCode = 400;
+              throw err;
+            }
+          } else {
+            const err = new Error(
+              "유효한 duplicateResolution.strategy가 필요합니다."
+            );
+            err.statusCode = 400;
+            throw err;
+          }
+        }
+
         const { balance } = await getOrganizationCreditBalanceBreakdown({
           organizationId,
           session,
@@ -492,6 +644,28 @@ export async function createRequestsFromDraft(req, res) {
             shippingMode: item.shippingMode,
             requestedShipDate: item.requestedShipDate,
           });
+
+          // 완료된 기존 의뢰에 대한 재의뢰(리메이크): referenceIds에 기존 requestId를 남긴다.
+          if (
+            duplicateResolution &&
+            String(duplicateResolution.strategy || "") === "remake" &&
+            duplicateResolution.existingRequestId
+          ) {
+            const existing = duplicates.find(
+              (d) =>
+                String(d?.existingRequest?._id || "") ===
+                String(duplicateResolution.existingRequestId)
+            );
+            const oldRequestId = existing?.existingRequest?.requestId;
+            if (oldRequestId) {
+              newRequest.referenceIds = Array.from(
+                new Set([
+                  ...(newRequest.referenceIds || []),
+                  String(oldRequestId),
+                ])
+              );
+            }
+          }
 
           applyStatusMapping(newRequest, newRequest.status);
           await newRequest.save({ session });
@@ -526,6 +700,12 @@ export async function createRequestsFromDraft(req, res) {
           data: e.payload || null,
         });
       }
+      if (statusCode >= 400 && statusCode < 500) {
+        return res.status(statusCode).json({
+          success: false,
+          message: e.message || "요청 처리 중 오류가 발생했습니다.",
+        });
+      }
       throw e;
     } finally {
       session.endSession();
@@ -542,6 +722,19 @@ export async function createRequestsFromDraft(req, res) {
     });
   } catch (error) {
     console.error("Error in createRequestsFromDraft:", error);
+
+    if (isDuplicateKeyError(error)) {
+      const msg = String(error?.message || "");
+      const isRequestIdDup = msg.includes("requestId");
+      return res.status(409).json({
+        success: false,
+        code: isRequestIdDup ? "REQUEST_ID_CONFLICT" : "DUPLICATE_KEY",
+        message: isRequestIdDup
+          ? "의뢰 번호 생성이 충돌했습니다. 잠시 후 다시 시도해주세요."
+          : "중복된 데이터로 인해 요청을 처리할 수 없습니다. 다시 시도해주세요.",
+      });
+    }
+
     return res.status(500).json({
       success: false,
       message: "Draft에서 의뢰 생성 중 오류가 발생했습니다.",

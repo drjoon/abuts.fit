@@ -27,6 +27,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const { toast } = useToast();
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const [duplicatePrompt, setDuplicatePrompt] = useState<{
+    mode: "active" | "completed";
+    duplicates: any[];
+  } | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [draftFiles, setDraftFiles] = useState<DraftCaseInfo[]>([]);
   const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<
@@ -515,27 +519,44 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   ]);
 
   // 제출/취소 처리
-  const { handleSubmit: rawHandleSubmit, handleCancel } = useNewRequestSubmitV2(
-    {
-      existingRequestId,
-      draftId,
-      token,
-      navigate,
-      files,
-      setFiles,
-      clinicPresets,
-      selectedClinicId,
-      setSelectedPreviewIndex,
-      caseInfosMap,
-      patchDraftImmediately,
-    }
-  );
+  const {
+    handleSubmit: rawHandleSubmit,
+    handleSubmitWithDuplicateResolution: rawHandleSubmitWithDuplicateResolution,
+    handleCancel,
+  } = useNewRequestSubmitV2({
+    existingRequestId,
+    draftId,
+    token,
+    navigate,
+    files,
+    setFiles,
+    clinicPresets,
+    selectedClinicId,
+    setSelectedPreviewIndex,
+    caseInfosMap,
+    patchDraftImmediately,
+    onDuplicateDetected: (payload) => {
+      setDuplicatePrompt(payload);
+    },
+  });
 
   const handleSubmit = useCallback(async () => {
     const ok = await ensureSetupForUpload();
     if (!ok) return;
     await rawHandleSubmit();
   }, [ensureSetupForUpload, rawHandleSubmit]);
+
+  const handleSubmitWithDuplicateResolution = useCallback(
+    async (opts: {
+      strategy: "replace" | "remake";
+      existingRequestId: string;
+    }) => {
+      const ok = await ensureSetupForUpload();
+      if (!ok) return;
+      await rawHandleSubmitWithDuplicateResolution(opts);
+    },
+    [ensureSetupForUpload, rawHandleSubmitWithDuplicateResolution]
+  );
 
   // 환자 사례 미리보기 (파일 기반)
   const patientCasesPreview = useMemo(() => {
@@ -596,8 +617,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
     // 제출/취소
     handleSubmit,
+    handleSubmitWithDuplicateResolution,
     handleCancel,
     deleteDraft,
     resetDraft,
+
+    duplicatePrompt,
+    setDuplicatePrompt,
   };
 };

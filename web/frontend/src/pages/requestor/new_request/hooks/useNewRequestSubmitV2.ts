@@ -19,6 +19,10 @@ type UseNewRequestSubmitV2Params = {
   setSelectedPreviewIndex: (v: number | null) => void;
   caseInfosMap?: Record<string, CaseInfos>;
   patchDraftImmediately?: (map: Record<string, CaseInfos>) => Promise<void>;
+  onDuplicateDetected?: (payload: {
+    mode: "active" | "completed";
+    duplicates: any[];
+  }) => void;
 };
 
 export const useNewRequestSubmitV2 = ({
@@ -33,6 +37,7 @@ export const useNewRequestSubmitV2 = ({
   setSelectedPreviewIndex,
   caseInfosMap,
   patchDraftImmediately,
+  onDuplicateDetected,
 }: UseNewRequestSubmitV2Params) => {
   const { toast } = useToast();
 
@@ -145,7 +150,10 @@ export const useNewRequestSubmitV2 = ({
     setSelectedPreviewIndex(null);
   };
 
-  const handleSubmit = async () => {
+  const submitFromDraft = async (duplicateResolution?: {
+    strategy: "replace" | "remake";
+    existingRequestId: string;
+  }) => {
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -264,6 +272,10 @@ export const useNewRequestSubmitV2 = ({
         clinicId: selectedClinicId || undefined,
       };
 
+      if (duplicateResolution) {
+        payload.duplicateResolution = duplicateResolution;
+      }
+
       if (caseInfosForSubmit) {
         payload.caseInfos = caseInfosForSubmit;
       }
@@ -280,6 +292,25 @@ export const useNewRequestSubmitV2 = ({
           status: res.status,
           errData,
         });
+
+        if (res.status === 409 && errData?.code === "DUPLICATE_REQUEST") {
+          const mode = errData?.data?.mode;
+          const duplicates = errData?.data?.duplicates;
+          if (
+            (mode === "active" || mode === "completed") &&
+            Array.isArray(duplicates) &&
+            duplicates.length > 0
+          ) {
+            onDuplicateDetected?.({ mode, duplicates });
+            toast({
+              title: "중복 의뢰 확인 필요",
+              description: "기존 의뢰 처리 방법을 선택해주세요.",
+              duration: 4000,
+            });
+            return;
+          }
+        }
+
         throw new Error(errData.message || `서버 오류: ${res.status}`);
       }
 
@@ -356,8 +387,20 @@ export const useNewRequestSubmitV2 = ({
     }
   };
 
+  const handleSubmit = async () => {
+    await submitFromDraft();
+  };
+
+  const handleSubmitWithDuplicateResolution = async (opts: {
+    strategy: "replace" | "remake";
+    existingRequestId: string;
+  }) => {
+    await submitFromDraft(opts);
+  };
+
   return {
     handleSubmit,
+    handleSubmitWithDuplicateResolution,
     handleCancel,
   };
 };
