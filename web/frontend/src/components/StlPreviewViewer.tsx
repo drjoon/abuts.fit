@@ -24,6 +24,7 @@ export function StlPreviewViewer({
   const [connectionDiameterState, setConnectionDiameterState] = useState<
     number | null
   >(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     onDiameterComputedRef.current = onDiameterComputed;
@@ -31,6 +32,10 @@ export function StlPreviewViewer({
 
   useEffect(() => {
     if (!containerRef.current) return;
+
+    setError(null);
+    setMaxDiameterState(null);
+    setConnectionDiameterState(null);
 
     const height = 300;
     let width = containerRef.current.clientWidth || 300;
@@ -69,25 +74,29 @@ export function StlPreviewViewer({
     scene.add(grid);
 
     const loader = new STLLoader();
-    const url = URL.createObjectURL(file);
+    let mesh: THREE.Mesh | null = null;
+    let geometry: THREE.BufferGeometry | null = null;
 
-    loader.load(
-      url,
-      (geometry) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const buffer = await file.arrayBuffer();
+        if (cancelled) return;
+
+        geometry = loader.parse(buffer);
+        geometry.computeBoundingBox();
+        geometry.computeBoundingSphere();
+
         const material = new THREE.MeshStandardMaterial({
           color: 0x5b9dff,
           metalness: 0.2,
           roughness: 0.25,
         });
-        const mesh = new THREE.Mesh(geometry, material);
-        geometry.computeBoundingBox();
-        geometry.computeBoundingSphere();
+        mesh = new THREE.Mesh(geometry, material);
 
         const bbox = geometry.boundingBox;
-        if (bbox) {
-          const position = geometry.getAttribute("position");
-
-          // 1) 전체 포인트에서 최대 반지름(maxR) 계산
+        const position = geometry.getAttribute("position");
+        if (bbox && position) {
           let maxR = 0;
           for (let i = 0; i < position.count; i++) {
             const x = position.getX(i);
@@ -96,10 +105,7 @@ export function StlPreviewViewer({
             if (r > maxR) maxR = r;
           }
 
-          // 2) z=0 평면과 각 삼각형(face)의 교차선을 이용해 커넥션 직경 계산
-          //    STL은 인덱스 없이 position 속에 삼각형이 순서대로 들어있다고 가정 (v0,v1,v2),(v3,v4,v5),...
           let connectionMaxR = 0;
-
           const addIntersection = (
             x1: number,
             y1: number,
@@ -109,9 +115,9 @@ export function StlPreviewViewer({
             z2: number
           ) => {
             if ((z1 === 0 && z2 === 0) || z1 === z2) return;
-            if ((z1 > 0 && z2 > 0) || (z1 < 0 && z2 < 0)) return; // 같은 쪽이면 z=0 안 지남
+            if ((z1 > 0 && z2 > 0) || (z1 < 0 && z2 < 0)) return;
 
-            const t = z1 / (z1 - z2); // z1 + t*(z2-z1) = 0
+            const t = z1 / (z1 - z2);
             if (t < 0 || t > 1) return;
 
             const ix = x1 + t * (x2 - x1);
@@ -133,7 +139,6 @@ export function StlPreviewViewer({
             const y2 = position.getY(i + 2);
             const z2 = position.getZ(i + 2);
 
-            // 세 엣지와 z=0 평면의 교차점 계산
             addIntersection(x0, y0, z0, x1, y1, z1);
             addIntersection(x1, y1, z1, x2, y2, z2);
             addIntersection(x2, y2, z2, x0, y0, z0);
@@ -143,7 +148,6 @@ export function StlPreviewViewer({
           const connectionDiameter =
             connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
 
-          // 내부 표시용 상태 업데이트 (필요 시에만)
           if (showOverlay) {
             setMaxDiameterState(Math.round(maxDiameter * 10) / 10);
             setConnectionDiameterState(
@@ -151,7 +155,6 @@ export function StlPreviewViewer({
             );
           }
 
-          // 부모로 콜백 전달 (기존 동작 유지)
           if (onDiameterComputedRef.current) {
             onDiameterComputedRef.current(
               file.name,
@@ -160,7 +163,6 @@ export function StlPreviewViewer({
             );
           }
 
-          // 3) 시각화를 위해서만 메쉬를 씬 중앙으로 이동
           const center = new THREE.Vector3();
           bbox.getCenter(center);
           mesh.position.sub(center);
@@ -173,12 +175,11 @@ export function StlPreviewViewer({
         }
 
         scene.add(mesh);
-      },
-      undefined,
-      () => {
-        URL.revokeObjectURL(url);
+      } catch (e) {
+        console.error("[StlPreviewViewer] failed to load STL", e);
+        setError("STL 파일을 불러오지 못했습니다");
       }
-    );
+    })();
 
     const updateSize = () => {
       if (!containerRef.current) return;
@@ -211,15 +212,27 @@ export function StlPreviewViewer({
     animate();
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(frameId);
       if (resizeObserver) {
         resizeObserver.disconnect();
       } else {
         window.removeEventListener("resize", updateSize);
       }
+      if (mesh) {
+        scene.remove(mesh);
+        const material = mesh.material;
+        if (Array.isArray(material)) {
+          material.forEach((m) => m.dispose());
+        } else {
+          material.dispose();
+        }
+      }
+      if (geometry) {
+        geometry.dispose();
+      }
       controls.dispose();
       renderer.dispose();
-      URL.revokeObjectURL(url);
       if (containerRef.current) {
         containerRef.current.innerHTML = "";
       }
@@ -229,6 +242,11 @@ export function StlPreviewViewer({
   return (
     <div className="relative w-full max-w-full h-[300px]">
       <div ref={containerRef} className="w-full h-full" />
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-destructive">
+          {error}
+        </div>
+      )}
       {showOverlay &&
         (maxDiameterState !== null || connectionDiameterState !== null) && (
           <div className="pointer-events-none absolute bottom-2 right-2 flex flex-col items-end gap-1 rounded-md bg-white/85 px-2 py-1 text-[12px] md:text-[13px] text-muted-foreground shadow-sm">
