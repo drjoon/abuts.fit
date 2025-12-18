@@ -176,16 +176,6 @@ export const NewRequestPage = () => {
     return `${found.name}:${found.size}`;
   };
 
-  const skippedFileKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const r of duplicateResolutions) {
-      if (r.strategy !== "skip") continue;
-      const k = getFileKeyByDraftCaseId(r.caseId);
-      if (k) keys.push(k);
-    }
-    return Array.from(new Set(keys));
-  }, [duplicateResolutions, files]);
-
   const currentDuplicateNewCaseInfo = useMemo(() => {
     if (!currentDuplicate?.caseId) return null;
     const fileKey = getFileKeyByDraftCaseId(String(currentDuplicate.caseId));
@@ -355,10 +345,68 @@ export const NewRequestPage = () => {
                         currentDuplicate?.existingRequest?.requestId || ""
                       )}
                     </span>
+                    {(currentDuplicate?.existingRequest?.caseInfos
+                      ?.clinicName ||
+                      currentDuplicate?.existingRequest?.caseInfos
+                        ?.patientName ||
+                      currentDuplicate?.existingRequest?.caseInfos?.tooth) && (
+                      <span className="truncate">
+                        {String(
+                          currentDuplicate?.existingRequest?.caseInfos
+                            ?.clinicName || ""
+                        )
+                          ? `치과: ${String(
+                              currentDuplicate?.existingRequest?.caseInfos
+                                ?.clinicName || ""
+                            )}`
+                          : ""}
+                        {String(
+                          currentDuplicate?.existingRequest?.caseInfos
+                            ?.patientName || ""
+                        )
+                          ? ` / 환자: ${String(
+                              currentDuplicate?.existingRequest?.caseInfos
+                                ?.patientName || ""
+                            )}`
+                          : ""}
+                        {String(
+                          currentDuplicate?.existingRequest?.caseInfos?.tooth ||
+                            ""
+                        )
+                          ? ` / 치아: ${String(
+                              currentDuplicate?.existingRequest?.caseInfos
+                                ?.tooth || ""
+                            )}`
+                          : ""}
+                      </span>
+                    )}
+                    {currentDuplicate?.fileName && (
+                      <span className="truncate">
+                        파일: {String(currentDuplicate.fileName || "")}
+                      </span>
+                    )}
                     <span className="truncate">
                       상태:{" "}
                       {String(currentDuplicate?.existingRequest?.status || "")}
                     </span>
+                    {currentDuplicate?.existingRequest?.price?.amount !=
+                      null && (
+                      <span className="truncate">
+                        금액(공급가):{" "}
+                        {Number(
+                          currentDuplicate?.existingRequest?.price?.amount || 0
+                        ).toLocaleString()}
+                        원
+                      </span>
+                    )}
+                    {currentDuplicate?.existingRequest?.createdAt && (
+                      <span className="truncate">
+                        접수일:{" "}
+                        {String(
+                          currentDuplicate.existingRequest.createdAt
+                        ).slice(0, 10)}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
@@ -372,26 +420,20 @@ export const NewRequestPage = () => {
             const caseId = String(currentDuplicate?.caseId || "").trim();
             const mode = duplicatePrompt?.mode;
 
-            actions.push({
-              label: "새의뢰 취소",
-              variant: "secondary",
-              onClick: async () => {
-                if (!caseId || !existingRequestMongoId) {
-                  setDuplicatePrompt(null);
-                  await handleCancelAll();
-                  return;
-                }
-                await applyDuplicateChoice({
-                  strategy: "skip",
-                  caseId,
-                  existingRequestId: existingRequestMongoId,
-                });
-              },
-            });
-
             if (existingRequestMongoId && caseId) {
+              actions.push({
+                label: "기존의뢰 유지",
+                variant: "secondary",
+                onClick: async () => {
+                  await applyDuplicateChoice({
+                    strategy: "skip",
+                    caseId,
+                    existingRequestId: existingRequestMongoId,
+                  });
+                },
+              });
               actions.unshift({
-                label: "재의뢰",
+                label: "새의뢰로 교체",
                 variant: "primary",
                 onClick: async () => {
                   await applyDuplicateChoice({
@@ -399,6 +441,14 @@ export const NewRequestPage = () => {
                     caseId,
                     existingRequestId: existingRequestMongoId,
                   });
+                },
+              });
+            } else {
+              actions.push({
+                label: "닫기",
+                variant: "secondary",
+                onClick: async () => {
+                  setDuplicatePrompt(null);
                 },
               });
             }
@@ -442,7 +492,6 @@ export const NewRequestPage = () => {
           toast={toast}
           highlight={highlightStep === "details"}
           sectionHighlightClass={sectionHighlightClass}
-          disabledFileKeys={skippedFileKeys}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 mt-2">

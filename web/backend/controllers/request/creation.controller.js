@@ -563,6 +563,8 @@ export async function createRequestsFromDraft(req, res) {
         const existing = latestByKey.get(key);
         if (!existing) continue;
 
+        const existingCi = existing?.caseInfos || {};
+
         duplicates.push({
           caseId: item.caseId,
           fileName: item.fileName,
@@ -572,6 +574,11 @@ export async function createRequestsFromDraft(req, res) {
             status: String(existing.status || ""),
             price: existing.price || null,
             createdAt: existing.createdAt || null,
+            caseInfos: {
+              clinicName: String(existingCi?.clinicName || ""),
+              patientName: String(existingCi?.patientName || ""),
+              tooth: String(existingCi?.tooth || ""),
+            },
           },
         });
       }

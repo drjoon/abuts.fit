@@ -20,27 +20,6 @@ import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/co
 
 const EDITABLE_STATUSES = new Set(["의뢰접수", "가공전"]);
 
-const hashToBase36 = (input: string) => {
-  const str = String(input || "");
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i += 1) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(36).toUpperCase();
-};
-
-const formatRequestIdSafe = (requestId?: string, seed?: string) => {
-  const raw = String(requestId || "").trim();
-  const m = raw.match(/^(\d{8})-(\d{6})$/);
-  if (!m) return raw;
-  const datePart = m[1];
-  const code = hashToBase36(`${String(seed || raw)}|abuts|requestId`)
-    .padStart(6, "0")
-    .slice(-6);
-  return `${datePart}-${code}`;
-};
-
 const getStatusBadge = (status: string) => {
   switch (status) {
     case "의뢰접수":
@@ -383,9 +362,7 @@ export const RequestorRecentRequestsCard = ({
           {items.map((item: any) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
-            const displayId = rawRequestId
-              ? formatRequestIdSafe(rawRequestId, stableKey)
-              : String(item.id || item._id || "");
+            const displayId = rawRequestId || String(item.id || item._id || "");
 
             return (
               <FunctionalItemCard

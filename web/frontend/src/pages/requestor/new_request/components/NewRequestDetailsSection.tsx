@@ -21,7 +21,6 @@ type Props = {
   setCaseInfos: (updates: Partial<CaseInfos>) => void;
   caseInfosMap?: Record<string, CaseInfos>;
   updateCaseInfos: (fileKey: string, updates: Partial<CaseInfos>) => void;
-  disabledFileKeys?: string[];
   connections: Connection[];
   typeOptions: string[];
   implantManufacturer: string;
@@ -67,7 +66,6 @@ export function NewRequestDetailsSection({
   setCaseInfos,
   caseInfosMap,
   updateCaseInfos,
-  disabledFileKeys,
   connections,
   typeOptions,
   implantManufacturer,
@@ -97,11 +95,6 @@ export function NewRequestDetailsSection({
   sectionHighlightClass,
 }: Props) {
   const hasActiveSession = files.length > 0;
-
-  const isDisabledFile = (fileKey: string) => {
-    if (!disabledFileKeys || disabledFileKeys.length === 0) return false;
-    return disabledFileKeys.includes(fileKey);
-  };
 
   const getFileWorkType = (_file: File): "abutment" | "crown" => {
     return "abutment";
@@ -225,13 +218,11 @@ export function NewRequestDetailsSection({
                       const filename = file.name;
                       const fileKey = `${file.name}:${file.size}`;
                       const isSelected = selectedPreviewIndex === index;
-                      const isDisabled = isDisabledFile(fileKey);
 
                       return (
                         <div
                           key={fileKey}
                           onClick={() => {
-                            if (isDisabled) return;
                             const currentWorkType = getFileWorkType(file);
                             setSelectedPreviewIndex(index);
 
@@ -271,11 +262,7 @@ export function NewRequestDetailsSection({
                             isSelected
                               ? "border-2 border-primary shadow-lg"
                               : "border border-gray-200 hover:border-primary/40 hover:shadow"
-                          } ${
-                            isDisabled
-                              ? "opacity-50 grayscale cursor-not-allowed bg-gray-50"
-                              : "bg-white"
-                          } text-gray-900`}
+                          } bg-white text-gray-900`}
                         >
                           <div className="flex items-center justify-between gap-2 text-xs md:text-sm">
                             <span className="truncate flex-1">{filename}</span>
@@ -289,7 +276,6 @@ export function NewRequestDetailsSection({
                                 }`}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (isDisabled) return;
                                   const fileCaseInfos =
                                     caseInfosMap?.[fileKey] || caseInfos;
 
@@ -352,7 +338,6 @@ export function NewRequestDetailsSection({
                                   setHighlightUnverifiedArrows(false);
                                 }}
                                 title="확인 완료"
-                                disabled={isDisabled}
                               >
                                 <ChevronDown className="h-4 w-4" />
                               </button>
@@ -389,13 +374,11 @@ export function NewRequestDetailsSection({
                     const filename = file.name;
                     const fileKey = `${file.name}:${file.size}`;
                     const isSelected = selectedPreviewIndex === index;
-                    const isDisabled = isDisabledFile(fileKey);
 
                     return (
                       <div
                         key={fileKey}
                         onClick={() => {
-                          if (isDisabled) return;
                           const currentWorkType = getFileWorkType(file);
                           setSelectedPreviewIndex(index);
 
@@ -431,10 +414,6 @@ export function NewRequestDetailsSection({
                           isSelected
                             ? "border-2 border-primary bg-primary/10 text-primary shadow-lg"
                             : "border border-primary/40 bg-primary/5 text-primary hover:border-primary hover:bg-primary/10 hover:shadow"
-                        } ${
-                          isDisabled
-                            ? "opacity-50 grayscale cursor-not-allowed"
-                            : ""
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 text-xs md:text-sm">
@@ -445,14 +424,12 @@ export function NewRequestDetailsSection({
                               className="text-muted-foreground hover:text-primary flex items-center justify-center"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (isDisabled) return;
                                 setFileVerificationStatus((prev) => ({
                                   ...prev,
                                   [fileKey]: false,
                                 }));
                               }}
                               title="확인 취소"
-                              disabled={isDisabled}
                             >
                               <ChevronUp className="h-4 w-4" />
                             </button>
