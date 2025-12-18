@@ -482,22 +482,75 @@ export async function createRequestsFromDraft(req, res) {
     // - duplicateResolution이 있으면 정책에 따라 replace/remake 처리한다.
     const requestFilter = await buildRequestorOrgScopeFilter(req);
     const duplicates = [];
-    for (const item of preparedCases) {
-      const existing = await Request.findOne({
-        ...requestFilter,
-        "caseInfos.patientName": item.patientName,
-        "caseInfos.tooth": item.tooth,
-        "caseInfos.clinicName": item.clinicName,
-        status: { $ne: "취소" },
-      })
-        .select({ _id: 1, requestId: 1, status: 1, createdAt: 1, price: 1 })
+
+    const keyTuplesRaw = preparedCases
+      .map((item) => ({
+        caseId: item.caseId,
+        fileName: item.caseInfosWithFile?.file?.fileName || undefined,
+        clinicName: String(item.clinicName || "").trim(),
+        patientName: String(item.patientName || "").trim(),
+        tooth: String(item.tooth || "").trim(),
+      }))
+      .filter((k) => k.clinicName && k.patientName && k.tooth);
+
+    const tupleByKey = new Map();
+    for (const item of keyTuplesRaw) {
+      const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
+      if (!tupleByKey.has(key)) {
+        tupleByKey.set(key, item);
+      }
+    }
+
+    const keyTuples = Array.from(tupleByKey.values());
+
+    if (keyTuples.length > 0) {
+      const orConditions = keyTuples.map((k) => ({
+        "caseInfos.clinicName": k.clinicName,
+        "caseInfos.patientName": k.patientName,
+        "caseInfos.tooth": k.tooth,
+      }));
+
+      const query = {
+        $and: [
+          requestFilter,
+          { status: { $ne: "취소" } },
+          { $or: orConditions },
+        ],
+      };
+
+      const candidates = await Request.find(query)
+        .select({
+          _id: 1,
+          requestId: 1,
+          status: 1,
+          createdAt: 1,
+          price: 1,
+          "caseInfos.clinicName": 1,
+          "caseInfos.patientName": 1,
+          "caseInfos.tooth": 1,
+        })
         .sort({ createdAt: -1 })
         .lean();
 
-      if (existing) {
+      const latestByKey = new Map();
+      for (const doc of candidates || []) {
+        const ci = doc?.caseInfos || {};
+        const key = `${String(ci.clinicName || "").trim()}|${String(
+          ci.patientName || ""
+        ).trim()}|${String(ci.tooth || "").trim()}`;
+        if (!latestByKey.has(key)) {
+          latestByKey.set(key, doc);
+        }
+      }
+
+      for (const item of keyTuples) {
+        const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
+        const existing = latestByKey.get(key);
+        if (!existing) continue;
+
         duplicates.push({
           caseId: item.caseId,
-          fileName: item.caseInfosWithFile?.file?.fileName || undefined,
+          fileName: item.fileName,
           existingRequest: {
             _id: String(existing._id),
             requestId: String(existing.requestId || ""),

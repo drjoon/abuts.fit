@@ -163,6 +163,10 @@ export const useNewRequestSubmitV2 = ({
       return;
     }
 
+    try {
+      void redirectToProfileIfNeeded();
+    } catch {}
+
     // 의뢰 수정 모드
     if (existingRequestId) {
       try {
@@ -208,10 +212,7 @@ export const useNewRequestSubmitV2 = ({
         if (!res.ok) throw new Error("서버 응답 오류");
 
         toast({ title: "의뢰가 수정되었습니다", duration: 2000 });
-        const redirected = await redirectToProfileIfNeeded();
-        if (!redirected) {
-          navigate("/dashboard");
-        }
+        navigate("/dashboard");
       } catch (err: any) {
         toast({
           title: "의뢰 제출 중 오류",
@@ -251,7 +252,9 @@ export const useNewRequestSubmitV2 = ({
           }
         }
 
-        await patchDraftImmediately(filteredMap);
+        try {
+          void patchDraftImmediately(filteredMap);
+        } catch {}
       }
 
       // 서버로도 현재 caseInfos 배열을 함께 보내 Draft.caseInfos 의 빈 필드를 보완한다.
@@ -315,22 +318,19 @@ export const useNewRequestSubmitV2 = ({
       }
 
       const data = await res.json();
-      const newRequestId = data.data?._id || data._id;
+      void data;
 
       // 파싱 로그 저장 (비동기, 실패해도 무시)
       saveParseLogs().catch((err) => {
         console.warn("[useNewRequestSubmitV2] Failed to save parse logs:", err);
       });
 
-      // Draft 삭제
       try {
-        await fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
+        void fetch(`${API_BASE_URL}/requests/drafts/${draftId}`, {
           method: "DELETE",
           headers: getHeaders(),
         });
-      } catch {
-        // 무시
-      }
+      } catch {}
 
       // 상태 초기화
       console.log(
@@ -355,10 +355,7 @@ export const useNewRequestSubmitV2 = ({
 
       toast({ title: "의뢰가 제출되었습니다" });
 
-      const redirected = await redirectToProfileIfNeeded();
-      if (!redirected) {
-        navigate(`/dashboard`);
-      }
+      navigate(`/dashboard`);
     } catch (err: any) {
       const rawMessage = err?.message || "";
 

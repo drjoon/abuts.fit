@@ -185,6 +185,24 @@ const requestSchema = new mongoose.Schema(
   }
 );
 
+requestSchema.index({
+  requestorOrganizationId: 1,
+  "caseInfos.clinicName": 1,
+  "caseInfos.patientName": 1,
+  "caseInfos.tooth": 1,
+  status: 1,
+  createdAt: -1,
+});
+
+requestSchema.index({
+  requestor: 1,
+  "caseInfos.clinicName": 1,
+  "caseInfos.patientName": 1,
+  "caseInfos.tooth": 1,
+  status: 1,
+  createdAt: -1,
+});
+
 // 의뢰 ID 자동 생성 (YYYYMMDD-000001, YYYYMMDD-000002 ... 날짜별 6자리 숫자 시퀀스)
 requestSchema.pre("save", async function (next) {
   if (!this.isNew || this.requestId) {
