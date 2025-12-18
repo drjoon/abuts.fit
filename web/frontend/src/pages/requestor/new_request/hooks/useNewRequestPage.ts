@@ -522,6 +522,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const {
     handleSubmit: rawHandleSubmit,
     handleSubmitWithDuplicateResolution: rawHandleSubmitWithDuplicateResolution,
+    handleSubmitWithDuplicateResolutions:
+      rawHandleSubmitWithDuplicateResolutions,
     handleCancel,
   } = useNewRequestSubmitV2({
     existingRequestId,
@@ -558,6 +560,21 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     [ensureSetupForUpload, rawHandleSubmitWithDuplicateResolution]
   );
 
+  const handleSubmitWithDuplicateResolutions = useCallback(
+    async (
+      opts: {
+        caseId: string;
+        strategy: "skip" | "replace" | "remake";
+        existingRequestId: string;
+      }[]
+    ) => {
+      const ok = await ensureSetupForUpload();
+      if (!ok) return;
+      await rawHandleSubmitWithDuplicateResolutions(opts as any);
+    },
+    [ensureSetupForUpload, rawHandleSubmitWithDuplicateResolutions]
+  );
+
   // 환자 사례 미리보기 (파일 기반)
   const patientCasesPreview = useMemo(() => {
     // 파일 이름에서 환자명/치아 정보 추출 (간단한 구현)
@@ -575,6 +592,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     // Draft 상태
     draftId,
     draftStatus,
+    resetDraft,
 
     // Case 정보 (파일별 독립적 관리)
     caseInfos: currentCaseInfos,
@@ -618,10 +636,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     // 제출/취소
     handleSubmit,
     handleSubmitWithDuplicateResolution,
+    handleSubmitWithDuplicateResolutions,
     handleCancel,
-    deleteDraft,
-    resetDraft,
-
+    selectedRequest,
     duplicatePrompt,
     setDuplicatePrompt,
   };

@@ -60,6 +60,7 @@ export const NewRequestPage = () => {
     duplicatePrompt,
     setDuplicatePrompt,
     handleSubmitWithDuplicateResolution,
+    handleSubmitWithDuplicateResolutions,
   } = useNewRequestPage(existingRequestId);
 
   const {
@@ -139,6 +140,60 @@ export const NewRequestPage = () => {
     if (fileInput) {
       fileInput.value = "";
     }
+  };
+
+  const [duplicateCursor, setDuplicateCursor] = useState(0);
+  const [duplicateResolutions, setDuplicateResolutions] = useState<
+    {
+      caseId: string;
+      strategy: "skip" | "replace" | "remake";
+      existingRequestId: string;
+    }[]
+  >([]);
+
+  useEffect(() => {
+    if (!duplicatePrompt) {
+      setDuplicateCursor(0);
+      setDuplicateResolutions([]);
+      return;
+    }
+    setDuplicateCursor(0);
+    setDuplicateResolutions([]);
+  }, [duplicatePrompt]);
+
+  const currentDuplicate =
+    duplicatePrompt &&
+    Array.isArray(duplicatePrompt.duplicates) &&
+    duplicatePrompt.duplicates.length > 0
+      ? duplicatePrompt.duplicates[duplicateCursor] || null
+      : null;
+
+  const applyDuplicateChoice = async (choice: {
+    strategy: "skip" | "replace" | "remake";
+    caseId: string;
+    existingRequestId: string;
+  }) => {
+    const nextResolutions = (() => {
+      const next = (duplicateResolutions || []).filter(
+        (r) => r.caseId !== choice.caseId
+      );
+      next.push(choice);
+      return next;
+    })();
+
+    setDuplicateResolutions(nextResolutions);
+
+    const totalDup = duplicatePrompt?.duplicates?.length || 0;
+    const nextCursor = duplicateCursor + 1;
+
+    if (nextCursor < totalDup) {
+      setDuplicateCursor(nextCursor);
+      return;
+    }
+
+    const all = nextResolutions;
+    setDuplicatePrompt(null);
+    await handleSubmitWithDuplicateResolutions(all);
   };
 
   const { summary: bulkShippingSummary } = useBulkShippingPolicy(user?.email);
@@ -229,110 +284,70 @@ export const NewRequestPage = () => {
               <div className="text-sm text-gray-700">
                 동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다.
               </div>
-              {Array.isArray(duplicatePrompt?.duplicates) &&
-                duplicatePrompt!.duplicates.length > 0 && (
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-                    <div className="font-semibold mb-1">중복된 의뢰</div>
-                    {duplicatePrompt!.duplicates.slice(0, 3).map((d: any) => (
-                      <div
-                        key={String(
-                          d?.existingRequest?._id || d?.caseId || Math.random()
-                        )}
-                        className="flex flex-col gap-0.5"
-                      >
-                        <span className="truncate">
-                          의뢰번호:{" "}
-                          {String(d?.existingRequest?.requestId || "")}
-                        </span>
-                        <span className="truncate">
-                          상태: {String(d?.existingRequest?.status || "")}
-                        </span>
-                      </div>
-                    ))}
+              {currentDuplicate && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+                  <div className="font-semibold mb-1">
+                    중복된 의뢰 ({duplicateCursor + 1} /{" "}
+                    {duplicatePrompt?.duplicates?.length || 1})
                   </div>
-                )}
+                  <div className="flex flex-col gap-0.5">
+                    <span className="truncate">
+                      의뢰번호:{" "}
+                      {String(
+                        currentDuplicate?.existingRequest?.requestId || ""
+                      )}
+                    </span>
+                    <span className="truncate">
+                      상태:{" "}
+                      {String(currentDuplicate?.existingRequest?.status || "")}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           }
           actions={(() => {
-            const first =
-              Array.isArray(duplicatePrompt?.duplicates) &&
-              duplicatePrompt!.duplicates.length > 0
-                ? duplicatePrompt!.duplicates[0]
-                : null;
+            const actions: any[] = [];
             const existingRequestMongoId = String(
-              first?.existingRequest?._id || ""
+              currentDuplicate?.existingRequest?._id || ""
             );
+            const caseId = String(currentDuplicate?.caseId || "").trim();
+            const mode = duplicatePrompt?.mode;
 
-            const actions: any[] = [
-              {
-                label: "새의뢰 취소",
-                variant: "secondary",
-                onClick: async () => {
+            actions.push({
+              label: "새의뢰 취소",
+              variant: "secondary",
+              onClick: async () => {
+                if (!caseId || !existingRequestMongoId) {
                   setDuplicatePrompt(null);
                   await handleCancelAll();
-                },
-              },
-            ];
-
-            if (!existingRequestMongoId) {
-              return actions;
-            }
-
-            actions.unshift({
-              label: "재의뢰",
-              variant: "primary",
-              onClick: async () => {
-                setDuplicatePrompt(null);
-                await handleSubmitWithDuplicateResolution({
-                  strategy:
-                    duplicatePrompt?.mode === "completed"
-                      ? "remake"
-                      : "replace",
+                  return;
+                }
+                await applyDuplicateChoice({
+                  strategy: "skip",
+                  caseId,
                   existingRequestId: existingRequestMongoId,
                 });
               },
             });
 
+            if (existingRequestMongoId && caseId) {
+              actions.unshift({
+                label: "재의뢰",
+                variant: "primary",
+                onClick: async () => {
+                  await applyDuplicateChoice({
+                    strategy: mode === "completed" ? "remake" : "replace",
+                    caseId,
+                    existingRequestId: existingRequestMongoId,
+                  });
+                },
+              });
+            }
+
             return actions;
           })()}
           onClose={() => setDuplicatePrompt(null)}
-        />
-
-        <NewRequestDetailsSection
-          files={files}
-          selectedPreviewIndex={selectedPreviewIndex}
-          setSelectedPreviewIndex={setSelectedPreviewIndex}
-          caseInfos={caseInfos}
-          setCaseInfos={setCaseInfos}
-          caseInfosMap={caseInfosMap}
-          updateCaseInfos={updateCaseInfos}
-          connections={connections}
-          typeOptions={typeOptions}
-          implantManufacturer={implantManufacturer}
-          setImplantManufacturer={setImplantManufacturer}
-          implantSystem={implantSystem}
-          setImplantSystem={setImplantSystem}
-          implantType={implantType}
-          setImplantType={setImplantType}
-          syncSelectedConnection={syncSelectedConnection}
-          fileVerificationStatus={fileVerificationStatus}
-          setFileVerificationStatus={setFileVerificationStatus}
-          highlightUnverifiedArrows={highlightUnverifiedArrows}
-          setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
-          handleRemoveFile={handleRemoveFile}
-          clinicNameOptions={clinicNameOptions}
-          patientNameOptions={patientNameOptions}
-          teethOptions={teethOptions}
-          addClinicPreset={addClinicPreset}
-          clearAllClinicPresets={clearAllClinicPresets}
-          addPatientPreset={addPatientPreset}
-          clearAllPatientPresets={clearAllPatientPresets}
-          addTeethPreset={addTeethPreset}
-          clearAllTeethPresets={clearAllTeethPresets}
-          handleAddOrSelectClinic={handleAddOrSelectClinic}
-          toast={toast}
-          highlight={highlightStep === "details"}
-          sectionHighlightClass={sectionHighlightClass}
         />
 
         {(() => {

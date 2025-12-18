@@ -698,7 +698,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 </div>
               )}
               <div className="text-xs text-muted-foreground">
-                가상계좌는 입금 완료 후 웹훅으로 자동 충전됩니다.
+                가상계좌는 입금 완료 후 자동 충전됩니다.
               </div>
             </div>
           </>
@@ -798,8 +798,9 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
                 {paidBalance > 0 && (
                   <div className="text-xs text-muted-foreground">
-                    환불: 계좌해지시 잔여 구매 크레딧(공급가)만 환불되며, VAT는
-                    잔액 비율대로 비례 환불됩니다.
+                    환불: 계좌해지시 남아있는 구매 크레딧(공급가)만 환불되며,
+                    무료 크레딧(공급가)은 환불되지 않습니다. VAT는 잔액 비율대로
+                    환불됩니다.
                   </div>
                 )}
 

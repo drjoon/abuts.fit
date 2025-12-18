@@ -25,6 +25,12 @@ type UseNewRequestSubmitV2Params = {
   }) => void;
 };
 
+type DuplicateResolutionCase = {
+  caseId: string;
+  strategy: "skip" | "replace" | "remake";
+  existingRequestId: string;
+};
+
 export const useNewRequestSubmitV2 = ({
   existingRequestId,
   draftId,
@@ -150,10 +156,13 @@ export const useNewRequestSubmitV2 = ({
     setSelectedPreviewIndex(null);
   };
 
-  const submitFromDraft = async (duplicateResolution?: {
-    strategy: "replace" | "remake";
-    existingRequestId: string;
-  }) => {
+  const submitFromDraft = async (
+    duplicateResolution?: {
+      strategy: "replace" | "remake";
+      existingRequestId: string;
+    },
+    duplicateResolutions?: DuplicateResolutionCase[]
+  ) => {
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -275,7 +284,9 @@ export const useNewRequestSubmitV2 = ({
         clinicId: selectedClinicId || undefined,
       };
 
-      if (duplicateResolution) {
+      if (Array.isArray(duplicateResolutions) && duplicateResolutions.length) {
+        payload.duplicateResolutions = duplicateResolutions;
+      } else if (duplicateResolution) {
         payload.duplicateResolution = duplicateResolution;
       }
 
@@ -395,9 +406,16 @@ export const useNewRequestSubmitV2 = ({
     await submitFromDraft(opts);
   };
 
+  const handleSubmitWithDuplicateResolutions = async (
+    opts: DuplicateResolutionCase[]
+  ) => {
+    await submitFromDraft(undefined, opts);
+  };
+
   return {
     handleSubmit,
     handleSubmitWithDuplicateResolution,
+    handleSubmitWithDuplicateResolutions,
     handleCancel,
   };
 };
