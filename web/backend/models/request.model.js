@@ -1,16 +1,5 @@
 import mongoose from "mongoose";
-
-const requestIdCounterSchema = new mongoose.Schema(
-  {
-    _id: { type: String },
-    seq: { type: Number, default: 0 },
-  },
-  { timestamps: true }
-);
-
-const RequestIdCounter =
-  mongoose.models.RequestIdCounter ||
-  mongoose.model("RequestIdCounter", requestIdCounterSchema);
+import crypto from "crypto";
 
 const requestSchema = new mongoose.Schema(
   {
@@ -203,7 +192,7 @@ requestSchema.index({
   createdAt: -1,
 });
 
-// 의뢰 ID 자동 생성 (YYYYMMDD-000001, YYYYMMDD-000002 ... 날짜별 6자리 숫자 시퀀스)
+// 의뢰 ID 자동 생성 (YYYYMMDD-XXXXXXXX)
 requestSchema.pre("save", async function (next) {
   if (!this.isNew || this.requestId) {
     return next();
@@ -211,22 +200,41 @@ requestSchema.pre("save", async function (next) {
 
   try {
     const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
+    // KST 기준 날짜로 requestId prefix 생성
+    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const year = kst.getUTCFullYear();
+    const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(kst.getUTCDate()).padStart(2, "0");
     const dateStr = `${year}${month}${day}`;
 
     const session = this.$session?.() || null;
-    const counter = await RequestIdCounter.findOneAndUpdate(
-      { _id: dateStr },
-      { $inc: { seq: 1 } },
-      { new: true, upsert: true, session }
-    );
+    const RequestModel = this.constructor;
+    const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    const SUFFIX_LEN = 8;
+    const MAX_TRIES = 8;
 
-    const seqNumber = Number(counter?.seq || 0);
-    const seqStr = String(seqNumber).padStart(6, "0");
-    this.requestId = `${dateStr}-${seqStr}`;
-    next();
+    const makeSuffix = () => {
+      const bytes = crypto.randomBytes(SUFFIX_LEN);
+      let out = "";
+      for (let i = 0; i < SUFFIX_LEN; i += 1) {
+        out += ALPHABET[bytes[i] % ALPHABET.length];
+      }
+      return out;
+    };
+
+    for (let attempt = 0; attempt < MAX_TRIES; attempt += 1) {
+      const candidate = `${dateStr}-${makeSuffix()}`;
+      const exists = await RequestModel.exists({
+        requestId: candidate,
+      }).session(session || undefined);
+      if (!exists) {
+        this.requestId = candidate;
+        next();
+        return;
+      }
+    }
+
+    next(new Error("requestId 생성에 실패했습니다."));
   } catch (error) {
     next(error);
   }

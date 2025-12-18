@@ -33,6 +33,14 @@
 - RESTful 원칙을 따르되, 실용적인 관점에서 설계합니다.
 - 명확한 HTTP 상태 코드를 반환합니다.
 
+## 4.1 requestId 생성 규칙
+
+- `Request.requestId`는 **서버에서 생성**하며, 클라이언트가 임의로 지정하지 않습니다.
+- 포맷은 `YYYYMMDD-XXXXXXXX` 형태의 **문자열 식별자**입니다.
+  - 앞 8자리: KST 기준 날짜(`YYYYMMDD`)
+  - 뒤 8자리: 대문자 영문 코드(예: `ABCDEFGH`)
+- `requestId`는 **유니크**해야 하며, 생성 시 충돌이 발생하면 재시도합니다.
+
 ## 5. 채팅 API 규칙
 
 ### 5.1 Request Chat (의뢰 채팅)
