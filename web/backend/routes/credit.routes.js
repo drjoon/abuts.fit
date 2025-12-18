@@ -14,6 +14,7 @@ import {
   cancelMyCreditOrder,
   requestCreditRefund,
 } from "../controllers/credit.controller.js";
+import { listMyCreditLedger } from "../controllers/creditLedger.controller.js";
 
 router.use(authenticate);
 // 크레딧/결제 관련 기능은 주대표/부대표만 접근 가능
@@ -22,6 +23,7 @@ router.use(authorizePosition(["principal", "vice_principal"]));
 router.get("/balance", getMyCreditBalance);
 router.get("/insights/spend", getMyCreditSpendInsights);
 router.get("/orders", listMyCreditOrders);
+router.get("/ledger", listMyCreditLedger);
 router.post("/orders", authorizePosition(["principal"]), createCreditOrder);
 router.post(
   "/orders/:orderId/cancel",

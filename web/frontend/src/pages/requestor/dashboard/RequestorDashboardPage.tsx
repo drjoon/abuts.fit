@@ -5,6 +5,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   RequestorEditRequestDialog,
   type EditingRequestState,
@@ -20,6 +21,7 @@ import {
   WorksheetDiameterCard,
   type DiameterStats,
 } from "@/shared/ui/dashboard/WorksheetDiameterCard";
+import { CreditLedgerModal } from "./components/CreditLedgerModal";
 
 export const RequestorDashboardPage = () => {
   const { user, token } = useAuthStore();
@@ -27,6 +29,7 @@ export const RequestorDashboardPage = () => {
   const { toast } = useToast();
 
   const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "all">("30d");
+  const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);
   const [editingDescription, setEditingDescription] = useState("");
@@ -248,12 +251,31 @@ export const RequestorDashboardPage = () => {
   const diameterStatsFromApi: DiameterStats | undefined =
     summaryResponse?.success ? summaryResponse.data.diameterStats : undefined;
 
+  const canOpenCreditLedger =
+    user.role === "requestor" &&
+    (user.position === "principal" || user.position === "vice_principal");
+
   return (
     <div>
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
         subtitle="의뢰 현황을 확인하세요."
-        headerRight={<PeriodFilter value={period} onChange={setPeriod} />}
+        headerRight={
+          <div className="flex flex-wrap items-center gap-2">
+            <PeriodFilter value={period} onChange={setPeriod} />
+            {canOpenCreditLedger && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={() => setCreditLedgerOpen(true)}
+              >
+                크레딧 사용 내역
+              </Button>
+            )}
+          </div>
+        }
         stats={<RequestorDashboardStatsCards stats={stats} />}
         topSection={
           <div className="space-y-6">
@@ -377,6 +399,11 @@ export const RequestorDashboardPage = () => {
             setEditingRequest(null);
           }
         }}
+      />
+
+      <CreditLedgerModal
+        open={creditLedgerOpen}
+        onOpenChange={setCreditLedgerOpen}
       />
     </div>
   );
