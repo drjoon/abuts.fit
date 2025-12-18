@@ -1,7 +1,8 @@
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import ClinicImplantPreset from "../../models/clinicImplantPreset.model.js";
+import CreditLedger from "../../models/creditLedger.model.js";
 import {
   getRequestorOrgId,
   normalizeCaseInfosImplantFields,
@@ -10,6 +11,58 @@ import {
   canAccessRequestAsRequestor,
   buildRequestorOrgScopeFilter,
 } from "./utils.js";
+
+async function getOrganizationCreditBalanceBreakdown({
+  organizationId,
+  session,
+}) {
+  const rows = await CreditLedger.find({ organizationId })
+    .sort({ createdAt: 1, _id: 1 })
+    .select({ type: 1, amount: 1 })
+    .session(session || null)
+    .lean();
+
+  let paid = 0;
+  let bonus = 0;
+
+  for (const r of rows) {
+    const type = String(r?.type || "");
+    const amount = Number(r?.amount || 0);
+    if (!Number.isFinite(amount)) continue;
+
+    if (type === "CHARGE") {
+      paid += amount;
+      continue;
+    }
+    if (type === "BONUS") {
+      bonus += amount;
+      continue;
+    }
+    if (type === "REFUND") {
+      paid += amount;
+      continue;
+    }
+    if (type === "ADJUST") {
+      paid += amount;
+      continue;
+    }
+    if (type === "SPEND") {
+      let spend = Math.abs(amount);
+      const fromBonus = Math.min(bonus, spend);
+      bonus -= fromBonus;
+      spend -= fromBonus;
+      paid -= spend;
+    }
+  }
+
+  const paidBalance = Math.max(0, Math.round(paid));
+  const bonusBalance = Math.max(0, Math.round(bonus));
+  return {
+    balance: paidBalance + bonusBalance,
+    paidBalance,
+    bonusBalance,
+  };
+}
 
 /**
  * 새 의뢰 생성
@@ -312,18 +365,16 @@ export async function createRequestsFromDraft(req, res) {
 
     const createdRequests = [];
     const missingFieldsByFile = []; // 필수 정보 누락 파일 추적
+    const preparedCases = [];
 
     for (let idx = 0; idx < abutmentCases.length; idx++) {
       const ci = abutmentCases[idx] || {};
-
       const normalizedCi = await normalizeCaseInfosImplantFields(ci);
 
       const patientName = (ci.patientName || "").trim();
       const tooth = (ci.tooth || "").trim();
       const clinicName = (ci.clinicName || "").trim();
       const workType = (ci.workType || "abutment").trim();
-
-      // 안전장치: 여기까지 온 케이스는 모두 abutment 여야 함
       if (workType !== "abutment") continue;
 
       const implantManufacturer = (
@@ -341,7 +392,6 @@ export async function createRequestsFromDraft(req, res) {
       if (!clinicName) missing.push("치과이름");
       if (!patientName) missing.push("환자이름");
       if (!tooth) missing.push("치아번호");
-
       if (!implantManufacturer) missing.push("임플란트 제조사");
       if (!implantSystem) missing.push("임플란트 시스템");
       if (!implantType) missing.push("임플란트 유형");
@@ -352,7 +402,7 @@ export async function createRequestsFromDraft(req, res) {
           fileName,
           missingFields: missing,
         });
-        continue; // 이 파일은 건너뛰고 다음 파일 처리
+        continue;
       }
 
       const computedPrice = await computePriceForRequest({
@@ -370,35 +420,25 @@ export async function createRequestsFromDraft(req, res) {
               fileName: ci.file.originalName,
               fileType: ci.file.mimetype,
               fileSize: ci.file.size,
-              // filePath는 아직 없으므로 undefined 유지
               filePath: undefined,
               s3Key: ci.file.s3Key,
-              // s3Url은 나중에 presigned URL 생성 시 채울 수 있으므로 undefined
               s3Url: undefined,
             },
           }
         : normalizedCi;
 
-      const newRequest = new Request({
-        requestor: req.user._id,
-        requestorOrganizationId:
-          req.user?.role === "requestor" && req.user?.organizationId
-            ? req.user.organizationId
-            : null,
-        caseInfos: caseInfosWithFile,
-        price: computedPrice,
+      preparedCases.push({
+        idx,
+        caseId: ci._id ? String(ci._id) : String(idx),
+        caseInfosWithFile,
         shippingMode,
         requestedShipDate,
+        computedPrice,
       });
-
-      applyStatusMapping(newRequest, newRequest.status);
-
-      await newRequest.save();
-      createdRequests.push(newRequest);
     }
 
-    // 생성된 의뢰가 없으면 에러 반환
-    if (createdRequests.length === 0) {
+    // 생성 대상이 없으면 에러 반환
+    if (preparedCases.length === 0) {
       return res.status(400).json({
         success: false,
         message: "필수 정보가 누락된 파일이 있습니다.",
@@ -409,6 +449,86 @@ export async function createRequestsFromDraft(req, res) {
           )
           .join("\n"),
       });
+    }
+
+    const organizationId = req.user?.organizationId;
+    if (!organizationId || !Types.ObjectId.isValid(String(organizationId))) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
+      });
+    }
+
+    const totalSpendSupply = preparedCases.reduce((acc, item) => {
+      const n = Number(item?.computedPrice?.amount || 0);
+      return acc + (Number.isFinite(n) ? n : 0);
+    }, 0);
+
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const { balance } = await getOrganizationCreditBalanceBreakdown({
+          organizationId,
+          session,
+        });
+
+        if (balance < totalSpendSupply) {
+          const err = new Error("크레딧이 부족합니다.");
+          err.statusCode = 402;
+          err.payload = { balance, required: totalSpendSupply };
+          throw err;
+        }
+
+        for (const item of preparedCases) {
+          const newRequest = new Request({
+            requestor: req.user._id,
+            requestorOrganizationId:
+              req.user?.role === "requestor" && req.user?.organizationId
+                ? req.user.organizationId
+                : null,
+            caseInfos: item.caseInfosWithFile,
+            price: item.computedPrice,
+            shippingMode: item.shippingMode,
+            requestedShipDate: item.requestedShipDate,
+          });
+
+          applyStatusMapping(newRequest, newRequest.status);
+          await newRequest.save({ session });
+          createdRequests.push(newRequest);
+
+          const uniqueKey = `draft:${String(draftId)}:case:${
+            item.caseId
+          }:spend`;
+          await CreditLedger.updateOne(
+            { uniqueKey },
+            {
+              $setOnInsert: {
+                organizationId,
+                userId: req.user?._id || null,
+                type: "SPEND",
+                amount: -Number(item?.computedPrice?.amount || 0),
+                refType: "REQUEST",
+                refId: newRequest._id,
+                uniqueKey,
+              },
+            },
+            { upsert: true, session }
+          );
+        }
+      });
+    } catch (e) {
+      const statusCode = Number(e?.statusCode || 0);
+      if (statusCode === 402) {
+        return res.status(402).json({
+          success: false,
+          message: "크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해주세요.",
+          data: e.payload || null,
+        });
+      }
+      throw e;
+    } finally {
+      session.endSession();
     }
 
     return res.status(201).json({

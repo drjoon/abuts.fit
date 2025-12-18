@@ -316,6 +316,12 @@ export const useNewRequestSubmitV2 = ({
         }
       } catch {}
 
+      try {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("abuts:credits:updated"));
+        }
+      } catch {}
+
       toast({ title: "의뢰가 제출되었습니다" });
 
       const redirected = await redirectToProfileIfNeeded();

@@ -353,6 +353,27 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         const paymentStorageKey = `abutsfit:payment-settings:v1:${paymentId}`;
         const hasPayment = !!localStorage.getItem(paymentStorageKey);
         if (!hasPayment) {
+          let currentBalance = 0;
+          try {
+            const balanceRes = await request<any>({
+              path: "/api/credits/balance",
+              method: "GET",
+              token,
+              headers: mockHeaders,
+            });
+            if (balanceRes.ok) {
+              const balanceBody: any = balanceRes.data || {};
+              const balanceData = balanceBody?.data || balanceBody;
+              currentBalance = Number(balanceData?.balance || 0);
+            }
+          } catch {
+            return true;
+          }
+
+          if (currentBalance > 0) {
+            return true;
+          }
+
           toast({
             title: "설정이 필요합니다",
             description: "결제 설정을 완료해주세요.",
@@ -401,11 +422,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
   const handleUpload = useCallback(
     async (filesToUpload: File[]) => {
-      const ok = await ensureSetupForUpload();
-      if (!ok) return;
       await rawHandleUpload(filesToUpload);
     },
-    [ensureSetupForUpload, rawHandleUpload]
+    [rawHandleUpload]
   );
 
   // Draft에서 caseInfos 동기화 (임플란트 정보 -> Draft)
@@ -496,19 +515,27 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   ]);
 
   // 제출/취소 처리
-  const { handleSubmit, handleCancel } = useNewRequestSubmitV2({
-    existingRequestId,
-    draftId,
-    token,
-    navigate,
-    files,
-    setFiles,
-    clinicPresets,
-    selectedClinicId,
-    setSelectedPreviewIndex,
-    caseInfosMap,
-    patchDraftImmediately,
-  });
+  const { handleSubmit: rawHandleSubmit, handleCancel } = useNewRequestSubmitV2(
+    {
+      existingRequestId,
+      draftId,
+      token,
+      navigate,
+      files,
+      setFiles,
+      clinicPresets,
+      selectedClinicId,
+      setSelectedPreviewIndex,
+      caseInfosMap,
+      patchDraftImmediately,
+    }
+  );
+
+  const handleSubmit = useCallback(async () => {
+    const ok = await ensureSetupForUpload();
+    if (!ok) return;
+    await rawHandleSubmit();
+  }, [ensureSetupForUpload, rawHandleSubmit]);
 
   // 환자 사례 미리보기 (파일 기반)
   const patientCasesPreview = useMemo(() => {

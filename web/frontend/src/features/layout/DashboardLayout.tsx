@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/lib/apiClient";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -103,6 +104,8 @@ export const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [worksheetSearch, setWorksheetSearch] = useState("");
@@ -150,6 +153,54 @@ export const DashboardLayout = () => {
   if (!token || !user || !user.id) {
     return null;
   }
+
+  const fetchCreditBalance = useCallback(async () => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role !== "requestor") {
+      setCreditBalance(null);
+      return;
+    }
+    if (user.position !== "principal" && user.position !== "vice_principal") {
+      setCreditBalance(null);
+      return;
+    }
+
+    setLoadingCreditBalance(true);
+    try {
+      const res = await request<any>({
+        path: "/api/credits/balance",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) {
+        setCreditBalance(null);
+        return;
+      }
+      const body: any = res.data || {};
+      const data = body.data || body;
+      setCreditBalance(Number(data?.balance ?? 0));
+    } catch {
+      setCreditBalance(null);
+    } finally {
+      setLoadingCreditBalance(false);
+    }
+  }, [token, user]);
+
+  useEffect(() => {
+    fetchCreditBalance();
+  }, [fetchCreditBalance]);
+
+  useEffect(() => {
+    const onCreditsUpdated = () => {
+      fetchCreditBalance();
+    };
+
+    window.addEventListener("abuts:credits:updated", onCreditsUpdated);
+    return () => {
+      window.removeEventListener("abuts:credits:updated", onCreditsUpdated);
+    };
+  }, [fetchCreditBalance]);
 
   useEffect(() => {
     if (!user) return;
@@ -239,57 +290,20 @@ export const DashboardLayout = () => {
             return;
           }
 
-          // 주대표인 경우: 사업장/직원/배송정보 확인
-          try {
-            const [orgRes, profileRes] = await Promise.all([
-              request<any>({
-                path: "/api/requestor-organizations/me",
-                method: "GET",
-                token,
-              }),
-              request<any>({
-                path: "/api/users/profile",
-                method: "GET",
-                token,
-              }),
-            ]);
-
-            const orgData = orgRes.ok ? (orgRes.data as any)?.data : null;
-            const userData = profileRes.ok
-              ? (profileRes.data as any)?.data
-              : null;
-
-            const hasOrg = !!orgData?.organization?.name;
-            const hasEmployee = !!userData?.name && !!userData?.phoneNumber;
-            let hasShipping = true;
-            try {
-              const key = `abutsfit:shipping-policy:v1:${String(
-                user?.email || "guest"
-              )}`;
-              hasShipping = !!localStorage.getItem(key);
-            } catch {
-              hasShipping = true;
-            }
-
-            if (!hasOrg) {
-              navigate("/dashboard/settings?tab=business");
-              return;
-            }
-
-            if (!hasEmployee) {
-              navigate("/dashboard/settings?tab=profile");
-              return;
-            }
-
-            if (!hasShipping) {
-              navigate("/dashboard/settings?tab=shipping");
-              return;
-            }
-          } catch {
-            // 정보 확인 실패 시 결제 페이지로 이동
-          }
-
-          navigate("/dashboard/settings?tab=payment");
+          toast({
+            title: "크레딧 부족",
+            description: "크레딧을 충전한 뒤 다시 시도해주세요.",
+            variant: "destructive",
+            duration: 5000,
+            action: (
+              <ToastAction
+                altText="크레딧 충전하기"
+                onClick={() => navigate("/dashboard/settings?tab=payment")}
+              >
+                충전하기
+              </ToastAction>
+            ),
+          });
           return;
         }
 
@@ -304,7 +318,19 @@ export const DashboardLayout = () => {
           // ignore
         }
 
-        navigate("/dashboard/settings?tab=payment");
+        toast({
+          title: "크레딧이 부족할 수 있어요",
+          description: "곧 크레딧이 소진될 수 있습니다. 미리 충전해주세요.",
+          duration: 5000,
+          action: (
+            <ToastAction
+              altText="크레딧 충전하기"
+              onClick={() => navigate("/dashboard/settings?tab=payment")}
+            >
+              충전하기
+            </ToastAction>
+          ),
+        });
       } catch {
         // ignore
       }
@@ -432,6 +458,24 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4">
+            {user.role === "requestor" &&
+              (user.position === "principal" ||
+                user.position === "vice_principal") && (
+                <button
+                  type="button"
+                  className="w-full mb-3 rounded-lg border border-border bg-background/60 px-3 py-2 text-left hover:bg-muted/60 transition-colors"
+                  onClick={() => navigate("/dashboard/settings?tab=payment")}
+                >
+                  <div className="text-xs text-muted-foreground">
+                    보유 크레딧
+                  </div>
+                  <div className="mt-1 text-sm font-semibold">
+                    {loadingCreditBalance
+                      ? "불러오는 중..."
+                      : `${Number(creditBalance || 0).toLocaleString()}원`}
+                  </div>
+                </button>
+              )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
