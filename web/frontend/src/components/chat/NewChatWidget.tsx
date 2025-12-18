@@ -34,6 +34,7 @@ export const NewChatWidget = () => {
   const [pendingFiles, setPendingFiles] = useState<TempUploadedFile[]>([]);
   const [requestPicks, setRequestPicks] = useState<RequestPickItem[]>([]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const didRefreshUnreadRef = useRef(false);
   const { uploadFiles } = useS3TempUpload({ token });
 
   useEffect(() => {
@@ -122,11 +123,18 @@ export const NewChatWidget = () => {
   }, [user?.mockUserId, user?.id]);
 
   useEffect(() => {
+    if (isOpen) return;
+    didRefreshUnreadRef.current = false;
+  }, [isOpen]);
+
+  useEffect(() => {
     if (!token || !isAuthenticated) return;
     if (isOpen) return;
     if (supportRoomDisabled) return;
 
     const tick = async () => {
+      if (document.visibilityState !== "visible") return;
+      if (typeof window !== "undefined" && !window.document.hasFocus()) return;
       try {
         const roomRes = await apiFetch<any>({
           path: "/api/chats/support-room",
@@ -147,8 +155,7 @@ export const NewChatWidget = () => {
       }
     };
 
-    void tick();
-    const id = window.setInterval(tick, 5000);
+    const id = window.setInterval(tick, 60000);
     return () => window.clearInterval(id);
   }, [token, isAuthenticated, isOpen, supportRoomDisabled]);
 
@@ -157,6 +164,7 @@ export const NewChatWidget = () => {
       if (!isOpen || !roomId || !token) return;
       if (messagesLoading) return;
       if (supportRoomDisabled) return;
+      if (didRefreshUnreadRef.current) return;
       try {
         const roomRes = await apiFetch<any>({
           path: "/api/chats/support-room",
@@ -167,6 +175,7 @@ export const NewChatWidget = () => {
         const roomBody = roomRes.data || {};
         const roomData = (roomBody as any)?.data || roomBody;
         setRoom(roomData as ChatRoom);
+        didRefreshUnreadRef.current = true;
       } catch {
         // ignore
       }
