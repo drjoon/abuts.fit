@@ -1015,6 +1015,15 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   handleChangePassword();
                 }}
               >
+                <input
+                  type="text"
+                  name="username"
+                  value={accountData.email}
+                  readOnly
+                  autoComplete="username"
+                  className="sr-only"
+                  tabIndex={-1}
+                />
                 <div className="space-y-2">
                   <Label htmlFor="currentPassword">현재 비밀번호</Label>
                   <Input
