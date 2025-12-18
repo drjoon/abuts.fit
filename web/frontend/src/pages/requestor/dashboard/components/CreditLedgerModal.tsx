@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +37,7 @@ type CreditLedgerItem = {
   amount: number;
   refType?: string;
   refId?: string | null;
+  refRequestId?: string;
   uniqueKey: string;
   createdAt: string;
 };
@@ -88,6 +90,7 @@ export const CreditLedgerModal = ({
   open,
   onOpenChange,
 }: CreditLedgerModalProps) => {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { token, user } = useAuthStore();
 
@@ -183,7 +186,7 @@ export const CreditLedgerModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-visible">
+      <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader className="pb-2">
           <DialogTitle className="text-lg">크레딧 사용 내역</DialogTitle>
         </DialogHeader>
@@ -193,7 +196,7 @@ export const CreditLedgerModal = ({
             크레딧 내역은 주대표/부대표만 확인할 수 있습니다.
           </div>
         ) : (
-          <div className="flex flex-col gap-3 min-h-0">
+          <div className="flex flex-col gap-3 min-h-0 flex-1">
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2 py-0.5">
@@ -230,7 +233,25 @@ export const CreditLedgerModal = ({
                 </div>
 
                 <div className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-                  {loading ? "불러오는 중..." : `${total.toLocaleString()}건`}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => {
+                        onOpenChange(false);
+                        navigate("/dashboard/settings?tab=payment");
+                      }}
+                      disabled={loading}
+                    >
+                      충전하기
+                    </Button>
+                    <span>
+                      {loading
+                        ? "불러오는 중..."
+                        : `${total.toLocaleString()}건`}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -258,7 +279,7 @@ export const CreditLedgerModal = ({
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-auto rounded-md border">
+            <div className="flex-1 min-h-0 overflow-y-scroll overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -291,7 +312,8 @@ export const CreditLedgerModal = ({
                         <TableCell className="text-xs">
                           <div className="flex flex-col leading-4">
                             <span className="font-mono text-xs font-semibold">
-                              {formatShortCode(String(r.uniqueKey || ""))}
+                              {String(r.refRequestId || "").trim() ||
+                                formatShortCode(String(r.uniqueKey || ""))}
                             </span>
                             <span className="text-[11px] text-muted-foreground">
                               {String(r.refType || "-")}

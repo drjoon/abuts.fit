@@ -458,24 +458,6 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4">
-            {user.role === "requestor" &&
-              (user.position === "principal" ||
-                user.position === "vice_principal") && (
-                <button
-                  type="button"
-                  className="w-full mb-3 rounded-lg border border-border bg-background/60 px-3 py-2 text-left hover:bg-muted/60 transition-colors"
-                  onClick={() => navigate("/dashboard/settings?tab=payment")}
-                >
-                  <div className="text-xs text-muted-foreground">
-                    보유 크레딧
-                  </div>
-                  <div className="mt-1 text-sm font-semibold">
-                    {loadingCreditBalance
-                      ? "불러오는 중..."
-                      : `${Number(creditBalance || 0).toLocaleString()}원`}
-                  </div>
-                </button>
-              )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -739,6 +721,8 @@ export const DashboardLayout = () => {
                 setWorksheetSearch,
                 showCompleted,
                 setShowCompleted,
+                creditBalance,
+                loadingCreditBalance,
               }}
             />
           </div>

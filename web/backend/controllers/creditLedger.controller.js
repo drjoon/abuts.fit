@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import CreditLedger from "../models/creditLedger.model.js";
+import Request from "../models/request.model.js";
 
 function parsePeriod(period) {
   const p = String(period || "").trim();
@@ -91,6 +92,18 @@ export async function listMyCreditLedger(req, res) {
       ors.push({ refId: new mongoose.Types.ObjectId(qRaw) });
     }
 
+    const looksLikeRequestId = /^\d{8}-\d{6}$/.test(qRaw);
+    if (looksLikeRequestId) {
+      const requestDoc = await Request.findOne({ requestId: qRaw })
+        .select({ _id: 1 })
+        .lean();
+      if (requestDoc?._id) {
+        ors.push({
+          refId: new mongoose.Types.ObjectId(String(requestDoc._id)),
+        });
+      }
+    }
+
     if (ors.length) {
       match.$or = ors;
     }
@@ -114,10 +127,46 @@ export async function listMyCreditLedger(req, res) {
       .lean(),
   ]);
 
+  const requestRefIds = Array.from(
+    new Set(
+      (items || [])
+        .filter(
+          (it) =>
+            String(it?.refType || "") === "REQUEST" &&
+            it?.refId &&
+            mongoose.Types.ObjectId.isValid(String(it.refId))
+        )
+        .map((it) => String(it.refId))
+    )
+  );
+
+  const refRequestIdById = new Map();
+  if (requestRefIds.length > 0) {
+    const requestDocs = await Request.find({
+      _id: { $in: requestRefIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    })
+      .select({ _id: 1, requestId: 1 })
+      .lean();
+
+    for (const doc of requestDocs || []) {
+      if (doc?._id) {
+        refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
+      }
+    }
+  }
+
+  const enrichedItems = (items || []).map((it) => {
+    if (String(it?.refType || "") !== "REQUEST") return it;
+    const refRequestId = it?.refId
+      ? refRequestIdById.get(String(it.refId)) || ""
+      : "";
+    return { ...it, refRequestId };
+  });
+
   return res.json({
     success: true,
     data: {
-      items,
+      items: enrichedItems,
       total,
       page,
       pageSize,

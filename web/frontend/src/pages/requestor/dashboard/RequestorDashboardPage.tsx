@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
@@ -23,10 +24,17 @@ import {
 } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { CreditLedgerModal } from "./components/CreditLedgerModal";
 
+type DashboardOutletContext = {
+  creditBalance: number | null;
+  loadingCreditBalance: boolean;
+};
+
 export const RequestorDashboardPage = () => {
   const { user, token } = useAuthStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { creditBalance, loadingCreditBalance } =
+    useOutletContext<DashboardOutletContext>();
 
   const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "all">("30d");
   const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
@@ -276,7 +284,11 @@ export const RequestorDashboardPage = () => {
                 className="h-8"
                 onClick={() => setCreditLedgerOpen(true)}
               >
-                크레딧 사용 내역
+                {loadingCreditBalance
+                  ? "보유 크레딧: ..."
+                  : `보유 크레딧: ${Number(
+                      creditBalance || 0
+                    ).toLocaleString()}원`}
               </Button>
             )}
           </div>

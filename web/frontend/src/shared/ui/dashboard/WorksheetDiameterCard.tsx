@@ -35,7 +35,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
 
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-0">
         <CardTitle className="text-md font-medium mb-2">
           커스텀 어벗먼트 최대 직경별 진행 갯수
           <p className="mt-1 text-[11px] text-muted-foreground text-center">
@@ -78,7 +78,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
           })}
         </div>
         <p className="mt-3 text-xs text-muted-foreground text-right">
-          총 {total.toLocaleString()}건 대기중
+          총 {total.toLocaleString()}건 진행중
         </p>
       </CardContent>
     </Card>
