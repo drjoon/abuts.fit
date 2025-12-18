@@ -782,7 +782,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                     ? "추천 정보를 계산하는 중..."
                     : spendInsights?.estimatedDaysFor500k
                     ? `50만원(공급가) 예상 소진: 약 ${spendInsights.estimatedDaysFor500k}일`
-                    : "사용 내역이 부족하여 50만원 기준으로 안내합니다."}
+                    : "최근 사용 내역이 부족하여 예상 소진일을 계산할 수 없습니다."}
                 </div>
               </div>
 

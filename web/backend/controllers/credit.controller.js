@@ -510,7 +510,9 @@ export async function getMyCreditSpendInsights(req, res) {
   const avgMonthlySpendSupply = spentSupply90 > 0 ? spentSupply90 / 3 : 0;
 
   const estimatedDaysFor500k =
-    avgDailySpendSupply > 0 ? Math.round(500000 / avgDailySpendSupply) : null;
+    avgDailySpendSupply > 0
+      ? Math.max(1, Math.ceil(500000 / avgDailySpendSupply))
+      : null;
 
   const recommendedOneMonthSupply = roundUpUnit(avgMonthlySpendSupply, 500000);
   const recommendedThreeMonthsSupply = roundUpUnit(

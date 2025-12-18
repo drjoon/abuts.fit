@@ -9,9 +9,10 @@ export type RequestorDashboardStat = {
 
 type Props = {
   stats: RequestorDashboardStat[];
+  onCardClick?: (stat: RequestorDashboardStat) => void;
 };
 
-export const RequestorDashboardStatsCards = ({ stats }: Props) => {
+export const RequestorDashboardStatsCards = ({ stats, onCardClick }: Props) => {
   return (
     <>
       {stats.map((stat, index) => {
@@ -20,6 +21,7 @@ export const RequestorDashboardStatsCards = ({ stats }: Props) => {
           <Card
             key={index}
             className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
+            onClick={() => onCardClick?.(stat)}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-md font-medium">

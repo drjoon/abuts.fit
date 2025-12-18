@@ -23,6 +23,12 @@ import {
   type DiameterStats,
 } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { CreditLedgerModal } from "./components/CreditLedgerModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type DashboardOutletContext = {
   creditBalance: number | null;
@@ -48,6 +54,58 @@ export const RequestorDashboardPage = () => {
     useState("");
   const [editingImplantSystem, setEditingImplantSystem] = useState("");
   const [editingImplantType, setEditingImplantType] = useState("");
+
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
+  const [statsModalLabel, setStatsModalLabel] = useState<string>("");
+
+  const statusGroupByLabel: Record<string, string[] | null> = {
+    // 현재 카드 표시값과 일치하도록(요약 통계 기준) 그룹을 정의
+    // '의뢰접수' 카드는 실제로 totalRequests(전체)라 status filter 없이 전체를 보여준다.
+    의뢰접수: null,
+    생산중: ["가공전", "가공후"],
+    배송중: ["배송중"],
+    완료: ["완료"],
+  };
+
+  const filterAbutmentRequest = (r: any) => {
+    if (!r) return false;
+    if (String(r.status || "") === "취소") return false;
+    const ci = r.caseInfos || {};
+    const implantSystem = String(ci.implantSystem || "").trim();
+    return Boolean(implantSystem);
+  };
+
+  const getModalItems = (all: any[], label: string) => {
+    const group = statusGroupByLabel[label];
+    const base = (all || []).filter(filterAbutmentRequest);
+    if (!group) return base;
+    return base.filter((r) => group.includes(String(r.status || "")));
+  };
+
+  const { data: myRequestsForModal, isFetching: loadingMyRequestsForModal } =
+    useQuery({
+      queryKey: ["requestor-dashboard-stats-modal", statsModalLabel],
+      queryFn: async () => {
+        const res = await apiFetch<any>({
+          path: "/api/requests/my?page=1&limit=50&sortBy=createdAt&sortOrder=desc",
+          method: "GET",
+          token,
+          headers: token
+            ? {
+                "x-mock-role": "requestor",
+              }
+            : undefined,
+        });
+        if (!res.ok) throw new Error("의뢰 목록 조회에 실패했습니다.");
+        const body = res.data;
+        const data = body?.data || body;
+        return Array.isArray(data?.requests) ? data.requests : [];
+      },
+      enabled: statsModalOpen && !!token,
+      retry: false,
+    });
+
+  const modalItems = getModalItems(myRequestsForModal || [], statsModalLabel);
 
   const {
     data: summaryResponse,
@@ -293,7 +351,15 @@ export const RequestorDashboardPage = () => {
             )}
           </div>
         }
-        stats={<RequestorDashboardStatsCards stats={stats} />}
+        stats={
+          <RequestorDashboardStatsCards
+            stats={stats}
+            onCardClick={(stat) => {
+              setStatsModalLabel(stat.label);
+              setStatsModalOpen(true);
+            }}
+          />
+        }
         topSection={
           <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
@@ -422,6 +488,51 @@ export const RequestorDashboardPage = () => {
         open={creditLedgerOpen}
         onOpenChange={setCreditLedgerOpen}
       />
+
+      <Dialog open={statsModalOpen} onOpenChange={setStatsModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{statsModalLabel} 세부 내역</DialogTitle>
+          </DialogHeader>
+
+          {loadingMyRequestsForModal ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : modalItems.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              표시할 내역이 없습니다.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
+              {modalItems.map((r: any) => {
+                const ci = r?.caseInfos || {};
+                const title =
+                  String(r?.title || "").trim() ||
+                  [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
+                  String(r?.requestId || "");
+                return (
+                  <button
+                    key={String(r?._id || r?.id || Math.random())}
+                    type="button"
+                    className="w-full text-left rounded-md border border-gray-200 bg-white px-3 py-2 hover:bg-gray-50"
+                    onClick={() => {
+                      setStatsModalOpen(false);
+                      openEditDialogFromRequest(r);
+                    }}
+                  >
+                    <div className="text-sm font-semibold text-gray-900 truncate">
+                      {title}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      상태: {String(r?.status || "")} / 의뢰번호:{" "}
+                      {String(r?.requestId || "")}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

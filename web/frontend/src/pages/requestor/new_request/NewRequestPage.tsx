@@ -168,6 +168,39 @@ export const NewRequestPage = () => {
       ? duplicatePrompt.duplicates[duplicateCursor] || null
       : null;
 
+  const getFileKeyByDraftCaseId = (draftCaseId: string) => {
+    const found = (files || []).find(
+      (f) => String((f as any)?._draftCaseInfoId || "") === String(draftCaseId)
+    );
+    if (!found) return null;
+    return `${found.name}:${found.size}`;
+  };
+
+  const skippedFileKeys = useMemo(() => {
+    const keys: string[] = [];
+    for (const r of duplicateResolutions) {
+      if (r.strategy !== "skip") continue;
+      const k = getFileKeyByDraftCaseId(r.caseId);
+      if (k) keys.push(k);
+    }
+    return Array.from(new Set(keys));
+  }, [duplicateResolutions, files]);
+
+  const currentDuplicateNewCaseInfo = useMemo(() => {
+    if (!currentDuplicate?.caseId) return null;
+    const fileKey = getFileKeyByDraftCaseId(String(currentDuplicate.caseId));
+    const file = fileKey
+      ? (files || []).find((f) => `${f.name}:${f.size}` === fileKey)
+      : null;
+    const info = fileKey ? caseInfosMap?.[fileKey] : undefined;
+    return {
+      fileName: file?.name || "",
+      patientName: String(info?.patientName || ""),
+      tooth: String(info?.tooth || ""),
+      clinicName: String(info?.clinicName || ""),
+    };
+  }, [currentDuplicate?.caseId, files, caseInfosMap]);
+
   const applyDuplicateChoice = async (choice: {
     strategy: "skip" | "replace" | "remake";
     caseId: string;
@@ -284,6 +317,31 @@ export const NewRequestPage = () => {
               <div className="text-sm text-gray-700">
                 동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다.
               </div>
+              {currentDuplicateNewCaseInfo && (
+                <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-gray-800">
+                  <div className="font-semibold mb-1">현재 케이스(새 의뢰)</div>
+                  {currentDuplicateNewCaseInfo.fileName && (
+                    <div className="truncate">
+                      파일: {currentDuplicateNewCaseInfo.fileName}
+                    </div>
+                  )}
+                  {(currentDuplicateNewCaseInfo.patientName ||
+                    currentDuplicateNewCaseInfo.tooth ||
+                    currentDuplicateNewCaseInfo.clinicName) && (
+                    <div className="truncate">
+                      {currentDuplicateNewCaseInfo.clinicName
+                        ? `치과: ${currentDuplicateNewCaseInfo.clinicName}`
+                        : ""}
+                      {currentDuplicateNewCaseInfo.patientName
+                        ? ` / 환자: ${currentDuplicateNewCaseInfo.patientName}`
+                        : ""}
+                      {currentDuplicateNewCaseInfo.tooth
+                        ? ` / 치아: ${currentDuplicateNewCaseInfo.tooth}`
+                        : ""}
+                    </div>
+                  )}
+                </div>
+              )}
               {currentDuplicate && (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
                   <div className="font-semibold mb-1">
@@ -349,113 +407,143 @@ export const NewRequestPage = () => {
           })()}
           onClose={() => setDuplicatePrompt(null)}
         />
+        <NewRequestDetailsSection
+          files={files}
+          selectedPreviewIndex={selectedPreviewIndex}
+          setSelectedPreviewIndex={setSelectedPreviewIndex}
+          caseInfos={caseInfos}
+          setCaseInfos={setCaseInfos}
+          caseInfosMap={caseInfosMap}
+          updateCaseInfos={updateCaseInfos}
+          connections={connections}
+          typeOptions={typeOptions}
+          implantManufacturer={implantManufacturer}
+          setImplantManufacturer={setImplantManufacturer}
+          implantSystem={implantSystem}
+          setImplantSystem={setImplantSystem}
+          implantType={implantType}
+          setImplantType={setImplantType}
+          syncSelectedConnection={syncSelectedConnection}
+          fileVerificationStatus={fileVerificationStatus}
+          setFileVerificationStatus={setFileVerificationStatus}
+          highlightUnverifiedArrows={highlightUnverifiedArrows}
+          setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
+          handleRemoveFile={handleRemoveFile}
+          clinicNameOptions={clinicNameOptions}
+          patientNameOptions={patientNameOptions}
+          teethOptions={teethOptions}
+          addClinicPreset={addClinicPreset}
+          clearAllClinicPresets={clearAllClinicPresets}
+          addPatientPreset={addPatientPreset}
+          clearAllPatientPresets={clearAllPatientPresets}
+          addTeethPreset={addTeethPreset}
+          clearAllTeethPresets={clearAllTeethPresets}
+          handleAddOrSelectClinic={handleAddOrSelectClinic}
+          toast={toast}
+          highlight={highlightStep === "details"}
+          sectionHighlightClass={sectionHighlightClass}
+          disabledFileKeys={skippedFileKeys}
+        />
 
-        {(() => {
-          const hasSelectedFile =
-            selectedPreviewIndex !== null && !!files[selectedPreviewIndex];
-          const hasCaseInfos = !!caseInfos;
-          return hasSelectedFile || hasCaseInfos;
-        })() && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 mt-2">
-            <NewRequestUploadSection
-              isDragOver={isDragOver}
-              highlight={highlightStep === "upload"}
-              sectionHighlightClass={sectionHighlightClass}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onFilesSelected={(selectedFiles) => {
-                const filesToUpload: File[] = [];
-                const rejectedFiles: string[] = [];
+        <div className="grid grid-cols-1 lg:grid-cols-2 mt-2">
+          <NewRequestUploadSection
+            isDragOver={isDragOver}
+            highlight={highlightStep === "upload"}
+            sectionHighlightClass={sectionHighlightClass}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onFilesSelected={(selectedFiles) => {
+              const filesToUpload: File[] = [];
+              const rejectedFiles: string[] = [];
 
-                selectedFiles.forEach((file) => {
-                  const validation = validateFileForUpload(file);
-                  if (validation.valid) {
-                    filesToUpload.push(file);
-                  } else {
-                    rejectedFiles.push(file.name);
-                  }
-                });
-
-                if (rejectedFiles.length > 0) {
-                  toast({
-                    title: "파일 업로드 불가",
-                    description: `${rejectedFiles.join(
-                      ", "
-                    )} - 1MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.`,
-                    variant: "destructive",
-                    duration: 4000,
-                  });
+              selectedFiles.forEach((file) => {
+                const validation = validateFileForUpload(file);
+                if (validation.valid) {
+                  filesToUpload.push(file);
+                } else {
+                  rejectedFiles.push(file.name);
                 }
+              });
 
-                if (filesToUpload.length > 0) {
-                  handleUpload(filesToUpload);
-                }
-              }}
-            />
-
-            <NewRequestShippingSection
-              caseInfos={caseInfos}
-              setCaseInfos={setCaseInfos}
-              disabled={!hasVerifiedFile}
-              highlight={highlightStep === "shipping"}
-              sectionHighlightClass={sectionHighlightClass}
-              bulkShippingSummary={bulkShippingSummary}
-              normalArrivalDate={normalArrivalDate}
-              expressArrivalDate={expressArrivalDate}
-              onOpenShippingSettings={() =>
-                navigate("/dashboard/settings?tab=shipping")
-              }
-              onSelectExpress={async () => {
-                const guessShipDate = calculateExpressDate(
-                  caseInfos?.maxDiameter
-                );
-                try {
-                  const res = await apiFetch<any>({
-                    path: `/api/requests/shipping-estimate?mode=express&shipYmd=${encodeURIComponent(
-                      guessShipDate
-                    )}`,
-                    method: "GET",
-                  });
-
-                  const shipDateYmd =
-                    res.ok && res.data?.success
-                      ? res.data?.data?.shipDateYmd
-                      : guessShipDate;
-
-                  setCaseInfos({
-                    shippingMode: "express",
-                    requestedShipDate: shipDateYmd,
-                  });
-                } catch {
-                  setCaseInfos({
-                    shippingMode: "express",
-                    requestedShipDate: guessShipDate,
-                  });
-                }
-              }}
-              onSubmit={() => {
-                if (unverifiedCount > 0) {
-                  setHighlightUnverifiedArrows(true);
-                  toast({
-                    title: "확인 필요",
-                    description: `모든 파일을 확인해서 [확인후]로 변경해주세요.`,
-                    duration: 5000,
-                  });
-                  setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
-                  return;
-                }
+              if (rejectedFiles.length > 0) {
                 toast({
-                  title: "의뢰 접수중",
-                  description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
-                  duration: 3000,
+                  title: "파일 업로드 불가",
+                  description: `${rejectedFiles.join(
+                    ", "
+                  )} - 1MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.`,
+                  variant: "destructive",
+                  duration: 4000,
                 });
-                handleSubmit();
-              }}
-              onCancelAll={handleCancelAll}
-            />
-          </div>
-        )}
+              }
+
+              if (filesToUpload.length > 0) {
+                handleUpload(filesToUpload);
+              }
+            }}
+          />
+
+          <NewRequestShippingSection
+            caseInfos={caseInfos}
+            setCaseInfos={setCaseInfos}
+            disabled={!hasVerifiedFile}
+            highlight={highlightStep === "shipping"}
+            sectionHighlightClass={sectionHighlightClass}
+            bulkShippingSummary={bulkShippingSummary}
+            normalArrivalDate={normalArrivalDate}
+            expressArrivalDate={expressArrivalDate}
+            onOpenShippingSettings={() =>
+              navigate("/dashboard/settings?tab=shipping")
+            }
+            onSelectExpress={async () => {
+              const guessShipDate = calculateExpressDate(
+                caseInfos?.maxDiameter
+              );
+              try {
+                const res = await apiFetch<any>({
+                  path: `/api/requests/shipping-estimate?mode=express&shipYmd=${encodeURIComponent(
+                    guessShipDate
+                  )}`,
+                  method: "GET",
+                });
+
+                const shipDateYmd =
+                  res.ok && res.data?.success
+                    ? res.data?.data?.shipDateYmd
+                    : guessShipDate;
+
+                setCaseInfos({
+                  shippingMode: "express",
+                  requestedShipDate: shipDateYmd,
+                });
+              } catch {
+                setCaseInfos({
+                  shippingMode: "express",
+                  requestedShipDate: guessShipDate,
+                });
+              }
+            }}
+            onSubmit={() => {
+              if (unverifiedCount > 0) {
+                setHighlightUnverifiedArrows(true);
+                toast({
+                  title: "확인 필요",
+                  description: `모든 파일을 확인해서 [확인후]로 변경해주세요.`,
+                  duration: 5000,
+                });
+                setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
+                return;
+              }
+              toast({
+                title: "의뢰 접수중",
+                description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
+                duration: 3000,
+              });
+              handleSubmit();
+            }}
+            onCancelAll={handleCancelAll}
+          />
+        </div>
       </div>
     </div>
   );
