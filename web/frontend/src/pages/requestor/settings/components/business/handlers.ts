@@ -142,7 +142,7 @@ export const handleSave = async (params: HandleSaveParams) => {
       const body: any = res.data || {};
       const reason = String(body?.reason || "").trim();
       const serverMessage = String(body?.message || "").trim();
-      if (res.status === 409 && reason === "duplicate_business_number") {
+      if (reason === "duplicate_business_number") {
         setErrors((prev) => ({ ...prev, businessNumber: true }));
         toast({
           title: "이미 등록된 사업자등록번호입니다",
