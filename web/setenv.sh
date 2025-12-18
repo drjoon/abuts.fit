@@ -6,8 +6,8 @@ set -euo pipefail
 ENV_NAME=${1:-book2}
 
 # .env 파일 경로
-ENV_FILE="web/backend/test.env"
-# ENV_FILE="web/backend/prod.env" # production
+ENV_FILE="backend/test.env"
+# ENV_FILE="backend/prod.env" # production
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "환경 파일을 찾을 수 없습니다: $ENV_FILE" >&2

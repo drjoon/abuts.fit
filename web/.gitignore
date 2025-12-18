@@ -1,11 +1,16 @@
-.git
 node_modules
-web/frontend/node_modules
-*.zip
+dist
 .DS_Store
+stats.html
 *.env
-*.env.*
+.env.*
+
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+cam
+docs
+hi-link
+

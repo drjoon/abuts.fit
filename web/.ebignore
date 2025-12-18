@@ -1,6 +1,8 @@
 .git
 node_modules
-web/frontend/node_modules
+frontend/.git
+frontend/node_modules
+backend/node_modules
 *.zip
 .DS_Store
 *.env

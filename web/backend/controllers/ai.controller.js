@@ -3,13 +3,32 @@ import { shouldBlockExternalCall } from "../utils/rateGuard.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import s3Utils from "../utils/s3.utils.js";
 
-const apiKey = process.env.GOOGLE_API_KEY;
+// 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
+let _apiKey = null;
+let _genAI = null;
+let _initialized = false;
 
-if (!apiKey) {
-  console.warn(
-    "[AI] GOOGLE_API_KEY is not set. Gemini filename parsing will be disabled."
-  );
-}
+const getGenAI = () => {
+  if (!_initialized) {
+    _initialized = true;
+    _apiKey = process.env.GOOGLE_API_KEY;
+    if (!_apiKey) {
+      console.warn(
+        "[AI] GOOGLE_API_KEY is not set. Gemini filename parsing will be disabled."
+      );
+    } else {
+      try {
+        _genAI = new GoogleGenerativeAI(_apiKey);
+      } catch (e) {
+        console.warn(
+          "[AI] Failed to initialize GoogleGenerativeAI:",
+          e?.message || e
+        );
+      }
+    }
+  }
+  return _genAI;
+};
 
 export async function parseBusinessLicense(req, res) {
   try {
@@ -94,6 +113,7 @@ export async function parseBusinessLicense(req, res) {
       });
     }
 
+    const genAI = getGenAI();
     if (!genAI) {
       const extracted = {};
       const verification = {
@@ -290,17 +310,7 @@ export async function parseBusinessLicense(req, res) {
   }
 }
 
-let genAI = null;
-if (apiKey) {
-  try {
-    genAI = new GoogleGenerativeAI(apiKey);
-  } catch (e) {
-    console.warn(
-      "[AI] Failed to initialize GoogleGenerativeAI:",
-      e?.message || e
-    );
-  }
-}
+// genAI는 이제 getGenAI()를 통해 지연 초기화됨
 
 const buildFallbackFromFilenames = (filenames) =>
   filenames.map((name) => ({
@@ -381,6 +391,7 @@ export async function parseFilenames(req, res) {
       });
     }
 
+    const genAI = getGenAI();
     if (!genAI) {
       // Gemini 미구성 시에도 API는 살아 있으되, 단순히 기본 파싱만 수행
       const fallback = buildFallbackFromFilenames(filenames);

@@ -211,7 +211,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
         });
 
         const json: any = await res.json().catch(() => null);
-        if (!res.ok || !json?.success) return false;
+        if (!res.ok || !json?.success) {
+          console.error("[login] API error:", json?.message || "Unknown error");
+          return false;
+        }
 
         const data = json?.data || {};
         const token = String(data?.token || "");
@@ -219,17 +222,27 @@ export const useAuthStore = create<AuthState>((set, get) => {
           ? String(data.refreshToken)
           : null;
         const normalizedUser = normalizeApiUser(data?.user);
-        if (!token || !normalizedUser) return false;
+        if (!token || !normalizedUser) {
+          console.error("[login] Missing token or user:", {
+            token: !!token,
+            user: !!normalizedUser,
+          });
+          return false;
+        }
 
+        // localStorage에 먼저 저장
         try {
           localStorage.setItem(AUTH_TOKEN_KEY, token);
           if (refreshToken)
             localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
           localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
-        } catch {
-          // ignore
+          console.log("[login] Tokens saved to localStorage");
+        } catch (err) {
+          console.error("[login] localStorage save failed:", err);
+          return false;
         }
 
+        // 그 후 Zustand state 업데이트
         set({
           user: normalizedUser,
           isAuthenticated: true,
@@ -238,7 +251,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
         });
 
         return true;
-      } catch {
+      } catch (err) {
+        console.error("[login] Unexpected error:", err);
         return false;
       }
     },

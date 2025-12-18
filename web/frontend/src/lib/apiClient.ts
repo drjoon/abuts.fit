@@ -37,7 +37,17 @@ export async function apiFetch<T = any>(
     ...(headers || {}),
   };
 
-  if (token === "MOCK_DEV_TOKEN") {
+  // 토큰이 명시적으로 전달되지 않으면 localStorage에서 읽기
+  let effectiveToken = token;
+  if (!effectiveToken) {
+    try {
+      effectiveToken = localStorage.getItem("abuts_auth_token") || undefined;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (effectiveToken === "MOCK_DEV_TOKEN") {
     try {
       const stateUser = useAuthStore.getState().user;
 
@@ -101,8 +111,8 @@ export async function apiFetch<T = any>(
     (finalHeaders as any)[k] = encodeURIComponent(v);
   }
 
-  if (token) {
-    (finalHeaders as any)["Authorization"] = `Bearer ${token}`;
+  if (effectiveToken) {
+    (finalHeaders as any)["Authorization"] = `Bearer ${effectiveToken}`;
   }
 
   let body: BodyInit | undefined = rest.body as BodyInit | undefined;

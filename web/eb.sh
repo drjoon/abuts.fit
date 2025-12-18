@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WEB_DIR="$ROOT_DIR/web"
+WEB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARENT_DIR="$(dirname "$WEB_DIR")"
 FRONTEND_DIR="$WEB_DIR/frontend"
 BACKEND_DIR="$WEB_DIR/backend"
+DIST_DIR="$FRONTEND_DIR/dist"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+ZIP_NAME="deploy-$TIMESTAMP.zip"
+ZIP_PATH="$PARENT_DIR/$ZIP_NAME"
 
 # 환경 모드: test (기본값) 또는 prod
 ENV_MODE="${1:-test}"
@@ -50,15 +54,41 @@ command -v eb >/dev/null 2>&1 || error "Elastic Beanstalk CLI(eb)가 설치되�
 info "프론트엔드 빌드"
 (cd "$FRONTEND_DIR" && npm install && npm run build)
 
-# .elasticbeanstalk 설정을 web 디렉토리로 복사 (EB CLI가 인식하도록)
-info "EB 설정 복사"
-if [[ -d "$ROOT_DIR/.elasticbeanstalk" ]]; then
-  # 기존 설정이 있으면 제거 후 복사 (항상 최신 상태 유지)
-  rm -rf "$WEB_DIR/.elasticbeanstalk"
-  cp -r "$ROOT_DIR/.elasticbeanstalk" "$WEB_DIR/"
-else
-  error "루트 디렉토리에 .elasticbeanstalk 설정이 없습니다."
-fi
+info "이전 dist 포함 zip 정리"
+find "$PARENT_DIR" -maxdepth 1 -name 'deploy-*.zip' -type f -mtime +3 -delete || true
+
+info "zip 패키지 생성"
+cat <<'EOF' > "$PARENT_DIR/.ebignore"
+.git
+node_modules
+frontend/node_modules
+*.zip
+.DS_Store
+*.env
+*.env.*
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+EOF
+
+rm -f "$ZIP_PATH"
+
+# web 폴더 내용을 zip 루트로 포함 (Procfile이 zip 루트에 위치하도록)
+(cd "$WEB_DIR" && zip -r "$ZIP_PATH" \
+  backend \
+  package.json \
+  package-lock.json \
+  Procfile \
+  .platform \
+  -x "backend/node_modules/*" \
+  -x "backend/.git/*" \
+  -x "*/.DS_Store" \
+  -x "*.env" \
+  -x "*.env.*")
+
+info "zip에 dist 포함"
+(cd "$WEB_DIR" && zip -ur "$ZIP_PATH" frontend/dist)
 
 # 환경 파일에서 환경변수 읽기
 info "환경변수 파싱 ($ENV_MODE.env)"
@@ -82,19 +112,12 @@ else
   ENV_VARS="$ENV_VARS NODE_ENV=test"
 fi
 
-# web 디렉토리로 이동하여 배포 수행
-info "EB 배포 시작 (web 디렉토리 기준)"
-cd "$WEB_DIR"
-
-TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-
-# EB 배포
-# web/.ebignore가 존재하므로, eb deploy는 이를 참조하여 zip을 생성함.
-# --staged 없이 실행하여 로컬 파일 시스템 상태(dist 포함)를 배포.
-eb deploy abutsfit --label "deploy-$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)" || error "eb deploy 실패"
+# 1. 먼저 앱 배포 (predeploy 훅에서 npm install 실행됨)
+info "EB 배포"
+eb deploy --staged --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)" || error "eb deploy 실패"
 
 # 2. 배포 후 환경변수 설정
 info "EBS 환경변수 적용 중..."
 eval "eb setenv $ENV_VARS" || error "환경변수 설정 실패"
 
-info "배포 완료"
+info "배포 완료: $ZIP_PATH ($ENV_MODE 환경)"

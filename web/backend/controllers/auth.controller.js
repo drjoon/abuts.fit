@@ -532,8 +532,15 @@ async function login(req, res) {
   try {
     const { email, password } = req.body;
 
+    // 이메일 정규화
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+
     // 이메일로 사용자 찾기
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email: normalizedEmail }).select(
+      "+password"
+    );
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -543,7 +550,9 @@ async function login(req, res) {
 
     // 비밀번호 확인
     try {
-      console.log(`로그인 시도: ${email}, 비밀번호 길이: ${password?.length}`);
+      console.log(
+        `로그인 시도: ${normalizedEmail}, 비밀번호 길이: ${password?.length}`
+      );
 
       // 비밀번호가 있는지 확인
       if (!user.password) {

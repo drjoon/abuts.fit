@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:5001}"
+BASE_URL="${BASE_URL:-http://localhost:8080}"
 
 TS="$(date +%s)"
 RAND="$RANDOM"
 
-PR_EMAIL="principal.${TS}.${RAND}@abuts.fit"
+PR_EMAIL="toss.test@abuts.fit"
 PR_PW="Password1234!"
 PR_NAME="테스트주대표"
 

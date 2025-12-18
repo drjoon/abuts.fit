@@ -72,6 +72,10 @@ const dbReady = connect(mongoUri)
   .then(async () => {
     if (process.env.NODE_ENV !== "test") {
       console.log(`MongoDB 연결 성공: ${mongoSource}`);
+      console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+      // URI에서 DB 이름만 추출하여 로그 (보안상 전체 URI는 출력하지 않음)
+      const dbName = mongoUri.split("/").pop()?.split("?")[0] || "unknown";
+      console.log(`연결된 DB: ${dbName}`);
     }
 
     if (

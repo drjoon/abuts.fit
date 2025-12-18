@@ -12,6 +12,18 @@ export const authenticate = async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      console.warn("[auth] Missing/invalid Authorization header", {
+        path: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+        forwardedFor: req.headers["x-forwarded-for"],
+        hasAuthorizationHeader: Boolean(req.headers.authorization),
+        headerKeys: Object.keys(req.headers || {}).sort(),
+      });
+      res.set("Cache-Control", "no-store");
+      res.set("Pragma", "no-cache");
+      res.set("Vary", "Authorization");
+      res.set("x-abuts-auth-reason", "missing_authorization");
       return res.status(401).json({
         success: false,
         message: "인증 토큰이 필요합니다.",
@@ -115,10 +127,32 @@ export const authenticate = async (req, res, next) => {
     }
 
     // 토큰 검증
-    const decoded = verifyToken(token);
+    let decoded;
+    try {
+      decoded = verifyToken(token);
+    } catch (tokenError) {
+      console.error("[auth] Token verification failed:", {
+        error: tokenError.message,
+        tokenLength: token.length,
+        jwtSecret: process.env.JWT_SECRET ? "SET" : "NOT_SET",
+      });
+      res.set("Cache-Control", "no-store");
+      res.set("Pragma", "no-cache");
+      res.set("Vary", "Authorization");
+      res.set("x-abuts-auth-reason", "token_verification_failed");
+      return res.status(401).json({
+        success: false,
+        message: "인증에 실패했습니다.",
+      });
+    }
 
     const userId = decoded?.userId;
     if (!userId || Array.isArray(userId)) {
+      console.error("[auth] Invalid userId in token:", { userId });
+      res.set("Cache-Control", "no-store");
+      res.set("Pragma", "no-cache");
+      res.set("Vary", "Authorization");
+      res.set("x-abuts-auth-reason", "invalid_user_id");
       return res.status(401).json({
         success: false,
         message: "인증에 실패했습니다.",
@@ -137,6 +171,10 @@ export const authenticate = async (req, res, next) => {
 
     // 사용자가 비활성화된 경우
     if (!user.active) {
+      res.set("Cache-Control", "no-store");
+      res.set("Pragma", "no-cache");
+      res.set("Vary", "Authorization");
+      res.set("x-abuts-auth-reason", "user_inactive");
       return res.status(401).json({
         success: false,
         message: "비활성화된 계정입니다.",
@@ -147,6 +185,10 @@ export const authenticate = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
+    res.set("Cache-Control", "no-store");
+    res.set("Pragma", "no-cache");
+    res.set("Vary", "Authorization");
+    res.set("x-abuts-auth-reason", "auth_middleware_error");
     return res.status(401).json({
       success: false,
       message: "인증에 실패했습니다.",
