@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
+import CreditLedger from "../../models/creditLedger.model.js";
 import {
   applyStatusMapping,
   buildRequestorOrgScopeFilter,
@@ -406,6 +407,48 @@ export async function updateRequestStatus(req, res) {
     }
 
     await request.save();
+
+    // 취소 시 크레딧 환불(차감 SPEND가 있는 경우에만)
+    if (status === "취소") {
+      const organizationId =
+        request.requestorOrganizationId || request.requestor?.organizationId;
+
+      if (organizationId) {
+        const spendRows = await CreditLedger.find({
+          organizationId,
+          type: "SPEND",
+          refType: "REQUEST",
+          refId: request._id,
+        })
+          .select({ amount: 1 })
+          .lean();
+
+        const totalSpend = (spendRows || []).reduce((acc, r) => {
+          const n = Number(r?.amount || 0);
+          return acc + (Number.isFinite(n) ? n : 0);
+        }, 0);
+
+        const refundAmount = Math.abs(totalSpend);
+        if (refundAmount > 0) {
+          const uniqueKey = `request:${String(request._id)}:cancel_refund`;
+          await CreditLedger.updateOne(
+            { uniqueKey },
+            {
+              $setOnInsert: {
+                organizationId,
+                userId: req.user?._id || null,
+                type: "REFUND",
+                amount: refundAmount,
+                refType: "REQUEST",
+                refId: request._id,
+                uniqueKey,
+              },
+            },
+            { upsert: true }
+          );
+        }
+      }
+    }
 
     res.status(200).json({
       success: true,

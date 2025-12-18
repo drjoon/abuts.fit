@@ -178,16 +178,21 @@ export const RequestorDashboardPage = () => {
         duration: 2000,
       });
 
-      await queryClient.invalidateQueries({
+      try {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("abuts:credits:updated"));
+        }
+      } catch {}
+
+      // UI는 즉시 해제하고, 데이터 갱신은 백그라운드에서 처리
+      void queryClient.invalidateQueries({
         queryKey: ["requestor-dashboard-summary-page"],
       });
-      await queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["requestor-my-requests"],
       });
-
-      // 화면 반영 보장
-      await refetchSummary();
-      await refetchBulk();
+      void refetchSummary();
+      void refetchBulk();
     } catch (error) {
       console.error("의뢰 취소 중 오류", error);
       toast({
