@@ -158,9 +158,80 @@ export const ServicePage = () => {
               </CardContent>
             </Card>
 
+            <Card id="pricing">
+              <CardHeader>
+                <CardTitle>5. 제작 의뢰 요금 산정 기준</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4 text-muted-foreground">
+                  <div>
+                    <div className="font-medium text-foreground mb-2">
+                      과금 단위
+                    </div>
+                    <ul className="list-disc list-inside space-y-2 ml-4">
+                      <li>
+                        판매 서비스는 <b>커스텀 어벗 제작 의뢰</b>이며, 기본
+                        과금 단위는
+                        <b> 1개(1치아 기준 1의뢰)</b>입니다.
+                      </li>
+                      <li>
+                        임플란트 제조사/시스템/유형 등 제작 사양은 의뢰 내용에
+                        포함되나, 현재는 사양/옵션별로 별도 추가금이 부과되지
+                        않습니다.
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div className="font-medium text-foreground mb-2">
+                      기본 단가 및 특가(고정가)
+                    </div>
+                    <ul className="list-disc list-inside space-y-2 ml-4">
+                      <li>
+                        기본 단가: <b>15,000원/개</b>
+                      </li>
+                      <li>
+                        재의뢰(리메이크/수정): 동일 치과·환자·치아 기준으로 최근
+                        90일 내 의뢰 이력이 있는 경우 <b>10,000원/개</b>
+                      </li>
+                      <li>
+                        런칭 이벤트(신규 기공소): 가입 승인일로부터 90일 동안
+                        <b> 10,000원/개</b> 고정
+                      </li>
+                      <li>
+                        <b>VAT(부가가치세) 및 배송비는 별도</b> 청구됩니다.
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <div className="font-medium text-foreground mb-2">
+                      주문량/리퍼럴 할인(자동)
+                    </div>
+                    <ul className="list-disc list-inside space-y-2 ml-4">
+                      <li>
+                        최근 30일 주문 건수(본인 주문 + 리퍼럴로 가입한
+                        기공소들의 주문) 합산 기준으로, <b>주문 1건당 10원</b>씩
+                        단가가 자동 할인됩니다.
+                      </li>
+                      <li>
+                        할인 한도는 <b>최대 5,000원</b>이며, 할인 한도 도달 시
+                        단가는
+                        <b> 10,000원/개</b>입니다.
+                      </li>
+                      <li>
+                        예) 최근 30일 합산 주문 500건 이상 → 15,000 - (500*10) =
+                        <b> 10,000원/개</b>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card id="refund">
               <CardHeader>
-                <CardTitle>5. 환불 정책</CardTitle>
+                <CardTitle>6. 환불 정책</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3 text-muted-foreground">
