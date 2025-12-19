@@ -215,3 +215,50 @@
 
 - **서비스 제공사**: 어벗츠 주식회사 (대표: 배태완)
 - **제조 파트너**: 애크로덴트
+
+### 6.9 회원가입 및 인증
+
+- **대상 경로**
+
+  - 기본 이메일 회원가입: `/signup`
+  - 리퍼럴 회원가입: `/signup?ref=...` 또는 `/signup?referredByUserId=...`
+  - 소셜 회원가입: `/oauth/callback` → `/signup?mode=social_new|social_complete`
+
+- **회원가입 위저드 (이메일/리퍼럴 전용)**
+
+  - Step 1: 가입 방법 선택 (Google, Kakao, Email 버튼)
+  - Step 2: 기본 정보 입력 (필수: `name`, `password`, `confirmPassword`)
+  - Step 3: 이메일 + 휴대폰 인증 (둘 다 인증 완료 필수)
+  - Step 4: 가입 완료 및 이동
+
+- **비밀번호 정책**
+
+  - 일반 이메일 가입(비소셜) 시: **길이 10자 이상 + 특수문자 1자 이상** 필수.
+
+- **이메일/휴대폰 인증 정책**
+
+  - 대상: `role=requestor` & 일반 회원가입
+  - 백엔드 `register` API 호출 전 `email`, `phoneNumber` 인증 완료 상태여야 함.
+  - API:
+    - 이메일 발송/검증: `POST /api/auth/signup/email-verification/{send,verify}`
+    - 휴대폰 발송/검증: `POST /api/auth/signup/phone-verification/{send,verify}` (국내 번호 +82 만 지원)
+  - 인증 상태는 `SignupVerification` 모델에 저장되며 가입 시 소비(consumed)됨.
+
+- **환경 변수**
+  - 이메일: AWS SES (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_FROM`)
+  - SMS: Solapi (`SOLAPI_API_KEY`, `SOLAPI_API_SECRET`, `SOLAPI_SENDER_NUMBER`)
+
+## 10. 코드 구조 및 파일 크기 관리
+
+- **파일 크기 제한**: 컴포넌트/훅/컨트롤러는 **800줄 이상**이 되면 반드시 분리.
+- **분리 기준**:
+  - **페이지 컴포넌트**: 상태 관리 + 레이아웃 와이어링만 담당 (200~400줄)
+  - **서브 컴포넌트**: 각 섹션/Step별 UI 로직 분리 (100~300줄)
+  - **훅**: 비즈니스 로직 + API 호출 분리 (200~400줄)
+  - **컨트롤러**: 엔드포인트별 핸들러 분리 (200~400줄)
+- **예시**: `SignupPage.tsx` (440줄) → `SignupWizardStep1~4.tsx` + `SignupSocialForm.tsx` 분리
+- **명명 규칙**:
+  - 페이지 컴포넌트: `XxxPage.tsx`
+  - 서브 컴포넌트: `XxxSection.tsx`, `XxxModal.tsx`, `XxxPanel.tsx`, `XxxStep1.tsx` 등
+  - 훅: `useXxx.ts`
+  - 유틸: `xxxUtils.ts`, `xxxHelpers.ts`

@@ -16,13 +16,17 @@ async function getNextSequence({ key, startAt }) {
   const doc = await Counter.findOneAndUpdate(
     { key },
     {
-      $setOnInsert: { key, seq: start - 1 },
+      $setOnInsert: { key },
       $inc: { seq: 1 },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   ).lean();
 
-  return Number(doc?.seq || 0);
+  const seq = Number(doc?.seq || 0);
+  if (!Number.isFinite(seq) || seq <= 0) return 0;
+
+  // 첫 번째 호출에서 startAt 값을 그대로 돌려주기 위해 offset 적용
+  return start - 1 + seq;
 }
 
 export async function ensureOrganizationDepositCode(organizationId) {

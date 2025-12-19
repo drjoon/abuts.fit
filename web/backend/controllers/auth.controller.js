@@ -5,6 +5,10 @@ import jwt from "jsonwebtoken";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
+import {
+  assertSignupVerifications,
+  consumeSignupVerifications,
+} from "./signupVerification.controller.js";
 
 const createReferralCode = () => {
   return crypto.randomBytes(9).toString("base64url");
@@ -17,6 +21,13 @@ const ensureUniqueReferralCode = async () => {
     if (!exists) return code;
   }
   throw new Error("리퍼럴 코드 생성에 실패했습니다.");
+};
+
+const isStrongPassword = (password) => {
+  const p = String(password || "");
+  if (p.length < 10) return false;
+  if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
+  return true;
 };
 
 async function getOrganizationCreditBalanceBreakdown(organizationId) {
@@ -294,6 +305,13 @@ async function register(req, res) {
       });
     }
 
+    if (!socialProvider && !isStrongPassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: "비밀번호는 10자 이상이며 특수문자를 포함해야 합니다.",
+      });
+    }
+
     // 이메일 중복 확인
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
@@ -407,7 +425,26 @@ async function register(req, res) {
           message: "휴대폰번호 형식을 확인해주세요.",
         });
       }
+
+      if (!socialProvider) {
+        const ok = await assertSignupVerifications({
+          email: normalizedEmail,
+          phoneDigits: normalizedPhoneDigits,
+        });
+        if (!ok) {
+          return res.status(400).json({
+            success: false,
+            message: "이메일 및 휴대전화 인증을 완료해주세요.",
+          });
+        }
+      }
     }
+
+    const normalizedOrganization = String(organization || "").trim();
+    const effectiveOrganization =
+      normalizedRole === "requestor" && !isRequestorStaff
+        ? normalizedOrganization || `${String(name || "").trim()} 기공소`
+        : "";
 
     // 사용자 생성
     const userDoc = {
@@ -417,10 +454,13 @@ async function register(req, res) {
       role: normalizedRole,
       position: initialPosition,
       phoneNumber: normalizedPhoneDigits,
-      organization: isRequestorStaff ? "" : organization,
+      organization: effectiveOrganization,
       referralCode,
       referredByUserId: referredByObjectId,
       approvedAt: new Date(),
+      ...(normalizedRole === "requestor" && !socialProvider
+        ? { phoneVerifiedAt: new Date(), isVerified: true }
+        : {}),
     };
 
     // 소셜 로그인 정보가 있으면 추가
@@ -433,6 +473,18 @@ async function register(req, res) {
 
     const user = new User(userDoc);
     await user.save();
+
+    if (normalizedRole === "requestor" && !socialProvider) {
+      try {
+        await consumeSignupVerifications({
+          email: normalizedEmail,
+          phoneDigits: normalizedPhoneDigits,
+          userId: user._id,
+        });
+      } catch (e) {
+        console.error("[register] consumeSignupVerifications failed", e);
+      }
+    }
 
     if (user.role === "requestor" && user.position === "principal") {
       const orgName = String(user.organization || "").trim();
