@@ -69,6 +69,9 @@ export const ServicePage = () => {
                       <b>양도</b> 또는 현금 <b>출금</b>은 불가합니다.
                     </li>
                     <li>
+                      크레딧에는 별도의 소진기간(사용기한)을 두지 않습니다.
+                    </li>
+                    <li>
                       환불은 <b>계정 해지</b> 시점에 한하여 진행됩니다.
                     </li>
                     <li>
@@ -238,6 +241,9 @@ export const ServicePage = () => {
                   <ul className="list-disc list-inside space-y-2 ml-4">
                     <li>
                       환불은 <b>계정 해지</b> 시점에 한하여 진행됩니다.
+                    </li>
+                    <li>
+                      크레딧에는 별도의 소진기간(사용기한)을 두지 않습니다.
                     </li>
                     <li>
                       <b>잔여 유료 크레딧(공급가)</b>이 있는 경우 해당 잔액은{" "}
