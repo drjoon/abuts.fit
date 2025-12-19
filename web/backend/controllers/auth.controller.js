@@ -282,8 +282,6 @@ async function register(req, res) {
       email,
       password,
       role,
-      phoneNumber,
-      organization,
       requestorType,
       referredByUserId,
       referredByReferralCode,
@@ -294,7 +292,6 @@ async function register(req, res) {
     const normalizedEmail = String(email || "")
       .trim()
       .toLowerCase();
-    const normalizedPhoneDigits = String(phoneNumber || "").replace(/\D/g, "");
 
     // 필수 필드 검증
     if (!name || !normalizedEmail || !password) {
@@ -319,20 +316,6 @@ async function register(req, res) {
         success: false,
         message: "이미 등록된 이메일입니다.",
       });
-    }
-
-    // 전화번호 중복 확인
-    if (normalizedPhoneDigits) {
-      const existingPhone = await User.findOne({
-        phoneNumber: normalizedPhoneDigits,
-        active: true,
-      });
-      if (existingPhone) {
-        return res.status(400).json({
-          success: false,
-          message: "이미 등록된 전화번호입니다.",
-        });
-      }
     }
 
     let referredByObjectId = null;
@@ -396,55 +379,22 @@ async function register(req, res) {
     const referralCode = await ensureUniqueReferralCode();
 
     const normalizedRole = role || "requestor";
-    const normalizedRequestorType = String(requestorType || "").trim();
-    const isRequestorStaff =
-      normalizedRole === "requestor" && normalizedRequestorType === "staff";
-
-    const isRequestorCoOwner =
-      normalizedRole === "requestor" && normalizedRequestorType === "co_owner";
-
-    let initialPosition = "staff";
-    if (normalizedRole === "requestor" && !isRequestorStaff) {
-      initialPosition = "principal";
-    }
-
-    if (isRequestorCoOwner) {
-      initialPosition = "vice_principal";
-    }
 
     if (normalizedRole === "requestor") {
-      if (!normalizedPhoneDigits) {
-        return res.status(400).json({
-          success: false,
-          message: "휴대폰번호를 입력해주세요.",
-        });
-      }
-      if (!/^\d{10,11}$/.test(normalizedPhoneDigits)) {
-        return res.status(400).json({
-          success: false,
-          message: "휴대폰번호 형식을 확인해주세요.",
-        });
-      }
-
       if (!socialProvider) {
         const ok = await assertSignupVerifications({
           email: normalizedEmail,
-          phoneDigits: normalizedPhoneDigits,
         });
         if (!ok) {
           return res.status(400).json({
             success: false,
-            message: "이메일 및 휴대전화 인증을 완료해주세요.",
+            message: "이메일 인증을 완료해주세요.",
           });
         }
       }
     }
 
-    const normalizedOrganization = String(organization || "").trim();
-    const effectiveOrganization =
-      normalizedRole === "requestor" && !isRequestorStaff
-        ? normalizedOrganization || `${String(name || "").trim()} 기공소`
-        : "";
+    const effectiveOrganization = "";
 
     // 사용자 생성
     const userDoc = {
@@ -452,14 +402,12 @@ async function register(req, res) {
       email: normalizedEmail,
       password,
       role: normalizedRole,
-      position: initialPosition,
-      phoneNumber: normalizedPhoneDigits,
       organization: effectiveOrganization,
       referralCode,
       referredByUserId: referredByObjectId,
       approvedAt: new Date(),
       ...(normalizedRole === "requestor" && !socialProvider
-        ? { phoneVerifiedAt: new Date(), isVerified: true }
+        ? { isVerified: true }
         : {}),
     };
 
@@ -478,70 +426,10 @@ async function register(req, res) {
       try {
         await consumeSignupVerifications({
           email: normalizedEmail,
-          phoneDigits: normalizedPhoneDigits,
           userId: user._id,
         });
       } catch (e) {
         console.error("[register] consumeSignupVerifications failed", e);
-      }
-    }
-
-    if (user.role === "requestor" && user.position === "principal") {
-      const orgName = String(user.organization || "").trim();
-      if (orgName) {
-        try {
-          const createdOrg = await RequestorOrganization.create({
-            name: orgName,
-            owner: user._id,
-            coOwners: [],
-            members: [user._id],
-            joinRequests: [],
-          });
-          await User.findByIdAndUpdate(user._id, {
-            $set: {
-              organizationId: createdOrg._id,
-              organization: createdOrg.name,
-            },
-          });
-        } catch (e) {
-          console.error("[register] organization create/update failed", e);
-          try {
-            // 생성 실패 시: 동일 owner+name 조직이 있으면 연결
-            let fallbackOrg = await RequestorOrganization.findOne({
-              name: orgName,
-              owner: user._id,
-            })
-              .select({ _id: 1, name: 1 })
-              .lean();
-
-            // owner+name이 없으면 name 단독으로 1개만 존재하는 경우 연결
-            if (!fallbackOrg) {
-              const matches = await RequestorOrganization.find({
-                name: orgName,
-              })
-                .select({ _id: 1, name: 1 })
-                .limit(2)
-                .lean();
-              if (Array.isArray(matches) && matches.length === 1) {
-                fallbackOrg = matches[0];
-              }
-            }
-
-            if (fallbackOrg?._id) {
-              await User.findByIdAndUpdate(user._id, {
-                $set: {
-                  organizationId: fallbackOrg._id,
-                  organization: fallbackOrg.name,
-                },
-              });
-            }
-          } catch (fallbackError) {
-            console.error(
-              "[register] organization fallback failed",
-              fallbackError
-            );
-          }
-        }
       }
     }
 
@@ -922,7 +810,6 @@ async function withdraw(req, res) {
         email: 1,
         originalEmail: 1,
         role: 1,
-        position: 1,
         organizationId: 1,
       })
       .lean();
@@ -934,10 +821,7 @@ async function withdraw(req, res) {
       });
     }
 
-    const isPrincipal =
-      user.role === "requestor" && user.position === "principal";
-
-    if (isPrincipal) {
+    if (user.role === "requestor") {
       const organizationId = user.organizationId;
       if (!organizationId) {
         return res.status(400).json({

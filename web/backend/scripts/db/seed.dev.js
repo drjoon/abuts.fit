@@ -158,7 +158,6 @@ async function run() {
         name: "데모 주대표",
         password: "password123",
         role: "requestor",
-        position: "principal",
         phoneNumber: "01000000001",
         organization: "데모기공소",
         referralCode: "seed_requestor_principal",
@@ -168,7 +167,6 @@ async function run() {
       patchDoc: {
         name: "데모 주대표",
         role: "requestor",
-        position: "principal",
         organization: "데모기공소",
         referralCode: "seed_requestor_principal",
         approvedAt: NOW,
@@ -188,7 +186,6 @@ async function run() {
         name: "데모 직원",
         password: "password123",
         role: "requestor",
-        position: "staff",
         phoneNumber: "01000000002",
         organization: "",
         referralCode: "seed_requestor_staff",
@@ -199,7 +196,6 @@ async function run() {
       patchDoc: {
         name: "데모 직원",
         role: "requestor",
-        position: "staff",
         organizationId: org._id,
         referralCode: "seed_requestor_staff",
         approvedAt: NOW,
@@ -218,7 +214,6 @@ async function run() {
         name: "데모 제조사",
         password: "password123",
         role: "manufacturer",
-        position: "master",
         phoneNumber: "01000000003",
         organization: "애크로덴트",
         referralCode: "seed_manufacturer_master",
@@ -228,7 +223,6 @@ async function run() {
       patchDoc: {
         name: "데모 제조사",
         role: "manufacturer",
-        position: "master",
         organization: "애크로덴트",
         referralCode: "seed_manufacturer_master",
         approvedAt: NOW,
@@ -242,7 +236,6 @@ async function run() {
         name: "데모 관리자",
         password: "password123",
         role: "admin",
-        position: "master",
         phoneNumber: "01000000004",
         organization: "어벗츠핏",
         referralCode: "seed_admin_master",
@@ -252,7 +245,6 @@ async function run() {
       patchDoc: {
         name: "데모 관리자",
         role: "admin",
-        position: "master",
         organization: "어벗츠핏",
         referralCode: "seed_admin_master",
         approvedAt: NOW,

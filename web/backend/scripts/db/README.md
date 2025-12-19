@@ -41,3 +41,7 @@ ABUTS_DB_FORCE=true
 
 - `reset`은 dropDatabase가 아니라 **각 컬렉션 deleteMany**로 정리합니다.
 - DB 연결은 `scripts/db/_mongo.js`의 규칙을 따릅니다.
+
+## 강제 실행
+
+ABUTS_DB_FORCE=true npm run db:reset-and-seed

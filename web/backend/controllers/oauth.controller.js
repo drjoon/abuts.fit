@@ -95,135 +95,11 @@ async function completeSignup(req, res) {
       });
     }
 
-    const { requestorType, organization, phoneNumber } = req.body || {};
-    const normalizedPhoneDigits = String(phoneNumber || "").replace(/\D/g, "");
-    const normalizedRequestorType = String(requestorType || "").trim();
-
-    if (!normalizedPhoneDigits) {
-      return res.status(400).json({
-        success: false,
-        message: "휴대폰번호를 입력해주세요.",
-      });
-    }
-
-    if (!/^\d{10,11}$/.test(normalizedPhoneDigits)) {
-      return res.status(400).json({
-        success: false,
-        message: "휴대폰번호 형식을 확인해주세요.",
-      });
-    }
-
-    if (!normalizedRequestorType) {
-      return res.status(400).json({
-        success: false,
-        message: "주대표/공동대표/직원을 선택해주세요.",
-      });
-    }
-
-    const isStaff = normalizedRequestorType === "staff";
-    const isCoOwner = normalizedRequestorType === "co_owner";
-    const orgName = String(organization || "").trim();
-
-    if (!isStaff && !orgName) {
-      return res.status(400).json({
-        success: false,
-        message: "기공소명을 입력해주세요.",
-      });
-    }
-
-    let nextPosition = "staff";
-    if (!isStaff) nextPosition = "principal";
-    if (isCoOwner) nextPosition = "vice_principal";
-
     user.role = "requestor";
-    user.position = nextPosition;
-    user.phoneNumber = normalizedPhoneDigits;
-    user.organization = isStaff ? "" : orgName;
+    user.organization = "";
     user.approvedAt = new Date();
 
     await user.save();
-
-    if (user.role === "requestor" && user.position === "principal") {
-      const trimmed = String(user.organization || "").trim();
-      if (trimmed) {
-        try {
-          const createdOrg = await RequestorOrganization.create({
-            name: trimmed,
-            owner: user._id,
-            coOwners: [],
-            members: [user._id],
-            joinRequests: [],
-          });
-          user.organizationId = createdOrg._id;
-          user.organization = createdOrg.name;
-          await user.save();
-        } catch (e) {
-          console.error(
-            "[completeSignup] organization create/update failed",
-            e
-          );
-
-          try {
-            let fallbackOrg = await RequestorOrganization.findOne({
-              name: trimmed,
-              $or: [{ owner: user._id }, { coOwners: user._id }],
-            })
-              .select({ _id: 1, name: 1 })
-              .lean();
-
-            if (!fallbackOrg) {
-              const matches = await RequestorOrganization.find({
-                name: trimmed,
-              })
-                .select({ _id: 1, name: 1, owner: 1, coOwners: 1, members: 1 })
-                .limit(10)
-                .lean();
-
-              if (Array.isArray(matches)) {
-                const meId = String(user._id);
-                const owned = matches.find(
-                  (m) =>
-                    String(m.owner) === meId ||
-                    (Array.isArray(m.coOwners) &&
-                      m.coOwners.some((c) => String(c) === meId))
-                );
-                const member = matches.find(
-                  (m) =>
-                    Array.isArray(m.members) &&
-                    m.members.some((x) => String(x) === meId)
-                );
-                fallbackOrg = owned || member || null;
-              }
-            }
-
-            if (!fallbackOrg?._id) {
-              const created2 = await RequestorOrganization.create({
-                name: trimmed,
-                owner: user._id,
-                coOwners: [],
-                members: [user._id],
-                joinRequests: [],
-              });
-              fallbackOrg = { _id: created2._id, name: created2.name };
-            }
-
-            if (fallbackOrg?._id) {
-              await User.findByIdAndUpdate(user._id, {
-                $set: {
-                  organizationId: fallbackOrg._id,
-                  organization: trimmed,
-                },
-              });
-            }
-          } catch (fallbackError) {
-            console.error(
-              "[completeSignup] organization fallback failed",
-              fallbackError
-            );
-          }
-        }
-      }
-    }
 
     const fresh = await User.findById(user._id).select("-password");
     return res.status(200).json({
@@ -310,7 +186,6 @@ async function findOrCreateUserFromSocial({
       email: normalizedEmail,
       password: generateRandomPassword(),
       role: "requestor",
-      position: "staff",
       referralCode,
       approvedAt: null,
       active: true,
@@ -341,7 +216,6 @@ async function findOrCreateUserFromSocial({
     email: normalizedEmail,
     password: generateRandomPassword(),
     role: "requestor",
-    position: "staff",
     referralCode,
     approvedAt: null,
     active: true,

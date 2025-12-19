@@ -117,9 +117,7 @@ export const CreditLedgerModal = ({
 
   const PAGE_SIZE = 50;
 
-  const canAccess =
-    user?.role === "requestor" &&
-    (user.position === "principal" || user.position === "vice_principal");
+  const canAccess = user?.role === "requestor";
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [type, setType] = useState<"all" | CreditLedgerType>("all");
@@ -166,7 +164,6 @@ export const CreditLedgerModal = ({
         headers: token
           ? {
               "x-mock-role": "requestor",
-              "x-mock-position": user?.position || "staff",
             }
           : undefined,
       });

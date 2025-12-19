@@ -56,11 +56,6 @@ export async function apiFetch<T = any>(
         sessionStorage.getItem("abuts_mock_role") ||
         localStorage.getItem("abuts_mock_role") ||
         "";
-      const position =
-        stateUser?.position ||
-        sessionStorage.getItem("abuts_mock_position") ||
-        localStorage.getItem("abuts_mock_position") ||
-        "";
       const email =
         stateUser?.email ||
         sessionStorage.getItem("abuts_mock_email") ||
@@ -88,8 +83,6 @@ export async function apiFetch<T = any>(
 
       if (!(finalHeaders as any)["x-mock-role"] && role)
         (finalHeaders as any)["x-mock-role"] = role;
-      if (!(finalHeaders as any)["x-mock-position"] && position)
-        (finalHeaders as any)["x-mock-position"] = position;
       if (!(finalHeaders as any)["x-mock-email"] && email)
         (finalHeaders as any)["x-mock-email"] = email;
       if (!(finalHeaders as any)["x-mock-name"] && name)

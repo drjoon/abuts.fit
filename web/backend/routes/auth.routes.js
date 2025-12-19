@@ -6,8 +6,6 @@ import { authenticate } from "../middlewares/auth.middleware.js";
 import {
   sendSignupEmailVerification,
   verifySignupEmailVerification,
-  sendSignupPhoneVerification,
-  verifySignupPhoneVerification,
 } from "../controllers/signupVerification.controller.js";
 
 // 회원가입
@@ -33,8 +31,6 @@ router.post("/reset-password/:token", authController.resetPassword);
 
 router.post("/signup/email-verification/send", sendSignupEmailVerification);
 router.post("/signup/email-verification/verify", verifySignupEmailVerification);
-router.post("/signup/phone-verification/send", sendSignupPhoneVerification);
-router.post("/signup/phone-verification/verify", verifySignupPhoneVerification);
 
 // 로그아웃 (인증 필요)
 router.post("/logout", authenticate, authController.logout);

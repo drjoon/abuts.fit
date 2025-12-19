@@ -5,19 +5,12 @@ const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
 const AUTH_USER_KEY = "abuts_auth_user";
 
 export type UserRole = "requestor" | "manufacturer" | "admin";
-export type UserPosition =
-  | "principal"
-  | "vice_principal"
-  | "staff"
-  | "master"
-  | "manager";
 
 export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
-  position: UserPosition;
   avatar?: string;
   companyName?: string;
   referralCode?: string;
@@ -34,7 +27,6 @@ const normalizeApiUser = (u: any): User | null => {
     name: String(u.name || ""),
     email: String(u.email || ""),
     role: u.role as UserRole,
-    position: (u.position || "staff") as UserPosition,
     companyName: String(u.organization || u.companyName || ""),
     referralCode: String(u.referralCode || ""),
     approvedAt: u.approvedAt ? String(u.approvedAt) : null,
@@ -44,90 +36,81 @@ const normalizeApiUser = (u: any): User | null => {
 export const mockUsers: User[] = [
   {
     id: "1",
-    name: "의뢰인 주대표",
+    name: "의뢰인 1",
     email: "requestor.principal@demo.abuts.fit",
     role: "requestor",
-    position: "principal",
     companyName: "서울치과기공소",
     referralCode: "mock_requestor_principal",
     mockUserId: "000000000000000000000001",
   },
   {
     id: "2",
-    name: "의뢰인 공동대표",
+    name: "의뢰인 2",
     email: "requestor.vice_principal@demo.abuts.fit",
     role: "requestor",
-    position: "vice_principal",
     companyName: "서울치과기공소",
     referralCode: "mock_requestor_vice_principal",
     mockUserId: "000000000000000000000002",
   },
   {
     id: "3",
-    name: "의뢰인 직원",
+    name: "의뢰인 3",
     email: "requestor.staff@demo.abuts.fit",
     role: "requestor",
-    position: "staff",
     companyName: "",
     referralCode: "mock_requestor_staff",
     mockUserId: "000000000000000000000003",
   },
   {
     id: "4",
-    name: "제조사 대표",
+    name: "제조사 1",
     email: "manufacturer.master@demo.abuts.fit",
     role: "manufacturer",
-    position: "master",
     companyName: "애크로덴트",
     referralCode: "mock_manufacturer_master",
     mockUserId: "000000000000000000000004",
   },
   {
     id: "5",
-    name: "제조사 매니저",
+    name: "제조사 2",
     email: "manufacturer.manager@demo.abuts.fit",
     role: "manufacturer",
-    position: "manager",
     companyName: "애크로덴트",
     referralCode: "mock_manufacturer_manager",
     mockUserId: "000000000000000000000005",
   },
   {
     id: "6",
-    name: "제조사 직원",
+    name: "제조사 3",
     email: "manufacturer.staff@demo.abuts.fit",
     role: "manufacturer",
-    position: "staff",
     companyName: "애크로덴트",
     referralCode: "mock_manufacturer_staff",
     mockUserId: "000000000000000000000006",
   },
   {
     id: "7",
-    name: "관리자 대표",
+    name: "관리자 1",
     email: "admin.master@demo.abuts.fit",
     role: "admin",
-    position: "master",
     companyName: "Abuts.fit",
     referralCode: "mock_admin_master",
     mockUserId: "000000000000000000000007",
   },
   {
     id: "8",
-    name: "관리자 매니저",
+    name: "관리자 2",
     email: "admin.manager@demo.abuts.fit",
     role: "admin",
-    position: "manager",
     companyName: "Abuts.fit",
     referralCode: "mock_admin_manager",
     mockUserId: "000000000000000000000008",
   },
   {
     id: "9",
-    name: "관리자 직원",
+    name: "관리자 3",
     email: "admin.staff@demo.abuts.fit",
     role: "admin",
-    position: "staff",
     companyName: "Abuts.fit",
     referralCode: "mock_admin_staff",
     mockUserId: "000000000000000000000009",
@@ -177,7 +160,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
         const mockToken = "MOCK_DEV_TOKEN";
         try {
           sessionStorage.setItem("abuts_mock_role", foundUser.role);
-          sessionStorage.setItem("abuts_mock_position", foundUser.position);
           sessionStorage.setItem("abuts_mock_email", foundUser.email);
           sessionStorage.setItem("abuts_mock_name", foundUser.name);
           sessionStorage.setItem(
@@ -276,7 +258,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
           name: String(u.name || ""),
           email: String(u.email || ""),
           role: u.role as UserRole,
-          position: (u.position || "staff") as UserPosition,
           companyName: String(u.organization || u.companyName || ""),
           referralCode: String(u.referralCode || ""),
           approvedAt: u.approvedAt ? String(u.approvedAt) : null,
@@ -305,14 +286,12 @@ export const useAuthStore = create<AuthState>((set, get) => {
     logout: () => {
       try {
         sessionStorage.removeItem("abuts_mock_role");
-        sessionStorage.removeItem("abuts_mock_position");
         sessionStorage.removeItem("abuts_mock_email");
         sessionStorage.removeItem("abuts_mock_name");
         sessionStorage.removeItem("abuts_mock_organization");
         sessionStorage.removeItem("abuts_mock_phone");
         sessionStorage.removeItem("abuts_mock_user_id");
         localStorage.removeItem("abuts_mock_role");
-        localStorage.removeItem("abuts_mock_position");
         localStorage.removeItem("abuts_mock_email");
         localStorage.removeItem("abuts_mock_name");
         localStorage.removeItem("abuts_mock_organization");

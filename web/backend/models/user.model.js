@@ -30,11 +30,6 @@ const userSchema = new mongoose.Schema(
       enum: ["requestor", "manufacturer", "admin"],
       default: "requestor",
     },
-    position: {
-      type: String,
-      enum: ["principal", "vice_principal", "staff", "master", "manager"],
-      default: "staff",
-    },
     referralCode: {
       type: String,
       unique: true,

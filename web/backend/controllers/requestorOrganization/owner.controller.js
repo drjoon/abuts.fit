@@ -203,7 +203,6 @@ export async function addCoOwner(req, res) {
       $set: {
         organizationId: org._id,
         organization: org.name,
-        position: "vice_principal",
       },
     });
 
@@ -256,10 +255,6 @@ export async function removeCoOwner(req, res) {
     }
 
     await org.save();
-
-    await User.findByIdAndUpdate(userId, {
-      $set: { position: "staff" },
-    });
 
     return res.json({ success: true, data: { removed: true } });
   } catch (error) {
@@ -463,7 +458,6 @@ export async function approveJoinRequest(req, res) {
       $set: {
         organization: org.name,
         organizationId: org._id,
-        position: "staff",
       },
     });
 

@@ -39,26 +39,24 @@ export async function getMyOrganization(req, res) {
             .limit(2)
             .lean();
           if (Array.isArray(matches) && matches.length === 0) {
-            if (String(req.user.position || "") === "principal") {
-              try {
-                org = await RequestorOrganization.create({
-                  name: orgName,
-                  owner: req.user._id,
-                  coOwners: [],
-                  members: [req.user._id],
-                  joinRequests: [],
-                });
-                await User.findByIdAndUpdate(req.user._id, {
-                  $set: { organizationId: org._id, organization: org.name },
-                });
-              } catch {
-                // ignore
-              }
+            try {
+              org = await RequestorOrganization.create({
+                name: orgName,
+                owner: req.user._id,
+                coOwners: [],
+                members: [req.user._id],
+                joinRequests: [],
+              });
+              await User.findByIdAndUpdate(req.user._id, {
+                $set: { organizationId: org._id, organization: org.name },
+              });
+            } catch {
+              // ignore
             }
           } else if (Array.isArray(matches) && matches.length === 1) {
             org = await RequestorOrganization.findById(matches[0]._id);
 
-            if (org && String(req.user.position || "") === "principal") {
+            if (org) {
               const meId = String(req.user._id);
               const ownerId = String(org.owner);
               const isCoOwner =
@@ -106,25 +104,19 @@ export async function getMyOrganization(req, res) {
               if (memberOrg?._id) {
                 org = await RequestorOrganization.findById(memberOrg._id);
               } else {
-                if (String(req.user.position || "") === "principal") {
-                  try {
-                    org = await RequestorOrganization.create({
-                      name: orgName,
-                      owner: req.user._id,
-                      coOwners: [],
-                      members: [req.user._id],
-                      joinRequests: [],
-                    });
-                    await User.findByIdAndUpdate(req.user._id, {
-                      $set: { organizationId: org._id, organization: org.name },
-                    });
-                  } catch {
-                    // ignore
-                  }
-                } else {
-                  await User.findByIdAndUpdate(req.user._id, {
-                    $set: { organization: "", organizationId: null },
+                try {
+                  org = await RequestorOrganization.create({
+                    name: orgName,
+                    owner: req.user._id,
+                    coOwners: [],
+                    members: [req.user._id],
+                    joinRequests: [],
                   });
+                  await User.findByIdAndUpdate(req.user._id, {
+                    $set: { organizationId: org._id, organization: org.name },
+                  });
+                } catch {
+                  // ignore
                 }
               }
             }
@@ -150,7 +142,7 @@ export async function getMyOrganization(req, res) {
       }
     }
 
-    if (!org && orgName && String(req.user.position || "") === "principal") {
+    if (!org && orgName) {
       try {
         org = await RequestorOrganization.create({
           name: orgName,

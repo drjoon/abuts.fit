@@ -322,9 +322,7 @@ export const RequestorDashboardPage = () => {
   const diameterStatsFromApi: DiameterStats | undefined =
     summaryResponse?.success ? summaryResponse.data.diameterStats : undefined;
 
-  const canOpenCreditLedger =
-    user.role === "requestor" &&
-    (user.position === "principal" || user.position === "vice_principal");
+  const canOpenCreditLedger = user.role === "requestor";
 
   return (
     <div>

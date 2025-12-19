@@ -161,10 +161,6 @@ export const DashboardLayout = () => {
       setCreditBalance(null);
       return;
     }
-    if (user.position !== "principal" && user.position !== "vice_principal") {
-      setCreditBalance(null);
-      return;
-    }
 
     setLoadingCreditBalance(true);
     try {
@@ -277,17 +273,6 @@ export const DashboardLayout = () => {
             localStorage.setItem(storageKey, "1");
           } catch {
             // ignore
-          }
-
-          // 주대표가 아니면 주대표에게 요청하도록 안내
-          if (user.role === "requestor" && user.position !== "principal") {
-            toast({
-              title: "크레딧 부족",
-              description: "주대표님께 크레딧 충전을 요청해주세요.",
-              variant: "destructive",
-              duration: 5000,
-            });
-            return;
           }
 
           toast({

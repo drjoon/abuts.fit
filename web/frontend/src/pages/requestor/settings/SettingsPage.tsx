@@ -34,22 +34,13 @@ export const RequestorSettingsPage = () => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
     return {
       "x-mock-role": (user?.role || "requestor") as string,
-      "x-mock-position": (user?.position || "staff") as string,
       "x-mock-email": user?.email || "mock@abuts.fit",
       "x-mock-name": user?.name || "사용자",
       "x-mock-organization":
         (user as any)?.organization || user?.companyName || "",
       "x-mock-phone": (user as any)?.phoneNumber || "",
     };
-  }, [
-    token,
-    user?.companyName,
-    user?.email,
-    user?.name,
-    user?.role,
-    user?.position,
-    user,
-  ]);
+  }, [token, user?.companyName, user?.email, user?.name, user?.role, user]);
 
   useEffect(() => {
     const load = async () => {
@@ -94,11 +85,8 @@ export const RequestorSettingsPage = () => {
       },
     ];
 
-    // 직원은 비즈니스, 임직원, 배송, 결제 탭 접근 불가
-    // 주대표/부대표만 접근 가능
-    const position = user?.position || "staff";
-    const canManageBusiness =
-      position === "principal" || position === "vice_principal";
+    // 모든 사용자가 비즈니스 탭 접근 가능
+    const canManageBusiness = true;
 
     if (canManageBusiness) {
       base.push({
