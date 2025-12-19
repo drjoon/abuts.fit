@@ -3,7 +3,7 @@ import "./bootstrap/env.js";
 import app, { dbReady } from "./app.js";
 import supportRoutes from "./routes/support.routes.js";
 import implantPresetRoutes from "./routes/implantPreset.routes.js";
-import { startCreditJobs } from "./utils/creditJobs.js";
+import { startCreditBPlanJobs } from "./utils/creditBPlanJobs.js";
 import { initializeSocket } from "./socket.js";
 
 // 포트 설정 (기본값 5001)
@@ -22,7 +22,7 @@ initializeSocket(server);
     server.listen(PORT, () => {
       console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
       console.log(`Socket.io가 활성화되었습니다.`);
-      startCreditJobs();
+      startCreditBPlanJobs();
     });
   } catch (err) {
     console.error("서버 시작 실패:", err);

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
@@ -10,8 +9,6 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-
-import { loadPaymentWidget } from "@tosspayments/payment-widget-sdk";
 
 type Props = {
   userData: {
@@ -25,34 +22,30 @@ type CreditOrderResponse = {
   success: boolean;
   data?: {
     id: string;
-    orderId: string;
     status: string;
+    depositCode: string;
     supplyAmount: number;
     vatAmount: number;
-    totalAmount: number;
+    amountTotal: number;
+    expiresAt: string;
+    depositAccount: {
+      bankName: string;
+      accountNumber: string;
+      holderName: string;
+    };
   };
   message?: string;
 };
 
 type CreditOrderItem = {
   _id?: string;
-  orderId: string;
   status: string;
+  depositCode: string;
   supplyAmount: number;
   vatAmount: number;
-  totalAmount: number;
-  paymentKey?: string | null;
-  approvedAt?: string | null;
-  depositedAt?: string | null;
-  virtualAccount?: {
-    bank?: string;
-    accountNumber?: string;
-    customerName?: string;
-    dueDate?: string;
-  };
-  refundedSupplyAmount?: number;
-  refundedVatAmount?: number;
-  refundedTotalAmount?: number;
+  amountTotal: number;
+  expiresAt?: string;
+  matchedAt?: string | null;
   createdAt?: string;
 };
 
@@ -123,31 +116,12 @@ function validateSupplyAmount(supply: number) {
 export const CreditPaymentTab = ({ userData }: Props) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
-  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [pendingOrder, setPendingOrder] = useState<{
-    orderId: string;
-    amount: number;
-    supplyAmount: number;
-  } | null>(null);
-  const [widgetReady, setWidgetReady] = useState(false);
-  const [paying, setPaying] = useState(false);
-  const [paymentWidget, setPaymentWidget] = useState<any>(null);
-
-  const resetPaymentWidget = () => {
+  const [pendingOrder, setPendingOrder] = useState<
+    CreditOrderResponse["data"] | null
+  >(null);
+  const resetPendingOrder = () => {
     setPendingOrder(null);
-    setWidgetReady(false);
-    setPaying(false);
-    setPaymentWidget(null);
-
-    try {
-      const pm = document.querySelector("#toss-payment-methods");
-      if (pm instanceof HTMLElement) pm.innerHTML = "";
-      const ag = document.querySelector("#toss-agreement");
-      if (ag instanceof HTMLElement) ag.innerHTML = "";
-    } catch {
-      // ignore
-    }
   };
 
   const [balance, setBalance] = useState<number>(0);
@@ -222,10 +196,10 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     if (ordersPeriod === "all") {
       return [...items].sort((a, b) => {
         const ta = new Date(
-          String(a.createdAt || a.approvedAt || a.depositedAt || 0)
+          String(a.createdAt || a.matchedAt || a.expiresAt || 0)
         ).getTime();
         const tb = new Date(
-          String(b.createdAt || b.approvedAt || b.depositedAt || 0)
+          String(b.createdAt || b.matchedAt || b.expiresAt || 0)
         ).getTime();
         return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
       });
@@ -236,41 +210,23 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     return items
       .filter((o) => {
         const t = new Date(
-          String(o.createdAt || o.approvedAt || o.depositedAt || "")
+          String(o.createdAt || o.matchedAt || o.expiresAt || "")
         ).getTime();
         if (!Number.isFinite(t)) return true;
         return t >= cutoff;
       })
       .sort((a, b) => {
         const ta = new Date(
-          String(a.createdAt || a.approvedAt || a.depositedAt || 0)
+          String(a.createdAt || a.matchedAt || a.expiresAt || 0)
         ).getTime();
         const tb = new Date(
-          String(b.createdAt || b.approvedAt || b.depositedAt || 0)
+          String(b.createdAt || b.matchedAt || b.expiresAt || 0)
         ).getTime();
         return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
       });
   }, [orders, ordersPeriod]);
 
   const [creatingOrder, setCreatingOrder] = useState(false);
-
-  const tossClientKey = String(
-    (import.meta as any).env?.VITE_TOSS_CLIENT_KEY || ""
-  ).trim();
-
-  const successUrl = useMemo(() => {
-    const origin = window.location.origin;
-    return `${origin}/dashboard/settings?tab=payment`;
-  }, []);
-
-  const failUrl = useMemo(() => {
-    const origin = window.location.origin;
-    return `${origin}/dashboard/settings?tab=payment&payResult=fail`;
-  }, []);
-
-  const customerKey = useMemo(() => {
-    return String(userData?.id || user?.id || user?.email || "guest").trim();
-  }, [user?.email, user?.id, userData?.id]);
 
   const reloadBalance = async () => {
     if (!token) return;
@@ -299,14 +255,15 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     setLoadingOrders(true);
     try {
       const res = await request<any>({
-        path: "/api/credits/orders",
+        path: "/api/credits/b-plan/orders",
         method: "GET",
         token,
       });
       if (!res.ok) throw new Error("orders fetch failed");
       const body: any = res.data || {};
       const data = body.data || body;
-      setOrders(Array.isArray(data) ? (data as CreditOrderItem[]) : []);
+      const items = data?.items;
+      setOrders(Array.isArray(items) ? (items as CreditOrderItem[]) : []);
     } catch {
       // ignore
     } finally {
@@ -350,74 +307,6 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     spendInsights?.recommended?.oneMonthSupply,
   ]);
 
-  useEffect(() => {
-    const payResult = searchParams.get("payResult");
-    const code = searchParams.get("code");
-    const message = searchParams.get("message");
-
-    if (payResult === "fail") {
-      toast({
-        title: "결제에 실패했습니다",
-        description:
-          message || code || "결제 요청이 취소되었거나 실패했습니다.",
-        variant: "destructive",
-      });
-      resetPaymentWidget();
-      setSearchParams({ tab: "payment" });
-      return;
-    }
-
-    const paymentKey = searchParams.get("paymentKey");
-    const orderId = searchParams.get("orderId");
-    const amount = searchParams.get("amount");
-
-    if (!paymentKey || !orderId || !amount) return;
-    if (!token) return;
-
-    const parsedAmount = Number(amount);
-    if (!Number.isFinite(parsedAmount)) return;
-
-    const run = async () => {
-      try {
-        const res = await request<any>({
-          path: "/api/credits/payments/confirm",
-          method: "POST",
-          token,
-          jsonBody: {
-            paymentKey,
-            orderId,
-            amount: parsedAmount,
-          },
-        });
-
-        if (!res.ok) {
-          const body: any = res.data || {};
-          throw new Error(body?.message || "결제 승인에 실패했습니다.");
-        }
-
-        await reloadBalance();
-        await reloadOrders();
-        toast({
-          title: "결제 요청이 완료되었습니다",
-          description: "입금 완료 후 크레딧이 자동 충전됩니다.",
-        });
-        resetPaymentWidget();
-        setSearchParams({ tab: "payment" });
-      } catch (e: any) {
-        toast({
-          title: "결제 승인 처리 실패",
-          description: String(e?.message || "결제 승인 처리에 실패했습니다."),
-          variant: "destructive",
-        });
-        resetPaymentWidget();
-        setSearchParams({ tab: "payment" });
-      }
-    };
-
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, token]);
-
   const handleCharge = async () => {
     if (!token) {
       toast({
@@ -438,19 +327,10 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       return;
     }
 
-    if (!tossClientKey) {
-      toast({
-        title: "결제 설정이 필요합니다",
-        description: "VITE_TOSS_CLIENT_KEY 환경변수를 설정해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setCreatingOrder(true);
     try {
       const res = await request<CreditOrderResponse>({
-        path: "/api/credits/orders",
+        path: "/api/credits/b-plan/orders",
         method: "POST",
         token,
         jsonBody: { supplyAmount },
@@ -463,14 +343,16 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
       const body: any = res.data || {};
       const data = body.data || body;
-      const orderId = String(data?.orderId || "");
-      const amount = Number(data?.totalAmount);
-
-      if (!orderId || !Number.isFinite(amount)) {
+      if (!data?.id) {
         throw new Error("주문 정보가 올바르지 않습니다.");
       }
 
-      setPendingOrder({ orderId, amount, supplyAmount });
+      setPendingOrder(data);
+      await reloadOrders();
+      toast({
+        title: "충전 요청이 생성되었습니다",
+        description: "입금 완료 후 크레딧이 자동 충전됩니다.",
+      });
     } catch (e: any) {
       toast({
         title: "충전 요청 실패",
@@ -482,76 +364,13 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     }
   };
 
-  useEffect(() => {
-    const run = async () => {
-      if (!pendingOrder) return;
-      if (!tossClientKey) return;
-
-      setWidgetReady(false);
-
-      try {
-        const widget: any = await loadPaymentWidget(tossClientKey, customerKey);
-        setPaymentWidget(widget);
-
-        try {
-          const pm = document.querySelector("#toss-payment-methods");
-          if (pm instanceof HTMLElement) pm.innerHTML = "";
-          const ag = document.querySelector("#toss-agreement");
-          if (ag instanceof HTMLElement) ag.innerHTML = "";
-
-          widget.renderPaymentMethods("#toss-payment-methods", {
-            value: pendingOrder.amount,
-          });
-          widget.renderAgreement("#toss-agreement");
-        } catch {
-          // ignore
-        }
-
-        setWidgetReady(true);
-      } catch (e: any) {
-        toast({
-          title: "결제 위젯 로드 실패",
-          description: String(e?.message || "결제 위젯 로드에 실패했습니다."),
-          variant: "destructive",
-        });
-      }
-    };
-
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOrder?.orderId, pendingOrder?.amount, tossClientKey, customerKey]);
-
-  const handlePayNow = async () => {
-    if (!pendingOrder || !paymentWidget) return;
-    if (!widgetReady) return;
-    setPaying(true);
-    try {
-      await paymentWidget.requestPayment({
-        orderId: pendingOrder.orderId,
-        orderName: `크레딧 충전 ${Math.floor(
-          pendingOrder.supplyAmount / 10000
-        )}만원`,
-        successUrl,
-        failUrl,
-        customerName: userData?.name || user?.name || "사용자",
-        customerEmail: userData?.email || user?.email || "",
-      });
-    } catch (e: any) {
-      toast({
-        title: "결제 요청 실패",
-        description: String(e?.message || "결제 요청에 실패했습니다."),
-        variant: "destructive",
-      });
-    } finally {
-      setPaying(false);
-    }
-  };
-
-  const cancelOrder = async (orderId: string) => {
+  const cancelOrder = async (chargeOrderId: string) => {
     if (!token) return;
     try {
       const res = await request<any>({
-        path: `/api/credits/orders/${encodeURIComponent(orderId)}/cancel`,
+        path: `/api/credits/b-plan/orders/${encodeURIComponent(
+          chargeOrderId
+        )}/cancel`,
         method: "POST",
         token,
       });
@@ -638,22 +457,16 @@ export const CreditPaymentTab = ({ userData }: Props) => {
               ) : (
                 <div className="space-y-2">
                   {filteredOrders.slice(0, 10).map((o) => {
-                    const bank = o.virtualAccount?.bank || "";
-                    const acc = o.virtualAccount?.accountNumber || "";
-                    const due = o.virtualAccount?.dueDate || "";
-                    const isWaiting = o.status === "WAITING_FOR_DEPOSIT";
-                    const canCancel =
-                      o.status === "WAITING_FOR_DEPOSIT" ||
-                      o.status === "CREATED";
+                    const canCancel = o.status === "PENDING";
 
                     const orderDate = formatKoreanDate(
-                      o.createdAt || o.approvedAt || o.depositedAt || null
+                      o.createdAt || o.matchedAt || null
                     );
-                    const shortId = formatOrderShortId(o.orderId);
+                    const shortId = formatOrderShortId(String(o._id || ""));
 
                     return (
                       <div
-                        key={o.orderId}
+                        key={String(o._id || shortId || orderDate)}
                         className="rounded-lg border border-gray-200 bg-white p-3"
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -671,13 +484,17 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                         <div className="mt-1 text-sm">
                           결제금액(부가세 포함):{" "}
                           <span className="font-semibold">
-                            {Number(o.totalAmount || 0).toLocaleString()}원
+                            {Number(o.amountTotal || 0).toLocaleString()}원
                           </span>
                         </div>
-                        {isWaiting && (bank || acc) && (
+                        {o.depositCode && (
                           <div className="mt-2 text-sm text-muted-foreground">
-                            입금계좌: {bank} {acc}
-                            {due ? ` (기한: ${due})` : ""}
+                            입금코드: {o.depositCode}
+                          </div>
+                        )}
+                        {o.expiresAt && (
+                          <div className="mt-1 text-sm text-muted-foreground">
+                            만료일: {formatKoreanDate(o.expiresAt)}
                           </div>
                         )}
 
@@ -686,7 +503,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                             <Button
                               type="button"
                               variant="outline"
-                              onClick={() => cancelOrder(o.orderId)}
+                              onClick={() => cancelOrder(String(o._id || ""))}
                             >
                               주문 취소
                             </Button>
@@ -698,7 +515,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 </div>
               )}
               <div className="text-xs text-muted-foreground">
-                가상계좌는 입금 완료 후 자동 충전됩니다.
+                입금 확인 후 자동 충전됩니다.
               </div>
             </div>
           </>
@@ -818,26 +635,34 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
           {pendingOrder && (
             <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
-              <div className="text-sm text-muted-foreground">
-                결제 수단 선택 후 결제를 진행하세요. (결제금액:{" "}
-                {pendingOrder.amount.toLocaleString()}원)
+              <div className="text-sm font-medium">입금 안내</div>
+              <div className="text-sm">
+                입금계좌: {pendingOrder.depositAccount.bankName}{" "}
+                {pendingOrder.depositAccount.accountNumber}
               </div>
-              <div id="toss-payment-methods" />
-              <div id="toss-agreement" />
-              <Button
-                type="button"
-                className="w-full"
-                onClick={handlePayNow}
-                disabled={!widgetReady || paying}
-              >
-                {paying ? "진행 중..." : "결제 진행"}
-              </Button>
-
+              <div className="text-sm">
+                예금주: {pendingOrder.depositAccount.holderName}
+              </div>
+              <div className="text-sm">
+                입금코드:{" "}
+                <span className="font-semibold">
+                  {pendingOrder.depositCode}
+                </span>
+              </div>
+              <div className="text-sm">
+                입금금액(부가세 포함):{" "}
+                <span className="font-semibold">
+                  {Number(pendingOrder.amountTotal || 0).toLocaleString()}원
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                동일 금액과 입금코드가 확인되면 자동으로 충전됩니다.
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 className="w-full"
-                onClick={resetPaymentWidget}
+                onClick={resetPendingOrder}
               >
                 닫기
               </Button>

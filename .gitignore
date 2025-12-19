@@ -11,6 +11,6 @@ stats.html
 !.elasticbeanstalk/*.global.yml
 
 cam
-docs
+docs/*
+!docs/credit_charge_b_plan_spec.md
 hi-link
-

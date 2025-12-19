@@ -8,6 +8,10 @@ const requestorOrganizationSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    depositCode: {
+      type: String,
+      default: "",
+    },
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -82,6 +86,13 @@ requestorOrganizationSchema.index({ owner: 1, name: 1 });
 requestorOrganizationSchema.index(
   { "extracted.businessNumber": 1 },
   { unique: true, sparse: true }
+);
+requestorOrganizationSchema.index(
+  { depositCode: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { depositCode: { $type: "string", $gt: "" } },
+  }
 );
 requestorOrganizationSchema.index({
   "joinRequests.user": 1,

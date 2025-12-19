@@ -8,7 +8,11 @@ import { existsSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
-import CreditOrder from "./models/creditOrder.model.js";
+import RequestorOrganization from "./models/requestorOrganization.model.js";
+import ChargeOrder from "./models/chargeOrder.model.js";
+import BankTransaction from "./models/bankTransaction.model.js";
+import Counter from "./models/counter.model.js";
+import AdminAuditLog from "./models/adminAuditLog.model.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -55,10 +59,20 @@ const dbReady = connect(mongoUri)
     if (
       String(process.env.ENABLE_SYNC_INDEXES || "").toLowerCase() === "true"
     ) {
-      try {
-        await CreditOrder.syncIndexes();
-      } catch (err) {
-        console.error("[CreditOrder] syncIndexes failed:", err);
+      const targets = [
+        ["RequestorOrganization", RequestorOrganization],
+        ["ChargeOrder", ChargeOrder],
+        ["BankTransaction", BankTransaction],
+        ["Counter", Counter],
+        ["AdminAuditLog", AdminAuditLog],
+      ];
+
+      for (const [name, model] of targets) {
+        try {
+          await model.syncIndexes();
+        } catch (err) {
+          console.error(`[${name}] syncIndexes failed:`, err);
+        }
       }
     }
   })

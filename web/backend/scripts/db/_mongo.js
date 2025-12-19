@@ -39,8 +39,22 @@ export function assertSafeToMutateDb(mongoUri) {
     .toLowerCase();
   const isForced = force === "true" || force === "1" || force === "yes";
 
+  const uri = String(mongoUri || "").trim();
+  const isAtlas =
+    uri.startsWith("mongodb+srv://") ||
+    uri.includes("mongodb.net") ||
+    uri.includes("mongo.ondigitalocean.com");
+
   const dbName = getDbNameFromMongoUri(mongoUri);
   const isExpectedName = /abuts[_-]?fit/i.test(dbName);
+
+  if (isAtlas && !isForced) {
+    throw new Error(
+      `Refusing to mutate remote MongoDB without ABUTS_DB_FORCE=true. (db=${
+        dbName || "unknown"
+      })`
+    );
+  }
 
   if (nodeEnv === "production" && !isForced) {
     throw new Error(

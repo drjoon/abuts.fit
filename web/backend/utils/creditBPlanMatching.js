@@ -1,0 +1,161 @@
+import mongoose from "mongoose";
+import ChargeOrder from "../models/chargeOrder.model.js";
+import BankTransaction from "../models/bankTransaction.model.js";
+import CreditLedger from "../models/creditLedger.model.js";
+
+export function extractDepositCodeFromText(text) {
+  const raw = String(text || "");
+  const matches = [...raw.matchAll(/(^|\D)([1-9]\d{4})(\D|$)/g)].map(
+    (m) => m?.[2]
+  );
+  const uniq = Array.from(new Set(matches.filter(Boolean)));
+  if (uniq.length !== 1) return "";
+  return String(uniq[0]);
+}
+
+export async function upsertBankTransaction({
+  externalId,
+  tranAmt,
+  printedContent,
+  occurredAt,
+  raw,
+}) {
+  const id = String(externalId || "").trim();
+  if (!id) {
+    const err = new Error("externalId가 필요합니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const amount = Number(tranAmt);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    const err = new Error("tranAmt가 유효하지 않습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const depositCode = extractDepositCodeFromText(printedContent);
+
+  let occurredAtDate = null;
+  if (occurredAt) {
+    const d = new Date(occurredAt);
+    if (!Number.isNaN(d.getTime())) {
+      occurredAtDate = d;
+    }
+  }
+
+  const doc = await BankTransaction.findOneAndUpdate(
+    { externalId: id },
+    {
+      $setOnInsert: { externalId: id },
+      $set: {
+        tranAmt: amount,
+        printedContent: String(printedContent || ""),
+        depositCode,
+        occurredAt: occurredAtDate,
+        raw: raw ?? null,
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  return doc;
+}
+
+export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
+  const max = Math.min(500, Math.max(1, Number(limit) || 200));
+  const txs = await BankTransaction.find({
+    status: "NEW",
+    depositCode: { $ne: "" },
+  })
+    .sort({ occurredAt: 1, createdAt: 1, _id: 1 })
+    .limit(max)
+    .lean();
+
+  const now = new Date();
+  let scanned = 0;
+  let matched = 0;
+
+  for (const tx of txs) {
+    scanned += 1;
+
+    const depositCode = String(tx?.depositCode || "").trim();
+    const tranAmt = Number(tx?.tranAmt || 0);
+    if (!depositCode || !Number.isFinite(tranAmt) || tranAmt <= 0) continue;
+
+    const candidates = await ChargeOrder.find({
+      status: "PENDING",
+      depositCode,
+      amountTotal: tranAmt,
+      expiresAt: { $gt: now },
+      bankTransactionId: null,
+    })
+      .select({ _id: 1, organizationId: 1, userId: 1, supplyAmount: 1 })
+      .lean();
+
+    if (candidates.length !== 1) continue;
+
+    const order = candidates[0];
+    const session = await mongoose.startSession();
+    try {
+      const ok = await session.withTransaction(async () => {
+        const updatedTx = await BankTransaction.updateOne(
+          { _id: tx._id, status: "NEW", chargeOrderId: null },
+          {
+            $set: {
+              status: "MATCHED",
+              chargeOrderId: order._id,
+              matchedAt: new Date(),
+              matchedBy: "AUTO",
+            },
+          },
+          { session }
+        );
+
+        if (!updatedTx?.modifiedCount) return false;
+
+        const updatedOrder = await ChargeOrder.updateOne(
+          { _id: order._id, status: "PENDING", bankTransactionId: null },
+          {
+            $set: {
+              status: "MATCHED",
+              bankTransactionId: tx._id,
+              matchedAt: new Date(),
+              matchedBy: "AUTO",
+            },
+          },
+          { session }
+        );
+
+        if (!updatedOrder?.modifiedCount) {
+          throw new Error("ChargeOrder update failed");
+        }
+
+        const uniqueKey = `bplan:bankTx:${String(tx._id)}:charge`;
+        await CreditLedger.updateOne(
+          { uniqueKey },
+          {
+            $setOnInsert: {
+              organizationId: order.organizationId,
+              userId: order.userId,
+              type: "CHARGE",
+              amount: Number(order.supplyAmount),
+              refType: "CHARGE_ORDER",
+              refId: order._id,
+              uniqueKey,
+            },
+          },
+          { upsert: true, session }
+        );
+
+        return true;
+      });
+
+      if (ok) matched += 1;
+    } finally {
+      session.endSession();
+    }
+  }
+
+  return { scanned, matched };
+}

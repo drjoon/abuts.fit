@@ -6,6 +6,12 @@ import {
   authorize,
   authorizePosition,
 } from "../middlewares/auth.middleware.js";
+import {
+  adminListBankTransactions,
+  adminListChargeOrders,
+  adminManualMatch,
+  adminUpsertBankTransaction,
+} from "../controllers/adminCreditBPlan.controller.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -65,6 +71,26 @@ router.get(
   "/dashboard",
   authorizePosition(["master", "manager"]),
   adminController.getDashboardStats
+);
+router.get(
+  "/credits/b-plan/charge-orders",
+  authorizePosition(["master", "manager", "staff"]),
+  adminListChargeOrders
+);
+router.get(
+  "/credits/b-plan/bank-transactions",
+  authorizePosition(["master", "manager", "staff"]),
+  adminListBankTransactions
+);
+router.post(
+  "/credits/b-plan/bank-transactions/upsert",
+  authorizePosition(["master", "manager"]),
+  adminUpsertBankTransaction
+);
+router.post(
+  "/credits/b-plan/match",
+  authorizePosition(["master", "manager"]),
+  adminManualMatch
 );
 
 // 가격/리퍼럴 정책 통계: Master/Manager

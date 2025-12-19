@@ -65,7 +65,7 @@ creditOrderSchema.index(
   { paymentKey: 1 },
   {
     unique: true,
-    partialFilterExpression: { paymentKey: { $type: "string", $ne: "" } },
+    partialFilterExpression: { paymentKey: { $type: "string", $gt: "" } },
   }
 );
 
