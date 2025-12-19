@@ -92,6 +92,9 @@ const SecurityPage = lazy(() =>
 const CookiesPage = lazy(() =>
   import("./pages/CookiesPage").then((m) => ({ default: m.CookiesPage }))
 );
+const ServicePage = lazy(() =>
+  import("./pages/ServicePage").then((m) => ({ default: m.ServicePage }))
+);
 const BusinessPage = lazy(() =>
   import("./pages/BusinessPage").then((m) => ({ default: m.BusinessPage }))
 );
@@ -165,6 +168,7 @@ const App = () => {
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/security" element={<SecurityPage />} />
                 <Route path="/cookies" element={<CookiesPage />} />
+                <Route path="/service" element={<ServicePage />} />
                 <Route path="/business" element={<BusinessPage />} />
                 <Route path="/credits" element={<CreditsPage />} />
                 <Route path="/refund-policy" element={<RefundPolicyPage />} />

@@ -22,8 +22,7 @@ export const Footer = () => {
     { label: "이용약관", href: "/terms" },
     { label: "개인정보처리방침", href: "/privacy" },
     { label: "쿠키 정책", href: "/cookies" },
-    { label: "크레딧 충전 안내", href: "/credits" },
-    { label: "환불정책", href: "/refund-policy" },
+    { label: "서비스/상품 안내", href: "/service" },
     { label: "사업자 정보", href: "/business" },
   ];
 
