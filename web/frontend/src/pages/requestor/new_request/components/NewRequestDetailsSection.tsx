@@ -167,6 +167,13 @@ export function NewRequestDetailsSection({
               STL Preview
             </div>
           )}
+
+          <div className="mt-2 text-xs text-muted-foreground">
+            스크류홀이 막힌 디자인으로 업로드해주세요.{" "}
+            <span className="underline">3Shape(링크)</span>과{" "}
+            <span className="underline">Exocad(링크)</span>에서 홀이 막힌 디자인
+            파일을 찾는법.
+          </div>
         </div>
 
         <div className="space-y-4 text-xs md:text-sm min-w-0">

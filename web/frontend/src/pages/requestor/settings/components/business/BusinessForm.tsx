@@ -66,6 +66,48 @@ export const BusinessForm = ({
     }
   }, [businessData.businessNumber, completeStep, isStepActive]);
 
+  useEffect(() => {
+    if (!isStepActive("requestor.business.representativeName")) return;
+    if (String(extracted.representativeName || "").trim()) {
+      completeStep("requestor.business.representativeName");
+    }
+  }, [completeStep, extracted.representativeName, isStepActive]);
+
+  useEffect(() => {
+    if (!isStepActive("requestor.business.phoneNumber")) return;
+    if (String(businessData.phone || "").trim()) {
+      completeStep("requestor.business.phoneNumber");
+    }
+  }, [businessData.phone, completeStep, isStepActive]);
+
+  useEffect(() => {
+    if (!isStepActive("requestor.business.address")) return;
+    if (String(businessData.address || "").trim()) {
+      completeStep("requestor.business.address");
+    }
+  }, [businessData.address, completeStep, isStepActive]);
+
+  useEffect(() => {
+    if (!isStepActive("requestor.business.email")) return;
+    if (String(extracted.email || "").trim()) {
+      completeStep("requestor.business.email");
+    }
+  }, [completeStep, extracted.email, isStepActive]);
+
+  useEffect(() => {
+    if (!isStepActive("requestor.business.businessType")) return;
+    if (String(extracted.businessType || "").trim()) {
+      completeStep("requestor.business.businessType");
+    }
+  }, [completeStep, extracted.businessType, isStepActive]);
+
+  useEffect(() => {
+    if (!isStepActive("requestor.business.businessItem")) return;
+    if (String(extracted.businessItem || "").trim()) {
+      completeStep("requestor.business.businessItem");
+    }
+  }, [completeStep, extracted.businessItem, isStepActive]);
+
   const disabled =
     licenseDeleteLoading ||
     licenseStatus === "uploading" ||
@@ -84,28 +126,33 @@ export const BusinessForm = ({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label htmlFor="repName">대표자명</Label>
-            <Input
-              id="repName"
-              className={cn(
-                errors.representativeName &&
-                  "border-destructive focus-visible:ring-destructive"
-              )}
-              value={extracted.representativeName || ""}
-              onChange={(e) => {
-                setExtracted((prev) => ({
-                  ...prev,
-                  representativeName: e.target.value,
-                }));
-                setErrors((prev) => ({
-                  ...prev,
-                  representativeName: false,
-                }));
-              }}
-              onBlur={() => {
-                if (disabled) return;
-                onSave();
-              }}
-            />
+            <GuideFocus
+              stepId="requestor.business.representativeName"
+              className="rounded-xl p-1"
+            >
+              <Input
+                id="repName"
+                className={cn(
+                  errors.representativeName &&
+                    "border-destructive focus-visible:ring-destructive"
+                )}
+                value={extracted.representativeName || ""}
+                onChange={(e) => {
+                  setExtracted((prev) => ({
+                    ...prev,
+                    representativeName: e.target.value,
+                  }));
+                  setErrors((prev) => ({
+                    ...prev,
+                    representativeName: false,
+                  }));
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onSave();
+                }}
+              />
+            </GuideFocus>
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgName">기공소명</Label>
@@ -145,31 +192,36 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgPhone">전화번호</Label>
-            <Input
-              id="orgPhone"
-              className={cn(
-                errors.phone &&
-                  "border-destructive focus-visible:ring-destructive"
-              )}
-              value={businessData.phone}
-              onChange={(e) => {
-                const nextValue = formatPhoneNumberInput(e.target.value);
-                setBusinessData((prev) => ({
-                  ...prev,
-                  phone: nextValue,
-                }));
-                setErrors((prev) => ({
-                  ...prev,
-                  phone: nextValue
-                    ? !isValidPhoneNumber(nextValue)
-                    : prev.phone,
-                }));
-              }}
-              onBlur={() => {
-                if (disabled) return;
-                onSave();
-              }}
-            />
+            <GuideFocus
+              stepId="requestor.business.phoneNumber"
+              className="rounded-xl p-1"
+            >
+              <Input
+                id="orgPhone"
+                className={cn(
+                  errors.phone &&
+                    "border-destructive focus-visible:ring-destructive"
+                )}
+                value={businessData.phone}
+                onChange={(e) => {
+                  const nextValue = formatPhoneNumberInput(e.target.value);
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    phone: nextValue,
+                  }));
+                  setErrors((prev) => ({
+                    ...prev,
+                    phone: nextValue
+                      ? !isValidPhoneNumber(nextValue)
+                      : prev.phone,
+                  }));
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onSave();
+                }}
+              />
+            </GuideFocus>
           </div>
 
           <div className="space-y-2">
@@ -216,105 +268,125 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="bizType">업태</Label>
-            <Input
-              id="bizType"
-              className={cn(
-                errors.businessType &&
-                  "border-destructive focus-visible:ring-destructive"
-              )}
-              value={extracted.businessType || ""}
-              onChange={(e) => {
-                setExtracted((prev) => ({
-                  ...prev,
-                  businessType: e.target.value,
-                }));
-                setErrors((prev) => ({
-                  ...prev,
-                  businessType: false,
-                }));
-              }}
-              onBlur={() => {
-                if (disabled) return;
-                onSave();
-              }}
-            />
+            <GuideFocus
+              stepId="requestor.business.businessType"
+              className="rounded-xl p-1"
+            >
+              <Input
+                id="bizType"
+                className={cn(
+                  errors.businessType &&
+                    "border-destructive focus-visible:ring-destructive"
+                )}
+                value={extracted.businessType || ""}
+                onChange={(e) => {
+                  setExtracted((prev) => ({
+                    ...prev,
+                    businessType: e.target.value,
+                  }));
+                  setErrors((prev) => ({
+                    ...prev,
+                    businessType: false,
+                  }));
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onSave();
+                }}
+              />
+            </GuideFocus>
           </div>
           <div className="space-y-2">
             <Label htmlFor="bizItem">종목</Label>
-            <Input
-              id="bizItem"
-              className={cn(
-                errors.businessItem &&
-                  "border-destructive focus-visible:ring-destructive"
-              )}
-              value={extracted.businessItem || ""}
-              onChange={(e) => {
-                setExtracted((prev) => ({
-                  ...prev,
-                  businessItem: e.target.value,
-                }));
-                setErrors((prev) => ({
-                  ...prev,
-                  businessItem: false,
-                }));
-              }}
-              onBlur={() => {
-                if (disabled) return;
-                onSave();
-              }}
-            />
+            <GuideFocus
+              stepId="requestor.business.businessItem"
+              className="rounded-xl p-1"
+            >
+              <Input
+                id="bizItem"
+                className={cn(
+                  errors.businessItem &&
+                    "border-destructive focus-visible:ring-destructive"
+                )}
+                value={extracted.businessItem || ""}
+                onChange={(e) => {
+                  setExtracted((prev) => ({
+                    ...prev,
+                    businessItem: e.target.value,
+                  }));
+                  setErrors((prev) => ({
+                    ...prev,
+                    businessItem: false,
+                  }));
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onSave();
+                }}
+              />
+            </GuideFocus>
           </div>
           <div className="space-y-2">
             <Label htmlFor="taxEmail">세금계산서 이메일</Label>
-            <Input
-              id="taxEmail"
-              type="email"
-              className={cn(
-                errors.email &&
-                  "border-destructive focus-visible:ring-destructive"
-              )}
-              value={extracted.email || ""}
-              onChange={(e) => {
-                const nextValue = e.target.value;
-                setExtracted((prev) => ({
-                  ...prev,
-                  email: nextValue,
-                }));
-                setErrors((prev) => ({
-                  ...prev,
-                  email: nextValue ? !isValidEmail(nextValue) : false,
-                }));
-              }}
-              onBlur={() => {
-                if (disabled) return;
-                onSave();
-              }}
-            />
+            <GuideFocus
+              stepId="requestor.business.email"
+              className="rounded-xl p-1"
+            >
+              <Input
+                id="taxEmail"
+                type="email"
+                className={cn(
+                  errors.email &&
+                    "border-destructive focus-visible:ring-destructive"
+                )}
+                value={extracted.email || ""}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setExtracted((prev) => ({
+                    ...prev,
+                    email: nextValue,
+                  }));
+                  setErrors((prev) => ({
+                    ...prev,
+                    email: nextValue ? !isValidEmail(nextValue) : false,
+                  }));
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onSave();
+                }}
+              />
+            </GuideFocus>
           </div>
         </div>
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="address">주소</Label>
-        <Input
-          id="address"
-          className={cn(
-            errors.address &&
-              "border-destructive focus-visible:ring-destructive"
-          )}
-          value={businessData.address}
-          onChange={(e) => {
-            setBusinessData((prev) => ({
-              ...prev,
-              address: e.target.value,
-            }));
-            setErrors((prev) => ({ ...prev, address: false }));
-          }}
-          onBlur={() => {
-            if (disabled) return;
-            onSave();
-          }}
-        />
+        <GuideFocus
+          stepId="requestor.business.address"
+          className="rounded-xl p-1"
+        >
+          <Input
+            id="address"
+            className={cn(
+              errors.address &&
+                "border-destructive focus-visible:ring-destructive"
+            )}
+            value={businessData.address}
+            onChange={(e) => {
+              setBusinessData((prev) => ({
+                ...prev,
+                address: e.target.value,
+              }));
+              setErrors((prev) => ({ ...prev, address: false }));
+            }}
+            onBlur={() => {
+              if (disabled) return;
+              onSave();
+            }}
+          />
+        </GuideFocus>
       </div>
     </div>
   );

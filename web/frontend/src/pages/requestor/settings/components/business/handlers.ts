@@ -11,6 +11,7 @@ interface HandleSaveParams {
   token: string;
   businessData: BusinessData;
   extracted: LicenseExtracted;
+  membership?: MembershipStatus;
   businessLicense?: {
     fileId?: string;
     s3Key?: string;
@@ -43,6 +44,7 @@ export const handleSave = async (
     token,
     businessData,
     extracted,
+    membership,
     businessLicense,
     mockHeaders,
     toast,
@@ -76,6 +78,8 @@ export const handleSave = async (
     const normalizedBusinessNumber = normalizeBusinessNumber(businessNumberRaw);
     const normalizedPhoneNumber = normalizePhoneNumber(phoneNumberRaw);
 
+    const allowPartialUpdate = membership === "owner";
+
     const requiredMissing =
       !companyName ||
       !repName ||
@@ -86,7 +90,7 @@ export const handleSave = async (
       !taxEmail ||
       !address;
 
-    if (requiredMissing) {
+    if (requiredMissing && !allowPartialUpdate) {
       if (!auto) {
         const nextErrors: Record<string, boolean> = {
           companyName: !companyName,
@@ -108,7 +112,7 @@ export const handleSave = async (
       return { success: false };
     }
 
-    if (!normalizedBusinessNumber) {
+    if (businessNumberRaw && !normalizedBusinessNumber) {
       setErrors((prev) => ({ ...prev, businessNumber: true }));
       if (!auto) {
         toast({
@@ -120,7 +124,7 @@ export const handleSave = async (
       return { success: false };
     }
 
-    if (!normalizedPhoneNumber) {
+    if (phoneNumberRaw && !normalizedPhoneNumber) {
       setErrors((prev) => ({ ...prev, phone: true }));
       if (!auto) {
         toast({
@@ -133,7 +137,7 @@ export const handleSave = async (
       return { success: false };
     }
 
-    if (!isValidEmail(taxEmail)) {
+    if (taxEmail && !isValidEmail(taxEmail)) {
       setErrors((prev) => ({ ...prev, email: true }));
       if (!auto) {
         toast({
@@ -145,7 +149,7 @@ export const handleSave = async (
       return { success: false };
     }
 
-    if (!isValidAddress(address)) {
+    if (address && !isValidAddress(address)) {
       setErrors((prev) => ({ ...prev, address: true }));
       if (!auto) {
         toast({

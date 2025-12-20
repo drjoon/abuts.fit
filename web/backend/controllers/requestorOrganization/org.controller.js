@@ -414,6 +414,9 @@ export async function updateMyOrganization(req, res) {
       });
     }
 
+    const hasOwn = (obj, key) =>
+      !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+
     const isDuplicateKeyError = (err) => {
       const code = err?.code;
       const name = String(err?.name || "");
@@ -478,6 +481,15 @@ export async function updateMyOrganization(req, res) {
     }
 
     const nextName = String(req.body?.name || "").trim();
+
+    const representativeNameProvided = hasOwn(req.body, "representativeName");
+    const businessItemProvided = hasOwn(req.body, "businessItem");
+    const phoneNumberProvided = hasOwn(req.body, "phoneNumber");
+    const businessNumberProvided = hasOwn(req.body, "businessNumber");
+    const businessTypeProvided = hasOwn(req.body, "businessType");
+    const emailProvided = hasOwn(req.body, "email");
+    const addressProvided = hasOwn(req.body, "address");
+
     const representativeName = String(
       req.body?.representativeName || ""
     ).trim();
@@ -534,6 +546,7 @@ export async function updateMyOrganization(req, res) {
     }
 
     const patch = {};
+    const unsetPatch = {};
     if (nextName) patch.name = nextName;
 
     if (
@@ -544,14 +557,21 @@ export async function updateMyOrganization(req, res) {
     }
 
     const extractedPatch = {};
-    if (representativeName)
+    if (representativeNameProvided)
       extractedPatch.representativeName = representativeName;
-    if (businessItem) extractedPatch.businessItem = businessItem;
-    if (phoneNumber) extractedPatch.phoneNumber = phoneNumber;
-    if (businessNumber) extractedPatch.businessNumber = businessNumber;
-    if (businessType) extractedPatch.businessType = businessType;
-    if (email) extractedPatch.email = email;
-    if (address) extractedPatch.address = address;
+    if (businessItemProvided) extractedPatch.businessItem = businessItem;
+    if (phoneNumberProvided) extractedPatch.phoneNumber = phoneNumber;
+    if (businessTypeProvided) extractedPatch.businessType = businessType;
+    if (emailProvided) extractedPatch.email = email;
+    if (addressProvided) extractedPatch.address = address;
+
+    if (businessNumberProvided) {
+      if (!businessNumber) {
+        unsetPatch["extracted.businessNumber"] = 1;
+      } else {
+        extractedPatch.businessNumber = businessNumber;
+      }
+    }
 
     if (businessNumber) {
       const query = { "extracted.businessNumber": businessNumber };
@@ -654,12 +674,18 @@ export async function updateMyOrganization(req, res) {
       };
     }
 
-    if (Object.keys(patch).length === 0) {
+    if (
+      Object.keys(patch).length === 0 &&
+      Object.keys(unsetPatch).length === 0
+    ) {
       return res.json({ success: true, data: { updated: false } });
     }
 
     try {
-      await RequestorOrganization.findByIdAndUpdate(org._id, { $set: patch });
+      const update = {};
+      if (Object.keys(patch).length > 0) update.$set = patch;
+      if (Object.keys(unsetPatch).length > 0) update.$unset = unsetPatch;
+      await RequestorOrganization.findByIdAndUpdate(org._id, update);
     } catch (e) {
       if (isDuplicateKeyError(e)) {
         const msg = String(e?.message || "");

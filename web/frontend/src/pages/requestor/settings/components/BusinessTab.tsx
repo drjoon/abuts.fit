@@ -55,6 +55,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     activeTourId,
     isStepActive,
     completeStep,
+    startTour,
   } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
@@ -213,11 +214,16 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   useEffect(() => {
     if (!guideActive) return;
     if (activeTourId !== "requestor-onboarding") return;
-    if (
-      !isStepActive("requestor.business.companyName") &&
-      !isStepActive("requestor.business.businessNumber")
-    )
-      return;
+    const isBusinessSetupStep =
+      isStepActive("requestor.business.companyName") ||
+      isStepActive("requestor.business.businessNumber") ||
+      isStepActive("requestor.business.representativeName") ||
+      isStepActive("requestor.business.phoneNumber") ||
+      isStepActive("requestor.business.address") ||
+      isStepActive("requestor.business.email") ||
+      isStepActive("requestor.business.businessType") ||
+      isStepActive("requestor.business.businessItem");
+    if (!isBusinessSetupStep) return;
     if (membership !== "none") return;
     if (setupMode) return;
     setSetupMode("license");
@@ -437,6 +443,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       token,
       businessData,
       extracted,
+      membership,
       businessLicense: {
         fileId: licenseFileId,
         s3Key: licenseS3Key,
@@ -732,7 +739,13 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 <button
                   type="button"
                   className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
-                  onClick={() => setSetupMode("license")}
+                  onClick={() => {
+                    setSetupMode("license");
+                    startTour(
+                      "requestor-onboarding",
+                      "requestor.business.companyName"
+                    );
+                  }}
                 >
                   <div className="text-sm font-medium">신규 기공소 등록</div>
                   <div className="text-xs text-muted-foreground mt-1">
@@ -794,19 +807,21 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     onDeleteLicense={handleDeleteLicense}
                   />
 
-                  <BusinessForm
-                    businessData={businessData}
-                    extracted={extracted}
-                    errors={errors}
-                    licenseStatus={licenseStatus}
-                    membership={membership}
-                    licenseDeleteLoading={licenseDeleteLoading}
-                    setBusinessData={setBusinessData}
-                    setExtracted={setExtracted}
-                    setErrors={setErrors}
-                    setCompanyNameTouched={setCompanyNameTouched}
-                    onSave={handleSave}
-                  />
+                  {(membership === "owner" || licenseStatus !== "missing") && (
+                    <BusinessForm
+                      businessData={businessData}
+                      extracted={extracted}
+                      errors={errors}
+                      licenseStatus={licenseStatus}
+                      membership={membership}
+                      licenseDeleteLoading={licenseDeleteLoading}
+                      setBusinessData={setBusinessData}
+                      setExtracted={setExtracted}
+                      setErrors={setErrors}
+                      setCompanyNameTouched={setCompanyNameTouched}
+                      onSave={handleSave}
+                    />
+                  )}
                 </div>
               )}
 

@@ -201,11 +201,14 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   }, [pendingExpiresAtMs, pendingNow, pendingOrder]);
 
   const pendingPanel = pendingOrder ? (
-    <div className="mt-4 space-y-1 rounded-lg border border-gray-200 bg-white/70 p-3 text-sm">
-      <div className="font-medium">입금 대기중</div>
+    <div className="relative mt-4 space-y-1 rounded-lg border border-gray-200 bg-white/70 p-3 text-sm">
       {pendingRemainingLabel ? (
-        <div>남은시간 {pendingRemainingLabel}</div>
+        <div className="absolute right-3 top-3 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+          남은시간 {pendingRemainingLabel}
+        </div>
       ) : null}
+
+      <div className="font-medium">입금 대기중</div>
       <div>
         입금계좌: {pendingOrder.depositAccount.bankName}{" "}
         {pendingOrder.depositAccount.accountNumber}

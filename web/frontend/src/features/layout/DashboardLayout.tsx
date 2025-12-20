@@ -174,11 +174,13 @@ export const DashboardLayout = () => {
   const [requestorGuide, setRequestorGuide] = useState<{
     loading: boolean;
     hasBusinessNumber: boolean;
+    missingBusinessStepId: string;
     missingProfileImage: boolean;
     needsPhone: boolean;
   }>({
     loading: true,
     hasBusinessNumber: true,
+    missingBusinessStepId: "",
     missingProfileImage: false,
     needsPhone: false,
   });
@@ -232,12 +234,49 @@ export const DashboardLayout = () => {
         if (cancelled) return;
         const orgBody: any = orgRes.data || {};
         const org = orgBody.data || orgBody;
-        const hasBusinessNumber = org?.hasBusinessNumber === true;
+        const extracted = org?.extracted || {};
+        const orgName = String(org?.organization?.name || "").trim();
+        const businessNumber = String(extracted?.businessNumber || "").trim();
+        const hasBusinessNumber = !!businessNumber;
+
+        const missingBusinessStepId = (() => {
+          const candidates: { id: string; ok: boolean }[] = [
+            { id: "requestor.business.companyName", ok: !!orgName },
+            { id: "requestor.business.businessNumber", ok: !!businessNumber },
+            {
+              id: "requestor.business.representativeName",
+              ok: !!String(extracted?.representativeName || "").trim(),
+            },
+            {
+              id: "requestor.business.phoneNumber",
+              ok: !!String(extracted?.phoneNumber || "").trim(),
+            },
+            {
+              id: "requestor.business.address",
+              ok: !!String(extracted?.address || "").trim(),
+            },
+            {
+              id: "requestor.business.email",
+              ok: !!String(extracted?.email || "").trim(),
+            },
+            {
+              id: "requestor.business.businessType",
+              ok: !!String(extracted?.businessType || "").trim(),
+            },
+            {
+              id: "requestor.business.businessItem",
+              ok: !!String(extracted?.businessItem || "").trim(),
+            },
+          ];
+          const missing = candidates.find((c) => !c.ok);
+          return missing?.id || "";
+        })();
 
         if (!hasBusinessNumber) {
           setRequestorGuide({
             loading: false,
             hasBusinessNumber: false,
+            missingBusinessStepId,
             missingProfileImage: false,
             needsPhone: false,
           });
@@ -261,6 +300,7 @@ export const DashboardLayout = () => {
         setRequestorGuide({
           loading: false,
           hasBusinessNumber: true,
+          missingBusinessStepId,
           missingProfileImage,
           needsPhone,
         });
@@ -300,7 +340,8 @@ export const DashboardLayout = () => {
       });
       startTour(
         "requestor-onboarding",
-        "requestor.business.companyName",
+        requestorGuide.missingBusinessStepId ||
+          "requestor.business.companyName",
         returnTo
       );
       navigate(
@@ -672,6 +713,8 @@ export const DashboardLayout = () => {
                   const initial = !requestorGuide.loading
                     ? !requestorGuide.hasBusinessNumber
                       ? "requestor.business.companyName"
+                      : requestorGuide.missingBusinessStepId
+                      ? requestorGuide.missingBusinessStepId
                       : requestorGuide.missingProfileImage
                       ? "requestor.account.profileImage"
                       : requestorGuide.needsPhone
