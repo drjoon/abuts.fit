@@ -24,8 +24,7 @@ export const BusinessLicenseUpload = ({
   onDeleteLicense,
 }: BusinessLicenseUploadProps) => {
   const licenseInputRef = useRef<HTMLInputElement | null>(null);
-
-  if (membership !== "owner") return null;
+  const canEdit = membership === "owner" || membership === "none";
 
   return (
     <div className="space-y-6">
@@ -55,13 +54,13 @@ export const BusinessLicenseUpload = ({
               disabled={
                 licenseStatus === "uploading" ||
                 licenseStatus === "processing" ||
-                membership !== "owner"
+                !canEdit
               }
               onClick={() => {
                 if (
                   licenseStatus === "uploading" ||
                   licenseStatus === "processing" ||
-                  membership !== "owner"
+                  !canEdit
                 ) {
                   return;
                 }
@@ -80,18 +79,13 @@ export const BusinessLicenseUpload = ({
               type="file"
               className="hidden"
               accept=".jpg,.jpeg,.png"
-              disabled={membership !== "owner"}
+              disabled={!canEdit}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) onFileUpload(f);
                 e.target.value = "";
               }}
             />
-            {membership !== "owner" && (
-              <p className="text-xs text-muted-foreground mt-2">
-                사업자등록증 업로드/수정은 대표자(주대표/공동대표)만 가능합니다.
-              </p>
-            )}
             <p className="text-xs text-muted-foreground mt-2">
               JPG, PNG 파일만 가능 (최대 10MB)
             </p>
@@ -108,7 +102,7 @@ export const BusinessLicenseUpload = ({
                     licenseDeleteLoading ||
                     licenseStatus === "uploading" ||
                     licenseStatus === "processing" ||
-                    membership !== "owner"
+                    !canEdit
                   }
                   aria-label="사업자등록증 삭제"
                 >

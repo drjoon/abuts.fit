@@ -355,25 +355,22 @@ export async function updateMyOrganization(req, res) {
       return v.length >= 5;
     };
 
-    if (!req.user.organizationId) {
-      return res.status(403).json({
-        success: false,
-        message: "기공소 정보가 설정되지 않았습니다.",
-      });
-    }
-
-    const org = await RequestorOrganization.findById(req.user.organizationId);
-    const meId = String(req.user._id);
-    const canEdit =
-      org &&
-      (String(org.owner) === meId ||
-        (Array.isArray(org.coOwners) &&
-          org.coOwners.some((c) => String(c) === meId)));
-    if (!canEdit) {
-      return res.status(403).json({
-        success: false,
-        message: "대표자 계정만 수정할 수 있습니다.",
-      });
+    const hasOrganization = !!req.user.organizationId;
+    let org = null;
+    if (hasOrganization) {
+      org = await RequestorOrganization.findById(req.user.organizationId);
+      const meId = String(req.user._id);
+      const canEdit =
+        org &&
+        (String(org.owner) === meId ||
+          (Array.isArray(org.coOwners) &&
+            org.coOwners.some((c) => String(c) === meId)));
+      if (!canEdit) {
+        return res.status(403).json({
+          success: false,
+          message: "대표자 계정만 수정할 수 있습니다.",
+        });
+      }
     }
 
     const nextName = String(req.body?.name || "").trim();
@@ -436,15 +433,74 @@ export async function updateMyOrganization(req, res) {
     if (address) extractedPatch.address = address;
 
     if (businessNumber) {
-      const current = String(org?.extracted?.businessNumber || "").trim();
-      if (businessNumber !== current) {
-        const dup = await RequestorOrganization.findOne({
-          _id: { $ne: org._id },
-          "extracted.businessNumber": businessNumber,
-        })
-          .select({ _id: 1 })
-          .lean();
-        if (dup) {
+      const query = { "extracted.businessNumber": businessNumber };
+      if (org?._id) {
+        query._id = { $ne: org._id };
+      }
+      const dup = await RequestorOrganization.findOne(query)
+        .select({ _id: 1 })
+        .lean();
+      if (dup) {
+        return res.status(409).json({
+          success: false,
+          reason: "duplicate_business_number",
+          message:
+            "이미 등록된 사업자등록번호입니다. 기존 기공소에 가입 요청을 진행해주세요.",
+        });
+      }
+    }
+
+    if (!hasOrganization) {
+      const requiredMissing =
+        !nextName ||
+        !representativeName ||
+        !businessType ||
+        !businessItem ||
+        !address ||
+        !email ||
+        !phoneNumber ||
+        !businessNumber;
+      if (requiredMissing) {
+        return res.status(400).json({
+          success: false,
+          message: "기공소 정보를 모두 입력해주세요.",
+        });
+      }
+
+      try {
+        const created = await RequestorOrganization.create({
+          name: nextName,
+          owner: req.user._id,
+          coOwners: [],
+          members: [req.user._id],
+          extracted: {
+            representativeName,
+            businessItem,
+            businessType,
+            address,
+            email,
+            phoneNumber,
+            businessNumber,
+          },
+        });
+
+        await User.findByIdAndUpdate(
+          req.user._id,
+          {
+            $set: {
+              organizationId: created._id,
+              organization: created.name,
+            },
+          },
+          { new: true }
+        );
+
+        return res.json({
+          success: true,
+          data: { created: true, organizationId: created._id },
+        });
+      } catch (e) {
+        if (isDuplicateKeyError(e)) {
           return res.status(409).json({
             success: false,
             reason: "duplicate_business_number",
@@ -452,6 +508,7 @@ export async function updateMyOrganization(req, res) {
               "이미 등록된 사업자등록번호입니다. 기존 기공소에 가입 요청을 진행해주세요.",
           });
         }
+        throw e;
       }
     }
 
@@ -510,20 +567,16 @@ export async function clearMyBusinessLicense(req, res) {
     }
 
     if (!req.user.organizationId) {
-      return res.status(403).json({
-        success: false,
-        message: "기공소 정보가 설정되지 않았습니다.",
+      return res.status(200).json({
+        success: true,
+        data: { cleared: true },
       });
     }
 
     const org = await RequestorOrganization.findById(req.user.organizationId);
     const meId = String(req.user._id);
-    const canEdit =
-      org &&
-      (String(org.owner) === meId ||
-        (Array.isArray(org.coOwners) &&
-          org.coOwners.some((c) => String(c) === meId)));
-    if (!canEdit) {
+    const isOwner = org && String(org.owner) === meId;
+    if (!isOwner) {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 삭제할 수 있습니다.",
@@ -545,9 +598,6 @@ export async function clearMyBusinessLicense(req, res) {
     }
 
     await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
-      $unset: {
-        "extracted.businessNumber": 1,
-      },
       $set: {
         businessLicense: {
           fileId: null,
@@ -563,6 +613,7 @@ export async function clearMyBusinessLicense(req, res) {
           representativeName: "",
           businessType: "",
           businessItem: "",
+          businessNumber: "",
         },
         verification: {
           verified: false,
@@ -573,8 +624,25 @@ export async function clearMyBusinessLicense(req, res) {
       },
     });
 
-    return res.json({ success: true, data: { cleared: true } });
+    const orgId = org._id;
+    await User.findByIdAndUpdate(req.user._id, {
+      $set: { organizationId: null, organization: "" },
+    });
+    await RequestorOrganization.findByIdAndUpdate(orgId, {
+      $pull: { members: req.user._id },
+    });
+
+    return res.json({ success: true, data: { cleared: true, detached: true } });
   } catch (error) {
+    console.error(
+      "[requestorOrganization] clearMyBusinessLicense error",
+      {
+        userId: req.user?._id,
+        organizationId: req.user?.organizationId,
+        message: error?.message,
+      },
+      error
+    );
     return res.status(500).json({
       success: false,
       message: "사업자등록증 삭제 중 오류가 발생했습니다.",

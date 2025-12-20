@@ -29,6 +29,7 @@ export const RequestorSettingsPage = () => {
   const [membership, setMembership] = useState<
     "owner" | "member" | "pending" | "none" | "unknown"
   >(token ? "unknown" : "none");
+  const [canManageStaff, setCanManageStaff] = useState(false);
 
   const mockHeaders = useMemo(() => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
@@ -47,6 +48,7 @@ export const RequestorSettingsPage = () => {
       try {
         if (!token) {
           setMembership("none");
+          setCanManageStaff(false);
           return;
         }
         const res = await request<any>({
@@ -67,16 +69,21 @@ export const RequestorSettingsPage = () => {
           | "pending"
           | "none";
         setMembership(next);
+
+        const ownerId = String(data?.organization?.owner || "").trim();
+        const myUserId = String(user?.mockUserId || user?.id || "");
+        setCanManageStaff(!!ownerId && !!myUserId && ownerId === myUserId);
       } catch {
         setMembership("none");
+        setCanManageStaff(false);
       }
     };
 
     load();
-  }, [mockHeaders, token]);
+  }, [mockHeaders, token, user?.id, user?.mockUserId]);
 
-  const tabs: SettingsTabDef[] = useMemo(
-    () => [
+  const tabs: SettingsTabDef[] = useMemo(() => {
+    const base: SettingsTabDef[] = [
       {
         key: "account",
         label: "계정",
@@ -89,12 +96,18 @@ export const RequestorSettingsPage = () => {
         icon: Building2,
         content: <BusinessTab userData={user} />,
       },
-      {
+    ];
+
+    if (canManageStaff) {
+      base.push({
         key: "staff",
         label: "임직원",
         icon: Users,
         content: <StaffTab userData={user} />,
-      },
+      });
+    }
+
+    base.push(
       {
         key: "shipping",
         label: "배송 옵션",
@@ -112,10 +125,11 @@ export const RequestorSettingsPage = () => {
         label: "알림",
         icon: Bell,
         content: <NotificationsTab />,
-      },
-    ],
-    [user]
-  );
+      }
+    );
+
+    return base;
+  }, [canManageStaff, user]);
 
   const tabFromUrl =
     (searchParams.get("tab") as TabKey | null) || (tabs[0]?.key as TabKey);

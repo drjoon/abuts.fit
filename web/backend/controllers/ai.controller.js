@@ -48,27 +48,24 @@ export async function parseBusinessLicense(req, res) {
       });
     }
 
-    if (!req.user.organizationId) {
-      return res.status(403).json({
-        success: false,
-        message: "기공소 정보가 설정되지 않았습니다.",
-      });
-    }
-
-    const org = await RequestorOrganization.findById(req.user.organizationId)
-      .select({ owner: 1, coOwners: 1 })
-      .lean();
-    const meId = String(req.user._id);
-    const canUpload =
-      org &&
-      (String(org.owner) === meId ||
-        (Array.isArray(org.coOwners) &&
-          org.coOwners.some((c) => String(c) === meId)));
-    if (!canUpload) {
-      return res.status(403).json({
-        success: false,
-        message: "대표자 계정만 사업자등록증 업로드가 가능합니다.",
-      });
+    const hasOrganization = !!req.user.organizationId;
+    let org = null;
+    if (hasOrganization) {
+      org = await RequestorOrganization.findById(req.user.organizationId)
+        .select({ owner: 1, coOwners: 1 })
+        .lean();
+      const meId = String(req.user._id);
+      const canUpload =
+        org &&
+        (String(org.owner) === meId ||
+          (Array.isArray(org.coOwners) &&
+            org.coOwners.some((c) => String(c) === meId)));
+      if (!canUpload) {
+        return res.status(403).json({
+          success: false,
+          message: "대표자 계정만 사업자등록증 업로드가 가능합니다.",
+        });
+      }
     }
 
     const key = String(s3Key || "").trim();
@@ -123,20 +120,22 @@ export async function parseBusinessLicense(req, res) {
           "GOOGLE_API_KEY가 설정되지 않아 사업자등록증 자동 인식이 비활성화되어 있습니다.",
       };
 
-      await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
-        $set: {
-          businessLicense: {
-            fileId: fileId || null,
-            s3Key: key,
-            originalName: originalName || "",
-            uploadedAt: new Date(),
+      if (hasOrganization && org?._id) {
+        await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
+          $set: {
+            businessLicense: {
+              fileId: fileId || null,
+              s3Key: key,
+              originalName: originalName || "",
+              uploadedAt: new Date(),
+            },
+            verification: {
+              ...verification,
+              checkedAt: new Date(),
+            },
           },
-          verification: {
-            ...verification,
-            checkedAt: new Date(),
-          },
-        },
-      });
+        });
+      }
 
       return res.json({
         success: true,
@@ -324,48 +323,53 @@ export async function parseBusinessLicense(req, res) {
       },
     };
 
-    try {
-      await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
-        $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
-      });
-    } catch (e) {
-      if (normalizedBusinessNumber && isDuplicateKeyError(e)) {
-        const verificationOverride = {
-          ...verification,
-          reason: "duplicate_business_number",
-          message:
-            "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
-        };
-
+    if (hasOrganization && org?._id) {
+      try {
         await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
-          $set: {
-            ...baseSet,
-            verification: {
-              ...verificationOverride,
-              checkedAt: new Date(),
-            },
-          },
+          $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
         });
+      } catch (e) {
+        if (normalizedBusinessNumber && isDuplicateKeyError(e)) {
+          const verificationOverride = {
+            ...verification,
+            reason: "duplicate_business_number",
+            message:
+              "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
+          };
 
-        return res.json({
-          success: true,
-          data: {
-            input: {
-              fileId: fileId || null,
-              s3Key: key,
-              originalName: originalName || null,
+          await RequestorOrganization.findByIdAndUpdate(
+            req.user.organizationId,
+            {
+              $set: {
+                ...baseSet,
+                verification: {
+                  ...verificationOverride,
+                  checkedAt: new Date(),
+                },
+              },
+            }
+          );
+
+          return res.json({
+            success: true,
+            data: {
+              input: {
+                fileId: fileId || null,
+                s3Key: key,
+                originalName: originalName || null,
+              },
+              extracted: {
+                ...baseSet.extracted,
+                businessNumber: "",
+              },
+              verification: {
+                ...verificationOverride,
+              },
             },
-            extracted: {
-              ...baseSet.extracted,
-              businessNumber: "",
-            },
-            verification: {
-              ...verificationOverride,
-            },
-          },
-        });
+          });
+        }
+        throw e;
       }
-      throw e;
     }
 
     return res.json({

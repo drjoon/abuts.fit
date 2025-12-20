@@ -23,7 +23,9 @@ interface HandleSaveParams {
   nextPath: string;
 }
 
-export const handleSave = async (params: HandleSaveParams) => {
+export const handleSave = async (
+  params: HandleSaveParams
+): Promise<boolean> => {
   const {
     token,
     businessData,
@@ -43,7 +45,7 @@ export const handleSave = async (params: HandleSaveParams) => {
         variant: "destructive",
         duration: 3000,
       });
-      return;
+      return false;
     }
 
     const companyName = String(businessData.companyName || "").trim();
@@ -76,7 +78,7 @@ export const handleSave = async (params: HandleSaveParams) => {
         variant: "destructive",
         duration: 3500,
       });
-      return;
+      return false;
     }
 
     if (!normalizedBusinessNumber) {
@@ -86,7 +88,7 @@ export const handleSave = async (params: HandleSaveParams) => {
         variant: "destructive",
         duration: 3500,
       });
-      return;
+      return false;
     }
 
     if (!normalizedPhoneNumber) {
@@ -97,7 +99,7 @@ export const handleSave = async (params: HandleSaveParams) => {
         variant: "destructive",
         duration: 3500,
       });
-      return;
+      return false;
     }
 
     if (!isValidEmail(taxEmail)) {
@@ -107,7 +109,7 @@ export const handleSave = async (params: HandleSaveParams) => {
         variant: "destructive",
         duration: 3500,
       });
-      return;
+      return false;
     }
 
     if (!isValidAddress(address)) {
@@ -118,7 +120,7 @@ export const handleSave = async (params: HandleSaveParams) => {
         variant: "destructive",
         duration: 3500,
       });
-      return;
+      return false;
     }
 
     const res = await request<any>({
@@ -151,7 +153,7 @@ export const handleSave = async (params: HandleSaveParams) => {
           variant: "destructive",
           duration: 4000,
         });
-        return;
+        return false;
       }
       toast({
         title: "저장 실패",
@@ -159,7 +161,7 @@ export const handleSave = async (params: HandleSaveParams) => {
         variant: "destructive",
         duration: 3000,
       });
-      return;
+      return false;
     }
 
     setErrors({});
@@ -177,12 +179,14 @@ export const handleSave = async (params: HandleSaveParams) => {
     if (nextPath) {
       navigate(nextPath);
     }
+    return true;
   } catch {
     toast({
       title: "저장 실패",
       variant: "destructive",
       duration: 3000,
     });
+    return false;
   }
 };
 
@@ -212,7 +216,7 @@ interface HandleDeleteLicenseParams {
 
 export const handleDeleteLicense = async (
   params: HandleDeleteLicenseParams
-) => {
+): Promise<boolean> => {
   const {
     token,
     membership,
@@ -240,7 +244,7 @@ export const handleDeleteLicense = async (
         variant: "destructive",
         duration: 3000,
       });
-      return;
+      return false;
     }
 
     if (membership !== "owner") {
@@ -249,11 +253,11 @@ export const handleDeleteLicense = async (
         variant: "destructive",
         duration: 3000,
       });
-      return;
+      return false;
     }
 
     if (!licenseFileName && !licenseS3Key && !licenseFileId) {
-      return;
+      return true;
     }
 
     setLicenseDeleteLoading(true);
@@ -272,7 +276,7 @@ export const handleDeleteLicense = async (
         variant: "destructive",
         duration: 3000,
       });
-      return;
+      return false;
     }
 
     setLicenseFileName("");
@@ -295,6 +299,7 @@ export const handleDeleteLicense = async (
       title: "삭제되었습니다",
       duration: 2000,
     });
+    return true;
   } finally {
     setLicenseDeleteLoading(false);
   }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
@@ -23,6 +24,8 @@ import {
   normalizePhoneNumber,
   isValidEmail,
   isValidAddress,
+  formatBusinessNumberInput,
+  formatPhoneNumberInput,
 } from "./business/validations";
 import {
   handleSave as handleSaveImpl,
@@ -42,7 +45,7 @@ interface BusinessTabProps {
 
 export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const { toast } = useToast();
-  const { token, user } = useAuthStore();
+  const { token, user, loginWithToken } = useAuthStore();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -50,6 +53,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const reason = (searchParams.get("reason") || "").trim();
 
   const [membership, setMembership] = useState<MembershipStatus>("none");
+  const [setupMode, setSetupMode] = useState<"license" | "search" | null>(null);
 
   const myUserId = useMemo(() => {
     return String(user?.mockUserId || user?.id || "");
@@ -161,16 +165,23 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
         const orgName = String(data?.organization?.name || "").trim();
         const ex = data?.extracted || {};
-        setBusinessData((prev) => ({
-          ...prev,
-          companyName: companyNameTouched
-            ? prev.companyName
-            : orgName || prev.companyName,
-          businessNumber:
-            String(ex?.businessNumber || "").trim() || prev.businessNumber,
-          address: String(ex?.address || "").trim() || prev.address,
-          phone: String(ex?.phoneNumber || "").trim() || prev.phone,
-        }));
+        setBusinessData((prev) => {
+          const nextBusinessNumber = formatBusinessNumberInput(
+            String(ex?.businessNumber || "").trim()
+          );
+          const nextPhone = formatPhoneNumberInput(
+            String(ex?.phoneNumber || "").trim()
+          );
+          return {
+            ...prev,
+            companyName: companyNameTouched
+              ? prev.companyName
+              : orgName || prev.companyName,
+            businessNumber: nextBusinessNumber || prev.businessNumber,
+            address: String(ex?.address || "").trim() || prev.address,
+            phone: nextPhone || prev.phone,
+          };
+        });
         setExtracted((prev) => ({
           ...prev,
           representativeName:
@@ -202,6 +213,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
     load();
   }, [mockHeaders, token]);
+
+  useEffect(() => {
+    if (membership !== "none") {
+      setSetupMode(null);
+    }
+  }, [membership]);
 
   useEffect(() => {
     const q = orgSearch.trim();
@@ -304,7 +321,26 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   const handleDeleteLicense = async () => {
-    await handleDeleteLicenseImpl({
+    if (membership === "none") {
+      setLicenseFileName("");
+      setLicenseFileId("");
+      setLicenseS3Key("");
+      setLicenseStatus("missing");
+      setIsVerified(false);
+      setExtracted({});
+      setErrors({});
+      setBusinessData((prev) => ({
+        ...prev,
+        companyName: "",
+        businessNumber: "",
+        address: "",
+        phone: "",
+      }));
+      setCompanyNameTouched(false);
+      return;
+    }
+
+    const success = await handleDeleteLicenseImpl({
       token,
       membership,
       licenseFileName,
@@ -323,6 +359,13 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setBusinessData,
       setCompanyNameTouched,
     });
+
+    if (success) {
+      await refreshMembership();
+      if (token) {
+        await loginWithToken(token);
+      }
+    }
   };
 
   const handleLeaveOrganization = async (organizationId: string) => {
@@ -374,7 +417,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   }, [isPrimaryOwner, membership]);
 
   const handleSave = async () => {
-    await handleSaveImpl({
+    const success = await handleSaveImpl({
       token,
       businessData,
       extracted,
@@ -397,6 +440,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         });
         return;
       }
+
+      const canUploadLicense =
+        membership === "owner" ||
+        (membership === "none" && setupMode === "license");
 
       const maxBytes = 10 * 1024 * 1024;
       const allowedMimeTypes = new Set(["image/jpeg", "image/png"]);
@@ -421,7 +468,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         return;
       }
 
-      if (membership !== "owner") {
+      if (!canUploadLicense) {
         toast({
           title: "대표자만 업로드할 수 있어요",
           description:
@@ -450,7 +497,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       const processingToast = toast({
         title: "AI 인식 중",
         description:
-          "사업자등록증을 인식하고 있어요. 약 4~5초 정도 걸릴 수 있어요.",
+          "사업자등록증을 인식하고 있어요. 약 10초 정도 걸릴 수 있어요.",
         duration: 60000,
       });
       const res = await request<any>({
@@ -499,16 +546,23 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             String(nextExtracted?.businessItem || "").trim() ||
             prev.businessItem,
         }));
-        setBusinessData((prev) => ({
-          ...prev,
-          companyName: companyNameTouched
-            ? prev.companyName
-            : nextCompanyName || prev.companyName,
-          businessNumber:
-            nextExtracted?.businessNumber?.trim() || prev.businessNumber,
-          address: nextExtracted?.address?.trim() || prev.address,
-          phone: nextExtracted?.phoneNumber?.trim() || prev.phone,
-        }));
+        setBusinessData((prev) => {
+          const aiBusinessNumber = formatBusinessNumberInput(
+            String(nextExtracted?.businessNumber || "").trim()
+          );
+          const aiPhone = formatPhoneNumberInput(
+            String(nextExtracted?.phoneNumber || "").trim()
+          );
+          return {
+            ...prev,
+            companyName: companyNameTouched
+              ? prev.companyName
+              : nextCompanyName || prev.companyName,
+            businessNumber: aiBusinessNumber || prev.businessNumber,
+            address: nextExtracted?.address?.trim() || prev.address,
+            phone: aiPhone || prev.phone,
+          };
+        });
         setIsVerified(!!data?.verification?.verified);
         setLicenseStatus("ready");
         processingToast.dismiss();
@@ -581,40 +635,95 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {membership === "owner" && (
-          <div className="space-y-6">
-            <BusinessLicenseUpload
-              membership={membership}
-              licenseStatus={licenseStatus}
-              isVerified={isVerified}
-              licenseFileName={licenseFileName}
-              licenseDeleteLoading={licenseDeleteLoading}
-              onFileUpload={handleFileUpload}
-              onDeleteLicense={handleDeleteLicense}
-            />
+        {membership === "none" && !setupMode && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-white/60 p-3 text-sm">
+              아래 두 가지 방법 중 하나를 선택해 기공소 소속을 설정해주세요.
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <button
+                type="button"
+                className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
+                onClick={() => setSetupMode("license")}
+              >
+                <div className="text-sm font-medium">신규 기공소 등록</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  사업자등록증을 업로드해서 기공소를 새로 등록합니다.
+                </div>
+              </button>
+              <button
+                type="button"
+                className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
+                onClick={() => setSetupMode("search")}
+              >
+                <div className="text-sm font-medium">기존 기공소 소속 신청</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  이미 등록된 기공소를 검색해 소속을 신청합니다.
+                </div>
+              </button>
+            </div>
 
-            {showLicenseDetails && (
-              <BusinessForm
-                businessData={businessData}
-                extracted={extracted}
-                errors={errors}
-                licenseStatus={licenseStatus}
-                membership={membership}
-                licenseDeleteLoading={licenseDeleteLoading}
-                setBusinessData={setBusinessData}
-                setExtracted={setExtracted}
-                setErrors={setErrors}
-                setCompanyNameTouched={setCompanyNameTouched}
-                onSave={handleSave}
-                onReset={handleDeleteLicense}
-              />
-            )}
+            <JoinRequestsSection
+              myJoinRequests={myJoinRequests}
+              cancelLoadingOrgId={cancelLoadingOrgId}
+              onCancelJoinRequest={handleCancelJoinRequest}
+              onLeaveOrganization={handleLeaveOrganization}
+            />
           </div>
         )}
 
-        {membership !== "owner" && (
-          <div className="space-y-4">
-            {membership === "member" && (
+        {(membership !== "none" || !!setupMode) && (
+          <div className="space-y-6">
+            {membership === "none" && (
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-medium">
+                  {setupMode === "license"
+                    ? "신규 기공소 등록"
+                    : "기존 기공소 소속 신청"}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSetupMode(null)}
+                >
+                  다른 방법 선택
+                </Button>
+              </div>
+            )}
+
+            {(membership === "owner" || setupMode === "license") && (
+              <div className="space-y-6">
+                <BusinessLicenseUpload
+                  membership={membership}
+                  licenseStatus={licenseStatus}
+                  isVerified={isVerified}
+                  licenseFileName={licenseFileName}
+                  licenseDeleteLoading={licenseDeleteLoading}
+                  onFileUpload={handleFileUpload}
+                  onDeleteLicense={handleDeleteLicense}
+                />
+
+                {showLicenseDetails && (
+                  <BusinessForm
+                    businessData={businessData}
+                    extracted={extracted}
+                    errors={errors}
+                    licenseStatus={licenseStatus}
+                    membership={membership}
+                    licenseDeleteLoading={licenseDeleteLoading}
+                    setBusinessData={setBusinessData}
+                    setExtracted={setExtracted}
+                    setErrors={setErrors}
+                    setCompanyNameTouched={setCompanyNameTouched}
+                    onSave={handleSave}
+                    onReset={handleDeleteLicense}
+                  />
+                )}
+              </div>
+            )}
+
+            {(membership === "member" || membership === "pending") && (
               <BusinessMemberView
                 currentOrgName={currentOrgName}
                 licenseStatus={licenseStatus}
@@ -624,26 +733,32 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
               />
             )}
 
-            {membership === "none" && (
-              <OrganizationSearchSection
-                orgSearch={orgSearch}
-                setOrgSearch={setOrgSearch}
-                orgSearchResults={orgSearchResults}
-                selectedOrg={selectedOrg}
-                setSelectedOrg={setSelectedOrg}
-                orgOpen={orgOpen}
-                setOrgOpen={setOrgOpen}
-                joinLoading={joinLoading}
-                onJoinRequest={handleJoinRequest}
-              />
-            )}
+            {(membership === "none"
+              ? setupMode === "search"
+              : membership !== "owner") && (
+              <div className="space-y-4">
+                {membership === "none" && (
+                  <OrganizationSearchSection
+                    orgSearch={orgSearch}
+                    setOrgSearch={setOrgSearch}
+                    orgSearchResults={orgSearchResults}
+                    selectedOrg={selectedOrg}
+                    setSelectedOrg={setSelectedOrg}
+                    orgOpen={orgOpen}
+                    setOrgOpen={setOrgOpen}
+                    joinLoading={joinLoading}
+                    onJoinRequest={handleJoinRequest}
+                  />
+                )}
 
-            <JoinRequestsSection
-              myJoinRequests={myJoinRequests}
-              cancelLoadingOrgId={cancelLoadingOrgId}
-              onCancelJoinRequest={handleCancelJoinRequest}
-              onLeaveOrganization={handleLeaveOrganization}
-            />
+                <JoinRequestsSection
+                  myJoinRequests={myJoinRequests}
+                  cancelLoadingOrgId={cancelLoadingOrgId}
+                  onCancelJoinRequest={handleCancelJoinRequest}
+                  onLeaveOrganization={handleLeaveOrganization}
+                />
+              </div>
+            )}
           </div>
         )}
       </CardContent>

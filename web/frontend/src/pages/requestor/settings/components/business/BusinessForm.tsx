@@ -9,6 +9,13 @@ import {
   LicenseStatus,
   MembershipStatus,
 } from "./types";
+import {
+  formatBusinessNumberInput,
+  formatPhoneNumberInput,
+  isValidBusinessNumber,
+  isValidPhoneNumber,
+  isValidEmail,
+} from "./validations";
 
 interface BusinessFormProps {
   businessData: BusinessData;
@@ -93,11 +100,17 @@ export const BusinessForm = ({
               )}
               value={businessData.phone}
               onChange={(e) => {
+                const nextValue = formatPhoneNumberInput(e.target.value);
                 setBusinessData((prev) => ({
                   ...prev,
-                  phone: e.target.value,
+                  phone: nextValue,
                 }));
-                setErrors((prev) => ({ ...prev, phone: false }));
+                setErrors((prev) => ({
+                  ...prev,
+                  phone: nextValue
+                    ? !isValidPhoneNumber(nextValue)
+                    : prev.phone,
+                }));
               }}
             />
           </div>
@@ -112,13 +125,16 @@ export const BusinessForm = ({
               )}
               value={businessData.businessNumber}
               onChange={(e) => {
+                const nextValue = formatBusinessNumberInput(e.target.value);
                 setBusinessData((prev) => ({
                   ...prev,
-                  businessNumber: e.target.value,
+                  businessNumber: nextValue,
                 }));
                 setErrors((prev) => ({
                   ...prev,
-                  businessNumber: false,
+                  businessNumber: nextValue
+                    ? !isValidBusinessNumber(nextValue)
+                    : prev.businessNumber,
                 }));
               }}
             />
@@ -176,11 +192,15 @@ export const BusinessForm = ({
               )}
               value={extracted.email || ""}
               onChange={(e) => {
+                const nextValue = e.target.value;
                 setExtracted((prev) => ({
                   ...prev,
-                  email: e.target.value,
+                  email: nextValue,
                 }));
-                setErrors((prev) => ({ ...prev, email: false }));
+                setErrors((prev) => ({
+                  ...prev,
+                  email: nextValue ? !isValidEmail(nextValue) : false,
+                }));
               }}
             />
           </div>

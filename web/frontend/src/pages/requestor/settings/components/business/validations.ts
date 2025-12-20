@@ -33,3 +33,53 @@ export const isValidAddress = (input: string): boolean => {
   const v = String(input || "").trim();
   return v.length >= 5;
 };
+
+const joinWithDash = (...parts: string[]) =>
+  parts.filter((part) => !!part).join("-");
+
+export const formatBusinessNumberInput = (input: string): string => {
+  const digits = String(input || "")
+    .replace(/\D/g, "")
+    .slice(0, 10);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 5) {
+    return joinWithDash(digits.slice(0, 3), digits.slice(3));
+  }
+  return joinWithDash(digits.slice(0, 3), digits.slice(3, 5), digits.slice(5));
+};
+
+export const formatPhoneNumberInput = (input: string): string => {
+  const digits = String(input || "")
+    .replace(/\D/g, "")
+    .slice(0, 11);
+  if (!digits) return "";
+  if (digits.startsWith("02")) {
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 5) {
+      return joinWithDash("02", digits.slice(2));
+    }
+    if (digits.length <= 9) {
+      return joinWithDash("02", digits.slice(2, 5), digits.slice(5));
+    }
+    return joinWithDash("02", digits.slice(2, 6), digits.slice(6));
+  }
+
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) {
+    return joinWithDash(digits.slice(0, 3), digits.slice(3));
+  }
+  if (digits.length <= 10) {
+    return joinWithDash(
+      digits.slice(0, 3),
+      digits.slice(3, 6),
+      digits.slice(6)
+    );
+  }
+  return joinWithDash(digits.slice(0, 3), digits.slice(3, 7), digits.slice(7));
+};
+
+export const isValidBusinessNumber = (input: string): boolean =>
+  !!normalizeBusinessNumber(input);
+
+export const isValidPhoneNumber = (input: string): boolean =>
+  !!normalizePhoneNumber(input);
