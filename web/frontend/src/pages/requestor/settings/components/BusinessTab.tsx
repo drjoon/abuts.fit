@@ -69,6 +69,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     isStepActive,
     completeStep,
     startTour,
+    stopTour,
   } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
@@ -245,6 +246,66 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     if (setupMode) return;
     setSetupMode("license");
   }, [activeTourId, guideActive, isStepActive, membership, setupMode]);
+
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-onboarding") return;
+    if (!isStepActive("requestor.business.licenseUpload")) return;
+    if (licenseStatus === "missing") return;
+    if (!licenseFileId && !licenseFileName && !licenseS3Key) return;
+    completeStep("requestor.business.licenseUpload");
+  }, [
+    activeTourId,
+    completeStep,
+    guideActive,
+    isStepActive,
+    licenseFileId,
+    licenseFileName,
+    licenseS3Key,
+    licenseStatus,
+  ]);
+
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-onboarding") return;
+    const licenseCompleted =
+      licenseStatus !== "missing" &&
+      licenseStatus !== "error" &&
+      (licenseFileId || licenseFileName || licenseS3Key);
+    if (!licenseCompleted) return;
+
+    const hasText = (value?: string | null) =>
+      Boolean(String(value || "").trim());
+
+    const businessInputsCompleted =
+      hasText(businessData.companyName) &&
+      hasText(businessData.businessNumber) &&
+      hasText(businessData.phone) &&
+      hasText(businessData.address) &&
+      hasText(extracted.representativeName) &&
+      hasText(extracted.email) &&
+      hasText(extracted.businessType) &&
+      hasText(extracted.businessItem);
+
+    if (!businessInputsCompleted) return;
+    stopTour();
+  }, [
+    activeTourId,
+    businessData.address,
+    businessData.businessNumber,
+    businessData.companyName,
+    businessData.phone,
+    extracted.businessItem,
+    extracted.businessType,
+    extracted.email,
+    extracted.representativeName,
+    guideActive,
+    licenseFileId,
+    licenseFileName,
+    licenseS3Key,
+    licenseStatus,
+    stopTour,
+  ]);
 
   useEffect(() => {
     const q = orgSearch.trim();

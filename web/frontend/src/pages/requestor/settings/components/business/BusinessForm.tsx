@@ -244,7 +244,10 @@ export const BusinessForm = ({
                     if (!String(businessData.phone || "").trim()) return;
                     completeStep("requestor.business.phoneNumber");
                   }
-                  focusNext(bizNoRef);
+                  const hasBusinessNumber = Boolean(
+                    String(businessData.businessNumber || "").trim()
+                  );
+                  focusNext(hasBusinessNumber ? emailRef : bizNoRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
