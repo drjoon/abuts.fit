@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Navigation } from "@/features/layout/Navigation";
@@ -162,6 +162,15 @@ export const LoginPage = () => {
                         )}
                       </button>
                     </div>
+                  </div>
+
+                  <div className="flex justify-end text-sm">
+                    <Link
+                      to="/forgot-password"
+                      className="text-primary hover:underline"
+                    >
+                      비밀번호를 잊으셨나요?
+                    </Link>
                   </div>
 
                   <Button

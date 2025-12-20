@@ -5,10 +5,13 @@ import jwt from "jsonwebtoken";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import {
   assertSignupVerifications,
   consumeSignupVerifications,
 } from "./signupVerification.controller.js";
+import { sendEmail } from "../utils/email.util.js";
+import { getFrontendBaseUrl } from "../utils/url.util.js";
 
 const createReferralCode = () => {
   return crypto.randomBytes(9).toString("base64url");
@@ -705,7 +708,7 @@ async function forgotPassword(req, res) {
     }
 
     // 비밀번호 재설정 토큰 생성
-    const resetToken = require("crypto").randomBytes(32).toString("hex");
+    const resetToken = crypto.randomBytes(32).toString("hex");
 
     // 토큰 해싱 (보안 강화)
     const hashedToken = await bcrypt.hash(resetToken, 10);
@@ -714,15 +717,39 @@ async function forgotPassword(req, res) {
     user.resetPasswordExpires = Date.now() + 3600000; // 1시간 후 만료
     await user.save();
 
-    // 실제 서비스에서는 이메일 전송 로직 구현
-    // 여기서는 토큰만 반환 (개발 목적)
+    const frontendBase = getFrontendBaseUrl(req);
+    const resetUrl = new URL("/reset-password", frontendBase);
+    resetUrl.searchParams.set("token", resetToken);
+    resetUrl.searchParams.set("email", email);
+
+    try {
+      await sendEmail({
+        to: email,
+        subject: "[abuts.fit] 비밀번호 재설정 안내",
+        html: `
+          <p>안녕하세요.</p>
+          <p>아래 버튼을 클릭하여 비밀번호를 재설정해주세요.</p>
+          <p style="margin: 24px 0;">
+            <a href="${resetUrl.toString()}" style="display:inline-block;padding:12px 24px;background:#5b6bff;color:#fff;border-radius:8px;text-decoration:none;">비밀번호 재설정</a>
+          </p>
+          <p>버튼이 작동하지 않으면 아래 링크를 브라우저에 복사해 붙여넣어주세요.</p>
+          <p>${resetUrl.toString()}</p>
+          <p>이 링크는 1시간 동안만 유효합니다.</p>
+          <p>감사합니다.<br/>abuts.fit 팀</p>
+        `,
+        text: `아래 링크를 열어 비밀번호를 재설정해주세요 (1시간 유효)\n${resetUrl.toString()}`,
+      });
+    } catch (error) {
+      console.error("[forgotPassword] email send failed:", error);
+      return res.status(500).json({
+        success: false,
+        message: "이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.",
+      });
+    }
 
     res.status(200).json({
       success: true,
       message: "비밀번호 재설정 링크가 이메일로 전송되었습니다.",
-      // 개발 환경에서만 토큰 노출 (실제 서비스에서는 제거)
-      resetToken:
-        process.env.NODE_ENV === "development" ? resetToken : undefined,
     });
   } catch (error) {
     res.status(500).json({
@@ -739,7 +766,22 @@ async function forgotPassword(req, res) {
  */
 async function resetPassword(req, res) {
   try {
-    const { token, newPassword } = req.body;
+    const token = req.params?.token || req.body?.token;
+    const { newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "토큰과 새 비밀번호를 모두 입력해주세요.",
+      });
+    }
+
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: "비밀번호는 10자 이상이며 특수문자를 포함해야 합니다.",
+      });
+    }
 
     // 토큰으로 사용자 찾기
     const user = await User.findOne({
@@ -767,9 +809,7 @@ async function resetPassword(req, res) {
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
-    console.log("[resetPassword] 저장 전 비밀번호:", user.password);
     await user.save();
-    console.log("[resetPassword] 저장 후 비밀번호:", user.password);
 
     res.status(200).json({
       success: true,
