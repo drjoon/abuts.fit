@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type RiskSummary = {
   delayedCount?: number;
@@ -22,9 +23,26 @@ type RiskSummary = {
 
 type Props = {
   riskSummary?: RiskSummary | null;
+  loading?: boolean;
 };
 
-export const RequestorRiskSummaryCard = ({ riskSummary }: Props) => {
+export const RequestorRiskSummaryCard = ({ riskSummary, loading }: Props) => {
+  if (loading) {
+    return (
+      <Card className="relative flex flex-1 flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm h-full">
+        <CardHeader className="pb-3">
+          <Skeleton className="h-5 w-32" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-16 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
   const summary = riskSummary || {};
 
   return (

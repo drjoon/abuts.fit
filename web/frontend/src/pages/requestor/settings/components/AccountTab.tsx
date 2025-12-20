@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/command";
 import { GuideFocus } from "@/features/guidetour/GuideFocus";
 import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
+import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
 
 interface AccountTabProps {
   userData: {
@@ -314,19 +315,27 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     );
   }, [accountData.email, accountData.name, avatarNonce]);
 
+  const [accountLoading, setAccountLoading] = useState(Boolean(token));
+
   useEffect(() => {
-    // 이메일이 바뀌는 경우를 대비해 재로딩
-    try {
-      if (!token) return;
-      request<any>({
-        path: "/api/users/profile",
-        method: "GET",
-        token,
-        headers: mockHeaders,
-      }).then((res) => {
-        if (!res.ok) return;
+    let mounted = true;
+
+    const loadProfile = async () => {
+      if (!token) {
+        if (mounted) setAccountLoading(false);
+        return;
+      }
+      try {
+        const res = await request<any>({
+          path: "/api/users/profile",
+          method: "GET",
+          token,
+          headers: mockHeaders,
+        });
+        if (!res.ok || !mounted) return;
         const body: any = res.data || {};
         const data = body.data || body;
+        if (!mounted) return;
         setAccountData((prev) => {
           const nextPhone = splitE164ToParts(data?.phoneNumber ?? "");
           return {
@@ -352,10 +361,16 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             kakao: !!nextAuthMethods.kakao,
           }));
         }
-      });
-    } catch {
-      // ignore
-    }
+      } finally {
+        if (mounted) setAccountLoading(false);
+      }
+    };
+
+    void loadProfile();
+
+    return () => {
+      mounted = false;
+    };
   }, [mockHeaders, token, userData?.email]);
 
   const phoneValidation = useMemo(() => {
@@ -754,225 +769,132 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     return !!(authMethods.email || authMethods.google || authMethods.kakao);
   }, [authMethods.email, authMethods.google, authMethods.kakao]);
 
+  if (accountLoading) {
+    return <SettingsCardSkeleton headerLines={2} bodyLines={8} />;
+  }
+
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            계정 설정
+    <div className="space-y-6">
+      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Badge
-                variant={userData?.role === "admin" ? "destructive" : "default"}
-              >
-                {userData?.role === "requestor"
-                  ? "의뢰자"
-                  : userData?.role === "manufacturer"
-                  ? "제조사"
-                  : "어벗츠.핏"}
-              </Badge>
+              <User className="h-5 w-5" />
+              계정 설정
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant={
+                    userData?.role === "admin" ? "destructive" : "default"
+                  }
+                >
+                  {userData?.role === "requestor"
+                    ? "의뢰자"
+                    : userData?.role === "manufacturer"
+                    ? "제조사"
+                    : "어벗츠.핏"}
+                </Badge>
+              </div>
             </div>
-          </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="border-red-400 text-red-400 hover:bg-red-50 hover:text-red-700"
-            onClick={() => setWithdrawDialogOpen(true)}
-            disabled={withdrawing}
-          >
-            <UserX className="h-4 w-4" />
-            {withdrawing ? "처리 중..." : "해지 신청"}
-          </Button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Profile Image */}
-        <div className="space-y-2">
-          <Label>프로필 이미지</Label>
-          <div className="flex items-center gap-4">
-            <Avatar className="h-20 w-20">
-              <AvatarImage
-                src={accountData.profileImage || undefined}
-                alt={accountData.name}
-              />
-              <AvatarFallback className="bg-primary/10">
-                <Camera className="h-8 w-8 text-primary" />
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <GuideFocus stepId="requestor.account.profileImage">
-                <div className="grid grid-cols-5 gap-2">
-                  {avatarOptions.map((url) => (
-                    <button
-                      key={url}
-                      type="button"
-                      className={cn(
-                        "rounded-full border bg-white/80 p-0.5 transition-colors",
-                        accountData.profileImage === url
-                          ? "border-primary"
-                          : "border-border hover:border-muted-foreground/40"
-                      )}
-                      onClick={() => {
-                        setAccountData((prev) => ({
-                          ...prev,
-                          profileImage: url,
-                        }));
-                        scheduleSave();
-                        if (isStepActive("requestor.account.profileImage")) {
-                          completeStep("requestor.account.profileImage");
-                        }
-                      }}
-                    >
-                      <img
-                        src={url}
-                        alt=""
-                        className="h-10 w-10 rounded-full bg-slate-100"
-                      />
-                    </button>
-                  ))}
+            <Button
+              type="button"
+              variant="outline"
+              className="border-red-400 text-red-400 hover:bg-red-50 hover:text-red-700"
+              onClick={() => setWithdrawDialogOpen(true)}
+              disabled={withdrawing}
+            >
+              <UserX className="h-4 w-4" />
+              {withdrawing ? "처리 중..." : "해지 신청"}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-6">
+            {/* Profile Image */}
+            <div className="space-y-2">
+              <Label>프로필 이미지</Label>
+              <div className="flex items-center gap-4">
+                <Avatar className="h-20 w-20">
+                  <AvatarImage
+                    src={accountData.profileImage || undefined}
+                    alt={accountData.name}
+                  />
+                  <AvatarFallback className="bg-primary/10">
+                    <Camera className="h-8 w-8 text-primary" />
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <GuideFocus stepId="requestor.account.profileImage">
+                    <div className="grid grid-cols-5 gap-2">
+                      {avatarOptions.map((url) => (
+                        <button
+                          key={url}
+                          type="button"
+                          className={cn(
+                            "rounded-full border bg-white/80 p-0.5 transition-colors",
+                            accountData.profileImage === url
+                              ? "border-primary"
+                              : "border-border hover:border-muted-foreground/40"
+                          )}
+                          onClick={() => {
+                            setAccountData((prev) => ({
+                              ...prev,
+                              profileImage: url,
+                            }));
+                            scheduleSave();
+                            if (
+                              isStepActive("requestor.account.profileImage")
+                            ) {
+                              completeStep("requestor.account.profileImage");
+                            }
+                          }}
+                        >
+                          <img
+                            src={url}
+                            alt=""
+                            className="h-10 w-10 rounded-full bg-slate-100"
+                          />
+                        </button>
+                      ))}
 
-                  <button
-                    type="button"
-                    className={cn(
-                      "rounded-full border bg-white/80 p-0.5 transition-colors",
-                      "border-border hover:border-muted-foreground/40"
-                    )}
-                    onClick={() => setAvatarNonce((v) => v + 1)}
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
-                      <RefreshCcw className="h-4 w-4 text-muted-foreground" />
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-full border bg-white/80 p-0.5 transition-colors",
+                          "border-border hover:border-muted-foreground/40"
+                        )}
+                        onClick={() => setAvatarNonce((v) => v + 1)}
+                      >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
+                          <RefreshCcw className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </button>
                     </div>
-                  </button>
+                  </GuideFocus>
                 </div>
-              </GuideFocus>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">이름</Label>
-            <Input
-              id="name"
-              value={accountData.name}
-              className={cn(
-                fieldErrors.name
-                  ? "border-destructive focus-visible:ring-destructive"
-                  : ""
-              )}
-              onChange={(e) =>
-                setAccountData((prev) => ({ ...prev, name: e.target.value }))
-              }
-              onChangeCapture={() =>
-                setFieldErrors((prev) => ({ ...prev, name: undefined }))
-              }
-              onBlur={() => {
-                const savedKey = JSON.stringify({
-                  name: accountData.name,
-                  phoneNumber: phoneValidation.normalized,
-                  profileImage: accountData.profileImage,
-                });
-                if (savedKey !== lastSavedKeyRef.current) {
-                  scheduleSave();
-                }
-              }}
-            />
-            {!!fieldErrors.name && (
-              <p className="text-xs text-destructive">{fieldErrors.name}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">이메일</Label>
-            <Input id="email" type="email" value={accountData.email} readOnly />
-          </div>
-          <div className="hidden md:block" />
-        </div>
-
-        <div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>국가</Label>
-              <Popover open={countryOpen} onOpenChange={setCountryOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={countryOpen}
-                    className="w-full justify-between"
-                  >
-                    <span className="truncate">
-                      {selectedCountry.country} (+{selectedCountry.dialCode})
-                    </span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[200px] p-0">
-                  <Command>
-                    <CommandInput placeholder="국가 검색..." />
-                    <CommandList>
-                      <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
-                      <CommandGroup>
-                        {COUNTRY_DIAL_CODES.map((c) => (
-                          <CommandItem
-                            key={`${c.country}-${c.dialCode}`}
-                            value={`${c.country} ${c.dialCode}`}
-                            onSelect={() => {
-                              setAccountData((prev) => ({
-                                ...prev,
-                                phoneDialCode: c.dialCode,
-                              }));
-                              setCountryOpen(false);
-                              setPhoneVerifiedAt(null);
-                              setVerificationSent(false);
-                              setTimeLeft(0);
-                              setPhoneVerificationCode("");
-                            }}
-                          >
-                            <Check
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                accountData.phoneDialCode === c.dialCode
-                                  ? "opacity-100"
-                                  : "opacity-0"
-                              )}
-                            />
-                            {c.country} (+{c.dialCode})
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="phone">휴대폰번호</Label>
-              <GuideFocus stepId="requestor.phone.number">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">이름</Label>
                 <Input
-                  id="phone"
-                  type="tel"
-                  inputMode="tel"
-                  placeholder="01012345678"
-                  value={accountData.phoneNationalNumber}
+                  id="name"
+                  value={accountData.name}
                   className={cn(
-                    "h-10",
-                    fieldErrors.phone || !phoneValidation.ok
+                    fieldErrors.name
                       ? "border-destructive focus-visible:ring-destructive"
                       : ""
                   )}
-                  onChange={(e) => {
-                    setFieldErrors((prev) => ({ ...prev, phone: undefined }));
+                  onChange={(e) =>
                     setAccountData((prev) => ({
                       ...prev,
-                      phoneNationalNumber: e.target.value,
-                    }));
-                    setPhoneVerifiedAt(null);
-                    setVerificationSent(false);
-                    setTimeLeft(0);
-                    setPhoneVerificationCode("");
-                  }}
+                      name: e.target.value,
+                    }))
+                  }
+                  onChangeCapture={() =>
+                    setFieldErrors((prev) => ({ ...prev, name: undefined }))
+                  }
                   onBlur={() => {
                     const savedKey = JSON.stringify({
                       name: accountData.name,
@@ -983,119 +905,216 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                       scheduleSave();
                     }
                   }}
-                  onKeyDown={async (e) => {
-                    if (!isStepActive("requestor.phone.number")) return;
-                    if (e.key !== "Enter") return;
-                    e.preventDefault();
-                    if (!canSendPhoneVerification) return;
-                    const ok = await handleSendPhoneVerification();
-                    if (!ok) return;
-                    completeStep("requestor.phone.number");
-                    setTimeout(() => {
-                      phoneCodeInputRef.current?.focus();
-                    }, 0);
-                  }}
                 />
-              </GuideFocus>
+                {!!fieldErrors.name && (
+                  <p className="text-xs text-destructive">{fieldErrors.name}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">이메일</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={accountData.email}
+                  readOnly
+                />
+              </div>
+              <div className="hidden md:block" />
             </div>
 
-            <div className="space-y-2">
-              <Label>확인</Label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>국가</Label>
+                <Popover open={countryOpen} onOpenChange={setCountryOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={countryOpen}
+                      className="w-full justify-between"
+                    >
+                      <span className="truncate">
+                        {selectedCountry.country} (+{selectedCountry.dialCode})
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[200px] p-0">
+                    <Command>
+                      <CommandInput placeholder="국가 검색..." />
+                      <CommandList>
+                        <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
+                        <CommandGroup>
+                          {COUNTRY_DIAL_CODES.map((c) => (
+                            <CommandItem
+                              key={`${c.country}-${c.dialCode}`}
+                              value={`${c.country} ${c.dialCode}`}
+                              onSelect={() => {
+                                setAccountData((prev) => ({
+                                  ...prev,
+                                  phoneDialCode: c.dialCode,
+                                }));
+                                setCountryOpen(false);
+                                setPhoneVerifiedAt(null);
+                                setVerificationSent(false);
+                                setTimeLeft(0);
+                                setPhoneVerificationCode("");
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  accountData.phoneDialCode === c.dialCode
+                                    ? "opacity-100"
+                                    : "opacity-0"
+                                )}
+                              />
+                              {c.country} (+{c.dialCode})
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-              <div className="h-10">
-                {phoneVerifiedAt ? (
-                  <Button
-                    variant="outline"
-                    className="w-full h-10 cursor-default border-green-200 bg-white text-green-600 hover:bg-white hover:text-green-600 disabled:opacity-100"
-                    disabled
-                  >
-                    <Check className="mr-2 h-4 w-4" />
-                    <span>인증 완료</span>
-                  </Button>
-                ) : verificationSent ? (
-                  <div className="flex gap-2 h-10">
-                    <GuideFocus stepId="requestor.phone.code">
-                      <Input
-                        ref={phoneCodeInputRef}
-                        value={phoneVerificationCode}
-                        onChange={(e) =>
-                          setPhoneVerificationCode(e.target.value)
-                        }
-                        onKeyDown={(e) => {
-                          if (!isStepActive("requestor.phone.code")) return;
-                          if (e.key !== "Enter") return;
-                          e.preventDefault();
-                          handleVerifyPhoneVerification();
-                        }}
-                        inputMode="numeric"
-                        placeholder="인증번호"
-                        className="flex-1 h-10"
-                      />
-                    </GuideFocus>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="default"
-                        onClick={handleVerifyPhoneVerification}
-                        className="h-10"
-                        disabled={
-                          phoneVerificationLoading !== "idle" ||
-                          !phoneVerificationCode.trim()
-                        }
-                      >
-                        {phoneVerificationLoading === "verifying"
-                          ? "..."
-                          : "확인"}
-                      </Button>
-                      {timeLeft > 0 && (
-                        <span className="text-xs text-destructive font-mono">
-                          {formatTime(timeLeft)}
-                        </span>
-                      )}
+              <div className="space-y-2">
+                <Label htmlFor="phone">휴대폰번호</Label>
+                <GuideFocus stepId="requestor.phone.number">
+                  <Input
+                    id="phone"
+                    type="tel"
+                    inputMode="tel"
+                    placeholder="01012345678"
+                    value={accountData.phoneNationalNumber}
+                    className={cn(
+                      "h-10",
+                      fieldErrors.phone || !phoneValidation.ok
+                        ? "border-destructive focus-visible:ring-destructive"
+                        : ""
+                    )}
+                    onChange={(e) => {
+                      setFieldErrors((prev) => ({ ...prev, phone: undefined }));
+                      setAccountData((prev) => ({
+                        ...prev,
+                        phoneNationalNumber: e.target.value,
+                      }));
+                      setPhoneVerifiedAt(null);
+                      setVerificationSent(false);
+                      setTimeLeft(0);
+                      setPhoneVerificationCode("");
+                    }}
+                    onBlur={() => {
+                      const savedKey = JSON.stringify({
+                        name: accountData.name,
+                        phoneNumber: phoneValidation.normalized,
+                        profileImage: accountData.profileImage,
+                      });
+                      if (savedKey !== lastSavedKeyRef.current) {
+                        scheduleSave();
+                      }
+                    }}
+                    onKeyDown={async (e) => {
+                      if (!isStepActive("requestor.phone.number")) return;
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      if (!canSendPhoneVerification) return;
+                      const ok = await handleSendPhoneVerification();
+                      if (!ok) return;
+                      completeStep("requestor.phone.number");
+                      setTimeout(() => {
+                        phoneCodeInputRef.current?.focus();
+                      }, 0);
+                    }}
+                  />
+                </GuideFocus>
+              </div>
+
+              <div className="space-y-2">
+                <Label>확인</Label>
+
+                <div className="h-10">
+                  {phoneVerifiedAt ? (
+                    <Button
+                      variant="outline"
+                      className="w-full h-10 cursor-default border-green-200 bg-white text-green-600 hover:bg-white hover:text-green-600 disabled:opacity-100"
+                      disabled
+                    >
+                      <Check className="mr-2 h-4 w-4" />
+                      <span>인증 완료</span>
+                    </Button>
+                  ) : verificationSent ? (
+                    <div className="flex gap-2 h-10">
+                      <GuideFocus stepId="requestor.phone.code">
+                        <Input
+                          ref={phoneCodeInputRef}
+                          value={phoneVerificationCode}
+                          onChange={(e) =>
+                            setPhoneVerificationCode(e.target.value)
+                          }
+                          onKeyDown={(e) => {
+                            if (!isStepActive("requestor.phone.code")) return;
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            handleVerifyPhoneVerification();
+                          }}
+                          inputMode="numeric"
+                          placeholder="인증번호"
+                          className="flex-1 h-10"
+                        />
+                      </GuideFocus>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="default"
+                          onClick={handleVerifyPhoneVerification}
+                          className="h-10"
+                          disabled={
+                            phoneVerificationLoading !== "idle" ||
+                            !phoneVerificationCode.trim()
+                          }
+                        >
+                          {phoneVerificationLoading === "verifying"
+                            ? "..."
+                            : "확인"}
+                        </Button>
+                        {timeLeft > 0 && (
+                          <span className="text-xs text-destructive font-mono">
+                            {formatTime(timeLeft)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full h-10"
-                    onClick={handleSendPhoneVerification}
-                    disabled={!canSendPhoneVerification}
-                  >
-                    {phoneVerificationLoading === "sending"
-                      ? "발송 중..."
-                      : "인증번호 발송"}
-                  </Button>
-                )}
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full h-10"
+                      onClick={handleSendPhoneVerification}
+                      disabled={!canSendPhoneVerification}
+                    >
+                      {phoneVerificationLoading === "sending"
+                        ? "발송 중..."
+                        : "인증번호 발송"}
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        {!!phoneValidation.message && !phoneValidation.ok && (
-          <p className="text-xs text-destructive -mt-4">
-            {phoneValidation.message}
-          </p>
-        )}
+          {!!phoneValidation.message && !phoneValidation.ok && (
+            <p className="text-xs text-destructive -mt-4">
+              {phoneValidation.message}
+            </p>
+          )}
 
-        {hasAnyAuthMethod && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-3">
-              <Label>로그인 방식</Label>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {authMethods.email && (
-                  <Badge
-                    variant="secondary"
-                    className="flex items-center gap-1"
-                  >
-                    <Link2 className="h-3 w-3" />
-                    이메일
-                  </Badge>
-                )}
-                {authMethods.google && <Badge variant="outline">Google</Badge>}
-                {authMethods.kakao && <Badge variant="outline">카카오</Badge>}
-                {!authMethods.email &&
-                  !authMethods.google &&
-                  !authMethods.kakao && (
+          {hasAnyAuthMethod && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-3">
+                <Label>로그인 방식</Label>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {authMethods.email && (
                     <Badge
                       variant="secondary"
                       className="flex items-center gap-1"
@@ -1104,136 +1123,152 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                       이메일
                     </Badge>
                   )}
+                  {authMethods.google && (
+                    <Badge variant="outline">Google</Badge>
+                  )}
+                  {authMethods.kakao && <Badge variant="outline">카카오</Badge>}
+                  {!authMethods.email &&
+                    !authMethods.google &&
+                    !authMethods.kakao && (
+                      <Badge
+                        variant="secondary"
+                        className="flex items-center gap-1"
+                      >
+                        <Link2 className="h-3 w-3" />
+                        이메일
+                      </Badge>
+                    )}
+                </div>
               </div>
-            </div>
 
-            {authMethods.email && (
-              <>
-                {!showPasswordFields ? (
-                  <div className="space-y-2 md:col-span-3 lg:col-span-3">
-                    <Label className="opacity-0">변경</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full h-10"
-                      onClick={() => {
-                        setShowPasswordFields(true);
-                        setTimeout(() => {
-                          passwordInputRef.current?.focus();
-                        }, 0);
-                      }}
-                    >
-                      <KeyRound className="mr-2 h-4 w-4" />
-                      비밀번호 변경
-                    </Button>
-                  </div>
-                ) : (
-                  <form
-                    className="contents"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (
-                        !passwordData.currentPassword ||
-                        !passwordData.newPassword
-                      )
-                        return;
-                      handleChangePassword();
-                    }}
-                  >
-                    <input
-                      type="text"
-                      name="username"
-                      value={accountData.email}
-                      readOnly
-                      autoComplete="username"
-                      className="sr-only"
-                      tabIndex={-1}
-                    />
-                    <div className="space-y-2">
-                      <Label htmlFor="currentPassword">현재 비밀번호</Label>
-                      <Input
-                        ref={passwordInputRef}
-                        id="currentPassword"
-                        type="password"
-                        value={passwordData.currentPassword}
-                        onChange={(e) =>
-                          setPasswordData((prev) => ({
-                            ...prev,
-                            currentPassword: e.target.value,
-                          }))
-                        }
-                        autoComplete="current-password"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="newPassword">새 비밀번호</Label>
-                      <Input
-                        id="newPassword"
-                        type="password"
-                        value={passwordData.newPassword}
-                        onChange={(e) =>
-                          setPasswordData((prev) => ({
-                            ...prev,
-                            newPassword: e.target.value,
-                          }))
-                        }
-                        autoComplete="new-password"
-                      />
-                    </div>
-                    <div className="space-y-2">
+              {authMethods.email && (
+                <>
+                  {!showPasswordFields ? (
+                    <div className="space-y-2 md:col-span-3 lg:col-span-3">
                       <Label className="opacity-0">변경</Label>
                       <Button
-                        type="submit"
+                        type="button"
                         variant="outline"
                         className="w-full h-10"
-                        disabled={
-                          !passwordData.currentPassword ||
-                          !passwordData.newPassword
-                        }
+                        onClick={() => {
+                          setShowPasswordFields(true);
+                          setTimeout(() => {
+                            passwordInputRef.current?.focus();
+                          }, 0);
+                        }}
                       >
                         <KeyRound className="mr-2 h-4 w-4" />
                         비밀번호 변경
                       </Button>
                     </div>
-                  </form>
-                )}
-              </>
-            )}
-          </div>
-        )}
+                  ) : (
+                    <form
+                      className="contents"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (
+                          !passwordData.currentPassword ||
+                          !passwordData.newPassword
+                        )
+                          return;
+                        handleChangePassword();
+                      }}
+                    >
+                      <input
+                        type="text"
+                        name="username"
+                        value={accountData.email}
+                        readOnly
+                        autoComplete="username"
+                        className="sr-only"
+                        tabIndex={-1}
+                      />
+                      <div className="space-y-2">
+                        <Label htmlFor="currentPassword">현재 비밀번호</Label>
+                        <Input
+                          ref={passwordInputRef}
+                          id="currentPassword"
+                          type="password"
+                          value={passwordData.currentPassword}
+                          onChange={(e) =>
+                            setPasswordData((prev) => ({
+                              ...prev,
+                              currentPassword: e.target.value,
+                            }))
+                          }
+                          autoComplete="current-password"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="newPassword">새 비밀번호</Label>
+                        <Input
+                          id="newPassword"
+                          type="password"
+                          value={passwordData.newPassword}
+                          onChange={(e) =>
+                            setPasswordData((prev) => ({
+                              ...prev,
+                              newPassword: e.target.value,
+                            }))
+                          }
+                          autoComplete="new-password"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="opacity-0">변경</Label>
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          className="w-full h-10"
+                          disabled={
+                            !passwordData.currentPassword ||
+                            !passwordData.newPassword
+                          }
+                        >
+                          <KeyRound className="mr-2 h-4 w-4" />
+                          비밀번호 변경
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
-        <MultiActionDialog
-          open={withdrawDialogOpen}
-          title="정말 해지하시겠어요?"
-          description={
-            (user as any)?.position === "principal" ? (
-              <div className="space-y-2">
-                <div>잔여 유료 크레딧이 있으면 환불 신청 후 접수됩니다.</div>
-                <div className="text-sm">
-                  잔여 유료 크레딧: <b>{paidBalance.toLocaleString()}원</b>
+          <MultiActionDialog
+            open={withdrawDialogOpen}
+            title="정말 해지하시겠어요?"
+            description={
+              (user as any)?.position === "principal" ? (
+                <div className="space-y-2">
+                  <div>잔여 유료 크레딧이 있으면 환불 신청 후 접수됩니다.</div>
+                  <div className="text-sm">
+                    잔여 유료 크레딧: <b>{paidBalance.toLocaleString()}원</b>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div>해지하시겠습니까?</div>
-            )
-          }
-          onClose={() => setWithdrawDialogOpen(false)}
-          actions={[
-            {
-              label: "취소",
-              variant: "secondary",
-              onClick: () => setWithdrawDialogOpen(false),
-              disabled: withdrawing,
-            },
-            {
-              label: "해지 신청",
-              variant: "danger",
-              onClick: handleWithdraw,
-              disabled: withdrawing,
-            },
-          ]}
-        />
-      </CardContent>
-    </Card>
+              ) : (
+                <div>해지하시겠습니까?</div>
+              )
+            }
+            onClose={() => setWithdrawDialogOpen(false)}
+            actions={[
+              {
+                label: "취소",
+                variant: "secondary",
+                onClick: () => setWithdrawDialogOpen(false),
+                disabled: withdrawing,
+              },
+              {
+                label: "해지 신청",
+                variant: "danger",
+                onClick: handleWithdraw,
+                disabled: withdrawing,
+              },
+            ]}
+          />
+        </CardContent>
+      </Card>
+    </div>
   );
 };

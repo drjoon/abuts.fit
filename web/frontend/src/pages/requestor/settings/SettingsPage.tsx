@@ -5,6 +5,7 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
+import { SettingsTabsSkeleton } from "@/features/components/SettingsSkeletons";
 import { AccountTab } from "./components/AccountTab";
 import { BusinessTab } from "./components/BusinessTab";
 import { StaffTab } from "./components/StaffTab";
@@ -30,6 +31,7 @@ export const RequestorSettingsPage = () => {
     "owner" | "member" | "pending" | "none" | "unknown"
   >(token ? "unknown" : "none");
   const [canManageStaff, setCanManageStaff] = useState(false);
+  const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
 
   const mockHeaders = useMemo(() => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
@@ -45,12 +47,15 @@ export const RequestorSettingsPage = () => {
 
   useEffect(() => {
     const load = async () => {
+      if (!token) {
+        setMembership("none");
+        setCanManageStaff(false);
+        setLoadingMembership(false);
+        return;
+      }
+
+      setLoadingMembership(true);
       try {
-        if (!token) {
-          setMembership("none");
-          setCanManageStaff(false);
-          return;
-        }
         const res = await request<any>({
           path: "/api/requestor-organizations/me",
           method: "GET",
@@ -59,6 +64,7 @@ export const RequestorSettingsPage = () => {
         });
         if (!res.ok) {
           setMembership("none");
+          setCanManageStaff(false);
           return;
         }
         const body: any = res.data || {};
@@ -69,15 +75,16 @@ export const RequestorSettingsPage = () => {
           | "pending"
           | "none";
         setMembership(next);
-
         setCanManageStaff(next === "owner");
       } catch {
         setMembership("none");
         setCanManageStaff(false);
+      } finally {
+        setLoadingMembership(false);
       }
     };
 
-    load();
+    void load();
   }, [mockHeaders, token]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
@@ -135,6 +142,10 @@ export const RequestorSettingsPage = () => {
   const activeTab = allowed.has(tabFromUrl)
     ? tabFromUrl
     : (tabs[0]?.key as TabKey);
+
+  if (loadingMembership) {
+    return <SettingsTabsSkeleton />;
+  }
 
   return (
     <SettingsScaffold

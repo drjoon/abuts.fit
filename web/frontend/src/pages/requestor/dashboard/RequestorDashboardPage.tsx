@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
+import { DashboardShellSkeleton } from "@/shared/ui/dashboard/DashboardShellSkeleton";
 import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -111,6 +112,7 @@ export const RequestorDashboardPage = () => {
     data: summaryResponse,
     refetch: refetchSummary,
     isFetching,
+    isLoading,
   } = useQuery({
     queryKey: ["requestor-dashboard-summary-page", period],
     queryFn: async () => {
@@ -270,6 +272,8 @@ export const RequestorDashboardPage = () => {
     }
   };
 
+  const showSkeleton = (isLoading || isFetching) && !summaryResponse;
+
   const stats: RequestorDashboardStat[] = (() => {
     if (!summaryResponse?.success) {
       return [
@@ -323,6 +327,10 @@ export const RequestorDashboardPage = () => {
     summaryResponse?.success ? summaryResponse.data.diameterStats : undefined;
 
   const canOpenCreditLedger = user.role === "requestor";
+
+  if (showSkeleton) {
+    return <DashboardShellSkeleton />;
+  }
 
   return (
     <div>

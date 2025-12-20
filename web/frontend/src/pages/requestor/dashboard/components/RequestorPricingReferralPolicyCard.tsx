@@ -19,6 +19,7 @@ import { Progress } from "@/components/ui/progress";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const RequestorPricingReferralPolicyCard = () => {
   const [open, setOpen] = useState(false);
@@ -34,7 +35,7 @@ export const RequestorPricingReferralPolicyCard = () => {
     return `${origin}/signup?ref=${referralCode}`;
   }, [referralCode]);
 
-  const { data } = useQuery({
+  const { data, isLoading, isFetching, isError, error } = useQuery({
     queryKey: ["requestor-pricing-referral-stats"],
     queryFn: async () => {
       const res = await apiFetch<any>({
@@ -56,8 +57,46 @@ export const RequestorPricingReferralPolicyCard = () => {
     retry: false,
   });
 
-  const myLast30DaysOrders = data?.myLast30DaysOrders ?? 0;
-  const referralLast30DaysOrders = data?.referralLast30DaysOrders ?? 0;
+  const shouldShowSkeleton = (isLoading || isFetching) && !data;
+
+  if (shouldShowSkeleton) {
+    return (
+      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm">
+        <CardHeader className="pt-6 pb-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="mt-2 h-4 w-64" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">
+            가격 & 리퍼럴 정책
+          </CardTitle>
+          <CardDescription className="text-sm text-destructive">
+            {(error as Error)?.message || "정보를 불러오지 못했습니다."}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const myLast30DaysOrders = data.myLast30DaysOrders ?? 0;
+  const referralLast30DaysOrders = data.referralLast30DaysOrders ?? 0;
 
   const totalOrders = myLast30DaysOrders + referralLast30DaysOrders;
   const targetOrdersForMaxDiscount = 500;
@@ -65,13 +104,13 @@ export const RequestorPricingReferralPolicyCard = () => {
     ? Math.min(100, (totalOrders / targetOrdersForMaxDiscount) * 100)
     : 0;
 
-  const maxDiscountPerUnit = data?.maxDiscountPerUnit ?? 5000;
-  const discountPerOrder = data?.discountPerOrder ?? 10;
-  const totalDiscount = data?.discountAmount ?? 0;
-  const baseUnitPrice = data?.baseUnitPrice ?? 15000;
-  const effectiveUnitPrice = data?.effectiveUnitPrice ?? baseUnitPrice;
+  const maxDiscountPerUnit = data.maxDiscountPerUnit ?? 5000;
+  const discountPerOrder = data.discountPerOrder ?? 10;
+  const totalDiscount = data.discountAmount ?? 0;
+  const baseUnitPrice = data.baseUnitPrice ?? 15000;
+  const effectiveUnitPrice = data.effectiveUnitPrice ?? baseUnitPrice;
 
-  const shouldHighlightReferral = data?.rule === "new_user_90days_fixed_10000";
+  const shouldHighlightReferral = data.rule === "new_user_90days_fixed_10000";
 
   const copyToClipboardFallback = (text: string) => {
     const textarea = document.createElement("textarea");

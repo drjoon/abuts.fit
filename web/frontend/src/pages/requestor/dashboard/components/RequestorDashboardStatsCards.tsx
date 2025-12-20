@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export type RequestorDashboardStat = {
   label: string;
@@ -9,17 +10,44 @@ export type RequestorDashboardStat = {
 
 type Props = {
   stats: RequestorDashboardStat[];
+  loading?: boolean;
   onCardClick?: (stat: RequestorDashboardStat) => void;
 };
 
-export const RequestorDashboardStatsCards = ({ stats, onCardClick }: Props) => {
+export const RequestorDashboardStatsCards = ({
+  stats,
+  loading,
+  onCardClick,
+}: Props) => {
+  if (loading) {
+    return (
+      <>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Card
+            key={`skeleton-${index}`}
+            className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm"
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-4 rounded-full" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-7 w-16" />
+              <Skeleton className="mt-2 h-3 w-24" />
+            </CardContent>
+          </Card>
+        ))}
+      </>
+    );
+  }
+
   return (
     <>
-      {stats.map((stat, index) => {
+      {stats.map((stat) => {
         const Icon = stat.icon;
         return (
           <Card
-            key={index}
+            key={stat.label}
             className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
             onClick={() => onCardClick?.(stat)}
           >
