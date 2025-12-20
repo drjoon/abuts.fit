@@ -17,14 +17,29 @@ export type GuideStep = {
 const TOUR_DEFINITIONS: Record<GuideTourId, GuideStep[]> = {
   "requestor-onboarding": [
     {
-      id: "requestor.business",
-      title: "기공소 정보 입력",
-      description: "사업자 정보와 기공소 세부 정보를 먼저 저장해주세요.",
+      id: "requestor.business.companyName",
+      title: "기공소명 입력",
+      description: "기공소명을 입력하고 Enter로 다음 단계로 넘어가세요.",
     },
     {
-      id: "requestor.phone",
-      title: "휴대폰 인증",
-      description: "계정 탭에서 휴대폰번호를 입력하고 인증을 완료해주세요.",
+      id: "requestor.business.businessNumber",
+      title: "사업자등록번호 입력",
+      description: "사업자등록번호를 입력하고 Enter로 다음 단계로 넘어가세요.",
+    },
+    {
+      id: "requestor.business.save",
+      title: "기공소 정보 저장",
+      description: "저장하기를 눌러 기공소 설정을 완료해주세요.",
+    },
+    {
+      id: "requestor.phone.number",
+      title: "휴대폰번호 입력",
+      description: "휴대폰번호 입력 후 Enter로 인증번호 발송을 진행하세요.",
+    },
+    {
+      id: "requestor.phone.code",
+      title: "인증번호 확인",
+      description: "인증번호 입력 후 Enter로 인증을 완료하세요.",
     },
   ],
 };
@@ -34,13 +49,19 @@ interface GuideTourState {
   activeTourId: GuideTourId | null;
   steps: GuideStep[];
   currentStepIndex: number;
-  startTour: (tourId: GuideTourId, initialStepId?: string) => void;
+  startTour: (
+    tourId: GuideTourId,
+    initialStepId?: string,
+    returnTo?: string
+  ) => void;
   stopTour: () => void;
   nextStep: () => void;
   prevStep: () => void;
   goToStep: (stepId: string) => void;
   completeStep: (stepId?: string) => void;
   isStepActive: (stepId: string) => boolean;
+  pendingRedirectTo: string | null;
+  clearPendingRedirectTo: () => void;
   getStepMeta: (stepId: string) => {
     step: GuideStep | undefined;
     index: number;
@@ -58,16 +79,25 @@ export const GuideTourProvider = ({
   const [activeTourId, setActiveTourId] = useState<GuideTourId | null>(null);
   const [steps, setSteps] = useState<GuideStep[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [pendingRedirectTo, setPendingRedirectTo] = useState<string | null>(
+    null
+  );
 
   const reset = useCallback(() => {
     setActive(false);
     setActiveTourId(null);
     setSteps([]);
     setCurrentStepIndex(0);
+    setReturnTo(null);
+  }, []);
+
+  const clearPendingRedirectTo = useCallback(() => {
+    setPendingRedirectTo(null);
   }, []);
 
   const startTour = useCallback(
-    (tourId: GuideTourId, initialStepId?: string) => {
+    (tourId: GuideTourId, initialStepId?: string, nextReturnTo?: string) => {
       const tourSteps = TOUR_DEFINITIONS[tourId] || [];
       if (!tourSteps.length) return;
 
@@ -86,6 +116,8 @@ export const GuideTourProvider = ({
       setActive(true);
       setActiveTourId(tourId);
       setCurrentStepIndex(initialIndex >= 0 ? initialIndex : 0);
+      setReturnTo(nextReturnTo ? String(nextReturnTo) : null);
+      setPendingRedirectTo(null);
     },
     []
   );
@@ -128,12 +160,15 @@ export const GuideTourProvider = ({
       if (stepId && current?.id !== stepId) return;
       if (!stepId && !current) return;
       if (currentStepIndex === steps.length - 1) {
+        if (returnTo) {
+          setPendingRedirectTo(returnTo);
+        }
         reset();
         return;
       }
       setCurrentStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
     },
-    [currentStepIndex, steps, reset]
+    [currentStepIndex, reset, returnTo, steps]
   );
 
   const isStepActive = useCallback(
@@ -178,6 +213,8 @@ export const GuideTourProvider = ({
       goToStep,
       completeStep,
       isStepActive,
+      pendingRedirectTo,
+      clearPendingRedirectTo,
       getStepMeta,
     }),
     [
@@ -192,6 +229,8 @@ export const GuideTourProvider = ({
       goToStep,
       completeStep,
       isStepActive,
+      pendingRedirectTo,
+      clearPendingRedirectTo,
       getStepMeta,
     ]
   );

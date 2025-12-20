@@ -1,8 +1,12 @@
+import { useRef } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Save, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { GuideFocus } from "@/features/guidetour/GuideFocus";
+import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import {
   BusinessData,
   LicenseExtracted,
@@ -46,6 +50,10 @@ export const BusinessForm = ({
   onSave,
   onReset,
 }: BusinessFormProps) => {
+  const { isStepActive, completeStep } = useGuideTour();
+  const bizNoRef = useRef<HTMLInputElement | null>(null);
+  const saveButtonRef = useRef<HTMLButtonElement | null>(null);
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
@@ -73,22 +81,32 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgName">기공소명</Label>
-            <Input
-              id="orgName"
-              className={cn(
-                errors.companyName &&
-                  "border-destructive focus-visible:ring-destructive"
-              )}
-              value={businessData.companyName}
-              onChange={(e) => {
-                setBusinessData((prev) => ({
-                  ...prev,
-                  companyName: e.target.value,
-                }));
-                setCompanyNameTouched(true);
-                setErrors((prev) => ({ ...prev, companyName: false }));
-              }}
-            />
+            <GuideFocus stepId="requestor.business.companyName">
+              <Input
+                id="orgName"
+                className={cn(
+                  errors.companyName &&
+                    "border-destructive focus-visible:ring-destructive"
+                )}
+                value={businessData.companyName}
+                onChange={(e) => {
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    companyName: e.target.value,
+                  }));
+                  setCompanyNameTouched(true);
+                  setErrors((prev) => ({ ...prev, companyName: false }));
+                }}
+                onKeyDown={(e) => {
+                  if (!isStepActive("requestor.business.companyName")) return;
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (!String(businessData.companyName || "").trim()) return;
+                  completeStep("requestor.business.companyName");
+                  bizNoRef.current?.focus();
+                }}
+              />
+            </GuideFocus>
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgPhone">전화번호</Label>
@@ -117,27 +135,39 @@ export const BusinessForm = ({
 
           <div className="space-y-2">
             <Label htmlFor="bizNo">사업자등록번호</Label>
-            <Input
-              id="bizNo"
-              className={cn(
-                errors.businessNumber &&
-                  "border-destructive focus-visible:ring-destructive"
-              )}
-              value={businessData.businessNumber}
-              onChange={(e) => {
-                const nextValue = formatBusinessNumberInput(e.target.value);
-                setBusinessData((prev) => ({
-                  ...prev,
-                  businessNumber: nextValue,
-                }));
-                setErrors((prev) => ({
-                  ...prev,
-                  businessNumber: nextValue
-                    ? !isValidBusinessNumber(nextValue)
-                    : prev.businessNumber,
-                }));
-              }}
-            />
+            <GuideFocus stepId="requestor.business.businessNumber">
+              <Input
+                ref={bizNoRef}
+                id="bizNo"
+                className={cn(
+                  errors.businessNumber &&
+                    "border-destructive focus-visible:ring-destructive"
+                )}
+                value={businessData.businessNumber}
+                onChange={(e) => {
+                  const nextValue = formatBusinessNumberInput(e.target.value);
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    businessNumber: nextValue,
+                  }));
+                  setErrors((prev) => ({
+                    ...prev,
+                    businessNumber: nextValue
+                      ? !isValidBusinessNumber(nextValue)
+                      : prev.businessNumber,
+                  }));
+                }}
+                onKeyDown={(e) => {
+                  if (!isStepActive("requestor.business.businessNumber"))
+                    return;
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (!String(businessData.businessNumber || "").trim()) return;
+                  completeStep("requestor.business.businessNumber");
+                  saveButtonRef.current?.focus();
+                }}
+              />
+            </GuideFocus>
           </div>
           <div className="space-y-2">
             <Label htmlFor="bizType">업태</Label>
@@ -241,10 +271,12 @@ export const BusinessForm = ({
           <RotateCcw className="mr-2 h-4 w-4" />
           초기화
         </Button>
-        <Button type="button" onClick={onSave}>
-          <Save className="mr-2 h-4 w-4" />
-          저장하기
-        </Button>
+        <GuideFocus stepId="requestor.business.save">
+          <Button ref={saveButtonRef} type="button" onClick={onSave}>
+            <Save className="mr-2 h-4 w-4" />
+            저장하기
+          </Button>
+        </GuideFocus>
       </div>
     </div>
   );

@@ -411,6 +411,11 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   }, [membership]);
 
   const handleSave = async () => {
+    const inBusinessTour =
+      isStepActive("requestor.business.companyName") ||
+      isStepActive("requestor.business.businessNumber") ||
+      isStepActive("requestor.business.save");
+
     const { success } = await handleSaveImpl({
       token,
       businessData,
@@ -425,7 +430,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setErrors,
       setBusinessData,
       navigate,
-      nextPath,
+      nextPath: inBusinessTour ? "" : nextPath,
     });
     if (success) {
       await refreshMembership();
@@ -433,9 +438,15 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         await loginWithToken(token);
       }
 
-      if (isStepActive("requestor.business")) {
-        completeStep("requestor.business");
-        navigate("/dashboard/settings?tab=account");
+      if (isStepActive("requestor.business.save")) {
+        completeStep("requestor.business.save");
+        navigate(
+          nextPath
+            ? `/dashboard/settings?tab=account&next=${encodeURIComponent(
+                nextPath
+              )}`
+            : "/dashboard/settings?tab=account"
+        );
       }
     }
   };
@@ -631,7 +642,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   return (
-    <GuideFocus stepId="requestor.business">
+    <GuideFocus stepId="requestor.business.save" muted>
       <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

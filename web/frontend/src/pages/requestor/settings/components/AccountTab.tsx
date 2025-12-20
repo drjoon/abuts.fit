@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Card,
@@ -153,6 +153,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const [verificationSent, setVerificationSent] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [countryOpen, setCountryOpen] = useState(false);
+  const phoneCodeInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -373,14 +374,14 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     !!phoneValidation.normalized &&
     phoneVerificationLoading === "idle";
 
-  const handleSendPhoneVerification = async () => {
+  const handleSendPhoneVerification = async (): Promise<boolean> => {
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
         variant: "destructive",
         duration: 3000,
       });
-      return;
+      return false;
     }
     if (!phoneValidation.ok || !phoneValidation.normalized) {
       toast({
@@ -389,7 +390,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         variant: "destructive",
         duration: 3000,
       });
-      return;
+      return false;
     }
 
     setPhoneVerificationLoading("sending");
@@ -414,7 +415,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           variant: "destructive",
           duration: 3000,
         });
-        return;
+        return false;
       }
 
       const body: any = res.data || {};
@@ -438,6 +439,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           duration: 3000,
         });
       }
+      return true;
     } catch {
       toast({
         title: "인증번호 발송 실패",
@@ -445,6 +447,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         variant: "destructive",
         duration: 3000,
       });
+      return false;
     } finally {
       setPhoneVerificationLoading("idle");
     }
@@ -508,8 +511,8 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         duration: 2000,
       });
 
-      if (isStepActive("requestor.phone")) {
-        completeStep("requestor.phone");
+      if (isStepActive("requestor.phone.code")) {
+        completeStep("requestor.phone.code");
       }
 
       if (nextPath) {
@@ -818,7 +821,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           <div className="hidden md:block" />
         </div>
 
-        <GuideFocus stepId="requestor.phone">
+        <div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>국가</Label>
@@ -878,30 +881,44 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
             <div className="space-y-2">
               <Label htmlFor="phone">휴대폰번호</Label>
-              <Input
-                id="phone"
-                type="tel"
-                inputMode="tel"
-                placeholder="01012345678"
-                value={accountData.phoneNationalNumber}
-                className={cn(
-                  "h-10",
-                  fieldErrors.phone || !phoneValidation.ok
-                    ? "border-destructive focus-visible:ring-destructive"
-                    : ""
-                )}
-                onChange={(e) => {
-                  setFieldErrors((prev) => ({ ...prev, phone: undefined }));
-                  setAccountData((prev) => ({
-                    ...prev,
-                    phoneNationalNumber: e.target.value,
-                  }));
-                  setPhoneVerifiedAt(null);
-                  setVerificationSent(false);
-                  setTimeLeft(0);
-                  setPhoneVerificationCode("");
-                }}
-              />
+              <GuideFocus stepId="requestor.phone.number">
+                <Input
+                  id="phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="01012345678"
+                  value={accountData.phoneNationalNumber}
+                  className={cn(
+                    "h-10",
+                    fieldErrors.phone || !phoneValidation.ok
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  )}
+                  onChange={(e) => {
+                    setFieldErrors((prev) => ({ ...prev, phone: undefined }));
+                    setAccountData((prev) => ({
+                      ...prev,
+                      phoneNationalNumber: e.target.value,
+                    }));
+                    setPhoneVerifiedAt(null);
+                    setVerificationSent(false);
+                    setTimeLeft(0);
+                    setPhoneVerificationCode("");
+                  }}
+                  onKeyDown={async (e) => {
+                    if (!isStepActive("requestor.phone.number")) return;
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    if (!canSendPhoneVerification) return;
+                    const ok = await handleSendPhoneVerification();
+                    if (!ok) return;
+                    completeStep("requestor.phone.number");
+                    setTimeout(() => {
+                      phoneCodeInputRef.current?.focus();
+                    }, 0);
+                  }}
+                />
+              </GuideFocus>
             </div>
 
             <div className="space-y-2">
@@ -919,18 +936,24 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   </Button>
                 ) : verificationSent ? (
                   <div className="flex gap-2 h-10">
-                    <Input
-                      value={phoneVerificationCode}
-                      onChange={(e) => setPhoneVerificationCode(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        e.preventDefault();
-                        handleVerifyPhoneVerification();
-                      }}
-                      inputMode="numeric"
-                      placeholder="인증번호"
-                      className="flex-1 h-10"
-                    />
+                    <GuideFocus stepId="requestor.phone.code">
+                      <Input
+                        ref={phoneCodeInputRef}
+                        value={phoneVerificationCode}
+                        onChange={(e) =>
+                          setPhoneVerificationCode(e.target.value)
+                        }
+                        onKeyDown={(e) => {
+                          if (!isStepActive("requestor.phone.code")) return;
+                          if (e.key !== "Enter") return;
+                          e.preventDefault();
+                          handleVerifyPhoneVerification();
+                        }}
+                        inputMode="numeric"
+                        placeholder="인증번호"
+                        className="flex-1 h-10"
+                      />
+                    </GuideFocus>
                     <div className="flex items-center gap-2">
                       <Button
                         type="button"
@@ -969,7 +992,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               </div>
             </div>
           </div>
-        </GuideFocus>
+        </div>
         {!!phoneValidation.message && !phoneValidation.ok && (
           <p className="text-xs text-destructive -mt-4">
             {phoneValidation.message}

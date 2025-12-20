@@ -106,7 +106,13 @@ export const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { active: guideActive, startTour, stopTour } = useGuideTour();
+  const {
+    active: guideActive,
+    startTour,
+    stopTour,
+    pendingRedirectTo,
+    clearPendingRedirectTo,
+  } = useGuideTour();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -158,108 +164,134 @@ export const DashboardLayout = () => {
   }
 
   useEffect(() => {
-    if (!token) return;
-    if (!user) return;
-    if (user.role !== "requestor") return;
+    if (!pendingRedirectTo) return;
+    navigate(pendingRedirectTo, { replace: true });
+    clearPendingRedirectTo();
+  }, [clearPendingRedirectTo, navigate, pendingRedirectTo]);
 
-    const params = new URLSearchParams(location.search);
-    const isOnBusinessTab =
-      location.pathname.startsWith("/dashboard/settings") &&
-      params.get("tab") === "business";
-    if (isOnBusinessTab) return;
-
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const res = await request<any>({
-          path: "/api/requestor-organizations/me",
-          method: "GET",
-          token,
-        });
-        if (cancelled) return;
-        if (!res.ok) return;
-
-        const body: any = res.data || {};
-        const data = body.data || body;
-        const hasBusinessNumber = data?.hasBusinessNumber === true;
-        if (hasBusinessNumber) return;
-
-        toast({
-          title: "기공소 정보가 필요합니다",
-          description: "기공소 설정을 먼저 완료해야 의뢰를 진행할 수 있어요.",
-        });
-        startTour("requestor-onboarding", "requestor.business");
-        navigate("/dashboard/settings?tab=business", { replace: true });
-      } catch {
-        // ignore
-      }
-    };
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    location.pathname,
-    location.search,
-    navigate,
-    startTour,
-    toast,
-    token,
-    user,
-  ]);
+  const [requestorGuide, setRequestorGuide] = useState<{
+    loading: boolean;
+    hasBusinessNumber: boolean;
+    needsPhone: boolean;
+  }>({ loading: true, hasBusinessNumber: true, needsPhone: false });
 
   useEffect(() => {
     if (!token) return;
     if (!user) return;
     if (user.role !== "requestor") return;
-    if (!user.organizationId) return;
 
     let cancelled = false;
     const run = async () => {
       try {
-        const res = await request<any>({
+        const orgRes = await request<any>({
+          path: "/api/requestor-organizations/me",
+          method: "GET",
+          token,
+        });
+        if (cancelled) return;
+        const orgBody: any = orgRes.data || {};
+        const org = orgBody.data || orgBody;
+        const hasBusinessNumber = org?.hasBusinessNumber === true;
+
+        if (!hasBusinessNumber) {
+          setRequestorGuide({
+            loading: false,
+            hasBusinessNumber: false,
+            needsPhone: false,
+          });
+          return;
+        }
+
+        const profileRes = await request<any>({
           path: "/api/users/profile",
           method: "GET",
           token,
         });
         if (cancelled) return;
-        if (!res.ok) return;
-
-        const body: any = res.data || {};
-        const data = body.data || body;
+        const profileBody: any = profileRes.data || {};
+        const profile = profileBody.data || profileBody;
         const needsPhone =
-          !String(data?.phoneNumber || "").trim() || !data?.phoneVerifiedAt;
-        if (!needsPhone) return;
+          !String(profile?.phoneNumber || "").trim() ||
+          !profile?.phoneVerifiedAt;
 
-        const params = new URLSearchParams(location.search);
-        const isOnAccountTab =
-          location.pathname.startsWith("/dashboard/settings") &&
-          params.get("tab") === "account";
-        if (isOnAccountTab) return;
-
-        toast({
-          title: "휴대폰 인증이 필요합니다",
-          description: "계정 설정에서 휴대폰 인증을 먼저 완료해주세요.",
-          duration: 3000,
-        });
-        startTour("requestor-onboarding", "requestor.phone");
-        navigate("/dashboard/settings?tab=account&reason=missing_phone", {
-          replace: true,
+        setRequestorGuide({
+          loading: false,
+          hasBusinessNumber: true,
+          needsPhone,
         });
       } catch {
-        // ignore
+        if (cancelled) return;
+        setRequestorGuide((prev) => ({ ...prev, loading: false }));
       }
     };
 
+    setRequestorGuide((prev) => ({ ...prev, loading: true }));
     run();
     return () => {
       cancelled = true;
     };
+  }, [guideActive, token, user]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role !== "requestor") return;
+    if (requestorGuide.loading) return;
+
+    const params = new URLSearchParams(location.search);
+    const isOnBusinessTab =
+      location.pathname.startsWith("/dashboard/settings") &&
+      params.get("tab") === "business";
+    const isOnAccountTab =
+      location.pathname.startsWith("/dashboard/settings") &&
+      params.get("tab") === "account";
+
+    const returnTo = `${location.pathname}${location.search || ""}`;
+
+    if (!requestorGuide.hasBusinessNumber && !isOnBusinessTab) {
+      toast({
+        title: "기공소 정보가 필요합니다",
+        description: "기공소 설정을 먼저 완료해야 의뢰를 진행할 수 있어요.",
+      });
+      startTour(
+        "requestor-onboarding",
+        "requestor.business.companyName",
+        returnTo
+      );
+      navigate(
+        `/dashboard/settings?tab=business&reason=missing_business&next=${encodeURIComponent(
+          returnTo
+        )}`,
+        { replace: true }
+      );
+      return;
+    }
+
+    if (
+      requestorGuide.hasBusinessNumber &&
+      requestorGuide.needsPhone &&
+      !isOnAccountTab
+    ) {
+      toast({
+        title: "휴대폰 인증이 필요합니다",
+        description: "계정 설정에서 휴대폰 인증을 먼저 완료해주세요.",
+        duration: 3000,
+      });
+      startTour("requestor-onboarding", "requestor.phone.number", returnTo);
+      navigate(
+        `/dashboard/settings?tab=account&reason=missing_phone&next=${encodeURIComponent(
+          returnTo
+        )}`,
+        { replace: true }
+      );
+    }
   }, [
     location.pathname,
     location.search,
     navigate,
+    requestorGuide.hasBusinessNumber,
+    requestorGuide.loading,
+    requestorGuide.needsPhone,
     startTour,
     toast,
     token,
@@ -560,32 +592,56 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
-            {user.role === "requestor" && (
-              <Button
-                type="button"
-                variant={guideActive ? "default" : "outline"}
-                className="w-full justify-start"
-                onClick={() => {
-                  if (guideActive) {
-                    stopTour();
-                    return;
-                  }
-                  const initial = user.organizationId
-                    ? "requestor.phone"
-                    : "requestor.business";
-                  startTour("requestor-onboarding", initial);
-                  navigate(
-                    initial === "requestor.business"
-                      ? "/dashboard/settings?tab=business"
-                      : "/dashboard/settings?tab=account",
-                    { replace: true }
-                  );
-                }}
-              >
-                <Sparkles className="mr-2 h-4 w-4" />
-                <span>{guideActive ? "가이드 종료" : "가이드 시작"}</span>
-              </Button>
-            )}
+            {user.role === "requestor" &&
+              (guideActive ||
+                (!requestorGuide.loading &&
+                  (!requestorGuide.hasBusinessNumber ||
+                    requestorGuide.needsPhone))) && (
+                <Button
+                  type="button"
+                  variant={guideActive ? "default" : "outline"}
+                  className="w-full justify-start"
+                  onClick={() => {
+                    if (guideActive) {
+                      stopTour();
+                      return;
+                    }
+
+                    const returnTo = `${location.pathname}${
+                      location.search || ""
+                    }`;
+                    const initial = !requestorGuide.hasBusinessNumber
+                      ? "requestor.business.companyName"
+                      : requestorGuide.needsPhone
+                      ? "requestor.phone.number"
+                      : "";
+
+                    if (!initial) {
+                      toast({
+                        title: "가이드가 필요하지 않습니다",
+                        description: "현재 완료해야 할 항목이 없어요.",
+                        duration: 3000,
+                      });
+                      return;
+                    }
+
+                    startTour("requestor-onboarding", initial, returnTo);
+                    navigate(
+                      initial.startsWith("requestor.business")
+                        ? `/dashboard/settings?tab=business&next=${encodeURIComponent(
+                            returnTo
+                          )}`
+                        : `/dashboard/settings?tab=account&next=${encodeURIComponent(
+                            returnTo
+                          )}`,
+                      { replace: true }
+                    );
+                  }}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  <span>{guideActive ? "가이드 종료" : "가이드 시작"}</span>
+                </Button>
+              )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
