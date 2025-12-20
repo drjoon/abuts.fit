@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { mockUsers, useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -32,12 +32,7 @@ export const LoginPage = () => {
     try {
       const success = await login(email, password);
       if (success) {
-        const role = useAuthStore.getState().user?.role;
-        if (role === "requestor") {
-          navigate("/dashboard/new-request");
-        } else {
-          navigate("/dashboard");
-        }
+        navigate("/dashboard/new-request");
       } else {
         toast({
           title: "로그인 실패",
@@ -61,20 +56,11 @@ export const LoginPage = () => {
       <Navigation />
 
       <main className="pt-24 pb-16 flex items-center justify-center">
-        <div className="w-full max-w-5xl px-4">
-          <div
-            className={`grid gap-6 items-start ${
-              import.meta.env.MODE === "development"
-                ? "md:grid-cols-2"
-                : "max-w-md mx-auto"
-            }`}
-          >
+        <div className="w-full px-4">
+          <div className="max-w-md mx-auto">
             <Card className="shadow-elegant border-border/50">
               <CardHeader className="text-center">
                 <CardTitle className="text-2xl">로그인</CardTitle>
-                <CardDescription>
-                  이메일과 비밀번호로 로그인하세요.
-                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -126,7 +112,7 @@ export const LoginPage = () => {
                   </div>
                 </div>
 
-                <div className="pt-4 relative flex justify-center text-xs uppercase">
+                <div className="pt-4 m-4 relative flex justify-center text-sm uppercase">
                   <span className="bg-background px-2 text-muted-foreground">
                     또는
                   </span>
@@ -189,49 +175,6 @@ export const LoginPage = () => {
                 </form>
               </CardContent>
             </Card>
-
-            {import.meta.env.MODE === "development" && (
-              <Card className="shadow-elegant border-border/50">
-                <CardHeader className="text-center">
-                  <CardTitle className="text-2xl">체험용 계정</CardTitle>
-                  <CardDescription>
-                    클릭하면 이메일/비밀번호가 자동으로 입력됩니다.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {mockUsers.map((user) => (
-                      <button
-                        key={user.id}
-                        type="button"
-                        className="w-full text-left p-3 rounded-md border border-border hover:bg-muted/50 transition-colors"
-                        onClick={() => {
-                          setEmail(user.email);
-                          setPassword("a64468ff-514b");
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="font-medium text-sm">{user.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {user.role === "requestor"
-                              ? "의뢰인"
-                              : user.role === "manufacturer"
-                              ? "제조사"
-                              : "관리자"}
-                          </div>
-                        </div>
-                        <div className="text-muted-foreground text-xs mt-1">
-                          {user.email}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3 text-center">
-                    공통 비밀번호: a64468ff-514b
-                  </p>
-                </CardContent>
-              </Card>
-            )}
           </div>
 
           <div className="mt-8 text-center">
