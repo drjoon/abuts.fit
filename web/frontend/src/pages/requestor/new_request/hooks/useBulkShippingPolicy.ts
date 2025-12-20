@@ -15,7 +15,7 @@ const getShippingPolicy = (email?: string | null): ShippingPolicyResult => {
     const parsed = raw ? JSON.parse(raw) : {};
     const shippingMode = parsed.shippingMode || "countBased";
     const autoBatchThreshold = parsed.autoBatchThreshold || 20;
-    const maxWaitDays = parsed.maxWaitDays || 3;
+    const maxWaitDays = parsed.maxWaitDays || 5;
     const weeklyBatchDays = parsed.weeklyBatchDays || ["mon", "thu"];
 
     if (shippingMode === "weeklyBased") {
@@ -42,7 +42,7 @@ const getShippingPolicy = (email?: string | null): ShippingPolicyResult => {
   } catch {
     return {
       shippingMode: "countBased",
-      summary: "20개씩 발송, 최대 3일 대기",
+      summary: "20개씩 발송, 최대 5일 대기",
     };
   }
 };

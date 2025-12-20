@@ -60,7 +60,7 @@ interface AccountTabProps {
 
 export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
-  const { token, user, logout } = useAuthStore();
+  const { token, user, logout, loginWithToken } = useAuthStore();
   const navigate = useNavigate();
   const { isStepActive, completeStep } = useGuideTour();
   const [searchParams] = useSearchParams();
@@ -70,6 +70,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedKeyRef = useRef<string>("");
   const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
 
   const [avatarNonce, setAvatarNonce] = useState(0);
 
@@ -147,6 +148,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     currentPassword: "",
     newPassword: "",
   });
+  const [showPasswordFields, setShowPasswordFields] = useState(false);
 
   const [phoneVerifiedAt, setPhoneVerifiedAt] = useState<string | null>(null);
   const [phoneVerificationCode, setPhoneVerificationCode] = useState("");
@@ -514,6 +516,18 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         duration: 2000,
       });
 
+      try {
+        window.dispatchEvent(new Event("abuts:profile:updated"));
+      } catch {
+        // ignore
+      }
+
+      setPhoneVerificationCode("");
+
+      if (token) {
+        void loginWithToken(token);
+      }
+
       if (isStepActive("requestor.phone.code")) {
         completeStep("requestor.phone.code");
       }
@@ -660,6 +674,12 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         profileImage: accountData.profileImage,
       });
       lastSavedKeyRef.current = savedKey;
+
+      try {
+        window.dispatchEvent(new Event("abuts:profile:updated"));
+      } catch {
+        // ignore
+      }
     } catch (e) {
       const raw = e instanceof Error ? e.message : "";
       const msg =
@@ -781,46 +801,51 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               </AvatarFallback>
             </Avatar>
             <div>
-              <div className="grid grid-cols-5 gap-2">
-                {avatarOptions.map((url) => (
+              <GuideFocus stepId="requestor.account.profileImage">
+                <div className="grid grid-cols-5 gap-2">
+                  {avatarOptions.map((url) => (
+                    <button
+                      key={url}
+                      type="button"
+                      className={cn(
+                        "rounded-full border bg-white/80 p-0.5 transition-colors",
+                        accountData.profileImage === url
+                          ? "border-primary"
+                          : "border-border hover:border-muted-foreground/40"
+                      )}
+                      onClick={() => {
+                        setAccountData((prev) => ({
+                          ...prev,
+                          profileImage: url,
+                        }));
+                        scheduleSave();
+                        if (isStepActive("requestor.account.profileImage")) {
+                          completeStep("requestor.account.profileImage");
+                        }
+                      }}
+                    >
+                      <img
+                        src={url}
+                        alt=""
+                        className="h-10 w-10 rounded-full bg-slate-100"
+                      />
+                    </button>
+                  ))}
+
                   <button
-                    key={url}
                     type="button"
                     className={cn(
                       "rounded-full border bg-white/80 p-0.5 transition-colors",
-                      accountData.profileImage === url
-                        ? "border-primary"
-                        : "border-border hover:border-muted-foreground/40"
+                      "border-border hover:border-muted-foreground/40"
                     )}
-                    onClick={() => {
-                      setAccountData((prev) => ({
-                        ...prev,
-                        profileImage: url,
-                      }));
-                      scheduleSave();
-                    }}
+                    onClick={() => setAvatarNonce((v) => v + 1)}
                   >
-                    <img
-                      src={url}
-                      alt=""
-                      className="h-10 w-10 rounded-full bg-slate-100"
-                    />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
+                      <RefreshCcw className="h-4 w-4 text-muted-foreground" />
+                    </div>
                   </button>
-                ))}
-
-                <button
-                  type="button"
-                  className={cn(
-                    "rounded-full border bg-white/80 p-0.5 transition-colors",
-                    "border-border hover:border-muted-foreground/40"
-                  )}
-                  onClick={() => setAvatarNonce((v) => v + 1)}
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
-                    <RefreshCcw className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </button>
-              </div>
+                </div>
+              </GuideFocus>
             </div>
           </div>
         </div>
@@ -1083,72 +1108,96 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             </div>
 
             {authMethods.email && (
-              <form
-                className="contents"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (
-                    !passwordData.currentPassword ||
-                    !passwordData.newPassword
-                  )
-                    return;
-                  handleChangePassword();
-                }}
-              >
-                <input
-                  type="text"
-                  name="username"
-                  value={accountData.email}
-                  readOnly
-                  autoComplete="username"
-                  className="sr-only"
-                  tabIndex={-1}
-                />
-                <div className="space-y-2">
-                  <Label htmlFor="currentPassword">현재 비밀번호</Label>
-                  <Input
-                    id="currentPassword"
-                    type="password"
-                    value={passwordData.currentPassword}
-                    onChange={(e) =>
-                      setPasswordData((prev) => ({
-                        ...prev,
-                        currentPassword: e.target.value,
-                      }))
-                    }
-                    autoComplete="current-password"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="newPassword">새 비밀번호</Label>
-                  <Input
-                    id="newPassword"
-                    type="password"
-                    value={passwordData.newPassword}
-                    onChange={(e) =>
-                      setPasswordData((prev) => ({
-                        ...prev,
-                        newPassword: e.target.value,
-                      }))
-                    }
-                    autoComplete="new-password"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="opacity-0">변경</Label>
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    className="w-full h-10"
-                    disabled={
-                      !passwordData.currentPassword || !passwordData.newPassword
-                    }
+              <>
+                {!showPasswordFields ? (
+                  <div className="space-y-2 md:col-span-3 lg:col-span-3">
+                    <Label className="opacity-0">변경</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full h-10"
+                      onClick={() => {
+                        setShowPasswordFields(true);
+                        setTimeout(() => {
+                          passwordInputRef.current?.focus();
+                        }, 0);
+                      }}
+                    >
+                      <KeyRound className="mr-2 h-4 w-4" />
+                      비밀번호 변경
+                    </Button>
+                  </div>
+                ) : (
+                  <form
+                    className="contents"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (
+                        !passwordData.currentPassword ||
+                        !passwordData.newPassword
+                      )
+                        return;
+                      handleChangePassword();
+                    }}
                   >
-                    <KeyRound className="mr-2 h-4 w-4" />
-                    비밀번호 변경
-                  </Button>
-                </div>
-              </form>
+                    <input
+                      type="text"
+                      name="username"
+                      value={accountData.email}
+                      readOnly
+                      autoComplete="username"
+                      className="sr-only"
+                      tabIndex={-1}
+                    />
+                    <div className="space-y-2">
+                      <Label htmlFor="currentPassword">현재 비밀번호</Label>
+                      <Input
+                        ref={passwordInputRef}
+                        id="currentPassword"
+                        type="password"
+                        value={passwordData.currentPassword}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            currentPassword: e.target.value,
+                          }))
+                        }
+                        autoComplete="current-password"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="newPassword">새 비밀번호</Label>
+                      <Input
+                        id="newPassword"
+                        type="password"
+                        value={passwordData.newPassword}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            newPassword: e.target.value,
+                          }))
+                        }
+                        autoComplete="new-password"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="opacity-0">변경</Label>
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        className="w-full h-10"
+                        disabled={
+                          !passwordData.currentPassword ||
+                          !passwordData.newPassword
+                        }
+                      >
+                        <KeyRound className="mr-2 h-4 w-4" />
+                        비밀번호 변경
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </>
             )}
           </div>
         )}

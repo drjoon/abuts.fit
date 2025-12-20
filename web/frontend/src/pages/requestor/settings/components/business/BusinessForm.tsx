@@ -3,7 +3,6 @@ import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GuideFocus } from "@/features/guidetour/GuideFocus";
 import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
@@ -33,7 +32,6 @@ interface BusinessFormProps {
   setErrors: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setCompanyNameTouched: (touched: boolean) => void;
   onSave: () => void;
-  onReset: () => void;
   renderActions?: (props: { disabled: boolean }) => React.ReactNode;
 }
 
@@ -49,7 +47,6 @@ export const BusinessForm = ({
   setErrors,
   setCompanyNameTouched,
   onSave,
-  onReset,
   renderActions,
 }: BusinessFormProps) => {
   const { isStepActive, completeStep } = useGuideTour();
@@ -298,18 +295,6 @@ export const BusinessForm = ({
             onSave();
           }}
         />
-      </div>
-
-      <div className="flex justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onReset}
-          disabled={disabled}
-        >
-          <RotateCcw className="mr-2 h-4 w-4" />
-          초기화
-        </Button>
       </div>
     </div>
   );

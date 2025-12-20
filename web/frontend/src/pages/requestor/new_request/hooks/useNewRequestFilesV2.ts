@@ -681,7 +681,7 @@ export const useNewRequestFilesV2 = ({
     setIsDragOver(true);
   }, []);
 
-  const handleDragLeave = useCallback(() => {
+  const handleDragLeave = useCallback((_e?: React.DragEvent) => {
     setIsDragOver(false);
   }, []);
 

@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
@@ -35,11 +31,23 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
 
+  const isDeletedAccount = useCallback((value?: string) => {
+    const v = String(value || "")
+      .trim()
+      .toLowerCase();
+    if (!v) return false;
+    const compact = v.replace(/\s+/g, "");
+    return (
+      compact.startsWith("delete+") ||
+      compact.includes("delete+") ||
+      compact.includes("delete%2b")
+    );
+  }, []);
+
   const [membership, setMembership] = useState<
     "none" | "owner" | "member" | "pending"
   >("none");
 
-  const [orgName, setOrgName] = useState<string>("");
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [pending, setPending] = useState<PendingJoinRequest[]>([]);
   const [representatives, setRepresentatives] = useState<
@@ -78,7 +86,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       | "member"
       | "pending";
     setMembership(next);
-    setOrgName(String(data?.organization?.name || "").trim());
   }, [mockHeaders, token]);
 
   const refreshRepresentatives = useCallback(async () => {
@@ -95,7 +102,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     }
     const body: any = res.data || {};
     const data = body.data || body;
-    setOrgName(String(data?.organizationName || "").trim());
 
     if (Array.isArray(data?.representatives)) {
       setRepresentatives(
@@ -145,7 +151,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     }
     const body: any = res.data || {};
     const data = body.data || body;
-    setOrgName(String(data?.organizationName || "").trim());
     setStaff(Array.isArray(data?.staff) ? data.staff : []);
   }, [mockHeaders, token]);
 
@@ -163,7 +168,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     }
     const body: any = res.data || {};
     const data = body.data || body;
-    setOrgName(String(data?.organizationName || "").trim());
     setPending(Array.isArray(data?.joinRequests) ? data.joinRequests : []);
   }, [mockHeaders, token]);
 
@@ -309,8 +313,41 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   };
 
   const representativeEntries = useMemo(() => {
-    return representatives.filter((entry) => Boolean(entry && entry._id));
-  }, [representatives]);
+    return representatives
+      .filter((entry) => Boolean(entry && entry._id))
+      .filter(
+        (entry) =>
+          !isDeletedAccount(entry.email) &&
+          !isDeletedAccount(entry.name) &&
+          !isDeletedAccount(entry._id)
+      );
+  }, [isDeletedAccount, representatives]);
+
+  const staffEntries = useMemo(() => {
+    return staff
+      .filter((m) => Boolean(m && m._id))
+      .filter(
+        (m) =>
+          !isDeletedAccount(m.email) &&
+          !isDeletedAccount(m.name) &&
+          !isDeletedAccount(m._id)
+      );
+  }, [isDeletedAccount, staff]);
+
+  const pendingEntries = useMemo(() => {
+    return pending.filter((r) => {
+      const u: any = (r as any)?.user;
+      const userId = typeof u === "string" ? u : String(u?._id || "");
+      const email = typeof u === "string" ? "" : String(u?.email || "");
+      const name = typeof u === "string" ? "" : String(u?.name || "");
+      return (
+        Boolean(userId) &&
+        !isDeletedAccount(userId) &&
+        !isDeletedAccount(email) &&
+        !isDeletedAccount(name)
+      );
+    });
+  }, [isDeletedAccount, pending]);
 
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
@@ -329,105 +366,93 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
             <div className="rounded-lg border bg-white/60 p-4 space-y-4">
               <div className="text-sm font-medium">등록된 임직원</div>
 
-              <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase text-muted-foreground">
-                  대표
+              {loading &&
+              representativeEntries.length === 0 &&
+              staffEntries.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  불러오는 중...
                 </div>
-                {loading && representativeEntries.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    불러오는 중...
-                  </div>
-                ) : representativeEntries.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    등록된 대표가 없습니다.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {representativeEntries.map((entry) => {
-                      const label = `${entry.name || ""}${
-                        entry.email ? ` (${entry.email})` : ""
-                      }`.trim();
-                      return (
-                        <div
-                          key={entry._id}
-                          className="flex items-center justify-between gap-3"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                              대표
-                            </span>
-                            <span className="text-sm truncate">
+              ) : representativeEntries.length === 0 &&
+                staffEntries.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  등록된 임직원이 없습니다.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {representativeEntries.map((entry) => {
+                    const label = `${entry.name || ""}${
+                      entry.email ? ` (${entry.email})` : ""
+                    }`.trim();
+                    return (
+                      <FunctionalItemCard
+                        key={entry._id}
+                        className="p-3"
+                        disabled
+                      >
+                        <div className="flex items-start gap-2">
+                          <Badge variant="secondary">대표</Badge>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">
                               {label || entry._id}
-                            </span>
+                            </div>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                      </FunctionalItemCard>
+                    );
+                  })}
 
-              <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase text-muted-foreground">
-                  직원
-                </div>
-                {loading && staff.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    불러오는 중...
-                  </div>
-                ) : staff.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    등록된 직원이 없습니다.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {staff.map((m) => {
-                      const label = `${m.name || ""}${
-                        m.email ? ` (${m.email})` : ""
-                      }`.trim();
-                      return (
-                        <div
-                          key={m._id}
-                          className="flex items-center justify-between gap-3"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                              직원
-                            </span>
-                            <span className="text-sm truncate">
-                              {label || m._id}
-                            </span>
+                  {staffEntries.map((m) => {
+                    const label = `${m.name || ""}${
+                      m.email ? ` (${m.email})` : ""
+                    }`.trim();
+                    return (
+                      <FunctionalItemCard
+                        key={m._id}
+                        className="p-3"
+                        onRemove={() => handleRemoveStaff(m._id)}
+                        confirmTitle="직원을 삭제할까요?"
+                        confirmDescription={
+                          <div className="text-sm text-muted-foreground">
+                            {label || m._id}
                           </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRemoveStaff(m._id)}
-                            disabled={actionUserId === m._id}
-                          >
-                            {actionUserId === m._id ? "삭제 중..." : "삭제"}
-                          </Button>
+                        }
+                        confirmLabel="삭제"
+                        cancelLabel="닫기"
+                        disabled={actionUserId === m._id}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Badge variant="outline">직원</Badge>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {label || m._id}
+                            </div>
+                            {actionUserId === m._id && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                처리 중...
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                      </FunctionalItemCard>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="rounded-lg border bg-white/60 p-4">
               <div className="text-sm font-medium mb-3">등록 신청자 관리</div>
-              {loading && pending.length === 0 ? (
+              {loading && pendingEntries.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
                   불러오는 중...
                 </div>
-              ) : pending.length === 0 ? (
+              ) : pendingEntries.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
                   대기 중인 신청이 없습니다.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {pending.map((r, idx) => {
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {pendingEntries.map((r, idx) => {
                     const u: any = (r as any)?.user;
                     const userId =
                       typeof u === "string" ? u : String(u?._id || "");
@@ -438,45 +463,51 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
                             u?.email ? `(${u.email})` : ""
                           }`.trim();
                     return (
-                      <div
+                      <FunctionalItemCard
                         key={`${userId}-${idx}`}
-                        className="flex items-center justify-between gap-3"
+                        className="p-3"
+                        onRemove={() => handleReject(userId)}
+                        confirmTitle="신청을 거절할까요?"
+                        confirmDescription={
+                          <div className="text-sm text-muted-foreground">
+                            {label || userId}
+                          </div>
+                        }
+                        confirmLabel="거절"
+                        cancelLabel="닫기"
+                        disabled={!userId || actionUserId === userId}
                       >
-                        <div className="text-sm truncate">
-                          {label || userId}
+                        <div className="flex items-start gap-2">
+                          <Badge variant="secondary">신청</Badge>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate">
+                              {label || userId}
+                            </div>
+                            <div className="flex gap-2 mt-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  handleApprove(userId, "representative")
+                                }
+                                disabled={!userId || actionUserId === userId}
+                              >
+                                대표
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleApprove(userId, "staff")}
+                                disabled={!userId || actionUserId === userId}
+                              >
+                                직원
+                              </Button>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              handleApprove(userId, "representative")
-                            }
-                            disabled={!userId || actionUserId === userId}
-                          >
-                            대표 승인
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleApprove(userId, "staff")}
-                            disabled={!userId || actionUserId === userId}
-                          >
-                            직원 승인
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleReject(userId)}
-                            disabled={!userId || actionUserId === userId}
-                          >
-                            거절
-                          </Button>
-                        </div>
-                      </div>
+                      </FunctionalItemCard>
                     );
                   })}
                 </div>

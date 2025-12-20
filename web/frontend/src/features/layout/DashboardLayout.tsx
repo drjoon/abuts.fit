@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -121,6 +121,7 @@ export const DashboardLayout = () => {
   const [showCompleted, setShowCompleted] = useState(false);
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
   const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
+  const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
 
   useEffect(() => {
     if (bootstrappedOnce) return;
@@ -175,6 +176,38 @@ export const DashboardLayout = () => {
     needsPhone: boolean;
   }>({ loading: true, hasBusinessNumber: true, needsPhone: false });
 
+  const refreshSidebarProfile = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await request<any>({
+        path: "/api/users/profile",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) return;
+      const body: any = res.data || {};
+      const data = body.data || body;
+      setSidebarProfileImage(String(data?.profileImage || "").trim());
+    } catch {
+      // ignore
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    void refreshSidebarProfile();
+  }, [refreshSidebarProfile, token, user?.id]);
+
+  useEffect(() => {
+    const onProfileUpdated = () => {
+      void refreshSidebarProfile();
+    };
+    window.addEventListener("abuts:profile:updated", onProfileUpdated);
+    return () => {
+      window.removeEventListener("abuts:profile:updated", onProfileUpdated);
+    };
+  }, [refreshSidebarProfile]);
+
   useEffect(() => {
     if (!token) return;
     if (!user) return;
@@ -210,6 +243,7 @@ export const DashboardLayout = () => {
         if (cancelled) return;
         const profileBody: any = profileRes.data || {};
         const profile = profileBody.data || profileBody;
+        setSidebarProfileImage(String(profile?.profileImage || "").trim());
         const needsPhone =
           !String(profile?.phoneNumber || "").trim() ||
           !profile?.phoneVerifiedAt;
@@ -277,7 +311,11 @@ export const DashboardLayout = () => {
         description: "계정 설정에서 휴대폰 인증을 먼저 완료해주세요.",
         duration: 3000,
       });
-      startTour("requestor-onboarding", "requestor.phone.number", returnTo);
+      startTour(
+        "requestor-onboarding",
+        "requestor.account.profileImage",
+        returnTo
+      );
       navigate(
         `/dashboard/settings?tab=account&reason=missing_phone&next=${encodeURIComponent(
           returnTo
@@ -613,7 +651,7 @@ export const DashboardLayout = () => {
                     const initial = !requestorGuide.hasBusinessNumber
                       ? "requestor.business.companyName"
                       : requestorGuide.needsPhone
-                      ? "requestor.phone.number"
+                      ? "requestor.account.profileImage"
                       : "";
 
                     if (!initial) {
@@ -655,6 +693,14 @@ export const DashboardLayout = () => {
                       isCollapsed ? "" : "mr-2 lg:mr-3"
                     }`}
                   >
+                    <AvatarImage
+                      src={
+                        sidebarProfileImage ||
+                        String((user as any)?.profileImage || "") ||
+                        undefined
+                      }
+                      alt={user.name}
+                    />
                     <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
                   </Avatar>
                   {!isCollapsed && (

@@ -27,6 +27,11 @@ const TOUR_DEFINITIONS: Record<GuideTourId, GuideStep[]> = {
       description: "사업자등록번호를 입력하고 Enter로 다음 단계로 넘어가세요.",
     },
     {
+      id: "requestor.account.profileImage",
+      title: "프로필 이미지 선택",
+      description: "프로필 이미지를 선택해보세요.",
+    },
+    {
       id: "requestor.phone.number",
       title: "휴대폰번호 입력",
       description: "휴대폰번호 입력 후 Enter로 인증번호 발송을 진행하세요.",
@@ -122,14 +127,16 @@ export const GuideTourProvider = ({
   }, [reset]);
 
   const nextStep = useCallback(() => {
-    setCurrentStepIndex((prev) => {
-      if (prev + 1 >= steps.length) {
-        reset();
-        return prev;
+    if (!steps.length) return;
+    if (currentStepIndex >= steps.length - 1) {
+      if (returnTo) {
+        setPendingRedirectTo(returnTo);
       }
-      return prev + 1;
-    });
-  }, [reset, steps.length]);
+      reset();
+      return;
+    }
+    setCurrentStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
+  }, [currentStepIndex, reset, returnTo, steps.length]);
 
   const prevStep = useCallback(() => {
     setCurrentStepIndex((prev) => Math.max(0, prev - 1));

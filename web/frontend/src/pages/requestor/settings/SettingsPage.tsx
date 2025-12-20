@@ -108,7 +108,7 @@ export const RequestorSettingsPage = () => {
     base.push(
       {
         key: "shipping",
-        label: "배송 옵션",
+        label: "배송",
         icon: Truck,
         content: <ShippingTab userData={user} />,
       },

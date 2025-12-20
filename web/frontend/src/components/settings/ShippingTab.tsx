@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -8,6 +8,8 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Truck } from "lucide-react";
+import { request } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 interface ShippingTabProps {
   userData: {
@@ -22,16 +24,66 @@ const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
 export const ShippingTab = ({ userData }: ShippingTabProps) => {
   const storageKey = `${STORAGE_KEY_PREFIX}${userData?.email || "guest"}`;
 
+  const { token, user } = useAuthStore();
+
   const [shippingMode, setShippingMode] = useState<
     "countBased" | "weeklyBased"
   >("countBased");
   const [option, setOption] = useState<"count3" | "monThu">("count3");
   const [autoBatchThreshold, setAutoBatchThreshold] = useState(20);
-  const [maxWaitDays, setMaxWaitDays] = useState(3);
+  const [maxWaitDays, setMaxWaitDays] = useState(5);
   const [weeklyBatchDays, setWeeklyBatchDays] = useState<string[]>([
     "mon",
     "thu",
   ]);
+
+  const mockHeaders = useMemo(() => {
+    if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
+    return {
+      "x-mock-role": (user?.role || userData?.role || "requestor") as string,
+      "x-mock-position": (user as any)?.position || "staff",
+      "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
+      "x-mock-name": user?.name || userData?.name || "사용자",
+      "x-mock-organization": (user as any)?.organization || "",
+      "x-mock-phone": (user as any)?.phoneNumber || "",
+    };
+  }, [token, user?.email, user?.name, user?.role, userData]);
+
+  const [computedWeeklyDay, setComputedWeeklyDay] = useState<string>("");
+
+  useEffect(() => {
+    const load = async () => {
+      if (!token) return;
+      try {
+        const res = await request<any>({
+          path: "/api/requestor-organizations/me",
+          method: "GET",
+          token,
+          headers: mockHeaders,
+        });
+        if (!res.ok) return;
+        const body: any = res.data || {};
+        const data = body.data || body;
+        const businessNumberRaw = String(
+          data?.extracted?.businessNumber ||
+            data?.organization?.businessNumber ||
+            data?.businessNumber ||
+            ""
+        ).trim();
+        const digits = businessNumberRaw.replace(/\D/g, "");
+        if (!digits) return;
+        const n = Number(digits.slice(-6));
+        if (!Number.isFinite(n)) return;
+        const idx = ((n % 5) + 5) % 5;
+        const map = ["mon", "tue", "wed", "thu", "fri"] as const;
+        setComputedWeeklyDay(map[idx]);
+      } catch {
+        // ignore
+      }
+    };
+
+    void load();
+  }, [mockHeaders, token]);
 
   useEffect(() => {
     try {
@@ -67,7 +119,22 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     }
   }, [storageKey]);
 
+  useEffect(() => {
+    if (!computedWeeklyDay) return;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? (JSON.parse(raw) as any) : null;
+      const hasStoredDays = Array.isArray(parsed?.weeklyBatchDays);
+      if (hasStoredDays) return;
+    } catch {
+      // ignore
+    }
+
+    setWeeklyBatchDays([computedWeeklyDay]);
+  }, [computedWeeklyDay, storageKey]);
+
   const toggleDay = (day: string) => {
+    if (computedWeeklyDay) return;
     setWeeklyBatchDays((prev) =>
       prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
     );
@@ -164,7 +231,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
                 <input
                   type="number"
                   min={1}
-                  max={10}
+                  max={999}
                   value={autoBatchThreshold}
                   onChange={(e) =>
                     setAutoBatchThreshold(Number(e.target.value) || 1)
@@ -213,6 +280,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
                     key={day}
                     type="button"
                     onClick={() => toggleDay(day)}
+                    disabled={Boolean(computedWeeklyDay)}
                     className={`px-4 py-2 rounded-lg text-base font-medium border-2 transition-all ${
                       active
                         ? "bg-green-600 text-white border-green-600 shadow-lg"

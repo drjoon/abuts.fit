@@ -8,6 +8,7 @@ import { useExpressShipping } from "./hooks/useExpressShipping";
 import { useFileVerification } from "./hooks/useFileVerification";
 import { apiFetch } from "@/lib/apiClient";
 import { MultiActionDialog } from "@/components/MultiActionDialog";
+import { PageFileDropZone } from "@/components/PageFileDropZone";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestUploadSection } from "./components/NewRequestUploadSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
@@ -36,7 +37,6 @@ export const NewRequestPage = () => {
     isDragOver,
     handleDragOver,
     handleDragLeave,
-    handleDrop,
     handleUpload,
     handleRemoveFile,
     typeOptions,
@@ -292,8 +292,40 @@ export const NewRequestPage = () => {
     return { valid: true };
   };
 
+  const handleIncomingFiles = (selectedFiles: File[]) => {
+    const filesToUpload: File[] = [];
+    const rejectedFiles: string[] = [];
+
+    selectedFiles.forEach((file) => {
+      const validation = validateFileForUpload(file);
+      if (validation.valid) {
+        filesToUpload.push(file);
+      } else {
+        rejectedFiles.push(file.name);
+      }
+    });
+
+    if (rejectedFiles.length > 0) {
+      toast({
+        title: "파일 업로드 실패",
+        description:
+          "1MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    }
+
+    if (filesToUpload.length > 0) {
+      void handleUpload(filesToUpload);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-subtle p-4 md:p-6">
+    <PageFileDropZone
+      onFiles={handleIncomingFiles}
+      activeClassName="ring-2 ring-primary/30"
+      className="min-h-screen bg-gradient-subtle p-4 md:p-6"
+    >
       <div className="max-w-6xl mx-auto space-y-4">
         <MultiActionDialog
           open={!!duplicatePrompt}
@@ -501,41 +533,17 @@ export const NewRequestPage = () => {
             sectionHighlightClass={sectionHighlightClass}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onFilesSelected={(selectedFiles) => {
-              const filesToUpload: File[] = [];
-              const rejectedFiles: string[] = [];
-
-              selectedFiles.forEach((file) => {
-                const validation = validateFileForUpload(file);
-                if (validation.valid) {
-                  filesToUpload.push(file);
-                } else {
-                  rejectedFiles.push(file.name);
-                }
-              });
-
-              if (rejectedFiles.length > 0) {
-                toast({
-                  title: "파일 업로드 불가",
-                  description: `${rejectedFiles.join(
-                    ", "
-                  )} - 1MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.`,
-                  variant: "destructive",
-                  duration: 4000,
-                });
-              }
-
-              if (filesToUpload.length > 0) {
-                handleUpload(filesToUpload);
-              }
+            onDrop={(e) => {
+              e.preventDefault();
+              handleDragLeave(e);
+              handleIncomingFiles(Array.from(e.dataTransfer.files));
             }}
+            onFilesSelected={handleIncomingFiles}
           />
 
           <NewRequestShippingSection
             caseInfos={caseInfos}
             setCaseInfos={setCaseInfos}
-            disabled={!hasVerifiedFile}
             highlight={highlightStep === "shipping"}
             sectionHighlightClass={sectionHighlightClass}
             bulkShippingSummary={bulkShippingSummary}
@@ -594,6 +602,6 @@ export const NewRequestPage = () => {
           />
         </div>
       </div>
-    </div>
+    </PageFileDropZone>
   );
 };
