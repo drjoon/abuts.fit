@@ -9,7 +9,16 @@ import { Building2, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { PageFileDropZone } from "@/components/PageFileDropZone";
-import { ToastAction } from "@/components/ui/toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import {
   BusinessLicenseUpload,
@@ -115,6 +124,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   );
 
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const [extracted, setExtracted] = useState<LicenseExtracted>({});
   const [isVerified, setIsVerified] = useState<boolean>(false);
@@ -336,17 +347,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   const handleDeleteLicense = async () => {
-    toast({
-      title: "정말 초기화할까요?",
-      description:
-        "삭제하면 등록된 임직원 정보도 초기화됩니다. 그래도 진행할까요?",
-      duration: 10000,
-      action: (
-        <ToastAction altText="초기화 진행" onClick={() => runDeleteLicense()}>
-          삭제
-        </ToastAction>
-      ),
-    });
+    setDeleteConfirmOpen(true);
   };
 
   const runDeleteLicense = async () => {
@@ -889,6 +890,28 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>정말 초기화할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              삭제하면 등록된 임직원 정보도 초기화됩니다. 그래도 진행할까요?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setDeleteConfirmOpen(false);
+                await runDeleteLicense();
+              }}
+            >
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageFileDropZone>
   );
 };
