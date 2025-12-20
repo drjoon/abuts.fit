@@ -23,9 +23,15 @@ interface HandleSaveParams {
   nextPath: string;
 }
 
+interface HandleSaveResult {
+  success: boolean;
+  welcomeBonusGranted?: boolean;
+  welcomeBonusAmount?: number;
+}
+
 export const handleSave = async (
   params: HandleSaveParams
-): Promise<boolean> => {
+): Promise<HandleSaveResult> => {
   const {
     token,
     businessData,
@@ -45,7 +51,7 @@ export const handleSave = async (
         variant: "destructive",
         duration: 3000,
       });
-      return false;
+      return { success: false };
     }
 
     const companyName = String(businessData.companyName || "").trim();
@@ -78,7 +84,7 @@ export const handleSave = async (
         variant: "destructive",
         duration: 3500,
       });
-      return false;
+      return { success: false };
     }
 
     if (!normalizedBusinessNumber) {
@@ -88,7 +94,7 @@ export const handleSave = async (
         variant: "destructive",
         duration: 3500,
       });
-      return false;
+      return { success: false };
     }
 
     if (!normalizedPhoneNumber) {
@@ -99,7 +105,7 @@ export const handleSave = async (
         variant: "destructive",
         duration: 3500,
       });
-      return false;
+      return { success: false };
     }
 
     if (!isValidEmail(taxEmail)) {
@@ -109,7 +115,7 @@ export const handleSave = async (
         variant: "destructive",
         duration: 3500,
       });
-      return false;
+      return { success: false };
     }
 
     if (!isValidAddress(address)) {
@@ -120,7 +126,7 @@ export const handleSave = async (
         variant: "destructive",
         duration: 3500,
       });
-      return false;
+      return { success: false };
     }
 
     const res = await request<any>({
@@ -153,7 +159,7 @@ export const handleSave = async (
           variant: "destructive",
           duration: 4000,
         });
-        return false;
+        return { success: false };
       }
       toast({
         title: "저장 실패",
@@ -161,8 +167,13 @@ export const handleSave = async (
         variant: "destructive",
         duration: 3000,
       });
-      return false;
+      return { success: false };
     }
+
+    const body: any = res.data || {};
+    const data = body?.data || body || {};
+    const welcomeBonusGranted = Boolean(data?.welcomeBonusGranted);
+    const welcomeBonusAmount = Number(data?.welcomeBonusAmount || 0);
 
     setErrors({});
     setBusinessData((prev) => ({
@@ -171,22 +182,36 @@ export const handleSave = async (
       businessNumber: normalizedBusinessNumber,
     }));
 
-    toast({
-      title: "설정이 저장되었습니다",
-      description: "사업자 정보가 성공적으로 업데이트되었습니다.",
-    });
+    if (welcomeBonusGranted && welcomeBonusAmount > 0) {
+      const formatted = new Intl.NumberFormat("ko-KR").format(
+        Math.max(0, welcomeBonusAmount)
+      );
+      toast({
+        title: "신규 기공소 등록 완료",
+        description: `축하 크레딧 ${formatted}원이 자동 적립되었어요.`,
+      });
+    } else {
+      toast({
+        title: "설정이 저장되었습니다",
+        description: "사업자 정보가 성공적으로 업데이트되었습니다.",
+      });
+    }
 
     if (nextPath) {
       navigate(nextPath);
     }
-    return true;
+    return {
+      success: true,
+      welcomeBonusGranted,
+      welcomeBonusAmount,
+    };
   } catch {
     toast({
       title: "저장 실패",
       variant: "destructive",
       duration: 3000,
     });
-    return false;
+    return { success: false };
   }
 };
 

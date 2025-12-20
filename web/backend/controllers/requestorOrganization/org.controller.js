@@ -2,6 +2,62 @@ import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import User from "../../models/user.model.js";
 import s3Utils from "../../utils/s3.utils.js";
 import File from "../../models/file.model.js";
+import CreditLedger from "../../models/creditLedger.model.js";
+
+const WELCOME_BONUS_AMOUNT = 30000;
+
+async function grantWelcomeBonusIfEligible({ organization, userId }) {
+  if (!organization?._id) return null;
+  const alreadyGranted =
+    Array.isArray(organization?.bonusGrants) &&
+    organization.bonusGrants.some((grant) => grant?.type === "WELCOME_BONUS");
+  if (alreadyGranted) return null;
+
+  const orgId = organization._id;
+  const uniqueKey = `welcome_bonus:org:${String(orgId)}`;
+
+  const result = await CreditLedger.updateOne(
+    { uniqueKey },
+    {
+      $setOnInsert: {
+        organizationId: orgId,
+        userId: userId || null,
+        type: "BONUS",
+        amount: WELCOME_BONUS_AMOUNT,
+        refType: "WELCOME_BONUS",
+        refId: orgId,
+        uniqueKey,
+      },
+    },
+    { upsert: true }
+  );
+
+  if (!result?.upsertedCount) return null;
+
+  const ledgerDoc = await CreditLedger.findOne({ uniqueKey })
+    .select({ _id: 1 })
+    .lean();
+
+  await RequestorOrganization.updateOne(
+    { _id: orgId },
+    {
+      $push: {
+        bonusGrants: {
+          type: "WELCOME_BONUS",
+          amount: WELCOME_BONUS_AMOUNT,
+          grantedAt: new Date(),
+          grantedByUserId: userId || null,
+          creditLedgerId: ledgerDoc?._id || null,
+          uniqueKey,
+          businessNumberSnapshot: String(
+            organization?.extracted?.businessNumber || ""
+          ),
+        },
+      },
+    }
+  );
+  return WELCOME_BONUS_AMOUNT;
+}
 
 export async function getMyOrganization(req, res) {
   try {
@@ -495,9 +551,19 @@ export async function updateMyOrganization(req, res) {
           { new: true }
         );
 
+        const granted = await grantWelcomeBonusIfEligible({
+          organization: created,
+          userId: req.user._id,
+        });
+
         return res.json({
           success: true,
-          data: { created: true, organizationId: created._id },
+          data: {
+            created: true,
+            organizationId: created._id,
+            welcomeBonusGranted: Boolean(granted),
+            welcomeBonusAmount: granted || 0,
+          },
         });
       } catch (e) {
         if (isDuplicateKeyError(e)) {

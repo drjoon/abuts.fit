@@ -417,7 +417,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   }, [isPrimaryOwner, membership]);
 
   const handleSave = async () => {
-    const success = await handleSaveImpl({
+    const { success } = await handleSaveImpl({
       token,
       businessData,
       extracted,
@@ -428,6 +428,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       navigate,
       nextPath,
     });
+    if (success) {
+      await refreshMembership();
+      if (token) {
+        await loginWithToken(token);
+      }
+    }
   };
 
   const handleFileUpload = async (file: File) => {

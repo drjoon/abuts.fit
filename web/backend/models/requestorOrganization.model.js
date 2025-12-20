@@ -76,6 +76,29 @@ const requestorOrganizationSchema = new mongoose.Schema(
       message: { type: String, default: "" },
       checkedAt: { type: Date, default: null },
     },
+    bonusGrants: [
+      {
+        type: {
+          type: String,
+          enum: ["WELCOME_BONUS"],
+          required: true,
+        },
+        amount: { type: Number, default: 0 },
+        grantedAt: { type: Date, default: Date.now },
+        grantedByUserId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          default: null,
+        },
+        creditLedgerId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "CreditLedger",
+          default: null,
+        },
+        uniqueKey: { type: String, default: "" },
+        businessNumberSnapshot: { type: String, default: "" },
+      },
+    ],
   },
   {
     timestamps: true,
