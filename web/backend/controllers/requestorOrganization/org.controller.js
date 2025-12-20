@@ -3,29 +3,90 @@ import User from "../../models/user.model.js";
 import s3Utils from "../../utils/s3.utils.js";
 import File from "../../models/file.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import BonusGrant from "../../models/bonusGrant.model.js";
 
 const WELCOME_BONUS_AMOUNT = 30000;
 
-async function grantWelcomeBonusIfEligible({ organization, userId }) {
-  if (!organization?._id) return null;
-  const alreadyGranted =
-    Array.isArray(organization?.bonusGrants) &&
-    organization.bonusGrants.some((grant) => grant?.type === "WELCOME_BONUS");
-  if (alreadyGranted) return null;
+function normalizeBusinessNumberDigits(input) {
+  const digits = String(input || "").replace(/\D/g, "");
+  if (digits.length !== 10) return "";
+  return digits;
+}
 
-  const orgId = organization._id;
-  const uniqueKey = `welcome_bonus:org:${String(orgId)}`;
+function isDuplicateKeyErrorForMongo(err) {
+  const code = err?.code;
+  const name = String(err?.name || "");
+  const msg = String(err?.message || "");
+  return (
+    code === 11000 ||
+    name.includes("MongoServerError") ||
+    msg.includes("E11000")
+  );
+}
 
+async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
+  if (!organizationId) return null;
+
+  const org = await RequestorOrganization.findById(organizationId)
+    .select({ extracted: 1 })
+    .lean();
+  if (!org) return null;
+
+  const businessNumber = normalizeBusinessNumberDigits(
+    org?.extracted?.businessNumber
+  );
+  if (!businessNumber) return null;
+
+  let grant = await BonusGrant.findOne({
+    type: "WELCOME_BONUS",
+    businessNumber,
+    isOverride: false,
+  })
+    .select({ _id: 1, creditLedgerId: 1 })
+    .lean();
+
+  if (!grant) {
+    try {
+      const created = await BonusGrant.create({
+        type: "WELCOME_BONUS",
+        businessNumber,
+        amount: WELCOME_BONUS_AMOUNT,
+        organizationId,
+        userId: userId || null,
+        isOverride: false,
+        source: "auto",
+        grantedByUserId: null,
+      });
+      grant = { _id: created._id, creditLedgerId: created.creditLedgerId };
+    } catch (e) {
+      if (isDuplicateKeyErrorForMongo(e)) {
+        grant = await BonusGrant.findOne({
+          type: "WELCOME_BONUS",
+          businessNumber,
+          isOverride: false,
+        })
+          .select({ _id: 1, creditLedgerId: 1 })
+          .lean();
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  if (!grant?._id) return null;
+  if (grant?.creditLedgerId) return null;
+
+  const uniqueKey = `bonus_grant:${String(grant._id)}`;
   const result = await CreditLedger.updateOne(
     { uniqueKey },
     {
       $setOnInsert: {
-        organizationId: orgId,
+        organizationId,
         userId: userId || null,
         type: "BONUS",
         amount: WELCOME_BONUS_AMOUNT,
         refType: "WELCOME_BONUS",
-        refId: orgId,
+        refId: organizationId,
         uniqueKey,
       },
     },
@@ -38,24 +99,11 @@ async function grantWelcomeBonusIfEligible({ organization, userId }) {
     .select({ _id: 1 })
     .lean();
 
-  await RequestorOrganization.updateOne(
-    { _id: orgId },
-    {
-      $push: {
-        bonusGrants: {
-          type: "WELCOME_BONUS",
-          amount: WELCOME_BONUS_AMOUNT,
-          grantedAt: new Date(),
-          grantedByUserId: userId || null,
-          creditLedgerId: ledgerDoc?._id || null,
-          uniqueKey,
-          businessNumberSnapshot: String(
-            organization?.extracted?.businessNumber || ""
-          ),
-        },
-      },
-    }
+  await BonusGrant.updateOne(
+    { _id: grant._id },
+    { $set: { creditLedgerId: ledgerDoc?._id || null } }
   );
+
   return WELCOME_BONUS_AMOUNT;
 }
 
@@ -573,7 +621,7 @@ export async function updateMyOrganization(req, res) {
         );
 
         const granted = await grantWelcomeBonusIfEligible({
-          organization: created,
+          organizationId: created._id,
           userId: req.user._id,
         });
 
@@ -711,15 +759,16 @@ export async function clearMyBusinessLicense(req, res) {
       },
     });
 
-    const orgId = org._id;
-    await User.findByIdAndUpdate(req.user._id, {
-      $set: { organizationId: null, organization: "" },
-    });
-    await RequestorOrganization.findByIdAndUpdate(orgId, {
-      $pull: { members: req.user._id },
-    });
+    await User.updateMany(
+      { organizationId: org._id },
+      { $set: { organizationId: null, organization: "" } }
+    );
+    await RequestorOrganization.findByIdAndDelete(org._id);
 
-    return res.json({ success: true, data: { cleared: true, detached: true } });
+    return res.json({
+      success: true,
+      data: { cleared: true, organizationRemoved: true },
+    });
   } catch (error) {
     console.error(
       "[requestorOrganization] clearMyBusinessLicense error",

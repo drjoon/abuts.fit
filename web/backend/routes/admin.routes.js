@@ -8,6 +8,10 @@ import {
   adminManualMatch,
   adminUpsertBankTransaction,
 } from "../controllers/adminCreditBPlan.controller.js";
+import {
+  adminListBonusGrants,
+  adminOverrideWelcomeBonus,
+} from "../controllers/adminBonusGrant.controller.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -50,5 +54,9 @@ router.get("/activity-logs", adminController.getActivityLogs);
 // 시스템 설정
 router.get("/settings", adminController.getSystemSettings);
 router.put("/settings", adminController.updateSystemSettings);
+
+// 보너스 지급 내역 / 예외 지급
+router.get("/bonus-grants", adminListBonusGrants);
+router.post("/bonus-grants/welcome-bonus/override", adminOverrideWelcomeBonus);
 
 export default router;

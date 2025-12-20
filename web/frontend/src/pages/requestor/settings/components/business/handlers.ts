@@ -244,19 +244,6 @@ interface HandleDeleteLicenseParams {
   mockHeaders: Record<string, string>;
   toast: (options: any) => void;
   setLicenseDeleteLoading: (loading: boolean) => void;
-  setLicenseFileName: (name: string) => void;
-  setLicenseFileId: (id: string) => void;
-  setLicenseS3Key: (key: string) => void;
-  setLicenseStatus: (status: any) => void;
-  setIsVerified: (verified: boolean) => void;
-  setExtracted: (extracted: any) => void;
-  setErrors: (
-    errors:
-      | Record<string, boolean>
-      | ((prev: Record<string, boolean>) => Record<string, boolean>)
-  ) => void;
-  setBusinessData: (fn: (prev: BusinessData) => BusinessData) => void;
-  setCompanyNameTouched: (touched: boolean) => void;
 }
 
 export const handleDeleteLicense = async (
@@ -271,15 +258,6 @@ export const handleDeleteLicense = async (
     mockHeaders,
     toast,
     setLicenseDeleteLoading,
-    setLicenseFileName,
-    setLicenseFileId,
-    setLicenseS3Key,
-    setLicenseStatus,
-    setIsVerified,
-    setExtracted,
-    setErrors,
-    setBusinessData,
-    setCompanyNameTouched,
   } = params;
 
   try {
@@ -323,22 +301,6 @@ export const handleDeleteLicense = async (
       });
       return false;
     }
-
-    setLicenseFileName("");
-    setLicenseFileId("");
-    setLicenseS3Key("");
-    setLicenseStatus("missing");
-    setIsVerified(false);
-    setExtracted({});
-    setErrors({});
-    setBusinessData((prev) => ({
-      ...prev,
-      companyName: "",
-      businessNumber: "",
-      address: "",
-      phone: "",
-    }));
-    setCompanyNameTouched(false);
 
     toast({
       title: "삭제되었습니다",

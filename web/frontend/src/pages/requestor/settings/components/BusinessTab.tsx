@@ -319,8 +319,25 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         phone: "",
       }));
       setCompanyNameTouched(false);
+      setSetupMode(null);
       return;
     }
+
+    setLicenseFileName("");
+    setLicenseFileId("");
+    setLicenseS3Key("");
+    setLicenseStatus("missing");
+    setIsVerified(false);
+    setExtracted({});
+    setErrors({});
+    setBusinessData((prev) => ({
+      ...prev,
+      companyName: "",
+      businessNumber: "",
+      address: "",
+      phone: "",
+    }));
+    setCompanyNameTouched(false);
 
     const success = await handleDeleteLicenseImpl({
       token,
@@ -331,18 +348,16 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       mockHeaders,
       toast,
       setLicenseDeleteLoading,
-      setLicenseFileName,
-      setLicenseFileId,
-      setLicenseS3Key,
-      setLicenseStatus,
-      setIsVerified,
-      setExtracted,
-      setErrors,
-      setBusinessData,
-      setCompanyNameTouched,
     });
 
     if (success) {
+      setBusinessData({
+        companyName: "",
+        businessNumber: "",
+        address: "",
+        phone: "",
+      });
+      setExtracted({});
       await refreshMembership();
       if (token) {
         await loginWithToken(token);
