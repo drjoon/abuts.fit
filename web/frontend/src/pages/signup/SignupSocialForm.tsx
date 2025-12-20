@@ -10,7 +10,7 @@ interface SignupSocialFormProps {
     confirmPassword: string;
     company: string;
     phone: string;
-    requestorType: "" | "owner" | "co_owner" | "staff";
+    requestorType: "" | "owner" | "staff";
   };
   isLoading: boolean;
   isSocialCompleteMode: boolean;
@@ -99,7 +99,7 @@ export const SignupSocialForm = ({
         )}
         <div>
           <Label>의뢰자 유형</Label>
-          <div className="grid grid-cols-3 gap-2 mt-2">
+          <div className="grid grid-cols-2 gap-3">
             <Button
               type="button"
               variant={
@@ -111,22 +111,10 @@ export const SignupSocialForm = ({
                   requestorType: "owner",
                 }))
               }
+              disabled={isLoading}
+              className="h-10"
             >
-              주대표
-            </Button>
-            <Button
-              type="button"
-              variant={
-                formData.requestorType === "co_owner" ? "default" : "outline"
-              }
-              onClick={() =>
-                onFormDataChange((prev) => ({
-                  ...prev,
-                  requestorType: "co_owner",
-                }))
-              }
-            >
-              공동대표
+              대표
             </Button>
             <Button
               type="button"
@@ -139,6 +127,8 @@ export const SignupSocialForm = ({
                   requestorType: "staff",
                 }))
               }
+              disabled={isLoading}
+              className="h-10"
             >
               직원
             </Button>
@@ -171,8 +161,7 @@ export const SignupSocialForm = ({
           />
         </div>
 
-        {(formData.requestorType === "owner" ||
-          formData.requestorType === "co_owner") && (
+        {formData.requestorType === "owner" && (
           <div>
             <Label htmlFor="company">기공소명</Label>
             <Input

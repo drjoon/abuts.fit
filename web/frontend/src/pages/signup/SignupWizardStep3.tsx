@@ -6,7 +6,7 @@ interface SignupWizardStep3Props {
   formData: {
     company: string;
     phone: string;
-    requestorType: "" | "owner" | "co_owner" | "staff";
+    requestorType: "" | "owner" | "staff";
   };
   isLoading: boolean;
   onFormChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -21,9 +21,7 @@ export const SignupWizardStep3 = ({
   onPrevious,
   onSubmit,
 }: SignupWizardStep3Props) => {
-  const handleRequestorTypeChange = (
-    type: "" | "owner" | "co_owner" | "staff"
-  ) => {
+  const handleRequestorTypeChange = (type: "" | "owner" | "staff") => {
     onFormChange({
       target: { name: "requestorType", value: type },
     } as React.ChangeEvent<HTMLInputElement>);
@@ -36,15 +34,14 @@ export const SignupWizardStep3 = ({
     }
   };
 
-  const showCompanyField =
-    formData.requestorType === "owner" || formData.requestorType === "co_owner";
+  const showCompanyField = formData.requestorType === "owner";
 
   return (
     <form className="space-y-5" onSubmit={onSubmit}>
       <div className="space-y-3">
         <Label className="text-sm font-medium">직책</Label>
         <div className="grid grid-cols-2 gap-2">
-          {(["owner", "co_owner", "staff"] as const).map((type) => (
+          {(["owner", "staff"] as const).map((type) => (
             <button
               key={type}
               type="button"
@@ -56,11 +53,7 @@ export const SignupWizardStep3 = ({
               }`}
               disabled={isLoading}
             >
-              {type === "owner"
-                ? "주대표"
-                : type === "co_owner"
-                ? "공동대표"
-                : "직원"}
+              {type === "owner" ? "대표" : "직원"}
             </button>
           ))}
         </div>
