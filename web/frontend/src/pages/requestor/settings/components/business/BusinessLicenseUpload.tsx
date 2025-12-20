@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Upload, X, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LicenseStatus, MembershipStatus } from "./types";
+import { useToast } from "@/hooks/use-toast";
 
 interface BusinessLicenseUploadProps {
   membership: MembershipStatus;
@@ -23,8 +24,11 @@ export const BusinessLicenseUpload = ({
   onFileUpload,
   onDeleteLicense,
 }: BusinessLicenseUploadProps) => {
+  const { toast } = useToast();
   const licenseInputRef = useRef<HTMLInputElement | null>(null);
   const canEdit = membership === "owner" || membership === "none";
+  const hasExistingLicense = Boolean(licenseFileName);
+  const canUploadNew = canEdit && !hasExistingLicense;
 
   return (
     <div className="space-y-6">
@@ -64,6 +68,15 @@ export const BusinessLicenseUpload = ({
                 ) {
                   return;
                 }
+                if (!canUploadNew) {
+                  toast({
+                    title: "이미 업로드되어 있습니다",
+                    description:
+                      "사업자등록증을 재업로드하려면 먼저 삭제하거나 [초기화]를 진행해주세요.",
+                    duration: 3000,
+                  });
+                  return;
+                }
                 licenseInputRef.current?.click();
               }}
             >
@@ -79,7 +92,7 @@ export const BusinessLicenseUpload = ({
               type="file"
               className="hidden"
               accept=".jpg,.jpeg,.png"
-              disabled={!canEdit}
+              disabled={!canEdit || !canUploadNew}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) onFileUpload(f);

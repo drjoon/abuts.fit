@@ -50,7 +50,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const { token, user, loginWithToken } = useAuthStore();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const navigate = useNavigate();
-  const { isStepActive, completeStep } = useGuideTour();
+  const {
+    active: guideActive,
+    activeTourId,
+    isStepActive,
+    completeStep,
+  } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
@@ -204,6 +209,19 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setSetupMode(null);
     }
   }, [membership]);
+
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-onboarding") return;
+    if (
+      !isStepActive("requestor.business.companyName") &&
+      !isStepActive("requestor.business.businessNumber")
+    )
+      return;
+    if (membership !== "none") return;
+    if (setupMode) return;
+    setSetupMode("license");
+  }, [activeTourId, guideActive, isStepActive, membership, setupMode]);
 
   useEffect(() => {
     const q = orgSearch.trim();
@@ -457,7 +475,18 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       if (!token) {
         toast({
           title: "로그인이 필요합니다",
+          description: "사업자등록증 업로드는 로그인 후 이용할 수 있습니다.",
           variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      if (licenseFileName) {
+        toast({
+          title: "이미 업로드되어 있습니다",
+          description:
+            "사업자등록증을 재업로드하려면 먼저 삭제하거나 [초기화]를 진행해주세요.",
           duration: 3000,
         });
         return;
@@ -645,6 +674,15 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const handleLicenseFilesDrop = (selectedFiles: File[]) => {
     const file = selectedFiles?.[0];
     if (!file) return;
+    if (licenseFileName) {
+      toast({
+        title: "이미 업로드되어 있습니다",
+        description:
+          "사업자등록증을 재업로드하려면 먼저 삭제하거나 [초기화]를 진행해주세요.",
+        duration: 3000,
+      });
+      return;
+    }
     void handleFileUpload(file);
   };
 

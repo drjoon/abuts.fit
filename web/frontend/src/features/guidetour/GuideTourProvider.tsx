@@ -6,7 +6,7 @@ import {
   useState,
 } from "react";
 
-export type GuideTourId = "requestor-onboarding";
+export type GuideTourId = "requestor-onboarding" | "requestor-new-request";
 
 export type GuideStep = {
   id: string;
@@ -40,6 +40,23 @@ const TOUR_DEFINITIONS: Record<GuideTourId, GuideStep[]> = {
       id: "requestor.phone.code",
       title: "인증번호 확인",
       description: "인증번호 입력 후 Enter로 인증을 완료하세요.",
+    },
+  ],
+  "requestor-new-request": [
+    {
+      id: "requestor.new_request.upload",
+      title: "STL 업로드",
+      description: "커스텀 어벗 STL 파일을 업로드해주세요.",
+    },
+    {
+      id: "requestor.new_request.details",
+      title: "의뢰 정보 입력",
+      description: "치과명/환자명/치아번호 등 정보를 확인해주세요.",
+    },
+    {
+      id: "requestor.new_request.shipping",
+      title: "배송 선택 후 의뢰하기",
+      description: "배송 옵션을 선택한 뒤 의뢰하기를 눌러주세요.",
     },
   ],
 };
@@ -129,6 +146,10 @@ export const GuideTourProvider = ({
   const nextStep = useCallback(() => {
     if (!steps.length) return;
     if (currentStepIndex >= steps.length - 1) {
+      if (activeTourId === "requestor-new-request") {
+        setCurrentStepIndex(0);
+        return;
+      }
       if (returnTo) {
         setPendingRedirectTo(returnTo);
       }
@@ -136,7 +157,7 @@ export const GuideTourProvider = ({
       return;
     }
     setCurrentStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
-  }, [currentStepIndex, reset, returnTo, steps.length]);
+  }, [activeTourId, currentStepIndex, reset, returnTo, steps.length]);
 
   const prevStep = useCallback(() => {
     setCurrentStepIndex((prev) => Math.max(0, prev - 1));
@@ -162,6 +183,10 @@ export const GuideTourProvider = ({
       if (stepId && current?.id !== stepId) return;
       if (!stepId && !current) return;
       if (currentStepIndex === steps.length - 1) {
+        if (activeTourId === "requestor-new-request") {
+          setCurrentStepIndex(0);
+          return;
+        }
         if (returnTo) {
           setPendingRedirectTo(returnTo);
         }
@@ -170,7 +195,7 @@ export const GuideTourProvider = ({
       }
       setCurrentStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
     },
-    [currentStepIndex, reset, returnTo, steps]
+    [activeTourId, currentStepIndex, reset, returnTo, steps]
   );
 
   const isStepActive = useCallback(

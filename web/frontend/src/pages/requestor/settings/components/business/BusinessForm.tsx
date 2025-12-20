@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,20 @@ export const BusinessForm = ({
   const { isStepActive, completeStep } = useGuideTour();
   const bizNoRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    if (!isStepActive("requestor.business.companyName")) return;
+    if (String(businessData.companyName || "").trim()) {
+      completeStep("requestor.business.companyName");
+    }
+  }, [businessData.companyName, completeStep, isStepActive]);
+
+  useEffect(() => {
+    if (!isStepActive("requestor.business.businessNumber")) return;
+    if (String(businessData.businessNumber || "").trim()) {
+      completeStep("requestor.business.businessNumber");
+    }
+  }, [businessData.businessNumber, completeStep, isStepActive]);
+
   const disabled =
     licenseDeleteLoading ||
     licenseStatus === "uploading" ||
@@ -95,7 +109,10 @@ export const BusinessForm = ({
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgName">기공소명</Label>
-            <GuideFocus stepId="requestor.business.companyName">
+            <GuideFocus
+              stepId="requestor.business.companyName"
+              className="rounded-xl p-1"
+            >
               <Input
                 id="orgName"
                 className={cn(
@@ -157,7 +174,10 @@ export const BusinessForm = ({
 
           <div className="space-y-2">
             <Label htmlFor="bizNo">사업자등록번호</Label>
-            <GuideFocus stepId="requestor.business.businessNumber">
+            <GuideFocus
+              stepId="requestor.business.businessNumber"
+              className="rounded-xl p-1"
+            >
               <Input
                 ref={bizNoRef}
                 id="bizNo"

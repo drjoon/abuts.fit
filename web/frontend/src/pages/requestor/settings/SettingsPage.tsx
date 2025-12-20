@@ -136,26 +136,8 @@ export const RequestorSettingsPage = () => {
     ? tabFromUrl
     : (tabs[0]?.key as TabKey);
 
-  const subtitle = useMemo(() => {
-    if (membership === "owner") {
-      return "계정과 기공소 설정, 임직원/배송/결제 정보를 관리하세요";
-    }
-    if (membership === "member") {
-      return "계정 설정을 변경하고, 기공소 정보는 읽기 전용으로 확인할 수 있어요";
-    }
-    if (membership === "pending") {
-      return "기공소 승인 대기 중입니다. 진행 상태는 '기공소' 탭에서 확인하세요";
-    }
-    if (membership === "none") {
-      return "기공소 소속을 설정하면 의뢰 제출을 진행할 수 있어요";
-    }
-    return "계정 정보와 비즈니스 설정을 관리하세요";
-  }, [membership]);
-
   return (
     <SettingsScaffold
-      title="설정"
-      subtitle={subtitle}
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={(next) => setSearchParams({ tab: next })}

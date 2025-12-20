@@ -11,32 +11,17 @@ export type SettingsTabDef = {
 };
 
 type Props = {
-  title: string;
-  subtitle: string;
   tabs: SettingsTabDef[];
   activeTab: string;
   onTabChange: (next: string) => void;
 };
 
-export const SettingsScaffold = ({
-  title,
-  subtitle,
-  tabs,
-  activeTab,
-  onTabChange,
-}: Props) => {
+export const SettingsScaffold = ({ tabs, activeTab, onTabChange }: Props) => {
   const totalTabs = tabs.length;
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-            {title}
-          </h1>
-          <p className="text-muted-foreground text-lg">{subtitle}</p>
-        </div>
-
         <Tabs
           value={activeTab}
           onValueChange={onTabChange}

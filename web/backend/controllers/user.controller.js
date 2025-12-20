@@ -324,20 +324,37 @@ async function updateProfile(req, res) {
       const prevPhone = String(req.user?.phoneNumber || "").trim();
       if (nextPhone && nextPhone !== prevPhone) {
         const prevPv = req.user?.phoneVerification || {};
-        updateData.phoneVerifiedAt = null;
-        updateData.phoneVerification = {
-          codeHash: null,
-          expiresAt: null,
-          sentAt: null,
-          dailySendDate: String(prevPv.dailySendDate || ""),
-          dailySendCount:
-            typeof prevPv.dailySendCount === "number" &&
-            Number.isFinite(prevPv.dailySendCount)
-              ? prevPv.dailySendCount
-              : 0,
-          attempts: 0,
-          pendingPhoneNumber: "",
-        };
+        const pendingPhone = String(prevPv?.pendingPhoneNumber || "").trim();
+        const pendingCodeHash = String(prevPv?.codeHash || "").trim();
+        const pendingExpiresAt = prevPv?.expiresAt
+          ? new Date(prevPv.expiresAt).getTime()
+          : 0;
+        const now = Date.now();
+
+        if (
+          pendingPhone &&
+          pendingPhone === nextPhone &&
+          pendingCodeHash &&
+          pendingExpiresAt &&
+          pendingExpiresAt > now
+        ) {
+          // 인증 진행 중(이미 발송된 번호와 동일)인 경우 초기화하지 않음
+        } else {
+          updateData.phoneVerifiedAt = null;
+          updateData.phoneVerification = {
+            codeHash: null,
+            expiresAt: null,
+            sentAt: null,
+            dailySendDate: String(prevPv.dailySendDate || ""),
+            dailySendCount:
+              typeof prevPv.dailySendCount === "number" &&
+              Number.isFinite(prevPv.dailySendCount)
+                ? prevPv.dailySendCount
+                : 0,
+            attempts: 0,
+            pendingPhoneNumber: "",
+          };
+        }
       }
     }
 
@@ -470,9 +487,35 @@ async function getNotificationSettings(req, res) {
         message: "사용자를 찾을 수 없습니다.",
       });
     }
-    res.status(200).json({
+
+    const notification = user?.preferences?.notifications || {};
+    const userConfiguredAt = notification?.userConfiguredAt || null;
+
+    if (!userConfiguredAt) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          methods: {
+            emailNotifications: true,
+            smsNotifications: true,
+            pushNotifications: true,
+            marketingEmails: true,
+          },
+          types: {
+            newRequests: true,
+            statusUpdates: true,
+            payments: true,
+          },
+        },
+      });
+    }
+
+    return res.status(200).json({
       success: true,
-      data: user.preferences.notifications,
+      data: {
+        methods: notification?.methods || {},
+        types: notification?.types || {},
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -528,6 +571,7 @@ async function updateNotificationSettings(req, res) {
       req.user._id,
       {
         $set: {
+          "preferences.notifications.userConfiguredAt": new Date(),
           "preferences.notifications.methods": nextMethods,
           "preferences.notifications.types": nextTypes,
         },

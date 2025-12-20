@@ -113,6 +113,20 @@ function validateSupplyAmount(supply: number) {
   return null;
 }
 
+function formatRemaining(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}시간 ${String(minutes).padStart(2, "0")}분 ${String(
+      seconds
+    ).padStart(2, "0")}초`;
+  }
+  return `${minutes}분 ${String(seconds).padStart(2, "0")}초`;
+}
+
 export const CreditPaymentTab = ({ userData }: Props) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
@@ -120,9 +134,6 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   const [pendingOrder, setPendingOrder] = useState<
     CreditOrderResponse["data"] | null
   >(null);
-  const resetPendingOrder = () => {
-    setPendingOrder(null);
-  };
 
   const [balance, setBalance] = useState<number>(0);
   const [paidBalance, setPaidBalance] = useState<number>(0);
@@ -132,6 +143,10 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   const [orders, setOrders] = useState<CreditOrderItem[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [ordersPeriod, setOrdersPeriod] = useState<PeriodFilterValue>("30d");
+
+  const [chargeVariant, setChargeVariant] = useState<
+    "first" | "regular" | null
+  >(null);
 
   const [spendInsights, setSpendInsights] = useState<
     CreditSpendInsightsResponse["data"] | null
@@ -157,6 +172,65 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       setLoadingInsights(false);
     }
   };
+
+  const [pendingNow, setPendingNow] = useState(() => Date.now());
+
+  const pendingExpiresAtMs = useMemo(() => {
+    if (!pendingOrder?.expiresAt) return 0;
+    const expiresAtMs = new Date(String(pendingOrder.expiresAt)).getTime();
+    return Number.isFinite(expiresAtMs) ? expiresAtMs : 0;
+  }, [pendingOrder?.expiresAt]);
+
+  useEffect(() => {
+    if (!pendingOrder?.expiresAt) return;
+    const timer = window.setInterval(() => setPendingNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [pendingOrder?.expiresAt]);
+
+  const pendingRemainingLabel = useMemo(() => {
+    if (!pendingExpiresAtMs) return "";
+    return formatRemaining(pendingExpiresAtMs - pendingNow);
+  }, [pendingExpiresAtMs, pendingNow]);
+
+  useEffect(() => {
+    if (!pendingOrder) return;
+    if (!pendingExpiresAtMs) return;
+    if (pendingNow >= pendingExpiresAtMs) {
+      setPendingOrder(null);
+    }
+  }, [pendingExpiresAtMs, pendingNow, pendingOrder]);
+
+  const pendingPanel = pendingOrder ? (
+    <div className="mt-4 space-y-1 rounded-lg border border-gray-200 bg-white/70 p-3 text-sm">
+      <div className="font-medium">입금 대기중</div>
+      {pendingRemainingLabel ? (
+        <div>남은시간 {pendingRemainingLabel}</div>
+      ) : null}
+      <div>
+        입금계좌: {pendingOrder.depositAccount.bankName}{" "}
+        {pendingOrder.depositAccount.accountNumber}
+      </div>
+      <div>예금주: {pendingOrder.depositAccount.holderName}</div>
+      <div>
+        입금금액(부가세 포함):{" "}
+        <span className="font-semibold">
+          {Number(pendingOrder.amountTotal || 0).toLocaleString()}원
+        </span>
+      </div>
+      <div>
+        입금코드:{" "}
+        <span className="font-semibold">{pendingOrder.depositCode}</span>
+      </div>
+
+      <div className="border-t border-dashed border-gray-200 pt-2 mt-2" />
+      <div className="text-xs text-muted-foreground">
+        입금자 이름에 입금코드 기재해주세요.
+      </div>
+      <div className="text-xs text-muted-foreground">
+        미기재시 수동 처리로 오래 걸려요.
+      </div>
+    </div>
+  ) : null;
 
   const [selectedSupply, setSelectedSupply] = useState<number>(500000);
   const [selectedPlan, setSelectedPlan] = useState<"1m" | "3m">("1m");
@@ -284,10 +358,45 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     );
   }, [orders]);
 
+  useEffect(() => {
+    if (!pendingOrder?.id) return;
+    const id = String(pendingOrder.id);
+    const found = orders.find((o) => {
+      const orderId = String((o as any)?._id || (o as any)?.id || "");
+      return orderId === id;
+    });
+    if (!found) return;
+    const status = String(found.status || "");
+    if (
+      [
+        "DONE",
+        "MATCHED",
+        "EXPIRED",
+        "CANCELED",
+        "REFUND_REQUESTED",
+        "REFUNDED",
+      ].includes(status)
+    ) {
+      setPendingOrder(null);
+    }
+  }, [orders, pendingOrder?.id]);
+
   const isFirstCharge = useMemo(() => {
-    if (loadingOrders) return false;
-    return !hasChargedBefore;
-  }, [hasChargedBefore, loadingOrders]);
+    return chargeVariant === "first";
+  }, [chargeVariant]);
+
+  useEffect(() => {
+    if (chargeVariant) return;
+    if (loadingOrders) return;
+    setChargeVariant(hasChargedBefore ? "regular" : "first");
+  }, [chargeVariant, hasChargedBefore, loadingOrders]);
+
+  useEffect(() => {
+    if (!chargeVariant) return;
+    if (chargeVariant === "first" && hasChargedBefore) {
+      setChargeVariant("regular");
+    }
+  }, [chargeVariant, hasChargedBefore]);
 
   useEffect(() => {
     if (loadingOrders) return;
@@ -550,6 +659,8 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 >
                   {creatingOrder ? "요청 중..." : "충전하기"}
                 </Button>
+
+                {pendingPanel}
               </div>
             </div>
           ) : (
@@ -627,43 +738,9 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 >
                   {creatingOrder ? "요청 중..." : "충전하기"}
                 </Button>
-              </div>
-            </div>
-          )}
 
-          {pendingOrder && (
-            <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
-              <div className="text-sm font-medium">입금 안내</div>
-              <div className="text-sm">
-                입금계좌: {pendingOrder.depositAccount.bankName}{" "}
-                {pendingOrder.depositAccount.accountNumber}
+                {pendingPanel}
               </div>
-              <div className="text-sm">
-                예금주: {pendingOrder.depositAccount.holderName}
-              </div>
-              <div className="text-sm">
-                입금코드:{" "}
-                <span className="font-semibold">
-                  {pendingOrder.depositCode}
-                </span>
-              </div>
-              <div className="text-sm">
-                입금금액(부가세 포함):{" "}
-                <span className="font-semibold">
-                  {Number(pendingOrder.amountTotal || 0).toLocaleString()}원
-                </span>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                동일 금액과 입금코드가 확인되면 자동으로 충전됩니다.
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={resetPendingOrder}
-              >
-                닫기
-              </Button>
             </div>
           )}
         </div>

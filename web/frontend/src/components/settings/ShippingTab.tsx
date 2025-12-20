@@ -72,9 +72,14 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
         ).trim();
         const digits = businessNumberRaw.replace(/\D/g, "");
         if (!digits) return;
-        const n = Number(digits.slice(-6));
-        if (!Number.isFinite(n)) return;
-        const idx = ((n % 5) + 5) % 5;
+        let idx = 0;
+        try {
+          idx = Number(((BigInt(digits) % 5n) + 5n) % 5n);
+        } catch {
+          const n = Number(digits);
+          if (!Number.isFinite(n)) return;
+          idx = ((n % 5) + 5) % 5;
+        }
         const map = ["mon", "tue", "wed", "thu", "fri"] as const;
         setComputedWeeklyDay(map[idx]);
       } catch {
@@ -121,23 +126,12 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
 
   useEffect(() => {
     if (!computedWeeklyDay) return;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      const parsed = raw ? (JSON.parse(raw) as any) : null;
-      const hasStoredDays = Array.isArray(parsed?.weeklyBatchDays);
-      if (hasStoredDays) return;
-    } catch {
-      // ignore
-    }
-
     setWeeklyBatchDays([computedWeeklyDay]);
   }, [computedWeeklyDay, storageKey]);
 
   const toggleDay = (day: string) => {
     if (computedWeeklyDay) return;
-    setWeeklyBatchDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
-    );
+    setWeeklyBatchDays([day]);
   };
 
   useEffect(() => {

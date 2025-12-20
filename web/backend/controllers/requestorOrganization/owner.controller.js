@@ -23,7 +23,11 @@ export async function getPendingJoinRequestsForOwner(req, res) {
       _id: req.user.organizationId,
       $or: [{ owner: req.user._id }, { coOwners: req.user._id }],
     })
-      .populate({ path: "joinRequests.user", select: "name email" })
+      .populate({
+        path: "joinRequests.user",
+        select: "name email",
+        match: { deletedAt: null },
+      })
       .lean();
 
     if (!org) {
@@ -34,7 +38,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
     }
 
     const pending = (org.joinRequests || []).filter(
-      (r) => r?.status === "pending"
+      (r) => r?.status === "pending" && r?.user
     );
 
     return res.json({
@@ -72,8 +76,16 @@ export async function getRepresentatives(req, res) {
     }
 
     const full = await RequestorOrganization.findById(org._id)
-      .populate({ path: "owner", select: "name email" })
-      .populate({ path: "coOwners", select: "name email" })
+      .populate({
+        path: "owner",
+        select: "name email",
+        match: { deletedAt: null },
+      })
+      .populate({
+        path: "coOwners",
+        select: "name email",
+        match: { deletedAt: null },
+      })
       .select({ name: 1, owner: 1, coOwners: 1 })
       .lean();
 
@@ -288,9 +300,21 @@ export async function getMyStaffMembers(req, res) {
       _id: req.user.organizationId,
       $or: [{ owner: req.user._id }, { coOwners: req.user._id }],
     })
-      .populate({ path: "members", select: "name email" })
-      .populate({ path: "owner", select: "name email" })
-      .populate({ path: "coOwners", select: "name email" })
+      .populate({
+        path: "members",
+        select: "name email",
+        match: { deletedAt: null },
+      })
+      .populate({
+        path: "owner",
+        select: "name email",
+        match: { deletedAt: null },
+      })
+      .populate({
+        path: "coOwners",
+        select: "name email",
+        match: { deletedAt: null },
+      })
       .select({ name: 1, owner: 1, coOwners: 1, members: 1 })
       .lean();
 

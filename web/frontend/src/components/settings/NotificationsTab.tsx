@@ -24,9 +24,9 @@ type NotificationSettingsV2 = {
 const defaultSettings: NotificationSettingsV2 = {
   methods: {
     emailNotifications: true,
-    smsNotifications: false,
+    smsNotifications: true,
     pushNotifications: true,
-    marketingEmails: false,
+    marketingEmails: true,
   },
   types: {
     newRequests: true,

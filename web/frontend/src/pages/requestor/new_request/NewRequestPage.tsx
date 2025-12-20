@@ -9,6 +9,8 @@ import { useFileVerification } from "./hooks/useFileVerification";
 import { apiFetch } from "@/lib/apiClient";
 import { MultiActionDialog } from "@/components/MultiActionDialog";
 import { PageFileDropZone } from "@/components/PageFileDropZone";
+import { GuideFocus } from "@/features/guidetour/GuideFocus";
+import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestUploadSection } from "./components/NewRequestUploadSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
@@ -71,6 +73,29 @@ export const NewRequestPage = () => {
     unverifiedCount,
     highlightStep,
   } = useFileVerification({ files });
+
+  const {
+    active: guideActive,
+    activeTourId,
+    goToStep,
+    stopTour,
+    isStepActive,
+  } = useGuideTour();
+
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-new-request") return;
+
+    const desiredStepId =
+      highlightStep === "upload"
+        ? "requestor.new_request.upload"
+        : highlightStep === "details"
+        ? "requestor.new_request.details"
+        : "requestor.new_request.shipping";
+
+    if (isStepActive(desiredStepId)) return;
+    goToStep(desiredStepId);
+  }, [activeTourId, goToStep, guideActive, highlightStep, isStepActive]);
 
   const hasVerifiedFile = useMemo(() => {
     if (!files.length) return false;
@@ -489,117 +514,127 @@ export const NewRequestPage = () => {
           })()}
           onClose={() => setDuplicatePrompt(null)}
         />
-        <NewRequestDetailsSection
-          files={files}
-          selectedPreviewIndex={selectedPreviewIndex}
-          setSelectedPreviewIndex={setSelectedPreviewIndex}
-          caseInfos={caseInfos}
-          setCaseInfos={setCaseInfos}
-          caseInfosMap={caseInfosMap}
-          updateCaseInfos={updateCaseInfos}
-          connections={connections}
-          typeOptions={typeOptions}
-          implantManufacturer={implantManufacturer}
-          setImplantManufacturer={setImplantManufacturer}
-          implantSystem={implantSystem}
-          setImplantSystem={setImplantSystem}
-          implantType={implantType}
-          setImplantType={setImplantType}
-          syncSelectedConnection={syncSelectedConnection}
-          fileVerificationStatus={fileVerificationStatus}
-          setFileVerificationStatus={setFileVerificationStatus}
-          highlightUnverifiedArrows={highlightUnverifiedArrows}
-          setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
-          handleRemoveFile={handleRemoveFile}
-          clinicNameOptions={clinicNameOptions}
-          patientNameOptions={patientNameOptions}
-          teethOptions={teethOptions}
-          addClinicPreset={addClinicPreset}
-          clearAllClinicPresets={clearAllClinicPresets}
-          addPatientPreset={addPatientPreset}
-          clearAllPatientPresets={clearAllPatientPresets}
-          addTeethPreset={addTeethPreset}
-          clearAllTeethPresets={clearAllTeethPresets}
-          handleAddOrSelectClinic={handleAddOrSelectClinic}
-          toast={toast}
-          highlight={highlightStep === "details"}
-          sectionHighlightClass={sectionHighlightClass}
-        />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 mt-2">
-          <NewRequestUploadSection
-            isDragOver={isDragOver}
-            highlight={highlightStep === "upload"}
-            sectionHighlightClass={sectionHighlightClass}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDragLeave(e);
-              handleIncomingFiles(Array.from(e.dataTransfer.files));
-            }}
-            onFilesSelected={handleIncomingFiles}
-          />
-
-          <NewRequestShippingSection
+        <GuideFocus stepId="requestor.new_request.details">
+          <NewRequestDetailsSection
+            files={files}
+            selectedPreviewIndex={selectedPreviewIndex}
+            setSelectedPreviewIndex={setSelectedPreviewIndex}
             caseInfos={caseInfos}
             setCaseInfos={setCaseInfos}
-            highlight={highlightStep === "shipping"}
+            caseInfosMap={caseInfosMap}
+            updateCaseInfos={updateCaseInfos}
+            connections={connections}
+            typeOptions={typeOptions}
+            implantManufacturer={implantManufacturer}
+            setImplantManufacturer={setImplantManufacturer}
+            implantSystem={implantSystem}
+            setImplantSystem={setImplantSystem}
+            implantType={implantType}
+            setImplantType={setImplantType}
+            syncSelectedConnection={syncSelectedConnection}
+            fileVerificationStatus={fileVerificationStatus}
+            setFileVerificationStatus={setFileVerificationStatus}
+            highlightUnverifiedArrows={highlightUnverifiedArrows}
+            setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
+            handleRemoveFile={handleRemoveFile}
+            clinicNameOptions={clinicNameOptions}
+            patientNameOptions={patientNameOptions}
+            teethOptions={teethOptions}
+            addClinicPreset={addClinicPreset}
+            clearAllClinicPresets={clearAllClinicPresets}
+            addPatientPreset={addPatientPreset}
+            clearAllPatientPresets={clearAllPatientPresets}
+            addTeethPreset={addTeethPreset}
+            clearAllTeethPresets={clearAllTeethPresets}
+            handleAddOrSelectClinic={handleAddOrSelectClinic}
+            toast={toast}
+            highlight={highlightStep === "details"}
             sectionHighlightClass={sectionHighlightClass}
-            bulkShippingSummary={bulkShippingSummary}
-            normalArrivalDate={normalArrivalDate}
-            expressArrivalDate={expressArrivalDate}
-            onOpenShippingSettings={() =>
-              navigate("/dashboard/settings?tab=shipping")
-            }
-            onSelectExpress={async () => {
-              const guessShipDate = calculateExpressDate(
-                caseInfos?.maxDiameter
-              );
-              try {
-                const res = await apiFetch<any>({
-                  path: `/api/requests/shipping-estimate?mode=express&shipYmd=${encodeURIComponent(
-                    guessShipDate
-                  )}`,
-                  method: "GET",
-                });
-
-                const shipDateYmd =
-                  res.ok && res.data?.success
-                    ? res.data?.data?.shipDateYmd
-                    : guessShipDate;
-
-                setCaseInfos({
-                  shippingMode: "express",
-                  requestedShipDate: shipDateYmd,
-                });
-              } catch {
-                setCaseInfos({
-                  shippingMode: "express",
-                  requestedShipDate: guessShipDate,
-                });
-              }
-            }}
-            onSubmit={() => {
-              if (unverifiedCount > 0) {
-                setHighlightUnverifiedArrows(true);
-                toast({
-                  title: "확인 필요",
-                  description: `모든 파일을 확인해서 [확인후]로 변경해주세요.`,
-                  duration: 5000,
-                });
-                setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
-                return;
-              }
-              toast({
-                title: "의뢰 접수중",
-                description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
-                duration: 3000,
-              });
-              handleSubmit();
-            }}
-            onCancelAll={handleCancelAll}
           />
+        </GuideFocus>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 mt-2">
+          <GuideFocus stepId="requestor.new_request.upload">
+            <NewRequestUploadSection
+              isDragOver={isDragOver}
+              highlight={highlightStep === "upload"}
+              sectionHighlightClass={sectionHighlightClass}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDragLeave(e);
+                handleIncomingFiles(Array.from(e.dataTransfer.files));
+              }}
+              onFilesSelected={handleIncomingFiles}
+            />
+          </GuideFocus>
+
+          <GuideFocus stepId="requestor.new_request.shipping">
+            <NewRequestShippingSection
+              caseInfos={caseInfos}
+              setCaseInfos={setCaseInfos}
+              highlight={highlightStep === "shipping"}
+              sectionHighlightClass={sectionHighlightClass}
+              bulkShippingSummary={bulkShippingSummary}
+              normalArrivalDate={normalArrivalDate}
+              expressArrivalDate={expressArrivalDate}
+              onOpenShippingSettings={() =>
+                navigate("/dashboard/settings?tab=shipping")
+              }
+              onSelectExpress={async () => {
+                const guessShipDate = calculateExpressDate(
+                  caseInfos?.maxDiameter
+                );
+                try {
+                  const res = await apiFetch<any>({
+                    path: `/api/requests/shipping-estimate?mode=express&shipYmd=${encodeURIComponent(
+                      guessShipDate
+                    )}`,
+                    method: "GET",
+                  });
+
+                  const shipDateYmd =
+                    res.ok && res.data?.success
+                      ? res.data?.data?.shipDateYmd
+                      : guessShipDate;
+
+                  setCaseInfos({
+                    shippingMode: "express",
+                    requestedShipDate: shipDateYmd,
+                  });
+                } catch {
+                  setCaseInfos({
+                    shippingMode: "express",
+                    requestedShipDate: guessShipDate,
+                  });
+                }
+              }}
+              onSubmit={() => {
+                if (unverifiedCount > 0) {
+                  setHighlightUnverifiedArrows(true);
+                  toast({
+                    title: "확인 필요",
+                    description: `모든 파일을 확인해서 [확인후]로 변경해주세요.`,
+                    duration: 5000,
+                  });
+                  setTimeout(() => setHighlightUnverifiedArrows(false), 10000);
+                  return;
+                }
+                toast({
+                  title: "의뢰 접수중",
+                  description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
+                  duration: 3000,
+                });
+                if (guideActive && activeTourId === "requestor-new-request") {
+                  stopTour();
+                }
+                handleSubmit();
+              }}
+              onCancelAll={handleCancelAll}
+            />
+          </GuideFocus>
         </div>
       </div>
     </PageFileDropZone>

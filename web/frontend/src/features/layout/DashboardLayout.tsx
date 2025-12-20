@@ -122,6 +122,7 @@ export const DashboardLayout = () => {
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
   const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
+  const [profileUpdatedTick, setProfileUpdatedTick] = useState(0);
 
   useEffect(() => {
     if (bootstrappedOnce) return;
@@ -173,8 +174,14 @@ export const DashboardLayout = () => {
   const [requestorGuide, setRequestorGuide] = useState<{
     loading: boolean;
     hasBusinessNumber: boolean;
+    missingProfileImage: boolean;
     needsPhone: boolean;
-  }>({ loading: true, hasBusinessNumber: true, needsPhone: false });
+  }>({
+    loading: true,
+    hasBusinessNumber: true,
+    missingProfileImage: false,
+    needsPhone: false,
+  });
 
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
@@ -201,6 +208,7 @@ export const DashboardLayout = () => {
   useEffect(() => {
     const onProfileUpdated = () => {
       void refreshSidebarProfile();
+      setProfileUpdatedTick((v) => v + 1);
     };
     window.addEventListener("abuts:profile:updated", onProfileUpdated);
     return () => {
@@ -230,6 +238,7 @@ export const DashboardLayout = () => {
           setRequestorGuide({
             loading: false,
             hasBusinessNumber: false,
+            missingProfileImage: false,
             needsPhone: false,
           });
           return;
@@ -244,6 +253,7 @@ export const DashboardLayout = () => {
         const profileBody: any = profileRes.data || {};
         const profile = profileBody.data || profileBody;
         setSidebarProfileImage(String(profile?.profileImage || "").trim());
+        const missingProfileImage = !String(profile?.profileImage || "").trim();
         const needsPhone =
           !String(profile?.phoneNumber || "").trim() ||
           !profile?.phoneVerifiedAt;
@@ -251,6 +261,7 @@ export const DashboardLayout = () => {
         setRequestorGuide({
           loading: false,
           hasBusinessNumber: true,
+          missingProfileImage,
           needsPhone,
         });
       } catch {
@@ -264,7 +275,7 @@ export const DashboardLayout = () => {
     return () => {
       cancelled = true;
     };
-  }, [guideActive, token, user]);
+  }, [guideActive, profileUpdatedTick, token, user]);
 
   useEffect(() => {
     if (!token) return;
@@ -303,7 +314,7 @@ export const DashboardLayout = () => {
 
     if (
       requestorGuide.hasBusinessNumber &&
-      requestorGuide.needsPhone &&
+      (requestorGuide.missingProfileImage || requestorGuide.needsPhone) &&
       !isOnAccountTab
     ) {
       toast({
@@ -311,11 +322,11 @@ export const DashboardLayout = () => {
         description: "계정 설정에서 휴대폰 인증을 먼저 완료해주세요.",
         duration: 3000,
       });
-      startTour(
-        "requestor-onboarding",
-        "requestor.account.profileImage",
-        returnTo
-      );
+
+      const initial = requestorGuide.missingProfileImage
+        ? "requestor.account.profileImage"
+        : "requestor.phone.number";
+      startTour("requestor-onboarding", initial, returnTo);
       navigate(
         `/dashboard/settings?tab=account&reason=missing_phone&next=${encodeURIComponent(
           returnTo
@@ -329,6 +340,7 @@ export const DashboardLayout = () => {
     navigate,
     requestorGuide.hasBusinessNumber,
     requestorGuide.loading,
+    requestorGuide.missingProfileImage,
     requestorGuide.needsPhone,
     startTour,
     toast,
@@ -630,56 +642,69 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
-            {user.role === "requestor" &&
-              (guideActive ||
-                (!requestorGuide.loading &&
-                  (!requestorGuide.hasBusinessNumber ||
-                    requestorGuide.needsPhone))) && (
-                <Button
-                  type="button"
-                  variant={guideActive ? "default" : "outline"}
-                  className="w-full justify-start"
-                  onClick={() => {
-                    if (guideActive) {
-                      stopTour();
-                      return;
-                    }
+            {user.role === "requestor" && (
+              <Button
+                type="button"
+                variant={guideActive ? "default" : "outline"}
+                className="w-full justify-start"
+                onClick={() => {
+                  if (guideActive) {
+                    stopTour();
+                    return;
+                  }
 
-                    const returnTo = `${location.pathname}${
-                      location.search || ""
-                    }`;
-                    const initial = !requestorGuide.hasBusinessNumber
+                  const returnTo = `${location.pathname}${
+                    location.search || ""
+                  }`;
+                  const isNewRequest = location.pathname.startsWith(
+                    "/dashboard/new-request"
+                  );
+
+                  if (isNewRequest) {
+                    startTour(
+                      "requestor-new-request",
+                      "requestor.new_request.upload",
+                      returnTo
+                    );
+                    return;
+                  }
+
+                  const initial = !requestorGuide.loading
+                    ? !requestorGuide.hasBusinessNumber
                       ? "requestor.business.companyName"
+                      : requestorGuide.missingProfileImage
+                      ? "requestor.account.profileImage"
                       : requestorGuide.needsPhone
                       ? "requestor.account.profileImage"
-                      : "";
+                      : ""
+                    : "";
 
-                    if (!initial) {
-                      toast({
-                        title: "가이드가 필요하지 않습니다",
-                        description: "현재 완료해야 할 항목이 없어요.",
-                        duration: 3000,
-                      });
-                      return;
-                    }
+                  if (!initial) {
+                    toast({
+                      title: "가이드가 필요하지 않습니다",
+                      description: "현재 완료해야 할 항목이 없어요.",
+                      duration: 3000,
+                    });
+                    return;
+                  }
 
-                    startTour("requestor-onboarding", initial, returnTo);
-                    navigate(
-                      initial.startsWith("requestor.business")
-                        ? `/dashboard/settings?tab=business&next=${encodeURIComponent(
-                            returnTo
-                          )}`
-                        : `/dashboard/settings?tab=account&next=${encodeURIComponent(
-                            returnTo
-                          )}`,
-                      { replace: true }
-                    );
-                  }}
-                >
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  <span>{guideActive ? "가이드 종료" : "가이드 시작"}</span>
-                </Button>
-              )}
+                  startTour("requestor-onboarding", initial, returnTo);
+                  navigate(
+                    initial.startsWith("requestor.business")
+                      ? `/dashboard/settings?tab=business&next=${encodeURIComponent(
+                          returnTo
+                        )}`
+                      : `/dashboard/settings?tab=account&next=${encodeURIComponent(
+                          returnTo
+                        )}`,
+                    { replace: true }
+                  );
+                }}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                <span>{guideActive ? "가이드투어 종료" : "가이드투어"}</span>
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
