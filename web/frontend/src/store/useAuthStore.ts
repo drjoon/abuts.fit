@@ -16,6 +16,7 @@ export interface User {
   referralCode?: string;
   mockUserId?: string;
   approvedAt?: string | null;
+  organizationId?: string | null;
 }
 
 const normalizeApiUser = (u: any): User | null => {
@@ -30,6 +31,7 @@ const normalizeApiUser = (u: any): User | null => {
     companyName: String(u.organization || u.companyName || ""),
     referralCode: String(u.referralCode || ""),
     approvedAt: u.approvedAt ? String(u.approvedAt) : null,
+    organizationId: u.organizationId ? String(u.organizationId) : null,
   };
 };
 
@@ -261,6 +263,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           companyName: String(u.organization || u.companyName || ""),
           referralCode: String(u.referralCode || ""),
           approvedAt: u.approvedAt ? String(u.approvedAt) : null,
+          organizationId: u.organizationId ? String(u.organizationId) : null,
         };
 
         try {

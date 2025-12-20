@@ -25,7 +25,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
 
   const fetchMessages = useCallback(
     async (page = 1) => {
-      if (!token || !roomId) return;
+      if (!roomId) return;
 
       setLoading(true);
       setError(null);
@@ -62,7 +62,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         setLoading(false);
       }
     },
-    [token, roomId, toast]
+    [roomId, toast]
   );
 
   const sendMessage = useCallback(

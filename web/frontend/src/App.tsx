@@ -180,10 +180,7 @@ const App = () => {
                     </ProtectedRoute>
                   }
                 >
-                  <Route
-                    index
-                    element={<Navigate to="new-request" replace />}
-                  />
+                  <Route index element={<DashboardHome />} />
                   <Route path="new-request" element={<NewRequestPage />} />
                   <Route path="new-request/:id" element={<NewRequestPage />} />
                   <Route

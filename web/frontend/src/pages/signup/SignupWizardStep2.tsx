@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +36,6 @@ export const SignupWizardStep2 = ({
   isStrongPassword,
   toast,
 }: SignupWizardStep2Props) => {
-  const confirmPasswordRef = useRef<HTMLInputElement>(null);
   const [emailCode, setEmailCode] = React.useState("");
 
   const handleNext = () => {
@@ -98,9 +97,9 @@ export const SignupWizardStep2 = ({
     onNext();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !isLoading) {
-      e.preventDefault();
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!isLoading) {
       handleNext();
     }
   };
@@ -122,7 +121,7 @@ export const SignupWizardStep2 = ({
   };
 
   return (
-    <div className="space-y-5">
+    <form className="space-y-5" onSubmit={handleSubmit}>
       <div className="space-y-2">
         <Label htmlFor="name" className="text-sm font-medium">
           이름
@@ -134,7 +133,6 @@ export const SignupWizardStep2 = ({
           placeholder="예: 홍길동"
           value={formData.name}
           onChange={onFormChange}
-          onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="name"
           className="h-10"
@@ -152,7 +150,6 @@ export const SignupWizardStep2 = ({
           placeholder="10자 이상, 특수문자 포함"
           value={formData.password}
           onChange={onFormChange}
-          onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="new-password"
           className="h-10"
@@ -170,7 +167,6 @@ export const SignupWizardStep2 = ({
           placeholder="비밀번호를 다시 입력해주세요"
           value={formData.confirmPassword}
           onChange={onFormChange}
-          onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="new-password"
           className="h-10"
@@ -255,15 +251,14 @@ export const SignupWizardStep2 = ({
           이전
         </Button>
         <Button
-          type="button"
+          type="submit"
           variant="hero"
           disabled={isLoading || !emailVerifiedAt}
-          onClick={handleNext}
           className="h-10"
         >
           {isLoading ? "처리 중..." : "회원가입"}
         </Button>
       </div>
-    </div>
+    </form>
   );
 };

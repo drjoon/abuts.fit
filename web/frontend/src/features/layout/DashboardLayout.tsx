@@ -154,10 +154,32 @@ export const DashboardLayout = () => {
     return null;
   }
 
+  useEffect(() => {
+    if (!user) return;
+    if (user.role !== "requestor") return;
+    if (user.organizationId) return;
+
+    const params = new URLSearchParams(location.search);
+    const isOnBusinessTab =
+      location.pathname.startsWith("/dashboard/settings") &&
+      params.get("tab") === "business";
+    if (isOnBusinessTab) return;
+
+    toast({
+      title: "기공소 정보가 필요합니다",
+      description: "기공소 설정을 먼저 완료해야 의뢰를 진행할 수 있어요.",
+    });
+    navigate("/dashboard/settings?tab=business", { replace: true });
+  }, [location.pathname, location.search, navigate, toast, user]);
+
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
     if (!user) return;
     if (user.role !== "requestor") {
+      setCreditBalance(null);
+      return;
+    }
+    if (!user.organizationId) {
       setCreditBalance(null);
       return;
     }
@@ -210,7 +232,8 @@ export const DashboardLayout = () => {
   useEffect(() => {
     if (!token) return;
     if (!user) return;
-    if (user.role === "admin") return;
+    if (user.role !== "requestor") return;
+    if (!user.organizationId) return;
 
     const today = new Date();
     const yyyyMmDd = today.toISOString().slice(0, 10);
