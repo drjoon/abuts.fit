@@ -243,6 +243,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       await Promise.all([
         refreshPending(),
         refreshStaff(),
+        refreshCoOwners(),
         refreshMembership(),
       ]);
     } finally {
