@@ -64,7 +64,7 @@ export const OAuthCallbackPage = () => {
         return;
       }
 
-      navigate("/dashboard", { replace: true });
+      navigate("/dashboard/new-request", { replace: true });
     };
 
     run();
