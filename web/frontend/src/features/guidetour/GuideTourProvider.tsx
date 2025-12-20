@@ -17,9 +17,24 @@ export type GuideStep = {
 const TOUR_DEFINITIONS: Record<GuideTourId, GuideStep[]> = {
   "requestor-onboarding": [
     {
+      id: "requestor.business.licenseUpload",
+      title: "사업자등록증 업로드",
+      description: "사업자등록증을 업로드해주세요.",
+    },
+    {
+      id: "requestor.business.representativeName",
+      title: "대표자명 입력",
+      description: "대표자명을 입력하고 Enter로 다음 단계로 넘어가세요.",
+    },
+    {
       id: "requestor.business.companyName",
       title: "기공소명 입력",
       description: "기공소명을 입력하고 Enter로 다음 단계로 넘어가세요.",
+    },
+    {
+      id: "requestor.business.phoneNumber",
+      title: "기공소 전화번호 입력",
+      description: "기공소 전화번호를 입력하고 Enter로 다음 단계로 넘어가세요.",
     },
     {
       id: "requestor.business.businessNumber",
@@ -27,34 +42,25 @@ const TOUR_DEFINITIONS: Record<GuideTourId, GuideStep[]> = {
       description: "사업자등록번호를 입력하고 Enter로 다음 단계로 넘어가세요.",
     },
     {
-      id: "requestor.business.representativeName",
-      title: "대표자명 입력",
-      description: "대표자명을 입력해주세요.",
-    },
-    {
-      id: "requestor.business.phoneNumber",
-      title: "기공소 전화번호 입력",
-      description: "기공소 전화번호를 입력해주세요.",
-    },
-    {
-      id: "requestor.business.address",
-      title: "주소 입력",
-      description: "기공소 주소를 입력해주세요.",
-    },
-    {
-      id: "requestor.business.email",
-      title: "세금계산서 이메일 입력",
-      description: "세금계산서 이메일을 입력해주세요.",
-    },
-    {
       id: "requestor.business.businessType",
       title: "업태 입력",
-      description: "업태를 입력해주세요.",
+      description: "업태를 입력하고 Enter로 다음 단계로 넘어가세요.",
     },
     {
       id: "requestor.business.businessItem",
       title: "종목 입력",
-      description: "종목을 입력해주세요.",
+      description: "종목을 입력하고 Enter로 다음 단계로 넘어가세요.",
+    },
+    {
+      id: "requestor.business.email",
+      title: "세금계산서 이메일 입력",
+      description:
+        "세금계산서 이메일을 입력하고 Enter로 다음 단계로 넘어가세요.",
+    },
+    {
+      id: "requestor.business.address",
+      title: "주소 입력",
+      description: "기공소 주소를 입력하고 Enter로 다음 단계로 넘어가세요.",
     },
     {
       id: "requestor.account.profileImage",

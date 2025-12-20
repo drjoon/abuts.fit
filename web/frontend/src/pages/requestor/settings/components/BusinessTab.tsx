@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,12 @@ import { Building2, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { PageFileDropZone } from "@/components/PageFileDropZone";
+import { ToastAction } from "@/components/ui/toast";
 
-import { BusinessLicenseUpload } from "./business/BusinessLicenseUpload";
+import {
+  BusinessLicenseUpload,
+  type BusinessLicenseUploadHandle,
+} from "./business/BusinessLicenseUpload";
 import { BusinessForm } from "./business/BusinessForm";
 import { OrganizationSearchSection } from "./business/OrganizationSearchSection";
 import { JoinRequestsSection } from "./business/JoinRequestsSection";
@@ -109,6 +113,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>(
     userData?.companyName ? "missing" : "missing"
   );
+
+  const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
 
   const [extracted, setExtracted] = useState<LicenseExtracted>({});
   const [isVerified, setIsVerified] = useState<boolean>(false);
@@ -330,6 +336,20 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   const handleDeleteLicense = async () => {
+    toast({
+      title: "정말 초기화할까요?",
+      description:
+        "삭제하면 등록된 임직원 정보도 초기화됩니다. 그래도 진행할까요?",
+      duration: 10000,
+      action: (
+        <ToastAction altText="초기화 진행" onClick={() => runDeleteLicense()}>
+          삭제
+        </ToastAction>
+      ),
+    });
+  };
+
+  const runDeleteLicense = async () => {
     if (membership === "none") {
       setLicenseFileName("");
       setLicenseFileId("");
@@ -743,8 +763,11 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     setSetupMode("license");
                     startTour(
                       "requestor-onboarding",
-                      "requestor.business.companyName"
+                      "requestor.business.licenseUpload"
                     );
+                    requestAnimationFrame(() => {
+                      licenseUploadRef.current?.focusUpload();
+                    });
                   }}
                 >
                   <div className="text-sm font-medium">신규 기공소 등록</div>
@@ -798,6 +821,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
               {(membership === "owner" || setupMode === "license") && (
                 <div className="space-y-6">
                   <BusinessLicenseUpload
+                    ref={licenseUploadRef}
                     membership={membership}
                     licenseStatus={licenseStatus}
                     isVerified={isVerified}

@@ -226,11 +226,9 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       </div>
 
       <div className="border-t border-dashed border-gray-200 pt-2 mt-2" />
-      <div className="text-xs text-muted-foreground">
-        입금자 이름에 입금코드 기재해주세요.
-      </div>
-      <div className="text-xs text-muted-foreground">
-        미기재시 수동 처리로 오래 걸려요.
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+        <div>입금자 이름에 입금코드 기재해주세요.</div>
+        <div className="mt-0.5">미기재시 수동 처리로 오래 걸려요.</div>
       </div>
     </div>
   ) : null;

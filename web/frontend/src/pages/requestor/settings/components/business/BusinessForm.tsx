@@ -50,7 +50,18 @@ export const BusinessForm = ({
   renderActions,
 }: BusinessFormProps) => {
   const { isStepActive, completeStep } = useGuideTour();
+  const repNameRef = useRef<HTMLInputElement | null>(null);
+  const companyNameRef = useRef<HTMLInputElement | null>(null);
+  const phoneRef = useRef<HTMLInputElement | null>(null);
   const bizNoRef = useRef<HTMLInputElement | null>(null);
+  const bizTypeRef = useRef<HTMLInputElement | null>(null);
+  const bizItemRef = useRef<HTMLInputElement | null>(null);
+  const emailRef = useRef<HTMLInputElement | null>(null);
+  const addressRef = useRef<HTMLInputElement | null>(null);
+
+  const focusNext = (next: React.RefObject<HTMLInputElement | null>) => {
+    next.current?.focus();
+  };
 
   useEffect(() => {
     if (!isStepActive("requestor.business.companyName")) return;
@@ -132,6 +143,7 @@ export const BusinessForm = ({
             >
               <Input
                 id="repName"
+                ref={repNameRef}
                 className={cn(
                   errors.representativeName &&
                     "border-destructive focus-visible:ring-destructive"
@@ -146,6 +158,12 @@ export const BusinessForm = ({
                     ...prev,
                     representativeName: false,
                   }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  completeStep("requestor.business.representativeName");
+                  focusNext(companyNameRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -162,6 +180,7 @@ export const BusinessForm = ({
             >
               <Input
                 id="orgName"
+                ref={companyNameRef}
                 className={cn(
                   errors.companyName &&
                     "border-destructive focus-visible:ring-destructive"
@@ -176,12 +195,13 @@ export const BusinessForm = ({
                   setErrors((prev) => ({ ...prev, companyName: false }));
                 }}
                 onKeyDown={(e) => {
-                  if (!isStepActive("requestor.business.companyName")) return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (!String(businessData.companyName || "").trim()) return;
-                  completeStep("requestor.business.companyName");
-                  bizNoRef.current?.focus();
+                  if (isStepActive("requestor.business.companyName")) {
+                    if (!String(businessData.companyName || "").trim()) return;
+                    completeStep("requestor.business.companyName");
+                  }
+                  focusNext(phoneRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -198,6 +218,7 @@ export const BusinessForm = ({
             >
               <Input
                 id="orgPhone"
+                ref={phoneRef}
                 className={cn(
                   errors.phone &&
                     "border-destructive focus-visible:ring-destructive"
@@ -215,6 +236,15 @@ export const BusinessForm = ({
                       ? !isValidPhoneNumber(nextValue)
                       : prev.phone,
                   }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (isStepActive("requestor.business.phoneNumber")) {
+                    if (!String(businessData.phone || "").trim()) return;
+                    completeStep("requestor.business.phoneNumber");
+                  }
+                  focusNext(bizNoRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -252,12 +282,14 @@ export const BusinessForm = ({
                   }));
                 }}
                 onKeyDown={(e) => {
-                  if (!isStepActive("requestor.business.businessNumber"))
-                    return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  if (!String(businessData.businessNumber || "").trim()) return;
-                  completeStep("requestor.business.businessNumber");
+                  if (isStepActive("requestor.business.businessNumber")) {
+                    if (!String(businessData.businessNumber || "").trim())
+                      return;
+                    completeStep("requestor.business.businessNumber");
+                  }
+                  focusNext(bizTypeRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -274,6 +306,7 @@ export const BusinessForm = ({
             >
               <Input
                 id="bizType"
+                ref={bizTypeRef}
                 className={cn(
                   errors.businessType &&
                     "border-destructive focus-visible:ring-destructive"
@@ -288,6 +321,15 @@ export const BusinessForm = ({
                     ...prev,
                     businessType: false,
                   }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (isStepActive("requestor.business.businessType")) {
+                    if (!String(extracted.businessType || "").trim()) return;
+                    completeStep("requestor.business.businessType");
+                  }
+                  focusNext(bizItemRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -304,6 +346,7 @@ export const BusinessForm = ({
             >
               <Input
                 id="bizItem"
+                ref={bizItemRef}
                 className={cn(
                   errors.businessItem &&
                     "border-destructive focus-visible:ring-destructive"
@@ -318,6 +361,15 @@ export const BusinessForm = ({
                     ...prev,
                     businessItem: false,
                   }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (isStepActive("requestor.business.businessItem")) {
+                    if (!String(extracted.businessItem || "").trim()) return;
+                    completeStep("requestor.business.businessItem");
+                  }
+                  focusNext(emailRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -335,6 +387,7 @@ export const BusinessForm = ({
               <Input
                 id="taxEmail"
                 type="email"
+                ref={emailRef}
                 className={cn(
                   errors.email &&
                     "border-destructive focus-visible:ring-destructive"
@@ -350,6 +403,15 @@ export const BusinessForm = ({
                     ...prev,
                     email: nextValue ? !isValidEmail(nextValue) : false,
                   }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (isStepActive("requestor.business.email")) {
+                    if (!String(extracted.email || "").trim()) return;
+                    completeStep("requestor.business.email");
+                  }
+                  focusNext(addressRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -369,6 +431,7 @@ export const BusinessForm = ({
         >
           <Input
             id="address"
+            ref={addressRef}
             className={cn(
               errors.address &&
                 "border-destructive focus-visible:ring-destructive"
@@ -380,6 +443,15 @@ export const BusinessForm = ({
                 address: e.target.value,
               }));
               setErrors((prev) => ({ ...prev, address: false }));
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              if (isStepActive("requestor.business.address")) {
+                if (!String(businessData.address || "").trim()) return;
+                completeStep("requestor.business.address");
+              }
+              addressRef.current?.blur();
             }}
             onBlur={() => {
               if (disabled) return;
