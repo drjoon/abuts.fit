@@ -19,7 +19,7 @@ router.delete(
 );
 
 // 공동 대표 관리
-router.get("/co-owners", requestorOrganizationController.getCoOwners);
+router.get("/co-owners", requestorOrganizationController.getRepresentatives);
 router.post("/co-owners", requestorOrganizationController.addCoOwner);
 router.delete(
   "/co-owners/:userId",

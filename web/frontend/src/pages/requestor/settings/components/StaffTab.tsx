@@ -17,12 +17,6 @@ type StaffMember = {
   email?: string;
 };
 
-type CoOwnerUser = {
-  _id: string;
-  name?: string;
-  email?: string;
-};
-
 type PendingJoinRequest = {
   user: { _id: string; name?: string; email?: string } | string;
   createdAt?: string;
@@ -48,8 +42,9 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const [orgName, setOrgName] = useState<string>("");
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [pending, setPending] = useState<PendingJoinRequest[]>([]);
-  const [ownerUser, setOwnerUser] = useState<CoOwnerUser | null>(null);
-  const [coOwners, setCoOwners] = useState<CoOwnerUser[]>([]);
+  const [representatives, setRepresentatives] = useState<
+    Array<{ _id: string; name?: string; email?: string }>
+  >([]);
   const [loading, setLoading] = useState(false);
   const [actionUserId, setActionUserId] = useState<string>("");
 
@@ -86,7 +81,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     setOrgName(String(data?.organization?.name || "").trim());
   }, [mockHeaders, token]);
 
-  const refreshCoOwners = useCallback(async () => {
+  const refreshRepresentatives = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
       path: "/api/requestor-organizations/co-owners",
@@ -95,15 +90,31 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       headers: mockHeaders,
     });
     if (!res.ok) {
-      setOwnerUser(null);
-      setCoOwners([]);
+      setRepresentatives([]);
       return;
     }
     const body: any = res.data || {};
     const data = body.data || body;
     setOrgName(String(data?.organizationName || "").trim());
-    setOwnerUser(data?.owner || null);
-    setCoOwners(Array.isArray(data?.coOwners) ? data.coOwners : []);
+    const next: Array<{ _id: string; name?: string; email?: string }> = [];
+    if (data?.owner?._id) {
+      next.push({
+        _id: data.owner._id,
+        name: data.owner.name,
+        email: data.owner.email,
+      });
+    }
+    if (Array.isArray(data?.coOwners)) {
+      data.coOwners.forEach((co: any) => {
+        if (!co?._id) return;
+        next.push({
+          _id: String(co._id),
+          name: co.name,
+          email: co.email,
+        });
+      });
+    }
+    setRepresentatives(next);
   }, [mockHeaders, token]);
 
   const refreshStaff = useCallback(async () => {
@@ -162,7 +173,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       setLoading(true);
       try {
         await Promise.all([
-          refreshCoOwners(),
+          refreshRepresentatives(),
           refreshStaff(),
           refreshPending(),
         ]);
@@ -171,7 +182,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       }
     };
     load();
-  }, [membership, refreshCoOwners, refreshPending, refreshStaff, token]);
+  }, [membership, refreshPending, refreshRepresentatives, refreshStaff, token]);
 
   const handleRemoveStaff = async (userId: string) => {
     try {
@@ -243,7 +254,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       await Promise.all([
         refreshPending(),
         refreshStaff(),
-        refreshCoOwners(),
+        refreshRepresentatives(),
         refreshMembership(),
       ]);
     } finally {
@@ -283,31 +294,9 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     }
   };
 
-  type RepresentativeEntry = {
-    _id: string;
-    name?: string;
-    email?: string;
-  };
-
-  const representativeEntries = useMemo<RepresentativeEntry[]>(() => {
-    const entries: Array<RepresentativeEntry | null> = [
-      ownerUser
-        ? {
-            _id: ownerUser._id || "owner",
-            name: ownerUser.name,
-            email: ownerUser.email,
-          }
-        : null,
-      ...coOwners.map((co) => ({
-        _id: co._id,
-        name: co.name,
-        email: co.email,
-      })),
-    ];
-    return entries.filter((entry): entry is RepresentativeEntry =>
-      Boolean(entry && entry._id)
-    );
-  }, [coOwners, ownerUser]);
+  const representativeEntries = useMemo(() => {
+    return representatives.filter((entry) => Boolean(entry && entry._id));
+  }, [representatives]);
 
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">

@@ -19,7 +19,7 @@ export const {
 
 export const {
   getPendingJoinRequestsForOwner,
-  getCoOwners,
+  getRepresentatives,
   addCoOwner,
   removeCoOwner,
   getMyStaffMembers,

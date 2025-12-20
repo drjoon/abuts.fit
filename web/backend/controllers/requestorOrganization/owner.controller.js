@@ -54,7 +54,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
   }
 }
 
-export async function getCoOwners(req, res) {
+export async function getRepresentatives(req, res) {
   try {
     if (!req.user || req.user.role !== "requestor") {
       return res.status(403).json({
@@ -77,29 +77,31 @@ export async function getCoOwners(req, res) {
       .select({ name: 1, owner: 1, coOwners: 1 })
       .lean();
 
-    const owner = full?.owner
-      ? {
-          _id: String(full.owner._id || full.owner),
-          name: String(full.owner.name || ""),
-          email: String(full.owner.email || ""),
-        }
-      : null;
-
-    const coOwners = Array.isArray(full?.coOwners)
-      ? full.coOwners.map((c) => ({
-          _id: String(c?._id || c),
-          name: String(c?.name || ""),
-          email: String(c?.email || ""),
-        }))
-      : [];
+    const representatives = [];
+    if (full?.owner?._id || full?.owner) {
+      representatives.push({
+        _id: String(full.owner._id || full.owner),
+        name: String(full.owner.name || ""),
+        email: String(full.owner.email || ""),
+      });
+    }
+    if (Array.isArray(full?.coOwners)) {
+      full.coOwners.forEach((c) => {
+        if (!c) return;
+        representatives.push({
+          _id: String(c._id || c),
+          name: String(c.name || ""),
+          email: String(c.email || ""),
+        });
+      });
+    }
 
     return res.json({
       success: true,
       data: {
         organizationId: String(full?._id || org._id),
         organizationName: String(full?.name || ""),
-        owner,
-        coOwners,
+        representatives,
       },
     });
   } catch (error) {
