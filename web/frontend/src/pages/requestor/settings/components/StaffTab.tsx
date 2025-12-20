@@ -7,8 +7,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
@@ -43,10 +41,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
 
-  const myUserId = useMemo(() => {
-    return String(user?.mockUserId || user?.id || "");
-  }, [user?.id, user?.mockUserId]);
-
   const [membership, setMembership] = useState<
     "none" | "owner" | "member" | "pending"
   >("none");
@@ -56,7 +50,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const [pending, setPending] = useState<PendingJoinRequest[]>([]);
   const [ownerUser, setOwnerUser] = useState<CoOwnerUser | null>(null);
   const [coOwners, setCoOwners] = useState<CoOwnerUser[]>([]);
-  const [coOwnerEmail, setCoOwnerEmail] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [actionUserId, setActionUserId] = useState<string>("");
 
@@ -180,85 +173,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     load();
   }, [membership, refreshCoOwners, refreshPending, refreshStaff, token]);
 
-  const handleAddCoOwner = async () => {
-    try {
-      if (!token) return;
-      const email = String(coOwnerEmail || "")
-        .trim()
-        .toLowerCase();
-
-      if (!email) {
-        toast({
-          title: "대표 이메일을 입력해주세요",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      setActionUserId("add");
-      const res = await request<any>({
-        path: "/api/requestor-organizations/co-owners",
-        method: "POST",
-        token,
-        headers: mockHeaders,
-        jsonBody: { email },
-      });
-
-      if (!res.ok) {
-        const message = String((res.data as any)?.message || "").trim();
-        toast({
-          title: "대표를 추가하지 못했어요",
-          description: message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      toast({ title: "대표가 추가되었습니다" });
-      setCoOwnerEmail("");
-      await Promise.all([
-        refreshCoOwners(),
-        refreshStaff(),
-        refreshMembership(),
-      ]);
-    } finally {
-      setActionUserId("");
-    }
-  };
-
-  const handleRemoveCoOwner = async (userId: string) => {
-    try {
-      if (!token) return;
-      const id = String(userId || "").trim();
-      if (!id) return;
-      setActionUserId(id);
-      const res = await request<any>({
-        path: `/api/requestor-organizations/co-owners/${id}`,
-        method: "DELETE",
-        token,
-        headers: mockHeaders,
-      });
-
-      if (!res.ok) {
-        const message = String((res.data as any)?.message || "").trim();
-        toast({
-          title: "대표를 삭제하지 못했어요",
-          description: message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
-
-      toast({ title: "대표가 삭제되었습니다" });
-      await Promise.all([refreshCoOwners(), refreshMembership()]);
-    } finally {
-      setActionUserId("");
-    }
-  };
-
   const handleRemoveStaff = async (userId: string) => {
     try {
       if (!token) return;
@@ -291,7 +205,10 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     }
   };
 
-  const handleApprove = async (userId: string) => {
+  const handleApprove = async (
+    userId: string,
+    role: "representative" | "staff"
+  ) => {
     try {
       if (!token) return;
       const id = String(userId || "").trim();
@@ -303,6 +220,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         method: "POST",
         token,
         headers: mockHeaders,
+        jsonBody: { role },
       });
 
       if (!res.ok) {
@@ -316,7 +234,12 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         return;
       }
 
-      toast({ title: "신청이 승인되었습니다" });
+      toast({
+        title:
+          role === "representative"
+            ? "대표로 승인되었습니다"
+            : "직원으로 승인되었습니다",
+      });
       await Promise.all([
         refreshPending(),
         refreshStaff(),
@@ -363,7 +286,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     _id: string;
     name?: string;
     email?: string;
-    removable: boolean;
   };
 
   const representativeEntries = useMemo<RepresentativeEntry[]>(() => {
@@ -373,14 +295,12 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
             _id: ownerUser._id || "owner",
             name: ownerUser.name,
             email: ownerUser.email,
-            removable: false,
           }
         : null,
       ...coOwners.map((co) => ({
         _id: co._id,
         name: co.name,
         email: co.email,
-        removable: true,
       })),
     ];
     return entries.filter((entry): entry is RepresentativeEntry =>
@@ -441,52 +361,11 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
                               {label || entry._id}
                             </span>
                           </div>
-                          {entry.removable && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRemoveCoOwner(entry._id)}
-                              disabled={actionUserId === entry._id}
-                            >
-                              {actionUserId === entry._id
-                                ? "삭제 중..."
-                                : "삭제"}
-                            </Button>
-                          )}
                         </div>
                       );
                     })}
                   </div>
                 )}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <div className="md:col-span-2 space-y-1">
-                  <Label htmlFor="coOwnerEmail">대표 추가(이메일)</Label>
-                  <Input
-                    id="coOwnerEmail"
-                    type="email"
-                    value={coOwnerEmail}
-                    onChange={(e) => setCoOwnerEmail(e.target.value)}
-                    placeholder="example@domain.com"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="opacity-0">추가</Label>
-                  <Button
-                    type="button"
-                    className="w-full"
-                    onClick={handleAddCoOwner}
-                    disabled={
-                      actionUserId === "add" ||
-                      !String(coOwnerEmail || "").trim()
-                    }
-                    variant="outline"
-                  >
-                    추가
-                  </Button>
-                </div>
               </div>
 
               <div className="space-y-2">
@@ -572,10 +451,21 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => handleApprove(userId)}
+                            onClick={() =>
+                              handleApprove(userId, "representative")
+                            }
                             disabled={!userId || actionUserId === userId}
                           >
-                            승인
+                            대표 승인
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleApprove(userId, "staff")}
+                            disabled={!userId || actionUserId === userId}
+                          >
+                            직원 승인
                           </Button>
                           <Button
                             type="button"

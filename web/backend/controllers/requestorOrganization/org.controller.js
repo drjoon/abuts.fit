@@ -440,6 +440,16 @@ export async function updateMyOrganization(req, res) {
     const email = String(req.body?.email || "").trim();
     const address = String(req.body?.address || "").trim();
 
+    const businessLicenseInput = req.body?.businessLicense || null;
+    const businessLicense = businessLicenseInput
+      ? {
+          fileId: businessLicenseInput?.fileId || null,
+          s3Key: String(businessLicenseInput?.s3Key || "").trim(),
+          originalName: String(businessLicenseInput?.originalName || "").trim(),
+          uploadedAt: new Date(),
+        }
+      : null;
+
     const phoneNumber = phoneNumberRaw
       ? normalizePhoneNumber(phoneNumberRaw)
       : "";
@@ -477,6 +487,13 @@ export async function updateMyOrganization(req, res) {
 
     const patch = {};
     if (nextName) patch.name = nextName;
+
+    if (
+      businessLicense &&
+      (businessLicense.s3Key || businessLicense.originalName)
+    ) {
+      patch.businessLicense = businessLicense;
+    }
 
     const extractedPatch = {};
     if (representativeName)
@@ -529,6 +546,10 @@ export async function updateMyOrganization(req, res) {
           owner: req.user._id,
           coOwners: [],
           members: [req.user._id],
+          ...(businessLicense &&
+          (businessLicense.s3Key || businessLicense.originalName)
+            ? { businessLicense }
+            : {}),
           extracted: {
             representativeName,
             businessItem,
@@ -671,22 +692,22 @@ export async function clearMyBusinessLicense(req, res) {
           originalName: "",
           uploadedAt: null,
         },
-        extracted: {
-          companyName: "",
-          address: "",
-          phoneNumber: "",
-          email: "",
-          representativeName: "",
-          businessType: "",
-          businessItem: "",
-          businessNumber: "",
-        },
+        "extracted.companyName": "",
+        "extracted.address": "",
+        "extracted.phoneNumber": "",
+        "extracted.email": "",
+        "extracted.representativeName": "",
+        "extracted.businessType": "",
+        "extracted.businessItem": "",
         verification: {
           verified: false,
           provider: "",
           message: "",
           checkedAt: null,
         },
+      },
+      $unset: {
+        "extracted.businessNumber": "",
       },
     });
 

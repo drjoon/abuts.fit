@@ -55,10 +55,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const [membership, setMembership] = useState<MembershipStatus>("none");
   const [setupMode, setSetupMode] = useState<"license" | "search" | null>(null);
 
-  const myUserId = useMemo(() => {
-    return String(user?.mockUserId || user?.id || "");
-  }, [user?.id, user?.mockUserId]);
-
   const [orgSearch, setOrgSearch] = useState("");
   const [orgSearchResults, setOrgSearchResults] = useState<
     {
@@ -104,16 +100,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>(
     userData?.companyName ? "missing" : "missing"
   );
-
-  const showLicenseDetails = useMemo(() => {
-    if (!licenseFileName) return false;
-    return (
-      licenseStatus === "ready" ||
-      licenseStatus === "error" ||
-      licenseStatus === "uploaded" ||
-      licenseStatus === "processing"
-    );
-  }, [licenseFileName, licenseStatus]);
 
   const [extracted, setExtracted] = useState<LicenseExtracted>({});
   const [isVerified, setIsVerified] = useState<boolean>(false);
@@ -194,8 +180,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         const licName = String(lic?.originalName || "").trim();
         const licFileId = String(lic?.fileId || "").trim();
         const licS3Key = String(lic?.s3Key || "").trim();
-        if (licName) {
-          setLicenseFileName(licName);
+        if (licName || licFileId || licS3Key) {
+          setLicenseFileName((prev) => licName || prev);
           setLicenseFileId(licFileId);
           setLicenseS3Key(licS3Key);
           setLicenseStatus("ready");
@@ -411,6 +397,11 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       token,
       businessData,
       extracted,
+      businessLicense: {
+        fileId: licenseFileId,
+        s3Key: licenseS3Key,
+        originalName: licenseFileName,
+      },
       mockHeaders,
       toast,
       setErrors,
@@ -699,22 +690,20 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                   onDeleteLicense={handleDeleteLicense}
                 />
 
-                {showLicenseDetails && (
-                  <BusinessForm
-                    businessData={businessData}
-                    extracted={extracted}
-                    errors={errors}
-                    licenseStatus={licenseStatus}
-                    membership={membership}
-                    licenseDeleteLoading={licenseDeleteLoading}
-                    setBusinessData={setBusinessData}
-                    setExtracted={setExtracted}
-                    setErrors={setErrors}
-                    setCompanyNameTouched={setCompanyNameTouched}
-                    onSave={handleSave}
-                    onReset={handleDeleteLicense}
-                  />
-                )}
+                <BusinessForm
+                  businessData={businessData}
+                  extracted={extracted}
+                  errors={errors}
+                  licenseStatus={licenseStatus}
+                  membership={membership}
+                  licenseDeleteLoading={licenseDeleteLoading}
+                  setBusinessData={setBusinessData}
+                  setExtracted={setExtracted}
+                  setErrors={setErrors}
+                  setCompanyNameTouched={setCompanyNameTouched}
+                  onSave={handleSave}
+                  onReset={handleDeleteLicense}
+                />
               </div>
             )}
 

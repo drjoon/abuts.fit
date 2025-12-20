@@ -235,7 +235,7 @@ export const BusinessForm = ({
             licenseDeleteLoading ||
             licenseStatus === "uploading" ||
             licenseStatus === "processing" ||
-            membership !== "owner"
+            (membership !== "owner" && membership !== "none")
           }
         >
           <RotateCcw className="mr-2 h-4 w-4" />

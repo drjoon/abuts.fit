@@ -437,6 +437,16 @@ export async function approveJoinRequest(req, res) {
       });
     }
 
+    const requestedRole = String(req.body?.role || "staff")
+      .trim()
+      .toLowerCase();
+    if (!["staff", "representative"].includes(requestedRole)) {
+      return res.status(400).json({
+        success: false,
+        message: "role은 representative 또는 staff여야 합니다.",
+      });
+    }
+
     const jr = (org.joinRequests || []).find(
       (r) => String(r?.user) === String(userId)
     );
@@ -448,9 +458,25 @@ export async function approveJoinRequest(req, res) {
     }
 
     jr.status = "approved";
-    if (!Array.isArray(org.members)) org.members = [];
-    if (!org.members.some((m) => String(m) === String(userId))) {
-      org.members.push(new Types.ObjectId(userId));
+    jr.approvedRole = requestedRole;
+
+    const userObjectId = new Types.ObjectId(userId);
+
+    if (requestedRole === "representative") {
+      if (!Array.isArray(org.coOwners)) org.coOwners = [];
+      if (
+        !org.coOwners.some((c) => String((c && c._id) || c) === String(userId))
+      ) {
+        org.coOwners.push(userObjectId);
+      }
+      if (Array.isArray(org.members)) {
+        org.members = org.members.filter((m) => String(m) !== String(userId));
+      }
+    } else {
+      if (!Array.isArray(org.members)) org.members = [];
+      if (!org.members.some((m) => String(m) === String(userId))) {
+        org.members.push(userObjectId);
+      }
     }
     await org.save();
 

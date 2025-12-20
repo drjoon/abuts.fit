@@ -11,6 +11,11 @@ interface HandleSaveParams {
   token: string;
   businessData: BusinessData;
   extracted: LicenseExtracted;
+  businessLicense?: {
+    fileId?: string;
+    s3Key?: string;
+    originalName?: string;
+  };
   mockHeaders: Record<string, string>;
   toast: (options: any) => void;
   setErrors: (
@@ -36,6 +41,7 @@ export const handleSave = async (
     token,
     businessData,
     extracted,
+    businessLicense,
     mockHeaders,
     toast,
     setErrors,
@@ -143,6 +149,20 @@ export const handleSave = async (
         businessItem,
         email: taxEmail,
         address,
+        ...(businessLicense &&
+        (String(businessLicense?.s3Key || "").trim() ||
+          String(businessLicense?.fileId || "").trim() ||
+          String(businessLicense?.originalName || "").trim())
+          ? {
+              businessLicense: {
+                fileId: String(businessLicense?.fileId || "").trim() || null,
+                s3Key: String(businessLicense?.s3Key || "").trim(),
+                originalName: String(
+                  businessLicense?.originalName || ""
+                ).trim(),
+              },
+            }
+          : {}),
       },
     });
 

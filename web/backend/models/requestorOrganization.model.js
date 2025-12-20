@@ -44,6 +44,16 @@ const requestorOrganizationSchema = new mongoose.Schema(
           enum: ["pending", "approved", "rejected"],
           default: "pending",
         },
+        requestedRole: {
+          type: String,
+          enum: ["representative", "staff"],
+          default: "staff",
+        },
+        approvedRole: {
+          type: String,
+          enum: ["representative", "staff", ""],
+          default: "",
+        },
         createdAt: {
           type: Date,
           default: Date.now,
