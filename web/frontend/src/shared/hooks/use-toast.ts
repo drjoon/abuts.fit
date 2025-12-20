@@ -164,14 +164,8 @@ function toast({ ...props }: Toast) {
       ? props.description
       : String(props.description ?? "");
 
-  const totalLength = (titleText || "").length + (descriptionText || "").length;
-  const baseDuration = 5000;
-  const extraStep = 1000;
-  const charsPerStep = 10; // 10글자당 +1초
-  const maxExtra = 5000;
-  const steps = Math.floor(totalLength / charsPerStep);
-  const extra = Math.min(steps * extraStep, maxExtra);
-  const duration = props.duration ?? baseDuration + extra;
+  const hasDescription = !!descriptionText.trim();
+  const duration = props.duration ?? (hasDescription ? 10000 : 5000);
 
   const id = genId();
 

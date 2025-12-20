@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -6,13 +6,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Save } from "lucide-react";
+import { Building2 } from "lucide-react";
 
 interface BusinessTabProps {
   userData: {
@@ -26,10 +25,19 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
 
-  const [business, setBusiness] = useState({
-    organization: (user as any)?.organization || "",
-    phoneNumber: (user as any)?.phoneNumber || "",
-  });
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const initialBusiness = useMemo(
+    () => ({
+      organization: (user as any)?.organization || "",
+      phoneNumber: (user as any)?.phoneNumber || "",
+    }),
+    [user]
+  );
+
+  const lastSavedKeyRef = useRef<string>(JSON.stringify(initialBusiness));
+
+  const [business, setBusiness] = useState(initialBusiness);
 
   const mockHeaders = useMemo(() => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
@@ -42,6 +50,18 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       "x-mock-phone": (user as any)?.phoneNumber || "",
     };
   }, [token, user?.email, user?.name, user?.role, userData]);
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      const fn = handleSaveRef.current;
+      if (fn) {
+        void fn();
+      }
+    }, 300);
+  }, []);
 
   const handleSave = async () => {
     try {
@@ -70,11 +90,17 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         return;
       }
 
-      toast({ title: "저장되었습니다" });
+      const savedKey = JSON.stringify({
+        organization: business.organization,
+        phoneNumber: business.phoneNumber,
+      });
+      lastSavedKeyRef.current = savedKey;
     } catch {
       toast({ title: "저장 실패", variant: "destructive", duration: 3000 });
     }
   };
+
+  handleSaveRef.current = handleSave;
 
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
@@ -95,6 +121,15 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
               onChange={(e) =>
                 setBusiness((p) => ({ ...p, organization: e.target.value }))
               }
+              onBlur={() => {
+                const savedKey = JSON.stringify({
+                  organization: business.organization,
+                  phoneNumber: business.phoneNumber,
+                });
+                if (savedKey !== lastSavedKeyRef.current) {
+                  scheduleSave();
+                }
+              }}
             />
           </div>
           <div className="space-y-2">
@@ -105,15 +140,17 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
               onChange={(e) =>
                 setBusiness((p) => ({ ...p, phoneNumber: e.target.value }))
               }
+              onBlur={() => {
+                const savedKey = JSON.stringify({
+                  organization: business.organization,
+                  phoneNumber: business.phoneNumber,
+                });
+                if (savedKey !== lastSavedKeyRef.current) {
+                  scheduleSave();
+                }
+              }}
             />
           </div>
-        </div>
-
-        <div className="flex justify-end">
-          <Button type="button" onClick={handleSave}>
-            <Save className="mr-2 h-4 w-4" />
-            저장하기
-          </Button>
         </div>
       </CardContent>
     </Card>

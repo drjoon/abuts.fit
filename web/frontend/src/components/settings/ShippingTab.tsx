@@ -6,10 +6,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Save, Truck } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Truck } from "lucide-react";
 
 interface ShippingTabProps {
   userData: {
@@ -22,7 +20,6 @@ interface ShippingTabProps {
 const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
 
 export const ShippingTab = ({ userData }: ShippingTabProps) => {
-  const { toast } = useToast();
   const storageKey = `${STORAGE_KEY_PREFIX}${userData?.email || "guest"}`;
 
   const [shippingMode, setShippingMode] = useState<
@@ -76,7 +73,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     );
   };
 
-  const handleSave = () => {
+  useEffect(() => {
     try {
       const payload = {
         shippingMode,
@@ -89,12 +86,14 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     } catch {
       // ignore
     }
-
-    toast({
-      title: "배송 옵션이 저장되었습니다",
-      description: "New Request의 '묶음' 옵션에 적용됩니다.",
-    });
-  };
+  }, [
+    autoBatchThreshold,
+    maxWaitDays,
+    option,
+    shippingMode,
+    storageKey,
+    weeklyBatchDays,
+  ]);
 
   const dayLabels: Record<string, string> = {
     mon: "월",
@@ -228,12 +227,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
           </div>
         )}
 
-        <div className="flex justify-end pt-2">
-          <Button onClick={handleSave}>
-            <Save className="mr-2 h-4 w-4" />
-            저장하기
-          </Button>
-        </div>
+        <div className="hidden" aria-hidden />
       </CardContent>
     </Card>
   );

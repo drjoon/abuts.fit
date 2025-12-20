@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 import { MultiActionDialog } from "@/components/MultiActionDialog";
 import {
   User,
-  Save,
   Camera,
   KeyRound,
   Link2,
@@ -67,6 +66,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
+
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedKeyRef = useRef<string>("");
+  const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
 
   const [avatarNonce, setAvatarNonce] = useState(0);
 
@@ -556,6 +559,18 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     }
   };
 
+  const scheduleSave = useCallback(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      const fn = handleSaveRef.current;
+      if (fn) {
+        void fn();
+      }
+    }, 300);
+  }, []);
+
   const handleSave = async () => {
     const nextErrors: { name?: string; phone?: string } = {};
     if (!accountData.name.trim()) {
@@ -638,6 +653,13 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         });
         return;
       }
+
+      const savedKey = JSON.stringify({
+        name: accountData.name,
+        phoneNumber: phoneValidation.normalized,
+        profileImage: accountData.profileImage,
+      });
+      lastSavedKeyRef.current = savedKey;
     } catch (e) {
       const raw = e instanceof Error ? e.message : "";
       const msg =
@@ -655,12 +677,9 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       });
       return;
     }
-
-    toast({
-      title: "설정이 저장되었습니다",
-      description: "계정 설정이 성공적으로 업데이트되었습니다.",
-    });
   };
+
+  handleSaveRef.current = handleSave;
 
   const handleChangePassword = async () => {
     try {
@@ -718,20 +737,33 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <User className="h-5 w-5" />
-          계정 설정
+        <CardTitle className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Badge
-              variant={userData?.role === "admin" ? "destructive" : "default"}
-            >
-              {userData?.role === "requestor"
-                ? "의뢰자"
-                : userData?.role === "manufacturer"
-                ? "제조사"
-                : "어벗츠.핏"}
-            </Badge>
+            <User className="h-5 w-5" />
+            계정 설정
+            <div className="flex items-center gap-2">
+              <Badge
+                variant={userData?.role === "admin" ? "destructive" : "default"}
+              >
+                {userData?.role === "requestor"
+                  ? "의뢰자"
+                  : userData?.role === "manufacturer"
+                  ? "제조사"
+                  : "어벗츠.핏"}
+              </Badge>
+            </div>
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="border-red-400 text-red-400 hover:bg-red-50 hover:text-red-700"
+            onClick={() => setWithdrawDialogOpen(true)}
+            disabled={withdrawing}
+          >
+            <UserX className="h-4 w-4" />
+            {withdrawing ? "처리 중..." : "해지 신청"}
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -760,12 +792,13 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                         ? "border-primary"
                         : "border-border hover:border-muted-foreground/40"
                     )}
-                    onClick={() =>
+                    onClick={() => {
                       setAccountData((prev) => ({
                         ...prev,
                         profileImage: url,
-                      }))
-                    }
+                      }));
+                      scheduleSave();
+                    }}
                   >
                     <img
                       src={url}
@@ -809,6 +842,16 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               onChangeCapture={() =>
                 setFieldErrors((prev) => ({ ...prev, name: undefined }))
               }
+              onBlur={() => {
+                const savedKey = JSON.stringify({
+                  name: accountData.name,
+                  phoneNumber: phoneValidation.normalized,
+                  profileImage: accountData.profileImage,
+                });
+                if (savedKey !== lastSavedKeyRef.current) {
+                  scheduleSave();
+                }
+              }}
             />
             {!!fieldErrors.name && (
               <p className="text-xs text-destructive">{fieldErrors.name}</p>
@@ -904,6 +947,16 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                     setVerificationSent(false);
                     setTimeLeft(0);
                     setPhoneVerificationCode("");
+                  }}
+                  onBlur={() => {
+                    const savedKey = JSON.stringify({
+                      name: accountData.name,
+                      phoneNumber: phoneValidation.normalized,
+                      profileImage: accountData.profileImage,
+                    });
+                    if (savedKey !== lastSavedKeyRef.current) {
+                      scheduleSave();
+                    }
                   }}
                   onKeyDown={async (e) => {
                     if (!isStepActive("requestor.phone.number")) return;
@@ -1099,35 +1152,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             )}
           </div>
         )}
-
-        <div className="flex justify-between">
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              className="border-red-400 text-red-400 hover:bg-red-50 hover:text-red-700"
-              onClick={() => setWithdrawDialogOpen(true)}
-              disabled={withdrawing}
-            >
-              <UserX className="h-4 w-4" />
-              {withdrawing ? "처리 중..." : "해지 신청"}
-            </Button>
-          </div>
-
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSave}
-              disabled={
-                !accountData.name.trim() ||
-                !accountData.phoneNationalNumber.trim() ||
-                !phoneValidation.ok
-              }
-            >
-              <Save className="mr-2 h-4 w-4" />
-              저장하기
-            </Button>
-          </div>
-        </div>
 
         <MultiActionDialog
           open={withdrawDialogOpen}

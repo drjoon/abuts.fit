@@ -3,7 +3,7 @@ import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Save, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GuideFocus } from "@/features/guidetour/GuideFocus";
 import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
@@ -34,6 +34,7 @@ interface BusinessFormProps {
   setCompanyNameTouched: (touched: boolean) => void;
   onSave: () => void;
   onReset: () => void;
+  renderActions?: (props: { disabled: boolean }) => React.ReactNode;
 }
 
 export const BusinessForm = ({
@@ -49,13 +50,25 @@ export const BusinessForm = ({
   setCompanyNameTouched,
   onSave,
   onReset,
+  renderActions,
 }: BusinessFormProps) => {
   const { isStepActive, completeStep } = useGuideTour();
   const bizNoRef = useRef<HTMLInputElement | null>(null);
-  const saveButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const disabled =
+    licenseDeleteLoading ||
+    licenseStatus === "uploading" ||
+    licenseStatus === "processing" ||
+    (membership !== "owner" && membership !== "none");
 
   return (
     <div className="space-y-6">
+      {renderActions ? (
+        <div className="flex justify-end gap-2">
+          {renderActions({ disabled })}
+        </div>
+      ) : null}
+
       <div className="space-y-2">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-2">
@@ -76,6 +89,10 @@ export const BusinessForm = ({
                   ...prev,
                   representativeName: false,
                 }));
+              }}
+              onBlur={() => {
+                if (disabled) return;
+                onSave();
               }}
             />
           </div>
@@ -105,6 +122,10 @@ export const BusinessForm = ({
                   completeStep("requestor.business.companyName");
                   bizNoRef.current?.focus();
                 }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onSave();
+                }}
               />
             </GuideFocus>
           </div>
@@ -129,6 +150,10 @@ export const BusinessForm = ({
                     ? !isValidPhoneNumber(nextValue)
                     : prev.phone,
                 }));
+              }}
+              onBlur={() => {
+                if (disabled) return;
+                onSave();
               }}
             />
           </div>
@@ -164,7 +189,10 @@ export const BusinessForm = ({
                   e.preventDefault();
                   if (!String(businessData.businessNumber || "").trim()) return;
                   completeStep("requestor.business.businessNumber");
-                  saveButtonRef.current?.focus();
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onSave();
                 }}
               />
             </GuideFocus>
@@ -188,6 +216,10 @@ export const BusinessForm = ({
                   businessType: false,
                 }));
               }}
+              onBlur={() => {
+                if (disabled) return;
+                onSave();
+              }}
             />
           </div>
           <div className="space-y-2">
@@ -208,6 +240,10 @@ export const BusinessForm = ({
                   ...prev,
                   businessItem: false,
                 }));
+              }}
+              onBlur={() => {
+                if (disabled) return;
+                onSave();
               }}
             />
           </div>
@@ -232,6 +268,10 @@ export const BusinessForm = ({
                   email: nextValue ? !isValidEmail(nextValue) : false,
                 }));
               }}
+              onBlur={() => {
+                if (disabled) return;
+                onSave();
+              }}
             />
           </div>
         </div>
@@ -253,6 +293,10 @@ export const BusinessForm = ({
             }));
             setErrors((prev) => ({ ...prev, address: false }));
           }}
+          onBlur={() => {
+            if (disabled) return;
+            onSave();
+          }}
         />
       </div>
 
@@ -261,22 +305,11 @@ export const BusinessForm = ({
           type="button"
           variant="outline"
           onClick={onReset}
-          disabled={
-            licenseDeleteLoading ||
-            licenseStatus === "uploading" ||
-            licenseStatus === "processing" ||
-            (membership !== "owner" && membership !== "none")
-          }
+          disabled={disabled}
         >
           <RotateCcw className="mr-2 h-4 w-4" />
           초기화
         </Button>
-        <GuideFocus stepId="requestor.business.save">
-          <Button ref={saveButtonRef} type="button" onClick={onSave}>
-            <Save className="mr-2 h-4 w-4" />
-            저장하기
-          </Button>
-        </GuideFocus>
       </div>
     </div>
   );

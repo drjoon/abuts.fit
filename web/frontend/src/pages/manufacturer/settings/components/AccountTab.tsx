@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -16,7 +16,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import {
   KeyRound,
-  Save,
   User,
   Camera,
   Link2,
@@ -57,6 +56,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
 
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const lastSavedKeyRef = useRef<string>("");
+
   const [avatarNonce, setAvatarNonce] = useState(0);
 
   const [authMethods, setAuthMethods] = useState({
@@ -89,6 +92,18 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       description: message,
     };
   };
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      const fn = handleSaveRef.current;
+      if (fn) {
+        void fn();
+      }
+    }, 300);
+  }, []);
 
   const [fieldErrors, setFieldErrors] = useState<{
     name?: string;
@@ -468,7 +483,13 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         return;
       }
 
-      toast({ title: "저장되었습니다" });
+      const savedKey = JSON.stringify({
+        name: profile.name,
+        phoneNumber: phoneValidation.normalized,
+        organization: profile.organization,
+        profileImage: profile.profileImage,
+      });
+      lastSavedKeyRef.current = savedKey;
     } catch (e) {
       const raw = e instanceof Error ? e.message : "";
       const msg =
@@ -486,6 +507,8 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       });
     }
   };
+
+  handleSaveRef.current = handleSave;
 
   const handleChangePassword = async () => {
     try {
@@ -570,12 +593,13 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                         ? "border-primary"
                         : "border-border hover:border-muted-foreground/40"
                     )}
-                    onClick={() =>
+                    onClick={() => {
                       setProfile((prev) => ({
                         ...prev,
                         profileImage: url,
-                      }))
-                    }
+                      }));
+                      scheduleSave();
+                    }}
                   >
                     <img src={url} alt="" className="h-10 w-10 rounded-full" />
                   </button>
@@ -615,6 +639,17 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               onChangeCapture={() =>
                 setFieldErrors((prev) => ({ ...prev, name: undefined }))
               }
+              onBlur={() => {
+                const savedKey = JSON.stringify({
+                  name: profile.name,
+                  phoneNumber: phoneValidation.normalized,
+                  organization: profile.organization,
+                  profileImage: profile.profileImage,
+                });
+                if (savedKey !== lastSavedKeyRef.current) {
+                  scheduleSave();
+                }
+              }}
             />
             {!!fieldErrors.name && (
               <p className="text-xs text-destructive">{fieldErrors.name}</p>
@@ -712,6 +747,17 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                 setVerificationSent(false);
                 setTimeLeft(0);
                 setPhoneVerificationCode("");
+              }}
+              onBlur={() => {
+                const savedKey = JSON.stringify({
+                  name: profile.name,
+                  phoneNumber: phoneValidation.normalized,
+                  organization: profile.organization,
+                  profileImage: profile.profileImage,
+                });
+                if (savedKey !== lastSavedKeyRef.current) {
+                  scheduleSave();
+                }
               }}
             />
           </div>

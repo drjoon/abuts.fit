@@ -398,7 +398,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
-        <CardTitle>크레딧 결제</CardTitle>
+        <CardTitle>크레딧 충전</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         {!isFirstCharge && (
@@ -522,8 +522,6 @@ export const CreditPaymentTab = ({ userData }: Props) => {
         )}
 
         <div className="space-y-4">
-          <div className="text-lg font-medium">크레딧 충전</div>
-
           {isFirstCharge ? (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-4">

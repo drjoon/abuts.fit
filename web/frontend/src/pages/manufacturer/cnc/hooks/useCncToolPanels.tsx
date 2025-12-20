@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
 
@@ -22,6 +22,14 @@ export const useCncToolPanels = ({
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
   const [modalBody, setModalBody] = useState<JSX.Element | null>(null);
+
+  const toolOffsetSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const toolLifeSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const scheduleToolLifeSaveRef = useRef<(() => void) | null>(null);
 
   const [toolLifeOriginal, setToolLifeOriginal] = useState<any[] | null>(null);
   const [toolLifeRows, setToolLifeRows] = useState<any[] | null>(null);
@@ -47,6 +55,86 @@ export const useCncToolPanels = ({
     let tipL = 0;
 
     setModalTitle(`툴 오프셋 #${toolNum}`);
+
+    let lastSavedKey = JSON.stringify({
+      toolNum,
+      geoX,
+      geoY,
+      geoZ,
+      geoR,
+      wearX,
+      wearY,
+      wearZ,
+      wearR,
+      tipL,
+    });
+
+    const saveNow = async (closeAfter: boolean) => {
+      if (!workUid) return;
+
+      const nextKey = JSON.stringify({
+        toolNum,
+        geoX,
+        geoY,
+        geoZ,
+        geoR,
+        wearX,
+        wearY,
+        wearZ,
+        wearR,
+        tipL,
+      });
+
+      if (nextKey === lastSavedKey) {
+        if (closeAfter) setModalOpen(false);
+        return;
+      }
+
+      const ok = await ensureCncWriteAllowed();
+      if (!ok) return;
+
+      try {
+        const payload = {
+          toolGeoOffsetArray: [
+            { no: toolNum, x: geoX, y: geoY, z: geoZ, r: geoR },
+          ],
+          toolWearOffsetArray: [{ x: wearX, y: wearY, z: wearZ, r: wearR }],
+          toolTipOffsetArray: [tipL],
+        };
+
+        const res = await callRaw(workUid, "UpdateToolOffset", payload);
+        const success = !res || res.success !== false;
+        if (!success) {
+          const msg =
+            res?.message ||
+            res?.error ||
+            "툴 오프셋 업데이트 실패 (Hi-Link UpdateToolOffset 응답 확인 필요)";
+          throw new Error(msg);
+        }
+
+        lastSavedKey = nextKey;
+        setToolTooltip(
+          `툴 #${toolNum} 오프셋이 업데이트되었습니다. (기하/마모/팁)`
+        );
+        if (closeAfter) {
+          setModalOpen(false);
+        }
+      } catch (e: any) {
+        const msg = e?.message ?? "툴 오프셋 업데이트 중 오류가 발생했습니다.";
+        setError(msg);
+        setToolHealth("alarm");
+        setToolTooltip(msg);
+      }
+    };
+
+    const scheduleSave = () => {
+      if (toolOffsetSaveTimeoutRef.current) {
+        clearTimeout(toolOffsetSaveTimeoutRef.current);
+      }
+      toolOffsetSaveTimeoutRef.current = setTimeout(() => {
+        void saveNow(false);
+      }, 800);
+    };
     setModalBody(
       <div className="space-y-4 text-sm text-gray-700">
         <div className="space-y-2">
@@ -65,6 +153,9 @@ export const useCncToolPanels = ({
                     if (axis === "Y") geoY = n;
                     if (axis === "Z") geoZ = n;
                     if (axis === "R") geoR = n;
+                  }}
+                  onBlur={() => {
+                    scheduleSave();
                   }}
                   className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -90,6 +181,9 @@ export const useCncToolPanels = ({
                     if (axis === "Z") wearZ = n;
                     if (axis === "R") wearR = n;
                   }}
+                  onBlur={() => {
+                    scheduleSave();
+                  }}
                   className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
@@ -108,6 +202,9 @@ export const useCncToolPanels = ({
               onChange={(e) => {
                 const v = Number(e.target.value);
                 tipL = Number.isFinite(v) ? v : 0;
+              }}
+              onBlur={() => {
+                scheduleSave();
               }}
               className="w-16 bg-white border border-gray-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
             />
@@ -155,51 +252,14 @@ export const useCncToolPanels = ({
             <button
               type="button"
               className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors"
-              onClick={async () => {
-                if (!workUid) return;
-
-                const ok = await ensureCncWriteAllowed();
-                if (!ok) return;
-
-                try {
-                  const payload = {
-                    toolGeoOffsetArray: [
-                      { no: toolNum, x: geoX, y: geoY, z: geoZ, r: geoR },
-                    ],
-                    toolWearOffsetArray: [
-                      { x: wearX, y: wearY, z: wearZ, r: wearR },
-                    ],
-                    toolTipOffsetArray: [tipL],
-                  };
-
-                  const res = await callRaw(
-                    workUid,
-                    "UpdateToolOffset",
-                    payload
-                  );
-                  const success = !res || res.success !== false;
-                  if (!success) {
-                    const msg =
-                      res?.message ||
-                      res?.error ||
-                      "툴 오프셋 업데이트 실패 (Hi-Link UpdateToolOffset 응답 확인 필요)";
-                    throw new Error(msg);
-                  }
-
-                  setToolTooltip(
-                    `툴 #${toolNum} 오프셋이 업데이트되었습니다. (기하/마모/팁)`
-                  );
-                  setModalOpen(false);
-                } catch (e: any) {
-                  const msg =
-                    e?.message ?? "툴 오프셋 업데이트 중 오류가 발생했습니다.";
-                  setError(msg);
-                  setToolHealth("alarm");
-                  setToolTooltip(msg);
+              onClick={() => {
+                if (toolOffsetSaveTimeoutRef.current) {
+                  clearTimeout(toolOffsetSaveTimeoutRef.current);
                 }
+                void saveNow(true);
               }}
             >
-              저장
+              닫기
             </button>
           </div>
         </div>
@@ -311,6 +371,9 @@ export const useCncToolPanels = ({
                             setToolLifeDirty(true);
                             setModalBody(buildBody(next));
                           }}
+                          onBlur={() => {
+                            scheduleToolLifeSaveRef.current?.();
+                          }}
                           className="w-full bg-white border border-gray-200 rounded-md px-1 py-0.5 text-[11px] text-center focus:ring-blue-500 focus:border-blue-500"
                         />
                       </td>
@@ -342,7 +405,7 @@ export const useCncToolPanels = ({
     setModalOpen(true);
   };
 
-  const handleToolLifeSaveConfirm = async () => {
+  const persistToolLifeChanges = async (closeModal: boolean) => {
     if (
       !workUid ||
       !toolLifeRows ||
@@ -352,7 +415,7 @@ export const useCncToolPanels = ({
     ) {
       setToolLifeSaveConfirmOpen(false);
       setToolLifeDirty(false);
-      setModalOpen(false);
+      if (closeModal) setModalOpen(false);
       return;
     }
     const ok = await ensureCncWriteAllowed();
@@ -414,7 +477,7 @@ export const useCncToolPanels = ({
       if (changedList.length === 0) {
         setToolLifeSaveConfirmOpen(false);
         setToolLifeDirty(false);
-        setModalOpen(false);
+        if (closeModal) setModalOpen(false);
         return;
       }
 
@@ -433,7 +496,26 @@ export const useCncToolPanels = ({
       setToolHealth("ok");
       setToolLifeDirty(false);
       setToolLifeSaveConfirmOpen(false);
-      setModalOpen(false);
+
+      if (Array.isArray(toolLifeOriginal)) {
+        const nextOrig = toolLifeOriginal.map((orig: any, idx: number) => {
+          const row = toolLifeRows[idx];
+          if (!row) return orig;
+          return {
+            ...orig,
+            toolNum: row.toolNum ?? orig.toolNum,
+            useCount: row.useCount ?? orig.useCount,
+            configCount: row.configCount ?? orig.configCount,
+            warningCount: row.warningCount ?? orig.warningCount,
+            use: typeof row.use === "boolean" ? row.use : orig.use,
+          };
+        });
+        setToolLifeOriginal(nextOrig);
+      }
+
+      if (closeModal) {
+        setModalOpen(false);
+      }
     } catch (e: any) {
       const msg = e?.message ?? "툴 수명 업데이트 중 오류가 발생했습니다.";
       setError(msg);
@@ -441,8 +523,21 @@ export const useCncToolPanels = ({
       setToolTooltip(msg);
       setToolLifeSaveConfirmOpen(false);
       setToolLifeDirty(false);
-      setModalOpen(false);
+      if (closeModal) setModalOpen(false);
     }
+  };
+
+  const handleToolLifeSaveConfirm = async () => {
+    await persistToolLifeChanges(true);
+  };
+
+  scheduleToolLifeSaveRef.current = () => {
+    if (toolLifeSaveTimeoutRef.current) {
+      clearTimeout(toolLifeSaveTimeoutRef.current);
+    }
+    toolLifeSaveTimeoutRef.current = setTimeout(() => {
+      void persistToolLifeChanges(false);
+    }, 800);
   };
 
   return {

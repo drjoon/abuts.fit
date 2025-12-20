@@ -18,6 +18,8 @@ interface HandleSaveParams {
   };
   mockHeaders: Record<string, string>;
   toast: (options: any) => void;
+  silent?: boolean;
+  auto?: boolean;
   setErrors: (
     errors:
       | Record<string, boolean>
@@ -44,6 +46,8 @@ export const handleSave = async (
     businessLicense,
     mockHeaders,
     toast,
+    silent,
+    auto,
     setErrors,
     setBusinessData,
     navigate,
@@ -72,66 +76,85 @@ export const handleSave = async (
     const normalizedBusinessNumber = normalizeBusinessNumber(businessNumberRaw);
     const normalizedPhoneNumber = normalizePhoneNumber(phoneNumberRaw);
 
-    const nextErrors: Record<string, boolean> = {
-      companyName: !companyName,
-      representativeName: !repName,
-      phone: !phoneNumberRaw,
-      businessNumber: !businessNumberRaw,
-      businessType: !businessType,
-      businessItem: !businessItem,
-      email: !taxEmail,
-      address: !address,
-    };
+    const requiredMissing =
+      !companyName ||
+      !repName ||
+      !phoneNumberRaw ||
+      !businessNumberRaw ||
+      !businessType ||
+      !businessItem ||
+      !taxEmail ||
+      !address;
 
-    if (Object.values(nextErrors).some(Boolean)) {
-      setErrors(nextErrors);
-      toast({
-        title: "필수 항목을 입력해주세요",
-        variant: "destructive",
-        duration: 3500,
-      });
+    if (requiredMissing) {
+      if (!auto) {
+        const nextErrors: Record<string, boolean> = {
+          companyName: !companyName,
+          representativeName: !repName,
+          phone: !phoneNumberRaw,
+          businessNumber: !businessNumberRaw,
+          businessType: !businessType,
+          businessItem: !businessItem,
+          email: !taxEmail,
+          address: !address,
+        };
+        setErrors(nextErrors);
+        toast({
+          title: "필수 항목을 입력해주세요",
+          variant: "destructive",
+          duration: 3500,
+        });
+      }
       return { success: false };
     }
 
     if (!normalizedBusinessNumber) {
       setErrors((prev) => ({ ...prev, businessNumber: true }));
-      toast({
-        title: "사업자등록번호 형식이 올바르지 않습니다",
-        variant: "destructive",
-        duration: 3500,
-      });
+      if (!auto) {
+        toast({
+          title: "사업자등록번호 형식이 올바르지 않습니다",
+          variant: "destructive",
+          duration: 3500,
+        });
+      }
       return { success: false };
     }
 
     if (!normalizedPhoneNumber) {
       setErrors((prev) => ({ ...prev, phone: true }));
-      toast({
-        title: "전화번호 형식이 올바르지 않습니다",
-        description: "숫자만 입력해도 자동으로 형식이 맞춰집니다.",
-        variant: "destructive",
-        duration: 3500,
-      });
+      if (!auto) {
+        toast({
+          title: "전화번호 형식이 올바르지 않습니다",
+          description: "숫자만 입력해도 자동으로 형식이 맞춰집니다.",
+          variant: "destructive",
+          duration: 3500,
+        });
+      }
       return { success: false };
     }
 
     if (!isValidEmail(taxEmail)) {
       setErrors((prev) => ({ ...prev, email: true }));
-      toast({
-        title: "세금계산서 이메일 형식이 올바르지 않습니다",
-        variant: "destructive",
-        duration: 3500,
-      });
+      if (!auto) {
+        toast({
+          title: "세금계산서 이메일 형식이 올바르지 않습니다",
+          variant: "destructive",
+          duration: 3500,
+        });
+      }
       return { success: false };
     }
 
     if (!isValidAddress(address)) {
       setErrors((prev) => ({ ...prev, address: true }));
-      toast({
-        title: "주소 형식이 올바르지 않습니다",
-        description: "주소를 5자 이상 입력해주세요.",
-        variant: "destructive",
-        duration: 3500,
-      });
+      if (!auto) {
+        toast({
+          title: "주소 형식이 올바르지 않습니다",
+          description: "주소를 5자 이상 입력해주세요.",
+          variant: "destructive",
+          duration: 3500,
+        });
+      }
       return { success: false };
     }
 
@@ -210,7 +233,7 @@ export const handleSave = async (
         title: "신규 기공소 등록 완료",
         description: `축하 크레딧 ${formatted}원이 자동 적립되었어요.`,
       });
-    } else {
+    } else if (!silent && !auto) {
       toast({
         title: "설정이 저장되었습니다",
         description: "사업자 정보가 성공적으로 업데이트되었습니다.",

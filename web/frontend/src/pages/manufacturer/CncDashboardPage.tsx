@@ -822,8 +822,8 @@ export const CncDashboardPage = () => {
           open={toolLifeSaveConfirmOpen}
           title="공구 수명 저장"
           description="설정값이 변경되었습니다. 변경 내용을 저장하시겠습니까?"
-          confirmLabel="저장"
-          cancelLabel="저장 안 함"
+          confirmLabel="적용"
+          cancelLabel="취소"
           onConfirm={handleToolLifeSaveConfirm}
           onCancel={() => {
             setToolLifeSaveConfirmOpen(false);

@@ -300,12 +300,16 @@ export const SignupPage = () => {
         if (authToken) {
           sessionStorage.removeItem("socialToken");
           await loginWithToken(authToken, authRefreshToken);
+          localStorage.removeItem("signupFormData");
+          localStorage.removeItem("signupEmailVerified");
           navigate("/dashboard/new-request", { replace: true });
         } else {
           toast({
             title: "회원가입 완료",
             description: "로그인 페이지로 이동합니다.",
           });
+          localStorage.removeItem("signupFormData");
+          localStorage.removeItem("signupEmailVerified");
           navigate("/login");
         }
         return;
@@ -335,6 +339,8 @@ export const SignupPage = () => {
         }
 
         await loginWithToken(token);
+        localStorage.removeItem("signupFormData");
+        localStorage.removeItem("signupEmailVerified");
         navigate("/dashboard/new-request", { replace: true });
         return;
       }

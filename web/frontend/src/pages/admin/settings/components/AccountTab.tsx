@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
-import { KeyRound, Save, User, Check, ChevronsUpDown } from "lucide-react";
+import { KeyRound, User, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   isValidE164,
@@ -46,6 +46,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
   const { token, user } = useAuthStore();
 
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const lastSavedKeyRef = useRef<string>("");
+
   const [profile, setProfile] = useState(() => {
     const initialPhone = splitE164ToParts((user as any)?.phoneNumber || "");
     return {
@@ -55,6 +59,18 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       phoneNationalNumber: initialPhone.nationalNumber,
     };
   });
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(() => {
+      const fn = handleSaveRef.current;
+      if (fn) {
+        void fn();
+      }
+    }, 300);
+  }, []);
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
@@ -381,11 +397,17 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         return;
       }
 
-      toast({ title: "저장되었습니다" });
+      const savedKey = JSON.stringify({
+        name: profile.name,
+        phoneNumber: phoneValidation.normalized,
+      });
+      lastSavedKeyRef.current = savedKey;
     } catch {
       toast({ title: "저장 실패", variant: "destructive", duration: 3000 });
     }
   };
+
+  handleSaveRef.current = handleSave;
 
   const handleChangePassword = async () => {
     try {
@@ -463,6 +485,15 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
               onChangeCapture={() =>
                 setFieldErrors((prev) => ({ ...prev, name: undefined }))
               }
+              onBlur={() => {
+                const savedKey = JSON.stringify({
+                  name: profile.name,
+                  phoneNumber: phoneValidation.normalized,
+                });
+                if (savedKey !== lastSavedKeyRef.current) {
+                  scheduleSave();
+                }
+              }}
             />
             {!!fieldErrors.name && (
               <p className="text-xs text-destructive">{fieldErrors.name}</p>
@@ -561,6 +592,15 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                 setTimeLeft(0);
                 setPhoneVerificationCode("");
               }}
+              onBlur={() => {
+                const savedKey = JSON.stringify({
+                  name: profile.name,
+                  phoneNumber: phoneValidation.normalized,
+                });
+                if (savedKey !== lastSavedKeyRef.current) {
+                  scheduleSave();
+                }
+              }}
             />
           </div>
 
@@ -635,21 +675,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
             {phoneValidation.message}
           </p>
         )}
-
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={
-              !profile.name.trim() ||
-              !profile.phoneNationalNumber.trim() ||
-              !phoneValidation.ok
-            }
-          >
-            <Save className="mr-2 h-4 w-4" />
-            저장하기
-          </Button>
-        </div>
 
         <div className="rounded-lg border bg-white/60 p-4 space-y-4">
           <div className="flex items-center gap-2 text-sm font-medium">

@@ -13,7 +13,6 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Building, AlertCircle, Check, AlertTriangle } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -34,7 +33,6 @@ interface PaymentTabProps {
 }
 
 export const PaymentTab = ({ userData }: PaymentTabProps) => {
-  const { toast } = useToast();
   const { user } = useAuthStore();
   const userRole = userData?.role || "requestor";
 
@@ -75,17 +73,13 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
     }
   }, [storageKey]);
 
-  const handleSave = () => {
+  useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(paymentData));
     } catch {
       // ignore
     }
-    toast({
-      title: "설정이 저장되었습니다",
-      description: "결제 설정이 성공적으로 업데이트되었습니다.",
-    });
-  };
+  }, [paymentData, storageKey]);
 
   const toggleAutoPayment = () => {
     setPaymentData((prev) => ({
@@ -235,15 +229,7 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
                   />
                 </div>
 
-                <div className="mt-2">
-                  <Button
-                    onClick={handleSave}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    계좌 정보 저장
-                  </Button>
-                </div>
+                <div className="mt-2"></div>
               </div>
             </div>
           )}
@@ -354,10 +340,6 @@ export const PaymentTab = ({ userData }: PaymentTabProps) => {
               )}
             </div>
           )}
-        </div>
-
-        <div className="flex justify-end">
-          <Button onClick={handleSave}>저장</Button>
         </div>
       </CardContent>
     </Card>

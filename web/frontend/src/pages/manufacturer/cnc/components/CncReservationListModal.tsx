@@ -146,7 +146,7 @@ export const CncReservationListModal: React.FC<
                 onClick={onClose}
                 className="px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 shadow-sm"
               >
-                저장
+                닫기
               </button>
             </div>
           )}

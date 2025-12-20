@@ -96,6 +96,20 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setOrgName(String(data?.organizationName || "").trim());
+
+    if (Array.isArray(data?.representatives)) {
+      setRepresentatives(
+        data.representatives
+          .filter((r: any) => Boolean(r && r._id))
+          .map((r: any) => ({
+            _id: String(r._id),
+            name: r.name,
+            email: r.email,
+          }))
+      );
+      return;
+    }
+
     const next: Array<{ _id: string; name?: string; email?: string }> = [];
     if (data?.owner?._id) {
       next.push({
@@ -301,12 +315,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
-        <CardTitle>직원 관리</CardTitle>
-        <CardDescription>
-          {orgName
-            ? `${orgName} 직원 및 신청자를 관리합니다.`
-            : "직원 및 신청자를 관리합니다."}
-        </CardDescription>
+        <CardTitle>임직원 관리</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         {membership !== "owner" && (

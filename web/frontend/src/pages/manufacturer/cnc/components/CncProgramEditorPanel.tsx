@@ -104,6 +104,14 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
 
   if (!visible) return <>{PinModal}</>;
 
+  const maybeSave = async () => {
+    if (readOnly) return;
+    if (!selectedProgram) return;
+    if (loading) return;
+    if (code === originalCode) return;
+    await handleSave();
+  };
+
   const handleSave = async () => {
     if (readOnly) return;
     if (!selectedProgram) return;
@@ -220,6 +228,15 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       void handleSave();
     });
+
+    // 편집 완료(포커스 아웃) 시 자동 저장
+    try {
+      editor.onDidBlurEditorText(() => {
+        void maybeSave();
+      });
+    } catch {
+      // no-op
+    }
   };
 
   const isBridgeSource = selectedProgram?.source === "bridge";
@@ -240,14 +257,6 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
               )}
             </div>
             <div className="flex items-center gap-2 text-[11px] text-slate-100">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={loading || readOnly}
-                className="px-2 py-1 rounded bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-xs font-medium text-white"
-              >
-                {loading ? "저장 중..." : "덮어쓰기"}
-              </button>
               {!isBridgeSource && (
                 <>
                   <button
@@ -256,7 +265,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
                     disabled={readOnly}
                     className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs font-medium disabled:opacity-50"
                   >
-                    이름변경 저장
+                    이름변경 생성
                   </button>
                   <button
                     type="button"
@@ -264,7 +273,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
                     disabled={loading || readOnly}
                     className="px-2 py-1 rounded bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-xs font-medium text-white"
                   >
-                    번호증가 저장
+                    번호증가 생성
                   </button>
                 </>
               )}
@@ -308,6 +317,15 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
                         setCode(value);
                       }
                     });
+
+                    // 편집 완료(포커스 아웃) 시 자동 저장
+                    try {
+                      modified.onDidBlurEditorText(() => {
+                        void maybeSave();
+                      });
+                    } catch {
+                      // no-op
+                    }
                   }}
                 />
               ) : (
@@ -360,7 +378,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
             },
           },
           {
-            label: loading ? "저장 중..." : "저장",
+            label: loading ? "처리 중..." : "적용",
             variant: "primary",
             disabled: loading,
             onClick: () => {

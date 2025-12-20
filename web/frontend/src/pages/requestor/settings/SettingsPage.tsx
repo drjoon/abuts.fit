@@ -70,9 +70,7 @@ export const RequestorSettingsPage = () => {
           | "none";
         setMembership(next);
 
-        const ownerId = String(data?.organization?.owner || "").trim();
-        const myUserId = String(user?.mockUserId || user?.id || "");
-        setCanManageStaff(!!ownerId && !!myUserId && ownerId === myUserId);
+        setCanManageStaff(next === "owner");
       } catch {
         setMembership("none");
         setCanManageStaff(false);
@@ -80,7 +78,7 @@ export const RequestorSettingsPage = () => {
     };
 
     load();
-  }, [mockHeaders, token, user?.id, user?.mockUserId]);
+  }, [mockHeaders, token]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
     const base: SettingsTabDef[] = [

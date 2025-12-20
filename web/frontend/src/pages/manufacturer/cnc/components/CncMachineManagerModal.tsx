@@ -1,4 +1,5 @@
 import type { MachineForm } from "@/pages/manufacturer/cnc/types";
+import { useEffect, useRef } from "react";
 
 interface CncMachineManagerModalProps {
   open: boolean;
@@ -22,6 +23,36 @@ export const CncMachineManagerModal = ({
   onRequestDelete,
 }: CncMachineManagerModalProps) => {
   if (!open) return null;
+
+  const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSubmittedKeyRef = useRef<string>("");
+
+  const computeKey = () => {
+    return JSON.stringify({
+      mode,
+      name: form.name,
+      ip: form.ip,
+      allowJobStart: !!form.allowJobStart,
+      allowProgramDelete: !!form.allowProgramDelete,
+    });
+  };
+
+  useEffect(() => {
+    lastSubmittedKeyRef.current = computeKey();
+  }, [mode, form.allowJobStart, form.allowProgramDelete, form.ip, form.name]);
+
+  const scheduleSubmit = () => {
+    if (mode !== "edit") return;
+    const nextKey = computeKey();
+    if (nextKey === lastSubmittedKeyRef.current) return;
+    if (submitTimeoutRef.current) {
+      clearTimeout(submitTimeoutRef.current);
+    }
+    submitTimeoutRef.current = setTimeout(() => {
+      void onSubmit();
+      lastSubmittedKeyRef.current = nextKey;
+    }, 400);
+  };
 
   return (
     <div
@@ -48,6 +79,7 @@ export const CncMachineManagerModal = ({
               type="text"
               value={form.name}
               onChange={(e) => onChange("name", e.target.value)}
+              onBlur={scheduleSubmit}
               className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
               placeholder="예: M1"
             />
@@ -60,6 +92,7 @@ export const CncMachineManagerModal = ({
               type="text"
               value={form.ip}
               onChange={(e) => onChange("ip", e.target.value)}
+              onBlur={scheduleSubmit}
               className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
               placeholder="예: 172.22.60.30"
             />
@@ -92,6 +125,7 @@ export const CncMachineManagerModal = ({
                 onClick={() =>
                   onChange("allowProgramDelete", !form.allowProgramDelete)
                 }
+                onBlur={scheduleSubmit}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   form.allowProgramDelete ? "bg-red-500" : "bg-gray-300"
                 }`}
@@ -123,13 +157,15 @@ export const CncMachineManagerModal = ({
             >
               취소
             </button>
-            <button
-              onClick={() => void onSubmit()}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 px-5 rounded-lg text-sm transition-colors"
-              disabled={loading}
-            >
-              {loading ? "저장 중..." : "저장"}
-            </button>
+            {mode === "create" && (
+              <button
+                onClick={() => void onSubmit()}
+                className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 px-5 rounded-lg text-sm transition-colors"
+                disabled={loading}
+              >
+                {loading ? "처리 중..." : "추가"}
+              </button>
+            )}
           </div>
         </div>
       </div>

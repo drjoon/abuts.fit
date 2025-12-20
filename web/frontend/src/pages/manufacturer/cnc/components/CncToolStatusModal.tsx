@@ -72,19 +72,13 @@ export const CncToolStatusModal = ({
           <div className="flex justify-end gap-3">
             <button
               type="button"
-              onClick={onRequestClose}
-              className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg text-xs sm:text-sm transition-colors"
-            >
-              취소
-            </button>
-            <button
-              type="button"
               onClick={() => {
                 if (onSave) onSave();
+                onRequestClose();
               }}
               className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg text-xs sm:text-sm transition-colors"
             >
-              저장
+              닫기
             </button>
           </div>
         )}

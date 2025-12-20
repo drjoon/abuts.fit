@@ -27,11 +27,6 @@ const TOUR_DEFINITIONS: Record<GuideTourId, GuideStep[]> = {
       description: "사업자등록번호를 입력하고 Enter로 다음 단계로 넘어가세요.",
     },
     {
-      id: "requestor.business.save",
-      title: "기공소 정보 저장",
-      description: "저장하기를 눌러 기공소 설정을 완료해주세요.",
-    },
-    {
       id: "requestor.phone.number",
       title: "휴대폰번호 입력",
       description: "휴대폰번호 입력 후 Enter로 인증번호 발송을 진행하세요.",

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Card,
   CardContent,
@@ -6,15 +6,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CreditCard, Save } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { CreditCard } from "lucide-react";
 
 export const PricingTab = () => {
-  const { toast } = useToast();
-
   const [pricingData, setPricingData] = useState({
     standardAbutment: "150000",
     premiumAbutment: "250000",
@@ -24,12 +20,32 @@ export const PricingTab = () => {
     minOrder: "100000",
   });
 
-  const handleSave = () => {
-    toast({
-      title: "설정이 저장되었습니다",
-      description: "가격 설정이 성공적으로 업데이트되었습니다.",
-    });
-  };
+  const storageKey = useMemo(() => {
+    return "abutsfit:pricing-settings:v1";
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setPricingData((prev) => ({
+        ...prev,
+        ...(parsed as any),
+      }));
+    } catch {
+      // ignore
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(pricingData));
+    } catch {
+      // ignore
+    }
+  }, [pricingData, storageKey]);
 
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
@@ -120,13 +136,6 @@ export const PricingTab = () => {
               }
             />
           </div>
-        </div>
-
-        <div className="flex justify-end">
-          <Button onClick={handleSave}>
-            <Save className="mr-2 h-4 w-4" />
-            저장하기
-          </Button>
         </div>
       </CardContent>
     </Card>

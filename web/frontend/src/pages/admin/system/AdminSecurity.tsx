@@ -1,11 +1,17 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { 
+import {
   Shield,
   Lock,
   Eye,
@@ -15,9 +21,7 @@ import {
   Server,
   Database,
   Network,
-  Save
 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
 // Mock security data
 const mockSecurityLogs = [
@@ -29,7 +33,7 @@ const mockSecurityLogs = [
     ip: "192.168.1.100",
     action: "다중 로그인 시도 차단",
     timestamp: "2024-01-20 14:30:15",
-    status: "blocked"
+    status: "blocked",
   },
   {
     id: "SEC-002",
@@ -39,7 +43,7 @@ const mockSecurityLogs = [
     ip: "10.0.0.1",
     action: "사용자 데이터 조회",
     timestamp: "2024-01-20 13:45:20",
-    status: "allowed"
+    status: "allowed",
   },
   {
     id: "SEC-003",
@@ -49,18 +53,26 @@ const mockSecurityLogs = [
     ip: "203.123.45.67",
     action: "의심스러운 파일 업로드 시도",
     timestamp: "2024-01-20 12:15:30",
-    status: "blocked"
-  }
+    status: "blocked",
+  },
 ];
 
 const getSeverityBadge = (severity: string) => {
   switch (severity) {
-    case 'high':
+    case "high":
       return <Badge variant="destructive">높음</Badge>;
-    case 'medium':
-      return <Badge className="bg-orange-100 text-orange-700 border-orange-200">보통</Badge>;
-    case 'low':
-      return <Badge className="bg-green-100 text-green-700 border-green-200">낮음</Badge>;
+    case "medium":
+      return (
+        <Badge className="bg-orange-100 text-orange-700 border-orange-200">
+          보통
+        </Badge>
+      );
+    case "low":
+      return (
+        <Badge className="bg-green-100 text-green-700 border-green-200">
+          낮음
+        </Badge>
+      );
     default:
       return <Badge variant="outline">{severity}</Badge>;
   }
@@ -68,18 +80,20 @@ const getSeverityBadge = (severity: string) => {
 
 const getStatusBadge = (status: string) => {
   switch (status) {
-    case 'blocked':
+    case "blocked":
       return <Badge variant="destructive">차단됨</Badge>;
-    case 'allowed':
-      return <Badge className="bg-green-100 text-green-700 border-green-200">허용됨</Badge>;
+    case "allowed":
+      return (
+        <Badge className="bg-green-100 text-green-700 border-green-200">
+          허용됨
+        </Badge>
+      );
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
 };
 
 export const AdminSecurity = () => {
-  const { toast } = useToast();
-  
   // Security Settings State
   const [securitySettings, setSecuritySettings] = useState({
     twoFactorAuth: true,
@@ -91,15 +105,35 @@ export const AdminSecurity = () => {
     fileUploadScan: true,
     ipWhitelist: true,
     apiRateLimit: 1000,
-    backupFrequency: "daily"
+    backupFrequency: "daily",
   });
 
-  const handleSave = () => {
-    toast({
-      title: "보안 설정이 저장되었습니다",
-      description: "새로운 보안 정책이 적용되었습니다.",
-    });
-  };
+  const storageKey = useMemo(() => {
+    return "abutsfit:admin-security-settings:v1";
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setSecuritySettings((prev) => ({
+        ...prev,
+        ...(parsed as any),
+      }));
+    } catch {
+      // ignore
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(securitySettings));
+    } catch {
+      // ignore
+    }
+  }, [securitySettings, storageKey]);
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
@@ -193,7 +227,12 @@ export const AdminSecurity = () => {
                   </div>
                   <Switch
                     checked={securitySettings.twoFactorAuth}
-                    onCheckedChange={(checked) => setSecuritySettings(prev => ({ ...prev, twoFactorAuth: checked }))}
+                    onCheckedChange={(checked) =>
+                      setSecuritySettings((prev) => ({
+                        ...prev,
+                        twoFactorAuth: checked,
+                      }))
+                    }
                   />
                 </div>
 
@@ -206,7 +245,12 @@ export const AdminSecurity = () => {
                   </div>
                   <Switch
                     checked={securitySettings.loginNotifications}
-                    onCheckedChange={(checked) => setSecuritySettings(prev => ({ ...prev, loginNotifications: checked }))}
+                    onCheckedChange={(checked) =>
+                      setSecuritySettings((prev) => ({
+                        ...prev,
+                        loginNotifications: checked,
+                      }))
+                    }
                   />
                 </div>
 
@@ -219,7 +263,12 @@ export const AdminSecurity = () => {
                   </div>
                   <Switch
                     checked={securitySettings.dataEncryption}
-                    onCheckedChange={(checked) => setSecuritySettings(prev => ({ ...prev, dataEncryption: checked }))}
+                    onCheckedChange={(checked) =>
+                      setSecuritySettings((prev) => ({
+                        ...prev,
+                        dataEncryption: checked,
+                      }))
+                    }
                   />
                 </div>
 
@@ -232,7 +281,12 @@ export const AdminSecurity = () => {
                   </div>
                   <Switch
                     checked={securitySettings.fileUploadScan}
-                    onCheckedChange={(checked) => setSecuritySettings(prev => ({ ...prev, fileUploadScan: checked }))}
+                    onCheckedChange={(checked) =>
+                      setSecuritySettings((prev) => ({
+                        ...prev,
+                        fileUploadScan: checked,
+                      }))
+                    }
                   />
                 </div>
               </div>
@@ -244,7 +298,12 @@ export const AdminSecurity = () => {
                     id="autoLogout"
                     type="number"
                     value={securitySettings.autoLogout}
-                    onChange={(e) => setSecuritySettings(prev => ({ ...prev, autoLogout: parseInt(e.target.value) }))}
+                    onChange={(e) =>
+                      setSecuritySettings((prev) => ({
+                        ...prev,
+                        autoLogout: parseInt(e.target.value),
+                      }))
+                    }
                   />
                 </div>
                 <div className="space-y-2">
@@ -253,16 +312,14 @@ export const AdminSecurity = () => {
                     id="maxLoginAttempts"
                     type="number"
                     value={securitySettings.maxLoginAttempts}
-                    onChange={(e) => setSecuritySettings(prev => ({ ...prev, maxLoginAttempts: parseInt(e.target.value) }))}
+                    onChange={(e) =>
+                      setSecuritySettings((prev) => ({
+                        ...prev,
+                        maxLoginAttempts: parseInt(e.target.value),
+                      }))
+                    }
                   />
                 </div>
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={handleSave}>
-                  <Save className="mr-2 h-4 w-4" />
-                  설정 저장
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -285,7 +342,9 @@ export const AdminSecurity = () => {
                     <Database className="h-5 w-5 text-green-500" />
                     <div>
                       <p className="font-medium">데이터베이스</p>
-                      <p className="text-sm text-muted-foreground">암호화 활성화, 정상 작동</p>
+                      <p className="text-sm text-muted-foreground">
+                        암호화 활성화, 정상 작동
+                      </p>
                     </div>
                   </div>
                   <CheckCircle className="h-5 w-5 text-green-500" />
@@ -296,7 +355,9 @@ export const AdminSecurity = () => {
                     <Network className="h-5 w-5 text-green-500" />
                     <div>
                       <p className="font-medium">네트워크</p>
-                      <p className="text-sm text-muted-foreground">SSL 인증서 유효, 방화벽 활성화</p>
+                      <p className="text-sm text-muted-foreground">
+                        SSL 인증서 유효, 방화벽 활성화
+                      </p>
                     </div>
                   </div>
                   <CheckCircle className="h-5 w-5 text-green-500" />
@@ -307,7 +368,9 @@ export const AdminSecurity = () => {
                     <Key className="h-5 w-5 text-yellow-500" />
                     <div>
                       <p className="font-medium">API 보안</p>
-                      <p className="text-sm text-muted-foreground">속도 제한 적용, 토큰 관리 중</p>
+                      <p className="text-sm text-muted-foreground">
+                        속도 제한 적용, 토큰 관리 중
+                      </p>
                     </div>
                   </div>
                   <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -318,7 +381,9 @@ export const AdminSecurity = () => {
                     <Shield className="h-5 w-5 text-green-500" />
                     <div>
                       <p className="font-medium">백업 시스템</p>
-                      <p className="text-sm text-muted-foreground">일일 백업 완료, 복구 테스트 완료</p>
+                      <p className="text-sm text-muted-foreground">
+                        일일 백업 완료, 복구 테스트 완료
+                      </p>
                     </div>
                   </div>
                   <CheckCircle className="h-5 w-5 text-green-500" />
@@ -339,7 +404,10 @@ export const AdminSecurity = () => {
           <CardContent>
             <div className="space-y-4">
               {mockSecurityLogs.map((log) => (
-                <div key={log.id} className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                >
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
                       <AlertTriangle className="h-4 w-4 text-orange-500" />

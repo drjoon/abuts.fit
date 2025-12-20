@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Bell, Save } from "lucide-react";
+import { Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -110,7 +109,7 @@ export const NotificationsTab = () => {
     load();
   }, [mockHeaders, token]);
 
-  const handleSave = async () => {
+  const saveSettings = async (nextSettings: NotificationSettingsV2) => {
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -119,6 +118,7 @@ export const NotificationsTab = () => {
       });
       return;
     }
+
     setIsLoading(true);
     try {
       const res = await request<any>({
@@ -126,7 +126,7 @@ export const NotificationsTab = () => {
         method: "PUT",
         token,
         headers: mockHeaders,
-        jsonBody: settings,
+        jsonBody: nextSettings,
       });
       if (!res.ok) {
         toast({
@@ -136,29 +136,32 @@ export const NotificationsTab = () => {
             "알림 설정 저장 중 오류가 발생했습니다.",
           variant: "destructive",
         });
-        return;
       }
-      toast({
-        title: "설정이 저장되었습니다",
-        description: "알림 설정이 성공적으로 업데이트되었습니다.",
-      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const toggleMethod = (key: keyof NotificationSettingsV2["methods"]) => {
-    setSettings((prev) => ({
-      ...prev,
-      methods: { ...prev.methods, [key]: !prev.methods[key] },
-    }));
+    setSettings((prev) => {
+      const next = {
+        ...prev,
+        methods: { ...prev.methods, [key]: !prev.methods[key] },
+      };
+      void saveSettings(next);
+      return next;
+    });
   };
 
   const toggleType = (key: keyof NotificationSettingsV2["types"]) => {
-    setSettings((prev) => ({
-      ...prev,
-      types: { ...prev.types, [key]: !prev.types[key] },
-    }));
+    setSettings((prev) => {
+      const next = {
+        ...prev,
+        types: { ...prev.types, [key]: !prev.types[key] },
+      };
+      void saveSettings(next);
+      return next;
+    });
   };
 
   return (
@@ -280,12 +283,7 @@ export const NotificationsTab = () => {
           </div>
         </div>
 
-        <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={isLoading}>
-            <Save className="mr-2 h-4 w-4" />
-            {isLoading ? "저장 중..." : "저장하기"}
-          </Button>
-        </div>
+        <div className="hidden" aria-hidden />
       </CardContent>
     </Card>
   );
