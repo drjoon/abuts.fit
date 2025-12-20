@@ -180,11 +180,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     load();
   }, [membership, refreshCoOwners, refreshPending, refreshStaff, token]);
 
-  const isPrimaryOwner = useMemo(() => {
-    if (!ownerUser?._id) return false;
-    return String(ownerUser._id) === myUserId;
-  }, [myUserId, ownerUser?._id]);
-
   const handleAddCoOwner = async () => {
     try {
       if (!token) return;
@@ -194,7 +189,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
 
       if (!email) {
         toast({
-          title: "공동대표 이메일을 입력해주세요",
+          title: "대표 이메일을 입력해주세요",
           variant: "destructive",
           duration: 3000,
         });
@@ -213,7 +208,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       if (!res.ok) {
         const message = String((res.data as any)?.message || "").trim();
         toast({
-          title: "공동대표를 추가하지 못했어요",
+          title: "대표를 추가하지 못했어요",
           description: message || "잠시 후 다시 시도해주세요.",
           variant: "destructive",
           duration: 3000,
@@ -221,7 +216,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         return;
       }
 
-      toast({ title: "공동대표가 추가되었습니다" });
+      toast({ title: "대표가 추가되었습니다" });
       setCoOwnerEmail("");
       await Promise.all([
         refreshCoOwners(),
@@ -249,7 +244,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       if (!res.ok) {
         const message = String((res.data as any)?.message || "").trim();
         toast({
-          title: "공동대표를 삭제하지 못했어요",
+          title: "대표를 삭제하지 못했어요",
           description: message || "잠시 후 다시 시도해주세요.",
           variant: "destructive",
           duration: 3000,
@@ -257,7 +252,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         return;
       }
 
-      toast({ title: "공동대표가 삭제되었습니다" });
+      toast({ title: "대표가 삭제되었습니다" });
       await Promise.all([refreshCoOwners(), refreshMembership()]);
     } finally {
       setActionUserId("");
@@ -364,6 +359,35 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
     }
   };
 
+  type RepresentativeEntry = {
+    _id: string;
+    name?: string;
+    email?: string;
+    removable: boolean;
+  };
+
+  const representativeEntries = useMemo<RepresentativeEntry[]>(() => {
+    const entries: Array<RepresentativeEntry | null> = [
+      ownerUser
+        ? {
+            _id: ownerUser._id || "owner",
+            name: ownerUser.name,
+            email: ownerUser.email,
+            removable: false,
+          }
+        : null,
+      ...coOwners.map((co) => ({
+        _id: co._id,
+        name: co.name,
+        email: co.email,
+        removable: true,
+      })),
+    ];
+    return entries.filter((entry): entry is RepresentativeEntry =>
+      Boolean(entry && entry._id)
+    );
+  }, [coOwners, ownerUser]);
+
   return (
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader>
@@ -377,67 +401,75 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       <CardContent className="space-y-6">
         {membership !== "owner" && (
           <div className="rounded-lg border bg-white/60 p-3 text-sm">
-            대표자(주대표/공동대표) 계정만 직원 관리를 할 수 있습니다.
+            대표 계정만 직원 관리를 할 수 있습니다.
           </div>
         )}
 
         {membership === "owner" && (
           <>
-            <div className="rounded-lg border bg-white/60 p-4 space-y-3">
-              <div className="text-sm font-medium">공동대표</div>
-
-              {!isPrimaryOwner && (
-                <div className="rounded-md border bg-white/70 p-2 text-xs text-muted-foreground">
-                  공동대표 추가/삭제는 주대표 계정만 가능합니다.
-                </div>
-              )}
+            <div className="rounded-lg border bg-white/60 p-4 space-y-4">
+              <div className="text-sm font-medium">등록된 임직원</div>
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm truncate">
-                    {ownerUser
-                      ? `${ownerUser.name || ""}${
-                          ownerUser.email ? ` (${ownerUser.email})` : ""
-                        }`
-                      : "-"}
-                  </div>
-                  <div className="text-xs text-muted-foreground">주대표</div>
+                <div className="text-xs font-semibold uppercase text-muted-foreground">
+                  대표
                 </div>
-
-                {coOwners.map((m) => {
-                  const label = `${m.name || ""}${
-                    m.email ? ` (${m.email})` : ""
-                  }`.trim();
-                  return (
-                    <div
-                      key={m._id}
-                      className="flex items-center justify-between gap-3"
-                    >
-                      <div className="text-sm truncate">{label || m._id}</div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRemoveCoOwner(m._id)}
-                        disabled={!isPrimaryOwner || actionUserId === m._id}
-                      >
-                        삭제
-                      </Button>
-                    </div>
-                  );
-                })}
+                {loading && representativeEntries.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    불러오는 중...
+                  </div>
+                ) : representativeEntries.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    등록된 대표가 없습니다.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {representativeEntries.map((entry) => {
+                      const label = `${entry.name || ""}${
+                        entry.email ? ` (${entry.email})` : ""
+                      }`.trim();
+                      return (
+                        <div
+                          key={entry._id}
+                          className="flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                              대표
+                            </span>
+                            <span className="text-sm truncate">
+                              {label || entry._id}
+                            </span>
+                          </div>
+                          {entry.removable && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRemoveCoOwner(entry._id)}
+                              disabled={actionUserId === entry._id}
+                            >
+                              {actionUserId === entry._id
+                                ? "삭제 중..."
+                                : "삭제"}
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 <div className="md:col-span-2 space-y-1">
-                  <Label htmlFor="coOwnerEmail">공동대표 추가(이메일)</Label>
+                  <Label htmlFor="coOwnerEmail">대표 추가(이메일)</Label>
                   <Input
                     id="coOwnerEmail"
                     type="email"
                     value={coOwnerEmail}
                     onChange={(e) => setCoOwnerEmail(e.target.value)}
                     placeholder="example@domain.com"
-                    disabled={!isPrimaryOwner}
                   />
                 </div>
                 <div className="space-y-1">
@@ -447,7 +479,6 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
                     className="w-full"
                     onClick={handleAddCoOwner}
                     disabled={
-                      !isPrimaryOwner ||
                       actionUserId === "add" ||
                       !String(coOwnerEmail || "").trim()
                     }
@@ -457,44 +488,53 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
                   </Button>
                 </div>
               </div>
-            </div>
 
-            <div className="rounded-lg border bg-white/60 p-4">
-              <div className="text-sm font-medium mb-3">등록된 직원</div>
-              {loading && staff.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  불러오는 중...
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase text-muted-foreground">
+                  직원
                 </div>
-              ) : staff.length === 0 ? (
-                <div className="text-sm text-muted-foreground">
-                  등록된 직원이 없습니다.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {staff.map((m) => {
-                    const label = `${m.name || ""}${
-                      m.email ? ` (${m.email})` : ""
-                    }`.trim();
-                    return (
-                      <div
-                        key={m._id}
-                        className="flex items-center justify-between gap-3"
-                      >
-                        <div className="text-sm truncate">{label || m._id}</div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRemoveStaff(m._id)}
-                          disabled={actionUserId === m._id}
+                {loading && staff.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    불러오는 중...
+                  </div>
+                ) : staff.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">
+                    등록된 직원이 없습니다.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {staff.map((m) => {
+                      const label = `${m.name || ""}${
+                        m.email ? ` (${m.email})` : ""
+                      }`.trim();
+                      return (
+                        <div
+                          key={m._id}
+                          className="flex items-center justify-between gap-3"
                         >
-                          {actionUserId === m._id ? "삭제 중..." : "삭제"}
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                              직원
+                            </span>
+                            <span className="text-sm truncate">
+                              {label || m._id}
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRemoveStaff(m._id)}
+                            disabled={actionUserId === m._id}
+                          >
+                            {actionUserId === m._id ? "삭제 중..." : "삭제"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="rounded-lg border bg-white/60 p-4">

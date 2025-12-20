@@ -59,8 +59,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     return String(user?.mockUserId || user?.id || "");
   }, [user?.id, user?.mockUserId]);
 
-  const [orgOwnerId, setOrgOwnerId] = useState<string>("");
-
   const [orgSearch, setOrgSearch] = useState("");
   const [orgSearchResults, setOrgSearchResults] = useState<
     {
@@ -160,8 +158,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         const data = body.data || body;
         const next = (data?.membership || "none") as MembershipStatus;
         setMembership(next);
-
-        setOrgOwnerId(String(data?.organization?.owner || "").trim());
 
         const orgName = String(data?.organization?.name || "").trim();
         const ex = data?.extracted || {};
@@ -403,18 +399,12 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     return fromUser || fromState || fromProps;
   }, [businessData.companyName, user, userData?.companyName]);
 
-  const isPrimaryOwner = useMemo(() => {
-    if (!orgOwnerId) return false;
-    if (!myUserId) return false;
-    return String(orgOwnerId) === String(myUserId);
-  }, [myUserId, orgOwnerId]);
-
   const roleBadge = useMemo(() => {
-    if (membership === "owner") return isPrimaryOwner ? "주대표" : "공동대표";
+    if (membership === "owner") return "대표";
     if (membership === "member") return "직원";
     if (membership === "pending") return "승인대기";
     return "미소속";
-  }, [isPrimaryOwner, membership]);
+  }, [membership]);
 
   const handleSave = async () => {
     const { success } = await handleSaveImpl({
@@ -476,9 +466,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
       if (!canUploadLicense) {
         toast({
-          title: "대표자만 업로드할 수 있어요",
-          description:
-            "사업자등록증 업로드/수정은 대표자(주대표/공동대표) 계정에서만 가능합니다.",
+          title: "대표 계정만 업로드할 수 있어요",
+          description: "사업자등록증 업로드/수정은 대표 계정에서만 가능합니다.",
           variant: "destructive",
           duration: 3000,
         });
