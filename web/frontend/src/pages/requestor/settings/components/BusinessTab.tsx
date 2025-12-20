@@ -7,6 +7,8 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
 import { Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { GuideFocus } from "@/features/guidetour/GuideFocus";
+import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 
 import { BusinessLicenseUpload } from "./business/BusinessLicenseUpload";
 import { BusinessForm } from "./business/BusinessForm";
@@ -48,6 +50,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const { token, user, loginWithToken } = useAuthStore();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const navigate = useNavigate();
+  const { isStepActive, completeStep } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
@@ -429,6 +432,11 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       if (token) {
         await loginWithToken(token);
       }
+
+      if (isStepActive("requestor.business")) {
+        completeStep("requestor.business");
+        navigate("/dashboard/settings?tab=account");
+      }
     }
   };
 
@@ -623,144 +631,148 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <p className="flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            기공소 정보
-          </p>
-          <span className="ml-2 inline-flex items-center rounded-md border bg-white/60 px-2 py-0.5 text-xs text-foreground">
-            {roleBadge}
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {membership === "none" && !setupMode && (
-          <div className="space-y-4">
-            <div className="rounded-lg bg-white/60 p-3 text-sm">
-              아래 두 가지 방법 중 하나를 선택해 기공소 소속을 설정해주세요.
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <button
-                type="button"
-                className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
-                onClick={() => setSetupMode("license")}
-              >
-                <div className="text-sm font-medium">신규 기공소 등록</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  사업자등록증을 업로드해서 기공소를 새로 등록합니다.
-                </div>
-              </button>
-              <button
-                type="button"
-                className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
-                onClick={() => setSetupMode("search")}
-              >
-                <div className="text-sm font-medium">기존 기공소 소속 신청</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  이미 등록된 기공소를 검색해 소속을 신청합니다.
-                </div>
-              </button>
-            </div>
-
-            <JoinRequestsSection
-              myJoinRequests={myJoinRequests}
-              cancelLoadingOrgId={cancelLoadingOrgId}
-              onCancelJoinRequest={handleCancelJoinRequest}
-              onLeaveOrganization={handleLeaveOrganization}
-            />
-          </div>
-        )}
-
-        {(membership !== "none" || !!setupMode) && (
-          <div className="space-y-6">
-            {membership === "none" && (
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium">
-                  {setupMode === "license"
-                    ? "신규 기공소 등록"
-                    : "기존 기공소 소속 신청"}
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSetupMode(null)}
-                >
-                  다른 방법 선택
-                </Button>
+    <GuideFocus stepId="requestor.business">
+      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <p className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              기공소 정보
+            </p>
+            <span className="ml-2 inline-flex items-center rounded-md border bg-white/60 px-2 py-0.5 text-xs text-foreground">
+              {roleBadge}
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {membership === "none" && !setupMode && (
+            <div className="space-y-4">
+              <div className="rounded-lg bg-white/60 p-3 text-sm">
+                아래 두 가지 방법 중 하나를 선택해 기공소 소속을 설정해주세요.
               </div>
-            )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
+                  onClick={() => setSetupMode("license")}
+                >
+                  <div className="text-sm font-medium">신규 기공소 등록</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    사업자등록증을 업로드해서 기공소를 새로 등록합니다.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
+                  onClick={() => setSetupMode("search")}
+                >
+                  <div className="text-sm font-medium">
+                    기존 기공소 소속 신청
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    이미 등록된 기공소를 검색해 소속을 신청합니다.
+                  </div>
+                </button>
+              </div>
 
-            {(membership === "owner" || setupMode === "license") && (
-              <div className="space-y-6">
-                <BusinessLicenseUpload
-                  membership={membership}
+              <JoinRequestsSection
+                myJoinRequests={myJoinRequests}
+                cancelLoadingOrgId={cancelLoadingOrgId}
+                onCancelJoinRequest={handleCancelJoinRequest}
+                onLeaveOrganization={handleLeaveOrganization}
+              />
+            </div>
+          )}
+
+          {(membership !== "none" || !!setupMode) && (
+            <div className="space-y-6">
+              {membership === "none" && (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium">
+                    {setupMode === "license"
+                      ? "신규 기공소 등록"
+                      : "기존 기공소 소속 신청"}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSetupMode(null)}
+                  >
+                    다른 방법 선택
+                  </Button>
+                </div>
+              )}
+
+              {(membership === "owner" || setupMode === "license") && (
+                <div className="space-y-6">
+                  <BusinessLicenseUpload
+                    membership={membership}
+                    licenseStatus={licenseStatus}
+                    isVerified={isVerified}
+                    licenseFileName={licenseFileName}
+                    licenseDeleteLoading={licenseDeleteLoading}
+                    onFileUpload={handleFileUpload}
+                    onDeleteLicense={handleDeleteLicense}
+                  />
+
+                  <BusinessForm
+                    businessData={businessData}
+                    extracted={extracted}
+                    errors={errors}
+                    licenseStatus={licenseStatus}
+                    membership={membership}
+                    licenseDeleteLoading={licenseDeleteLoading}
+                    setBusinessData={setBusinessData}
+                    setExtracted={setExtracted}
+                    setErrors={setErrors}
+                    setCompanyNameTouched={setCompanyNameTouched}
+                    onSave={handleSave}
+                    onReset={handleDeleteLicense}
+                  />
+                </div>
+              )}
+
+              {(membership === "member" || membership === "pending") && (
+                <BusinessMemberView
+                  currentOrgName={currentOrgName}
                   licenseStatus={licenseStatus}
                   isVerified={isVerified}
-                  licenseFileName={licenseFileName}
-                  licenseDeleteLoading={licenseDeleteLoading}
-                  onFileUpload={handleFileUpload}
-                  onDeleteLicense={handleDeleteLicense}
-                />
-
-                <BusinessForm
-                  businessData={businessData}
                   extracted={extracted}
-                  errors={errors}
-                  licenseStatus={licenseStatus}
-                  membership={membership}
-                  licenseDeleteLoading={licenseDeleteLoading}
-                  setBusinessData={setBusinessData}
-                  setExtracted={setExtracted}
-                  setErrors={setErrors}
-                  setCompanyNameTouched={setCompanyNameTouched}
-                  onSave={handleSave}
-                  onReset={handleDeleteLicense}
+                  businessData={businessData}
                 />
-              </div>
-            )}
+              )}
 
-            {(membership === "member" || membership === "pending") && (
-              <BusinessMemberView
-                currentOrgName={currentOrgName}
-                licenseStatus={licenseStatus}
-                isVerified={isVerified}
-                extracted={extracted}
-                businessData={businessData}
-              />
-            )}
+              {(membership === "none"
+                ? setupMode === "search"
+                : membership !== "owner") && (
+                <div className="space-y-4">
+                  {membership === "none" && (
+                    <OrganizationSearchSection
+                      orgSearch={orgSearch}
+                      setOrgSearch={setOrgSearch}
+                      orgSearchResults={orgSearchResults}
+                      selectedOrg={selectedOrg}
+                      setSelectedOrg={setSelectedOrg}
+                      orgOpen={orgOpen}
+                      setOrgOpen={setOrgOpen}
+                      joinLoading={joinLoading}
+                      onJoinRequest={handleJoinRequest}
+                    />
+                  )}
 
-            {(membership === "none"
-              ? setupMode === "search"
-              : membership !== "owner") && (
-              <div className="space-y-4">
-                {membership === "none" && (
-                  <OrganizationSearchSection
-                    orgSearch={orgSearch}
-                    setOrgSearch={setOrgSearch}
-                    orgSearchResults={orgSearchResults}
-                    selectedOrg={selectedOrg}
-                    setSelectedOrg={setSelectedOrg}
-                    orgOpen={orgOpen}
-                    setOrgOpen={setOrgOpen}
-                    joinLoading={joinLoading}
-                    onJoinRequest={handleJoinRequest}
+                  <JoinRequestsSection
+                    myJoinRequests={myJoinRequests}
+                    cancelLoadingOrgId={cancelLoadingOrgId}
+                    onCancelJoinRequest={handleCancelJoinRequest}
+                    onLeaveOrganization={handleLeaveOrganization}
                   />
-                )}
-
-                <JoinRequestsSection
-                  myJoinRequests={myJoinRequests}
-                  cancelLoadingOrgId={cancelLoadingOrgId}
-                  onCancelJoinRequest={handleCancelJoinRequest}
-                  onLeaveOrganization={handleLeaveOrganization}
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </GuideFocus>
   );
 };

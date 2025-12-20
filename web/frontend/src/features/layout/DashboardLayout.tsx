@@ -31,8 +31,10 @@ import {
   Factory,
   Printer,
   Search,
+  Sparkles,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
+import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 
 const sidebarItems = {
   requestor: [
@@ -104,6 +106,7 @@ export const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+  const { active: guideActive, startTour, stopTour } = useGuideTour();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -155,9 +158,9 @@ export const DashboardLayout = () => {
   }
 
   useEffect(() => {
+    if (!token) return;
     if (!user) return;
     if (user.role !== "requestor") return;
-    if (user.organizationId) return;
 
     const params = new URLSearchParams(location.search);
     const isOnBusinessTab =
@@ -165,12 +168,103 @@ export const DashboardLayout = () => {
       params.get("tab") === "business";
     if (isOnBusinessTab) return;
 
-    toast({
-      title: "기공소 정보가 필요합니다",
-      description: "기공소 설정을 먼저 완료해야 의뢰를 진행할 수 있어요.",
-    });
-    navigate("/dashboard/settings?tab=business", { replace: true });
-  }, [location.pathname, location.search, navigate, toast, user]);
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await request<any>({
+          path: "/api/requestor-organizations/me",
+          method: "GET",
+          token,
+        });
+        if (cancelled) return;
+        if (!res.ok) return;
+
+        const body: any = res.data || {};
+        const data = body.data || body;
+        const hasBusinessNumber = data?.hasBusinessNumber === true;
+        if (hasBusinessNumber) return;
+
+        toast({
+          title: "기공소 정보가 필요합니다",
+          description: "기공소 설정을 먼저 완료해야 의뢰를 진행할 수 있어요.",
+        });
+        startTour("requestor-onboarding", "requestor.business");
+        navigate("/dashboard/settings?tab=business", { replace: true });
+      } catch {
+        // ignore
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    location.pathname,
+    location.search,
+    navigate,
+    startTour,
+    toast,
+    token,
+    user,
+  ]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role !== "requestor") return;
+    if (!user.organizationId) return;
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await request<any>({
+          path: "/api/users/profile",
+          method: "GET",
+          token,
+        });
+        if (cancelled) return;
+        if (!res.ok) return;
+
+        const body: any = res.data || {};
+        const data = body.data || body;
+        const needsPhone =
+          !String(data?.phoneNumber || "").trim() || !data?.phoneVerifiedAt;
+        if (!needsPhone) return;
+
+        const params = new URLSearchParams(location.search);
+        const isOnAccountTab =
+          location.pathname.startsWith("/dashboard/settings") &&
+          params.get("tab") === "account";
+        if (isOnAccountTab) return;
+
+        toast({
+          title: "휴대폰 인증이 필요합니다",
+          description: "계정 설정에서 휴대폰 인증을 먼저 완료해주세요.",
+          duration: 3000,
+        });
+        startTour("requestor-onboarding", "requestor.phone");
+        navigate("/dashboard/settings?tab=account&reason=missing_phone", {
+          replace: true,
+        });
+      } catch {
+        // ignore
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    location.pathname,
+    location.search,
+    navigate,
+    startTour,
+    toast,
+    token,
+    user,
+  ]);
 
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
@@ -465,7 +559,33 @@ export const DashboardLayout = () => {
             </ul>
           </nav>
 
-          <div className="p-3 lg:p-4">
+          <div className="p-3 lg:p-4 space-y-2">
+            {user.role === "requestor" && (
+              <Button
+                type="button"
+                variant={guideActive ? "default" : "outline"}
+                className="w-full justify-start"
+                onClick={() => {
+                  if (guideActive) {
+                    stopTour();
+                    return;
+                  }
+                  const initial = user.organizationId
+                    ? "requestor.phone"
+                    : "requestor.business";
+                  startTour("requestor-onboarding", initial);
+                  navigate(
+                    initial === "requestor.business"
+                      ? "/dashboard/settings?tab=business"
+                      : "/dashboard/settings?tab=account",
+                    { replace: true }
+                  );
+                }}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                <span>{guideActive ? "가이드 종료" : "가이드 시작"}</span>
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

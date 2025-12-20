@@ -47,6 +47,8 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { GuideFocus } from "@/features/guidetour/GuideFocus";
+import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 
 interface AccountTabProps {
   userData: {
@@ -61,6 +63,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
   const { token, user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const { isStepActive, completeStep } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
@@ -505,6 +508,10 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         duration: 2000,
       });
 
+      if (isStepActive("requestor.phone")) {
+        completeStep("requestor.phone");
+      }
+
       if (nextPath) {
         try {
           if (userData?.role === "requestor") {
@@ -811,161 +818,158 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           <div className="hidden md:block" />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* 1열: 국제 코드 */}
-          <div className="space-y-2">
-            <Label>국가</Label>
-            <Popover open={countryOpen} onOpenChange={setCountryOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={countryOpen}
-                  className="w-full justify-between"
-                >
-                  <span className="truncate">
-                    {selectedCountry.country} (+{selectedCountry.dialCode})
-                  </span>
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[200px] p-0">
-                <Command>
-                  <CommandInput placeholder="국가 검색..." />
-                  <CommandList>
-                    <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
-                    <CommandGroup>
-                      {COUNTRY_DIAL_CODES.map((c) => (
-                        <CommandItem
-                          key={`${c.country}-${c.dialCode}`}
-                          value={`${c.country} ${c.dialCode}`}
-                          onSelect={() => {
-                            setAccountData((prev) => ({
-                              ...prev,
-                              phoneDialCode: c.dialCode,
-                            }));
-                            setCountryOpen(false);
-                            // 전화번호 변경 간주 -> 인증 초기화
-                            setPhoneVerifiedAt(null);
-                            setVerificationSent(false);
-                            setTimeLeft(0);
-                            setPhoneVerificationCode("");
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              accountData.phoneDialCode === c.dialCode
-                                ? "opacity-100"
-                                : "opacity-0"
-                            )}
-                          />
-                          {c.country} (+{c.dialCode})
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
+        <GuideFocus stepId="requestor.phone">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>국가</Label>
+              <Popover open={countryOpen} onOpenChange={setCountryOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={countryOpen}
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {selectedCountry.country} (+{selectedCountry.dialCode})
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-0">
+                  <Command>
+                    <CommandInput placeholder="국가 검색..." />
+                    <CommandList>
+                      <CommandEmpty>검색 결과가 없습니다.</CommandEmpty>
+                      <CommandGroup>
+                        {COUNTRY_DIAL_CODES.map((c) => (
+                          <CommandItem
+                            key={`${c.country}-${c.dialCode}`}
+                            value={`${c.country} ${c.dialCode}`}
+                            onSelect={() => {
+                              setAccountData((prev) => ({
+                                ...prev,
+                                phoneDialCode: c.dialCode,
+                              }));
+                              setCountryOpen(false);
+                              setPhoneVerifiedAt(null);
+                              setVerificationSent(false);
+                              setTimeLeft(0);
+                              setPhoneVerificationCode("");
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                accountData.phoneDialCode === c.dialCode
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                            />
+                            {c.country} (+{c.dialCode})
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
 
-          {/* 2열: 휴대폰 번호 */}
-          <div className="space-y-2">
-            <Label htmlFor="phone">휴대폰번호</Label>
-            <Input
-              id="phone"
-              type="tel"
-              inputMode="tel"
-              placeholder="01012345678"
-              value={accountData.phoneNationalNumber}
-              className={cn(
-                "h-10",
-                fieldErrors.phone || !phoneValidation.ok
-                  ? "border-destructive focus-visible:ring-destructive"
-                  : ""
-              )}
-              onChange={(e) => {
-                setFieldErrors((prev) => ({ ...prev, phone: undefined }));
-                setAccountData((prev) => ({
-                  ...prev,
-                  phoneNationalNumber: e.target.value,
-                }));
-                // 번호 변경 시 인증 초기화
-                setPhoneVerifiedAt(null);
-                setVerificationSent(false);
-                setTimeLeft(0);
-                setPhoneVerificationCode("");
-              }}
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">휴대폰번호</Label>
+              <Input
+                id="phone"
+                type="tel"
+                inputMode="tel"
+                placeholder="01012345678"
+                value={accountData.phoneNationalNumber}
+                className={cn(
+                  "h-10",
+                  fieldErrors.phone || !phoneValidation.ok
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : ""
+                )}
+                onChange={(e) => {
+                  setFieldErrors((prev) => ({ ...prev, phone: undefined }));
+                  setAccountData((prev) => ({
+                    ...prev,
+                    phoneNationalNumber: e.target.value,
+                  }));
+                  setPhoneVerifiedAt(null);
+                  setVerificationSent(false);
+                  setTimeLeft(0);
+                  setPhoneVerificationCode("");
+                }}
+              />
+            </div>
 
-          {/* 3열: 인증번호/확인 */}
-          <div className="space-y-2">
-            <Label>확인</Label>
+            <div className="space-y-2">
+              <Label>확인</Label>
 
-            <div className="h-10">
-              {phoneVerifiedAt ? (
-                <Button
-                  variant="outline"
-                  className="w-full h-10 cursor-default border-green-200 bg-white text-green-600 hover:bg-white hover:text-green-600 disabled:opacity-100"
-                  disabled
-                >
-                  <Check className="mr-2 h-4 w-4" />
-                  <span>인증 완료</span>
-                </Button>
-              ) : verificationSent ? (
-                <div className="flex gap-2 h-10">
-                  <Input
-                    value={phoneVerificationCode}
-                    onChange={(e) => setPhoneVerificationCode(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      e.preventDefault();
-                      handleVerifyPhoneVerification();
-                    }}
-                    inputMode="numeric"
-                    placeholder="인증번호"
-                    className="flex-1 h-10"
-                  />
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="default"
-                      onClick={handleVerifyPhoneVerification}
-                      className="h-10"
-                      disabled={
-                        phoneVerificationLoading !== "idle" ||
-                        !phoneVerificationCode.trim()
-                      }
-                    >
-                      {phoneVerificationLoading === "verifying"
-                        ? "..."
-                        : "확인"}
-                    </Button>
-                    {timeLeft > 0 && (
-                      <span className="text-xs text-destructive font-mono">
-                        {formatTime(timeLeft)}
-                      </span>
-                    )}
+              <div className="h-10">
+                {phoneVerifiedAt ? (
+                  <Button
+                    variant="outline"
+                    className="w-full h-10 cursor-default border-green-200 bg-white text-green-600 hover:bg-white hover:text-green-600 disabled:opacity-100"
+                    disabled
+                  >
+                    <Check className="mr-2 h-4 w-4" />
+                    <span>인증 완료</span>
+                  </Button>
+                ) : verificationSent ? (
+                  <div className="flex gap-2 h-10">
+                    <Input
+                      value={phoneVerificationCode}
+                      onChange={(e) => setPhoneVerificationCode(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        handleVerifyPhoneVerification();
+                      }}
+                      inputMode="numeric"
+                      placeholder="인증번호"
+                      className="flex-1 h-10"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="default"
+                        onClick={handleVerifyPhoneVerification}
+                        className="h-10"
+                        disabled={
+                          phoneVerificationLoading !== "idle" ||
+                          !phoneVerificationCode.trim()
+                        }
+                      >
+                        {phoneVerificationLoading === "verifying"
+                          ? "..."
+                          : "확인"}
+                      </Button>
+                      {timeLeft > 0 && (
+                        <span className="text-xs text-destructive font-mono">
+                          {formatTime(timeLeft)}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full h-10"
-                  onClick={handleSendPhoneVerification}
-                  disabled={!canSendPhoneVerification}
-                >
-                  {phoneVerificationLoading === "sending"
-                    ? "발송 중..."
-                    : "인증번호 발송"}
-                </Button>
-              )}
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-10"
+                    onClick={handleSendPhoneVerification}
+                    disabled={!canSendPhoneVerification}
+                  >
+                    {phoneVerificationLoading === "sending"
+                      ? "발송 중..."
+                      : "인증번호 발송"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </GuideFocus>
         {!!phoneValidation.message && !phoneValidation.ok && (
           <p className="text-xs text-destructive -mt-4">
             {phoneValidation.message}
@@ -1106,7 +1110,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
           open={withdrawDialogOpen}
           title="정말 해지하시겠어요?"
           description={
-            user?.position === "principal" ? (
+            (user as any)?.position === "principal" ? (
               <div className="space-y-2">
                 <div>잔여 유료 크레딧이 있으면 환불 신청 후 접수됩니다.</div>
                 <div className="text-sm">

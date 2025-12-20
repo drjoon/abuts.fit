@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { NewChatWidget } from "@/components/chat/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/utils/filenameRules";
+import { GuideTourProvider } from "@/features/guidetour/GuideTourProvider";
 
 const Index = lazy(() => import("./pages/Index"));
 const LoginPage = lazy(() =>
@@ -165,84 +166,101 @@ const App = () => {
         <BrowserRouter>
           <Toaster />
           <Sonner />
-          <AppLayout>
-            <Suspense fallback={<div className="p-6">불러오는 중...</div>}>
-              <Routes>
-                <Route path="/" element={<Index />} />
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/signup" element={<SignupPage />} />
-                <Route
-                  path="/forgot-password"
-                  element={<ForgotPasswordPage />}
-                />
-                <Route path="/reset-password" element={<ResetPasswordPage />} />
-                <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
-                <Route path="/help" element={<HelpPage />} />
-                <Route path="/contact" element={<ContactPage />} />
-                <Route path="/terms" element={<TermsPage />} />
-                <Route path="/privacy" element={<PrivacyPage />} />
-                <Route path="/security" element={<SecurityPage />} />
-                <Route path="/cookies" element={<CookiesPage />} />
-                <Route path="/service" element={<ServicePage />} />
-                <Route path="/business" element={<BusinessPage />} />
-                <Route path="/credits" element={<CreditsPage />} />
-                <Route path="/refund-policy" element={<RefundPolicyPage />} />
-                <Route
-                  path="/dashboard"
-                  element={
-                    <ProtectedRoute>
-                      <DashboardLayout />
-                    </ProtectedRoute>
-                  }
-                >
-                  <Route index element={<DashboardHome />} />
-                  <Route path="new-request" element={<NewRequestPage />} />
-                  <Route path="new-request/:id" element={<NewRequestPage />} />
+          <GuideTourProvider>
+            <AppLayout>
+              <Suspense fallback={<div className="p-6">불러오는 중...</div>}>
+                <Routes>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/signup" element={<SignupPage />} />
                   <Route
-                    path="worksheet"
+                    path="/forgot-password"
+                    element={<ForgotPasswordPage />}
+                  />
+                  <Route
+                    path="/reset-password"
+                    element={<ResetPasswordPage />}
+                  />
+                  <Route
+                    path="/oauth/callback"
+                    element={<OAuthCallbackPage />}
+                  />
+                  <Route path="/help" element={<HelpPage />} />
+                  <Route path="/contact" element={<ContactPage />} />
+                  <Route path="/terms" element={<TermsPage />} />
+                  <Route path="/privacy" element={<PrivacyPage />} />
+                  <Route path="/security" element={<SecurityPage />} />
+                  <Route path="/cookies" element={<CookiesPage />} />
+                  <Route path="/service" element={<ServicePage />} />
+                  <Route path="/business" element={<BusinessPage />} />
+                  <Route path="/credits" element={<CreditsPage />} />
+                  <Route path="/refund-policy" element={<RefundPolicyPage />} />
+                  <Route
+                    path="/dashboard"
                     element={
-                      <RoleProtectedRoute roles={["manufacturer"]}>
-                        <ManufacturerWorksheetPage />
-                      </RoleProtectedRoute>
+                      <ProtectedRoute>
+                        <DashboardLayout />
+                      </ProtectedRoute>
                     }
-                  />
-                  <Route
-                    path="cnc"
-                    element={
-                      <RoleProtectedRoute roles={["manufacturer"]}>
-                        <CncDashboardPage />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="printer"
-                    element={
-                      <RoleProtectedRoute roles={["manufacturer"]}>
-                        <CncDashboardPage />
-                      </RoleProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="user-management"
-                    element={<AdminUserManagement />}
-                  />
-                  <Route
-                    path="request-monitoring"
-                    element={<AdminRequestMonitoring />}
-                  />
-                  <Route
-                    path="chat-management"
-                    element={<AdminChatManagement />}
-                  />
-                  <Route path="system-analytics" element={<AdminAnalytics />} />
-                  <Route path="security-settings" element={<AdminSecurity />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                </Route>
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
-            <NewChatWidget />
-          </AppLayout>
+                  >
+                    <Route index element={<DashboardHome />} />
+                    <Route path="new-request" element={<NewRequestPage />} />
+                    <Route
+                      path="new-request/:id"
+                      element={<NewRequestPage />}
+                    />
+                    <Route
+                      path="worksheet"
+                      element={
+                        <RoleProtectedRoute roles={["manufacturer"]}>
+                          <ManufacturerWorksheetPage />
+                        </RoleProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="cnc"
+                      element={
+                        <RoleProtectedRoute roles={["manufacturer"]}>
+                          <CncDashboardPage />
+                        </RoleProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="printer"
+                      element={
+                        <RoleProtectedRoute roles={["manufacturer"]}>
+                          <CncDashboardPage />
+                        </RoleProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="user-management"
+                      element={<AdminUserManagement />}
+                    />
+                    <Route
+                      path="request-monitoring"
+                      element={<AdminRequestMonitoring />}
+                    />
+                    <Route
+                      path="chat-management"
+                      element={<AdminChatManagement />}
+                    />
+                    <Route
+                      path="system-analytics"
+                      element={<AdminAnalytics />}
+                    />
+                    <Route
+                      path="security-settings"
+                      element={<AdminSecurity />}
+                    />
+                    <Route path="settings" element={<SettingsPage />} />
+                  </Route>
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
+              <NewChatWidget />
+            </AppLayout>
+          </GuideTourProvider>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
