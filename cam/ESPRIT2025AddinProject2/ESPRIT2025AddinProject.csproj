@@ -6,7 +6,7 @@
     <ProductVersion>8.0.30703</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{5F02E3C4-D9FB-4959-9FA5-BFDCBF104002}</ProjectGuid>
-    <OutputType>Library</OutputType>
+    <OutputType>WinExe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Acrodent.EspritAddIns.ESPRIT2025AddinProject</RootNamespace>
     <AssemblyName>ESPRIT2025AddinProject</AssemblyName>
@@ -14,6 +14,10 @@
     <FileAlignment>512</FileAlignment>
     <ReferencePath>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog;C:\Program Files (x86)\Common Files\D.P.Technology\AnnexLibraries</ReferencePath>
     <TargetFrameworkProfile />
+    <LangVersion>latest</LangVersion>
+    <SignAssembly>false</SignAssembly>
+    <AssemblyOriginatorKeyFile></AssemblyOriginatorKeyFile>
+    <StartupObject>Acrodent.EspritAddIns.ESPRIT2025AddinProject.Program</StartupObject>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
     <DebugSymbols>true</DebugSymbols>
@@ -39,13 +43,10 @@
     <StartProgram>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\esprit.exe</StartProgram>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="DentalAddin, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\..\..\..\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\DentalAddin.dll</HintPath>
-    </Reference>
     <Reference Include="EspritAddInAssistant, Version=12.4.4.22230, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>C:\Program Files (x86)\Common Files\D.P.Technology\AnnexLibraries\EspritAddInAssistant.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="EspritAnnex">
       <HintPath>C:\Program Files (x86)\Common Files\D.P.Technology\AnnexLibraries\EspritAnnex.dll</HintPath>
@@ -72,13 +73,59 @@
       <EmbedInteropTypes>False</EmbedInteropTypes>
       <HintPath>..\..\..\..\..\Program Files (x86)\D.P.Technology\ESPRIT\Prog\Interop.EspritMenus.dll</HintPath>
     </Reference>
+    <Reference Include="Microsoft.VisualBasic" />
+    <Reference Include="Interop.EspritFeatures">
+      <HintPath>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\Interop.EspritFeatures.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Interop.EspritGeometry">
+      <HintPath>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\Interop.EspritGeometry.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Interop.EspritGeometryBase">
+      <HintPath>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\Interop.EspritGeometryBase.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Interop.EspritGeometryRoutines">
+      <HintPath>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\Interop.EspritGeometryRoutines.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Interop.EspritGraphicsIO">
+      <HintPath>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\Interop.EspritGraphicsIO.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Interop.EspritTechnology">
+      <HintPath>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog\Interop.EspritTechnology.dll</HintPath>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Program.cs" />
     <Compile Include="Connect.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Clean_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\ConnectionCut.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Feature36_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Intersection.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Intersection2.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MainModule.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Mark.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Milling_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MoveSTL_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_Module.cs" />
+    <Compile Include="DentalAddinCompat\DentalAddinData.cs" />
+    <Compile Include="DentalAddinCompat\DentalAddinHost.cs" />
+    <Compile Include="DentalAddinCompat\DentalPanelForm.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
@@ -93,7 +140,14 @@
     <Compile Include="RepeatProcess.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="tooth_16.bmp">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="tooth_32.bmp">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <None Include="app.config" />
+    <None Include="DentalAddinKey.snk" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
@@ -107,7 +161,8 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>"%25Windir%25\Microsoft.NET\Framework\v4.0.30319\regasm" "$(TargetPath)" /codebase</PostBuildEvent>
+    <PostBuildEvent>
+    </PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

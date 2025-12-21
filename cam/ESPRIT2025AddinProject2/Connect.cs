@@ -15,10 +15,15 @@ using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 using Esprit;
-using System.IO;
+using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
+using DrawingPoint = System.Drawing.Point;
 
 
 namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
@@ -48,6 +53,224 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     _ConnectionManager.EspritApplicationShutdown += _ConnectionManager_EspritApplicationShutdown;
                 }
                 return _ConnectionManager;
+            }
+        }
+
+        private sealed class AddInStatusForm : Form
+        {
+            private readonly Label _statusLabel;
+
+            public AddInStatusForm()
+            {
+                FormBorderStyle = FormBorderStyle.FixedToolWindow;
+                StartPosition = FormStartPosition.Manual;
+                TopMost = true;
+                ShowInTaskbar = false;
+                Text = "Acrodent Dental Add-in";
+                Size = new Size(360, 120);
+
+                _statusLabel = new Label
+                {
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                    Padding = new Padding(16),
+                };
+
+                Controls.Add(_statusLabel);
+
+                var screen = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 800, 600);
+                Location = new DrawingPoint(screen.Right - Width - 20, screen.Bottom - Height - 20);
+            }
+
+            public void UpdateStatus(string message)
+            {
+                _statusLabel.Text = message;
+            }
+        }
+
+        private void ShowStatusPanel(string message)
+        {
+            try
+            {
+                if (_statusForm == null || _statusForm.IsDisposed)
+                {
+                    _statusForm = new AddInStatusForm();
+                }
+
+                _statusForm.UpdateStatus(message);
+                if (!_statusForm.Visible)
+                {
+                    _statusForm.Show();
+                }
+
+                _statusForm.BringToFront();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Connect: ShowStatusPanel failed - {ex.Message}");
+            }
+        }
+
+        private void HideStatusPanel()
+        {
+            try
+            {
+                if (_statusForm != null && !_statusForm.IsDisposed)
+                {
+                    _statusForm.Close();
+                    _statusForm.Dispose();
+                    _statusForm = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Connect: HideStatusPanel failed - {ex.Message}");
+            }
+        }
+
+        private static EspritMenus.Menu FindToolbarsSubMenu(EspritMenus.Menus rootMenus)
+        {
+            if (rootMenus == null)
+            {
+                return null;
+            }
+
+            EspritMenus.Menu viewMenu = FindTopMenu(rootMenus, new string[4] { "&View", "보기(&V)", "视图(&V)", "ビュー(&V)" });
+            if (viewMenu == null)
+            {
+                return null;
+            }
+
+            int count = viewMenu.Count;
+            for (int i = 1; i <= count; i++)
+            {
+                EspritMenus.MenuItem item = viewMenu[i];
+                if (item == null)
+                {
+                    continue;
+                }
+
+                string name = item.Name;
+                if (name == "&工具栏..." || name == "&Toolbars..." || name == "툴바(&T)" || name == "ツールバー(&T)...")
+                {
+                    return item.SubMenu;
+                }
+            }
+
+            return null;
+        }
+
+        private static EspritMenus.Menu FindTopMenu(EspritMenus.Menus rootMenus, string[] candidates)
+        {
+            if (rootMenus == null || candidates == null)
+            {
+                return null;
+            }
+
+            foreach (string candidate in candidates)
+            {
+                if (string.IsNullOrEmpty(candidate))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    EspritMenus.Menu menu = rootMenus[candidate];
+                    if (menu != null)
+                    {
+                        return menu;
+                    }
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+
+            // fallback: some installs only support ordinal indices
+            try
+            {
+                for (int i = 1; i <= rootMenus.Count; i++)
+                {
+                    EspritMenus.Menu menu = rootMenus[i];
+                    if (menu == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (string candidate in candidates)
+                    {
+                        if (!string.IsNullOrEmpty(candidate) && menu.Name == candidate)
+                        {
+                            return menu;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return null;
+        }
+
+        private static void SafeRemoveMenuItem(EspritMenus.Menu menu, string name)
+        {
+            if (menu == null || string.IsNullOrEmpty(name))
+            {
+                return;
+            }
+
+            try
+            {
+                menu.Remove(name);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private static void EnsureMenuSeparator(EspritMenus.Menu menu)
+        {
+            if (menu == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (menu.Count > 0 && menu[menu.Count].Type != EspritConstants.espMenuItemType.espMenuItemSeparator)
+                {
+                    menu.Add(EspritConstants.espMenuItemType.espMenuItemSeparator);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private static void RemoveTrailingSeparators(EspritMenus.Menu menu)
+        {
+            if (menu == null)
+            {
+                return;
+            }
+
+            try
+            {
+                while (menu.Count > 0 && menu[menu.Count].Type == EspritConstants.espMenuItemType.espMenuItemSeparator)
+                {
+                    menu.Remove(menu.Count);
+                }
+            }
+            catch
+            {
+                // ignore
             }
         }
 
@@ -124,8 +347,13 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         public static int _MyCookie;
 
+        internal static DentalAddinHost DentalHost { get; } = new DentalAddinHost();
+
         // New flag to ensure toolbar position is applied only once
         private bool _toolbarPositionLoaded = false;
+        private System.Windows.Forms.Timer _heartbeatTimer;
+        private AddInStatusForm _statusForm;
+        private const int HeartbeatIntervalMs = 60 * 1000;
         
         public void _ConnectionManager_AddInConnect(Esprit.Application espritApplication)
         {
@@ -137,6 +365,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             // This event can be removed if it does not need to be used (e.g. if you only need an Esprit.Document or Esprit.Document members).
             _espApp = espritApplication;
             _pm = _espApp.ProjectManager;
+            DentalHost.Initialize(_espApp);
 
             // -------------------------
             // 1. Apply commands
@@ -144,8 +373,17 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             var EC = espritApplication.AddIn as EspritCommands.AddIn;
             _MyCookie = EC.GetCookie();
 
-            _espApp.ToolBars.Remove(_toolbarName);
+            try
+            {
+                _espApp.ToolBars.Remove(_toolbarName);
+            }
+            catch
+            {
+                // ignore
+            }
+
             _newToolbar = _espApp.ToolBars.Add(_toolbarName);
+            var toolbarIcons = EnsureToolbarIcons();
             for (int i = 0; i < _iCntOfCommands; i++)
             {
                 _iCNumbs.Add(EC.AddCommand(_MyCookie, i, "Acrodent Command " + i));
@@ -154,7 +392,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             for (int i = 0; i < _iCntOfCommands; i++)
             {
                 Esprit.ToolBarControl tbcon = _newToolbar.Add(EspritConstants.espToolBarControl.espToolBarControlButton, "acrodent_Addin_" + i.ToString(), _iCNumbs[i]);
-                tbcon.SetBitmap(Path.Combine(Directory.GetCurrentDirectory(), "tooth_16.bmp"), Path.Combine(Directory.GetCurrentDirectory(), "tooth_32.bmp"));
+                tbcon.SetBitmap(toolbarIcons.smallIconPath, toolbarIcons.largeIconPath);
                 tbcon.Enabled = true;
                 tbcon.Name = "Acrodent command " + i.ToString();
             }
@@ -166,25 +404,57 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             // 2. Commands on View menu
             // -------------------------
 
-            EspritMenus.Menus myMenu = _espApp.Menus as EspritMenus.Menus;
-            _tbMenu = myMenu["&View"]["&Toolbars..."].SubMenu;
-            _tbMenu.Remove(_toolbarName);
-            _tbMenuItem = _tbMenu.Add(EspritConstants.espMenuItemType.espMenuItemCommand, _toolbarName, _iCNumbs[0]);
+            try
+            {
+                EspritMenus.Menus myMenu = _espApp.Menus as EspritMenus.Menus;
+                EspritMenus.Menu toolbarsSubMenu = FindToolbarsSubMenu(myMenu);
+                if (toolbarsSubMenu != null)
+                {
+                    SafeRemoveMenuItem(toolbarsSubMenu, _toolbarName);
+                    EnsureMenuSeparator(toolbarsSubMenu);
+                    _tbMenuItem = toolbarsSubMenu.Add(EspritConstants.espMenuItemType.espMenuItemCommand, _toolbarName, _iCNumbs[0]);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine("Connect: View/Toolbars menu hook failed: " + ex);
+            }
 
             // -------------------------
             // 3. Commands on Tool sub menu
             // -------------------------
 
-            _tbMenu = myMenu["&Tools"];
-            _tbMenu.Remove(_toolbarName);
+            try
+            {
+                EspritMenus.Menus myMenu = _espApp.Menus as EspritMenus.Menus;
+                EspritMenus.Menu toolsMenu = FindTopMenu(myMenu, new string[3] { "&Tools", "도구(&T)", "工具(&T)" });
+                if (toolsMenu != null)
+                {
+                    SafeRemoveMenuItem(toolsMenu, _toolbarName);
+                    RemoveTrailingSeparators(toolsMenu);
+                    toolsMenu.Add(EspritConstants.espMenuItemType.espMenuItemSeparator);
+                    toolsMenu.Add(EspritConstants.espMenuItemType.espMenuItemPopUp, _toolbarName);
 
-            if (_tbMenu[_tbMenu.Count].Type == EspritConstants.espMenuItemType.espMenuItemSeparator)
-                _tbMenu.Remove(_tbMenu.Count);
-            _tbMenu.Add(EspritConstants.espMenuItemType.espMenuItemSeparator);
-            _tbMenu.Add(EspritConstants.espMenuItemType.espMenuItemPopUp, _toolbarName);
-            _tbMenu = myMenu["&Tools"][_toolbarName].SubMenu;
+                    EspritMenus.Menu popupSubMenu = null;
+                    try
+                    {
+                        popupSubMenu = toolsMenu[_toolbarName].SubMenu;
+                    }
+                    catch
+                    {
+                        popupSubMenu = null;
+                    }
 
-            _tbMenu.Add(EspritConstants.espMenuItemType.espMenuItemCommand, "Command 1", _iCNumbs[0]);
+                    if (popupSubMenu != null)
+                    {
+                        popupSubMenu.Add(EspritConstants.espMenuItemType.espMenuItemCommand, "Command 1", _iCNumbs[0]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine("Connect: Tools menu hook failed: " + ex);
+            }
 
             // Ensure toolbar position is applied after toolbar/menu creation.
             // This makes sure position loading occurs after the application has initialized UI elements.
@@ -200,6 +470,9 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             {
                 System.Diagnostics.Trace.WriteLine($"Connect: Failed to load toolbar position in AddInConnect: {ex}");
             }
+
+            ShowAddInLoadedIndicator();
+            StartHeartbeat();
         }
 
 
@@ -211,17 +484,12 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             switch (UserId)
             {
                 case 0:
-                    //DentalAddin.DentalPanel da = new DentalAddin.DentalPanel();
-                    //
-                    //exTab = ApplicationUtilities.AddProjectManagerTab(da);
-                    //ApplicationUtilities.TryActivateProjectManagerTab(exTab.HWND);
-                    //
-                    //da.InputFPointVal(1.23);
-                    //da.InputBPointVal(4.56);
+                    // DentalAddin 옵션 패널을 먼저 노출해 사용자가 설정 파일을 확인/수정할 수 있게 한다.
+                    DentalHost.ShowPanel();
 
                     // TODO : put your folder path as second argument of RepeatProcess constructor
                     // e.g.: RepeatProcess rp = new RepeatProcess(_espApp, @"C:\STLFiles");
-                    RepeatProcess rp = new RepeatProcess(_espApp);
+                    var rp = new RepeatProcess(_espApp);
                     rp.Run();
 
                     break;
@@ -233,7 +501,21 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             // Triggered when the Add-In disconnects because it was Unloaded from the Add-In Manager.
             // This means ESPRIT will remain running; otherwise only EspritApplicationShutdown is triggered.
             // This event procedure can be removed if it does not need to be used.
-            _pm.PMTabs.Remove(exTab.HWND);
+            if (exTab != null)
+            {
+                try
+                {
+                    _pm?.PMTabs?.Remove(exTab.HWND);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Trace.WriteLine($"Connect: PMTab remove failed - {ex.Message}");
+                }
+                exTab = null;
+            }
+
+            HideStatusPanel();
+            StopHeartbeat();
         }
 
         public void _ConnectionManager_DocumentClosed(bool espritIsShuttingDown)
@@ -280,6 +562,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             // Triggered when the Add-In disconnects explicitly because ESPRIT is shutting down.
             // This event can be removed if it does not need to be used.
             Toolbar_PositionSave(_toolbarName, _newToolbar);
+            StopHeartbeat();
         }
 
         #region TOOLBAR_POSITION
@@ -377,6 +660,172 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             Registry.SetValue(keyName, valueName, POSvalue, RegistryValueKind.String);
         }
         #endregion Registry_Read_Write
+
+        private static (string smallIconPath, string largeIconPath) EnsureToolbarIcons()
+        {
+            string assemblyLocation = Assembly.GetExecutingAssembly().Location;
+            string baseDir = Path.GetDirectoryName(assemblyLocation) ?? AppDomain.CurrentDomain.BaseDirectory;
+            string iconDir = Path.Combine(baseDir, "Icons");
+            Directory.CreateDirectory(iconDir);
+
+            string smallIcon = Path.Combine(iconDir, "tooth_16.bmp");
+            string largeIcon = Path.Combine(iconDir, "tooth_32.bmp");
+
+            if (!File.Exists(smallIcon))
+            {
+                GenerateToolbarIcon(smallIcon, 16);
+            }
+
+            if (!File.Exists(largeIcon))
+            {
+                GenerateToolbarIcon(largeIcon, 32);
+            }
+
+            return (smallIcon, largeIcon);
+        }
+
+        private static void GenerateToolbarIcon(string path, int size)
+        {
+            using (var bmp = new Bitmap(size, size))
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var bgColor = Color.FromArgb(32, 70, 255);
+                var accentColor = Color.White;
+                g.Clear(bgColor);
+
+                using (var brush = new SolidBrush(accentColor))
+                {
+                    var toothRect = new Rectangle((int)(size * 0.25), (int)(size * 0.15), (int)(size * 0.5), (int)(size * 0.55));
+                    g.FillEllipse(brush, toothRect);
+
+                    var rootRect = new Rectangle((int)(size * 0.35), (int)(size * 0.55), (int)(size * 0.3), (int)(size * 0.35));
+                    g.FillPolygon(brush, new DrawingPoint[]
+                    {
+                        new DrawingPoint(rootRect.Left, rootRect.Top),
+                        new DrawingPoint(rootRect.Right, rootRect.Top),
+                        new DrawingPoint(rootRect.Right - (int)(size * 0.08), rootRect.Bottom),
+                        new DrawingPoint(rootRect.Left + (int)(size * 0.08), rootRect.Bottom)
+                    });
+                }
+
+                bmp.Save(path, ImageFormat.Bmp);
+            }
+        }
+
+        private void ShowAddInLoadedIndicator()
+        {
+            string banner = $"[Acrodent Dental Add-in] {DateTime.Now:yyyy-MM-dd HH:mm:ss}에 로드되었습니다.";
+            LogToEspritOutputs(banner);
+            ShowToast(banner);
+            ShowStatusPanel(banner);
+        }
+
+        private void StartHeartbeat()
+        {
+            StopHeartbeat();
+            _heartbeatTimer = new System.Windows.Forms.Timer();
+            _heartbeatTimer.Interval = HeartbeatIntervalMs;
+            _heartbeatTimer.Tick += HeartbeatTimerOnTick;
+            _heartbeatTimer.Start();
+        }
+
+        private void StopHeartbeat()
+        {
+            if (_heartbeatTimer != null)
+            {
+                _heartbeatTimer.Tick -= HeartbeatTimerOnTick;
+                _heartbeatTimer.Stop();
+                _heartbeatTimer.Dispose();
+                _heartbeatTimer = null;
+            }
+        }
+
+        private void HeartbeatTimerOnTick(object sender, EventArgs e)
+        {
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            var heartbeatMessage = $"[{timestamp}] My Dental Addin";
+            LogToEspritOutputs(heartbeatMessage);
+            ShowStatusPanel(heartbeatMessage);
+        }
+
+        private void LogToEspritOutputs(string message)
+        {
+            if (_espApp == null)
+            {
+                System.Diagnostics.Trace.WriteLine($"Connect: cannot log message (app null) - {message}");
+                return;
+            }
+
+            var logged = false;
+
+            try
+            {
+                _espApp.OutputWindow?.Text(message);
+                logged = true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Connect: OutputWindow.Text failed - {ex.Message}");
+            }
+
+            if (!logged)
+            {
+                System.Diagnostics.Trace.WriteLine($"Connect: {message}");
+            }
+        }
+
+        private void ShowToast(string message)
+        {
+            try
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    using (var toast = new AddInToastForm(message))
+                    {
+                        toast.Show();
+                        System.Windows.Forms.Application.DoEvents();
+                        Thread.Sleep(2500);
+                        toast.Invoke(new Action(() => toast.Close()));
+                    }
+                });
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private sealed class AddInToastForm : Form
+        {
+            public AddInToastForm(string message)
+            {
+                FormBorderStyle = FormBorderStyle.None;
+                StartPosition = FormStartPosition.Manual;
+                ShowInTaskbar = false;
+                TopMost = true;
+                BackColor = Color.FromArgb(32, 70, 255);
+                ForeColor = Color.White;
+                Padding = new Padding(24, 18, 24, 18);
+
+                var textLabel = new Label
+                {
+                    AutoSize = true,
+                    Text = message,
+                    Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    BackColor = Color.Transparent
+                };
+
+                    Controls.Add(textLabel);
+                    AutoSize = true;
+
+                    var screen = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 800, 600);
+                    Location = new DrawingPoint(
+                        screen.Right - Width - 20,
+                        screen.Bottom - Height - 20);
+            }
+        }
     }
 
 }

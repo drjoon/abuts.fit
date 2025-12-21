@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import {
   SettingsScaffold,
   type SettingsTabDef,
@@ -26,6 +27,27 @@ type TabKey =
 export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    active: guideActive,
+    activeTourId,
+    steps: guideSteps,
+    currentStepIndex,
+  } = useGuideTour();
+
+  const guideHighlightTab = useMemo((): TabKey | undefined => {
+    if (!guideActive) return undefined;
+    if (activeTourId !== "requestor-onboarding") return undefined;
+    const stepId = guideSteps[currentStepIndex]?.id;
+    if (!stepId) return undefined;
+    if (stepId.startsWith("requestor.business")) return "business";
+    if (
+      stepId.startsWith("requestor.account") ||
+      stepId.startsWith("requestor.phone")
+    ) {
+      return "account";
+    }
+    return undefined;
+  }, [activeTourId, currentStepIndex, guideActive, guideSteps]);
 
   const [membership, setMembership] = useState<
     "owner" | "member" | "pending" | "none" | "unknown"
@@ -87,6 +109,36 @@ export const RequestorSettingsPage = () => {
     void load();
   }, [mockHeaders, token]);
 
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-onboarding") return;
+    const stepId = guideSteps[currentStepIndex]?.id;
+    if (!stepId) return;
+
+    if (searchParams.get("tab")) return;
+
+    const desiredTab: TabKey | null = stepId.startsWith("requestor.business")
+      ? "business"
+      : stepId.startsWith("requestor.account") ||
+        stepId.startsWith("requestor.phone")
+      ? "account"
+      : null;
+
+    if (!desiredTab) return;
+    if (searchParams.get("tab") === desiredTab) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("tab", desiredTab);
+    setSearchParams(nextParams, { replace: true });
+  }, [
+    activeTourId,
+    currentStepIndex,
+    guideActive,
+    guideSteps,
+    searchParams,
+    setSearchParams,
+  ]);
+
   const tabs: SettingsTabDef[] = useMemo(() => {
     const base: SettingsTabDef[] = [
       {
@@ -147,11 +199,23 @@ export const RequestorSettingsPage = () => {
     return <SettingsTabsSkeleton />;
   }
 
+  const highlightTabKey =
+    guideHighlightTab && guideHighlightTab === activeTab
+      ? guideHighlightTab
+      : undefined;
+
   return (
-    <SettingsScaffold
-      tabs={tabs}
-      activeTab={activeTab}
-      onTabChange={(next) => setSearchParams({ tab: next })}
-    />
+    <>
+      <SettingsScaffold
+        tabs={tabs}
+        activeTab={activeTab}
+        highlightTabKey={highlightTabKey}
+        onTabChange={(next) => {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.set("tab", next);
+          setSearchParams(nextParams, { replace: true });
+        }}
+      />
+    </>
   );
 };

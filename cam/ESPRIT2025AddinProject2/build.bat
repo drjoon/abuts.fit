@@ -1,0 +1,1 @@
+msbuild ESPRIT2025AddinProject.csproj /p:Configuration=Debug /p:Platform=x86

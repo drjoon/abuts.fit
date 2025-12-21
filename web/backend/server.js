@@ -15,17 +15,17 @@ const server = createServer(app);
 // Socket.io 초기화
 initializeSocket(server);
 
-// 서버 시작
-(async () => {
-  try {
-    await dbReady;
-    server.listen(PORT, () => {
-      console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-      console.log(`Socket.io가 활성화되었습니다.`);
-      startCreditBPlanJobs();
-    });
-  } catch (err) {
-    console.error("서버 시작 실패:", err);
-    process.exit(1);
-  }
-})();
+// 서버 시작 (DB 연결과 무관하게 우선 기동하여 EB 헬스체크/프로세스 트래킹을 통과)
+server.listen(PORT, () => {
+  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
+  console.log(`Socket.io가 활성화되었습니다.`);
+});
+
+dbReady
+  .then(() => {
+    console.log("MongoDB 연결 준비 완료");
+    startCreditBPlanJobs();
+  })
+  .catch((err) => {
+    console.error("MongoDB 연결 실패(서버는 계속 실행):", err);
+  });

@@ -147,6 +147,7 @@ import aiRoutes from "./routes/ai.routes.js";
 import parseLogRoutes from "./routes/parseLog.routes.js";
 import filenameRuleRoutes from "./routes/filenameRule.routes.js";
 import requestorOrganizationRoutes from "./routes/requestorOrganization.routes.js";
+import guideProgressRoutes from "./routes/guideProgress.routes.js";
 
 import creditRoutes from "./routes/credit.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
@@ -168,6 +169,7 @@ app.use("/api/ai", aiRoutes);
 app.use("/api/parse-logs", parseLogRoutes);
 app.use("/api/filename-rules", filenameRuleRoutes);
 app.use("/api/requestor-organizations", requestorOrganizationRoutes);
+app.use("/api/guide-progress", guideProgressRoutes);
 
 app.use("/api/credits", creditRoutes);
 app.use("/api/webhooks", webhookRoutes);

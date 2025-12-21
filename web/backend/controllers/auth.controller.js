@@ -1,6 +1,7 @@
 import User from "../models/user.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
+import GuideProgress from "../models/guideProgress.model.js";
 import jwt from "jsonwebtoken";
 import { generateToken, generateRefreshToken } from "../utils/jwt.util.js";
 import { Types } from "mongoose";
@@ -424,6 +425,14 @@ async function register(req, res) {
 
     const user = new User(userDoc);
     await user.save();
+
+    if (normalizedRole === "requestor") {
+      try {
+        await GuideProgress.ensureForUser(user._id, "requestor-onboarding");
+      } catch (e) {
+        console.error("[register] GuideProgress.ensureForUser failed", e);
+      }
+    }
 
     if (normalizedRole === "requestor" && !socialProvider) {
       try {
@@ -861,15 +870,20 @@ async function withdraw(req, res) {
       });
     }
 
-    if (user.role === "requestor") {
-      const organizationId = user.organizationId;
-      if (!organizationId) {
-        return res.status(400).json({
-          success: false,
-          message: "기공소 정보가 없는 사용자는 탈퇴할 수 없습니다.",
-        });
+    let isRequestorOwner = false;
+    let organizationId = user.organizationId || null;
+    if (user.role === "requestor" && organizationId) {
+      const organization = await RequestorOrganization.findById(organizationId)
+        .select({ owner: 1 })
+        .lean();
+      if (!organization) {
+        organizationId = null;
+      } else {
+        isRequestorOwner = String(organization.owner) === String(userId);
       }
+    }
 
+    if (user.role === "requestor" && isRequestorOwner && organizationId) {
       const { paidBalance } = await getOrganizationCreditBalanceBreakdown(
         organizationId
       );
@@ -877,7 +891,7 @@ async function withdraw(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "잔여 유료 크레딧이 있는 상태에서는 탈퇴할 수 없습니다. 고객센터를 통해 환불 처리 후 탈퇴해주세요.",
+            "잔여 유료 크레딧이 있는 상태에서는 계정을 해지할 수 없습니다. 고객센터를 통해 환불 처리 후 해지해주세요.",
           data: { paidBalance },
         });
       }
@@ -902,7 +916,7 @@ async function withdraw(req, res) {
 
     return res.json({
       success: true,
-      message: "해지가 완료되었습니다.",
+      message: "계정 해지가 완료되었습니다.",
     });
   } catch (error) {
     return res.status(500).json({

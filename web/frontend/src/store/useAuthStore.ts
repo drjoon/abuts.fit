@@ -159,25 +159,29 @@ export const useAuthStore = create<AuthState>((set, get) => {
     login: async (email: string, password: string) => {
       const foundUser = mockUsers.find((u) => u.email === email);
       if (foundUser && password === "a64468ff-514b") {
+        const mockUser: User = {
+          ...foundUser,
+          approvedAt: foundUser.approvedAt || new Date().toISOString(),
+        };
         const mockToken = "MOCK_DEV_TOKEN";
         try {
-          sessionStorage.setItem("abuts_mock_role", foundUser.role);
-          sessionStorage.setItem("abuts_mock_email", foundUser.email);
-          sessionStorage.setItem("abuts_mock_name", foundUser.name);
+          sessionStorage.setItem("abuts_mock_role", mockUser.role);
+          sessionStorage.setItem("abuts_mock_email", mockUser.email);
+          sessionStorage.setItem("abuts_mock_name", mockUser.name);
           sessionStorage.setItem(
             "abuts_mock_organization",
-            foundUser.companyName || ""
+            mockUser.companyName || ""
           );
           sessionStorage.setItem("abuts_mock_phone", "");
           sessionStorage.setItem(
             "abuts_mock_user_id",
-            foundUser.mockUserId || ""
+            mockUser.mockUserId || ""
           );
         } catch {
           // ignore
         }
         set({
-          user: foundUser,
+          user: mockUser,
           isAuthenticated: true,
           token: mockToken,
           refreshToken: null,

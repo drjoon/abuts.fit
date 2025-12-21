@@ -120,6 +120,7 @@ export async function apiFetch<T = any>(
     method,
     headers: finalHeaders,
     body,
+    cache: rest.cache ?? "no-store",
     ...rest,
   });
 

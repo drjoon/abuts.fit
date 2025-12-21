@@ -13,7 +13,10 @@
     "db:reset": "cross-env ENV_FILE=local.env node scripts/db/reset.js",
     "db:seed:core": "cross-env ENV_FILE=local.env node scripts/db/seed.core.js",
     "db:seed:dev": "cross-env ENV_FILE=local.env node scripts/db/seed.dev.js",
-    "db:reset-and-seed": "cross-env ENV_FILE=local.env node scripts/db/reset-and-seed.js"
+    "db:seed:guide-progress": "cross-env ENV_FILE=local.env node scripts/db/seed.guide-progress.js",
+    "db:reset-and-seed": "cross-env ENV_FILE=local.env node scripts/db/reset-and-seed.js",
+    "db:seed:e2e-user": "cross-env ENV_FILE=local.env node scripts/db/seed.e2e-user.js",
+    "db:cleanup:e2e-user": "cross-env ENV_FILE=local.env node scripts/db/cleanup.e2e-user.js"
   },
   "keywords": [
     "dental",

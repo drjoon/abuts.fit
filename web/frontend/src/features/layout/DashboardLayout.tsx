@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/lib/apiClient";
@@ -34,7 +34,11 @@ import {
   Sparkles,
 } from "lucide-react";
 import logo from "@/assets/logo.png";
-import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
+import {
+  getRequestorOnboardingSteps,
+  getRequestorNewRequestSteps,
+  useGuideTour,
+} from "@/features/guidetour/GuideTourProvider";
 
 const sidebarItems = {
   requestor: [
@@ -108,6 +112,7 @@ export const DashboardLayout = () => {
   const { toast } = useToast();
   const {
     active: guideActive,
+    activeTourId,
     startTour,
     stopTour,
     pendingRedirectTo,
@@ -122,7 +127,26 @@ export const DashboardLayout = () => {
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
   const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
-  const [profileUpdatedTick, setProfileUpdatedTick] = useState(0);
+  const lastAutoRedirectKeyRef = useRef<string>("");
+  const [onboardingStatus, setOnboardingStatus] = useState<{
+    loading: boolean;
+    checked: boolean;
+    firstIncomplete: string | null;
+  }>({
+    loading: false,
+    checked: false,
+    firstIncomplete: null,
+  });
+
+  const [newRequestTourStatus, setNewRequestTourStatus] = useState<{
+    loading: boolean;
+    checked: boolean;
+    firstIncomplete: string | null;
+  }>({
+    loading: false,
+    checked: false,
+    firstIncomplete: null,
+  });
 
   useEffect(() => {
     if (bootstrappedOnce) return;
@@ -171,19 +195,217 @@ export const DashboardLayout = () => {
     clearPendingRedirectTo();
   }, [clearPendingRedirectTo, navigate, pendingRedirectTo]);
 
-  const [requestorGuide, setRequestorGuide] = useState<{
-    loading: boolean;
-    hasBusinessNumber: boolean;
-    missingBusinessStepId: string;
-    missingProfileImage: boolean;
-    needsPhone: boolean;
-  }>({
-    loading: true,
-    hasBusinessNumber: true,
-    missingBusinessStepId: "",
-    missingProfileImage: false,
-    needsPhone: false,
-  });
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role !== "requestor") return;
+    if (guideActive) return;
+
+    let cancelled = false;
+    setOnboardingStatus({
+      loading: true,
+      checked: false,
+      firstIncomplete: null,
+    });
+
+    void (async () => {
+      try {
+        const steps = getRequestorOnboardingSteps();
+        const res = await request<any>({
+          path: "/api/guide-progress/requestor-onboarding",
+          method: "GET",
+          token,
+        });
+
+        if (cancelled) return;
+        if (!res.ok) {
+          setOnboardingStatus({
+            loading: false,
+            checked: true,
+            firstIncomplete: null,
+          });
+          return;
+        }
+
+        const body: any = res.data || {};
+        const data = body.data || body;
+        const rows = Array.isArray(data?.steps) ? data.steps : [];
+        const doneIds = new Set(
+          rows
+            .filter((s: any) => String(s?.status || "") === "done")
+            .map((s: any) => String(s?.stepId || "").trim())
+            .filter(Boolean)
+        );
+
+        const firstIncomplete =
+          steps.find((s) => !doneIds.has(s.id))?.id || null;
+        setOnboardingStatus({
+          loading: false,
+          checked: true,
+          firstIncomplete,
+        });
+      } catch {
+        if (cancelled) return;
+        setOnboardingStatus({
+          loading: false,
+          checked: true,
+          firstIncomplete: null,
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guideActive, token, user]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role !== "requestor") return;
+    if (guideActive) return;
+
+    let cancelled = false;
+    setNewRequestTourStatus({
+      loading: true,
+      checked: false,
+      firstIncomplete: null,
+    });
+
+    void (async () => {
+      try {
+        const steps = getRequestorNewRequestSteps();
+        const res = await request<any>({
+          path: "/api/guide-progress/requestor-new-request",
+          method: "GET",
+          token,
+        });
+
+        if (cancelled) return;
+
+        if (!res.ok) {
+          const first = steps?.[0]?.id ? String(steps[0].id) : null;
+          setNewRequestTourStatus({
+            loading: false,
+            checked: true,
+            firstIncomplete: first,
+          });
+          return;
+        }
+
+        const body: any = res.data || {};
+        const data = body.data || body;
+        const rows = Array.isArray(data?.steps) ? data.steps : [];
+        const doneIds = new Set(
+          rows
+            .filter((s: any) => String(s?.status || "") === "done")
+            .map((s: any) => String(s?.stepId || "").trim())
+            .filter(Boolean)
+        );
+
+        const firstIncomplete =
+          steps.find((s) => !doneIds.has(s.id))?.id || null;
+        setNewRequestTourStatus({
+          loading: false,
+          checked: true,
+          firstIncomplete,
+        });
+      } catch {
+        if (cancelled) return;
+        const steps = getRequestorNewRequestSteps();
+        const first = steps?.[0]?.id ? String(steps[0].id) : null;
+        setNewRequestTourStatus({
+          loading: false,
+          checked: true,
+          firstIncomplete: first,
+        });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guideActive, token, user]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (!user) return;
+    if (user.role !== "requestor") return;
+    if (!onboardingStatus.checked) return;
+
+    const nextPath = "/dashboard/new-request";
+    const firstIncomplete = onboardingStatus.firstIncomplete;
+
+    if (firstIncomplete) {
+      if (!(guideActive && activeTourId === "requestor-onboarding")) {
+        startTour("requestor-onboarding", firstIncomplete, nextPath);
+      }
+
+      const targetTab = firstIncomplete.startsWith("requestor.business")
+        ? "business"
+        : "account";
+
+      const isOnSettings = location.pathname.startsWith("/dashboard/settings");
+      const currentParams = new URLSearchParams(location.search);
+      const currentTab = currentParams.get("tab");
+
+      if (!isOnSettings || currentTab !== targetTab) {
+        const redirectKey = `onboarding:settings:${targetTab}:${firstIncomplete}`;
+        if (lastAutoRedirectKeyRef.current !== redirectKey) {
+          lastAutoRedirectKeyRef.current = redirectKey;
+          navigate(
+            `/dashboard/settings?tab=${targetTab}&next=${encodeURIComponent(
+              nextPath
+            )}`,
+            { replace: true }
+          );
+        }
+      }
+      return;
+    }
+
+    if (!newRequestTourStatus.checked) return;
+    const newRequestFirstIncomplete = newRequestTourStatus.firstIncomplete;
+
+    if (newRequestFirstIncomplete) {
+      if (!(guideActive && activeTourId === "requestor-new-request")) {
+        startTour("requestor-new-request", newRequestFirstIncomplete, nextPath);
+      }
+
+      const isOnNewRequest = location.pathname.startsWith(
+        "/dashboard/new-request"
+      );
+      if (!isOnNewRequest) {
+        const redirectKey = `new-request-tour:guard:${location.pathname}`;
+        if (lastAutoRedirectKeyRef.current !== redirectKey) {
+          lastAutoRedirectKeyRef.current = redirectKey;
+          navigate("/dashboard/new-request", { replace: true });
+        }
+      }
+      return;
+    }
+
+    if (!location.pathname.startsWith("/dashboard/new-request")) {
+      const redirectKey = "onboarding:new-request";
+      if (lastAutoRedirectKeyRef.current !== redirectKey) {
+        lastAutoRedirectKeyRef.current = redirectKey;
+        navigate("/dashboard/new-request", { replace: true });
+      }
+    }
+  }, [
+    activeTourId,
+    guideActive,
+    location.pathname,
+    location.search,
+    navigate,
+    onboardingStatus.checked,
+    onboardingStatus.firstIncomplete,
+    newRequestTourStatus.checked,
+    newRequestTourStatus.firstIncomplete,
+    startTour,
+    token,
+    user,
+  ]);
 
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
@@ -210,184 +432,12 @@ export const DashboardLayout = () => {
   useEffect(() => {
     const onProfileUpdated = () => {
       void refreshSidebarProfile();
-      setProfileUpdatedTick((v) => v + 1);
     };
     window.addEventListener("abuts:profile:updated", onProfileUpdated);
     return () => {
       window.removeEventListener("abuts:profile:updated", onProfileUpdated);
     };
   }, [refreshSidebarProfile]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (!user) return;
-    if (user.role !== "requestor") return;
-
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const orgRes = await request<any>({
-          path: "/api/requestor-organizations/me",
-          method: "GET",
-          token,
-        });
-        if (cancelled) return;
-        const orgBody: any = orgRes.data || {};
-        const org = orgBody.data || orgBody;
-        const extracted = org?.extracted || {};
-        const orgName = String(org?.organization?.name || "").trim();
-        const businessNumber = String(extracted?.businessNumber || "").trim();
-        const hasBusinessNumber = !!businessNumber;
-
-        const missingBusinessStepId = (() => {
-          const candidates: { id: string; ok: boolean }[] = [
-            { id: "requestor.business.companyName", ok: !!orgName },
-            { id: "requestor.business.businessNumber", ok: !!businessNumber },
-            {
-              id: "requestor.business.representativeName",
-              ok: !!String(extracted?.representativeName || "").trim(),
-            },
-            {
-              id: "requestor.business.phoneNumber",
-              ok: !!String(extracted?.phoneNumber || "").trim(),
-            },
-            {
-              id: "requestor.business.address",
-              ok: !!String(extracted?.address || "").trim(),
-            },
-            {
-              id: "requestor.business.email",
-              ok: !!String(extracted?.email || "").trim(),
-            },
-            {
-              id: "requestor.business.businessType",
-              ok: !!String(extracted?.businessType || "").trim(),
-            },
-            {
-              id: "requestor.business.businessItem",
-              ok: !!String(extracted?.businessItem || "").trim(),
-            },
-          ];
-          const missing = candidates.find((c) => !c.ok);
-          return missing?.id || "";
-        })();
-
-        if (!hasBusinessNumber) {
-          setRequestorGuide({
-            loading: false,
-            hasBusinessNumber: false,
-            missingBusinessStepId,
-            missingProfileImage: false,
-            needsPhone: false,
-          });
-          return;
-        }
-
-        const profileRes = await request<any>({
-          path: "/api/users/profile",
-          method: "GET",
-          token,
-        });
-        if (cancelled) return;
-        const profileBody: any = profileRes.data || {};
-        const profile = profileBody.data || profileBody;
-        setSidebarProfileImage(String(profile?.profileImage || "").trim());
-        const missingProfileImage = !String(profile?.profileImage || "").trim();
-        const needsPhone =
-          !String(profile?.phoneNumber || "").trim() ||
-          !profile?.phoneVerifiedAt;
-
-        setRequestorGuide({
-          loading: false,
-          hasBusinessNumber: true,
-          missingBusinessStepId,
-          missingProfileImage,
-          needsPhone,
-        });
-      } catch {
-        if (cancelled) return;
-        setRequestorGuide((prev) => ({ ...prev, loading: false }));
-      }
-    };
-
-    setRequestorGuide((prev) => ({ ...prev, loading: true }));
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [guideActive, profileUpdatedTick, token, user]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (!user) return;
-    if (user.role !== "requestor") return;
-    if (requestorGuide.loading) return;
-
-    const params = new URLSearchParams(location.search);
-    const isOnBusinessTab =
-      location.pathname.startsWith("/dashboard/settings") &&
-      params.get("tab") === "business";
-    const isOnAccountTab =
-      location.pathname.startsWith("/dashboard/settings") &&
-      params.get("tab") === "account";
-
-    const returnTo = `${location.pathname}${location.search || ""}`;
-
-    if (!requestorGuide.hasBusinessNumber && !isOnBusinessTab) {
-      toast({
-        title: "기공소 정보가 필요합니다",
-        description: "기공소 설정을 먼저 완료해야 의뢰를 진행할 수 있어요.",
-      });
-      startTour(
-        "requestor-onboarding",
-        requestorGuide.missingBusinessStepId ||
-          "requestor.business.companyName",
-        returnTo
-      );
-      navigate(
-        `/dashboard/settings?tab=business&reason=missing_business&next=${encodeURIComponent(
-          returnTo
-        )}`,
-        { replace: true }
-      );
-      return;
-    }
-
-    if (
-      requestorGuide.hasBusinessNumber &&
-      (requestorGuide.missingProfileImage || requestorGuide.needsPhone) &&
-      !isOnAccountTab
-    ) {
-      toast({
-        title: "휴대폰 인증이 필요합니다",
-        description: "계정 설정에서 휴대폰 인증을 먼저 완료해주세요.",
-        duration: 3000,
-      });
-
-      const initial = requestorGuide.missingProfileImage
-        ? "requestor.account.profileImage"
-        : "requestor.phone.number";
-      startTour("requestor-onboarding", initial, returnTo);
-      navigate(
-        `/dashboard/settings?tab=account&reason=missing_phone&next=${encodeURIComponent(
-          returnTo
-        )}`,
-        { replace: true }
-      );
-    }
-  }, [
-    location.pathname,
-    location.search,
-    navigate,
-    requestorGuide.hasBusinessNumber,
-    requestorGuide.loading,
-    requestorGuide.missingProfileImage,
-    requestorGuide.needsPhone,
-    startTour,
-    toast,
-    token,
-    user,
-  ]);
 
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
@@ -437,14 +487,17 @@ export const DashboardLayout = () => {
     };
   }, [fetchCreditBalance]);
 
+  const isMockUser = Boolean((user as any)?.mockUserId);
+
   useEffect(() => {
     if (!user) return;
     if (user.role !== "requestor") return;
     if ((user as any).approvedAt) return;
+    if (isMockUser) return;
     if (location.pathname.startsWith("/dashboard")) {
       navigate("/signup?mode=social_complete", { replace: true });
     }
-  }, [location.pathname, navigate, user]);
+  }, [isMockUser, location.pathname, navigate, user]);
 
   useEffect(() => {
     if (!token) return;
@@ -568,7 +621,16 @@ export const DashboardLayout = () => {
     };
   }, [location.pathname, location.search, navigate, toast, token, user]);
 
-  const menuItems = sidebarItems[user.role as keyof typeof sidebarItems] || [];
+  type SidebarItem = { icon: any; label: string; href: string };
+  const baseMenuItems = (sidebarItems[user.role as keyof typeof sidebarItems] ||
+    []) as unknown as SidebarItem[];
+  const menuItems = (() => {
+    return baseMenuItems;
+  })();
+
+  const resolvedMenuItems = (() => {
+    return menuItems;
+  })();
 
   const isManufacturer = user.role === "manufacturer";
   const isEquipmentRoute =
@@ -641,7 +703,7 @@ export const DashboardLayout = () => {
 
           <nav className="flex-1 p-3 lg:p-4">
             <ul className="space-y-1 lg:space-y-2">
-              {menuItems.map((item) => {
+              {resolvedMenuItems.map((item) => {
                 const isRootDashboard = item.href === "/dashboard";
                 const isActive = isRootDashboard
                   ? location.pathname === item.href
@@ -702,46 +764,107 @@ export const DashboardLayout = () => {
                   );
 
                   if (isNewRequest) {
-                    startTour(
-                      "requestor-new-request",
-                      "requestor.new_request.upload",
-                      returnTo
+                    void (async () => {
+                      const steps = getRequestorNewRequestSteps();
+                      let initial = steps?.[0]?.id ? String(steps[0].id) : "";
+
+                      try {
+                        const res = await request<any>({
+                          path: "/api/guide-progress/requestor-new-request",
+                          method: "GET",
+                          token,
+                        });
+
+                        if (res.ok) {
+                          const body: any = res.data || {};
+                          const data = body.data || body;
+                          const rows = Array.isArray(data?.steps)
+                            ? data.steps
+                            : [];
+                          const doneIds = new Set(
+                            rows
+                              .filter(
+                                (s: any) => String(s?.status || "") === "done"
+                              )
+                              .map((s: any) => String(s?.stepId || "").trim())
+                              .filter(Boolean)
+                          );
+
+                          const first = steps.find((s) => !doneIds.has(s.id));
+                          initial = first?.id ? String(first.id) : "";
+                        }
+                      } catch {
+                        // ignore
+                      }
+
+                      if (!initial) {
+                        toast({
+                          title: "가이드가 필요하지 않습니다",
+                          description: "현재 완료해야 할 항목이 없어요.",
+                          duration: 3000,
+                        });
+                        return;
+                      }
+
+                      startTour("requestor-new-request", initial, returnTo);
+                    })();
+                    return;
+                  }
+
+                  void (async () => {
+                    const steps = getRequestorOnboardingSteps();
+                    let initial = "";
+
+                    try {
+                      const res = await request<any>({
+                        path: "/api/guide-progress/requestor-onboarding",
+                        method: "GET",
+                        token,
+                      });
+
+                      if (res.ok) {
+                        const body: any = res.data || {};
+                        const data = body.data || body;
+                        const rows = Array.isArray(data?.steps)
+                          ? data.steps
+                          : [];
+                        const doneIds = new Set(
+                          rows
+                            .filter(
+                              (s: any) => String(s?.status || "") === "done"
+                            )
+                            .map((s: any) => String(s?.stepId || "").trim())
+                            .filter(Boolean)
+                        );
+
+                        const first = steps.find((s) => !doneIds.has(s.id));
+                        initial = first?.id || "";
+                      }
+                    } catch {
+                      // ignore
+                    }
+
+                    if (!initial) {
+                      toast({
+                        title: "가이드가 필요하지 않습니다",
+                        description: "현재 완료해야 할 항목이 없어요.",
+                        duration: 3000,
+                      });
+                      return;
+                    }
+
+                    startTour("requestor-onboarding", initial, returnTo);
+                    navigate(
+                      initial.startsWith("requestor.business")
+                        ? `/dashboard/settings?tab=business&next=${encodeURIComponent(
+                            returnTo
+                          )}`
+                        : `/dashboard/settings?tab=account&next=${encodeURIComponent(
+                            returnTo
+                          )}`,
+                      { replace: true }
                     );
-                    return;
-                  }
-
-                  const initial = !requestorGuide.loading
-                    ? !requestorGuide.hasBusinessNumber
-                      ? "requestor.business.companyName"
-                      : requestorGuide.missingBusinessStepId
-                      ? requestorGuide.missingBusinessStepId
-                      : requestorGuide.missingProfileImage
-                      ? "requestor.account.profileImage"
-                      : requestorGuide.needsPhone
-                      ? "requestor.account.profileImage"
-                      : ""
-                    : "";
-
-                  if (!initial) {
-                    toast({
-                      title: "가이드가 필요하지 않습니다",
-                      description: "현재 완료해야 할 항목이 없어요.",
-                      duration: 3000,
-                    });
-                    return;
-                  }
-
-                  startTour("requestor-onboarding", initial, returnTo);
-                  navigate(
-                    initial.startsWith("requestor.business")
-                      ? `/dashboard/settings?tab=business&next=${encodeURIComponent(
-                          returnTo
-                        )}`
-                      : `/dashboard/settings?tab=account&next=${encodeURIComponent(
-                          returnTo
-                        )}`,
-                    { replace: true }
-                  );
+                  })();
                 }}
               >
                 <Sparkles className="mr-2 h-4 w-4" />

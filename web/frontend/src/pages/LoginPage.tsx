@@ -32,7 +32,7 @@ export const LoginPage = () => {
     try {
       const success = await login(email, password);
       if (success) {
-        navigate("/dashboard/new-request", { replace: true });
+        navigate("/dashboard", { replace: true });
       } else {
         toast({
           title: "로그인 실패",

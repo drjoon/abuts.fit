@@ -92,7 +92,7 @@ info "zip에 dist 포함"
 
 # 환경 파일에서 환경변수 읽기
 info "환경변수 파싱 ($ENV_MODE.env)"
-ENV_VARS=""
+ENV_ARGS=()
 while IFS='=' read -r key value || [[ -n "$key" ]]; do
   # 빈 줄, 주석 무시
   [[ -z "$key" || "$key" =~ ^# ]] && continue
@@ -101,15 +101,15 @@ while IFS='=' read -r key value || [[ -n "$key" ]]; do
   value="${value#\"}"
   value="${value%\'}"
   value="${value#\'}"
-  # 환경변수 문자열에 추가
-  ENV_VARS="$ENV_VARS $key=\"$value\""
+  # KEY=VALUE 형태로 안전하게 인자 배열에 추가 (특수문자/공백 보호)
+  ENV_ARGS+=("$key=$value")
 done < "$ENV_FILE"
 
 # NODE_ENV 추가
 if [[ "$ENV_MODE" == "prod" ]]; then
-  ENV_VARS="$ENV_VARS NODE_ENV=production"
+  ENV_ARGS+=("NODE_ENV=production")
 else
-  ENV_VARS="$ENV_VARS NODE_ENV=test"
+  ENV_ARGS+=("NODE_ENV=test")
 fi
 
 # 1. 먼저 앱 배포 (predeploy 훅에서 npm install 실행됨)
@@ -118,6 +118,6 @@ eb deploy --staged --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)
 
 # 2. 배포 후 환경변수 설정
 info "EBS 환경변수 적용 중..."
-eval "eb setenv $ENV_VARS" || error "환경변수 설정 실패"
+eb setenv "${ENV_ARGS[@]}" || error "환경변수 설정 실패"
 
 info "배포 완료: $ZIP_PATH ($ENV_MODE 환경)"

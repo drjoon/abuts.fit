@@ -27,6 +27,8 @@ export const GuideFocus = ({
 
   return (
     <div
+      data-guide-step={stepId}
+      data-guide-active={active ? "1" : "0"}
       className={cn(
         "relative transition-all duration-300",
         active &&

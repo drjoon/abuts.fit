@@ -14,9 +14,15 @@ type Props = {
   tabs: SettingsTabDef[];
   activeTab: string;
   onTabChange: (next: string) => void;
+  highlightTabKey?: string;
 };
 
-export const SettingsScaffold = ({ tabs, activeTab, onTabChange }: Props) => {
+export const SettingsScaffold = ({
+  tabs,
+  activeTab,
+  onTabChange,
+  highlightTabKey,
+}: Props) => {
   const totalTabs = tabs.length;
 
   return (
@@ -42,7 +48,11 @@ export const SettingsScaffold = ({ tabs, activeTab, onTabChange }: Props) => {
               <TabsTrigger
                 key={t.key}
                 value={t.key}
-                className="flex items-center gap-2"
+                className={cn(
+                  "flex items-center gap-2",
+                  highlightTabKey === t.key &&
+                    "ring-2 ring-primary/60 shadow-[0_10px_40px_rgba(14,92,228,0.18)]"
+                )}
               >
                 <t.icon className="h-4 w-4" />
                 {t.label}

@@ -18,6 +18,7 @@ import {
   isValidBusinessNumber,
   isValidPhoneNumber,
   isValidEmail,
+  isValidAddress,
 } from "./validations";
 
 interface BusinessFormProps {
@@ -64,60 +65,20 @@ export const BusinessForm = ({
   };
 
   useEffect(() => {
-    if (!isStepActive("requestor.business.companyName")) return;
-    if (String(businessData.companyName || "").trim()) {
-      completeStep("requestor.business.companyName");
-    }
-  }, [businessData.companyName, completeStep, isStepActive]);
-
-  useEffect(() => {
-    if (!isStepActive("requestor.business.businessNumber")) return;
-    if (String(businessData.businessNumber || "").trim()) {
-      completeStep("requestor.business.businessNumber");
-    }
-  }, [businessData.businessNumber, completeStep, isStepActive]);
-
-  useEffect(() => {
-    if (!isStepActive("requestor.business.representativeName")) return;
-    if (String(extracted.representativeName || "").trim()) {
-      completeStep("requestor.business.representativeName");
-    }
-  }, [completeStep, extracted.representativeName, isStepActive]);
-
-  useEffect(() => {
     if (!isStepActive("requestor.business.phoneNumber")) return;
-    if (String(businessData.phone || "").trim()) {
-      completeStep("requestor.business.phoneNumber");
-    }
-  }, [businessData.phone, completeStep, isStepActive]);
-
-  useEffect(() => {
-    if (!isStepActive("requestor.business.address")) return;
-    if (String(businessData.address || "").trim()) {
-      completeStep("requestor.business.address");
-    }
-  }, [businessData.address, completeStep, isStepActive]);
+    if (String(businessData.phone || "").trim()) return;
+    requestAnimationFrame(() => {
+      phoneRef.current?.focus();
+    });
+  }, [businessData.phone, isStepActive]);
 
   useEffect(() => {
     if (!isStepActive("requestor.business.email")) return;
-    if (String(extracted.email || "").trim()) {
-      completeStep("requestor.business.email");
-    }
-  }, [completeStep, extracted.email, isStepActive]);
-
-  useEffect(() => {
-    if (!isStepActive("requestor.business.businessType")) return;
-    if (String(extracted.businessType || "").trim()) {
-      completeStep("requestor.business.businessType");
-    }
-  }, [completeStep, extracted.businessType, isStepActive]);
-
-  useEffect(() => {
-    if (!isStepActive("requestor.business.businessItem")) return;
-    if (String(extracted.businessItem || "").trim()) {
-      completeStep("requestor.business.businessItem");
-    }
-  }, [completeStep, extracted.businessItem, isStepActive]);
+    if (String(extracted.email || "").trim()) return;
+    requestAnimationFrame(() => {
+      emailRef.current?.focus();
+    });
+  }, [extracted.email, isStepActive]);
 
   const disabled =
     licenseDeleteLoading ||
@@ -162,7 +123,11 @@ export const BusinessForm = ({
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  completeStep("requestor.business.representativeName");
+                  if (isStepActive("requestor.business.representativeName")) {
+                    const v = String(extracted.representativeName || "").trim();
+                    if (v.length < 2) return;
+                    completeStep("requestor.business.representativeName");
+                  }
                   focusNext(companyNameRef);
                 }}
                 onBlur={() => {
@@ -198,10 +163,11 @@ export const BusinessForm = ({
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.companyName")) {
-                    if (!String(businessData.companyName || "").trim()) return;
+                    const v = String(businessData.companyName || "").trim();
+                    if (v.length < 2) return;
                     completeStep("requestor.business.companyName");
                   }
-                  focusNext(phoneRef);
+                  focusNext(repNameRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -241,7 +207,8 @@ export const BusinessForm = ({
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.phoneNumber")) {
-                    if (!String(businessData.phone || "").trim()) return;
+                    const v = String(businessData.phone || "").trim();
+                    if (!isValidPhoneNumber(v)) return;
                     completeStep("requestor.business.phoneNumber");
                   }
                   const hasBusinessNumber = Boolean(
@@ -251,6 +218,26 @@ export const BusinessForm = ({
                 }}
                 onBlur={() => {
                   if (disabled) return;
+
+                  if (isStepActive("requestor.business.phoneNumber")) {
+                    const v = String(businessData.phone || "").trim();
+                    if (!v) {
+                      phoneRef.current?.focus();
+                      return;
+                    }
+                    if (!isValidPhoneNumber(v)) {
+                      phoneRef.current?.focus();
+                      return;
+                    }
+                    completeStep("requestor.business.phoneNumber");
+                    const hasBusinessNumber = Boolean(
+                      String(businessData.businessNumber || "").trim()
+                    );
+                    setTimeout(() => {
+                      focusNext(hasBusinessNumber ? emailRef : bizNoRef);
+                    }, 0);
+                  }
+
                   onSave();
                 }}
               />
@@ -288,8 +275,8 @@ export const BusinessForm = ({
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessNumber")) {
-                    if (!String(businessData.businessNumber || "").trim())
-                      return;
+                    const v = String(businessData.businessNumber || "").trim();
+                    if (!isValidBusinessNumber(v)) return;
                     completeStep("requestor.business.businessNumber");
                   }
                   focusNext(bizTypeRef);
@@ -329,7 +316,8 @@ export const BusinessForm = ({
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessType")) {
-                    if (!String(extracted.businessType || "").trim()) return;
+                    const v = String(extracted.businessType || "").trim();
+                    if (v.length < 2) return;
                     completeStep("requestor.business.businessType");
                   }
                   focusNext(bizItemRef);
@@ -369,7 +357,8 @@ export const BusinessForm = ({
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessItem")) {
-                    if (!String(extracted.businessItem || "").trim()) return;
+                    const v = String(extracted.businessItem || "").trim();
+                    if (v.length < 2) return;
                     completeStep("requestor.business.businessItem");
                   }
                   focusNext(emailRef);
@@ -411,13 +400,30 @@ export const BusinessForm = ({
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.email")) {
-                    if (!String(extracted.email || "").trim()) return;
+                    const v = String(extracted.email || "").trim();
+                    if (!v) return;
+                    if (!isValidEmail(v)) return;
                     completeStep("requestor.business.email");
                   }
                   focusNext(addressRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
+
+                  if (isStepActive("requestor.business.email")) {
+                    const v = String(extracted.email || "").trim();
+                    if (!v) {
+                      emailRef.current?.focus();
+                      return;
+                    }
+                    if (isValidEmail(v)) {
+                      completeStep("requestor.business.email");
+                      setTimeout(() => {
+                        focusNext(addressRef);
+                      }, 0);
+                    }
+                  }
+
                   onSave();
                 }}
               />
@@ -451,7 +457,8 @@ export const BusinessForm = ({
               if (e.key !== "Enter") return;
               e.preventDefault();
               if (isStepActive("requestor.business.address")) {
-                if (!String(businessData.address || "").trim()) return;
+                const v = String(businessData.address || "").trim();
+                if (!isValidAddress(v)) return;
                 completeStep("requestor.business.address");
               }
               addressRef.current?.blur();

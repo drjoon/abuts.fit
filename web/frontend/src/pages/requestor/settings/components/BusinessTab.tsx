@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
 import { Building2, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { GuideFocus } from "@/features/guidetour/GuideFocus";
 import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { PageFileDropZone } from "@/components/PageFileDropZone";
 import {
@@ -49,6 +50,32 @@ import {
   handleJoinRequest as handleJoinRequestImpl,
 } from "./business/handlers";
 
+const SETUP_MODE_STORAGE_KEY = "business_tab_setup_mode";
+
+const readStoredSetupMode = (): "license" | "search" | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SETUP_MODE_STORAGE_KEY);
+    if (raw === "license" || raw === "search") return raw;
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredSetupMode = (mode: "license" | "search" | null) => {
+  if (typeof window === "undefined") return;
+  try {
+    if (!mode) {
+      window.localStorage.removeItem(SETUP_MODE_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(SETUP_MODE_STORAGE_KEY, mode);
+  } catch {
+    // ignore
+  }
+};
+
 interface BusinessTabProps {
   userData: {
     companyName?: string;
@@ -69,14 +96,17 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     isStepActive,
     completeStep,
     startTour,
-    stopTour,
+    setStepCompleted,
   } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
 
   const [membership, setMembership] = useState<MembershipStatus>("none");
-  const [setupMode, setSetupMode] = useState<"license" | "search" | null>(null);
+  const [setupMode, setSetupMode] = useState<"license" | "search" | null>(() =>
+    readStoredSetupMode()
+  );
+  const [setupModeLocked, setSetupModeLocked] = useState(false);
 
   const [orgSearch, setOrgSearch] = useState("");
   const [orgSearchResults, setOrgSearchResults] = useState<
@@ -108,7 +138,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     if (token !== "MOCK_DEV_TOKEN") return {} as Record<string, string>;
     return {
       "x-mock-role": (user?.role || userData?.role || "requestor") as string,
-      "x-mock-position": (user as any)?.position || "staff",
       "x-mock-email": user?.email || userData?.email || "mock@abuts.fit",
       "x-mock-name": user?.name || userData?.name || "사용자",
       "x-mock-organization":
@@ -223,16 +252,29 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     load();
   }, [mockHeaders, token]);
 
+  const updateSetupMode = useCallback((mode: "license" | "search" | null) => {
+    setSetupMode(mode);
+    writeStoredSetupMode(mode);
+  }, []);
+
   useEffect(() => {
-    if (membership !== "none") {
-      setSetupMode(null);
+    if (membership !== "none" && setupMode !== null) {
+      updateSetupMode(null);
     }
-  }, [membership]);
+  }, [membership, setupMode, updateSetupMode]);
+
+  useEffect(() => {
+    if (!guideActive || membership !== "none") {
+      setSetupModeLocked(false);
+    }
+  }, [guideActive, membership]);
 
   useEffect(() => {
     if (!guideActive) return;
     if (activeTourId !== "requestor-onboarding") return;
+    if (setupModeLocked) return;
     const isBusinessSetupStep =
+      isStepActive("requestor.business.licenseUpload") ||
       isStepActive("requestor.business.companyName") ||
       isStepActive("requestor.business.businessNumber") ||
       isStepActive("requestor.business.representativeName") ||
@@ -244,8 +286,16 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     if (!isBusinessSetupStep) return;
     if (membership !== "none") return;
     if (setupMode) return;
-    setSetupMode("license");
-  }, [activeTourId, guideActive, isStepActive, membership, setupMode]);
+    updateSetupMode("license");
+  }, [
+    activeTourId,
+    guideActive,
+    isStepActive,
+    membership,
+    setupMode,
+    setupModeLocked,
+    updateSetupMode,
+  ]);
 
   useEffect(() => {
     if (!guideActive) return;
@@ -263,48 +313,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     licenseFileName,
     licenseS3Key,
     licenseStatus,
-  ]);
-
-  useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-onboarding") return;
-    const licenseCompleted =
-      licenseStatus !== "missing" &&
-      licenseStatus !== "error" &&
-      (licenseFileId || licenseFileName || licenseS3Key);
-    if (!licenseCompleted) return;
-
-    const hasText = (value?: string | null) =>
-      Boolean(String(value || "").trim());
-
-    const businessInputsCompleted =
-      hasText(businessData.companyName) &&
-      hasText(businessData.businessNumber) &&
-      hasText(businessData.phone) &&
-      hasText(businessData.address) &&
-      hasText(extracted.representativeName) &&
-      hasText(extracted.email) &&
-      hasText(extracted.businessType) &&
-      hasText(extracted.businessItem);
-
-    if (!businessInputsCompleted) return;
-    stopTour();
-  }, [
-    activeTourId,
-    businessData.address,
-    businessData.businessNumber,
-    businessData.companyName,
-    businessData.phone,
-    extracted.businessItem,
-    extracted.businessType,
-    extracted.email,
-    extracted.representativeName,
-    guideActive,
-    licenseFileId,
-    licenseFileName,
-    licenseS3Key,
-    licenseStatus,
-    stopTour,
   ]);
 
   useEffect(() => {
@@ -428,7 +436,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         phone: "",
       }));
       setCompanyNameTouched(false);
-      setSetupMode(null);
+      updateSetupMode(null);
       return;
     }
 
@@ -818,37 +826,51 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 아래 두 가지 방법 중 하나를 선택해 기공소 소속을 설정해주세요.
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
-                  onClick={() => {
-                    setSetupMode("license");
-                    startTour(
-                      "requestor-onboarding",
-                      "requestor.business.licenseUpload"
-                    );
-                    requestAnimationFrame(() => {
-                      licenseUploadRef.current?.focusUpload();
-                    });
-                  }}
+                <GuideFocus
+                  stepId="requestor.business.licenseUpload"
+                  hint="사업자등록증 업로드"
                 >
-                  <div className="text-sm font-medium">신규 기공소 등록</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    사업자등록증을 업로드해서 기공소를 새로 등록합니다.
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  className="text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
-                  onClick={() => setSetupMode("search")}
+                  <button
+                    type="button"
+                    className="w-full text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
+                    onClick={() => {
+                      setSetupModeLocked(true);
+                      setSetupMode("license");
+                      startTour(
+                        "requestor-onboarding",
+                        "requestor.business.licenseUpload"
+                      );
+                      requestAnimationFrame(() => {
+                        licenseUploadRef.current?.focusUpload();
+                      });
+                    }}
+                  >
+                    <div className="text-sm font-medium">신규 기공소 등록</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      사업자등록증을 업로드해서 기공소를 새로 등록합니다.
+                    </div>
+                  </button>
+                </GuideFocus>
+                <GuideFocus
+                  stepId="requestor.business.licenseUpload"
+                  hint="기공소 선택"
                 >
-                  <div className="text-sm font-medium">
-                    기존 기공소 소속 신청
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    이미 등록된 기공소를 검색해 소속을 신청합니다.
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    className="w-full text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
+                    onClick={() => {
+                      setSetupModeLocked(true);
+                      setSetupMode("search");
+                    }}
+                  >
+                    <div className="text-sm font-medium">
+                      기존 기공소 소속 신청
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      이미 등록된 기공소를 검색해 소속을 신청합니다.
+                    </div>
+                  </button>
+                </GuideFocus>
               </div>
 
               <JoinRequestsSection
@@ -873,7 +895,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setSetupMode(null)}
+                    onClick={() => {
+                      setSetupModeLocked(true);
+                      setSetupMode(null);
+                    }}
                   >
                     다른 방법 선택
                   </Button>
@@ -926,17 +951,19 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 : membership !== "owner") && (
                 <div className="space-y-4">
                   {membership === "none" && (
-                    <OrganizationSearchSection
-                      orgSearch={orgSearch}
-                      setOrgSearch={setOrgSearch}
-                      orgSearchResults={orgSearchResults}
-                      selectedOrg={selectedOrg}
-                      setSelectedOrg={setSelectedOrg}
-                      orgOpen={orgOpen}
-                      setOrgOpen={setOrgOpen}
-                      joinLoading={joinLoading}
-                      onJoinRequest={handleJoinRequest}
-                    />
+                    <GuideFocus stepId="requestor.business.licenseUpload">
+                      <OrganizationSearchSection
+                        orgSearch={orgSearch}
+                        setOrgSearch={setOrgSearch}
+                        orgSearchResults={orgSearchResults}
+                        selectedOrg={selectedOrg}
+                        setSelectedOrg={setSelectedOrg}
+                        orgOpen={orgOpen}
+                        setOrgOpen={setOrgOpen}
+                        joinLoading={joinLoading}
+                        onJoinRequest={handleJoinRequest}
+                      />
+                    </GuideFocus>
                   )}
 
                   <JoinRequestsSection

@@ -302,11 +302,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           description: "계정 설정에서 휴대폰 인증을 완료해주세요.",
           duration: 3000,
         });
-        navigate(
-          `/dashboard/settings?tab=account&reason=missing_phone&next=${encodeURIComponent(
-            setupNextPath
-          )}`
-        );
         return false;
       }
 
@@ -326,11 +321,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           description: "기공소 설정에서 사업자 정보를 등록해주세요.",
           duration: 3000,
         });
-        navigate(
-          `/dashboard/settings?tab=business&reason=missing_business&next=${encodeURIComponent(
-            setupNextPath
-          )}`
-        );
         return false;
       }
 
@@ -345,11 +335,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             description: "배송 옵션을 먼저 설정해주세요.",
             duration: 3000,
           });
-          navigate(
-            `/dashboard/settings?tab=shipping&reason=missing_shipping&next=${encodeURIComponent(
-              setupNextPath
-            )}`
-          );
           return false;
         }
 
@@ -383,11 +368,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             description: "결제 설정을 완료해주세요.",
             duration: 3000,
           });
-          navigate(
-            `/dashboard/settings?tab=payment&reason=missing_payment&next=${encodeURIComponent(
-              setupNextPath
-            )}`
-          );
           return false;
         }
       }

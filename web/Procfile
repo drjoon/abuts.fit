@@ -1,1 +1,1 @@
-web: bash -c "cd backend && node server.js"
+web: cd backend && node server.js 2>&1 | /usr/bin/logger -t abuts-web

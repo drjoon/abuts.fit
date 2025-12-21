@@ -63,7 +63,13 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const { toast } = useToast();
   const { token, user, logout, loginWithToken } = useAuthStore();
   const navigate = useNavigate();
-  const { isStepActive, completeStep } = useGuideTour();
+  const {
+    active: guideActive,
+    activeTourId,
+    isStepActive,
+    completeStep,
+    setStepCompleted,
+  } = useGuideTour();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
@@ -159,7 +165,68 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const [verificationSent, setVerificationSent] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
   const [countryOpen, setCountryOpen] = useState(false);
+  const phoneInputRef = useRef<HTMLInputElement | null>(null);
   const phoneCodeInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-onboarding") return;
+
+    if (isStepActive("requestor.phone.number") && !phoneVerifiedAt) {
+      requestAnimationFrame(() => {
+        phoneInputRef.current?.focus();
+      });
+      return;
+    }
+
+    if (
+      isStepActive("requestor.phone.code") &&
+      verificationSent &&
+      !phoneVerifiedAt
+    ) {
+      requestAnimationFrame(() => {
+        phoneCodeInputRef.current?.focus();
+      });
+    }
+  }, [
+    activeTourId,
+    guideActive,
+    isStepActive,
+    phoneVerifiedAt,
+    verificationSent,
+  ]);
+
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-onboarding") return;
+
+    const markStep = (stepId: string, completed: boolean) => {
+      if (completed && isStepActive(stepId)) return;
+      setStepCompleted(stepId, completed);
+    };
+
+    const hasProfileImage = Boolean(
+      String(accountData.profileImage || "").trim()
+    );
+    markStep("requestor.account.profileImage", hasProfileImage);
+
+    if (phoneVerifiedAt) {
+      markStep("requestor.phone.number", true);
+      markStep("requestor.phone.code", true);
+      return;
+    }
+
+    markStep("requestor.phone.number", Boolean(verificationSent));
+    markStep("requestor.phone.code", false);
+  }, [
+    accountData.profileImage,
+    activeTourId,
+    guideActive,
+    isStepActive,
+    phoneVerifiedAt,
+    setStepCompleted,
+    verificationSent,
+  ]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -983,6 +1050,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                 <Label htmlFor="phone">휴대폰번호</Label>
                 <GuideFocus stepId="requestor.phone.number">
                   <Input
+                    ref={phoneInputRef}
                     id="phone"
                     type="tel"
                     inputMode="tel"

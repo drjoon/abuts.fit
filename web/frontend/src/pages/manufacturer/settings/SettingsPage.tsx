@@ -10,16 +10,9 @@ import { BusinessTab } from "./components/BusinessTab";
 import { PricingTab } from "@/components/settings/PricingTab";
 import { PaymentTab } from "@/components/settings/CreditPaymentTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
-import { ShippingTab } from "@/components/settings/ShippingTab";
-import { User, Building2, CreditCard, Bell, Truck } from "lucide-react";
+import { User, Building2, CreditCard, Bell } from "lucide-react";
 
-type TabKey =
-  | "account"
-  | "business"
-  | "shipping"
-  | "pricing"
-  | "payment"
-  | "notifications";
+type TabKey = "account" | "business" | "pricing" | "payment" | "notifications";
 
 export const ManufacturerSettingsPage = () => {
   const { user } = useAuthStore();
@@ -38,12 +31,6 @@ export const ManufacturerSettingsPage = () => {
         label: "사업자",
         icon: Building2,
         content: <BusinessTab userData={user} />,
-      },
-      {
-        key: "shipping",
-        label: "배송 옵션",
-        icon: Truck,
-        content: <ShippingTab userData={user} />,
       },
       {
         key: "pricing",
@@ -76,8 +63,6 @@ export const ManufacturerSettingsPage = () => {
 
   return (
     <SettingsScaffold
-      title="설정"
-      subtitle="계정 정보와 비즈니스 설정을 관리하세요"
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={(next) => setSearchParams({ tab: next })}

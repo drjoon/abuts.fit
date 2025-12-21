@@ -302,7 +302,7 @@ export const SignupPage = () => {
           await loginWithToken(authToken, authRefreshToken);
           localStorage.removeItem("signupFormData");
           localStorage.removeItem("signupEmailVerified");
-          navigate("/dashboard/new-request", { replace: true });
+          navigate("/dashboard", { replace: true });
         } else {
           toast({
             title: "회원가입 완료",
@@ -341,7 +341,7 @@ export const SignupPage = () => {
         await loginWithToken(token);
         localStorage.removeItem("signupFormData");
         localStorage.removeItem("signupEmailVerified");
-        navigate("/dashboard/new-request", { replace: true });
+        navigate("/dashboard", { replace: true });
         return;
       }
 
@@ -375,7 +375,7 @@ export const SignupPage = () => {
         await loginWithToken(authToken, authRefreshToken);
         localStorage.removeItem("signupFormData");
         localStorage.removeItem("signupEmailVerified");
-        navigate("/dashboard/new-request", { replace: true });
+        navigate("/dashboard", { replace: true });
       } else {
         toast({
           title: "회원가입 완료",
@@ -440,7 +440,7 @@ export const SignupPage = () => {
                   {wizardStep === 3 && (
                     <SignupWizardStep4
                       onNavigate={() =>
-                        navigate("/dashboard/new-request", { replace: true })
+                        navigate("/dashboard", { replace: true })
                       }
                     />
                   )}
@@ -479,7 +479,7 @@ export const SignupPage = () => {
                   {wizardStep === 3 && (
                     <SignupSocialWizardStep4
                       onNavigate={() => {
-                        navigate("/dashboard/new-request", { replace: true });
+                        navigate("/dashboard", { replace: true });
                       }}
                     />
                   )}

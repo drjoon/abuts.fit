@@ -1,10 +1,14 @@
-﻿using Esprit;
+﻿// 원본 STL 자동 처리 로직은 현재 요구사항에서 사용하지 않으므로 전체를 비활성화했다.
+// 향후 복구가 필요하면 아래 블록의 주석을 제거하면 된다.
+#if false
+using Esprit;
 using EspritConstants;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
 
 namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 {
@@ -20,7 +24,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private CancellationTokenSource _cts;
         private Task _processingTask;
 
-        // Keep folderPath optional for backward compatibility
         public RepeatProcess(Esprit.Application app, string folderPath = @"C:\abuts.fit\StlFiles")
         {
             _espApp = app;
@@ -29,7 +32,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         public void Run()
         {
-            // 1. Collect existing STL files from the folder initially
             if (!Directory.Exists(_folderPath))
             {
                 System.Diagnostics.Trace.WriteLine($"RepeatProcess: folder not found: {_folderPath}");
@@ -38,7 +40,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
             EnqueueExistingFiles();
 
-            // 2. Set up FileSystemWatcher for real-time detection
             _watcher = new FileSystemWatcher(_folderPath, "*.stl")
             {
                 NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
@@ -48,7 +49,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             _watcher.Created += OnCreated;
             _watcher.Changed += OnChanged;
 
-            // 3. Start background processing loop
             _cts = new CancellationTokenSource();
             _processingTask = Task.Run(() => ProcessLoop(_cts.Token), _cts.Token);
         }
@@ -70,8 +70,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         private void OnCreated(object sender, FileSystemEventArgs e)
         {
-            // When a file is created, immediate access may fail if it's still being written.
-            // Apply a simple retry logic.
             Task.Run(() =>
             {
                 const int maxAttempts = 5;
@@ -80,17 +78,14 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 {
                     try
                     {
-                        // Try opening the file to ensure it's readable
                         using (var stream = File.Open(e.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read))
                         {
-                            // If successful, enqueue the file
                             EnqueueFileIfNew(e.FullPath);
                             return;
                         }
                     }
                     catch (IOException)
                     {
-                        // Possibly still being written -> wait and retry
                         Thread.Sleep(delayMs);
                     }
                     catch (UnauthorizedAccessException)
@@ -99,14 +94,12 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     }
                 }
 
-                // If still can't open after retries, enqueue anyway (files are not deleted per assumption)
                 EnqueueFileIfNew(e.FullPath);
             });
         }
 
         private void OnChanged(object sender, FileSystemEventArgs e)
         {
-            // Try again on change event in case the file has finished writing
             EnqueueFileIfNew(e.FullPath);
         }
 
@@ -144,7 +137,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     catch (Exception ex)
                     {
                         System.Diagnostics.Trace.WriteLine($"RepeatProcess: Error processing '{fileToProcess}': {ex}");
-                        // Re-queue logic can be added if needed
                     }
                 }
                 else
@@ -155,7 +147,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     }
                     catch (OperationCanceledException)
                     {
-                        // Canceled
                     }
                 }
             }
@@ -165,59 +156,26 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             System.Diagnostics.Trace.WriteLine($"RepeatProcess: Processing {path}");
 
-            /***************************
-                 * STL FILE IMPORT *
-             ***************************/
-            // Assume template document is already open in ESPRIT
             Document espdoc = _espApp.Document;
-            // Import STL file
             espdoc.MergeFile(path);
+            Connect.DentalHost.RunWorkflow(espdoc, path);
 
-
-
-            /***************************
-               * DentalAddin process *
-             ***************************/
-            /////////////////////////////////////////
-            // DO SOMETHING WITH DENTAL ADDIN HERE //
-            /////////////////////////////////////////
-
-
-
-            /***************************
-                 * POST PROCESSING *
-             ***************************/
-
-            // Postprocessor default path
             String postFile = _espApp.Configuration.GetFileDirectory(espFileType.espFileTypePostProcessor);
-
-            // TODO : change post file name to your postprocessor
             postFile = Path.Combine(postFile, "HyundaiWia_XF6300T_V19_FKSM.asc");
-            // TODO : change NC file path
             String NCCodeFileName = Path.ChangeExtension(path, ".nc");
 
             espdoc.NCCode.AddAll();
             espdoc.NCCode.Execute(postFile, NCCodeFileName);
 
-
-
-            /*****************************************
-             * Delete operations, features and STL*
-             *****************************************/
-
-            // Delete some graphic objects after processing
-            // Order : operations(toolpathes) -> features -> STL model
             for (int idx = espdoc.GraphicsCollection.Count; idx >= 1; idx--)
             {
                 GraphicObject go = espdoc.GraphicsCollection[idx] as GraphicObject;
-                System.Diagnostics.Trace.WriteLine($"RepeatProcess: Detached graphic object: {go.TypeName}");
                 if (go.GraphicObjectType == espGraphicObjectType.espOperation ||
                     go.GraphicObjectType == espGraphicObjectType.espFeatureChain ||
                     go.GraphicObjectType == espGraphicObjectType.espFreeFormFeature ||
                     go.GraphicObjectType == espGraphicObjectType.espFeatureSet ||
                     go.GraphicObjectType == espGraphicObjectType.espSTL_Model)
                 {
-                    System.Diagnostics.Trace.WriteLine($"RepeatProcess: Delete graphic object: {go.GuiTypeName}");
                     espdoc.GraphicsCollection.Remove(idx);
                 }
             }
@@ -257,6 +215,29 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             Stop();
             _cts?.Dispose();
             _cts = null;
+        }
+    }
+}
+#endif
+
+using System;
+
+namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
+{
+    internal class RepeatProcess : IDisposable
+    {
+        public RepeatProcess(Esprit.Application app, string folderPath = @"C:\abuts.fit\StlFiles")
+        {
+            // Disabled implementation
+        }
+
+        public void Run()
+        {
+            System.Diagnostics.Trace.WriteLine("RepeatProcess: disabled stub invoked.");
+        }
+
+        public void Dispose()
+        {
         }
     }
 }
