@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # 사용법: ./setenv.sh [EB_ENV_NAME]
-# 예:    ./setenv.sh abutsfit
-ENV_NAME=${1:-abutsfit}
+# 예:    ./setenv.sh prod
+ENV_NAME=${1:-test}
 
 # .env 파일 경로
 ENV_FILE="backend/test.env"
