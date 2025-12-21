@@ -1,1 +1,1 @@
-web: cd backend && node server.js
+web: bash -c "cd backend && npm install --omit=dev --no-audit --no-fund && node server.js"

@@ -1,21 +1,31 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-echo "Running predeploy hook..."
+echo "[predeploy] Running hook..."
 
-# EB 배포 중 소스 코드가 위치하는 staging 디렉토리
 STAGING_DIR="/var/app/staging"
-BACKEND_DIR="$STAGING_DIR/backend"
+CANDIDATES=(
+  "$STAGING_DIR/backend"
+  "$STAGING_DIR/web/backend"
+)
 
-if [ -d "$BACKEND_DIR" ]; then
-  echo "Installing dependencies in $BACKEND_DIR"
-  cd "$BACKEND_DIR"
-  
-  # 의존성 설치
-  npm install --omit=dev --no-audit --no-fund
-  
-  echo "Predeploy hook completed."
-else
-  echo "Backend directory not found at $BACKEND_DIR"
-  exit 1
-fi
+for idx in "${!CANDIDATES[@]}"; do
+  dir="${CANDIDATES[$idx]}"
+  if [ -d "$dir" ]; then
+    echo "[predeploy] Installing dependencies in $dir"
+    cd "$dir"
+    if npm install --omit=dev --no-audit --no-fund; then
+      echo "[predeploy] npm install finished in $dir"
+      exit 0
+    else
+      echo "[predeploy] npm install failed in $dir" >&2
+      exit 1
+    fi
+  fi
+done
+
+echo "[predeploy] Backend directory not found. Tried:"
+printf '  - %s\n' "${CANDIDATES[@]}"
+echo "[predeploy] Contents of $STAGING_DIR:"
+ls -al "$STAGING_DIR"
+exit 1

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # 사용법: ./setenv.sh [EB_ENV_NAME]
-# 예:    ./setenv.sh book2
-ENV_NAME=${1:-book2}
+# 예:    ./setenv.sh abutsfit
+ENV_NAME=${1:-abutsfit}
 
 # .env 파일 경로
 ENV_FILE="backend/test.env"
@@ -14,15 +14,39 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-# 주석/빈줄 제거 + 양쪽 큰따옴표 제거해서 KEY=VALUE 형태로 변환
-ENV_VARS=$(
-  grep -v '^[[:space:]]*#' "$ENV_FILE" |       \
-  sed '/^[[:space:]]*$/d' |                    \
-  sed -E 's/^([^=]+)=\"?(.*)\"?$/\1=\2/' |     \
-  tr '\n' ' '
-)
+python3 - <<'PY' "$ENV_FILE" "$ENV_NAME"
+import sys
+from pathlib import Path
+import subprocess
 
-echo "Applying env to Elastic Beanstalk environment: $ENV_NAME"
-echo "Variables: $ENV_VARS"
+env_path = Path(sys.argv[1])
+env_name = sys.argv[2]
+pairs = []
 
-eb setenv $ENV_VARS --environment "$ENV_NAME"
+for raw in env_path.read_text(encoding='utf-8').splitlines():
+    line = raw.strip()
+    if not line or line.startswith('#') or '=' not in line:
+        continue
+    key, value = line.split('=', 1)
+    key = key.strip()
+    value = value.strip().replace('\r', '')
+
+    if value.startswith('"') and value.endswith('"'):
+        formatted = f"{key}={value}"
+    elif ' ' in value:
+        formatted = f'{key}="{value}"'
+    else:
+        formatted = f"{key}={value}"
+
+    pairs.append(formatted)
+
+if not pairs:
+    print("적용할 환경 변수가 없습니다.", file=sys.stderr)
+    sys.exit(1)
+
+print(f"Applying env to Elastic Beanstalk environment: {env_name}")
+for item in pairs:
+    print(f"  {item}")
+
+subprocess.run(["eb", "setenv", *pairs, "--environment", env_name], check=True)
+PY

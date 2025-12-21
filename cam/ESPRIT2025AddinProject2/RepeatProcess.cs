@@ -21,7 +21,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private Task _processingTask;
 
         // Keep folderPath optional for backward compatibility
-        public RepeatProcess(Esprit.Application app, string folderPath = @"C:\STLFiles")
+        public RepeatProcess(Esprit.Application app, string folderPath = @"C:\abuts.fit\StlFiles")
         {
             _espApp = app;
             _folderPath = folderPath;
