@@ -9,3 +9,5 @@ stats.html
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+*.zip
