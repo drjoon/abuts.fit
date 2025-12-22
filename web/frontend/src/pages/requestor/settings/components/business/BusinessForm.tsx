@@ -399,22 +399,18 @@ export const BusinessForm = ({
                   const nextValue = e.target.value;
                   setExtracted((prev) => ({
                     ...prev,
-                    email: nextValue,
+                    email: e.target.value,
                   }));
-                  const trimmed = nextValue.trim();
-                  const invalid = trimmed ? !isValidEmail(trimmed) : true;
-                  setErrors((prev) => ({
-                    ...prev,
-                    email: trimmed ? invalid : false,
-                  }));
+                  const invalid = !isValidEmail(e.target.value);
+                  setErrors((prev) => ({ ...prev, email: invalid }));
                   setStepCompleted("requestor.business.email", !invalid);
                 }}
                 onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.email")) {
                     const v = String(extracted.email || "").trim();
-                    if (!v) return;
                     if (!isValidEmail(v)) return;
                     completeStep("requestor.business.email");
                   }
@@ -466,11 +462,12 @@ export const BusinessForm = ({
               setErrors((prev) => ({ ...prev, address: false }));
             }}
             onKeyDown={(e) => {
+              if ((e.nativeEvent as any)?.isComposing) return;
               if (e.key !== "Enter") return;
               e.preventDefault();
               if (isStepActive("requestor.business.address")) {
                 const v = String(businessData.address || "").trim();
-                if (!isValidAddress(v)) return;
+                if (v.length < 5) return;
                 completeStep("requestor.business.address");
               }
               addressRef.current?.blur();

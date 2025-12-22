@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/hooks/use-toast";
@@ -80,7 +80,36 @@ export const NewRequestPage = () => {
     goToStep,
     stopTour,
     isStepActive,
+    setStepCompleted,
   } = useGuideTour();
+
+  const guideStepNavTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-new-request") return;
+
+    // 파일이 하나라도 있으면 업로드 스텝은 완료로 처리해서
+    // 업로드존/상세입력존 사이에서 가이드 포커스가 흔들리는 것을 방지한다.
+    const hasFiles = files.length > 0;
+    setStepCompleted("requestor.new_request.upload", hasFiles);
+  }, [activeTourId, files.length, guideActive, setStepCompleted]);
+
+  useEffect(() => {
+    if (!guideActive) return;
+    if (activeTourId !== "requestor-new-request") return;
+
+    // 모든 파일이 확인되면 details 스텝을 완료로 처리해서
+    // details/shipping 간 포커스 경쟁을 줄인다.
+    const doneDetails = files.length > 0 && unverifiedCount === 0;
+    setStepCompleted("requestor.new_request.details", doneDetails);
+  }, [
+    activeTourId,
+    files.length,
+    guideActive,
+    setStepCompleted,
+    unverifiedCount,
+  ]);
 
   useEffect(() => {
     if (!guideActive) return;
@@ -88,14 +117,36 @@ export const NewRequestPage = () => {
 
     const desiredStepId =
       highlightStep === "upload"
-        ? "requestor.new_request.upload"
+        ? files.length > 0
+          ? "requestor.new_request.details"
+          : "requestor.new_request.upload"
         : highlightStep === "details"
         ? "requestor.new_request.details"
         : "requestor.new_request.shipping";
 
     if (isStepActive(desiredStepId)) return;
-    goToStep(desiredStepId);
-  }, [activeTourId, goToStep, guideActive, highlightStep, isStepActive]);
+
+    if (guideStepNavTimerRef.current) {
+      window.clearTimeout(guideStepNavTimerRef.current);
+    }
+    guideStepNavTimerRef.current = window.setTimeout(() => {
+      goToStep(desiredStepId);
+    }, 0);
+
+    return () => {
+      if (guideStepNavTimerRef.current) {
+        window.clearTimeout(guideStepNavTimerRef.current);
+        guideStepNavTimerRef.current = null;
+      }
+    };
+  }, [
+    activeTourId,
+    files.length,
+    goToStep,
+    guideActive,
+    highlightStep,
+    isStepActive,
+  ]);
 
   const hasVerifiedFile = useMemo(() => {
     if (!files.length) return false;
