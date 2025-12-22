@@ -19,8 +19,8 @@ export const GuideFocus = ({
   hint,
   muted = false,
 }: GuideFocusProps) => {
-  const { isStepActive, getStepMeta } = useGuideTour();
-  const active = isStepActive(stepId);
+  const { isStepActive, isStepCompleted, getStepMeta } = useGuideTour();
+  const active = isStepActive(stepId) && !isStepCompleted(stepId);
   const meta = getStepMeta(stepId);
 
   const message = hint || meta.step?.title;

@@ -1,1 +1,0 @@
-ABUTS_DB_FORCE=true npm run db:reset-and-seed

@@ -22,6 +22,12 @@ router.post(
   fileController.uploadTempFiles
 );
 
+router.post(
+  "/temp/presign",
+  authenticate,
+  fileController.createTempUploadPresign
+);
+
 // 전체 파일 목록 조회 (관리자) 또는 의뢰 ID로 필터링
 router.get("/", authenticate, fileController.getFiles);
 

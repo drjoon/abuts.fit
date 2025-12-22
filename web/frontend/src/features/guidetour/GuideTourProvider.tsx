@@ -118,6 +118,11 @@ interface GuideTourState {
   goToStep: (stepId: string) => void;
   completeStep: (stepId?: string) => void;
   setStepCompleted: (stepId: string, completed?: boolean) => void;
+  syncStepStatus: (params: {
+    tourId: GuideTourId;
+    stepId: string;
+    done: boolean;
+  }) => void;
   isStepCompleted: (stepId: string) => boolean;
   isStepActive: (stepId: string) => boolean;
   pendingRedirectTo: string | null;
@@ -134,11 +139,20 @@ type PersistedGuideState = {
   returnTo?: string | null;
 };
 
-const GUIDE_STATE_STORAGE_KEY = "guide_tour_state";
+const GUIDE_STATE_STORAGE_KEY = "guide_tour_state_v2";
 
-const readPersistedGuideState = (): PersistedGuideState | null => {
+const getGuideStateStorageKey = (userId?: string | null) => {
+  if (!userId) return null;
+  return `${GUIDE_STATE_STORAGE_KEY}:${userId}`;
+};
+
+const readPersistedGuideState = (
+  userId?: string | null
+): PersistedGuideState | null => {
   try {
-    const raw = localStorage.getItem(GUIDE_STATE_STORAGE_KEY);
+    const storageKey = getGuideStateStorageKey(userId);
+    if (!storageKey) return null;
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.tourId || !parsed?.stepId) return null;
@@ -148,13 +162,18 @@ const readPersistedGuideState = (): PersistedGuideState | null => {
   }
 };
 
-const writePersistedGuideState = (state: PersistedGuideState | null) => {
+const writePersistedGuideState = (
+  userId: string | null,
+  state: PersistedGuideState | null
+) => {
   try {
+    const storageKey = getGuideStateStorageKey(userId);
+    if (!storageKey) return;
     if (!state) {
-      localStorage.removeItem(GUIDE_STATE_STORAGE_KEY);
+      localStorage.removeItem(storageKey);
       return;
     }
-    localStorage.setItem(GUIDE_STATE_STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(storageKey, JSON.stringify(state));
   } catch {
     // ignore
   }
@@ -162,12 +181,18 @@ const writePersistedGuideState = (state: PersistedGuideState | null) => {
 
 const GuideTourContext = createContext<GuideTourState | null>(null);
 
+const emitGuideProgressUpdated = () => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("abuts:guide-progress:updated"));
+};
+
 export const GuideTourProvider = ({
   children,
 }: {
   children: React.ReactNode;
 }) => {
   const token = useAuthStore((s) => s.token);
+  const authUserId = useAuthStore((s) => s.user?.id || null);
   const [active, setActive] = useState(false);
   const [activeTourId, setActiveTourId] = useState<GuideTourId | null>(null);
   const [steps, setSteps] = useState<GuideStep[]>([]);
@@ -180,11 +205,12 @@ export const GuideTourProvider = ({
   const [pendingRedirectTo, setPendingRedirectTo] = useState<string | null>(
     null
   );
+  const lastSyncedStepStatusRef = useRef<Map<string, boolean>>(new Map());
 
   const progressHydratingRef = useRef(false);
   const prevCompletedStepIdsRef = useRef<Set<string>>(new Set());
   const progressLoadSeqRef = useRef(0);
-  const resumeAttemptedRef = useRef(false);
+  const resumeAttemptedForUserRef = useRef<string | null>(null);
 
   const reset = useCallback(() => {
     setActive(false);
@@ -250,13 +276,17 @@ export const GuideTourProvider = ({
 
   useEffect(() => {
     if (active) return;
-    if (resumeAttemptedRef.current) return;
-    resumeAttemptedRef.current = true;
-    const persisted = readPersistedGuideState();
+    if (!authUserId) {
+      resumeAttemptedForUserRef.current = null;
+      return;
+    }
+    if (resumeAttemptedForUserRef.current === authUserId) return;
+    resumeAttemptedForUserRef.current = authUserId;
+    const persisted = readPersistedGuideState(authUserId);
     if (!persisted?.tourId) return;
     const tourSteps = TOUR_DEFINITIONS[persisted.tourId];
     if (!tourSteps?.length) {
-      writePersistedGuideState(null);
+      writePersistedGuideState(authUserId, null);
       return;
     }
     const persistedIndex = tourSteps.findIndex(
@@ -273,25 +303,74 @@ export const GuideTourProvider = ({
   }, [active]);
 
   useEffect(() => {
+    if (!authUserId) return;
     if (!active || !activeTourId || !steps.length) {
-      writePersistedGuideState(null);
+      writePersistedGuideState(authUserId, null);
       return;
     }
     const currentStep = steps[currentStepIndex];
     if (!currentStep) {
-      writePersistedGuideState(null);
+      writePersistedGuideState(authUserId, null);
       return;
     }
-    writePersistedGuideState({
+    writePersistedGuideState(authUserId, {
       tourId: activeTourId,
       stepId: currentStep.id,
       returnTo,
     });
-  }, [active, activeTourId, currentStepIndex, steps, returnTo]);
+  }, [active, activeTourId, authUserId, currentStepIndex, steps, returnTo]);
 
   const clearPendingRedirectTo = useCallback(() => {
     setPendingRedirectTo(null);
   }, []);
+
+  const syncStepStatus = useCallback(
+    ({
+      tourId,
+      stepId,
+      done,
+    }: {
+      tourId: GuideTourId;
+      stepId: string;
+      done: boolean;
+    }) => {
+      if (!tourId || !stepId) return;
+      if (tourId === activeTourId) {
+        setCompletedStepIds((prev) => {
+          const has = prev.has(stepId);
+          if (done && has) return prev;
+          if (!done && !has) return prev;
+          const next = new Set(prev);
+          if (done) next.add(stepId);
+          else next.delete(stepId);
+          return next;
+        });
+      }
+
+      const key = `${tourId}:${stepId}`;
+      const prevStatus = lastSyncedStepStatusRef.current.get(key);
+      if (prevStatus === done) return;
+      lastSyncedStepStatusRef.current.set(key, done);
+
+      if (!token) return;
+      void (async () => {
+        try {
+          await request<any>({
+            path: `/api/guide-progress/${encodeURIComponent(
+              tourId
+            )}/steps/${encodeURIComponent(stepId)}`,
+            method: "PATCH",
+            token,
+            jsonBody: { done },
+          });
+          emitGuideProgressUpdated();
+        } catch {
+          // ignore failure; will retry on next sync
+        }
+      })();
+    },
+    [activeTourId, token]
+  );
 
   const startTour = useCallback(
     (tourId: GuideTourId, initialStepId?: string, nextReturnTo?: string) => {
@@ -442,15 +521,8 @@ export const GuideTourProvider = ({
       const targetId = stepId || current?.id;
       if (!targetId) return;
 
-      if (activeTourId && token) {
-        void request<any>({
-          path: `/api/guide-progress/${encodeURIComponent(
-            activeTourId
-          )}/steps/${encodeURIComponent(targetId)}`,
-          method: "PATCH",
-          token,
-          jsonBody: { done: true },
-        });
+      if (activeTourId) {
+        syncStepStatus({ tourId: activeTourId, stepId: targetId, done: true });
       }
 
       const nextCompleted = new Set(completedStepIds);
@@ -491,8 +563,16 @@ export const GuideTourProvider = ({
         else next.delete(stepId);
         return next;
       });
+
+      if (activeTourId) {
+        syncStepStatus({
+          tourId: activeTourId,
+          stepId,
+          done: completed,
+        });
+      }
     },
-    []
+    [activeTourId, syncStepStatus]
   );
 
   const isStepCompleted = useCallback(
@@ -542,6 +622,7 @@ export const GuideTourProvider = ({
       goToStep,
       completeStep,
       setStepCompleted,
+      syncStepStatus,
       isStepCompleted,
       isStepActive,
       pendingRedirectTo,

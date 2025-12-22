@@ -11,6 +11,11 @@ export interface TempUploadedFile {
   key?: string;
 }
 
+type PresignResponseItem = {
+  uploadUrl: string;
+  file: TempUploadedFile;
+};
+
 interface UseS3TempUploadOptions {
   token?: string | null;
 }
@@ -21,33 +26,54 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
   const uploadFiles = useCallback(
     async (files: File[]): Promise<TempUploadedFile[]> => {
       if (!files.length) return [];
-      const formData = new FormData();
 
-      files.forEach((file) => {
-        // 실제 브라우저가 가진 정상 파일명
-        formData.append("files", file);
-        formData.append("originalNames", file.name);
-      });
-
-      const headers: Record<string, string> = {};
-      // Authorization 헤더는 apiFetch의 token 옵션으로 처리하되,
-      // 필요한 경우 추가 헤더를 headers로 전달한다.
       const res = await apiFetch<any>({
-        path: "/api/files/temp",
+        path: "/api/files/temp/presign",
         method: "POST",
         token,
-        headers,
-        body: formData,
+        jsonBody: {
+          files: files.map((file) => ({
+            originalName: file.name,
+            mimetype: file.type || "application/octet-stream",
+            size: file.size,
+          })),
+        },
       });
 
       if (!res.ok) {
-        throw new Error("파일 업로드에 실패했습니다.");
+        throw new Error("업로드 URL 생성에 실패했습니다.");
       }
 
       const body = res.data || {};
       const data = (body as any)?.data;
       if (!Array.isArray(data)) return [];
-      return data as TempUploadedFile[];
+
+      const presigned = data as PresignResponseItem[];
+
+      const uploadedFiles: TempUploadedFile[] = [];
+      for (let i = 0; i < presigned.length; i += 1) {
+        const item = presigned[i];
+        const file = files[i];
+        if (!item?.uploadUrl || !item?.file?._id) {
+          throw new Error("업로드 URL 응답이 올바르지 않습니다.");
+        }
+
+        const putRes = await fetch(item.uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": file?.type || "application/octet-stream",
+          },
+          body: file,
+        });
+
+        if (!putRes.ok) {
+          throw new Error("S3 업로드에 실패했습니다.");
+        }
+
+        uploadedFiles.push(item.file);
+      }
+
+      return uploadedFiles;
     },
     [token]
   );

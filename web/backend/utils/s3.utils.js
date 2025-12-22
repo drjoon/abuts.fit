@@ -263,6 +263,30 @@ const getSignedUrl = async (key, expires = 3600) => {
   return getSignedUrlV3(getS3Client(), command, { expiresIn: expires });
 };
 
+const getUploadSignedUrl = async (key, contentType, expires = 900) => {
+  const guardKey = `s3-uploadSignedUrl:${key}`;
+  const { blocked, count } = shouldBlockExternalCall(guardKey);
+  if (blocked) {
+    console.error("[S3] getUploadSignedUrl: rate guard blocked", {
+      key,
+      count,
+    });
+    throw new Error(
+      "S3 업로드 URL 생성이 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요."
+    );
+  }
+
+  const command = new PutObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+    Key: key,
+    ContentType: String(contentType || "application/octet-stream"),
+  });
+  const { getSignedUrl: getSignedUrlV3 } = await import(
+    "@aws-sdk/s3-request-presigner"
+  );
+  return getSignedUrlV3(getS3Client(), command, { expiresIn: expires });
+};
+
 export { s3Upload };
 
 export default {
@@ -272,5 +296,6 @@ export default {
   objectExistsInS3,
   deleteFileFromS3,
   getSignedUrl,
+  getUploadSignedUrl,
   getFileType,
 };

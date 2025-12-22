@@ -24,6 +24,11 @@ const MIN_WAIT_DAYS = 3;
 const MAX_WAIT_DAYS = 14;
 const DEFAULT_MAX_WAIT_DAYS = 5;
 
+const WEEKDAY_OPTIONS = ["mon", "tue", "wed", "thu", "fri"] as const;
+
+const getRandomWeekday = () =>
+  WEEKDAY_OPTIONS[Math.floor(Math.random() * WEEKDAY_OPTIONS.length)];
+
 const clampWaitDays = (value: number | undefined | null) => {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return DEFAULT_MAX_WAIT_DAYS;
@@ -43,8 +48,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
   const [autoBatchThreshold, setAutoBatchThreshold] = useState(20);
   const [maxWaitDays, setMaxWaitDays] = useState(DEFAULT_MAX_WAIT_DAYS);
   const [weeklyBatchDays, setWeeklyBatchDays] = useState<string[]>([
-    "mon",
-    "thu",
+    getRandomWeekday(),
   ]);
 
   const mockHeaders = useMemo(() => {
@@ -141,7 +145,14 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
 
   const toggleDay = (day: string) => {
     if (computedWeeklyDay) return;
-    setWeeklyBatchDays([day]);
+    setWeeklyBatchDays((prev) => {
+      const exists = prev.includes(day);
+      if (exists) {
+        if (prev.length === 1) return prev;
+        return prev.filter((d) => d !== day);
+      }
+      return [...prev, day];
+    });
   };
 
   useEffect(() => {

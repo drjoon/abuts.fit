@@ -51,11 +51,21 @@ import {
 } from "./business/handlers";
 
 const SETUP_MODE_STORAGE_KEY = "business_tab_setup_mode";
+const BUSINESS_DRAFT_STORAGE_KEY = "business_tab_draft_v1";
 
-const readStoredSetupMode = (): "license" | "search" | null => {
+const getSetupModeStorageKey = (userId?: string | null) => {
+  if (!userId) return null;
+  return `${SETUP_MODE_STORAGE_KEY}:${userId}`;
+};
+
+const readStoredSetupMode = (
+  userId?: string | null
+): "license" | "search" | null => {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(SETUP_MODE_STORAGE_KEY);
+    const storageKey = getSetupModeStorageKey(userId);
+    if (!storageKey) return null;
+    const raw = window.localStorage.getItem(storageKey);
     if (raw === "license" || raw === "search") return raw;
     return null;
   } catch {
@@ -63,14 +73,70 @@ const readStoredSetupMode = (): "license" | "search" | null => {
   }
 };
 
-const writeStoredSetupMode = (mode: "license" | "search" | null) => {
+const writeStoredSetupMode = (
+  userId: string | null,
+  mode: "license" | "search" | null
+) => {
   if (typeof window === "undefined") return;
   try {
+    const storageKey = getSetupModeStorageKey(userId);
+    if (!storageKey) return;
     if (!mode) {
-      window.localStorage.removeItem(SETUP_MODE_STORAGE_KEY);
+      window.localStorage.removeItem(storageKey);
       return;
     }
-    window.localStorage.setItem(SETUP_MODE_STORAGE_KEY, mode);
+    window.localStorage.setItem(storageKey, mode);
+  } catch {
+    // ignore
+  }
+};
+
+const getBusinessDraftStorageKey = (userId?: string | null) => {
+  if (!userId) return null;
+  return `${BUSINESS_DRAFT_STORAGE_KEY}:${userId}`;
+};
+
+type BusinessDraftPayload = {
+  businessData: BusinessData;
+  extracted: LicenseExtracted;
+  licenseFileName: string;
+  licenseFileId: string;
+  licenseS3Key: string;
+  licenseStatus: LicenseStatus;
+  isVerified: boolean;
+  updatedAt: number;
+};
+
+const readStoredBusinessDraft = (
+  userId?: string | null
+): BusinessDraftPayload | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const storageKey = getBusinessDraftStorageKey(userId);
+    if (!storageKey) return null;
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.businessData) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredBusinessDraft = (
+  userId: string | null,
+  payload: BusinessDraftPayload | null
+) => {
+  if (typeof window === "undefined") return;
+  try {
+    const storageKey = getBusinessDraftStorageKey(userId);
+    if (!storageKey) return;
+    if (!payload) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
   } catch {
     // ignore
   }
@@ -94,6 +160,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     active: guideActive,
     activeTourId,
     isStepActive,
+    goToStep,
     completeStep,
     startTour,
     setStepCompleted,
@@ -102,10 +169,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
 
+  const authUserId = user?.id ? String(user.id) : null;
   const [membership, setMembership] = useState<MembershipStatus>("none");
-  const [setupMode, setSetupMode] = useState<"license" | "search" | null>(() =>
-    readStoredSetupMode()
-  );
+  const [setupMode, setSetupMode] = useState<"license" | "search" | null>(null);
   const [setupModeLocked, setSetupModeLocked] = useState(false);
 
   const [orgSearch, setOrgSearch] = useState("");
@@ -156,6 +222,11 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const latestDraftRef = useRef<{
+    payload: BusinessDraftPayload | null;
+    hasAnyLicense: boolean;
+    hasAnyData: boolean;
+  }>({ payload: null, hasAnyLicense: false, hasAnyData: false });
 
   const [extracted, setExtracted] = useState<LicenseExtracted>({});
   const [isVerified, setIsVerified] = useState<boolean>(false);
@@ -168,6 +239,38 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   });
   const [companyNameTouched, setCompanyNameTouched] = useState(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
+
+  const applyStoredDraft = useCallback((draft: BusinessDraftPayload) => {
+    setBusinessData(draft.businessData);
+    setExtracted(draft.extracted);
+    setLicenseFileName(draft.licenseFileName);
+    setLicenseFileId(draft.licenseFileId);
+    setLicenseS3Key(draft.licenseS3Key);
+    setLicenseStatus(draft.licenseStatus);
+    setIsVerified(draft.isVerified);
+  }, []);
+
+  useEffect(() => {
+    if (!authUserId) return;
+    const draft = readStoredBusinessDraft(authUserId);
+    if (!draft) return;
+
+    const hasDraftLicense =
+      Boolean(String(draft.licenseFileId || "").trim()) ||
+      Boolean(String(draft.licenseS3Key || "").trim()) ||
+      Boolean(String(draft.licenseFileName || "").trim());
+    if (!hasDraftLicense) return;
+
+    if (licenseFileId || licenseS3Key || licenseFileName) return;
+
+    applyStoredDraft(draft);
+  }, [
+    applyStoredDraft,
+    authUserId,
+    licenseFileId,
+    licenseFileName,
+    licenseS3Key,
+  ]);
 
   useEffect(() => {
     if (!reason) return;
@@ -241,6 +344,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           setLicenseFileId(licFileId);
           setLicenseS3Key(licS3Key);
           setLicenseStatus("ready");
+
+          writeStoredBusinessDraft(authUserId, null);
         }
 
         setIsVerified(!!data?.businessVerified);
@@ -250,12 +355,80 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     };
 
     load();
-  }, [mockHeaders, token]);
+  }, [authUserId, mockHeaders, token]);
 
-  const updateSetupMode = useCallback((mode: "license" | "search" | null) => {
-    setSetupMode(mode);
-    writeStoredSetupMode(mode);
-  }, []);
+  useEffect(() => {
+    if (!authUserId) return;
+    if (membership !== "none") {
+      writeStoredBusinessDraft(authUserId, null);
+    }
+  }, [authUserId, membership]);
+
+  const hasAnyLicense =
+    Boolean(String(licenseFileId || "").trim()) ||
+    Boolean(String(licenseS3Key || "").trim()) ||
+    Boolean(String(licenseFileName || "").trim());
+  const hasAnyData =
+    Boolean(String(businessData.companyName || "").trim()) ||
+    Boolean(String(businessData.businessNumber || "").trim()) ||
+    Boolean(String(businessData.address || "").trim()) ||
+    Boolean(String(businessData.phone || "").trim()) ||
+    Object.values(extracted || {}).some((v) => Boolean(String(v || "").trim()));
+
+  latestDraftRef.current = {
+    hasAnyLicense,
+    hasAnyData,
+    payload:
+      hasAnyLicense || hasAnyData
+        ? {
+            businessData,
+            extracted,
+            licenseFileName,
+            licenseFileId,
+            licenseS3Key,
+            licenseStatus,
+            isVerified,
+            updatedAt: Date.now(),
+          }
+        : null,
+  };
+
+  useEffect(() => {
+    if (!authUserId) return;
+    const { hasAnyLicense: latestHasAnyLicense, hasAnyData: latestHasAnyData } =
+      latestDraftRef.current;
+    if (!latestHasAnyLicense && !latestHasAnyData) {
+      writeStoredBusinessDraft(authUserId, null);
+      return;
+    }
+    writeStoredBusinessDraft(authUserId, latestDraftRef.current.payload);
+  }, [
+    authUserId,
+    businessData,
+    extracted,
+    isVerified,
+    licenseFileId,
+    licenseFileName,
+    licenseS3Key,
+    licenseStatus,
+  ]);
+
+  const updateSetupMode = useCallback(
+    (mode: "license" | "search" | null) => {
+      setSetupMode(mode);
+      writeStoredSetupMode(authUserId, mode);
+    },
+    [authUserId]
+  );
+
+  useEffect(() => {
+    if (!authUserId) return;
+    if (membership !== "none") return;
+    if (setupMode !== null) return;
+    const stored = readStoredSetupMode(authUserId);
+    if (!stored) return;
+    updateSetupMode(stored);
+  }, [authUserId, membership, setupMode, updateSetupMode]);
 
   useEffect(() => {
     if (membership !== "none" && setupMode !== null) {
@@ -268,34 +441,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setSetupModeLocked(false);
     }
   }, [guideActive, membership]);
-
-  useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-onboarding") return;
-    if (setupModeLocked) return;
-    const isBusinessSetupStep =
-      isStepActive("requestor.business.licenseUpload") ||
-      isStepActive("requestor.business.companyName") ||
-      isStepActive("requestor.business.businessNumber") ||
-      isStepActive("requestor.business.representativeName") ||
-      isStepActive("requestor.business.phoneNumber") ||
-      isStepActive("requestor.business.address") ||
-      isStepActive("requestor.business.email") ||
-      isStepActive("requestor.business.businessType") ||
-      isStepActive("requestor.business.businessItem");
-    if (!isBusinessSetupStep) return;
-    if (membership !== "none") return;
-    if (setupMode) return;
-    updateSetupMode("license");
-  }, [
-    activeTourId,
-    guideActive,
-    isStepActive,
-    membership,
-    setupMode,
-    setupModeLocked,
-    updateSetupMode,
-  ]);
 
   useEffect(() => {
     if (!guideActive) return;
@@ -416,6 +561,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   const handleDeleteLicense = async () => {
+    if (membership === "none") {
+      await runDeleteLicense();
+      return;
+    }
     setDeleteConfirmOpen(true);
   };
 
@@ -437,6 +586,9 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       }));
       setCompanyNameTouched(false);
       updateSetupMode(null);
+      if (authUserId) {
+        writeStoredBusinessDraft(authUserId, null);
+      }
       return;
     }
 
@@ -638,13 +790,33 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setLicenseFileId(first._id);
       setLicenseS3Key(first.key || "");
       setLicenseStatus("uploaded");
+      completeStep("requestor.business.licenseUpload");
+
+      if (String(businessData.phone || "").trim()) {
+        goToStep("requestor.business.email");
+      } else {
+        goToStep("requestor.business.phoneNumber");
+      }
+
+      setTimeout(() => {
+        if (isStepActive("requestor.business.phoneNumber")) {
+          const phoneInput =
+            document.querySelector<HTMLInputElement>("#orgPhone");
+          if (phoneInput) phoneInput.focus();
+        }
+        if (isStepActive("requestor.business.email")) {
+          const emailInput =
+            document.querySelector<HTMLInputElement>("#taxEmail");
+          if (emailInput) emailInput.focus();
+        }
+      }, 50);
 
       setLicenseStatus("processing");
       const processingStartedAt = Date.now();
       const processingToast = toast({
         title: "AI 인식 중",
         description:
-          "사업자등록증을 인식하고 있어요. 약 10초 정도 걸릴 수 있어요.",
+          "사업자등록증을 인식하고 있어요. 약 5초 정도 걸릴 수 있어요.",
         duration: 60000,
       });
       const res = await request<any>({
@@ -835,7 +1007,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     className="w-full text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
                     onClick={() => {
                       setSetupModeLocked(true);
-                      setSetupMode("license");
+                      updateSetupMode("license");
                       startTour(
                         "requestor-onboarding",
                         "requestor.business.licenseUpload"
@@ -860,7 +1032,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     className="w-full text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
                     onClick={() => {
                       setSetupModeLocked(true);
-                      setSetupMode("search");
+                      updateSetupMode("search");
                     }}
                   >
                     <div className="text-sm font-medium">
@@ -897,7 +1069,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     size="sm"
                     onClick={() => {
                       setSetupModeLocked(true);
-                      setSetupMode(null);
+                      updateSetupMode(null);
                     }}
                   >
                     다른 방법 선택
@@ -951,7 +1123,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 : membership !== "owner") && (
                 <div className="space-y-4">
                   {membership === "none" && (
-                    <GuideFocus stepId="requestor.business.licenseUpload">
+                    <GuideFocus
+                      stepId="requestor.business.licenseUpload"
+                      hint="기공소 선택"
+                    >
                       <OrganizationSearchSection
                         orgSearch={orgSearch}
                         setOrgSearch={setOrgSearch}

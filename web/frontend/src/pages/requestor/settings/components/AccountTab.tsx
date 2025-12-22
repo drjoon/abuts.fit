@@ -148,7 +148,8 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     email: userData?.email || "",
     phoneDialCode: "82",
     phoneNationalNumber: "",
-    profileImage: "",
+    profileImage:
+      (user as any)?.profileImage || (userData as any)?.profileImage || "",
   });
 
   const [passwordData, setPasswordData] = useState({
@@ -201,7 +202,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     if (activeTourId !== "requestor-onboarding") return;
 
     const markStep = (stepId: string, completed: boolean) => {
-      if (completed && isStepActive(stepId)) return;
       setStepCompleted(stepId, completed);
     };
 
@@ -227,6 +227,15 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     setStepCompleted,
     verificationSent,
   ]);
+
+  useEffect(() => {
+    const nextProfileImage = String((user as any)?.profileImage || "").trim();
+    if (!nextProfileImage) return;
+    setAccountData((prev) => {
+      if (String(prev.profileImage || "").trim()) return prev;
+      return { ...prev, profileImage: nextProfileImage };
+    });
+  }, [user]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;

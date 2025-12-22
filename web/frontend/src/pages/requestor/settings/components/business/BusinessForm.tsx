@@ -50,7 +50,7 @@ export const BusinessForm = ({
   onSave,
   renderActions,
 }: BusinessFormProps) => {
-  const { isStepActive, completeStep } = useGuideTour();
+  const { isStepActive, completeStep, setStepCompleted } = useGuideTour();
   const repNameRef = useRef<HTMLInputElement | null>(null);
   const companyNameRef = useRef<HTMLInputElement | null>(null);
   const phoneRef = useRef<HTMLInputElement | null>(null);
@@ -121,6 +121,7 @@ export const BusinessForm = ({
                   }));
                 }}
                 onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.representativeName")) {
@@ -160,6 +161,7 @@ export const BusinessForm = ({
                   setErrors((prev) => ({ ...prev, companyName: false }));
                 }}
                 onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.companyName")) {
@@ -196,14 +198,19 @@ export const BusinessForm = ({
                     ...prev,
                     phone: nextValue,
                   }));
+                  const hasValue = Boolean(nextValue.trim());
+                  const invalid = hasValue && !isValidPhoneNumber(nextValue);
                   setErrors((prev) => ({
                     ...prev,
-                    phone: nextValue
-                      ? !isValidPhoneNumber(nextValue)
-                      : prev.phone,
+                    phone: invalid,
                   }));
+                  setStepCompleted(
+                    "requestor.business.phoneNumber",
+                    hasValue && !invalid
+                  );
                 }}
                 onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.phoneNumber")) {
@@ -272,6 +279,7 @@ export const BusinessForm = ({
                   }));
                 }}
                 onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessNumber")) {
@@ -313,6 +321,7 @@ export const BusinessForm = ({
                   }));
                 }}
                 onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessType")) {
@@ -354,6 +363,7 @@ export const BusinessForm = ({
                   }));
                 }}
                 onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessItem")) {
@@ -391,10 +401,13 @@ export const BusinessForm = ({
                     ...prev,
                     email: nextValue,
                   }));
+                  const trimmed = nextValue.trim();
+                  const invalid = trimmed ? !isValidEmail(trimmed) : true;
                   setErrors((prev) => ({
                     ...prev,
-                    email: nextValue ? !isValidEmail(nextValue) : false,
+                    email: trimmed ? invalid : false,
                   }));
+                  setStepCompleted("requestor.business.email", !invalid);
                 }}
                 onKeyDown={(e) => {
                   if (e.key !== "Enter") return;
@@ -412,16 +425,15 @@ export const BusinessForm = ({
 
                   if (isStepActive("requestor.business.email")) {
                     const v = String(extracted.email || "").trim();
-                    if (!v) {
+                    if (!v || !isValidEmail(v)) {
+                      setStepCompleted("requestor.business.email", false);
                       emailRef.current?.focus();
                       return;
                     }
-                    if (isValidEmail(v)) {
-                      completeStep("requestor.business.email");
-                      setTimeout(() => {
-                        focusNext(addressRef);
-                      }, 0);
-                    }
+                    completeStep("requestor.business.email");
+                    setTimeout(() => {
+                      focusNext(addressRef);
+                    }, 0);
                   }
 
                   onSave();

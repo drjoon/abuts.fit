@@ -26,6 +26,13 @@ const normalizeOriginalName = (name) => {
   }
 };
 
+const getExtFromName = (name) => {
+  const n = String(name || "");
+  if (!n.includes(".")) return "";
+  const ext = `.${n.split(".").pop().toLowerCase()}`;
+  return ext.length > 10 ? "" : ext;
+};
+
 // 임시 파일 업로드 (의뢰와 아직 연결되지 않은 상태, 사용자별 중복 방지)
 export const uploadTempFiles = asyncHandler(async (req, res) => {
   const files = Array.isArray(req.files) ? req.files : [];
@@ -159,6 +166,65 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
   return res
     .status(201)
     .json(new ApiResponse(201, results, "파일이 성공적으로 업로드되었습니다."));
+});
+
+export const createTempUploadPresign = asyncHandler(async (req, res) => {
+  const uploadedBy = req.user?._id;
+  if (!uploadedBy) {
+    throw new ApiError(401, "인증 정보가 없습니다.");
+  }
+
+  const bodyFiles = Array.isArray(req.body?.files) ? req.body.files : [];
+  if (!bodyFiles.length) {
+    throw new ApiError(400, "하나 이상의 파일 메타 정보가 필요합니다.");
+  }
+
+  const results = [];
+  for (const item of bodyFiles) {
+    const originalName = normalizeOriginalName(item?.originalName || "");
+    const mimetype = String(item?.mimetype || "").trim();
+    const size = Number(item?.size || 0);
+    if (!originalName || !mimetype || !Number.isFinite(size) || size <= 0) {
+      throw new ApiError(400, "파일 메타 정보가 올바르지 않습니다.");
+    }
+
+    const ext = getExtFromName(originalName);
+    const key = `uploads/users/${uploadedBy.toString()}/${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 10)}${ext}`;
+
+    const bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
+    const region = process.env.AWS_REGION || "ap-northeast-2";
+    const location = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+
+    const fileType =
+      s3Utils.getFileType(originalName) || getFileType(originalName);
+
+    const created = await File.create({
+      originalName,
+      encoding: "",
+      mimetype,
+      size,
+      bucket,
+      key,
+      location,
+      contentType: mimetype,
+      uploadedBy,
+      fileType,
+      isPublic: false,
+    });
+
+    const uploadUrl = await s3Utils.getUploadSignedUrl(key, mimetype);
+
+    results.push({
+      uploadUrl,
+      file: created.toObject(),
+    });
+  }
+
+  return res
+    .status(201)
+    .json(new ApiResponse(201, results, "업로드 URL이 생성되었습니다."));
 });
 
 export const uploadFile = asyncHandler(async (req, res) => {
