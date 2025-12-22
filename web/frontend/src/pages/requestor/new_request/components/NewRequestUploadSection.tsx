@@ -21,7 +21,7 @@ export function NewRequestUploadSection({
   onFilesSelected,
 }: Props) {
   return (
-    <div className="mb-4 lg:mb-0 mr-4">
+    <div className="mb-4 lg:mb-0 w-full">
       <div
         className={`relative flex flex-col rounded-2xl border-2 border-gray-300 p-1 md:p-1 transition-shadow hover:shadow-md ${
           highlight ? sectionHighlightClass : ""

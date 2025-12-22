@@ -327,48 +327,82 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       // 대표자만 배송/결제 탭이 존재하므로 owner만 추가로 체크한다.
       if (membership === "owner") {
         const emailKey = String(user?.email || "guest").trim() || "guest";
-        const shippingStorageKey = `abutsfit:shipping-policy:v1:${emailKey}`;
-        const hasShipping = !!localStorage.getItem(shippingStorageKey);
-        if (!hasShipping) {
-          toast({
-            title: "설정이 필요합니다",
-            description: "배송 옵션을 먼저 설정해주세요.",
-            duration: 3000,
+        let currentBalance = 0;
+        try {
+          const balanceRes = await request<any>({
+            path: "/api/credits/balance",
+            method: "GET",
+            token,
+            headers: mockHeaders,
           });
-          return false;
+          if (balanceRes.ok) {
+            const balanceBody: any = balanceRes.data || {};
+            const balanceData = balanceBody?.data || balanceBody;
+            currentBalance = Number(balanceData?.balance || 0);
+          }
+        } catch {
+          return true;
         }
 
-        const paymentId = String(user?.id || emailKey || "guest").trim();
-        const paymentStorageKey = `abutsfit:payment-settings:v1:${paymentId}`;
-        const hasPayment = !!localStorage.getItem(paymentStorageKey);
-        if (!hasPayment) {
-          let currentBalance = 0;
-          try {
-            const balanceRes = await request<any>({
-              path: "/api/credits/balance",
-              method: "GET",
-              token,
-              headers: mockHeaders,
-            });
-            if (balanceRes.ok) {
-              const balanceBody: any = balanceRes.data || {};
-              const balanceData = balanceBody?.data || balanceBody;
-              currentBalance = Number(balanceData?.balance || 0);
+        try {
+          const userId = String(user?.id || emailKey || "guest").trim();
+          const createdAtRaw = String((user as any)?.createdAt || "").trim();
+          const createdAtMs = createdAtRaw
+            ? new Date(createdAtRaw).getTime()
+            : NaN;
+          const isNewUser =
+            Number.isFinite(createdAtMs) &&
+            Date.now() - createdAtMs < 7 * 24 * 60 * 60 * 1000;
+
+          let threshold = 10000;
+          if (!isNewUser) {
+            try {
+              const insightsRes = await request<any>({
+                path: "/api/credits/insights/spend",
+                method: "GET",
+                token,
+                headers: mockHeaders,
+              });
+              if (insightsRes.ok) {
+                const body: any = insightsRes.data || {};
+                const data = body?.data || body;
+                const avgDailySpendSupply = Number(
+                  data?.avgDailySpendSupply || 0
+                );
+                const hasUsageData = data?.hasUsageData === true;
+                if (
+                  hasUsageData &&
+                  Number.isFinite(avgDailySpendSupply) &&
+                  avgDailySpendSupply > 0
+                ) {
+                  threshold = Math.max(0, Math.round(avgDailySpendSupply * 7));
+                }
+              }
+            } catch {
+              // ignore
             }
-          } catch {
-            return true;
           }
 
-          if (currentBalance > 0) {
-            return true;
-          }
+          const now = new Date();
+          const ymd = `${now.getFullYear()}-${String(
+            now.getMonth() + 1
+          ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+          const toastKey = `abutsfit:credit-topup-toast:v1:${userId}:${ymd}`;
 
-          toast({
-            title: "설정이 필요합니다",
-            description: "결제 설정을 완료해주세요.",
-            duration: 3000,
-          });
-          return false;
+          if (currentBalance <= threshold && !localStorage.getItem(toastKey)) {
+            localStorage.setItem(toastKey, "1");
+            toast({
+              title: "크레딧 충전이 필요합니다",
+              description:
+                currentBalance <= 0
+                  ? "현재 크레딧이 0원입니다. 설정 > 결제 탭에서 크레딧을 충전해주세요."
+                  : "크레딧이 부족합니다. 설정 > 결제 탭에서 크레딧을 충전해주세요.",
+              variant: "destructive",
+              duration: 5000,
+            });
+          }
+        } catch {
+          // ignore
         }
       }
     } catch {

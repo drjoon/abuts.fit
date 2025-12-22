@@ -32,7 +32,7 @@ export const GuideFocus = ({
       className={cn(
         "relative transition-all duration-300",
         active &&
-          "z-10 rounded-3xl ring-2 ring-primary/60 shadow-[0_15px_60px_rgba(14,92,228,0.25)]",
+          "z-10 rounded-2xl ring-2 ring-primary/60 shadow-[0_15px_60px_rgba(14,92,228,0.25)]",
         className
       )}
     >

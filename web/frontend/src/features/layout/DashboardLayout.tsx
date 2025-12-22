@@ -333,6 +333,20 @@ export const DashboardLayout = () => {
     if (user.role !== "requestor") return;
     if (!onboardingStatus.checked) return;
 
+    const params = new URLSearchParams(location.search);
+    const isOnSettings = location.pathname.startsWith("/dashboard/settings");
+    const isOnNewRequest = location.pathname.startsWith(
+      "/dashboard/new-request"
+    );
+    const settingsTab = params.get("tab");
+    const isGuideAllowedRoute =
+      isOnNewRequest ||
+      (isOnSettings &&
+        (settingsTab === "account" || settingsTab === "business"));
+
+    // 대시보드(홈) 및 설정의 기타 탭에서는 가이드 투어가 개입하지 않는다.
+    if (!isGuideAllowedRoute) return;
+
     const nextPath = "/dashboard/new-request";
     const firstIncomplete = onboardingStatus.firstIncomplete;
 
@@ -345,11 +359,7 @@ export const DashboardLayout = () => {
         ? "business"
         : "account";
 
-      const isOnSettings = location.pathname.startsWith("/dashboard/settings");
-      const currentParams = new URLSearchParams(location.search);
-      const currentTab = currentParams.get("tab");
-
-      if (!isOnSettings || currentTab !== targetTab) {
+      if (isOnSettings && settingsTab !== targetTab) {
         const redirectKey = `onboarding:settings:${targetTab}:${firstIncomplete}`;
         if (lastAutoRedirectKeyRef.current !== redirectKey) {
           lastAutoRedirectKeyRef.current = redirectKey;
@@ -372,25 +382,8 @@ export const DashboardLayout = () => {
         startTour("requestor-new-request", newRequestFirstIncomplete, nextPath);
       }
 
-      const isOnNewRequest = location.pathname.startsWith(
-        "/dashboard/new-request"
-      );
-      if (!isOnNewRequest) {
-        const redirectKey = `new-request-tour:guard:${location.pathname}`;
-        if (lastAutoRedirectKeyRef.current !== redirectKey) {
-          lastAutoRedirectKeyRef.current = redirectKey;
-          navigate("/dashboard/new-request", { replace: true });
-        }
-      }
+      if (!isOnNewRequest) return;
       return;
-    }
-
-    if (!location.pathname.startsWith("/dashboard/new-request")) {
-      const redirectKey = "onboarding:new-request";
-      if (lastAutoRedirectKeyRef.current !== redirectKey) {
-        lastAutoRedirectKeyRef.current = redirectKey;
-        navigate("/dashboard/new-request", { replace: true });
-      }
     }
   }, [
     activeTourId,

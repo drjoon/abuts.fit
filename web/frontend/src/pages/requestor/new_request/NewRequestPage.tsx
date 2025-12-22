@@ -605,7 +605,7 @@ export const NewRequestPage = () => {
           />
         </GuideFocus>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 mt-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
           <GuideFocus stepId="requestor.new_request.upload">
             <NewRequestUploadSection
               isDragOver={isDragOver}
