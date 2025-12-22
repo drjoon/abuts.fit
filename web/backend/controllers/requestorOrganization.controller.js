@@ -20,8 +20,8 @@ export const {
 export const {
   getPendingJoinRequestsForOwner,
   getRepresentatives,
-  addCoOwner,
-  removeCoOwner,
+  addOwner,
+  removeOwner,
   getMyStaffMembers,
   removeStaffMember,
   approveJoinRequest,

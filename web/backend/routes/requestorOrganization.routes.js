@@ -18,13 +18,10 @@ router.delete(
   requestorOrganizationController.clearMyBusinessLicense
 );
 
-// 공동 대표 관리
-router.get("/co-owners", requestorOrganizationController.getRepresentatives);
-router.post("/co-owners", requestorOrganizationController.addCoOwner);
-router.delete(
-  "/co-owners/:userId",
-  requestorOrganizationController.removeCoOwner
-);
+// 대표(owners) 관리
+router.get("/owners", requestorOrganizationController.getRepresentatives);
+router.post("/owners", requestorOrganizationController.addOwner);
+router.delete("/owners/:userId", requestorOrganizationController.removeOwner);
 
 // 가입 요청/탈퇴: 일반 기능 (직원도 가입 요청 취소/탈퇴는 가능해야 함)
 router.post(

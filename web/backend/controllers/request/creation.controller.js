@@ -833,7 +833,7 @@ export async function createRequestsFromDraft(req, res) {
               err.statusCode = 404;
               throw err;
             }
-            if (!canAccessRequestAsRequestor(req, existingDoc)) {
+            if (!(await canAccessRequestAsRequestor(req, existingDoc))) {
               const err = new Error("기존 의뢰에 접근 권한이 없습니다.");
               err.statusCode = 403;
               throw err;
@@ -890,7 +890,7 @@ export async function createRequestsFromDraft(req, res) {
               err.statusCode = 404;
               throw err;
             }
-            if (!canAccessRequestAsRequestor(req, existingDoc)) {
+            if (!(await canAccessRequestAsRequestor(req, existingDoc))) {
               const err = new Error("기존 의뢰에 접근 권한이 없습니다.");
               err.statusCode = 403;
               throw err;

@@ -67,7 +67,7 @@ async function ensureOrganization(user, orgName) {
     org = await RequestorOrganization.create({
       name: orgName,
       owner: user._id,
-      coOwners: [],
+      owners: [],
       members: [user._id],
       joinRequests: [],
     });

@@ -48,7 +48,7 @@ export async function buildRequestorOrgScopeFilter(req) {
   }
 
   const org = await RequestorOrganization.findById(orgId)
-    .select({ owner: 1, coOwners: 1, members: 1 })
+    .select({ owner: 1, owners: 1, members: 1 })
     .lean();
 
   if (!org) {
@@ -57,17 +57,17 @@ export async function buildRequestorOrgScopeFilter(req) {
 
   const myId = String(req.user._id);
   const ownerId = String(org.owner || "");
-  const coOwnerIds = Array.isArray(org.coOwners)
-    ? org.coOwners.map((id) => String(id))
+  const ownerIds = Array.isArray(org.owners)
+    ? org.owners.map((id) => String(id))
     : [];
 
-  // 대표(owner 또는 coOwners) 여부 확인
-  const isRepresentative = myId === ownerId || coOwnerIds.includes(myId);
+  // 대표(owner 또는 owners) 여부 확인
+  const isRepresentative = myId === ownerId || ownerIds.includes(myId);
 
   if (isRepresentative) {
     // 대표: 조직 전체 의뢰 조회 (모든 멤버의 의뢰)
     const memberIdsRaw = Array.isArray(org.members) ? org.members : [];
-    const memberIds = [ownerId, ...coOwnerIds, ...memberIdsRaw]
+    const memberIds = [ownerId, ...ownerIds, ...memberIdsRaw]
       .map((id) => String(id))
       .filter((id) => Types.ObjectId.isValid(id));
 
@@ -123,9 +123,9 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
     return false;
   }
 
-  // 3. 같은 조직인 경우, 대표(owner, coOwners)인지 확인
+  // 3. 같은 조직인 경우, 대표(owner, owners)인지 확인
   const org = await RequestorOrganization.findById(myOrgId)
-    .select({ owner: 1, coOwners: 1 })
+    .select({ owner: 1, owners: 1 })
     .lean();
 
   if (!org) {
@@ -133,11 +133,11 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
   }
 
   const ownerId = String(org.owner || "");
-  const coOwnerIds = Array.isArray(org.coOwners)
-    ? org.coOwners.map((id) => String(id))
+  const ownerIds = Array.isArray(org.owners)
+    ? org.owners.map((id) => String(id))
     : [];
 
-  const isRepresentative = myId === ownerId || coOwnerIds.includes(myId);
+  const isRepresentative = myId === ownerId || ownerIds.includes(myId);
 
   // 대표이면 조직 내 모든 의뢰 접근 가능, 직원이면 본인 의뢰만 (이미 1번에서 체크됨)
   return isRepresentative;

@@ -18,7 +18,7 @@ const requestorOrganizationSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    coOwners: [
+    owners: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",

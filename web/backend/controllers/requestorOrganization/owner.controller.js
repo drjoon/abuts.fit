@@ -21,7 +21,7 @@ export async function getPendingJoinRequestsForOwner(req, res) {
 
     const org = await RequestorOrganization.findOne({
       _id: req.user.organizationId,
-      $or: [{ owner: req.user._id }, { coOwners: req.user._id }],
+      $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
       .populate({
         path: "joinRequests.user",
@@ -82,11 +82,11 @@ export async function getRepresentatives(req, res) {
         match: { deletedAt: null },
       })
       .populate({
-        path: "coOwners",
+        path: "owners",
         select: "name email",
         match: { deletedAt: null },
       })
-      .select({ name: 1, owner: 1, coOwners: 1 })
+      .select({ name: 1, owner: 1, owners: 1 })
       .lean();
 
     const representatives = [];
@@ -97,8 +97,8 @@ export async function getRepresentatives(req, res) {
         email: String(full.owner.email || ""),
       });
     }
-    if (Array.isArray(full?.coOwners)) {
-      full.coOwners.forEach((c) => {
+    if (Array.isArray(full?.owners)) {
+      full.owners.forEach((c) => {
         if (!c) return;
         representatives.push({
           _id: String(c._id || c),
@@ -125,7 +125,7 @@ export async function getRepresentatives(req, res) {
   }
 }
 
-export async function addCoOwner(req, res) {
+export async function addOwner(req, res) {
   try {
     if (!req.user || req.user.role !== "requestor") {
       return res.status(403).json({
@@ -180,8 +180,8 @@ export async function addCoOwner(req, res) {
     }
 
     if (
-      Array.isArray(org.coOwners) &&
-      org.coOwners.some((c) => String(c) === targetId)
+      Array.isArray(org.owners) &&
+      org.owners.some((c) => String(c) === targetId)
     ) {
       return res.status(409).json({
         success: false,
@@ -197,8 +197,8 @@ export async function addCoOwner(req, res) {
       });
     }
 
-    if (!Array.isArray(org.coOwners)) org.coOwners = [];
-    org.coOwners.push(new Types.ObjectId(targetId));
+    if (!Array.isArray(org.owners)) org.owners = [];
+    org.owners.push(new Types.ObjectId(targetId));
 
     if (!Array.isArray(org.members)) org.members = [];
     if (!org.members.some((m) => String(m) === targetId)) {
@@ -230,7 +230,7 @@ export async function addCoOwner(req, res) {
   }
 }
 
-export async function removeCoOwner(req, res) {
+export async function removeOwner(req, res) {
   try {
     if (!req.user || req.user.role !== "requestor") {
       return res.status(403).json({
@@ -255,12 +255,12 @@ export async function removeCoOwner(req, res) {
       });
     }
 
-    const before = Array.isArray(org.coOwners) ? org.coOwners.length : 0;
-    org.coOwners = Array.isArray(org.coOwners)
-      ? org.coOwners.filter((c) => String(c) !== String(userId))
+    const before = Array.isArray(org.owners) ? org.owners.length : 0;
+    org.owners = Array.isArray(org.owners)
+      ? org.owners.filter((c) => String(c) !== String(userId))
       : [];
 
-    const after = org.coOwners.length;
+    const after = org.owners.length;
     if (before === after) {
       return res.status(404).json({
         success: false,
@@ -298,7 +298,7 @@ export async function getMyStaffMembers(req, res) {
 
     const org = await RequestorOrganization.findOne({
       _id: req.user.organizationId,
-      $or: [{ owner: req.user._id }, { coOwners: req.user._id }],
+      $or: [{ owner: req.user._id }, { owners: req.user._id }],
     })
       .populate({
         path: "members",
@@ -311,11 +311,11 @@ export async function getMyStaffMembers(req, res) {
         match: { deletedAt: null },
       })
       .populate({
-        path: "coOwners",
+        path: "owners",
         select: "name email",
         match: { deletedAt: null },
       })
-      .select({ name: 1, owner: 1, coOwners: 1, members: 1 })
+      .select({ name: 1, owner: 1, owners: 1, members: 1 })
       .lean();
 
     if (!org) {
@@ -326,8 +326,8 @@ export async function getMyStaffMembers(req, res) {
     }
 
     const ownerId = String((org.owner && org.owner._id) || org.owner || "");
-    const coOwnerIds = Array.isArray(org.coOwners)
-      ? org.coOwners.map((c) => String((c && c._id) || c || ""))
+    const ownerIds = Array.isArray(org.owners)
+      ? org.owners.map((c) => String((c && c._id) || c || ""))
       : [];
     const members = Array.isArray(org.members) ? org.members : [];
     const staff = members
@@ -335,7 +335,7 @@ export async function getMyStaffMembers(req, res) {
         const id = String((m && m._id) || m || "");
         if (!id) return false;
         if (id === ownerId) return false;
-        if (coOwnerIds.includes(id)) return false;
+        if (ownerIds.includes(id)) return false;
         return true;
       })
       .map((m) => ({
@@ -394,8 +394,8 @@ export async function removeStaffMember(req, res) {
     }
 
     if (
-      Array.isArray(org.coOwners) &&
-      org.coOwners.some((c) => String((c && c._id) || c) === String(userId))
+      Array.isArray(org.owners) &&
+      org.owners.some((c) => String((c && c._id) || c) === String(userId))
     ) {
       return res.status(409).json({
         success: false,
@@ -489,11 +489,11 @@ export async function approveJoinRequest(req, res) {
     const userObjectId = new Types.ObjectId(userId);
 
     if (requestedRole === "representative") {
-      if (!Array.isArray(org.coOwners)) org.coOwners = [];
+      if (!Array.isArray(org.owners)) org.owners = [];
       if (
-        !org.coOwners.some((c) => String((c && c._id) || c) === String(userId))
+        !org.owners.some((c) => String((c && c._id) || c) === String(userId))
       ) {
-        org.coOwners.push(userObjectId);
+        org.owners.push(userObjectId);
       }
       if (Array.isArray(org.members)) {
         org.members = org.members.filter((m) => String(m) !== String(userId));

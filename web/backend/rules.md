@@ -55,7 +55,7 @@
 
 **기본 원칙**: 조직(RequestorOrganization) 내 역할에 따라 의뢰 조회 권한 차등 적용
 
-- **대표 (owner, coOwners)**:
+- **대표 (owner, owners)**:
   - 조직 내 모든 의뢰 조회 가능 (전체 멤버가 생성한 의뢰)
   - 조직 내 모든 의뢰 수정/취소/삭제 권한
 - **직원 (members)**:

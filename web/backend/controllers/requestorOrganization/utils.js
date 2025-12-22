@@ -6,7 +6,7 @@ export async function resolveOwnedOrg(req) {
   const meId = req.user?._id;
   const org = await RequestorOrganization.findOne({
     _id: orgId,
-    $or: [{ owner: meId }, { coOwners: meId }],
+    $or: [{ owner: meId }, { owners: meId }],
   });
   return org;
 }

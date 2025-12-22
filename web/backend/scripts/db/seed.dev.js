@@ -52,7 +52,7 @@ async function ensureRequestorOrg({ orgName, ownerId }) {
     org = await RequestorOrganization.create({
       name: orgName,
       owner: ownerId,
-      coOwners: [],
+      owners: [],
       members: [ownerId],
       joinRequests: [],
     });

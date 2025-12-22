@@ -68,7 +68,7 @@ async function seedDev() {
   const org = await RequestorOrganization.create({
     name: "데모기공소",
     owner: principal._id,
-    coOwners: [],
+    owners: [],
     members: [principal._id],
     joinRequests: [],
   });

@@ -52,14 +52,14 @@ export async function parseBusinessLicense(req, res) {
     let org = null;
     if (hasOrganization) {
       org = await RequestorOrganization.findById(req.user.organizationId)
-        .select({ owner: 1, coOwners: 1 })
+        .select({ owner: 1, owners: 1 })
         .lean();
       const meId = String(req.user._id);
       const canUpload =
         org &&
         (String(org.owner) === meId ||
-          (Array.isArray(org.coOwners) &&
-            org.coOwners.some((c) => String(c) === meId)));
+          (Array.isArray(org.owners) &&
+            org.owners.some((c) => String(c) === meId)));
       if (!canUpload) {
         return res.status(403).json({
           success: false,

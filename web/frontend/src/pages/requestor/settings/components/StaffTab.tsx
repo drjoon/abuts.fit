@@ -91,7 +91,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   const refreshRepresentatives = useCallback(async () => {
     if (!token) return;
     const res = await request<any>({
-      path: "/api/requestor-organizations/co-owners",
+      path: "/api/requestor-organizations/owners",
       method: "GET",
       token,
       headers: mockHeaders,
@@ -115,26 +115,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
       );
       return;
     }
-
-    const next: Array<{ _id: string; name?: string; email?: string }> = [];
-    if (data?.owner?._id) {
-      next.push({
-        _id: data.owner._id,
-        name: data.owner.name,
-        email: data.owner.email,
-      });
-    }
-    if (Array.isArray(data?.coOwners)) {
-      data.coOwners.forEach((co: any) => {
-        if (!co?._id) return;
-        next.push({
-          _id: String(co._id),
-          name: co.name,
-          email: co.email,
-        });
-      });
-    }
-    setRepresentatives(next);
+    setRepresentatives([]);
   }, [mockHeaders, token]);
 
   const refreshStaff = useCallback(async () => {

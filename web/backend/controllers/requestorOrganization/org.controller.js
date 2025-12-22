@@ -129,7 +129,7 @@ export async function getMyOrganization(req, res) {
             org = await RequestorOrganization.create({
               name: orgName,
               owner: req.user._id,
-              coOwners: [],
+              owners: [],
               members: [req.user._id],
               joinRequests: [],
             });
@@ -147,7 +147,7 @@ export async function getMyOrganization(req, res) {
               org = await RequestorOrganization.create({
                 name: orgName,
                 owner: req.user._id,
-                coOwners: [],
+                owners: [],
                 members: [req.user._id],
                 joinRequests: [],
               });
@@ -163,19 +163,19 @@ export async function getMyOrganization(req, res) {
             if (org) {
               const meId = String(req.user._id);
               const ownerId = String(org.owner);
-              const isCoOwner =
-                Array.isArray(org.coOwners) &&
-                org.coOwners.some((c) => String(c) === meId);
+              const isOwner =
+                Array.isArray(org.owners) &&
+                org.owners.some((c) => String(c) === meId);
               const isMember =
                 Array.isArray(org.members) &&
                 org.members.some((m) => String(m) === meId);
 
-              if (ownerId !== meId && !isCoOwner && !isMember) {
+              if (ownerId !== meId && !isOwner && !isMember) {
                 try {
                   org = await RequestorOrganization.create({
                     name: orgName,
                     owner: req.user._id,
-                    coOwners: [],
+                    owners: [],
                     members: [req.user._id],
                     joinRequests: [],
                   });
@@ -190,7 +190,7 @@ export async function getMyOrganization(req, res) {
           } else {
             const owned = await RequestorOrganization.findOne({
               name: orgName,
-              $or: [{ owner: req.user._id }, { coOwners: req.user._id }],
+              $or: [{ owner: req.user._id }, { owners: req.user._id }],
             })
               .select({ _id: 1 })
               .lean();
@@ -212,7 +212,7 @@ export async function getMyOrganization(req, res) {
                   org = await RequestorOrganization.create({
                     name: orgName,
                     owner: req.user._id,
-                    coOwners: [],
+                    owners: [],
                     members: [req.user._id],
                     joinRequests: [],
                   });
@@ -228,14 +228,14 @@ export async function getMyOrganization(req, res) {
             if (org?._id) {
               const meId2 = String(req.user._id);
               const ownerId2 = String(org.owner);
-              const isCoOwner2 =
-                Array.isArray(org.coOwners) &&
-                org.coOwners.some((c) => String(c) === meId2);
+              const isOwner2 =
+                Array.isArray(org.owners) &&
+                org.owners.some((c) => String(c) === meId2);
               const isMember2 =
                 Array.isArray(org.members) &&
                 org.members.some((m) => String(m) === meId2);
 
-              if (ownerId2 === meId2 || isCoOwner2 || isMember2) {
+              if (ownerId2 === meId2 || isOwner2 || isMember2) {
                 await User.findByIdAndUpdate(req.user._id, {
                   $set: { organizationId: org._id, organization: org.name },
                 });
@@ -251,7 +251,7 @@ export async function getMyOrganization(req, res) {
         org = await RequestorOrganization.create({
           name: orgName,
           owner: req.user._id,
-          coOwners: [],
+          owners: [],
           members: [req.user._id],
           joinRequests: [],
         });
@@ -283,12 +283,11 @@ export async function getMyOrganization(req, res) {
 
     const ownerId = String(org.owner);
     const meId = String(req.user._id);
-    const isCoOwner =
-      Array.isArray(org.coOwners) &&
-      org.coOwners.some((c) => String(c) === meId);
+    const isOwner =
+      Array.isArray(org.owners) && org.owners.some((c) => String(c) === meId);
 
     let membership = "none";
-    if (ownerId === meId || isCoOwner) {
+    if (ownerId === meId || isOwner) {
       membership = "owner";
     } else if (
       Array.isArray(org.members) &&
@@ -470,8 +469,8 @@ export async function updateMyOrganization(req, res) {
       const canEdit =
         org &&
         (String(org.owner) === meId ||
-          (Array.isArray(org.coOwners) &&
-            org.coOwners.some((c) => String(c) === meId)));
+          (Array.isArray(org.owners) &&
+            org.owners.some((c) => String(c) === meId)));
       if (!canEdit) {
         return res.status(403).json({
           success: false,
@@ -612,7 +611,7 @@ export async function updateMyOrganization(req, res) {
         const created = await RequestorOrganization.create({
           name: nextName,
           owner: req.user._id,
-          coOwners: [],
+          owners: [],
           members: [req.user._id],
           ...(businessLicense &&
           (businessLicense.s3Key || businessLicense.originalName)
