@@ -415,6 +415,8 @@ interface HandleJoinRequestParams {
   setSelectedOrg: (org: any) => void;
   refreshMembership: () => Promise<void>;
   refreshMyJoinRequests: () => Promise<void>;
+  stopTour: () => void;
+  setStepCompleted: (stepId: string, completed?: boolean) => void;
 }
 
 export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
@@ -429,6 +431,8 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
     setSelectedOrg,
     refreshMembership,
     refreshMyJoinRequests,
+    stopTour,
+    setStepCompleted,
   } = params;
 
   try {
@@ -470,6 +474,19 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
     }
 
     toast({ title: "소속 신청이 접수되었습니다" });
+    stopTour();
+    setStepCompleted("requestor.account.profileImage", true);
+    setStepCompleted("requestor.phone.number", true);
+    setStepCompleted("requestor.phone.code", true);
+    setStepCompleted("requestor.business.licenseUpload", true);
+    setStepCompleted("requestor.business.companyName", true);
+    setStepCompleted("requestor.business.representativeName", true);
+    setStepCompleted("requestor.business.phoneNumber", true);
+    setStepCompleted("requestor.business.businessNumber", true);
+    setStepCompleted("requestor.business.businessType", true);
+    setStepCompleted("requestor.business.businessItem", true);
+    setStepCompleted("requestor.business.email", true);
+    setStepCompleted("requestor.business.address", true);
     setOrgSearch("");
     setOrgSearchResults([]);
     setSelectedOrg(null);

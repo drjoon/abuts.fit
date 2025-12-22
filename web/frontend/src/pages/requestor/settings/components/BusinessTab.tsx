@@ -163,6 +163,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     goToStep,
     completeStep,
     startTour,
+    stopTour,
     setStepCompleted,
   } = useGuideTour();
   const [searchParams] = useSearchParams();
@@ -192,8 +193,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     address?: string;
   } | null>(null);
   const [myJoinRequests, setMyJoinRequests] = useState<
-    { organizationId: string; organizationName: string; status: string }[]
-  >([]);
+    | { organizationId: string; organizationName: string; status: string }[]
+    | null
+  >(null);
+  const [joinRequestsLoaded, setJoinRequestsLoaded] = useState(false);
   const [joinLoading, setJoinLoading] = useState(false);
   const [cancelLoadingOrgId, setCancelLoadingOrgId] = useState<string>("");
   const [orgOpen, setOrgOpen] = useState(false);
@@ -298,7 +301,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           token,
           headers: mockHeaders,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          setJoinRequestsLoaded(true);
+          return;
+        }
         const body: any = res.data || {};
         const data = body.data || body;
         const next = (data?.membership || "none") as MembershipStatus;
@@ -498,8 +504,17 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   useEffect(() => {
     const load = async () => {
       try {
-        if (!token) return;
-        if (membership === "owner") return;
+        if (!token) {
+          setJoinRequestsLoaded(false);
+          setMyJoinRequests(null);
+          return;
+        }
+        if (membership === "owner") {
+          setJoinRequestsLoaded(true);
+          setMyJoinRequests([]);
+          return;
+        }
+        setJoinRequestsLoaded(false);
         const res = await request<any>({
           path: "/api/requestor-organizations/join-requests/me",
           method: "GET",
@@ -512,6 +527,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         setMyJoinRequests(Array.isArray(data) ? data : []);
       } catch {
         setMyJoinRequests([]);
+      } finally {
+        setJoinRequestsLoaded(true);
       }
     };
 
@@ -535,6 +552,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
   const refreshMyJoinRequests = async () => {
     if (!token) return;
+    setJoinRequestsLoaded(false);
     const res = await request<any>({
       path: "/api/requestor-organizations/join-requests/me",
       method: "GET",
@@ -545,6 +563,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     const body: any = res.data || {};
     const data = body.data || body;
     setMyJoinRequests(Array.isArray(data) ? data : []);
+    setJoinRequestsLoaded(true);
   };
 
   const handleCancelJoinRequest = async (organizationId: string) => {
@@ -659,8 +678,18 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setSelectedOrg,
       refreshMembership,
       refreshMyJoinRequests,
+      stopTour,
+      setStepCompleted,
     });
   };
+
+  const hasJoinRequest =
+    Array.isArray(myJoinRequests) && myJoinRequests.length > 0;
+  const showJoinRequestSection = joinRequestsLoaded && hasJoinRequest;
+  const showSelectionChoices =
+    joinRequestsLoaded &&
+    Array.isArray(myJoinRequests) &&
+    myJoinRequests.length === 0;
 
   const currentOrgName = useMemo(() => {
     const fromUser = String((user as any)?.organization || "").trim();
@@ -992,7 +1021,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {membership === "none" && !setupMode && (
+          {membership === "none" && !setupMode && showSelectionChoices && (
             <div className="space-y-4">
               <div className="rounded-lg bg-white/60 p-3 text-sm">
                 아래 두 가지 방법 중 하나를 선택해 기공소 소속을 설정해주세요.
@@ -1054,9 +1083,18 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             </div>
           )}
 
-          {(membership !== "none" || !!setupMode) && (
+          {membership === "none" && showJoinRequestSection && (
+            <JoinRequestsSection
+              myJoinRequests={myJoinRequests || []}
+              cancelLoadingOrgId={cancelLoadingOrgId}
+              onCancelJoinRequest={handleCancelJoinRequest}
+              onLeaveOrganization={handleLeaveOrganization}
+            />
+          )}
+
+          {(membership !== "none" || !!setupMode || showJoinRequestSection) && (
             <div className="space-y-6">
-              {membership === "none" && (
+              {membership === "none" && showSelectionChoices && (
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-medium">
                     {setupMode === "license"
@@ -1119,7 +1157,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
               )}
 
               {(membership === "none"
-                ? setupMode === "search"
+                ? setupMode === "search" && showSelectionChoices
                 : membership !== "owner") && (
                 <div className="space-y-4">
                   {membership === "none" && (
@@ -1141,12 +1179,15 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     </GuideFocus>
                   )}
 
-                  <JoinRequestsSection
-                    myJoinRequests={myJoinRequests}
-                    cancelLoadingOrgId={cancelLoadingOrgId}
-                    onCancelJoinRequest={handleCancelJoinRequest}
-                    onLeaveOrganization={handleLeaveOrganization}
-                  />
+                  {Array.isArray(myJoinRequests) &&
+                    myJoinRequests.length > 0 && (
+                      <JoinRequestsSection
+                        myJoinRequests={myJoinRequests}
+                        cancelLoadingOrgId={cancelLoadingOrgId}
+                        onCancelJoinRequest={handleCancelJoinRequest}
+                        onLeaveOrganization={handleLeaveOrganization}
+                      />
+                    )}
                 </div>
               )}
             </div>
