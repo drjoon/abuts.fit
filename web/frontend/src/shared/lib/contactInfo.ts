@@ -1,4 +1,4 @@
-export const COMPANY_PHONE = "080-212-0001";
+export const COMPANY_PHONE = "1588-3948";
 
 export const COMPANY_ADDRESS = "경상남도 거제시 거제중앙로29길 6, 3층(고현동)";
 
