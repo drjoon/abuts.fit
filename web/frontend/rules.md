@@ -79,15 +79,42 @@
 - 대시보드/리스트/최근의뢰 등 UI에서 `requestId`는 **서버가 생성한 문자열을 그대로 표시**합니다.
 - 프론트에서 임의로 **6자리 숫자/해시 등으로 변환(마스킹)하지 않습니다.**
 
-## 7. 채팅 기능 규칙
+## 7. 크레딧 및 의뢰 관리 정책
 
-## 8. 드래그 앤 드롭(파일 업로드) 규칙
+### 7.1 크레딧 관리 정책
+
+- **표시 단위**: 조직(Organization) 단위로 크레딧 표시
+- **잔액 조회**: 조직 내 모든 멤버가 동일한 크레딧 잔액 조회
+- **충전**: 조직 단위로 크레딧 충전 (대표/직원 구분 없음)
+- **사용**: 의뢰 생성 시 조직 크레딧에서 자동 차감
+- **환불**: 의뢰 취소 시 조직 크레딧으로 자동 복원
+
+### 7.2 의뢰건 조회 권한 정책
+
+**기본 원칙**: 조직 내 역할에 따라 의뢰 조회 권한 차등 적용
+
+- **대표 (owner, coOwners)**:
+  - 조직 내 모든 멤버가 생성한 의뢰 조회 가능
+  - 모든 의뢰 수정/취소 가능
+- **직원 (members)**:
+  - 본인이 생성한 의뢰만 조회 가능
+  - 본인 의뢰만 수정/취소 가능
+  - 타 직원의 의뢰는 목록/상세 모두 비표시
+
+**UI 구현**:
+
+- 의뢰 목록 API(`GET /api/requests/my`)는 서버에서 권한 기반 필터링
+- 대시보드/통계는 조회 가능한 의뢰 기준으로 표시
+
+## 8. 채팅 기능 규칙
+
+## 9. 드래그 앤 드롭(파일 업로드) 규칙
 
 - 파일 드래그&드롭을 지원해야 하는 화면에서는 **개별 페이지에서 drag/drop 이벤트를 직접 구현하지 않습니다.**
 - 반드시 공용 컴포넌트 `components/PageFileDropZone.tsx`를 사용해 **페이지 전체 드롭**을 기본으로 지원합니다.
 - 드롭존 내부 UI(버튼 업로드 등)는 페이지 전용 컴포넌트로 유지하되, drop 이벤트 수신/파일 추출/전파는 `PageFileDropZone`에서 처리합니다.
 
-### 7.1 채팅 타입
+### 8.1 채팅 타입
 
 - **Request Chat (의뢰 채팅)**: `useRequestChat` 훅 사용
 
@@ -100,7 +127,7 @@
   - API: `/api/chats/rooms`, `/api/chats/rooms/:roomId/messages`
   - Admin은 모든 사용자와 채팅 가능, 일반 사용자는 Admin과만 가능
 
-### 7.2 채팅 훅 사용법
+### 8.2 채팅 훅 사용법
 
 **useRequestChat** (`shared/hooks/useRequestChat.ts`):
 
@@ -132,13 +159,13 @@ const { users, searchUsers } = useUserSearch();
 await searchUsers("검색어", "admin"); // 역할 필터링 선택사항
 ```
 
-### 7.3 파일 첨부
+### 8.3 파일 첨부
 
 - 파일은 먼저 `/api/files/upload` 로 S3에 업로드
 - 반환된 메타데이터를 `attachments` 배열에 포함하여 `sendMessage` 호출
 - 기존 `useS3TempUpload` 훅 활용 가능
 
-### 7.4 채팅 UI 컴포넌트
+### 8.4 채팅 UI 컴포넌트
 
 - **ChatWidget** (`components/ChatWidget.tsx`): 전역 채팅 위젯 (기존)
 - **ChatConversation** (`components/chat/ChatConversation.tsx`): 대화 UI

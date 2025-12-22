@@ -41,16 +41,43 @@
   - 뒤 8자리: 대문자 영문 코드(예: `ABCDEFGH`)
 - `requestId`는 **유니크**해야 하며, 생성 시 충돌이 발생하면 재시도합니다.
 
-## 5. 채팅 API 규칙
+## 5. 크레딧 및 의뢰 관리 정책
 
-### 5.1 Request Chat (의뢰 채팅)
+### 5.1 크레딧 관리 정책
+
+- **크레딧 단위**: `organizationId` (RequestorOrganization) 기준으로 관리
+- **충전**: 조직 단위로 크레딧 충전 (공급가 기준 적립, 결제는 공급가+VAT)
+- **차감**: 의뢰 생성 시 조직의 크레딧에서 차감 (누가 의뢰하든 동일한 조직 크레딧 사용)
+- **환불**: 의뢰 취소 시 조직 크레딧으로 복원
+- **조회**: 조직 내 모든 멤버가 동일한 잔액 조회 (`GET /api/credits/balance`)
+
+### 5.2 의뢰건 조회 권한 정책
+
+**기본 원칙**: 조직(RequestorOrganization) 내 역할에 따라 의뢰 조회 권한 차등 적용
+
+- **대표 (owner, coOwners)**:
+  - 조직 내 모든 의뢰 조회 가능 (전체 멤버가 생성한 의뢰)
+  - 조직 내 모든 의뢰 수정/취소/삭제 권한
+- **직원 (members)**:
+  - 본인이 생성한 의뢰만 조회 가능
+  - 본인이 생성한 의뢰만 수정/취소/삭제 가능
+  - 타 직원의 의뢰는 조회 불가
+
+**구현**:
+
+- `buildRequestorOrgScopeFilter()`: 역할 기반 필터링
+- `canAccessRequestAsRequestor()`: 개별 의뢰 접근 권한 검증
+
+## 6. 채팅 API 규칙
+
+### 6.1 Request Chat (의뢰 채팅)
 
 - **Endpoint**: `POST /api/requests/:id/messages`
 - **권한**: Requestor (본인/조직), Manufacturer (할당된 의뢰), Admin
 - **Request Body**: `{ content: string, attachments?: array }`
 - **Response**: 업데이트된 Request 객체 (messages 배열 포함)
 
-### 5.2 Direct Chat (독립 채팅)
+### 6.2 Direct Chat (독립 채팅)
 
 **채팅방 관련**:
 
@@ -68,7 +95,7 @@
 
 - `GET /api/chats/search-users?query=검색어&role=역할` - 채팅 상대 검색
 
-### 5.3 파일 첨부
+### 6.3 파일 첨부
 
 - 파일은 먼저 `/api/files/upload` 엔드포인트를 통해 S3에 업로드
 - 반환된 메타데이터(s3Key, s3Url 등)를 메시지의 `attachments` 배열에 포함

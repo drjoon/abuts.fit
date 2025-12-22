@@ -177,7 +177,7 @@ export async function getRequestById(req, res) {
     }
 
     // 접근 권한 확인 (의뢰자, 관리자만 조회 가능)
-    const isRequestor = canAccessRequestAsRequestor(req, request);
+    const isRequestor = await canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
 
     if (!isRequestor && !isAdmin) {
@@ -231,7 +231,7 @@ export async function updateRequest(req, res) {
     }
 
     // 접근 권한 확인 (의뢰자, 관리자만 수정 가능)
-    const isRequestor = canAccessRequestAsRequestor(req, request);
+    const isRequestor = await canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
 
     if (!isRequestor && !isAdmin) {
@@ -348,7 +348,7 @@ export async function updateRequestStatus(req, res) {
     }
 
     // 접근 권한 확인 (의뢰자, 관리자만 상태 변경 가능)
-    const isRequestor = canAccessRequestAsRequestor(req, request);
+    const isRequestor = await canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
 
     if (!isRequestor && !isAdmin) {
@@ -493,7 +493,7 @@ export async function deleteRequest(req, res) {
     }
 
     // 권한 검증: 관리자이거나 같은 기공소(조직) 의뢰자만 삭제 가능
-    const isRequestor = canAccessRequestAsRequestor(req, request);
+    const isRequestor = await canAccessRequestAsRequestor(req, request);
     if (req.user.role !== "admin" && !isRequestor) {
       return res.status(403).json({
         success: false,

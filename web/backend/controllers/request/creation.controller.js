@@ -231,7 +231,7 @@ export async function cloneRequestToDraft(req, res) {
       });
     }
 
-    const isRequestor = canAccessRequestAsRequestor(req, request);
+    const isRequestor = await canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
     if (!isRequestor && !isAdmin) {
       return res.status(403).json({
@@ -750,7 +750,7 @@ export async function createRequestsFromDraft(req, res) {
             err.statusCode = 404;
             throw err;
           }
-          if (!canAccessRequestAsRequestor(req, existingDoc)) {
+          if (!(await canAccessRequestAsRequestor(req, existingDoc))) {
             const err = new Error("기존 의뢰에 접근 권한이 없습니다.");
             err.statusCode = 403;
             throw err;
