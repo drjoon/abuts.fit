@@ -2,6 +2,10 @@
   "name": "abuts-fit-background",
   "private": true,
   "type": "module",
+  "scripts": {
+    "start": "node worker.js",
+    "dev": "ENV_FILE=local.env node worker.js"
+  },
   "dependencies": {
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
