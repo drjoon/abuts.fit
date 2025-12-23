@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">5.08% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>6/118</span>
+                <span class='fraction'>0/118</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">5.12% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>6/117</span>
+                <span class='fraction'>0/117</span>
             </div>
         
             
@@ -467,8 +467,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -493,8 +493,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -516,7 +516,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -615,8 +615,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -698,8 +698,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -734,7 +734,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -814,7 +814,7 @@ async function <span class="fstat-no" title="function not covered" >normalizeCas
 }
 &nbsp;
 // 새 드래프트 생성
-export const createDraft = asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const createDraft = <span class="cstat-no" title="statement not covered" >asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
   const { caseInfos = <span class="branch-0 cbranch-no" title="branch not covered" >[] </span>} = <span class="cstat-no" title="statement not covered" >req.body || {};</span>
 &nbsp;
   const normalizedCaseInfos = <span class="cstat-no" title="statement not covered" >Array.isArray(caseInfos)</span>
@@ -840,7 +840,7 @@ export const createDraft = asyncHandler(<span class="fstat-no" title="function n
 });
 &nbsp;
 // 드래프트 조회
-export const getDraft = asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const getDraft = <span class="cstat-no" title="statement not covered" >asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
   const { id } = <span class="cstat-no" title="statement not covered" >req.params;</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  if (!Types.ObjectId.isValid(id)) {</span>
@@ -863,7 +863,7 @@ export const getDraft = asyncHandler(<span class="fstat-no" title="function not 
 });
 &nbsp;
 // 드래프트 부분 업데이트 (message, caseInfos 등)
-export const updateDraft = asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const updateDraft = <span class="cstat-no" title="statement not covered" >asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
   const { id } = <span class="cstat-no" title="statement not covered" >req.params;</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  if (!Types.ObjectId.isValid(id)) {</span>
@@ -962,7 +962,7 @@ export const updateDraft = asyncHandler(<span class="fstat-no" title="function n
 });
 &nbsp;
 // 파일 + 케이스 정보 추가 (caseInfos 요소 생성)
-export const addFileToDraft = asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const addFileToDraft = <span class="cstat-no" title="statement not covered" >asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
   const { id } = <span class="cstat-no" title="statement not covered" >req.params;</span> // draftId
   const {
     originalName,
@@ -1045,7 +1045,7 @@ export const addFileToDraft = asyncHandler(<span class="fstat-no" title="functio
 });
 &nbsp;
 // 드래프트에서 케이스(파일+정보) 삭제
-export const removeFileFromDraft = asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const removeFileFromDraft = <span class="cstat-no" title="statement not covered" >asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
   const { id, fileId } = <span class="cstat-no" title="statement not covered" >req.params;</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  if (!Types.ObjectId.isValid(id)) {</span>
@@ -1081,7 +1081,7 @@ export const removeFileFromDraft = asyncHandler(<span class="fstat-no" title="fu
 });
 &nbsp;
 // 드래프트 삭제 (취소)
-export const deleteDraft = asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const deleteDraft = <span class="cstat-no" title="statement not covered" >asyncHandler(<span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
   const { id } = <span class="cstat-no" title="statement not covered" >req.params;</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  if (!Types.ObjectId.isValid(id)) {</span>
@@ -1111,7 +1111,7 @@ export const deleteDraft = asyncHandler(<span class="fstat-no" title="function n
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-14T04:38:00.640Z
+                at 2025-12-23T03:03:53.757Z
             </div>
         <script src="../prettify.js"></script>
         <script>

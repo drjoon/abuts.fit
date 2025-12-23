@@ -299,3 +299,7 @@ export default {
   getUploadSignedUrl,
   getFileType,
 };
+
+export { getUploadSignedUrl };
+
+export { getSignedUrl };

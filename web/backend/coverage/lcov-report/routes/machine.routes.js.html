@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">58.82% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>10/17</span>
+                <span class='fraction'>0/17</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">33.33% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>1/3</span>
+                <span class='fraction'>0/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">66.66% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>10/15</span>
+                <span class='fraction'>0/15</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line medium'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -118,35 +118,35 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">35x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
-<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import express from "express";
@@ -161,13 +161,13 @@ import {
 } from "../controllers/machine.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 &nbsp;
-const router = express.Router();
+const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
 &nbsp;
 // NODE_ENV === 'test' 에서는 인증을 건너뛰고,
 // 그 외 환경에서는 authenticate + authorize(roles)를 적용하는 헬퍼
 const maybeAuth =
-  (roles = <span class="branch-0 cbranch-no" title="branch not covered" >[])</span> =&gt;
-<span class="fstat-no" title="function not covered" >  as</span>ync (req, res, next) =&gt; {
+<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >  (r</span>oles = <span class="branch-0 cbranch-no" title="branch not covered" >[])</span> =&gt;</span>
+<span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >  as</span>ync (req, res, next) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >    if (process.env.NODE_ENV === "test") <span class="cstat-no" title="statement not covered" >return next();</span></span>
 &nbsp;
     // 인증 시도
@@ -179,17 +179,17 @@ const maybeAuth =
   };
 &nbsp;
 // 제조사만 장비 목록/등록/삭제 및 제어 가능 (test 환경 제외)
-router.get("/", maybeAuth(["manufacturer"]), getMachines);
-router.post("/", maybeAuth(["manufacturer"]), upsertMachine);
-router.delete("/:uid", maybeAuth(["manufacturer"]), deleteMachine);
+<span class="cstat-no" title="statement not covered" >router.get("/", maybeAuth(["manufacturer"]), getMachines);</span>
+<span class="cstat-no" title="statement not covered" >router.post("/", maybeAuth(["manufacturer"]), upsertMachine);</span>
+<span class="cstat-no" title="statement not covered" >router.delete("/:uid", maybeAuth(["manufacturer"]), deleteMachine);</span>
 &nbsp;
-router.get("/:uid/status", maybeAuth(["manufacturer"]), getMachineStatusProxy);
+<span class="cstat-no" title="statement not covered" >router.get("/:uid/status", maybeAuth(["manufacturer"]), getMachineStatusProxy);</span>
 &nbsp;
-router.post("/:uid/reset", maybeAuth(["manufacturer"]), resetMachineProxy);
+<span class="cstat-no" title="statement not covered" >router.post("/:uid/reset", maybeAuth(["manufacturer"]), resetMachineProxy);</span>
 &nbsp;
-router.post("/:uid/start", maybeAuth(["manufacturer"]), startMachineProxy);
+<span class="cstat-no" title="statement not covered" >router.post("/:uid/start", maybeAuth(["manufacturer"]), startMachineProxy);</span>
 &nbsp;
-router.post("/:uid/raw", maybeAuth(["manufacturer"]), callRawProxy);
+<span class="cstat-no" title="statement not covered" >router.post("/:uid/raw", maybeAuth(["manufacturer"]), callRawProxy);</span>
 &nbsp;
 export default router;
 &nbsp;</pre></td></tr></table></pre>
@@ -199,7 +199,7 @@ export default router;
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-14T04:38:00.640Z
+                at 2025-12-23T03:03:53.757Z
             </div>
         <script src="../prettify.js"></script>
         <script>

@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">83.33% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>5/6</span>
+                <span class='fraction'>0/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">61.53% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>8/13</span>
+                <span class='fraction'>0/13</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">66.66% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/3</span>
+                <span class='fraction'>0/3</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">83.33% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>5/6</span>
+                <span class='fraction'>0/6</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -132,18 +132,18 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">133x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">126x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">7x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">133x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -163,7 +163,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -185,22 +185,22 @@
  * @param {String} expiresIn - 토큰 만료 시간 (기본값: '1d')
  * @returns {String} 생성된 JWT 토큰
  */
-export function generateToken(payload, expiresIn = "1d") {
+export function <span class="fstat-no" title="function not covered" >generateToken(</span>payload, expiresIn = <span class="branch-0 cbranch-no" title="branch not covered" >"1d")</span> {
   // Mongoose 모델 인스턴스인 경우 필요한 데이터만 추출
   let tokenPayload;
   
-  if (payload &amp;&amp; payload._id) {
+<span class="cstat-no" title="statement not covered" >  if (payload &amp;&amp; payload._id) {</span>
     // Mongoose 모델 인스턴스인 경우
-    tokenPayload = {
+<span class="cstat-no" title="statement not covered" >    tokenPayload = {</span>
       userId: payload._id,
-      role: payload.role || <span class="branch-1 cbranch-no" title="branch not covered" >'requestor'</span>
+      role: payload.role || 'requestor'
     };
   } else {
     // 일반 객체인 경우 그대로 사용
-    tokenPayload = payload;
+<span class="cstat-no" title="statement not covered" >    tokenPayload = payload;</span>
   }
   
-  return jwt.sign(tokenPayload, process.env.JWT_SECRET || <span class="branch-1 cbranch-no" title="branch not covered" >"your_jwt_secret_key",</span> {
+<span class="cstat-no" title="statement not covered" >  return jwt.sign(tokenPayload, process.env.JWT_SECRET || "your_jwt_secret_key", {</span>
     expiresIn,
   });
 }
@@ -219,10 +219,10 @@ export function <span class="fstat-no" title="function not covered" >verifyToken
  * @param {String} userId - 사용자 ID
  * @returns {String} 생성된 리프레시 토큰
  */
-export function generateRefreshToken(userId) {
-  return jwt.sign(
+export function <span class="fstat-no" title="function not covered" >generateRefreshToken(</span>userId) {
+<span class="cstat-no" title="statement not covered" >  return jwt.sign(</span>
     { userId },
-    process.env.JWT_REFRESH_SECRET || <span class="branch-1 cbranch-no" title="branch not covered" >"your_jwt_refresh_secret_key",</span>
+    process.env.JWT_REFRESH_SECRET || "your_jwt_refresh_secret_key",
     {
       expiresIn: "7d", // 리프레시 토큰은 더 긴 유효 기간
     }
@@ -241,7 +241,7 @@ export default {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-14T04:38:00.640Z
+                at 2025-12-23T03:03:53.757Z
             </div>
         <script src="../prettify.js"></script>
         <script>

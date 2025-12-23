@@ -11,3 +11,4 @@ export const SUPPORT_EMAIL = "support@abuts.fit";
 export const BUSINESS_EMAIL = "business@abuts.fit";
 export const PRIVACY_EMAIL = "privacy@abuts.fit";
 export const SECURITY_EMAIL = "security@abuts.fit";
+export const POSTMASTER_EMAIL = "postmaster@abuts.fit";

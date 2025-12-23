@@ -12,6 +12,13 @@ import {
   adminListBonusGrants,
   adminOverrideWelcomeBonus,
 } from "../controllers/adminBonusGrant.controller.js";
+import {
+  adminListMails,
+  adminGetMail,
+  adminSendMail,
+  adminGetMailUploadUrl,
+  adminGetMailDownloadUrl,
+} from "../controllers/mail.controller.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -54,6 +61,13 @@ router.get("/activity-logs", adminController.getActivityLogs);
 // 시스템 설정
 router.get("/settings", adminController.getSystemSettings);
 router.put("/settings", adminController.updateSystemSettings);
+
+// 메일 관리
+router.get("/mails", adminListMails);
+router.get("/mails/:id", adminGetMail);
+router.post("/mails/send", adminSendMail);
+router.post("/mails/upload-url", adminGetMailUploadUrl);
+router.post("/mails/download-url", adminGetMailDownloadUrl);
 
 // 보너스 지급 내역 / 예외 지급
 router.get("/bonus-grants", adminListBonusGrants);

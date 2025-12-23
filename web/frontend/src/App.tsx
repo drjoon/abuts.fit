@@ -65,6 +65,9 @@ const AdminChatManagement = lazy(() =>
     default: m.AdminChatManagement,
   }))
 );
+const AdminMailPage = lazy(
+  () => import("./pages/admin/support/AdminMailPage.tsx")
+);
 const AdminAnalytics = lazy(() =>
   import("./pages/admin/system/AdminAnalytics").then((m) => ({
     default: m.AdminAnalytics,
@@ -241,6 +244,7 @@ const App = () => {
                       path="request-monitoring"
                       element={<AdminRequestMonitoring />}
                     />
+                    <Route path="mail" element={<AdminMailPage />} />
                     <Route
                       path="chat-management"
                       element={<AdminChatManagement />}

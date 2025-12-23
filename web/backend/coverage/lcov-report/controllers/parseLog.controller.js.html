@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">5.5% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>6/109</span>
+                <span class='fraction'>0/109</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">5.6% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>6/107</span>
+                <span class='fraction'>0/107</span>
             </div>
         
             
@@ -454,9 +454,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -522,9 +522,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -573,7 +573,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -636,9 +636,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -711,9 +711,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -752,7 +752,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -833,7 +833,7 @@ import FilenameRule from "../models/filenameRule.model.js";
  * 파싱 로그 저장
  * POST /api/parse-logs
  */
-export const createParseLog = <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const createParseLog = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const { filename, parsed, userInput, matchedRuleId, draftId } = <span class="cstat-no" title="statement not covered" >req.body;</span>
 &nbsp;
@@ -901,7 +901,7 @@ export const createParseLog = <span class="fstat-no" title="function not covered
  * GET /api/parse-logs/incorrect
  * Query: limit=50, skip=0, userId=..., startDate=..., endDate=...
  */
-export const getIncorrectLogs = <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const getIncorrectLogs = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const { limit = <span class="branch-0 cbranch-no" title="branch not covered" >50,</span> skip = <span class="branch-0 cbranch-no" title="branch not covered" >0,</span> userId, startDate, endDate } = <span class="cstat-no" title="statement not covered" >req.query;</span>
 &nbsp;
@@ -952,7 +952,7 @@ export const getIncorrectLogs = <span class="fstat-no" title="function not cover
  * 자주 틀리는 패턴 분석
  * GET /api/parse-logs/analysis/mismatches
  */
-export const analyzeMismatches = <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const analyzeMismatches = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const { startDate, endDate } = <span class="cstat-no" title="statement not covered" >req.query;</span>
 &nbsp;
@@ -1015,7 +1015,7 @@ export const analyzeMismatches = <span class="fstat-no" title="function not cove
  * 로그 통계
  * GET /api/parse-logs/stats
  */
-export const getStatistics = <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const getStatistics = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const { startDate, endDate, userId } = <span class="cstat-no" title="statement not covered" >req.query;</span>
 &nbsp;
@@ -1090,7 +1090,7 @@ export const getStatistics = <span class="fstat-no" title="function not covered"
  * 로그 내보내기 (JSON)
  * GET /api/parse-logs/export/json
  */
-export const exportLogsAsJSON = <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const exportLogsAsJSON = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const { startDate, endDate, isCorrect } = <span class="cstat-no" title="statement not covered" >req.query;</span>
 &nbsp;
@@ -1131,7 +1131,7 @@ export const exportLogsAsJSON = <span class="fstat-no" title="function not cover
  * 로그 내보내기 (CSV)
  * GET /api/parse-logs/export/csv
  */
-export const exportLogsAsCSV = <span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {
+export const exportLogsAsCSV = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (req, res) =&gt; {</span>
 <span class="cstat-no" title="statement not covered" >  try {</span>
     const { startDate, endDate, isCorrect } = <span class="cstat-no" title="statement not covered" >req.query;</span>
 &nbsp;
@@ -1207,7 +1207,7 @@ export const exportLogsAsCSV = <span class="fstat-no" title="function not covere
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-14T04:38:00.640Z
+                at 2025-12-23T03:03:53.757Z
             </div>
         <script src="../prettify.js"></script>
         <script>
