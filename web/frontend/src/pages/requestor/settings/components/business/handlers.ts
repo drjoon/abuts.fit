@@ -234,7 +234,7 @@ export const handleSave = async (
           title: "사업자등록번호 검증에 실패했습니다",
           description:
             serverMessage ||
-            "홈택스 조회 결과와 일치하지 않습니다. 정보를 확인해주세요.",
+            "홈택스 조회 결과와 일치하지 않습니다. 정보를 확인해주세요. 반복될 경우 관리자에게 문의하면 수동 검증 후 승인됩니다.",
           variant: "destructive",
           duration: 4500,
         });

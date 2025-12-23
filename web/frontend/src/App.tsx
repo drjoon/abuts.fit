@@ -78,6 +78,9 @@ const AdminSecurity = lazy(() =>
     default: m.AdminSecurity,
   }))
 );
+const AdminOrganizationVerification = lazy(
+  () => import("./pages/admin/system/AdminOrganizationVerification")
+);
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/CncDashboardPage").then((m) => ({
     default: m.CncDashboardPage,
@@ -256,6 +259,14 @@ const App = () => {
                     <Route
                       path="security-settings"
                       element={<AdminSecurity />}
+                    />
+                    <Route
+                      path="organization-verification"
+                      element={
+                        <RoleProtectedRoute roles={["admin"]}>
+                          <AdminOrganizationVerification />
+                        </RoleProtectedRoute>
+                      }
                     />
                     <Route path="settings" element={<SettingsPage />} />
                   </Route>

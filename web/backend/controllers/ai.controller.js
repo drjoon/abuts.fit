@@ -193,7 +193,8 @@ export async function parseBusinessLicense(req, res) {
       '  "phoneNumber": string,\n' +
       '  "email": string,\n' +
       '  "businessType": string,\n' +
-      '  "businessItem": string\n' +
+      '  "businessItem": string,\n' +
+      '  "startDate": string   // 개업연월일, YYYYMMDD 8자리로 반환\n' +
       "}";
 
     const result = await model.generateContent([
@@ -248,6 +249,12 @@ export async function parseBusinessLicense(req, res) {
       });
     }
 
+    const normalizeStartDate = (input) => {
+      const digits = String(input || "").replace(/\D/g, "");
+      if (digits.length !== 8) return "";
+      return digits;
+    };
+
     const extracted = {
       companyName: String((parseOk ? parsed.companyName : "") || "").trim(),
       businessNumber: String(
@@ -261,6 +268,7 @@ export async function parseBusinessLicense(req, res) {
       ).trim(),
       businessType: String((parseOk ? parsed.businessType : "") || "").trim(),
       businessItem: String((parseOk ? parsed.businessItem : "") || "").trim(),
+      startDate: normalizeStartDate(parseOk ? parsed.startDate : ""),
     };
 
     const normalizeBusinessNumber = (input) => {

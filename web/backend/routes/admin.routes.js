@@ -27,6 +27,7 @@ import {
   adminRejectTaxInvoiceDraft,
   adminCancelTaxInvoiceDraft,
 } from "../controllers/adminTaxInvoice.controller.js";
+import { adminOverrideOrganizationVerification } from "../controllers/admin.controller.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -88,5 +89,11 @@ router.patch("/tax-invoices/drafts/:id", adminUpdateTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/approve", adminApproveTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/reject", adminRejectTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/cancel", adminCancelTaxInvoiceDraft);
+
+// 사업자 검증 수동 처리
+router.post(
+  "/organizations/:id/verification/override",
+  adminOverrideOrganizationVerification
+);
 
 export default router;

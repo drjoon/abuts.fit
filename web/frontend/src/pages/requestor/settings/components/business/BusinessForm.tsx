@@ -146,7 +146,6 @@ export const BusinessForm = ({
             <Input
               id="startDate"
               ref={startDateRef}
-              placeholder="YYYYMMDD"
               inputMode="numeric"
               className={cn(
                 errors.startDate &&
