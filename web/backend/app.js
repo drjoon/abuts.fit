@@ -11,6 +11,7 @@ import rateLimit from "express-rate-limit";
 import RequestorOrganization from "./models/requestorOrganization.model.js";
 import ChargeOrder from "./models/chargeOrder.model.js";
 import BankTransaction from "./models/bankTransaction.model.js";
+import BankPollingState from "./models/bankPollingState.model.js";
 import Counter from "./models/counter.model.js";
 import AdminAuditLog from "./models/adminAuditLog.model.js";
 import SignupVerification from "./models/signupVerification.model.js";
@@ -64,6 +65,7 @@ const dbReady = connect(mongoUri)
         ["RequestorOrganization", RequestorOrganization],
         ["ChargeOrder", ChargeOrder],
         ["BankTransaction", BankTransaction],
+        ["BankPollingState", BankPollingState],
         ["Counter", Counter],
         ["AdminAuditLog", AdminAuditLog],
         ["SignupVerification", SignupVerification],

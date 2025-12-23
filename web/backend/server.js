@@ -3,7 +3,6 @@ import "./bootstrap/env.js";
 import app, { dbReady } from "./app.js";
 import supportRoutes from "./routes/support.routes.js";
 import implantPresetRoutes from "./routes/implantPreset.routes.js";
-import { startCreditBPlanJobs } from "./utils/creditBPlanJobs.js";
 import { initializeSocket } from "./socket.js";
 
 // 포트 설정 (기본값 5001)
@@ -24,7 +23,6 @@ server.listen(PORT, () => {
 dbReady
   .then(() => {
     console.log("MongoDB 연결 준비 완료");
-    startCreditBPlanJobs();
   })
   .catch((err) => {
     console.error("MongoDB 연결 실패(서버는 계속 실행):", err);

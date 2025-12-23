@@ -77,6 +77,7 @@ rm -f "$ZIP_PATH"
 # web 폴더 내용을 zip 루트로 포함 (Procfile이 zip 루트에 위치하도록)
 (cd "$WEB_DIR" && zip -r "$ZIP_PATH" \
   backend \
+  background \
   package.json \
   package-lock.json \
   Procfile \
