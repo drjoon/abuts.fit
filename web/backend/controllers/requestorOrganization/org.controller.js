@@ -4,6 +4,7 @@ import s3Utils from "../../utils/s3.utils.js";
 import File from "../../models/file.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
+import { verifyBusinessNumber } from "../../services/hometax.service.js";
 
 const WELCOME_BONUS_AMOUNT = 30000;
 
@@ -590,6 +591,23 @@ export async function updateMyOrganization(req, res) {
       }
     }
 
+    let verificationResult = null;
+    if (businessNumber) {
+      verificationResult = await verifyBusinessNumber({
+        businessNumber,
+        companyName: nextName || org?.name || "",
+      });
+      if (!verificationResult?.verified) {
+        return res.status(400).json({
+          success: false,
+          reason: "business_verification_failed",
+          message:
+            verificationResult?.message ||
+            "사업자등록번호 검증에 실패했습니다. 정보를 다시 확인해주세요.",
+        });
+      }
+    }
+
     if (!hasOrganization) {
       const requiredMissing =
         !nextName ||
@@ -626,6 +644,14 @@ export async function updateMyOrganization(req, res) {
             phoneNumber,
             businessNumber,
           },
+          verification: verificationResult
+            ? {
+                verified: !!verificationResult.verified,
+                provider: verificationResult.provider || "hometax",
+                message: verificationResult.message || "",
+                checkedAt: new Date(),
+              }
+            : undefined,
         });
 
         await User.findByIdAndUpdate(
@@ -651,6 +677,14 @@ export async function updateMyOrganization(req, res) {
             organizationId: created._id,
             welcomeBonusGranted: Boolean(granted),
             welcomeBonusAmount: granted || 0,
+            verification: verificationResult
+              ? {
+                  verified: !!verificationResult.verified,
+                  provider: verificationResult.provider || "hometax",
+                  message: verificationResult.message || "",
+                  checkedAt: new Date(),
+                }
+              : undefined,
           },
         });
       } catch (e) {
@@ -670,6 +704,15 @@ export async function updateMyOrganization(req, res) {
       patch.extracted = {
         ...(org.extracted ? org.extracted.toObject?.() || org.extracted : {}),
         ...extractedPatch,
+      };
+    }
+
+    if (verificationResult) {
+      patch.verification = {
+        verified: !!verificationResult.verified,
+        provider: verificationResult.provider || "hometax",
+        message: verificationResult.message || "",
+        checkedAt: new Date(),
       };
     }
 
@@ -707,7 +750,20 @@ export async function updateMyOrganization(req, res) {
       );
     }
 
-    return res.json({ success: true, data: { updated: true } });
+    return res.json({
+      success: true,
+      data: {
+        updated: true,
+        verification: verificationResult
+          ? {
+              verified: !!verificationResult.verified,
+              provider: verificationResult.provider || "hometax",
+              message: verificationResult.message || "",
+              checkedAt: new Date(),
+            }
+          : undefined,
+      },
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,

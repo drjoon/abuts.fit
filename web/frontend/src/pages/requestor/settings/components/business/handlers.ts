@@ -208,6 +208,18 @@ export const handleSave = async (
         });
         return { success: false };
       }
+      if (reason === "business_verification_failed") {
+        setErrors((prev) => ({ ...prev, businessNumber: true }));
+        toast({
+          title: "사업자등록번호 검증에 실패했습니다",
+          description:
+            serverMessage ||
+            "홈택스 조회 결과와 일치하지 않습니다. 정보를 확인해주세요.",
+          variant: "destructive",
+          duration: 4500,
+        });
+        return { success: false };
+      }
       toast({
         title: "저장 실패",
         description: serverMessage || undefined,
