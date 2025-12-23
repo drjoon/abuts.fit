@@ -1,5 +1,5 @@
-import "../backend/bootstrap/env.js";
-import { dbReady } from "../backend/app.js";
+import "./bootstrap/env.js";
+import { dbReady } from "./db.js";
 import express from "express";
 import {
   startCreditBPlanJobs,
@@ -11,7 +11,11 @@ const startedAt = new Date();
 
 function startStatusServer() {
   const app = express();
-  const port = Number(process.env.BACKGROUND_PORT || 4001);
+  const port = Number(process.env.PORT || process.env.BACKGROUND_PORT || 4001);
+
+  app.get("/", (req, res) => {
+    res.json({ ok: true, service: "background-worker" });
+  });
 
   app.get("/healthz", (req, res) => {
     res.json({ ok: true, startedAt: startedAt.toISOString() });
