@@ -9,6 +9,7 @@ import {
   startTaxInvoiceBatchJobs,
   getTaxInvoiceBatchStatus,
 } from "./jobs/taxInvoiceBatch.js";
+import { startHealthMonitor } from "./monitor/healthMonitor.js";
 
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const startedAt = new Date();
@@ -53,6 +54,13 @@ async function main() {
 
   startTaxInvoiceBatchJobs();
   console.log("[worker] tax invoice batch jobs started");
+
+  startHealthMonitor({
+    getCreditBPlanStatus,
+    getTaxInvoiceBatchStatus,
+    staleMinutes: Number(process.env.WORKER_HEALTH_STALE_MINUTES || 10),
+    intervalMinutes: Number(process.env.WORKER_HEALTH_INTERVAL_MINUTES || 1),
+  });
 
   while (true) {
     await sleepMs(60_000);

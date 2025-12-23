@@ -2,17 +2,27 @@ import {
   S3Client,
   GetObjectCommand,
   PutObjectCommand,
+  HeadBucketCommand,
+  CreateBucketCommand,
 } from "@aws-sdk/client-s3";
 import { simpleParser } from "mailparser";
 import fetch from "node-fetch";
 
-const s3 = new S3Client({ region: process.env.AWS_REGION || "ap-northeast-2" });
+const AWS_REGION = process.env.AWS_REGION || "ap-northeast-2";
+const s3 = new S3Client({ region: AWS_REGION });
 const EMAIL_BUCKET = process.env.EMAIL_BUCKET;
 const RAW_PREFIX = process.env.RAW_PREFIX || "emails/raw/";
 const ATTACH_PREFIX = process.env.ATTACH_PREFIX || "emails/attachments/";
 const WEBHOOK_URL = process.env.WEBHOOK_URL; // e.g. https://api.example.com/api/webhooks/mail
 const WEBHOOK_SECRET = process.env.MAIL_WEBHOOK_SECRET;
-const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
+const PUSHOVER_TOKEN =
+  process.env.PUSHOVER_TOKEN || process.env.MAIL_PUSHOVER_TOKEN;
+const PUSHOVER_USER =
+  process.env.PUSHOVER_USER || process.env.MAIL_PUSHOVER_USER;
+const PUSHOVER_DEVICE =
+  process.env.PUSHOVER_DEVICE || process.env.MAIL_PUSHOVER_DEVICE || "";
+const PUSHOVER_PRIORITY =
+  process.env.PUSHOVER_PRIORITY || process.env.MAIL_PUSHOVER_PRIORITY;
 
 const streamToBuffer = async (stream) => {
   const chunks = [];
@@ -20,6 +30,38 @@ const streamToBuffer = async (stream) => {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks);
+};
+
+const ensureBucketExists = async (bucket, region) => {
+  try {
+    await s3.send(new HeadBucketCommand({ Bucket: bucket }));
+    return;
+  } catch (err) {
+    if (
+      err?.$metadata?.httpStatusCode !== 404 &&
+      err?.name !== "NotFound" &&
+      err?.Code !== "NoSuchBucket"
+    ) {
+      // 다른 에러는 그대로 던짐
+      throw err;
+    }
+  }
+
+  const params =
+    region === "us-east-1"
+      ? { Bucket: bucket }
+      : {
+          Bucket: bucket,
+          CreateBucketConfiguration: { LocationConstraint: region },
+        };
+
+  try {
+    await s3.send(new CreateBucketCommand(params));
+    console.log(`Bucket created: ${bucket} (${region})`);
+  } catch (err) {
+    if (err?.name === "BucketAlreadyOwnedByYou") return;
+    throw err;
+  }
 };
 
 const putObject = async ({ key, body, contentType }) => {
@@ -48,22 +90,34 @@ const fetchJson = async (url, payload) => {
   return res.json();
 };
 
-const postSlack = async (text) => {
-  if (!SLACK_WEBHOOK_URL) return;
+const postPushover = async ({ title, message }) => {
+  if (!PUSHOVER_TOKEN || !PUSHOVER_USER) return;
+  const body = new URLSearchParams({
+    token: PUSHOVER_TOKEN,
+    user: PUSHOVER_USER,
+    title: title || "Mail inbound",
+    message,
+  });
+  if (PUSHOVER_DEVICE) body.append("device", PUSHOVER_DEVICE);
+  if (PUSHOVER_PRIORITY !== undefined && PUSHOVER_PRIORITY !== null)
+    body.append("priority", String(PUSHOVER_PRIORITY));
+
   try {
-    await fetch(SLACK_WEBHOOK_URL, {
+    await fetch("https://api.pushover.net/1/messages.json", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
     });
   } catch (err) {
-    console.error("Slack notify failed", err);
+    console.error("Pushover notify failed", err);
   }
 };
 
 export const handler = async (event) => {
   if (!EMAIL_BUCKET) throw new Error("EMAIL_BUCKET is not set");
   if (!WEBHOOK_URL) throw new Error("WEBHOOK_URL is not set");
+
+  await ensureBucketExists(EMAIL_BUCKET, AWS_REGION);
 
   for (const record of event.Records || []) {
     const bucket = record.s3.bucket.name;
@@ -142,12 +196,12 @@ export const handler = async (event) => {
       throw err;
     }
 
-    const slackText = `Inbound mail\nFrom: ${
+    const pushText = `Inbound mail\nFrom: ${
       payload.from
     }\nTo: ${payload.to.join(", ")}\nSubject: ${
       payload.subject || "(no subject)"
     }\nAttachments: ${attachments.length}`;
-    await postSlack(slackText);
+    await postPushover({ title: "Inbound mail", message: pushText });
   }
 
   return { status: "ok" };
