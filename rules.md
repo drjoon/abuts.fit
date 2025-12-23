@@ -269,6 +269,14 @@
 - **예시**: `SignupPage.tsx` (440줄) → `SignupWizardStep1~4.tsx` + `SignupSocialForm.tsx` 분리
 - **명명 규칙**:
   - 페이지 컴포넌트: `XxxPage.tsx`
+
+## 11. 서버 구성(배포 단위) 및 shared 정책
+
+- 이 저장소는 아래 배포 단위로 분리 운영합니다.
+  - `web/`: 백엔드 API + 프론트 서빙
+  - `background/`: 백그라운드 워커(잡)
+  - `lambda/`: AWS Lambda 함수
+- DB 모델(스키마)은 루트 `shared/models`에 두고 `web/backend`, `background`가 공통 참조합니다.
   - 서브 컴포넌트: `XxxSection.tsx`, `XxxModal.tsx`, `XxxPanel.tsx`, `XxxStep1.tsx` 등
   - 훅: `useXxx.ts`
   - 유틸: `xxxUtils.ts`, `xxxHelpers.ts`

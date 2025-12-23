@@ -19,6 +19,14 @@ import {
   adminGetMailUploadUrl,
   adminGetMailDownloadUrl,
 } from "../controllers/mail.controller.js";
+import {
+  adminListTaxInvoiceDrafts,
+  adminGetTaxInvoiceDraft,
+  adminUpdateTaxInvoiceDraft,
+  adminApproveTaxInvoiceDraft,
+  adminRejectTaxInvoiceDraft,
+  adminCancelTaxInvoiceDraft,
+} from "../controllers/adminTaxInvoice.controller.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -72,5 +80,13 @@ router.post("/mails/download-url", adminGetMailDownloadUrl);
 // 보너스 지급 내역 / 예외 지급
 router.get("/bonus-grants", adminListBonusGrants);
 router.post("/bonus-grants/welcome-bonus/override", adminOverrideWelcomeBonus);
+
+// 세금계산서(드래프트) 관리
+router.get("/tax-invoices/drafts", adminListTaxInvoiceDrafts);
+router.get("/tax-invoices/drafts/:id", adminGetTaxInvoiceDraft);
+router.patch("/tax-invoices/drafts/:id", adminUpdateTaxInvoiceDraft);
+router.post("/tax-invoices/drafts/:id/approve", adminApproveTaxInvoiceDraft);
+router.post("/tax-invoices/drafts/:id/reject", adminRejectTaxInvoiceDraft);
+router.post("/tax-invoices/drafts/:id/cancel", adminCancelTaxInvoiceDraft);
 
 export default router;

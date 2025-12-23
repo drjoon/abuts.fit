@@ -15,6 +15,7 @@ import BankPollingState from "./models/bankPollingState.model.js";
 import Counter from "./models/counter.model.js";
 import AdminAuditLog from "./models/adminAuditLog.model.js";
 import SignupVerification from "./models/signupVerification.model.js";
+import TaxInvoiceDraft from "./models/taxInvoiceDraft.model.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -66,6 +67,7 @@ const dbReady = connect(mongoUri)
         ["ChargeOrder", ChargeOrder],
         ["BankTransaction", BankTransaction],
         ["BankPollingState", BankPollingState],
+        ["TaxInvoiceDraft", TaxInvoiceDraft],
         ["Counter", Counter],
         ["AdminAuditLog", AdminAuditLog],
         ["SignupVerification", SignupVerification],

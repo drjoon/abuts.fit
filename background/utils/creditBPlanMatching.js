@@ -1,9 +1,9 @@
 import mongoose from "mongoose";
-import ChargeOrder from "../models/chargeOrder.model.js";
-import BankTransaction from "../models/bankTransaction.model.js";
-import CreditLedger from "../models/creditLedger.model.js";
-import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
-import RequestorOrganization from "../models/requestorOrganization.model.js";
+import ChargeOrder from "../../shared/models/chargeOrder.model.js";
+import BankTransaction from "../../shared/models/bankTransaction.model.js";
+import CreditLedger from "../../shared/models/creditLedger.model.js";
+import TaxInvoiceDraft from "../../shared/models/taxInvoiceDraft.model.js";
+import RequestorOrganization from "../../shared/models/requestorOrganization.model.js";
 
 export function extractDepositCodeFromText(text) {
   const raw = String(text || "");
@@ -150,7 +150,6 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
           { upsert: true, session }
         );
 
-        // 세금계산서 발행용 Draft 생성 (중복 보호: chargeOrderId unique)
         const existingDraft = await TaxInvoiceDraft.findOne(
           { chargeOrderId: order._id },
           null,

@@ -5,6 +5,10 @@ import {
   startCreditBPlanJobs,
   getCreditBPlanStatus,
 } from "./jobs/creditBPlanJobs.js";
+import {
+  startTaxInvoiceBatchJobs,
+  getTaxInvoiceBatchStatus,
+} from "./jobs/taxInvoiceBatch.js";
 
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const startedAt = new Date();
@@ -27,6 +31,7 @@ function startStatusServer() {
       startedAt: startedAt.toISOString(),
       uptimeSec: Math.floor((Date.now() - startedAt.getTime()) / 1000),
       creditBPlan: getCreditBPlanStatus(),
+      taxInvoiceBatch: getTaxInvoiceBatchStatus(),
     });
   });
 
@@ -45,6 +50,9 @@ async function main() {
 
   startCreditBPlanJobs();
   console.log("[worker] credit b-plan jobs started");
+
+  startTaxInvoiceBatchJobs();
+  console.log("[worker] tax invoice batch jobs started");
 
   while (true) {
     await sleepMs(60_000);
