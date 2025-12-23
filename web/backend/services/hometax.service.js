@@ -40,7 +40,12 @@ async function callHometax(path, payload) {
   return { ok: true, data };
 }
 
-export async function verifyBusinessNumber({ businessNumber, companyName }) {
+export async function verifyBusinessNumber({
+  businessNumber,
+  companyName,
+  representativeName,
+  startDate, // YYYYMMDD, optional
+}) {
   const digits = normalizeBusinessNumberDigits(businessNumber);
   if (!digits) {
     return {
@@ -50,40 +55,45 @@ export async function verifyBusinessNumber({ businessNumber, companyName }) {
     };
   }
 
-  // 1) 진위확인: 번호 + 상호명으로 검증
-  const validatePayload = {
-    businesses: [
-      {
-        b_no: digits,
-        b_nm: String(companyName || "").trim(),
-      },
-    ],
-  };
-
-  const validateResp = await callHometax("/v1/validate", validatePayload);
-  if (!validateResp.ok) {
-    return {
-      verified: false,
-      provider: "hometax",
-      message: validateResp.message,
+  // 1) 진위확인: 대표자명 + 개업일자가 있을 때만 시도 (누락 시 malformed 에러 방지)
+  let vItem = null;
+  if (representativeName && startDate) {
+    const validatePayload = {
+      businesses: [
+        {
+          b_no: digits,
+          b_nm: String(companyName || "").trim(),
+          p_nm: String(representativeName || "").trim(),
+          start_dt: String(startDate || "").trim(),
+        },
+      ],
     };
-  }
 
-  const vItem = Array.isArray(validateResp.data?.data)
-    ? validateResp.data.data[0]
-    : null;
+    const validateResp = await callHometax("/v1/validate", validatePayload);
+    if (!validateResp.ok) {
+      return {
+        verified: false,
+        provider: "hometax",
+        message: validateResp.message,
+      };
+    }
 
-  const validCode = String(vItem?.valid || "").trim(); // "01" 정상, "02" 불일치
-  const validMsg = String(vItem?.valid_msg || "").trim();
+    vItem = Array.isArray(validateResp.data?.data)
+      ? validateResp.data.data[0]
+      : null;
 
-  if (validCode && validCode !== "01") {
-    return {
-      verified: false,
-      provider: "hometax",
-      message:
-        validMsg ||
-        "홈택스 진위확인에 실패했습니다. 사업자등록번호/상호를 확인해주세요.",
-    };
+    const validCode = String(vItem?.valid || "").trim(); // "01" 정상, "02" 불일치
+    const validMsg = String(vItem?.valid_msg || "").trim();
+
+    if (validCode && validCode !== "01") {
+      return {
+        verified: false,
+        provider: "hometax",
+        message:
+          validMsg ||
+          "홈택스 진위확인에 실패했습니다. 사업자등록번호/상호를 확인해주세요.",
+      };
+    }
   }
 
   // 2) 상태조회: 휴업/폐업 여부 체크

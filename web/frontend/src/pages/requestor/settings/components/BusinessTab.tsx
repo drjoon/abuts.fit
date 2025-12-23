@@ -339,6 +339,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             String(ex?.businessType || "").trim() || prev.businessType,
           businessItem:
             String(ex?.businessItem || "").trim() || prev.businessItem,
+          startDate: String(ex?.startDate || "").trim() || prev.startDate,
         }));
 
         const lic = data?.businessLicense || {};
@@ -639,6 +640,14 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     });
 
     if (success) {
+      latestDraftRef.current = {
+        payload: null,
+        hasAnyLicense: false,
+        hasAnyData: false,
+      };
+      if (authUserId) {
+        writeStoredBusinessDraft(authUserId, null);
+      }
       setBusinessData({
         companyName: "",
         businessNumber: "",

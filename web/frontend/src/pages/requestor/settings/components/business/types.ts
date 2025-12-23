@@ -7,6 +7,7 @@ export type LicenseExtracted = {
   representativeName?: string;
   businessType?: string;
   businessItem?: string;
+  startDate?: string; // YYYY-MM-DD 입력 예상, 저장은 그대로
 };
 
 export type BusinessData = {

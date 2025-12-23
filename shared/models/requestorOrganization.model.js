@@ -79,6 +79,7 @@ const requestorOrganizationSchema = new mongoose.Schema(
       representativeName: { type: String, default: "" },
       businessType: { type: String, default: "" },
       businessItem: { type: String, default: "" },
+      startDate: { type: String, default: "" },
     },
     verification: {
       verified: { type: Boolean, default: false },

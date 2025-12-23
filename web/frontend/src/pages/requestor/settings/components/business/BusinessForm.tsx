@@ -19,6 +19,8 @@ import {
   isValidPhoneNumber,
   isValidEmail,
   isValidAddress,
+  normalizeStartDate,
+  isValidStartDate,
 } from "./validations";
 
 interface BusinessFormProps {
@@ -52,6 +54,7 @@ export const BusinessForm = ({
 }: BusinessFormProps) => {
   const { isStepActive, completeStep, setStepCompleted } = useGuideTour();
   const repNameRef = useRef<HTMLInputElement | null>(null);
+  const startDateRef = useRef<HTMLInputElement | null>(null);
   const companyNameRef = useRef<HTMLInputElement | null>(null);
   const phoneRef = useRef<HTMLInputElement | null>(null);
   const bizNoRef = useRef<HTMLInputElement | null>(null);
@@ -129,7 +132,7 @@ export const BusinessForm = ({
                     if (v.length < 2) return;
                     completeStep("requestor.business.representativeName");
                   }
-                  focusNext(companyNameRef);
+                  focusNext(startDateRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -137,6 +140,51 @@ export const BusinessForm = ({
                 }}
               />
             </GuideFocus>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="startDate">개업연월일</Label>
+            <Input
+              id="startDate"
+              ref={startDateRef}
+              placeholder="YYYYMMDD"
+              inputMode="numeric"
+              className={cn(
+                errors.startDate &&
+                  "border-destructive focus-visible:ring-destructive"
+              )}
+              value={extracted.startDate || ""}
+              onChange={(e) => {
+                const nextValue = normalizeStartDate(e.target.value);
+                setExtracted((prev) => ({
+                  ...prev,
+                  startDate: nextValue,
+                }));
+                const invalid =
+                  Boolean(nextValue) && !isValidStartDate(nextValue || "");
+                setErrors((prev) => ({
+                  ...prev,
+                  startDate: invalid,
+                }));
+              }}
+              onKeyDown={(e) => {
+                if ((e.nativeEvent as any)?.isComposing) return;
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                focusNext(companyNameRef);
+              }}
+              onBlur={() => {
+                if (disabled) return;
+                if (isStepActive("requestor.business.representativeName")) {
+                  const v = String(extracted.startDate || "").trim();
+                  if (v && !isValidStartDate(v)) {
+                    setErrors((prev) => ({ ...prev, startDate: true }));
+                    startDateRef.current?.focus();
+                    return;
+                  }
+                }
+                onSave();
+              }}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="orgName">기공소명</Label>
@@ -169,7 +217,7 @@ export const BusinessForm = ({
                     if (v.length < 2) return;
                     completeStep("requestor.business.companyName");
                   }
-                  focusNext(repNameRef);
+                  focusNext(phoneRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -218,10 +266,7 @@ export const BusinessForm = ({
                     if (!isValidPhoneNumber(v)) return;
                     completeStep("requestor.business.phoneNumber");
                   }
-                  const hasBusinessNumber = Boolean(
-                    String(businessData.businessNumber || "").trim()
-                  );
-                  focusNext(hasBusinessNumber ? emailRef : bizNoRef);
+                  focusNext(bizNoRef);
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -237,11 +282,8 @@ export const BusinessForm = ({
                       return;
                     }
                     completeStep("requestor.business.phoneNumber");
-                    const hasBusinessNumber = Boolean(
-                      String(businessData.businessNumber || "").trim()
-                    );
                     setTimeout(() => {
-                      focusNext(hasBusinessNumber ? emailRef : bizNoRef);
+                      focusNext(bizNoRef);
                     }, 0);
                   }
 

@@ -462,6 +462,12 @@ export async function updateMyOrganization(req, res) {
       return v.length >= 5;
     };
 
+    const normalizeStartDate = (input) => {
+      const digits = String(input || "").replace(/\D/g, "");
+      if (digits.length !== 8) return "";
+      return digits;
+    };
+
     const hasOrganization = !!req.user.organizationId;
     let org = null;
     if (hasOrganization) {
@@ -489,6 +495,7 @@ export async function updateMyOrganization(req, res) {
     const businessTypeProvided = hasOwn(req.body, "businessType");
     const emailProvided = hasOwn(req.body, "email");
     const addressProvided = hasOwn(req.body, "address");
+    const startDateProvided = hasOwn(req.body, "startDate");
 
     const representativeName = String(
       req.body?.representativeName || ""
@@ -499,6 +506,8 @@ export async function updateMyOrganization(req, res) {
     const businessType = String(req.body?.businessType || "").trim();
     const email = String(req.body?.email || "").trim();
     const address = String(req.body?.address || "").trim();
+    const startDateRaw = String(req.body?.startDate || "").trim();
+    const startDate = normalizeStartDate(startDateRaw);
 
     const businessLicenseInput = req.body?.businessLicense || null;
     const businessLicense = businessLicenseInput
@@ -545,6 +554,13 @@ export async function updateMyOrganization(req, res) {
       });
     }
 
+    if (startDateRaw && !startDate) {
+      return res.status(400).json({
+        success: false,
+        message: "개업연월일은 YYYYMMDD 8자리로 입력해주세요.",
+      });
+    }
+
     const patch = {};
     const unsetPatch = {};
     if (nextName) patch.name = nextName;
@@ -564,6 +580,7 @@ export async function updateMyOrganization(req, res) {
     if (businessTypeProvided) extractedPatch.businessType = businessType;
     if (emailProvided) extractedPatch.email = email;
     if (addressProvided) extractedPatch.address = address;
+    if (startDateProvided) extractedPatch.startDate = startDate;
 
     if (businessNumberProvided) {
       if (!businessNumber) {
@@ -596,6 +613,8 @@ export async function updateMyOrganization(req, res) {
       verificationResult = await verifyBusinessNumber({
         businessNumber,
         companyName: nextName || org?.name || "",
+        representativeName,
+        startDate,
       });
       if (!verificationResult?.verified) {
         return res.status(400).json({
@@ -617,7 +636,8 @@ export async function updateMyOrganization(req, res) {
         !address ||
         !email ||
         !phoneNumber ||
-        !businessNumber;
+        !businessNumber ||
+        !startDate;
       if (requiredMissing) {
         return res.status(400).json({
           success: false,
@@ -643,6 +663,7 @@ export async function updateMyOrganization(req, res) {
             email,
             phoneNumber,
             businessNumber,
+            startDate,
           },
           verification: verificationResult
             ? {
@@ -791,7 +812,11 @@ export async function clearMyBusinessLicense(req, res) {
 
     const org = await RequestorOrganization.findById(req.user.organizationId);
     const meId = String(req.user._id);
-    const isOwner = org && String(org.owner) === meId;
+    const isOwner =
+      org &&
+      (String(org.owner) === meId ||
+        (Array.isArray(org.owners) &&
+          org.owners.some((c) => String(c) === meId)));
     if (!isOwner) {
       return res.status(403).json({
         success: false,

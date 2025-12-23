@@ -4,6 +4,8 @@ import {
   normalizePhoneNumber,
   isValidEmail,
   isValidAddress,
+  normalizeStartDate,
+  isValidStartDate,
 } from "./validations";
 import { BusinessData, LicenseExtracted, MembershipStatus } from "./types";
 
@@ -74,6 +76,8 @@ export const handleSave = async (
     const businessItem = String(extracted.businessItem || "").trim();
     const taxEmail = String(extracted.email || "").trim();
     const address = String(businessData.address || "").trim();
+    const startDateRaw = String(extracted.startDate || "").trim();
+    const startDate = normalizeStartDate(startDateRaw);
 
     const normalizedBusinessNumber = normalizeBusinessNumber(businessNumberRaw);
     const normalizedPhoneNumber = normalizePhoneNumber(phoneNumberRaw);
@@ -88,7 +92,8 @@ export const handleSave = async (
       !businessType ||
       !businessItem ||
       !taxEmail ||
-      !address;
+      !address ||
+      !startDate;
 
     if (requiredMissing && !allowPartialUpdate) {
       if (!auto) {
@@ -101,10 +106,24 @@ export const handleSave = async (
           businessItem: !businessItem,
           email: !taxEmail,
           address: !address,
+          startDate: !startDate,
         };
         setErrors(nextErrors);
         toast({
           title: "필수 항목을 입력해주세요",
+          variant: "destructive",
+          duration: 3500,
+        });
+      }
+      return { success: false };
+    }
+
+    if (startDateRaw && !startDate) {
+      setErrors((prev) => ({ ...prev, startDate: true }));
+      if (!auto) {
+        toast({
+          title: "개업연월일 형식이 올바르지 않습니다",
+          description: "YYYYMMDD 8자리로 입력해주세요.",
           variant: "destructive",
           duration: 3500,
         });
@@ -176,6 +195,7 @@ export const handleSave = async (
         businessItem,
         email: taxEmail,
         address,
+        startDate,
         ...(businessLicense &&
         (String(businessLicense?.s3Key || "").trim() ||
           String(businessLicense?.fileId || "").trim() ||

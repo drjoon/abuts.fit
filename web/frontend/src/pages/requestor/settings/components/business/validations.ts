@@ -83,3 +83,14 @@ export const isValidBusinessNumber = (input: string): boolean =>
 
 export const isValidPhoneNumber = (input: string): boolean =>
   !!normalizePhoneNumber(input);
+
+export const normalizeStartDate = (input: string): string => {
+  const digits = String(input || "")
+    .replace(/\D/g, "")
+    .slice(0, 8);
+  if (digits.length !== 8) return "";
+  return digits;
+};
+
+export const isValidStartDate = (input: string): boolean =>
+  !!normalizeStartDate(input);
