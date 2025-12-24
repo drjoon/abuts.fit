@@ -10,6 +10,14 @@ else
   echo "[debug] Procfile not found in /var/app/staging"
 fi
 
+echo "[debug] ls -al /var/app/staging"
+ls -al /var/app/staging || true
+
+echo "[debug] ls -al /var/app/staging/shared"
+ls -al /var/app/staging/shared
+echo "[debug] ls -al /var/app/staging/backend/shared"
+ls -al /var/app/staging/backend/shared || true
+
 echo "[debug] systemctl cat web.service"
 systemctl cat web.service --no-pager 2>/dev/null || true
 

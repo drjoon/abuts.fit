@@ -10,9 +10,7 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 ZIP_NAME="deploy-$TIMESTAMP.zip"
 ZIP_PATH="$PARENT_DIR/$ZIP_NAME"
 
-# 환경 모드: test (기본값) 또는 prod
-ENV_MODE="${1:-test}"
-
+# 로그 출력 함수
 info() {
   echo -e "\033[1;34m[INFO]\033[0m $1"
 }
@@ -25,6 +23,11 @@ error() {
   echo -e "\033[1;31m[ERROR]\033[0m $1" >&2
   exit 1
 }
+
+info "parent/shared → web/shared 동기화 생략 (수동 관리)"
+
+# 환경 모드: test (기본값) 또는 prod
+ENV_MODE="${1:-test}"
 
 # 환경 모드 검증
 if [[ "$ENV_MODE" != "test" && "$ENV_MODE" != "prod" ]]; then
@@ -74,10 +77,11 @@ EOF
 
 rm -f "$ZIP_PATH"
 
-# web 폴더 내용을 zip 루트로 포함 (Procfile이 zip 루트에 위치하도록)
+# web 폴더 내부를 zip 루트로 포함해 EB 루트에 backend/shared가 직접 위치하도록
 (cd "$WEB_DIR" && zip -r "$ZIP_PATH" \
   backend \
-  background \
+  shared \
+  backend/shared \
   package.json \
   package-lock.json \
   Procfile \
@@ -87,6 +91,14 @@ rm -f "$ZIP_PATH"
   -x "*/.DS_Store" \
   -x "*.env" \
   -x "*.env.*")
+
+# zip 내부에 shared 포함 확인 (대표 파일 체크)
+if ! unzip -l "$ZIP_PATH" "shared/models/requestorOrganization.model.js" >/dev/null 2>&1; then
+  error "ZIP에 shared/models/requestorOrganization.model.js 이 포함되지 않았습니다."
+fi
+if ! unzip -l "$ZIP_PATH" "backend/shared/models/requestorOrganization.model.js" >/dev/null 2>&1; then
+  error "ZIP에 backend/shared/models/requestorOrganization.model.js 이 포함되지 않았습니다."
+fi
 
 info "zip에 dist 포함"
 (cd "$WEB_DIR" && zip -ur "$ZIP_PATH" frontend/dist)

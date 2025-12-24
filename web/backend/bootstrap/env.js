@@ -1,5 +1,4 @@
-import { config } from "dotenv";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -17,13 +16,50 @@ const redactUrlCredentials = (uri) => {
   return s.replace(/\/\/(.*)@/, "//***@");
 };
 
+const parseDotenvLine = (line) => {
+  const s = String(line || "").trim();
+  if (!s) return null;
+  if (s.startsWith("#")) return null;
+
+  const idx = s.indexOf("=");
+  if (idx < 0) return null;
+
+  const key = s.slice(0, idx).trim();
+  if (!key) return null;
+
+  let value = s.slice(idx + 1).trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+  return { key, value };
+};
+
+const loadEnvFileIntoProcessEnv = (path) => {
+  try {
+    const content = readFileSync(path, "utf8");
+    for (const line of content.split(/\r?\n/)) {
+      const parsed = parseDotenvLine(line);
+      if (!parsed) continue;
+      if (process.env[parsed.key] === undefined) {
+        process.env[parsed.key] = parsed.value;
+      }
+    }
+    globalThis.__abuts_env_path = path;
+  } catch (e) {
+    console.warn(`[dotenv] failed to read env file: ${path}`, e);
+  }
+};
+
 export function ensureEnvLoaded() {
   if (globalThis.__abuts_env_loaded) return;
   globalThis.__abuts_env_loaded = true;
 
   const envFile = String(process.env.ENV_FILE || "").trim();
   if (!envFile) {
-    config();
+    return;
   } else {
     const candidates = isAbsolute(envFile)
       ? [envFile]
@@ -37,15 +73,13 @@ export function ensureEnvLoaded() {
 
     const found = candidates.find((p) => existsSync(p));
     if (found) {
-      config({ path: found });
-      globalThis.__abuts_env_path = found;
+      loadEnvFileIntoProcessEnv(found);
     } else {
       console.warn(
         `[dotenv] ENV_FILE not found. ENV_FILE=${envFile}. Tried: ${candidates.join(
           ", "
         )}`
       );
-      config();
     }
   }
 

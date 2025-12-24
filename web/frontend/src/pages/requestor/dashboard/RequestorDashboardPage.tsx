@@ -165,6 +165,13 @@ export const RequestorDashboardPage = () => {
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
 
+  const isInitialLoading =
+    isLoading || isBulkLoading || loadingCreditBalance || !summaryResponse;
+
+  if (isInitialLoading) {
+    return <DashboardShellSkeleton showMain />;
+  }
+
   const openEditDialogFromRequest = (request: any) => {
     const mongoId = request._id || request.id;
     const displayId = request.requestId || request.id || mongoId;

@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/components/common/AppLayout";
+import { LoadingScreen } from "@/components/common/LoadingScreen";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { NewChatWidget } from "@/components/chat/NewChatWidget";
@@ -174,7 +175,7 @@ const App = () => {
           <Sonner />
           <GuideTourProvider>
             <AppLayout>
-              <Suspense fallback={<div className="p-6">불러오는 중...</div>}>
+              <Suspense fallback={<LoadingScreen />}>
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/login" element={<LoginPage />} />

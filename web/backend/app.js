@@ -99,7 +99,27 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        "img-src": ["'self'", "data:", "https://robohash.org"],
+        // S3 업로드/다운로드 허용
+        "default-src": [
+          "'self'",
+          "https://abuts-fit.s3.ap-south-1.amazonaws.com",
+          "https://*.amazonaws.com",
+          "blob:",
+          "data:",
+        ],
+        // 업로드/정적 파일을 S3에서 직접 읽을 수 있도록 허용
+        "connect-src": [
+          "'self'",
+          "https://abuts-fit.s3.ap-south-1.amazonaws.com",
+          "https://*.amazonaws.com",
+        ],
+        "img-src": [
+          "'self'",
+          "data:",
+          "https://robohash.org",
+          "https://abuts-fit.s3.ap-south-1.amazonaws.com",
+          "https://*.amazonaws.com",
+        ],
       },
     },
   })

@@ -14,6 +14,7 @@ import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestUploadSection } from "./components/NewRequestUploadSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
+import { NewRequestPageSkeleton } from "@/components/common/NewRequestPageSkeleton";
 
 /**
  * New Request 페이지 (리팩터링 버전)
@@ -63,6 +64,7 @@ export const NewRequestPage = () => {
     setDuplicatePrompt,
     handleSubmitWithDuplicateResolution,
     handleSubmitWithDuplicateResolutions,
+    draftStatus,
   } = useNewRequestPage(existingRequestId);
 
   const {

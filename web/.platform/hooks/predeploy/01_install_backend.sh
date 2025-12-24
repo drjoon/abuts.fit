@@ -9,23 +9,33 @@ CANDIDATES=(
   "$STAGING_DIR/web/backend"
 )
 
-for idx in "${!CANDIDATES[@]}"; do
-  dir="${CANDIDATES[$idx]}"
-  if [ -d "$dir" ]; then
-    echo "[predeploy] Installing dependencies in $dir"
-    cd "$dir"
-    if npm install --omit=dev --no-audit --no-fund; then
-      echo "[predeploy] npm install finished in $dir"
-      exit 0
-    else
-      echo "[predeploy] npm install failed in $dir" >&2
-      exit 1
-    fi
-  fi
-done
+TARGET="$STAGING_DIR/backend"
 
-echo "[predeploy] Backend directory not found. Tried:"
-printf '  - %s\n' "${CANDIDATES[@]}"
+echo "[predeploy] Expected backend dir: $TARGET"
+
+if [ -d "$TARGET" ]; then
+  # ensure shared symlink inside backend (shared is at /var/app/staging/shared)
+  if [ -e "$TARGET/shared" ] && [ ! -L "$TARGET/shared" ]; then
+    echo "[predeploy] removing non-symlink $TARGET/shared"
+    rm -rf "$TARGET/shared"
+  fi
+  if [ ! -L "$TARGET/shared" ]; then
+    ln -s ../shared "$TARGET/shared"
+    echo "[predeploy] linked $TARGET/shared -> ../shared"
+  fi
+
+  echo "[predeploy] Installing dependencies in $TARGET"
+  cd "$TARGET"
+  if npm ci --omit=dev --no-audit --no-fund; then
+    echo "[predeploy] npm ci finished in $TARGET"
+    exit 0
+  else
+    echo "[predeploy] npm ci failed in $TARGET" >&2
+    exit 1
+  fi
+fi
+
+echo "[predeploy] Backend directory not found at $TARGET"
 echo "[predeploy] Contents of $STAGING_DIR:"
 ls -al "$STAGING_DIR"
 exit 1
