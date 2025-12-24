@@ -96,6 +96,7 @@ async function sendWithBolta(draft) {
   const baseURL = requiredStr(
     process.env.BOLTA_BASE_URL || "https://xapi.bolta.io"
   );
+  const clientRefId = String(draft?._id || "").trim();
 
   const payload = buildBoltaPayload(draft);
   const auth = Buffer.from(`${apiKey}:`).toString("base64");
@@ -106,6 +107,7 @@ async function sendWithBolta(draft) {
       Authorization: `Basic ${auth}`,
       "Customer-Key": customerKey,
       "Content-Type": "application/json",
+      ...(clientRefId ? { "Bolta-Client-Reference-Id": clientRefId } : {}),
     },
     timeout: 15000,
   });
