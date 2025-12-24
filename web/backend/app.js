@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import { existsSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
-import { connect } from "mongoose";
+import mongoose, { connect } from "mongoose";
 import RequestorOrganization from "./models/requestorOrganization.model.js";
 import ChargeOrder from "./models/chargeOrder.model.js";
 import BankTransaction from "./models/bankTransaction.model.js";
@@ -30,25 +30,32 @@ const app = express();
 app.set("trust proxy", 1);
 
 // 데이터베이스 연결
+// MONGO_URI는 기존 레거시 키를 위한 백업으로 유지
 const mongoUri =
   process.env.NODE_ENV === "test"
-    ? process.env.MONGODB_URI_TEST || "mongodb://localhost:27017/abutsFitTest"
+    ? process.env.MONGODB_URI_TEST ||
+      process.env.MONGO_URI_TEST ||
+      "mongodb://localhost:27017/abutsFitTest"
     : process.env.NODE_ENV === "production"
-    ? process.env.MONGODB_URI || "mongodb://localhost:27017/abutsFit"
+    ? process.env.MONGODB_URI ||
+      process.env.MONGO_URI ||
+      "mongodb://localhost:27017/abutsFit"
     : process.env.MONGODB_URI_TEST ||
+      process.env.MONGO_URI_TEST ||
       process.env.MONGODB_URI ||
+      process.env.MONGO_URI ||
       "mongodb://localhost:27017/abutsFit";
 
 const mongoSource =
   process.env.NODE_ENV === "test"
     ? "TEST DB"
     : process.env.NODE_ENV === "production"
-    ? process.env.MONGODB_URI
+    ? process.env.MONGODB_URI || process.env.MONGO_URI
       ? "PROD DB"
       : "LOCAL DB"
-    : process.env.MONGODB_URI_TEST
+    : process.env.MONGODB_URI_TEST || process.env.MONGO_URI_TEST
     ? "TEST DB"
-    : process.env.MONGODB_URI
+    : process.env.MONGODB_URI || process.env.MONGO_URI
     ? "PROD DB"
     : "LOCAL DB";
 
@@ -62,9 +69,31 @@ const dbReady = connect(mongoUri)
       console.log(`연결된 DB: ${dbName}`);
     }
 
+    const readyState = mongoose.connection.readyState;
+    console.log("[mongoose] readyState after connect:", readyState);
+
+    const shouldSync =
+      String(process.env.ENABLE_SYNC_INDEXES || "").toLowerCase() === "true";
+    const isDev = process.env.NODE_ENV !== "production";
+    if (shouldSync && isDev) {
+      console.warn(
+        "[syncIndexes] dev 환경에서는 기본적으로 스킵합니다. 필요 시 ENABLE_SYNC_INDEXES_DEV=true 설정"
+      );
+    }
+
     if (
-      String(process.env.ENABLE_SYNC_INDEXES || "").toLowerCase() === "true"
+      shouldSync &&
+      (!isDev ||
+        String(process.env.ENABLE_SYNC_INDEXES_DEV || "").toLowerCase() ===
+          "true")
     ) {
+      if (readyState !== 1) {
+        console.warn(
+          `[syncIndexes] skipped because connection not ready (readyState=${readyState})`
+        );
+        return;
+      }
+
       const targets = [
         ["RequestorOrganization", RequestorOrganization],
         ["ChargeOrder", ChargeOrder],
