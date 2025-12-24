@@ -221,6 +221,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>(
     userData?.companyName ? "missing" : "missing"
   );
+  const resetVersionRef = useRef(0);
+  const suppressPrefillRef = useRef(false);
 
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
 
@@ -292,6 +294,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   }, [navigate, reason, searchParams, toast]);
 
   useEffect(() => {
+    const loadVersion = resetVersionRef.current;
     const load = async () => {
       try {
         if (!token) return;
@@ -305,10 +308,21 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           setJoinRequestsLoaded(true);
           return;
         }
+        if (resetVersionRef.current !== loadVersion) return;
         const body: any = res.data || {};
         const data = body.data || body;
         const next = (data?.membership || "none") as MembershipStatus;
         setMembership(next);
+
+        if (
+          suppressPrefillRef.current &&
+          setupMode === "license" &&
+          licenseStatus === "missing"
+        ) {
+          suppressPrefillRef.current = false;
+          return;
+        }
+        suppressPrefillRef.current = false;
 
         const orgName = String(data?.organization?.name || "").trim();
         const ex = data?.extracted || {};
@@ -329,6 +343,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
             phone: nextPhone || prev.phone,
           };
         });
+        if (resetVersionRef.current !== loadVersion) return;
         setExtracted((prev) => ({
           ...prev,
           representativeName:
@@ -347,6 +362,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         const licFileId = String(lic?.fileId || "").trim();
         const licS3Key = String(lic?.s3Key || "").trim();
         if (licName || licFileId || licS3Key) {
+          if (resetVersionRef.current !== loadVersion) return;
           setLicenseFileName((prev) => licName || prev);
           setLicenseFileId(licFileId);
           setLicenseS3Key(licS3Key);
@@ -355,6 +371,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           writeStoredBusinessDraft(authUserId, null);
         }
 
+        if (resetVersionRef.current !== loadVersion) return;
         setIsVerified(!!data?.businessVerified);
       } catch {
         setMembership("none");
@@ -589,6 +606,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   };
 
   const runDeleteLicense = async () => {
+    resetVersionRef.current += 1;
     if (membership === "none") {
       setLicenseFileName("");
       setLicenseFileId("");
@@ -700,6 +718,28 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     Array.isArray(myJoinRequests) &&
     myJoinRequests.length === 0;
 
+  const resetLocalBusinessState = useCallback(() => {
+    resetVersionRef.current += 1;
+    suppressPrefillRef.current = true;
+    setLicenseFileName("");
+    setLicenseFileId("");
+    setLicenseS3Key("");
+    setLicenseStatus("missing");
+    setIsVerified(false);
+    setExtracted({});
+    setErrors({});
+    setBusinessData({
+      companyName: "",
+      businessNumber: "",
+      address: "",
+      phone: "",
+    });
+    setCompanyNameTouched(false);
+    if (authUserId) {
+      writeStoredBusinessDraft(authUserId, null);
+    }
+  }, [authUserId]);
+
   const currentOrgName = useMemo(() => {
     const fromUser = String((user as any)?.organization || "").trim();
     const fromState = String(businessData.companyName || "").trim();
@@ -715,6 +755,11 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   }, [membership]);
 
   const handleSave = async () => {
+    const savingToast = toast({
+      title: "저장 중...",
+      description: "사업자 정보를 확인하고 있습니다.",
+      duration: 3000,
+    });
     const { success, verification } = await handleSaveImpl({
       token,
       businessData,
@@ -734,6 +779,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       navigate,
       nextPath: "",
     });
+    savingToast?.dismiss?.();
     if (success) {
       await refreshMembership();
       if (token) {
@@ -1040,6 +1086,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                     className="w-full text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
                     onClick={() => {
                       setSetupModeLocked(true);
+                      resetLocalBusinessState();
                       updateSetupMode("license");
                       startTour(
                         "requestor-onboarding",

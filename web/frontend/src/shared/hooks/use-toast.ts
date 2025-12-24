@@ -137,6 +137,14 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
+const getByteLength = (text: string) => {
+  try {
+    return new TextEncoder().encode(text).length;
+  } catch {
+    return text.length;
+  }
+};
+
 function toast({ ...props }: Toast) {
   const now = Date.now();
   const key = `${props.title ?? ""}|${props.description ?? ""}|${
@@ -165,7 +173,9 @@ function toast({ ...props }: Toast) {
       : String(props.description ?? "");
 
   const hasDescription = !!descriptionText.trim();
-  const duration = props.duration ?? (hasDescription ? 10000 : 5000);
+  const descBytes = hasDescription ? getByteLength(descriptionText) : 0;
+  const duration =
+    props.duration ?? (descBytes > 0 ? (descBytes <= 20 ? 4000 : 8000) : 4000);
 
   const id = genId();
 
