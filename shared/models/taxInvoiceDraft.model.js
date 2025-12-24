@@ -39,6 +39,8 @@ const TaxInvoiceDraftSchema = new mongoose.Schema(
       contactEmail: String,
       contactTel: String,
     },
+    attemptCount: { type: Number, default: 0, min: 0 },
+    lastAttemptAt: { type: Date, default: null },
     hometaxTrxId: { type: String, default: null },
     failReason: { type: String, default: null },
     approvedAt: { type: Date, default: null },

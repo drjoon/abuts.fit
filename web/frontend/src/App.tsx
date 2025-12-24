@@ -74,6 +74,11 @@ const AdminAnalytics = lazy(() =>
     default: m.AdminAnalytics,
   }))
 );
+const AdminTaxInvoices = lazy(() =>
+  import("./pages/admin/system/AdminTaxInvoices").then((m) => ({
+    default: m.AdminTaxInvoices,
+  }))
+);
 const AdminSecurity = lazy(() =>
   import("./pages/admin/system/AdminSecurity").then((m) => ({
     default: m.AdminSecurity,
@@ -256,6 +261,14 @@ const App = () => {
                     <Route
                       path="system-analytics"
                       element={<AdminAnalytics />}
+                    />
+                    <Route
+                      path="tax-invoices"
+                      element={
+                        <RoleProtectedRoute roles={["admin"]}>
+                          <AdminTaxInvoices />
+                        </RoleProtectedRoute>
+                      }
                     />
                     <Route
                       path="security-settings"

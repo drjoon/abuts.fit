@@ -1,1 +1,1 @@
-export { default } from "../shared/models/requestorOrganization.model.js";
+export { default } from "../../../shared/models/requestorOrganization.model.js";

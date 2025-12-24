@@ -130,7 +130,17 @@ export async function adminApproveTaxInvoiceDraft(req, res) {
 
   await TaxInvoiceDraft.updateOne(
     { _id: id, status: { $ne: "SENT" } },
-    { $set: { status: "APPROVED", approvedAt: new Date(), failReason: null } }
+    {
+      $set: {
+        status: "APPROVED",
+        approvedAt: new Date(),
+        failReason: null,
+        hometaxTrxId: null,
+        sentAt: null,
+        attemptCount: 0,
+        lastAttemptAt: null,
+      },
+    }
   );
 
   await writeAuditLog({

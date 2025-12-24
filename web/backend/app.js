@@ -17,6 +17,7 @@ import Counter from "./models/counter.model.js";
 import AdminAuditLog from "./models/adminAuditLog.model.js";
 import SignupVerification from "./models/signupVerification.model.js";
 import TaxInvoiceDraft from "./models/taxInvoiceDraft.model.js";
+import JobLock from "./models/jobLock.model.js";
 import { requestFloodBlocker } from "./middlewares/requestFloodBlocker.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -70,6 +71,7 @@ const dbReady = connect(mongoUri)
         ["BankTransaction", BankTransaction],
         ["BankPollingState", BankPollingState],
         ["TaxInvoiceDraft", TaxInvoiceDraft],
+        ["JobLock", JobLock],
         ["Counter", Counter],
         ["AdminAuditLog", AdminAuditLog],
         ["SignupVerification", SignupVerification],

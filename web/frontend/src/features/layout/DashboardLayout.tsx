@@ -65,6 +65,7 @@ const sidebarItems = {
       label: "채팅 관리",
       href: "/dashboard/chat-management",
     },
+    { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     {
       icon: BarChart3,
       label: "시스템 통계",

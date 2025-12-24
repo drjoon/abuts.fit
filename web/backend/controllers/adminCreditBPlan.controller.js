@@ -2,7 +2,9 @@ import mongoose from "mongoose";
 import ChargeOrder from "../models/chargeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
+import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../models/adminAuditLog.model.js";
+import RequestorOrganization from "../models/requestorOrganization.model.js";
 import { upsertBankTransaction } from "../utils/creditBPlanMatching.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
@@ -152,12 +154,10 @@ export async function adminManualMatch(req, res) {
   }
 
   if (String(order.status) === "CANCELED") {
-    return res
-      .status(400)
-      .json({
-        success: false,
-        message: "취소된 ChargeOrder는 매칭할 수 없습니다.",
-      });
+    return res.status(400).json({
+      success: false,
+      message: "취소된 ChargeOrder는 매칭할 수 없습니다.",
+    });
   }
 
   const session = await mongoose.startSession();
@@ -215,6 +215,51 @@ export async function adminManualMatch(req, res) {
         },
         { upsert: true, session }
       );
+
+      const existingDraft = await TaxInvoiceDraft.findOne(
+        { chargeOrderId: order._id },
+        null,
+        { session }
+      );
+      if (!existingDraft) {
+        const org = await RequestorOrganization.findById(order.organizationId)
+          .select({
+            "extracted.businessNumber": 1,
+            "extracted.companyName": 1,
+            "extracted.representativeName": 1,
+            "extracted.address": 1,
+            "extracted.businessType": 1,
+            "extracted.businessItem": 1,
+            "extracted.email": 1,
+            "extracted.phoneNumber": 1,
+          })
+          .lean({ session });
+
+        await TaxInvoiceDraft.create(
+          [
+            {
+              chargeOrderId: order._id,
+              organizationId: order.organizationId,
+              status: "PENDING_APPROVAL",
+              supplyAmount: Number(order.supplyAmount),
+              vatAmount: Number(order.vatAmount || 0),
+              totalAmount: Number(order.amountTotal || 0),
+              buyer: {
+                bizNo: org?.extracted?.businessNumber || "",
+                corpName: org?.extracted?.companyName || "",
+                ceoName: org?.extracted?.representativeName || "",
+                addr: org?.extracted?.address || "",
+                bizType: org?.extracted?.businessType || "",
+                bizClass: org?.extracted?.businessItem || "",
+                contactEmail: org?.extracted?.email || "",
+                contactTel: org?.extracted?.phoneNumber || "",
+                contactName: org?.extracted?.representativeName || "",
+              },
+            },
+          ],
+          { session }
+        );
+      }
 
       updatedOrder = await ChargeOrder.findById(order._id)
         .session(session)

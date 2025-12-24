@@ -277,6 +277,34 @@
   - `background/`: 백그라운드 워커(잡)
   - `lambda/`: AWS Lambda 함수
 - DB 모델(스키마)은 루트 `shared/models`에 두고 `web/backend`, `background`가 공통 참조합니다.
-  - 서브 컴포넌트: `XxxSection.tsx`, `XxxModal.tsx`, `XxxPanel.tsx`, `XxxStep1.tsx` 등
-  - 훅: `useXxx.ts`
-  - 유틸: `xxxUtils.ts`, `xxxHelpers.ts`
+
+### 11.1 DB 모델(shared) 분리 원칙
+
+- **원칙**: 2개 이상의 프로세스(`web/backend`, `background`, `lambda`)에서 사용하는 DB 모델은 반드시 `shared/models`를 **단일 소스**로 둡니다.
+- `web/backend/models`에는 공용 모델을 직접 정의하지 않고, `shared/models`를 **re-export**하여 사용합니다.
+- `shared/mongoose.js`를 통해 mongoose 인스턴스가 여러 번 로드되지 않도록 유지합니다.
+
+## 12. 세금계산서(국세청/홈택스) 자동 발행 정책
+
+### 12.1 기본 흐름(충전금 기준)
+
+- **기준**: 충전금(입금) 매칭으로 크레딧이 적립되는 건에 대해 세금계산서를 발행합니다.
+- **Draft 생성**: `ChargeOrder`가 `MATCHED`가 되는 시점(자동/관리자 수동 매칭 포함)에 `TaxInvoiceDraft`를 자동 생성합니다.
+- **관리자 승인**: 관리자가 `TaxInvoiceDraft`를 검토 후 승인합니다.
+- **자동 전송**: 전일(KST) 승인된 건에 대해 **익일 12:00(KST)** 배치로 국세청(홈택스) 전송을 시도합니다.
+
+### 12.2 상태(Status) 규칙
+
+- `PENDING_APPROVAL`: 입금 매칭 시 자동 생성(승인 대기)
+- `APPROVED`: 관리자 승인
+- `REJECTED`: 관리자 반려(사유 보관)
+- `CANCELLED`: 전송 전 취소
+- `SENT`: 국세청(홈택스) 전송 성공
+- `FAILED`: 전송 실패(재시도 대상)
+
+### 12.3 배치 실행 및 중복 방지
+
+- 배치는 `background/` 워커에서 수행합니다.
+- 멀티 인스턴스 실행 가능성을 고려하여, 배치 실행은 `JobLock`(DB 기반 락)을 획득한 경우에만 진행합니다.
+- 기본 락 TTL은 15분이며, 환경변수 `TAX_INVOICE_BATCH_LOCK_TTL_MS`로 조절할 수 있습니다.
+- 배치 on/off는 환경변수 `TAX_INVOICE_BATCH_ENABLED`로 제어합니다.
