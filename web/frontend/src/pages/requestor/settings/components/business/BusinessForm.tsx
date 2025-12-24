@@ -34,7 +34,8 @@ interface BusinessFormProps {
   setExtracted: React.Dispatch<React.SetStateAction<LicenseExtracted>>;
   setErrors: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setCompanyNameTouched: (touched: boolean) => void;
-  onSave: () => void;
+  onSave: () => void; // 제출(서버 저장)
+  onAutoSave?: () => void; // 블러/탭 시 로컬 draft 저장만
   renderActions?: (props: { disabled: boolean }) => React.ReactNode;
 }
 
@@ -50,6 +51,7 @@ export const BusinessForm = ({
   setErrors,
   setCompanyNameTouched,
   onSave,
+  onAutoSave,
   renderActions,
 }: BusinessFormProps) => {
   const { isStepActive, completeStep, setStepCompleted } = useGuideTour();
@@ -62,6 +64,68 @@ export const BusinessForm = ({
   const bizItemRef = useRef<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
+  const submitRef = useRef<HTMLButtonElement | null>(null);
+
+  type FieldKey =
+    | "repName"
+    | "startDate"
+    | "companyName"
+    | "phone"
+    | "bizNo"
+    | "bizType"
+    | "bizItem"
+    | "email"
+    | "address"
+    | "submit";
+
+  const focusNextEmpty = (current: FieldKey) => {
+    const fields: {
+      key: FieldKey;
+      ref: React.RefObject<HTMLInputElement | HTMLButtonElement | null>;
+      value: string | undefined;
+    }[] = [
+      { key: "repName", ref: repNameRef, value: extracted.representativeName },
+      { key: "startDate", ref: startDateRef, value: extracted.startDate },
+      {
+        key: "companyName",
+        ref: companyNameRef,
+        value: businessData.companyName,
+      },
+      { key: "phone", ref: phoneRef, value: businessData.phone },
+      { key: "bizNo", ref: bizNoRef, value: businessData.businessNumber },
+      { key: "bizType", ref: bizTypeRef, value: extracted.businessType },
+      { key: "bizItem", ref: bizItemRef, value: extracted.businessItem },
+      { key: "email", ref: emailRef, value: extracted.email },
+      { key: "address", ref: addressRef, value: businessData.address },
+      // submit 버튼은 항상 마지막으로 포커스
+      { key: "submit", ref: submitRef, value: "" },
+    ];
+    const idx = fields.findIndex((f) => f.key === current);
+    if (idx === -1) return false;
+    for (let i = idx + 1; i < fields.length; i += 1) {
+      const f = fields[i];
+      const filled = Boolean(String(f.value || "").trim());
+      if (!filled || f.key === "submit") {
+        f.ref.current?.focus();
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const handleNav = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    current: FieldKey
+  ) => {
+    if ((e.nativeEvent as any)?.isComposing) return false;
+    const isNav = e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+    if (!isNav) return false;
+    const moved = focusNextEmpty(current);
+    if (moved) {
+      e.preventDefault();
+    }
+    return moved;
+  };
 
   const focusNext = (next: React.RefObject<HTMLInputElement | null>) => {
     next.current?.focus();
@@ -83,11 +147,97 @@ export const BusinessForm = ({
     });
   }, [extracted.email, isStepActive]);
 
+  // 초기값이 이미 있으면 가이드 포커스를 완료 상태로 설정
+  useEffect(() => {
+    const name = String(businessData.companyName || "").trim();
+    if (name.length >= 2) {
+      setStepCompleted("requestor.business.companyName", true);
+    }
+  }, [businessData.companyName, setStepCompleted]);
+
+  // 채워진 칸은 가이드 포커스 완료 처리하여 이동하지 않도록
+  useEffect(() => {
+    const fields: { step: string; value: string; valid: boolean }[] = [
+      {
+        step: "requestor.business.representativeName",
+        value: String(extracted.representativeName || "").trim(),
+        valid: String(extracted.representativeName || "").trim().length >= 2,
+      },
+      {
+        step: "requestor.business.startDate",
+        value: String(extracted.startDate || "").trim(),
+        valid: Boolean(
+          extracted.startDate && isValidStartDate(extracted.startDate)
+        ),
+      },
+      {
+        step: "requestor.business.companyName",
+        value: String(businessData.companyName || "").trim(),
+        valid: String(businessData.companyName || "").trim().length >= 2,
+      },
+      {
+        step: "requestor.business.phoneNumber",
+        value: String(businessData.phone || "").trim(),
+        valid: Boolean(
+          businessData.phone && isValidPhoneNumber(businessData.phone)
+        ),
+      },
+      {
+        step: "requestor.business.businessNumber",
+        value: String(businessData.businessNumber || "").trim(),
+        valid: Boolean(
+          businessData.businessNumber &&
+            isValidBusinessNumber(businessData.businessNumber)
+        ),
+      },
+      {
+        step: "requestor.business.businessType",
+        value: String(extracted.businessType || "").trim(),
+        valid: String(extracted.businessType || "").trim().length >= 2,
+      },
+      {
+        step: "requestor.business.businessItem",
+        value: String(extracted.businessItem || "").trim(),
+        valid: String(extracted.businessItem || "").trim().length >= 2,
+      },
+      {
+        step: "requestor.business.email",
+        value: String(extracted.email || "").trim(),
+        valid: Boolean(extracted.email && isValidEmail(extracted.email)),
+      },
+      {
+        step: "requestor.business.address",
+        value: String(businessData.address || "").trim(),
+        valid: String(businessData.address || "").trim().length >= 5,
+      },
+    ];
+
+    fields.forEach(({ step, valid, value }) => {
+      if (value && valid) {
+        setStepCompleted(step, true);
+      }
+    });
+  }, [
+    businessData.address,
+    businessData.businessNumber,
+    businessData.companyName,
+    businessData.phone,
+    extracted.businessItem,
+    extracted.businessType,
+    extracted.email,
+    extracted.representativeName,
+    extracted.startDate,
+    setStepCompleted,
+  ]);
+
   const disabled =
     licenseDeleteLoading ||
     licenseStatus === "uploading" ||
     licenseStatus === "processing" ||
     (membership !== "owner" && membership !== "none");
+
+  const guideMuted =
+    licenseStatus === "uploading" || licenseStatus === "processing";
 
   return (
     <div className="space-y-6">
@@ -104,6 +254,7 @@ export const BusinessForm = ({
             <GuideFocus
               stepId="requestor.business.representativeName"
               className="rounded-xl p-1"
+              muted={guideMuted}
             >
               <Input
                 id="repName"
@@ -125,10 +276,15 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(extracted.representativeName || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (handleNav(e, "repName")) return;
+                  }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.representativeName")) {
-                    const v = String(extracted.representativeName || "").trim();
                     if (v.length < 2) return;
                     completeStep("requestor.business.representativeName");
                   }
@@ -136,7 +292,7 @@ export const BusinessForm = ({
                 }}
                 onBlur={() => {
                   if (disabled) return;
-                  onSave();
+                  onAutoSave?.();
                 }}
               />
             </GuideFocus>
@@ -167,6 +323,12 @@ export const BusinessForm = ({
               }}
               onKeyDown={(e) => {
                 if ((e.nativeEvent as any)?.isComposing) return;
+                const v = String(extracted.startDate || "").trim();
+                const isNav =
+                  e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                if (isNav && v) {
+                  if (handleNav(e, "startDate")) return;
+                }
                 if (e.key !== "Enter") return;
                 e.preventDefault();
                 focusNext(companyNameRef);
@@ -181,7 +343,7 @@ export const BusinessForm = ({
                     return;
                   }
                 }
-                onSave();
+                onAutoSave?.();
               }}
             />
           </div>
@@ -190,6 +352,7 @@ export const BusinessForm = ({
             <GuideFocus
               stepId="requestor.business.companyName"
               className="rounded-xl p-1"
+              muted={guideMuted}
             >
               <Input
                 id="orgName"
@@ -209,10 +372,15 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(businessData.companyName || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (handleNav(e, "companyName")) return;
+                  }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.companyName")) {
-                    const v = String(businessData.companyName || "").trim();
                     if (v.length < 2) return;
                     completeStep("requestor.business.companyName");
                   }
@@ -220,7 +388,7 @@ export const BusinessForm = ({
                 }}
                 onBlur={() => {
                   if (disabled) return;
-                  onSave();
+                  onAutoSave?.();
                 }}
               />
             </GuideFocus>
@@ -230,6 +398,7 @@ export const BusinessForm = ({
             <GuideFocus
               stepId="requestor.business.phoneNumber"
               className="rounded-xl p-1"
+              muted={guideMuted}
             >
               <Input
                 id="orgPhone"
@@ -258,10 +427,15 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(businessData.phone || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (handleNav(e, "phone")) return;
+                  }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.phoneNumber")) {
-                    const v = String(businessData.phone || "").trim();
                     if (!isValidPhoneNumber(v)) return;
                     completeStep("requestor.business.phoneNumber");
                   }
@@ -286,7 +460,7 @@ export const BusinessForm = ({
                     }, 0);
                   }
 
-                  onSave();
+                  onAutoSave?.();
                 }}
               />
             </GuideFocus>
@@ -297,6 +471,7 @@ export const BusinessForm = ({
             <GuideFocus
               stepId="requestor.business.businessNumber"
               className="rounded-xl p-1"
+              muted={guideMuted}
             >
               <Input
                 ref={bizNoRef}
@@ -316,15 +491,24 @@ export const BusinessForm = ({
                     ...prev,
                     businessNumber: nextValue
                       ? !isValidBusinessNumber(nextValue)
-                      : prev.businessNumber,
+                      : false,
                   }));
+                  setStepCompleted(
+                    "requestor.business.businessNumber",
+                    !!nextValue && isValidBusinessNumber(nextValue)
+                  );
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(businessData.businessNumber || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (handleNav(e, "bizNo")) return;
+                  }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessNumber")) {
-                    const v = String(businessData.businessNumber || "").trim();
                     if (!isValidBusinessNumber(v)) return;
                     completeStep("requestor.business.businessNumber");
                   }
@@ -332,7 +516,7 @@ export const BusinessForm = ({
                 }}
                 onBlur={() => {
                   if (disabled) return;
-                  onSave();
+                  onAutoSave?.();
                 }}
               />
             </GuideFocus>
@@ -342,6 +526,7 @@ export const BusinessForm = ({
             <GuideFocus
               stepId="requestor.business.businessType"
               className="rounded-xl p-1"
+              muted={guideMuted}
             >
               <Input
                 id="bizType"
@@ -363,10 +548,15 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(extracted.businessType || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (handleNav(e, "bizType")) return;
+                  }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessType")) {
-                    const v = String(extracted.businessType || "").trim();
                     if (v.length < 2) return;
                     completeStep("requestor.business.businessType");
                   }
@@ -374,7 +564,7 @@ export const BusinessForm = ({
                 }}
                 onBlur={() => {
                   if (disabled) return;
-                  onSave();
+                  onAutoSave?.();
                 }}
               />
             </GuideFocus>
@@ -384,6 +574,7 @@ export const BusinessForm = ({
             <GuideFocus
               stepId="requestor.business.businessItem"
               className="rounded-xl p-1"
+              muted={guideMuted}
             >
               <Input
                 id="bizItem"
@@ -405,10 +596,15 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(extracted.businessItem || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (handleNav(e, "bizItem")) return;
+                  }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.businessItem")) {
-                    const v = String(extracted.businessItem || "").trim();
                     if (v.length < 2) return;
                     completeStep("requestor.business.businessItem");
                   }
@@ -416,7 +612,7 @@ export const BusinessForm = ({
                 }}
                 onBlur={() => {
                   if (disabled) return;
-                  onSave();
+                  onAutoSave?.();
                 }}
               />
             </GuideFocus>
@@ -426,6 +622,7 @@ export const BusinessForm = ({
             <GuideFocus
               stepId="requestor.business.email"
               className="rounded-xl p-1"
+              muted={guideMuted}
             >
               <Input
                 id="taxEmail"
@@ -448,10 +645,15 @@ export const BusinessForm = ({
                 }}
                 onKeyDown={(e) => {
                   if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(extracted.email || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    if (handleNav(e, "email")) return;
+                  }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
                   if (isStepActive("requestor.business.email")) {
-                    const v = String(extracted.email || "").trim();
                     if (!isValidEmail(v)) return;
                     completeStep("requestor.business.email");
                   }
@@ -473,7 +675,7 @@ export const BusinessForm = ({
                     }, 0);
                   }
 
-                  onSave();
+                  onAutoSave?.();
                 }}
               />
             </GuideFocus>
@@ -486,38 +688,65 @@ export const BusinessForm = ({
         <GuideFocus
           stepId="requestor.business.address"
           className="rounded-xl p-1"
+          muted={guideMuted}
         >
-          <Input
-            id="address"
-            ref={addressRef}
-            className={cn(
-              errors.address &&
-                "border-destructive focus-visible:ring-destructive"
-            )}
-            value={businessData.address}
-            onChange={(e) => {
-              setBusinessData((prev) => ({
-                ...prev,
-                address: e.target.value,
-              }));
-              setErrors((prev) => ({ ...prev, address: false }));
-            }}
-            onKeyDown={(e) => {
-              if ((e.nativeEvent as any)?.isComposing) return;
-              if (e.key !== "Enter") return;
-              e.preventDefault();
-              if (isStepActive("requestor.business.address")) {
-                const v = String(businessData.address || "").trim();
-                if (v.length < 5) return;
-                completeStep("requestor.business.address");
-              }
-              addressRef.current?.blur();
-            }}
-            onBlur={() => {
-              if (disabled) return;
-              onSave();
-            }}
-          />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="md:col-span-3">
+              <Input
+                id="address"
+                ref={addressRef}
+                className={cn(
+                  errors.address &&
+                    "border-destructive focus-visible:ring-destructive"
+                )}
+                value={businessData.address}
+                onChange={(e) => {
+                  setBusinessData((prev) => ({
+                    ...prev,
+                    address: e.target.value,
+                  }));
+                  setErrors((prev) => ({ ...prev, address: false }));
+                }}
+                onKeyDown={(e) => {
+                  if ((e.nativeEvent as any)?.isComposing) return;
+                  const v = String(businessData.address || "").trim();
+                  const isNav =
+                    e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
+                  if (isNav && v) {
+                    // 주소는 Enter 시 바로 제출
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (isStepActive("requestor.business.address")) {
+                        if (v.length < 5) return;
+                        completeStep("requestor.business.address");
+                      }
+                      onSave();
+                      return;
+                    }
+                    if (handleNav(e, "address")) return;
+                  }
+                }}
+                onBlur={() => {
+                  if (disabled) return;
+                  onAutoSave?.();
+                }}
+              />
+            </div>
+            <div className="md:col-span-1">
+              <Button
+                type="button"
+                variant="default"
+                className="w-full"
+                disabled={disabled}
+                ref={submitRef}
+                onClick={() => {
+                  onSave();
+                }}
+              >
+                검증 후 제출
+              </Button>
+            </div>
+          </div>
         </GuideFocus>
       </div>
     </div>

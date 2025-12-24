@@ -110,26 +110,7 @@ export const RequestorSettingsPage = () => {
   }, [mockHeaders, token]);
 
   useEffect(() => {
-    if (!guideActive) return;
-    if (activeTourId !== "requestor-onboarding") return;
-    const stepId = guideSteps[currentStepIndex]?.id;
-    if (!stepId) return;
-
-    if (searchParams.get("tab")) return;
-
-    const desiredTab: TabKey | null = stepId.startsWith("requestor.business")
-      ? "business"
-      : stepId.startsWith("requestor.account") ||
-        stepId.startsWith("requestor.phone")
-      ? "account"
-      : null;
-
-    if (!desiredTab) return;
-    if (searchParams.get("tab") === desiredTab) return;
-
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set("tab", desiredTab);
-    setSearchParams(nextParams, { replace: true });
+    return;
   }, [
     activeTourId,
     currentStepIndex,

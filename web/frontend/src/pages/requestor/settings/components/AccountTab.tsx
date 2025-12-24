@@ -108,9 +108,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       });
     }
 
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete("reason");
-    navigate({ search: `?${nextParams.toString()}` }, { replace: true });
+    return;
   }, [navigate, reason, searchParams, toast]);
 
   const getFriendlySaveError = (status: number, message: string) => {
@@ -623,35 +621,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         completeStep("requestor.phone.code");
       }
 
-      if (nextPath) {
-        try {
-          if (userData?.role === "requestor") {
-            const orgRes = await request<any>({
-              path: "/api/requestor-organizations/me",
-              method: "GET",
-              token,
-              headers: mockHeaders,
-            });
-
-            if (orgRes.ok) {
-              const body: any = orgRes.data || {};
-              const data2 = body.data || body;
-              if (!data2?.hasBusinessNumber) {
-                navigate(
-                  `/dashboard/settings?tab=business&next=${encodeURIComponent(
-                    nextPath
-                  )}`
-                );
-                return;
-              }
-            }
-          }
-        } catch {
-          // ignore
-        }
-
-        navigate(nextPath);
-      }
+      // nextPath 기반 자동 포워딩 제거
     } catch {
       toast({
         title: "인증 실패",

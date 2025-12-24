@@ -448,10 +448,6 @@ export const GuideTourProvider = ({
     if (!progressLoaded) return;
     const firstIncomplete = findFirstIncompleteIndex(steps, completedStepIds);
     if (firstIncomplete >= 0) return;
-
-    if (returnTo) {
-      setPendingRedirectTo(returnTo);
-    }
     reset();
   }, [
     active,
@@ -481,9 +477,6 @@ export const GuideTourProvider = ({
     if (firstIncomplete >= 0) {
       setCurrentStepIndex(firstIncomplete);
       return;
-    }
-    if (returnTo) {
-      setPendingRedirectTo(returnTo);
     }
     reset();
   }, [

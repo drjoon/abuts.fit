@@ -20,7 +20,7 @@ export const GuideFocus = ({
   muted = false,
 }: GuideFocusProps) => {
   const { isStepActive, isStepCompleted, getStepMeta } = useGuideTour();
-  const active = isStepActive(stepId) && !isStepCompleted(stepId);
+  const active = isStepActive(stepId) && !isStepCompleted(stepId) && !muted;
   const meta = getStepMeta(stepId);
 
   const message = hint || meta.step?.title;
@@ -39,7 +39,7 @@ export const GuideFocus = ({
       <div
         className={cn(
           "relative",
-          active && !muted && "animate-[pulse_1.8s_ease-in-out_infinite]"
+          active && "animate-[pulse_1.8s_ease-in-out_infinite]"
         )}
       >
         {children}

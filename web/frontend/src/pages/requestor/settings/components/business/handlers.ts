@@ -276,9 +276,6 @@ export const handleSave = async (
       });
     }
 
-    if (nextPath) {
-      navigate(nextPath);
-    }
     return {
       success: true,
       welcomeBonusGranted,

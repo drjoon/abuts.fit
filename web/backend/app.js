@@ -1,13 +1,14 @@
 import express, { json, urlencoded, static as staticMiddleware } from "express";
 import "./bootstrap/env.js";
-import { connect } from "mongoose";
-import cors from "cors";
+import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import morgan from "morgan";
+import cors from "cors";
+import cookieParser from "cookie-parser";
 import { existsSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
-import rateLimit from "express-rate-limit";
+import { connect } from "mongoose";
 import RequestorOrganization from "./models/requestorOrganization.model.js";
 import ChargeOrder from "./models/chargeOrder.model.js";
 import BankTransaction from "./models/bankTransaction.model.js";
@@ -16,6 +17,7 @@ import Counter from "./models/counter.model.js";
 import AdminAuditLog from "./models/adminAuditLog.model.js";
 import SignupVerification from "./models/signupVerification.model.js";
 import TaxInvoiceDraft from "./models/taxInvoiceDraft.model.js";
+import { requestFloodBlocker } from "./middlewares/requestFloodBlocker.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -132,6 +134,8 @@ const limiter = rateLimit({
 
 // API 요청에 Rate Limiting 적용
 app.use("/api", limiter);
+// 동일 콜 과도 반복 차단 (최근 100개, 5초 내 동일 콜 5회 이상)
+app.use("/api", requestFloodBlocker);
 
 // 정적 파일 제공 (업로드된 파일 등)
 app.use("/uploads", staticMiddleware(resolve(__dirname, "uploads")));

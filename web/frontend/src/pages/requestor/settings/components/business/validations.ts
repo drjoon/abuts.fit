@@ -85,11 +85,10 @@ export const isValidPhoneNumber = (input: string): boolean =>
   !!normalizePhoneNumber(input);
 
 export const normalizeStartDate = (input: string): string => {
-  const digits = String(input || "")
+  // 부분 입력도 유지하면서 숫자만 최대 8자리까지 허용
+  return String(input || "")
     .replace(/\D/g, "")
     .slice(0, 8);
-  if (digits.length !== 8) return "";
-  return digits;
 };
 
 export const isValidStartDate = (input: string): boolean =>

@@ -736,7 +736,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setErrors,
       setBusinessData,
       navigate,
-      nextPath: inBusinessTour ? "" : nextPath,
+      nextPath: "",
     });
     if (success) {
       await refreshMembership();
@@ -746,13 +746,6 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
 
       if (isStepActive("requestor.business.businessNumber")) {
         completeStep("requestor.business.businessNumber");
-        navigate(
-          nextPath
-            ? `/dashboard/settings?tab=account&next=${encodeURIComponent(
-                nextPath
-              )}`
-            : "/dashboard/settings?tab=account"
-        );
       }
     }
   };
@@ -902,6 +895,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
           businessItem:
             String(nextExtracted?.businessItem || "").trim() ||
             prev.businessItem,
+          startDate:
+            String(nextExtracted?.startDate || "").trim() || prev.startDate,
         }));
         setBusinessData((prev) => {
           const aiBusinessNumber = formatBusinessNumberInput(
@@ -1150,6 +1145,19 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                       setErrors={setErrors}
                       setCompanyNameTouched={setCompanyNameTouched}
                       onSave={handleSave}
+                      onAutoSave={() => {
+                        if (!authUserId) return;
+                        writeStoredBusinessDraft(authUserId, {
+                          businessData,
+                          extracted,
+                          licenseFileName,
+                          licenseFileId,
+                          licenseS3Key,
+                          licenseStatus,
+                          isVerified,
+                          updatedAt: Date.now(),
+                        });
+                      }}
                     />
                   )}
                 </div>

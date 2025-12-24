@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { request } from "@/lib/apiClient";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
@@ -246,14 +247,12 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
     loginWithToken: async (token: string, refreshToken?: string | null) => {
       try {
-        const res = await fetch("/api/auth/me", {
+        const res = await request<any>({
+          path: "/api/auth/me",
           method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          token,
         });
-
-        const json: any = await res.json().catch(() => null);
+        const json: any = res.data;
         if (!res.ok || !json?.success || !json?.data) return false;
 
         const u = json.data;

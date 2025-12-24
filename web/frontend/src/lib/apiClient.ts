@@ -1,5 +1,10 @@
 import { useAuthStore } from "@/store/useAuthStore";
 
+const IN_FLIGHT = new Map<string, Promise<ApiResponse<any>>>();
+const SHORT_CACHE = new Map<string, { ts: number; value: ApiResponse<any> }>();
+const SHORT_CACHE_TTL_MS = 1000;
+const SHORT_CACHE_MAX = 100;
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface ApiRequestOptions extends RequestInit {
@@ -116,27 +121,69 @@ export async function apiFetch<T = any>(
     body = JSON.stringify(jsonBody);
   }
 
-  const response = await fetch(url, {
-    method,
-    headers: finalHeaders,
-    body,
-    cache: rest.cache ?? "no-store",
-    ...rest,
-  });
+  const bodyKey =
+    typeof body === "string" ? body : body ? "__non_string_body__" : "";
+  const requestKey = `${method}:${url}:${String(effectiveToken || "")}:
+${bodyKey}`;
 
-  let data: any = null;
-  const contentType = response.headers.get("content-type") || "";
-
-  if (contentType.includes("application/json")) {
-    data = await response.json().catch(() => null);
+  const now = Date.now();
+  if (method === "GET") {
+    const cached = SHORT_CACHE.get(requestKey);
+    if (cached && now - cached.ts <= SHORT_CACHE_TTL_MS) {
+      return cached.value as ApiResponse<T>;
+    }
   }
 
-  return {
-    ok: response.ok,
-    status: response.status,
-    data: data as T | null,
-    raw: response,
-  };
+  const existing = IN_FLIGHT.get(requestKey);
+  if (existing) {
+    return (await existing) as ApiResponse<T>;
+  }
+
+  const exec = (async () => {
+    const response = await fetch(url, {
+      method,
+      headers: finalHeaders,
+      body,
+      cache: rest.cache ?? "no-store",
+      ...rest,
+    });
+
+    let data: any = null;
+    const contentType = response.headers.get("content-type") || "";
+
+    if (contentType.includes("application/json")) {
+      data = await response.json().catch(() => null);
+    }
+
+    const out: ApiResponse<T> = {
+      ok: response.ok,
+      status: response.status,
+      data: data as T | null,
+      raw: response,
+    };
+
+    if (method === "GET") {
+      SHORT_CACHE.set(requestKey, {
+        ts: Date.now(),
+        value: out as ApiResponse<any>,
+      });
+      if (SHORT_CACHE.size > SHORT_CACHE_MAX) {
+        const keys = Array.from(SHORT_CACHE.keys());
+        for (let i = 0; i < keys.length - SHORT_CACHE_MAX; i += 1) {
+          SHORT_CACHE.delete(keys[i]);
+        }
+      }
+    }
+
+    return out;
+  })();
+
+  IN_FLIGHT.set(requestKey, exec as Promise<ApiResponse<any>>);
+  try {
+    return (await exec) as ApiResponse<T>;
+  } finally {
+    IN_FLIGHT.delete(requestKey);
+  }
 }
 
 /**
