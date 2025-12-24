@@ -57,6 +57,7 @@ export async function verifyBusinessNumber({
 
   // 1) 진위확인: 대표자명 + 개업일자가 있을 때만 시도 (누락 시 malformed 에러 방지)
   let vItem = null;
+  let validMsg = "";
   if (representativeName && startDate) {
     const validatePayload = {
       businesses: [
@@ -83,7 +84,7 @@ export async function verifyBusinessNumber({
       : null;
 
     const validCode = String(vItem?.valid || "").trim(); // "01" 정상, "02" 불일치
-    const validMsg = String(vItem?.valid_msg || "").trim();
+    validMsg = String(vItem?.valid_msg || "").trim();
 
     if (validCode && validCode !== "01") {
       return {

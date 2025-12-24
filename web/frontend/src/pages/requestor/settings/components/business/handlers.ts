@@ -37,6 +37,12 @@ interface HandleSaveResult {
   success: boolean;
   welcomeBonusGranted?: boolean;
   welcomeBonusAmount?: number;
+  verification?: {
+    verified?: boolean;
+    provider?: string;
+    message?: string;
+    checkedAt?: string;
+  };
 }
 
 export const handleSave = async (
@@ -253,6 +259,16 @@ export const handleSave = async (
     const data = body?.data || body || {};
     const welcomeBonusGranted = Boolean(data?.welcomeBonusGranted);
     const welcomeBonusAmount = Number(data?.welcomeBonusAmount || 0);
+    const verificationRaw = data?.verification;
+    const verification = verificationRaw
+      ? {
+          verified: Boolean(verificationRaw?.verified),
+          provider: String(verificationRaw?.provider || "").trim() || undefined,
+          message: String(verificationRaw?.message || "").trim() || undefined,
+          checkedAt:
+            String(verificationRaw?.checkedAt || "").trim() || undefined,
+        }
+      : undefined;
 
     setErrors({});
     setBusinessData((prev) => ({
@@ -280,6 +296,7 @@ export const handleSave = async (
       success: true,
       welcomeBonusGranted,
       welcomeBonusAmount,
+      verification,
     };
   } catch {
     toast({

@@ -715,11 +715,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   }, [membership]);
 
   const handleSave = async () => {
-    const inBusinessTour =
-      isStepActive("requestor.business.companyName") ||
-      isStepActive("requestor.business.businessNumber");
-
-    const { success } = await handleSaveImpl({
+    const { success, verification } = await handleSaveImpl({
       token,
       businessData,
       extracted,
@@ -731,8 +727,8 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       },
       mockHeaders,
       toast,
-      silent: true,
-      auto: true,
+      silent: false,
+      auto: false,
       setErrors,
       setBusinessData,
       navigate,
@@ -742,6 +738,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       await refreshMembership();
       if (token) {
         await loginWithToken(token);
+      }
+
+      if (verification && typeof verification === "object") {
+        setIsVerified(!!verification.verified);
       }
 
       if (isStepActive("requestor.business.businessNumber")) {

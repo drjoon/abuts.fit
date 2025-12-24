@@ -275,49 +275,11 @@ export const GuideTourProvider = ({
   }, [active, activeTourId, token]);
 
   useEffect(() => {
-    if (active) return;
-    if (!authUserId) {
-      resumeAttemptedForUserRef.current = null;
-      return;
-    }
-    if (resumeAttemptedForUserRef.current === authUserId) return;
-    resumeAttemptedForUserRef.current = authUserId;
-    const persisted = readPersistedGuideState(authUserId);
-    if (!persisted?.tourId) return;
-    const tourSteps = TOUR_DEFINITIONS[persisted.tourId];
-    if (!tourSteps?.length) {
-      writePersistedGuideState(authUserId, null);
-      return;
-    }
-    const persistedIndex = tourSteps.findIndex(
-      (s) => s.id === persisted.stepId
-    );
-    const initialIndex = persistedIndex >= 0 ? persistedIndex : 0;
-    setSteps(tourSteps);
-    setActive(true);
-    setActiveTourId(persisted.tourId);
-    setCurrentStepIndex(initialIndex);
-    setCompletedStepIds(new Set());
-    setProgressLoaded(false);
-    setReturnTo(persisted.returnTo || null);
+    return;
   }, [active]);
 
   useEffect(() => {
-    if (!authUserId) return;
-    if (!active || !activeTourId || !steps.length) {
-      writePersistedGuideState(authUserId, null);
-      return;
-    }
-    const currentStep = steps[currentStepIndex];
-    if (!currentStep) {
-      writePersistedGuideState(authUserId, null);
-      return;
-    }
-    writePersistedGuideState(authUserId, {
-      tourId: activeTourId,
-      stepId: currentStep.id,
-      returnTo,
-    });
+    return;
   }, [active, activeTourId, authUserId, currentStepIndex, steps, returnTo]);
 
   const clearPendingRedirectTo = useCallback(() => {

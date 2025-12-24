@@ -113,6 +113,18 @@ export const BusinessForm = ({
     return false;
   };
 
+  const focusNextEmptyAndMaybeSubmit = (current: FieldKey) => {
+    const moved = focusNextEmpty(current);
+    if (!moved) return false;
+    // 마지막 입력칸에서 submit으로 이동한 경우 Enter로 바로 실행
+    requestAnimationFrame(() => {
+      if (document.activeElement === submitRef.current) {
+        submitRef.current?.click();
+      }
+    });
+    return true;
+  };
+
   const handleNav = (
     e: React.KeyboardEvent<HTMLInputElement>,
     current: FieldKey
@@ -439,7 +451,7 @@ export const BusinessForm = ({
                     if (!isValidPhoneNumber(v)) return;
                     completeStep("requestor.business.phoneNumber");
                   }
-                  focusNext(bizNoRef);
+                  focusNextEmpty("phone");
                 }}
                 onBlur={() => {
                   if (disabled) return;
@@ -456,7 +468,7 @@ export const BusinessForm = ({
                     }
                     completeStep("requestor.business.phoneNumber");
                     setTimeout(() => {
-                      focusNext(bizNoRef);
+                      focusNextEmpty("phone");
                     }, 0);
                   }
 
@@ -649,7 +661,14 @@ export const BusinessForm = ({
                   const isNav =
                     e.key === "Enter" || (e.key === "Tab" && !e.shiftKey);
                   if (isNav && v) {
-                    if (handleNav(e, "email")) return;
+                    if (e.key === "Enter") {
+                      if (focusNextEmptyAndMaybeSubmit("email")) {
+                        e.preventDefault();
+                        return;
+                      }
+                    } else {
+                      if (handleNav(e, "email")) return;
+                    }
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
@@ -657,6 +676,8 @@ export const BusinessForm = ({
                     if (!isValidEmail(v)) return;
                     completeStep("requestor.business.email");
                   }
+                  // 이메일이 마지막 빈 칸이면 submit 실행, 아니면 다음으로 이동
+                  if (focusNextEmptyAndMaybeSubmit("email")) return;
                   focusNext(addressRef);
                 }}
                 onBlur={() => {

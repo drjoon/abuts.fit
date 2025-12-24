@@ -441,6 +441,10 @@ export const DashboardLayout = () => {
     if (user.role !== "requestor") return;
     if (!user.organizationId) return;
 
+    // 크레딧 안내는 신규 의뢰 흐름에서만 노출한다.
+    // (설정/대시보드 등에서 자동 토스트가 뜨며 흐름을 방해하는 문제 방지)
+    if (!location.pathname.startsWith("/dashboard/new-request")) return;
+
     const today = new Date();
     const yyyyMmDd = today.toISOString().slice(0, 10);
     const storageKey = `abuts_credit_nudge:${String(user.id)}:${yyyyMmDd}`;
