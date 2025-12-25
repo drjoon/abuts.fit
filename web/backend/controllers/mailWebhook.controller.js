@@ -1,5 +1,17 @@
 import Mail from "../models/mail.model.js";
 
+const toBool = (v) =>
+  String(v || "")
+    .trim()
+    .toLowerCase() === "true";
+
+const maskSecret = (s) => {
+  const str = String(s ?? "");
+  if (!str) return "(empty)";
+  if (str.length <= 4) return `(${str.length})****`;
+  return `(${str.length})${str.slice(0, 2)}****${str.slice(-2)}`;
+};
+
 export async function receiveInboundMail(req, res) {
   try {
     const {
@@ -19,6 +31,13 @@ export async function receiveInboundMail(req, res) {
 
     const expectedSecret = process.env.MAIL_WEBHOOK_SECRET;
     if (expectedSecret && secret !== expectedSecret) {
+      if (toBool(process.env.DEBUG_MAIL_WEBHOOK)) {
+        console.warn("[mailWebhook] unauthorized", {
+          envFile: String(process.env.ENV_FILE || "").trim() || null,
+          expectedSecret: maskSecret(expectedSecret),
+          receivedSecret: maskSecret(secret),
+        });
+      }
       return res.status(401).json({ success: false, message: "unauthorized" });
     }
 
