@@ -31,6 +31,14 @@ for raw in env_path.read_text(encoding='utf-8').splitlines():
     key = key.strip()
     value = value.strip().replace('\r', '')
 
+    # inline comment 제거: 따옴표로 감싸지지 않은 값에서만 적용
+    if value and not (value.startswith('"') and value.endswith('"')):
+        hash_pos = value.find('#')
+        if hash_pos != -1:
+            before_hash = value[:hash_pos]
+            if before_hash.endswith(' ') or before_hash.endswith('\t'):
+                value = before_hash.rstrip()
+
     if value.startswith('"') and value.endswith('"'):
         formatted = f"{key}={value}"
     elif ' ' in value:

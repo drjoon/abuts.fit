@@ -14,6 +14,9 @@ const EMAIL_BUCKET = process.env.EMAIL_BUCKET;
 const RAW_PREFIX = process.env.RAW_PREFIX || "emails/raw/";
 const ATTACH_PREFIX = process.env.ATTACH_PREFIX || "emails/attachments/";
 const WEBHOOK_URL = process.env.WEBHOOK_URL; // e.g. https://api.example.com/api/webhooks/mail
+const WEBHOOK_URL_LOCAL = process.env.WEBHOOK_URL_LOCAL; // e.g. http://localhost:5173/api/webhooks/mail
+const USE_LOCAL_WEBHOOK =
+  String(process.env.USE_LOCAL_WEBHOOK || "").toLowerCase() === "true";
 const WEBHOOK_SECRET = process.env.MAIL_WEBHOOK_SECRET;
 const PUSHOVER_TOKEN =
   process.env.PUSHOVER_TOKEN || process.env.MAIL_PUSHOVER_TOKEN;
@@ -115,11 +118,18 @@ const postPushover = async ({ title, message }) => {
 
 export const handler = async (event) => {
   if (!EMAIL_BUCKET) throw new Error("EMAIL_BUCKET is not set");
-  if (!WEBHOOK_URL) throw new Error("WEBHOOK_URL is not set");
+  const webhookUrl =
+    USE_LOCAL_WEBHOOK && WEBHOOK_URL_LOCAL ? WEBHOOK_URL_LOCAL : WEBHOOK_URL;
+  if (!webhookUrl) throw new Error("WEBHOOK_URL is not set");
+
+  if (!event?.Records?.length) {
+    console.warn("No Records in event, skipping");
+    return { status: "skipped", reason: "no-records" };
+  }
 
   await ensureBucketExists(EMAIL_BUCKET, AWS_REGION);
 
-  for (const record of event.Records || []) {
+  for (const record of event.Records) {
     const bucket = record.s3.bucket.name;
     const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
 
@@ -190,7 +200,7 @@ export const handler = async (event) => {
     };
 
     try {
-      await fetchJson(WEBHOOK_URL, payload);
+      await fetchJson(webhookUrl, payload);
     } catch (err) {
       console.error("Webhook post failed", err);
       throw err;

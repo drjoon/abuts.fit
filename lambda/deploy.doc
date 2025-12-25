@@ -1,10 +1,10 @@
 1. 준비
-- AWS CLI 자격증명(profile) 설정 확인: aws sts get-caller-identity --profile abuts
+- AWS CLI 자격증명(profile) 설정 확인: aws sts get-caller-identity --profile abuts.fit
 - Lambda 함수 이름/ARN, 리전, 필요한 환경변수(SES 도메인/이메일, QUEUE/SNS/SQS 등) 확인.
 
 2. 패키징 (Node.js 예시)
   - 함수 루트에서 의존성 설치: npm ci --omit=dev
-  - 배포 ZIP 생성: zip -r lambda.zip index.js node_modules package.json (필요 파일 포함)
+  - 배포 ZIP 생성: zip -r lambda.zip index.js node_modules package.json # (필요 파일 포함)
   - 새로 만들기
     aws lambda create-function \
   --function-name ABUTS-EMAIL-INBOUND \
@@ -12,29 +12,19 @@
   --role arn:aws:iam::106055905364:role/abuts-email-inbound-role \
   --handler index.handler \
   --zip-file fileb://lambda.zip \
-  --profile abuts --region ap-northeast-2
+  --profile abuts.fit --region ap-south-1
 
 3. 배포
-  - aws lambda update-function-code \
+- 배포 ZIP 생성:
+zip -r lambda.zip index.js node_modules package.json # (필요 파일 포함)
+- 업데이트:
+aws lambda update-function-code \
+    --function-name ABUTS-EMAIL-INBOUND \
+    --zip-file fileb://lambda.zip \
+    --profile abuts.fit --region ap-south-1
+
+- 환경변수 (prod):
+aws lambda update-function-configuration \
   --function-name ABUTS-EMAIL-INBOUND \
-  --zip-file fileb://lambda.zip \
-  --profile abuts --region ap-northeast-2
-
-  - 환경변수도 필요한 경우:
-  aws lambda update-function-configuration \
-  --function-name ABUTS-EMAIL-INBOUND \
-  --environment "Variables={EMAIL_BUCKET=abuts-fit-email,RAW_PREFIX=emails/raw/,ATTACH_PREFIX=emails/attachments/,WEBHOOK_URL=https://abuts.fit/api/webhooks/mail,MAIL_WEBHOOK_SECRET=3WKblafMNLpxsglta8tEtdUpe+DYrXQhRRsQ314/cBY=}" \
-  --profile abuts --region ap-south-1
-
-4. 권한/연결 확인
-- SES: 수신용 도메인/메일 인증, 수신 Rule Set이 활성화되어 있고 Lambda로 포워딩되는지 확인.
-- Lambda 실행 역할에 SES/CloudWatch Logs 권한 있는지 확인.
-- (SQS/SNS 연동 시) 트리거 설정이 활성화됐는지 확인.
-
-5. 테스트
-- Lambda 콘솔/CLI로 테스트 이벤트 실행.
-- SES 수신 테스트 메일 발송 → CloudWatch Logs로 함수 실행 여부 확인.
-
-6. 배포 후 점검
-- 실제 수신 메일이 정상 처리되는지 확인.
-- 실패 시 CloudWatch Logs 에러 확인 후 환경변수/권한 재확인.
+  --environment "Variables={USE_LOCAL_WEBHOOK=false,EMAIL_BUCKET=abuts-fit-email,RAW_PREFIX=emails/raw/,ATTACH_PREFIX=emails/attachments/,WEBHOOK_URL=https://abuts.fit/api/webhooks/mail,WEBHOOK_URL_LOCAL=http://localhost:5173/api/webhooks/mail,MAIL_WEBHOOK_SECRET=3WKblafMNLpxsglta8tEtdUpe+DYrXQhRRsQ314/cBY=}" \
+  --profile abuts.fit --region ap-south-1
