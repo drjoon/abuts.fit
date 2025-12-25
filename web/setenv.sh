@@ -18,6 +18,7 @@ python3 - <<'PY' "$ENV_FILE" "$ENV_NAME"
 import sys
 from pathlib import Path
 import subprocess
+import os
 
 env_path = Path(sys.argv[1])
 env_name = sys.argv[2]
@@ -31,13 +32,15 @@ for raw in env_path.read_text(encoding='utf-8').splitlines():
     key = key.strip()
     value = value.strip().replace('\r', '')
 
-    # inline comment 제거: 따옴표로 감싸지지 않은 값에서만 적용
+    if key == "PORT" and os.getenv("ALLOW_PORT", "").lower() != "true":
+        continue
+
+    # inline comment/트레일 공백 제거: 따옴표로 감싸지지 않은 값에만 적용
     if value and not (value.startswith('"') and value.endswith('"')):
         hash_pos = value.find('#')
         if hash_pos != -1:
-            before_hash = value[:hash_pos]
-            if before_hash.endswith(' ') or before_hash.endswith('\t'):
-                value = before_hash.rstrip()
+            value = value[:hash_pos]
+        value = value.strip()
 
     if value.startswith('"') and value.endswith('"'):
         formatted = f"{key}={value}"
@@ -52,9 +55,21 @@ if not pairs:
     print("적용할 환경 변수가 없습니다.", file=sys.stderr)
     sys.exit(1)
 
+def should_mask(k: str) -> bool:
+    k = (k or "").upper()
+    return any(x in k for x in ["SECRET", "TOKEN", "PASSWORD", "KEY"]) or k.endswith("_ID")
+
+def mask_pair(pair: str) -> str:
+    if "=" not in pair:
+        return pair
+    k, v = pair.split("=", 1)
+    if should_mask(k):
+        return f"{k}=*****"
+    return pair
+
 print(f"Applying env to Elastic Beanstalk environment: {env_name}")
 for item in pairs:
-    print(f"  {item}")
+    print(f"  {mask_pair(item)}")
 
 subprocess.run(["eb", "setenv", *pairs, "--environment", env_name], check=True)
 PY

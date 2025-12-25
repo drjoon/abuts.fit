@@ -236,11 +236,23 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 const FRONTEND_DIST_PATH = resolve(__dirname, "../frontend/dist");
-const shouldServeFrontendDist = process.env.NODE_ENV === "production";
+const shouldServeFrontendDist =
+  process.env.NODE_ENV === "production" ||
+  process.env.NODE_ENV === "test" ||
+  process.env.NODE_ENV === "development";
+const FRONTEND_INDEX_PATH = join(FRONTEND_DIST_PATH, "index.html");
 const hasFrontendDist =
   shouldServeFrontendDist && existsSync(FRONTEND_DIST_PATH);
+const hasFrontendIndex = hasFrontendDist && existsSync(FRONTEND_INDEX_PATH);
 
-if (hasFrontendDist) {
+app.get("/", (req, res) => {
+  if (hasFrontendIndex) {
+    return res.sendFile(FRONTEND_INDEX_PATH);
+  }
+  return res.send("어벗츠.핏 API 서버에 오신 것을 환영합니다.");
+});
+
+if (hasFrontendIndex) {
   app.use(staticMiddleware(FRONTEND_DIST_PATH));
   app.get("*", (req, res, next) => {
     if (req.path.startsWith("/api/")) {
@@ -249,14 +261,7 @@ if (hasFrontendDist) {
     if (req.path.startsWith("/uploads/")) {
       return next();
     }
-    res.sendFile(join(FRONTEND_DIST_PATH, "index.html"));
-  });
-}
-
-// 기본 라우트
-if (!hasFrontendDist) {
-  app.get("/", (req, res) => {
-    res.send("어벗츠.핏 API 서버에 오신 것을 환영합니다.");
+    res.sendFile(FRONTEND_INDEX_PATH);
   });
 }
 

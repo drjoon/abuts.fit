@@ -61,14 +61,22 @@ info "이전 dist 포함 zip 정리"
 find "$PARENT_DIR" -maxdepth 1 -name 'deploy-*.zip' -type f -mtime +3 -delete || true
 
 info "zip 패키지 생성"
-cat <<'EOF' > "$PARENT_DIR/.ebignore"
+cat <<'EOF' > "$WEB_DIR/.ebignore"
 .git
+/package.json
+/package-lock.json
+!backend/package.json
+!backend/package-lock.json
+!shared/package.json
+!shared/package-lock.json
 node_modules
 frontend/node_modules
 *.zip
 .DS_Store
 *.env
 *.env.*
+/backend/coverage
+/backend/.nyc_output
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
@@ -82,11 +90,11 @@ rm -f "$ZIP_PATH"
   backend \
   shared \
   backend/shared \
-  package.json \
-  package-lock.json \
   Procfile \
   .platform \
   -x "backend/node_modules/*" \
+  -x "backend/coverage/*" \
+  -x "backend/.nyc_output/*" \
   -x "backend/.git/*" \
   -x "*/.DS_Store" \
   -x "*.env" \
@@ -127,10 +135,10 @@ fi
 
 # 1. 먼저 앱 배포 (predeploy 훅에서 npm install 실행됨)
 info "EB 배포"
-eb deploy --staged --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)" || error "eb deploy 실패"
+(cd "$WEB_DIR" && eb deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)") || error "eb deploy 실패"
 
 # 2. 배포 후 환경변수 설정
 info "EBS 환경변수 적용 중..."
-eb setenv "${ENV_ARGS[@]}" || error "환경변수 설정 실패"
+(cd "$WEB_DIR" && eb setenv "${ENV_ARGS[@]}") || error "환경변수 설정 실패"
 
 info "배포 완료: $ZIP_PATH ($ENV_MODE 환경)"
