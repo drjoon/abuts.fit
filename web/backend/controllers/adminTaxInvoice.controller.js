@@ -40,6 +40,13 @@ function toNumOrUndef(v) {
 }
 
 export async function adminListTaxInvoiceDrafts(req, res) {
+  // 개발 환경에서 일시적으로 조회 차단 (몽고 타임아웃 회피용)
+  if (
+    String(process.env.SKIP_TAX_INVOICE_QUERIES || "").toLowerCase() === "true"
+  ) {
+    return res.json({ success: true, data: [] });
+  }
+
   const status = String(req.query.status || "")
     .trim()
     .toUpperCase();

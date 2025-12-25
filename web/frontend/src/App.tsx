@@ -46,47 +46,21 @@ const ManufacturerWorksheetPage = lazy(() =>
     default: m.ManufacturerWorksheetPage,
   }))
 );
+
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((m) => ({
     default: m.SettingsPage,
   }))
 );
-const AdminUserManagement = lazy(() =>
-  import("./pages/admin/users/AdminUserManagement").then((m) => ({
-    default: m.AdminUserManagement,
-  }))
-);
-const AdminRequestMonitoring = lazy(() =>
-  import("./pages/admin/monitoring/AdminRequestMonitoring").then((m) => ({
-    default: m.AdminRequestMonitoring,
-  }))
-);
-const AdminChatManagement = lazy(() =>
-  import("./pages/admin/support/AdminChatManagement").then((m) => ({
-    default: m.AdminChatManagement,
-  }))
-);
-const AdminMailPage = lazy(
-  () => import("./pages/admin/support/AdminMailPage.tsx")
-);
-const AdminAnalytics = lazy(() =>
-  import("./pages/admin/system/AdminAnalytics").then((m) => ({
-    default: m.AdminAnalytics,
-  }))
-);
-const AdminTaxInvoices = lazy(() =>
-  import("./pages/admin/system/AdminTaxInvoices").then((m) => ({
-    default: m.AdminTaxInvoices,
-  }))
-);
-const AdminSecurity = lazy(() =>
-  import("./pages/admin/system/AdminSecurity").then((m) => ({
-    default: m.AdminSecurity,
-  }))
-);
-const AdminOrganizationVerification = lazy(
-  () => import("./pages/admin/system/AdminOrganizationVerification")
-);
+import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
+import { AdminRequestMonitoring } from "@/pages/admin/monitoring/AdminRequestMonitoring";
+import AdminMailPage from "@/pages/admin/support/AdminMailPage";
+import AdminSmsPage from "@/pages/admin/support/AdminSmsPage";
+import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";
+import { AdminAnalytics } from "@/pages/admin/system/AdminAnalytics";
+import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
+import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
+import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/CncDashboardPage").then((m) => ({
     default: m.CncDashboardPage,
@@ -254,6 +228,7 @@ const App = () => {
                       element={<AdminRequestMonitoring />}
                     />
                     <Route path="mail" element={<AdminMailPage />} />
+                    <Route path="sms" element={<AdminSmsPage />} />
                     <Route
                       path="chat-management"
                       element={<AdminChatManagement />}

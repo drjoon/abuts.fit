@@ -19,6 +19,8 @@ import {
 import {
   LayoutDashboard,
   MessageSquare,
+  Mail,
+  Send,
   FileText,
   BarChart3,
   Settings,
@@ -61,9 +63,19 @@ const sidebarItems = {
       href: "/dashboard/request-monitoring",
     },
     {
+      icon: Mail,
+      label: "메일",
+      href: "/dashboard/mail",
+    },
+    {
       icon: MessageSquare,
       label: "채팅 관리",
       href: "/dashboard/chat-management",
+    },
+    {
+      icon: Send,
+      label: "문자메시지",
+      href: "/dashboard/sms",
     },
     { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     {

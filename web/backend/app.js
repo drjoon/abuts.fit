@@ -236,7 +236,9 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 const FRONTEND_DIST_PATH = resolve(__dirname, "../frontend/dist");
-const hasFrontendDist = existsSync(FRONTEND_DIST_PATH);
+const shouldServeFrontendDist = process.env.NODE_ENV === "production";
+const hasFrontendDist =
+  shouldServeFrontendDist && existsSync(FRONTEND_DIST_PATH);
 
 if (hasFrontendDist) {
   app.use(staticMiddleware(FRONTEND_DIST_PATH));

@@ -28,6 +28,10 @@ import {
   adminCancelTaxInvoiceDraft,
 } from "../controllers/adminTaxInvoice.controller.js";
 import { adminOverrideOrganizationVerification } from "../controllers/admin.controller.js";
+import {
+  adminSendSms,
+  adminListSms,
+} from "../controllers/adminSms.controller.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -95,5 +99,9 @@ router.post(
   "/organizations/:id/verification/override",
   adminOverrideOrganizationVerification
 );
+
+// 문자(SMS) 발송/이력
+router.post("/sms/send", adminSendSms);
+router.get("/sms/history", adminListSms);
 
 export default router;
