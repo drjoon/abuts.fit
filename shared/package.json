@@ -1,8 +1,0 @@
-{
-  "name": "abuts-fit-shared",
-  "private": true,
-  "type": "module",
-  "peerDependencies": {
-    "mongoose": "^8.17.0"
-  }
-}

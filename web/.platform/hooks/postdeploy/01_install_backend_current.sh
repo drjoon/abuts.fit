@@ -37,11 +37,18 @@ if [ ! -L "$TARGET/shared" ]; then
 fi
 
 echo "[postdeploy] Installing dependencies in $TARGET"
+
 cd "$TARGET"
 
 if [ -f "package-lock.json" ] || [ -f "npm-shrinkwrap.json" ]; then
-  npm ci --omit=dev --no-audit --no-fund
-  echo "[postdeploy] npm ci finished in $TARGET"
+  if npm ci --omit=dev --no-audit --no-fund; then
+    echo "[postdeploy] npm ci finished in $TARGET"
+  else
+    echo "[postdeploy] npm ci failed. Falling back to npm install in $TARGET" >&2
+    npm install --omit=dev --no-audit --no-fund
+    echo "[postdeploy] npm install finished in $TARGET"
+  fi
+
   if command -v systemctl >/dev/null 2>&1; then
     systemctl reset-failed web.service || true
     systemctl restart web.service || true
@@ -56,3 +63,5 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl reset-failed web.service || true
   systemctl restart web.service || true
 fi
+
+exit 0

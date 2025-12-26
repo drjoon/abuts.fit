@@ -3,8 +3,6 @@
 /package-lock.json
 !backend/package.json
 !backend/package-lock.json
-!shared/package.json
-!shared/package-lock.json
 node_modules
 frontend/node_modules
 *.zip

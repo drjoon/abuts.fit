@@ -8,7 +8,7 @@ set -euo pipefail
 ENVIRONMENT="${1:-prod}"
 ROOT_DIR="$(cd -- "$(dirname "$0")/.." && pwd)"
 BG_DIR="$ROOT_DIR/background"
-SHARED_DIR="$ROOT_DIR/shared"
+WEB_MODELS_DIR="$ROOT_DIR/web/backend/models"
 TS="$(date +%Y%m%d-%H%M%S)"
 ZIP_NAME="background-${ENVIRONMENT}-${TS}.zip"
 STAGING="/tmp/abuts-fit-bg-${TS}"
@@ -26,13 +26,12 @@ rsync -av \
   --exclude "*.zip" \
   "$BG_DIR/" "$STAGING/"
 
-# shared -> staging/shared (file:../shared 의존성용)
+# web/backend/models/*.model.js -> staging/models/ (모든 모델 파일)
+mkdir -p "$STAGING/models"
 rsync -av \
-  --exclude ".git" \
-  --exclude "node_modules" \
-  --exclude "*.env" \
-  --exclude "*.env.*" \
-  "$SHARED_DIR/" "$STAGING/shared/"
+  --include="*.model.js" \
+  --exclude="*" \
+  "$WEB_MODELS_DIR/" "$STAGING/models/"
 
 cd "$STAGING"
 echo "[bg-eb] creating zip: $ZIP_NAME"

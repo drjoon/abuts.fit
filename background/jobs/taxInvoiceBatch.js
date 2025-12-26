@@ -1,5 +1,5 @@
-import TaxInvoiceDraft from "../../shared/models/taxInvoiceDraft.model.js";
-import JobLock from "../../shared/models/jobLock.model.js";
+import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
+import JobLock from "../models/jobLock.model.js";
 import { sendTaxInvoiceDraft } from "../services/hometaxClient.js";
 
 const status = {

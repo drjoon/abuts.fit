@@ -1,5 +1,5 @@
 import axios from "axios";
-import BankPollingState from "../../shared/models/bankPollingState.model.js";
+import BankPollingState from "../models/bankPollingState.model.js";
 import { upsertBankTransaction } from "../utils/creditBPlanMatching.js";
 
 const toBool = (v) =>

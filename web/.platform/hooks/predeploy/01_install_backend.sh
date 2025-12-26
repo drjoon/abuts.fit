@@ -36,11 +36,19 @@ if [ -n "$TARGET" ] && [ -d "$TARGET" ]; then
   fi
 
   echo "[predeploy] Installing dependencies in $TARGET"
+
+
   cd "$TARGET"
 
   if [ -f "package-lock.json" ] || [ -f "npm-shrinkwrap.json" ]; then
-    npm ci --omit=dev --no-audit --no-fund
-    echo "[predeploy] npm ci finished in $TARGET"
+    if npm ci --omit=dev --no-audit --no-fund; then
+      echo "[predeploy] npm ci finished in $TARGET"
+      exit 0
+    fi
+
+    echo "[predeploy] npm ci failed. Falling back to npm install in $TARGET" >&2
+    npm install --omit=dev --no-audit --no-fund
+    echo "[predeploy] npm install finished in $TARGET"
     exit 0
   fi
 

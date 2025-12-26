@@ -1,4 +1,4 @@
-import ChargeOrder from "../../shared/models/chargeOrder.model.js";
+import ChargeOrder from "../models/chargeOrder.model.js";
 import { autoMatchBankTransactionsOnce } from "../utils/creditBPlanMatching.js";
 import { pollNhOpenBankingOnce } from "./nhOpenBankingPoller.js";
 

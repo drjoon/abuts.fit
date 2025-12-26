@@ -24,8 +24,6 @@ error() {
   exit 1
 }
 
-info "parent/shared → web/shared 동기화 생략 (수동 관리)"
-
 # 환경 모드: test (기본값) 또는 prod
 ENV_MODE="${1:-test}"
 
@@ -67,8 +65,6 @@ cat <<'EOF' > "$WEB_DIR/.ebignore"
 /package-lock.json
 !backend/package.json
 !backend/package-lock.json
-!shared/package.json
-!shared/package-lock.json
 node_modules
 frontend/node_modules
 *.zip
@@ -85,11 +81,9 @@ EOF
 
 rm -f "$ZIP_PATH"
 
-# web 폴더 내부를 zip 루트로 포함해 EB 루트에 backend/shared가 직접 위치하도록
+# web 폴더 내부를 zip 루트로 포함
 (cd "$WEB_DIR" && zip -r "$ZIP_PATH" \
   backend \
-  shared \
-  backend/shared \
   Procfile \
   .platform \
   -x "backend/node_modules/*" \
@@ -99,14 +93,6 @@ rm -f "$ZIP_PATH"
   -x "*/.DS_Store" \
   -x "*.env" \
   -x "*.env.*")
-
-# zip 내부에 shared 포함 확인 (대표 파일 체크)
-if ! unzip -l "$ZIP_PATH" "shared/models/requestorOrganization.model.js" >/dev/null 2>&1; then
-  error "ZIP에 shared/models/requestorOrganization.model.js 이 포함되지 않았습니다."
-fi
-if ! unzip -l "$ZIP_PATH" "backend/shared/models/requestorOrganization.model.js" >/dev/null 2>&1; then
-  error "ZIP에 backend/shared/models/requestorOrganization.model.js 이 포함되지 않았습니다."
-fi
 
 info "zip에 dist 포함"
 (cd "$WEB_DIR" && zip -ur "$ZIP_PATH" frontend/dist)
