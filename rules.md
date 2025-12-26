@@ -276,13 +276,15 @@
   - `web/`: 백엔드 API + 프론트 서빙
   - `background/`: 백그라운드 워커(잡)
   - `lambda/`: AWS Lambda 함수
-- DB 모델(스키마)은 루트 `shared/models`에 두고 `web/backend`, `background`가 공통 참조합니다.
+- **기본 원칙**: DB 모델(스키마)은 하나의 소스에서 관리하고, 워커는 복사본을 사용합니다.
+  - 주 소스: `web/backend/models`
+  - 워커 사용: `background/models`에 **복사**하여 사용 (백엔드에서 변경 시 워커로 재복사)
+  - lambda 등 다른 프로세스도 동일한 스키마를 복사 사용
 
-### 11.1 DB 모델(shared) 분리 원칙
+### 11.1 DB 모델 복사 원칙
 
-- **원칙**: 2개 이상의 프로세스(`web/backend`, `background`, `lambda`)에서 사용하는 DB 모델은 반드시 `shared/models`를 **단일 소스**로 둡니다.
-- `web/backend/models`에는 공용 모델을 직접 정의하지 않고, `shared/models`를 **re-export**하여 사용합니다.
-- `shared/mongoose.js`를 통해 mongoose 인스턴스가 여러 번 로드되지 않도록 유지합니다.
+- `web/backend/models`에서 변경 시 `background/models`로 복사하여 스키마 일치 유지
+- mongoose 인스턴스는 각 프로세스별로 독립 연결(backend, background)
 
 ## 12. 세금계산서(국세청/홈택스) 자동 발행 정책
 

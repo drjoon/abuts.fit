@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import TaxInvoiceDraft from "../model/taxInvoiceDraft.model.js";
+import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import { issueTaxInvoice } from "../utils/popbill.util.js";
 
 /**

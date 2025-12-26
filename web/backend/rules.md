@@ -105,19 +105,29 @@
 
 - 웹 서버 프로세스와 백그라운드 잡 프로세스는 분리 운영을 권장합니다.
 - 멀티 인스턴스(Load Balancer) 환경에서 웹 서버가 스케일 아웃될 경우, 웹 서버 내에서 잡을 실행하면 중복 실행/레이스 컨디션이 발생할 수 있습니다.
-- `web/backend`와 `background`는 루트 `shared/models`의 DB 모델(스키마)을 공통 사용합니다.
+- **모델 공유 규칙**: 백그라운드 워커(`background/`)는 `web/backend/models`를 그대로 `background/models`에 복사해 사용합니다. (DB 스키마 단일 소스 → backend, worker는 복사본 사용)
+- 작업 목록/상태는 DB에 저장되고, 백그라운드 워커가 이를 읽어 정해진 시각에 실행합니다.
 
 ### 7.1 크레딧 충전(인터넷뱅킹) 잡
 
-- 실행 위치: `backend/utils/creditBPlanJobs.js`
+- 실행 위치: `background/jobs/creditBPlanJobs.js`
 - 수행 순서: NH 거래내역 폴링 → 만료 처리 → 자동 매칭
 - 권장: EB Worker 환경에서 단일 인스턴스로 실행
 
-### 7.2 환경변수
+### 7.2 세금계산서 발행 잡
+
+- 실행 위치: `background/jobs/taxInvoiceBatch.js` (익일 정오 일괄 발행) 및 `background/jobs/taxInvoiceScheduler.js` (cron 스케줄)
+- 대상: `TaxInvoiceDraft.status`가 `APPROVED` 또는 `FAILED` (재시도)
+- 락: `JobLock` 컬렉션을 사용해 중복 실행 방지
+
+### 7.3 환경변수
 
 - `CREDIT_B_PLAN_JOB_ENABLED`
   - 기본: 미설정 시 실행
   - 웹 서버에서 잡을 끄고 워커에서만 돌릴 때: 웹 서버 환경에 `false` 설정
+- `TAX_INVOICE_BATCH_ENABLED`
+  - 기본: 미설정 시 실행
+  - 끌 경우 `false`로 설정
 - `CREDIT_B_PLAN_JOB_INTERVAL_MS`
   - 기본: 5분
 
