@@ -18,6 +18,11 @@ import {
   adminSendMail,
   adminGetMailUploadUrl,
   adminGetMailDownloadUrl,
+  adminMarkAsRead,
+  adminMarkAsUnread,
+  adminMoveToSpam,
+  adminTrashMail,
+  adminEmptyTrash,
 } from "../controllers/mail.controller.js";
 import {
   adminListTaxInvoiceDrafts,
@@ -81,6 +86,11 @@ router.get("/mails/:id", adminGetMail);
 router.post("/mails/send", adminSendMail);
 router.post("/mails/upload-url", adminGetMailUploadUrl);
 router.post("/mails/download-url", adminGetMailDownloadUrl);
+router.post("/mails/:id/read", adminMarkAsRead);
+router.post("/mails/:id/unread", adminMarkAsUnread);
+router.post("/mails/:id/spam", adminMoveToSpam);
+router.post("/mails/:id/trash", adminTrashMail);
+router.post("/mails/trash/empty", adminEmptyTrash);
 
 // 보너스 지급 내역 / 예외 지급
 router.get("/bonus-grants", adminListBonusGrants);

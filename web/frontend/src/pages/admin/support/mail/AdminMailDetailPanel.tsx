@@ -10,7 +10,14 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download, Paperclip } from "lucide-react";
+import {
+  Download,
+  Paperclip,
+  Mail,
+  MailOpen,
+  AlertOctagon,
+  Trash2,
+} from "lucide-react";
 import {
   formatBytes,
   formatDateTime,
@@ -22,12 +29,20 @@ type Props = {
   selected: MailItem | null;
   detailLoading: boolean;
   onDownload: (s3Key: string) => void;
+  onMarkAsRead?: (id: string) => void;
+  onMarkAsUnread?: (id: string) => void;
+  onMoveToSpam?: (id: string) => void;
+  onTrash?: (id: string) => void;
 };
 
 export const AdminMailDetailPanel = ({
   selected,
   detailLoading,
   onDownload,
+  onMarkAsRead,
+  onMarkAsUnread,
+  onMoveToSpam,
+  onTrash,
 }: Props) => {
   const selectedDate =
     selected?.createdAt || selected?.receivedAt || selected?.sentAt;
@@ -79,15 +94,39 @@ export const AdminMailDetailPanel = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {selected.s3RawKey ? (
+                {onMarkAsUnread &&
+                selected.isRead &&
+                selected.direction === "inbound" ? (
                   <Button
                     variant="outline"
                     size="sm"
                     className="gap-2"
-                    onClick={() => onDownload(selected.s3RawKey!)}
+                    onClick={() => onMarkAsUnread(selected._id)}
                   >
-                    <Download className="h-4 w-4" />
-                    EML
+                    <Mail className="h-4 w-4" />
+                    안읽음
+                  </Button>
+                ) : null}
+                {onMoveToSpam && selected.folder !== "spam" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => onMoveToSpam(selected._id)}
+                  >
+                    <AlertOctagon className="h-4 w-4" />
+                    스팸
+                  </Button>
+                ) : null}
+                {onTrash && selected.folder !== "trash" ? (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => onTrash(selected._id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    삭제
                   </Button>
                 ) : null}
               </div>

@@ -2,6 +2,7 @@ import type { KeyboardEvent } from "react";
 import type { MailItem } from "@/features/admin/mail/mailApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -13,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 import { Paperclip, RefreshCw, Search } from "lucide-react";
 import { formatDateTime, getDirectionBadge, getStatusBadge } from "./mailUi";
 
@@ -118,6 +118,11 @@ export const AdminMailListPanel = ({
                       <div className="flex items-center gap-2">
                         {getDirectionBadge(mail.direction)}
                         {getStatusBadge(mail.status)}
+                        {!mail.isRead && mail.direction === "inbound" ? (
+                          <Badge variant="default" className="text-xs">
+                            새 메일
+                          </Badge>
+                        ) : null}
                         {mail.attachments?.length ? (
                           <Badge variant="outline" className="gap-1">
                             <Paperclip className="h-3 w-3" />
@@ -131,7 +136,14 @@ export const AdminMailListPanel = ({
                         )}
                       </div>
                     </div>
-                    <div className="mt-2 font-medium text-sm truncate">
+                    <div
+                      className={cn(
+                        "mt-2 text-sm truncate",
+                        !mail.isRead && mail.direction === "inbound"
+                          ? "font-bold"
+                          : "font-medium"
+                      )}
+                    >
                       {mail.subject || "(제목 없음)"}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground truncate">

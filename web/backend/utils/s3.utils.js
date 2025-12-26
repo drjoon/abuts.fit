@@ -217,7 +217,7 @@ export const uploadFileToS3 = async (fileBuffer, key, contentType) => {
   }
 };
 
-const deleteFileFromS3 = async (key) => {
+const deleteFileFromS3 = async (key, bucketOverride) => {
   const guardKey = `s3-delete:${key}`;
   const { blocked, count } = shouldBlockExternalCall(guardKey);
   if (blocked) {
@@ -228,9 +228,11 @@ const deleteFileFromS3 = async (key) => {
     return false;
   }
   try {
+    const Bucket =
+      bucketOverride || process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
     await getS3Client().send(
       new DeleteObjectCommand({
-        Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+        Bucket,
         Key: key,
       })
     );
@@ -288,6 +290,7 @@ const getUploadSignedUrl = async (key, contentType, expires = 900) => {
 };
 
 export { s3Upload };
+export { deleteFileFromS3 };
 
 export default {
   s3Upload,

@@ -3,17 +3,26 @@ import {
   createDownloadUrl,
   fetchMail,
   fetchMails,
+  markAsRead,
+  markAsUnread,
+  moveToSpam,
+  trashMail,
   type MailItem,
 } from "@/features/admin/mail/mailApi";
 import { useToast } from "@/hooks/use-toast";
 
-export type MailTab = "inbox" | "sent" | "compose";
+export type MailTab = "inbox" | "sent" | "trash" | "spam" | "compose";
 
 export const useAdminMailBox = () => {
   const { toast } = useToast();
 
   const [tab, setTab] = useState<MailTab>("inbox");
-  const [direction, setDirection] = useState<"inbound" | "outbound">("inbound");
+  const [direction, setDirection] = useState<"inbound" | "outbound" | null>(
+    "inbound"
+  );
+  const [folder, setFolder] = useState<"inbox" | "sent" | "trash" | "spam">(
+    "inbox"
+  );
 
   const [q, setQ] = useState("");
   const queryRef = useRef<string>("");
@@ -39,8 +48,22 @@ export const useAdminMailBox = () => {
   }, [q]);
 
   useEffect(() => {
-    if (tab === "inbox") setDirection("inbound");
-    if (tab === "sent") setDirection("outbound");
+    if (tab === "inbox") {
+      setDirection("inbound");
+      setFolder("inbox");
+    }
+    if (tab === "sent") {
+      setDirection("outbound");
+      setFolder("sent");
+    }
+    if (tab === "trash") {
+      setDirection(null);
+      setFolder("trash");
+    }
+    if (tab === "spam") {
+      setDirection(null);
+      setFolder("spam");
+    }
   }, [tab]);
 
   const loadList = useCallback(
@@ -49,11 +72,15 @@ export const useAdminMailBox = () => {
         setListLoading(true);
         const params = {
           direction: direction || undefined,
+          folder: folder || undefined,
           q: queryRef.current || undefined,
           ...(reset ? {} : cursorRef.current || {}),
         };
         const res = await fetchMails(params);
-        setMails((prev) => (reset ? res.data : [...prev, ...res.data]));
+        const filtered = folder
+          ? res.data.filter((m) => m.folder === folder)
+          : res.data;
+        setMails((prev) => (reset ? filtered : [...prev, ...filtered]));
         cursorRef.current = res.nextCursor;
         setCursor(res.nextCursor);
       } catch (err: any) {
@@ -66,17 +93,16 @@ export const useAdminMailBox = () => {
         setListLoading(false);
       }
     },
-    [direction, toast]
+    [direction, folder, toast]
   );
 
   useEffect(() => {
-    cursorRef.current = null;
-    setCursor(null);
-    setMails([]);
     setSelectedId(null);
     setSelected(null);
+    cursorRef.current = null;
+    setCursor(null);
     loadList(true);
-  }, [direction, loadList]);
+  }, [folder, direction, loadList]);
 
   const loadDetail = useCallback(
     async (id: string) => {
@@ -98,12 +124,22 @@ export const useAdminMailBox = () => {
   );
 
   const selectMail = useCallback(
-    (id: string) => {
+    async (id: string) => {
       setSelectedId(id);
       setSelected(null);
       loadDetail(id);
+
+      try {
+        const mail = mails.find((m) => m._id === id);
+        if (mail && !mail.isRead && mail.direction === "inbound") {
+          await markAsRead(id);
+          loadList(true);
+        }
+      } catch (err) {
+        console.error("Failed to mark as read:", err);
+      }
     },
-    [loadDetail]
+    [loadDetail, mails, loadList]
   );
 
   const onSearch = useCallback(() => {
@@ -137,11 +173,86 @@ export const useAdminMailBox = () => {
     [toast]
   );
 
+  const handleMarkAsRead = useCallback(
+    async (id: string) => {
+      try {
+        await markAsRead(id);
+        toast({ title: "읽음으로 표시했습니다" });
+        loadList(true);
+      } catch (err: any) {
+        toast({
+          title: "읽음 처리 실패",
+          description: err.message,
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, loadList]
+  );
+
+  const handleMarkAsUnread = useCallback(
+    async (id: string) => {
+      try {
+        await markAsUnread(id);
+        toast({ title: "안읽음으로 표시했습니다" });
+        setSelectedId(null);
+        setSelected(null);
+        loadList(true);
+      } catch (err: any) {
+        toast({
+          title: "안읽음 처리 실패",
+          description: err.message,
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, loadList]
+  );
+
+  const handleMoveToSpam = useCallback(
+    async (id: string) => {
+      try {
+        await moveToSpam(id);
+        toast({ title: "스팸함으로 이동했습니다" });
+        setSelectedId(null);
+        setSelected(null);
+        loadList(true);
+      } catch (err: any) {
+        toast({
+          title: "스팸 이동 실패",
+          description: err.message,
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, loadList]
+  );
+
+  const handleTrash = useCallback(
+    async (id: string) => {
+      try {
+        await trashMail(id);
+        toast({ title: "휴지통으로 이동했습니다" });
+        setSelectedId(null);
+        setSelected(null);
+        loadList(true);
+      } catch (err: any) {
+        toast({
+          title: "삭제 실패",
+          description: err.message,
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, loadList]
+  );
+
   return {
     tab,
     setTab,
     q,
     setQ,
+    folder,
     mails,
     listLoading,
     selectedId,
@@ -152,5 +263,9 @@ export const useAdminMailBox = () => {
     loadMore,
     hasMore,
     handleDownload,
+    handleMarkAsRead,
+    handleMarkAsUnread,
+    handleMoveToSpam,
+    handleTrash,
   };
 };

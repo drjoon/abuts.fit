@@ -11,6 +11,8 @@ export type MailItem = {
   _id: string;
   direction: "inbound" | "outbound";
   status: "pending" | "sent" | "failed" | "received";
+  folder?: "inbox" | "sent" | "trash" | "spam";
+  isRead?: boolean;
   from?: string;
   to?: string[];
   cc?: string[];
@@ -23,6 +25,8 @@ export type MailItem = {
   messageId?: string;
   receivedAt?: string;
   sentAt?: string;
+  trashedAt?: string;
+  readAt?: string;
   createdAt?: string;
 };
 
@@ -40,6 +44,7 @@ type ApiEnvelope<T> = {
 
 export async function fetchMails(params: {
   direction?: "inbound" | "outbound";
+  folder?: "inbox" | "sent" | "trash" | "spam";
   q?: string;
   from?: string;
   to?: string;
@@ -104,6 +109,52 @@ export async function createDownloadUrl(payload: {
     jsonBody: payload,
   });
   if (!res.ok) throw new Error(res.data?.message || "다운로드 URL 발급 실패");
+  return res.data!.data;
+}
+
+export async function trashMail(id: string) {
+  const res = await request<ApiEnvelope<MailItem>>({
+    path: `/api/admin/mails/${id}/trash`,
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(res.data?.message || "휴지통 이동 실패");
+  return res.data!.data;
+}
+
+export async function emptyTrash(permanently = true) {
+  const res = await request<ApiEnvelope<{ deletedCount: number }>>({
+    path: "/api/admin/mails/trash/empty",
+    method: "POST",
+    jsonBody: { permanently },
+  });
+  if (!res.ok) throw new Error(res.data?.message || "휴지통 비우기 실패");
+  return res.data!.data;
+}
+
+export async function markAsRead(id: string) {
+  const res = await request<ApiEnvelope<MailItem>>({
+    path: `/api/admin/mails/${id}/read`,
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(res.data?.message || "읽음 처리 실패");
+  return res.data!.data;
+}
+
+export async function markAsUnread(id: string) {
+  const res = await request<ApiEnvelope<MailItem>>({
+    path: `/api/admin/mails/${id}/unread`,
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(res.data?.message || "안읽음 처리 실패");
+  return res.data!.data;
+}
+
+export async function moveToSpam(id: string) {
+  const res = await request<ApiEnvelope<MailItem>>({
+    path: `/api/admin/mails/${id}/spam`,
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(res.data?.message || "스팸 이동 실패");
   return res.data!.data;
 }
 

@@ -12,6 +12,17 @@ const MailAttachmentSchema = new mongoose.Schema(
 
 const MailSchema = new mongoose.Schema(
   {
+    folder: {
+      type: String,
+      enum: ["inbox", "sent", "trash", "spam"],
+      default: "inbox",
+      index: true,
+    },
+    isRead: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     direction: {
       type: String,
       enum: ["inbound", "outbound"],
@@ -35,6 +46,8 @@ const MailSchema = new mongoose.Schema(
     error: { type: String },
     receivedAt: { type: Date },
     sentAt: { type: Date },
+    trashedAt: { type: Date },
+    readAt: { type: Date },
   },
   {
     timestamps: true,
@@ -44,6 +57,7 @@ const MailSchema = new mongoose.Schema(
 MailSchema.index({ direction: 1, createdAt: -1 });
 MailSchema.index({ from: 1, createdAt: -1 });
 MailSchema.index({ to: 1, createdAt: -1 });
+MailSchema.index({ folder: 1, createdAt: -1 });
 MailSchema.index({ subject: "text" });
 
 const Mail = mongoose.model("Mail", MailSchema);

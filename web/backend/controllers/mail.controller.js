@@ -1,6 +1,10 @@
 import Mail from "../models/mail.model.js";
 import { sendEmailWithAttachments } from "../utils/email.util.js";
-import { getSignedUrl, getUploadSignedUrl } from "../utils/s3.utils.js";
+import {
+  getSignedUrl,
+  getUploadSignedUrl,
+  deleteFileFromS3,
+} from "../utils/s3.utils.js";
 
 const PAGE_SIZE = 20;
 
@@ -8,6 +12,7 @@ export async function adminListMails(req, res) {
   try {
     const {
       direction,
+      folder,
       q,
       from,
       to,
@@ -19,6 +24,7 @@ export async function adminListMails(req, res) {
     } = req.query;
 
     const query = {};
+    if (folder) query.folder = folder;
     if (direction) query.direction = direction;
     if (from) query.from = from;
     if (to) query.to = to;
@@ -40,10 +46,12 @@ export async function adminListMails(req, res) {
     }
 
     const size = Math.min(Number(limit) || PAGE_SIZE, 100);
+    console.log("[adminListMails] query:", JSON.stringify(query));
     const items = await Mail.find(query)
       .sort({ createdAt: -1, _id: -1 })
       .limit(size + 1)
       .lean();
+    console.log("[adminListMails] found:", items.length, "items");
 
     const hasMore = items.length > size;
     const data = hasMore ? items.slice(0, size) : items;
@@ -60,6 +68,117 @@ export async function adminListMails(req, res) {
     return res
       .status(500)
       .json({ success: false, message: "메일 목록 조회 실패" });
+  }
+}
+
+export async function adminMarkAsRead(req, res) {
+  try {
+    const { id } = req.params;
+    const mail = await Mail.findById(id);
+    if (!mail) {
+      return res.status(404).json({ success: false, message: "not found" });
+    }
+    mail.isRead = true;
+    mail.readAt = new Date();
+    await mail.save();
+    return res.status(200).json({ success: true, data: mail });
+  } catch (error) {
+    console.error("[adminMarkAsRead] failed", error);
+    return res.status(500).json({ success: false, message: "읽음 처리 실패" });
+  }
+}
+
+export async function adminMarkAsUnread(req, res) {
+  try {
+    const { id } = req.params;
+    const mail = await Mail.findById(id);
+    if (!mail) {
+      return res.status(404).json({ success: false, message: "not found" });
+    }
+    mail.isRead = false;
+    mail.readAt = null;
+    // 스팸/휴지통 등에서 안읽음 처리 시 기본 수신함으로 복귀
+    if (mail.folder !== "inbox") {
+      mail.folder = "inbox";
+      mail.trashedAt = null;
+    }
+    await mail.save();
+    return res.status(200).json({ success: true, data: mail });
+  } catch (error) {
+    console.error("[adminMarkAsUnread] failed", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "안읽음 처리 실패" });
+  }
+}
+
+export async function adminMoveToSpam(req, res) {
+  try {
+    const { id } = req.params;
+    const mail = await Mail.findById(id);
+    if (!mail) {
+      return res.status(404).json({ success: false, message: "not found" });
+    }
+    mail.folder = "spam";
+    await mail.save();
+    return res.status(200).json({ success: true, data: mail });
+  } catch (error) {
+    console.error("[adminMoveToSpam] failed", error);
+    return res.status(500).json({ success: false, message: "스팸 이동 실패" });
+  }
+}
+
+export async function adminTrashMail(req, res) {
+  try {
+    const { id } = req.params;
+    const mail = await Mail.findById(id);
+    if (!mail) {
+      return res.status(404).json({ success: false, message: "not found" });
+    }
+    mail.folder = "trash";
+    mail.trashedAt = new Date();
+    await mail.save();
+    return res.status(200).json({ success: true, data: mail });
+  } catch (error) {
+    console.error("[adminTrashMail] failed", error);
+    return res.status(500).json({ success: false, message: "삭제 실패" });
+  }
+}
+
+export async function adminEmptyTrash(req, res) {
+  try {
+    const { permanently } = req.body || {};
+    const trashes = await Mail.find({ folder: "trash" });
+    let deletedCount = 0;
+
+    for (const mail of trashes) {
+      if (permanently) {
+        // S3 원본 및 첨부 삭제
+        if (mail.s3RawKey) {
+          await deleteFileFromS3(mail.s3RawKey);
+        }
+        if (mail.attachments?.length) {
+          for (const att of mail.attachments) {
+            if (att.s3Key) await deleteFileFromS3(att.s3Key);
+          }
+        }
+        await Mail.deleteOne({ _id: mail._id });
+        deletedCount += 1;
+      } else {
+        mail.folder = "trash";
+        await mail.save();
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { deletedCount, permanently: !!permanently },
+    });
+  } catch (error) {
+    console.error("[adminEmptyTrash] failed", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "휴지통 비우기 실패" });
   }
 }
 
