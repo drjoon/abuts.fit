@@ -40,6 +40,11 @@ import {
   adminSendSms,
   adminListSms,
 } from "../controllers/adminSms.controller.js";
+import {
+  adminGetCreditStats,
+  adminGetOrganizationCredits,
+  adminGetOrganizationCreditDetail,
+} from "../controllers/adminCredit.controller.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -61,6 +66,11 @@ router.patch("/requests/:id/assign", adminController.assignManufacturer);
 
 // 대시보드 통계
 router.get("/dashboard", adminController.getDashboardStats);
+
+// 크레딧 관리
+router.get("/credits/stats", adminGetCreditStats);
+router.get("/credits/organizations", adminGetOrganizationCredits);
+router.get("/credits/organizations/:id", adminGetOrganizationCreditDetail);
 router.get("/credits/b-plan/charge-orders", adminListChargeOrders);
 router.get("/credits/b-plan/bank-transactions", adminListBankTransactions);
 router.post(

@@ -60,6 +60,7 @@ import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";
 import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
+import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/CncDashboardPage").then((m) => ({
     default: m.CncDashboardPage,
@@ -249,6 +250,14 @@ const App = () => {
                       element={
                         <RoleProtectedRoute roles={["admin"]}>
                           <AdminOrganizationVerification />
+                        </RoleProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="credits"
+                      element={
+                        <RoleProtectedRoute roles={["admin"]}>
+                          <AdminCreditPage />
                         </RoleProtectedRoute>
                       }
                     />
