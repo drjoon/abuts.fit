@@ -15,12 +15,30 @@ const chargeOrderSchema = new mongoose.Schema(
       index: true,
     },
     depositCode: { type: String, required: true, trim: true, index: true },
+    depositorName: { type: String, required: true, trim: true, index: true },
     status: {
       type: String,
-      enum: ["PENDING", "MATCHED", "EXPIRED", "CANCELED"],
+      enum: ["PENDING", "MATCHED", "EXPIRED", "CANCELED", "AUTO_MATCHED"],
       default: "PENDING",
       index: true,
     },
+    adminApproved: { type: Boolean, default: false },
+    adminApprovedAt: { type: Date, default: null },
+    adminApprovedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    adminVerified: { type: Boolean, default: false },
+    adminVerifiedAt: { type: Date, default: null },
+    adminVerifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    isLocked: { type: Boolean, default: false },
+    lockedAt: { type: Date, default: null },
+    lockedReason: { type: String, default: "" },
     supplyAmount: { type: Number, required: true, min: 0 },
     vatAmount: { type: Number, required: true, min: 0 },
     amountTotal: { type: Number, required: true, min: 0, index: true },
@@ -46,6 +64,13 @@ const chargeOrderSchema = new mongoose.Schema(
 
 chargeOrderSchema.index({
   depositCode: 1,
+  status: 1,
+  amountTotal: 1,
+  expiresAt: 1,
+});
+
+chargeOrderSchema.index({
+  depositorName: 1,
   status: 1,
   amountTotal: 1,
   expiresAt: 1,

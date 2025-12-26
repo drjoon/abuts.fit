@@ -24,6 +24,7 @@ type CreditOrderResponse = {
     id: string;
     status: string;
     depositCode: string;
+    depositorName: string;
     supplyAmount: number;
     vatAmount: number;
     amountTotal: number;
@@ -220,15 +221,22 @@ export const CreditPaymentTab = ({ userData }: Props) => {
           {Number(pendingOrder.amountTotal || 0).toLocaleString()}원
         </span>
       </div>
-      <div>
-        입금코드:{" "}
-        <span className="font-semibold">{pendingOrder.depositCode}</span>
-      </div>
 
       <div className="border-t border-dashed border-gray-200 pt-2 mt-2" />
-      <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
-        <div>입금자 이름에 입금코드 기재해주세요.</div>
-        <div className="mt-0.5">미기재시 수동 처리로 오래 걸려요.</div>
+      <div className="rounded-md border-2 border-red-400 bg-red-50 px-3 py-2.5 text-sm">
+        <div className="flex items-start gap-2">
+          <span className="text-lg">⚠️</span>
+          <div className="flex-1">
+            <div className="font-bold text-red-900 text-base mb-1">
+              입금자명을 반드시 "{pendingOrder.depositorName}"으로 입력하세요!
+            </div>
+            <div className="text-red-800 space-y-0.5">
+              <div>• 다른 이름으로 입금하시면 자동 처리가 되지 않습니다.</div>
+              <div>• 은행에 따라 앞뒤에 다른 문자가 붙어도 괜찮습니다.</div>
+              <div>• 입금 확인 후 자동으로 크레딧이 충전됩니다.</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   ) : null;

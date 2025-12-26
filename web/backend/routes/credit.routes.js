@@ -11,7 +11,14 @@ import {
   createChargeOrder,
   listMyChargeOrders,
   cancelMyChargeOrder,
+  requestTaxInvoice,
+  listMyTaxInvoices,
+  getMyTaxInvoice,
 } from "../controllers/creditBPlan.controller.js";
+import {
+  sendVerificationCode,
+  verifyCode,
+} from "../controllers/phoneVerification.controller.js";
 
 router.use(authenticate);
 
@@ -24,5 +31,14 @@ router.post("/b-plan/orders", createChargeOrder);
 router.post("/orders", createChargeOrder);
 router.post("/orders/:chargeOrderId/cancel", cancelMyChargeOrder);
 router.post("/b-plan/orders/:chargeOrderId/cancel", cancelMyChargeOrder);
+
+// 세금계산서
+router.post("/tax-invoices", requestTaxInvoice);
+router.get("/tax-invoices", listMyTaxInvoices);
+router.get("/tax-invoices/:id", getMyTaxInvoice);
+
+// 전화번호 인증
+router.post("/phone/send-code", sendVerificationCode);
+router.post("/phone/verify-code", verifyCode);
 
 export default router;

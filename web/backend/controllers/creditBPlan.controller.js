@@ -1,4 +1,6 @@
 import ChargeOrder from "../models/chargeOrder.model.js";
+import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
+import RequestorOrganization from "../models/requestorOrganization.model.js";
 import { ensureOrganizationDepositCode } from "../utils/depositCode.utils.js";
 
 function roundVat(amount) {
@@ -50,11 +52,20 @@ function getDepositAccountInfo() {
 export async function createChargeOrder(req, res) {
   const organizationId = req.user?.organizationId;
   const userId = req.user?._id;
+  const userName = req.user?.name;
 
   if (!organizationId) {
     return res.status(403).json({
       success: false,
       message: "기공소 정보가 없습니다.",
+    });
+  }
+
+  if (!userName) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "사용자 이름이 등록되지 않았습니다. 계정 정보를 먼저 등록해주세요.",
     });
   }
 
@@ -75,6 +86,7 @@ export async function createChargeOrder(req, res) {
     organizationId,
     userId,
     depositCode,
+    depositorName: userName,
     supplyAmount,
     vatAmount,
     amountTotal,
@@ -88,6 +100,7 @@ export async function createChargeOrder(req, res) {
       id: doc._id,
       status: doc.status,
       depositCode: doc.depositCode,
+      depositorName: doc.depositorName,
       supplyAmount: doc.supplyAmount,
       vatAmount: doc.vatAmount,
       amountTotal: doc.amountTotal,
@@ -178,4 +191,182 @@ export async function cancelMyChargeOrder(req, res) {
 
   const updated = await ChargeOrder.findById(order._id).lean();
   return res.json({ success: true, data: updated });
+}
+
+export async function requestTaxInvoice(req, res) {
+  try {
+    const userId = req.user?._id;
+    const organizationId = req.user?.organizationId;
+
+    if (!organizationId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const { chargeOrderId } = req.body;
+    if (!chargeOrderId) {
+      return res.status(400).json({
+        success: false,
+        message: "충전 주문 ID가 필요합니다.",
+      });
+    }
+
+    const chargeOrder = await ChargeOrder.findOne({
+      _id: chargeOrderId,
+      organizationId,
+    });
+
+    if (!chargeOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "충전 주문을 찾을 수 없습니다.",
+      });
+    }
+
+    if (chargeOrder.status !== "MATCHED") {
+      return res.status(400).json({
+        success: false,
+        message: "입금이 확인된 주문만 세금계산서를 요청할 수 있습니다.",
+      });
+    }
+
+    const existingDraft = await TaxInvoiceDraft.findOne({
+      chargeOrderId,
+      status: { $in: ["PENDING_APPROVAL", "APPROVED", "SENT"] },
+    });
+
+    if (existingDraft) {
+      return res.status(400).json({
+        success: false,
+        message: "이미 세금계산서 발급 요청이 진행 중입니다.",
+      });
+    }
+
+    const organization = await RequestorOrganization.findById(organizationId);
+    if (!organization) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "조직 정보를 찾을 수 없습니다. 사업자 정보를 먼저 등록해주세요.",
+      });
+    }
+
+    const extracted = organization.extracted || {};
+    const buyer = {
+      bizNo: extracted.businessNumber || "",
+      corpName: extracted.companyName || "",
+      ceoName: extracted.ceoName || "",
+      addr: extracted.address || "",
+      bizType: extracted.businessType || "",
+      bizClass: extracted.businessCategory || "",
+      contactName: req.user?.name || "",
+      contactEmail: req.user?.email || "",
+      contactTel: req.user?.phone || "",
+    };
+
+    const draft = await TaxInvoiceDraft.create({
+      chargeOrderId,
+      organizationId,
+      userId,
+      status: "PENDING_APPROVAL",
+      supplyAmount: chargeOrder.supplyAmount || 0,
+      vatAmount: chargeOrder.vatAmount || 0,
+      totalAmount: chargeOrder.amountTotal || 0,
+      buyer,
+    });
+
+    return res.status(201).json({ success: true, data: draft });
+  } catch (error) {
+    console.error("세금계산서 발급 요청 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "세금계산서 발급 요청에 실패했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function listMyTaxInvoices(req, res) {
+  try {
+    const userId = req.user?._id;
+    const organizationId = req.user?.organizationId;
+
+    if (!organizationId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const { status, page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const query = { organizationId };
+    if (status) {
+      query.status = status;
+    }
+
+    const drafts = await TaxInvoiceDraft.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await TaxInvoiceDraft.countDocuments(query);
+
+    return res.status(200).json({
+      success: true,
+      data: drafts,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (error) {
+    console.error("세금계산서 목록 조회 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "세금계산서 목록 조회에 실패했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getMyTaxInvoice(req, res) {
+  try {
+    const organizationId = req.user?.organizationId;
+    const { id } = req.params;
+
+    if (!organizationId) {
+      return res.status(403).json({
+        success: false,
+        message: "기공소 정보가 설정되지 않았습니다.",
+      });
+    }
+
+    const draft = await TaxInvoiceDraft.findOne({
+      _id: id,
+      organizationId,
+    }).lean();
+
+    if (!draft) {
+      return res.status(404).json({
+        success: false,
+        message: "세금계산서를 찾을 수 없습니다.",
+      });
+    }
+
+    return res.status(200).json({ success: true, data: draft });
+  } catch (error) {
+    console.error("세금계산서 조회 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "세금계산서 조회에 실패했습니다.",
+      error: error.message,
+    });
+  }
 }

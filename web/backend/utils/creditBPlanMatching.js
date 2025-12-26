@@ -68,7 +68,6 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
   const max = Math.min(500, Math.max(1, Number(limit) || 200));
   const txs = await BankTransaction.find({
     status: "NEW",
-    depositCode: { $ne: "" },
   })
     .sort({ occurredAt: 1, createdAt: 1, _id: 1 })
     .limit(max)
@@ -81,23 +80,39 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
   for (const tx of txs) {
     scanned += 1;
 
-    const depositCode = String(tx?.depositCode || "").trim();
+    const printedContent = String(tx?.printedContent || "").trim();
     const tranAmt = Number(tx?.tranAmt || 0);
-    if (!depositCode || !Number.isFinite(tranAmt) || tranAmt <= 0) continue;
+    if (!printedContent || !Number.isFinite(tranAmt) || tranAmt <= 0) continue;
 
     const candidates = await ChargeOrder.find({
       status: "PENDING",
-      depositCode,
       amountTotal: tranAmt,
       expiresAt: { $gt: now },
       bankTransactionId: null,
     })
-      .select({ _id: 1, organizationId: 1, userId: 1, supplyAmount: 1 })
+      .select({
+        _id: 1,
+        organizationId: 1,
+        userId: 1,
+        supplyAmount: 1,
+        depositorName: 1,
+        vatAmount: 1,
+        amountTotal: 1,
+      })
       .lean();
 
-    if (candidates.length !== 1) continue;
+    let matchedOrder = null;
+    for (const candidate of candidates) {
+      const depositorName = String(candidate?.depositorName || "").trim();
+      if (depositorName && printedContent.includes(depositorName)) {
+        matchedOrder = candidate;
+        break;
+      }
+    }
 
-    const order = candidates[0];
+    if (!matchedOrder) continue;
+    const order = matchedOrder;
+
     const session = await mongoose.startSession();
     try {
       const ok = await session.withTransaction(async () => {
@@ -124,6 +139,8 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
               bankTransactionId: tx._id,
               matchedAt: new Date(),
               matchedBy: "AUTO",
+              adminApproved: true,
+              adminApprovedAt: new Date(),
             },
           },
           { session }
@@ -133,6 +150,7 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
           throw new Error("ChargeOrder update failed");
         }
 
+        // 크레딧 즉시 충전
         const uniqueKey = `bplan:bankTx:${String(tx._id)}:charge`;
         await CreditLedger.updateOne(
           { uniqueKey },
@@ -150,7 +168,7 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
           { upsert: true, session }
         );
 
-        // 세금계산서 발행용 Draft 생성 (중복 보호: chargeOrderId unique)
+        // 세금계산서 Draft 생성 (다음날 12시 일괄 발행용)
         const existingDraft = await TaxInvoiceDraft.findOne(
           { chargeOrderId: order._id },
           null,
@@ -175,7 +193,7 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
               {
                 chargeOrderId: order._id,
                 organizationId: order.organizationId,
-                status: "PENDING_APPROVAL",
+                status: "APPROVED",
                 supplyAmount: Number(order.supplyAmount),
                 vatAmount: Number(order.vatAmount || 0),
                 totalAmount: Number(order.amountTotal || 0),

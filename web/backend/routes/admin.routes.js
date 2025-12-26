@@ -9,6 +9,9 @@ import {
   adminUpsertBankTransaction,
   adminRequestBankTransactions,
   adminGetBankTransactions,
+  adminVerifyChargeOrder,
+  adminLockChargeOrder,
+  adminUnlockChargeOrder,
 } from "../controllers/adminCreditBPlan.controller.js";
 import {
   adminListBonusGrants,
@@ -93,6 +96,9 @@ router.get(
   "/credits/b-plan/bank-transactions/search",
   adminGetBankTransactions
 );
+router.post("/credits/b-plan/charge-orders/verify", adminVerifyChargeOrder);
+router.post("/credits/b-plan/charge-orders/lock", adminLockChargeOrder);
+router.post("/credits/b-plan/charge-orders/unlock", adminUnlockChargeOrder);
 
 // 가격/리퍼럴 정책 통계
 router.get("/pricing-stats", adminController.getPricingStats);
