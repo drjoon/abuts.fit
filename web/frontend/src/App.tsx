@@ -57,7 +57,6 @@ import { AdminRequestMonitoring } from "@/pages/admin/monitoring/AdminRequestMon
 import AdminMailPage from "@/pages/admin/support/AdminMailPage";
 import AdminSmsPage from "@/pages/admin/support/AdminSmsPage";
 import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";
-import { AdminAnalytics } from "@/pages/admin/system/AdminAnalytics";
 import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
@@ -232,10 +231,6 @@ const App = () => {
                     <Route
                       path="chat-management"
                       element={<AdminChatManagement />}
-                    />
-                    <Route
-                      path="system-analytics"
-                      element={<AdminAnalytics />}
                     />
                     <Route
                       path="tax-invoices"

@@ -28,6 +28,7 @@ import {
   PanelLeftOpen,
   PanelLeft,
   Users,
+  Wallet,
   Shield,
   ClipboardList,
   Factory,
@@ -55,7 +56,7 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
-    { icon: LayoutDashboard, label: "어벗츠.핏 대시보드", href: "/dashboard" },
+    { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Users, label: "사용자 관리", href: "/dashboard/user-management" },
     {
       icon: FileText,
@@ -78,11 +79,7 @@ const sidebarItems = {
       href: "/dashboard/sms",
     },
     { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
-    {
-      icon: BarChart3,
-      label: "시스템 통계",
-      href: "/dashboard/system-analytics",
-    },
+    { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
     {
       icon: Shield,
       label: "보안 설정",
