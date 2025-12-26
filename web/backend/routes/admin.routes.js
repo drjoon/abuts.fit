@@ -7,6 +7,8 @@ import {
   adminListChargeOrders,
   adminManualMatch,
   adminUpsertBankTransaction,
+  adminRequestBankTransactions,
+  adminGetBankTransactions,
 } from "../controllers/adminCreditBPlan.controller.js";
 import {
   adminListBonusGrants,
@@ -34,11 +36,16 @@ import {
   adminApproveTaxInvoiceDraft,
   adminRejectTaxInvoiceDraft,
   adminCancelTaxInvoiceDraft,
+  adminIssueTaxInvoice,
+  adminGetTaxInvoiceStatus,
+  adminCancelIssuedTaxInvoice,
 } from "../controllers/adminTaxInvoice.controller.js";
 import { adminOverrideOrganizationVerification } from "../controllers/admin.controller.js";
 import {
   adminSendSms,
   adminListSms,
+  adminSendKakaoOrSms,
+  adminListKakaoTemplates,
 } from "../controllers/adminSms.controller.js";
 import {
   adminGetCreditStats,
@@ -78,6 +85,14 @@ router.post(
   adminUpsertBankTransaction
 );
 router.post("/credits/b-plan/match", adminManualMatch);
+router.post(
+  "/credits/b-plan/bank-transactions/request",
+  adminRequestBankTransactions
+);
+router.get(
+  "/credits/b-plan/bank-transactions/search",
+  adminGetBankTransactions
+);
 
 // 가격/리퍼럴 정책 통계
 router.get("/pricing-stats", adminController.getPricingStats);
@@ -119,6 +134,9 @@ router.patch("/tax-invoices/drafts/:id", adminUpdateTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/approve", adminApproveTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/reject", adminRejectTaxInvoiceDraft);
 router.post("/tax-invoices/drafts/:id/cancel", adminCancelTaxInvoiceDraft);
+router.post("/tax-invoices/drafts/:id/issue", adminIssueTaxInvoice);
+router.get("/tax-invoices/status", adminGetTaxInvoiceStatus);
+router.post("/tax-invoices/cancel", adminCancelIssuedTaxInvoice);
 
 // 사업자 검증 수동 처리
 router.post(
@@ -129,5 +147,9 @@ router.post(
 // 문자(SMS) 발송/이력
 router.post("/sms/send", adminSendSms);
 router.get("/sms/history", adminListSms);
+
+// 카카오톡 알림톡 + SMS (팝빌)
+router.post("/messages/send", adminSendKakaoOrSms);
+router.get("/kakao/templates", adminListKakaoTemplates);
 
 export default router;

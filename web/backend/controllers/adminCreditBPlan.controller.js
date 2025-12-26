@@ -6,6 +6,10 @@ import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../models/adminAuditLog.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import { upsertBankTransaction } from "../utils/creditBPlanMatching.js";
+import {
+  requestBankAccountList,
+  getBankAccountTransactions,
+} from "../utils/popbill.util.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -290,4 +294,62 @@ export async function adminManualMatch(req, res) {
     success: true,
     data: { chargeOrder: updatedOrder, bankTransaction: updatedTx },
   });
+}
+
+export async function adminRequestBankTransactions(req, res) {
+  try {
+    const { corpNum, bankCode, accountNumber } = req.body;
+
+    if (!corpNum || !bankCode || !accountNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자번호, 은행코드, 계좌번호가 필요합니다.",
+      });
+    }
+
+    const jobResult = await requestBankAccountList(
+      corpNum,
+      bankCode,
+      accountNumber
+    );
+
+    await writeAuditLog({
+      req,
+      action: "BANK_TRANSACTION_REQUEST",
+      refType: "POPBILL_JOB",
+      refId: jobResult?.jobID,
+      details: { corpNum, bankCode, accountNumber },
+    });
+
+    return res.json({ success: true, data: jobResult });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "계좌 거래내역 요청 실패",
+      error: error.message,
+    });
+  }
+}
+
+export async function adminGetBankTransactions(req, res) {
+  try {
+    const { corpNum, jobID } = req.query;
+
+    if (!corpNum || !jobID) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자번호와 작업ID가 필요합니다.",
+      });
+    }
+
+    const transactions = await getBankAccountTransactions(corpNum, jobID);
+
+    return res.json({ success: true, data: transactions });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "계좌 거래내역 조회 실패",
+      error: error.message,
+    });
+  }
 }

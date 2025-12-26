@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Phone, Send, History } from "lucide-react";
+import { Phone, Send, History, MessageCircle } from "lucide-react";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
@@ -63,6 +63,10 @@ export default function AdminSmsPage() {
   const [to, setTo] = useState("");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
+  const [useKakao, setUseKakao] = useState(true);
+  const [templateCode, setTemplateCode] = useState("");
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
   const [history, setHistory] = useState<SmsHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const { token } = useAuthStore();
@@ -93,8 +97,27 @@ export default function AdminSmsPage() {
     }
   };
 
+  const loadTemplates = async () => {
+    if (!token) return;
+    setTemplatesLoading(true);
+    try {
+      const res = await request<any>({
+        path: "/api/admin/kakao/templates",
+        method: "GET",
+        token,
+      });
+      if (res.ok) {
+        const body = res.data || {};
+        setTemplates(Array.isArray(body.data) ? body.data : []);
+      }
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadHistory();
+    void loadTemplates();
   }, [token]);
 
   const sendSms = async () => {
@@ -118,11 +141,19 @@ export default function AdminSmsPage() {
     }
     setSending(true);
     try {
+      const endpoint = useKakao
+        ? "/api/admin/messages/send"
+        : "/api/admin/sms/send";
       const res = await request<any>({
-        path: "/api/admin/sms/send",
+        path: endpoint,
         method: "POST",
         token,
-        jsonBody: { to: toList, text: body },
+        jsonBody: {
+          to: toList,
+          text: body,
+          templateCode: useKakao ? templateCode : undefined,
+          useKakao,
+        },
       });
       if (!res.ok) {
         toast({
@@ -167,8 +198,46 @@ export default function AdminSmsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="useKakao"
+                  checked={useKakao}
+                  onChange={(e) => setUseKakao(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <label htmlFor="useKakao" className="text-sm font-medium">
+                  <MessageCircle className="h-4 w-4 inline mr-1" />
+                  카카오톡 알림톡 우선 전송 (실패 시 SMS 대체)
+                </label>
+              </div>
+
+              {useKakao && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">템플릿 선택</label>
+                  <select
+                    value={templateCode}
+                    onChange={(e) => setTemplateCode(e.target.value)}
+                    className="w-full border rounded-md p-2 text-sm"
+                    disabled={templatesLoading}
+                  >
+                    <option value="">템플릿 선택</option>
+                    {templates.map((t) => (
+                      <option key={t.templateCode} value={t.templateCode}>
+                        {t.templateName} ({t.templateCode})
+                      </option>
+                    ))}
+                  </select>
+                  {templatesLoading && (
+                    <div className="text-xs text-muted-foreground">
+                      템플릿 불러오는 중...
+                    </div>
+                  )}
+                </div>
+              )}
+
               <Input
-                placeholder="수신자 번호 (예: 01012345678)"
+                placeholder="수신자 번호 (예: 01012345678, 여러 명은 쉼표로 구분)"
                 value={to}
                 onChange={(e: ChangeEvent<HTMLInputElement>) =>
                   setTo(e.target.value)
@@ -182,8 +251,18 @@ export default function AdminSmsPage() {
                 }
                 rows={6}
               />
+              <div className="text-xs text-muted-foreground">
+                {useKakao
+                  ? "카카오톡 알림톡으로 먼저 발송하고, 실패 시 자동으로 SMS/LMS로 대체 발송됩니다."
+                  : "SMS/LMS로 직접 발송됩니다. (90자 초과 시 LMS)"}
+              </div>
               <div className="flex justify-end">
-                <Button onClick={sendSms} disabled={sending || !to || !body}>
+                <Button
+                  onClick={sendSms}
+                  disabled={
+                    sending || !to || !body || (useKakao && !templateCode)
+                  }
+                >
                   <Send className="h-4 w-4 mr-2" />
                   {sending ? "발송 중..." : "발송하기"}
                 </Button>

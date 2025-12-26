@@ -330,6 +330,16 @@ export const AdminTaxInvoices = () => {
                         <>
                           <Button
                             size="sm"
+                            disabled={isActionLoading}
+                            onClick={() =>
+                              postAction({ id: d._id, action: "issue" })
+                            }
+                          >
+                            <FileText className="h-4 w-4 mr-1" />
+                            팝빌 발행
+                          </Button>
+                          <Button
+                            size="sm"
                             variant="secondary"
                             disabled={isActionLoading}
                             onClick={() => openReject(d._id)}
