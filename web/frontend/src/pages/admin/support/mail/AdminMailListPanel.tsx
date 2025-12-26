@@ -42,9 +42,6 @@ export const AdminMailListPanel = ({
 
   return (
     <Card className="lg:col-span-2">
-      <CardHeader>
-        <CardTitle className="text-base">메일 목록</CardTitle>
-      </CardHeader>
       <CardContent className="space-y-3 mt-6">
         <div className="flex gap-2">
           <div className="relative flex-1">

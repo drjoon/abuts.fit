@@ -139,14 +139,6 @@ export const AdminSecurity = () => {
     <div className="min-h-screen bg-gradient-subtle p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-            보안 설정
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            시스템 보안을 관리하고 모니터링하세요
-          </p>
-        </div>
 
         {/* Security Overview */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

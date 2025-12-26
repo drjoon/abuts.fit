@@ -270,13 +270,6 @@ export default function AdminCreditPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-3xl font-bold">크레딧 관리</h1>
-        <p className="text-muted-foreground">
-          크레딧 충전, 입금 내역, 조직별 잔액을 관리합니다.
-        </p>
-      </div>
-
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
@@ -390,44 +383,41 @@ export default function AdminCreditPage() {
         <TabsContent value="orders" className="space-y-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>충전 주문 목록</CardTitle>
-                <div className="flex gap-2">
-                  <Button
-                    variant={orderStatusFilter === "" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setOrderStatusFilter("");
-                      loadChargeOrders();
-                    }}
-                  >
-                    전체
-                  </Button>
-                  <Button
-                    variant={
-                      orderStatusFilter === "PENDING" ? "default" : "outline"
-                    }
-                    size="sm"
-                    onClick={() => {
-                      setOrderStatusFilter("PENDING");
-                      loadChargeOrders("PENDING");
-                    }}
-                  >
-                    대기중
-                  </Button>
-                  <Button
-                    variant={
-                      orderStatusFilter === "MATCHED" ? "default" : "outline"
-                    }
-                    size="sm"
-                    onClick={() => {
-                      setOrderStatusFilter("MATCHED");
-                      loadChargeOrders("MATCHED");
-                    }}
-                  >
-                    매칭완료
-                  </Button>
-                </div>
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant={orderStatusFilter === "" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setOrderStatusFilter("");
+                    loadChargeOrders();
+                  }}
+                >
+                  전체
+                </Button>
+                <Button
+                  variant={
+                    orderStatusFilter === "PENDING" ? "default" : "outline"
+                  }
+                  size="sm"
+                  onClick={() => {
+                    setOrderStatusFilter("PENDING");
+                    loadChargeOrders("PENDING");
+                  }}
+                >
+                  대기중
+                </Button>
+                <Button
+                  variant={
+                    orderStatusFilter === "MATCHED" ? "default" : "outline"
+                  }
+                  size="sm"
+                  onClick={() => {
+                    setOrderStatusFilter("MATCHED");
+                    loadChargeOrders("MATCHED");
+                  }}
+                >
+                  매칭완료
+                </Button>
               </div>
             </CardHeader>
             <CardContent>

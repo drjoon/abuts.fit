@@ -163,13 +163,6 @@ export const AdminRequestMonitoring = () => {
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="space-y-4">
-          <h1 className="text-4xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-            의뢰 모니터링
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            모든 의뢰의 진행 상황을 실시간으로 모니터링하세요
-          </p>
-
           {/* Search and Filter */}
           <div className="flex gap-4 flex-wrap">
             <div className="relative flex-1 min-w-[300px]">

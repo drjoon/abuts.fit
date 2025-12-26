@@ -218,20 +218,6 @@ export const AdminTaxInvoices = () => {
 
   return (
     <div className="p-4 space-y-4">
-      <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              세금계산서
-            </CardTitle>
-            <CardDescription>
-              충전금(입금) 매칭 건의 세금계산서 발행을 승인/관리합니다.
-            </CardDescription>
-          </div>
-        </CardHeader>
-      </Card>
-
       <Tabs
         value={status}
         onValueChange={(v: string) => setStatus(v as DraftStatus)}

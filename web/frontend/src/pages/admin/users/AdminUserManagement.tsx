@@ -310,13 +310,6 @@ export const AdminUserManagement = () => {
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="space-y-4">
-          <h1 className="text-4xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-            사용자 관리
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            플랫폼 사용자들을 관리하고 모니터링하세요
-          </p>
-
           {/* Search and Filter */}
           <div className="flex gap-4 flex-wrap">
             <div className="relative flex-1 min-w-[300px]">

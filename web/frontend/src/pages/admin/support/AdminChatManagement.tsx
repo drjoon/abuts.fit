@@ -339,14 +339,6 @@ export const AdminChatManagement = () => {
     <div className="min-h-screen bg-gradient-subtle p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold bg-gradient-hero bg-clip-text text-transparent">
-            채팅 관리
-          </h1>
-          <p className="text-muted-foreground">
-            플랫폼 내 모든 채팅을 모니터링하고 관리하세요
-          </p>
-        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4">
           <Card className={cn("overflow-hidden", leftHeightClass)}>

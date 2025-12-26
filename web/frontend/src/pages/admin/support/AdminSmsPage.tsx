@@ -143,20 +143,6 @@ export default function AdminSmsPage() {
 
   return (
     <div className="p-4 space-y-4">
-      <Card>
-        <CardHeader className="flex-row items-start justify-between gap-4">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2">
-              <Send className="h-5 w-5" />
-              문자메시지 (솔라스)
-            </CardTitle>
-            <CardDescription>
-              Solapi 연동으로 문자 발송/이력을 관리합니다. (메일과 분리)
-            </CardDescription>
-          </div>
-        </CardHeader>
-      </Card>
-
       <Tabs value={tab} onValueChange={(v) => setTab(v as "send" | "history")}>
         <TabsList>
           <TabsTrigger value="send" className="gap-2">
