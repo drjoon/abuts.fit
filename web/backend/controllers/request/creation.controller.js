@@ -11,6 +11,7 @@ import {
   canAccessRequestAsRequestor,
   buildRequestorOrgScopeFilter,
 } from "./utils.js";
+import { checkCreditLock } from "../../utils/creditLock.util.js";
 
 async function getOrganizationCreditBalanceBreakdown({
   organizationId,
@@ -86,6 +87,16 @@ export async function createRequest(req, res) {
           success: false,
           message:
             "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
+        });
+      }
+
+      // 크레딧 lock 체크
+      const lockStatus = await checkCreditLock(orgId);
+      if (lockStatus.isLocked) {
+        return res.status(403).json({
+          success: false,
+          message: `크레딧 사용이 제한되었습니다. 사유: ${lockStatus.reason}`,
+          lockedAt: lockStatus.lockedAt,
         });
       }
     }
@@ -347,6 +358,16 @@ export async function createRequestsFromDraft(req, res) {
           success: false,
           message:
             "기공소 소속 정보가 필요합니다. 설정 > 기공소에서 소속을 먼저 확인해주세요.",
+        });
+      }
+
+      // 크레딧 lock 체크
+      const lockStatus = await checkCreditLock(orgId);
+      if (lockStatus.isLocked) {
+        return res.status(403).json({
+          success: false,
+          message: `크레딧 사용이 제한되었습니다. 사유: ${lockStatus.reason}`,
+          lockedAt: lockStatus.lockedAt,
         });
       }
     }

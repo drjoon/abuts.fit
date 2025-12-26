@@ -332,6 +332,211 @@ export async function adminRequestBankTransactions(req, res) {
   }
 }
 
+export async function adminVerifyChargeOrder(req, res) {
+  try {
+    const { chargeOrderId } = req.body;
+    const adminUserId = req.user?._id;
+
+    if (!chargeOrderId) {
+      return res.status(400).json({
+        success: false,
+        message: "충전 주문 ID가 필요합니다.",
+      });
+    }
+
+    const order = await ChargeOrder.findById(chargeOrderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "충전 주문을 찾을 수 없습니다.",
+      });
+    }
+
+    if (order.status !== "MATCHED") {
+      return res.status(400).json({
+        success: false,
+        message: "매칭된 주문만 검증할 수 있습니다.",
+      });
+    }
+
+    if (order.adminVerified) {
+      return res.status(400).json({
+        success: false,
+        message: "이미 검증된 주문입니다.",
+      });
+    }
+
+    await ChargeOrder.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          adminVerified: true,
+          adminVerifiedAt: new Date(),
+          adminVerifiedBy: adminUserId,
+        },
+      }
+    );
+
+    await writeAuditLog({
+      req,
+      action: "CREDIT_B_PLAN_VERIFY",
+      refType: "CHARGE_ORDER",
+      refId: order._id,
+      details: {
+        chargeOrderId: String(order._id),
+        organizationId: String(order.organizationId),
+        supplyAmount: order.supplyAmount,
+      },
+    });
+
+    const updatedOrder = await ChargeOrder.findById(order._id).lean();
+
+    return res.json({
+      success: true,
+      data: updatedOrder,
+      message: "충전 주문이 검증되었습니다.",
+    });
+  } catch (error) {
+    console.error("충전 주문 검증 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "충전 주문 검증에 실패했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function adminLockChargeOrder(req, res) {
+  try {
+    const { chargeOrderId, reason } = req.body;
+
+    if (!chargeOrderId) {
+      return res.status(400).json({
+        success: false,
+        message: "충전 주문 ID가 필요합니다.",
+      });
+    }
+
+    const order = await ChargeOrder.findById(chargeOrderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "충전 주문을 찾을 수 없습니다.",
+      });
+    }
+
+    if (order.isLocked) {
+      return res.status(400).json({
+        success: false,
+        message: "이미 잠긴 주문입니다.",
+      });
+    }
+
+    await ChargeOrder.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          isLocked: true,
+          lockedAt: new Date(),
+          lockedReason: reason || "관리자 검토 필요",
+        },
+      }
+    );
+
+    await writeAuditLog({
+      req,
+      action: "CREDIT_B_PLAN_LOCK",
+      refType: "CHARGE_ORDER",
+      refId: order._id,
+      details: {
+        chargeOrderId: String(order._id),
+        organizationId: String(order.organizationId),
+        reason: reason || "관리자 검토 필요",
+      },
+    });
+
+    const updatedOrder = await ChargeOrder.findById(order._id).lean();
+
+    return res.json({
+      success: true,
+      data: updatedOrder,
+      message: "충전 주문이 잠겼습니다. 해당 조직의 크레딧 사용이 제한됩니다.",
+    });
+  } catch (error) {
+    console.error("충전 주문 잠금 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "충전 주문 잠금에 실패했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function adminUnlockChargeOrder(req, res) {
+  try {
+    const { chargeOrderId } = req.body;
+
+    if (!chargeOrderId) {
+      return res.status(400).json({
+        success: false,
+        message: "충전 주문 ID가 필요합니다.",
+      });
+    }
+
+    const order = await ChargeOrder.findById(chargeOrderId);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "충전 주문을 찾을 수 없습니다.",
+      });
+    }
+
+    if (!order.isLocked) {
+      return res.status(400).json({
+        success: false,
+        message: "잠기지 않은 주문입니다.",
+      });
+    }
+
+    await ChargeOrder.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          isLocked: false,
+          lockedAt: null,
+          lockedReason: "",
+        },
+      }
+    );
+
+    await writeAuditLog({
+      req,
+      action: "CREDIT_B_PLAN_UNLOCK",
+      refType: "CHARGE_ORDER",
+      refId: order._id,
+      details: {
+        chargeOrderId: String(order._id),
+        organizationId: String(order.organizationId),
+      },
+    });
+
+    const updatedOrder = await ChargeOrder.findById(order._id).lean();
+
+    return res.json({
+      success: true,
+      data: updatedOrder,
+      message: "충전 주문 잠금이 해제되었습니다.",
+    });
+  } catch (error) {
+    console.error("충전 주문 잠금 해제 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "충전 주문 잠금 해제에 실패했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function adminGetBankTransactions(req, res) {
   try {
     const { corpNum, jobID } = req.query;

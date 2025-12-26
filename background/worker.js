@@ -9,6 +9,7 @@ import {
   startTaxInvoiceBatchJobs,
   getTaxInvoiceBatchStatus,
 } from "./jobs/taxInvoiceBatch.js";
+import { startTaxInvoiceScheduler } from "./jobs/taxInvoiceScheduler.js";
 import { startHealthMonitor } from "./monitor/healthMonitor.js";
 
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -54,6 +55,9 @@ async function main() {
 
   startTaxInvoiceBatchJobs();
   console.log("[worker] tax invoice batch jobs started");
+
+  startTaxInvoiceScheduler();
+  console.log("[worker] tax invoice scheduler started (daily 12:00)");
 
   startHealthMonitor({
     getCreditBPlanStatus,

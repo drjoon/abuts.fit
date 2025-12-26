@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { AutoMatchVerificationTab } from "./components/AutoMatchVerificationTab";
 
 type CreditStats = {
   totalOrgs: number;
@@ -323,6 +324,7 @@ export default function AdminCreditPage() {
       <Tabs defaultValue="organizations" className="space-y-4">
         <TabsList>
           <TabsTrigger value="organizations">조직별 크레딧</TabsTrigger>
+          <TabsTrigger value="verification">자동 매칭 검증</TabsTrigger>
           <TabsTrigger value="orders">충전 주문</TabsTrigger>
           <TabsTrigger value="transactions">입금 내역</TabsTrigger>
           <TabsTrigger value="match">수동 매칭</TabsTrigger>
@@ -378,6 +380,10 @@ export default function AdminCreditPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="verification" className="space-y-4">
+          <AutoMatchVerificationTab />
         </TabsContent>
 
         <TabsContent value="orders" className="space-y-4">
