@@ -133,6 +133,13 @@ export const handler = async (event) => {
     const bucket = record.s3.bucket.name;
     const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
 
+    // 람다가 원본을 RAW_PREFIX로 복사하거나 첨부를 저장하면서 생성한 오브젝트로 인해
+    // 재귀 호출되는 것을 방지
+    if (key.startsWith(RAW_PREFIX) || key.startsWith(ATTACH_PREFIX)) {
+      console.warn(`Skip self-generated object: ${key}`);
+      continue;
+    }
+
     if (bucket !== EMAIL_BUCKET) {
       console.warn(`Skip different bucket: ${bucket}`);
       continue;
