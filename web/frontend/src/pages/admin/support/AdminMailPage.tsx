@@ -13,7 +13,11 @@ import { useAdminMailBox } from "./mail/useAdminMailBox";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { emptyTrash } from "@/features/admin/mail/mailApi";
+import {
+  emptySent,
+  emptySpam,
+  emptyTrash,
+} from "@/features/admin/mail/mailApi";
 
 export const AdminMailPage = () => {
   const { toast } = useToast();
@@ -36,6 +40,7 @@ export const AdminMailPage = () => {
     handleMarkAsUnread,
     handleMoveToSpam,
     handleTrash,
+    handleRestoreToSent,
     folder,
   } = useAdminMailBox();
 
@@ -57,10 +62,44 @@ export const AdminMailPage = () => {
     }
   };
 
+  const handleEmptySpam = async () => {
+    try {
+      await emptySpam(true);
+      toast({
+        title: "스팸함을 비웠습니다",
+        description: "스팸 메일이 영구 삭제되었습니다.",
+      });
+      if (tab === "spam") onSearch();
+    } catch (err: any) {
+      toast({
+        title: "스팸함 비우기 실패",
+        description: err.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEmptySent = async () => {
+    try {
+      await emptySent(true);
+      toast({
+        title: "발신함을 비웠습니다",
+        description: "발신 메일 기록이 영구 삭제되었습니다.",
+      });
+      if (tab === "sent") onSearch();
+    } catch (err: any) {
+      toast({
+        title: "발신함 비우기 실패",
+        description: err.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="p-4 space-y-4">
       <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-        <TabsList>
+        <TabsList className="flex flex-wrap items-center gap-2 w-full">
           <TabsTrigger value="inbox" className="gap-2">
             <Inbox className="h-4 w-4" />
             수신함
@@ -71,13 +110,47 @@ export const AdminMailPage = () => {
           </TabsTrigger>
           <TabsTrigger value="trash" className="gap-2">
             <Trash2 className="h-4 w-4" />
-            삭제됨
+            휴지통
           </TabsTrigger>
           <TabsTrigger value="spam" className="gap-2">
             <AlertOctagon className="h-4 w-4" />
             스팸함
           </TabsTrigger>
-          <TabsTrigger value="compose" className="gap-2">
+          {tab === "sent" && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-2 h-8 px-3 text-sm ml-4"
+              onClick={handleEmptySent}
+            >
+              발신함 비우기
+            </Button>
+          )}
+          {tab === "spam" && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-2 h-8 px-3 text-sm ml-4"
+              onClick={handleEmptySpam}
+            >
+              스팸함 비우기
+            </Button>
+          )}
+          {tab === "trash" && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-2 h-8 px-3 text-sm ml-4"
+              onClick={handleEmptyTrash}
+            >
+              <Trash2 className="h-4 w-4" />
+              휴지통 비우기
+            </Button>
+          )}
+          <TabsTrigger
+            value="compose"
+            className="ml-auto gap-2 bg-primary text-white hover:bg-primary/90"
+          >
             <Mail className="h-4 w-4" />
             작성
           </TabsTrigger>
@@ -86,8 +159,6 @@ export const AdminMailPage = () => {
         <TabsContent value="inbox" className="mt-4">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             <AdminMailListPanel
-              title="메일 목록"
-              description="수신 메일을 조회합니다."
               q={q}
               setQ={setQ}
               loading={listLoading}
@@ -108,6 +179,7 @@ export const AdminMailPage = () => {
               onMarkAsUnread={handleMarkAsUnread}
               onMoveToSpam={handleMoveToSpam}
               onTrash={handleTrash}
+              onRestoreToSent={handleRestoreToSent}
             />
           </div>
         </TabsContent>
@@ -115,8 +187,6 @@ export const AdminMailPage = () => {
         <TabsContent value="sent" className="mt-4">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             <AdminMailListPanel
-              title="메일 목록"
-              description="발신 메일을 조회합니다."
               q={q}
               setQ={setQ}
               loading={listLoading}
@@ -137,26 +207,14 @@ export const AdminMailPage = () => {
               onMarkAsUnread={handleMarkAsUnread}
               onMoveToSpam={handleMoveToSpam}
               onTrash={handleTrash}
+              onRestoreToSent={handleRestoreToSent}
             />
           </div>
         </TabsContent>
 
         <TabsContent value="trash" className="mt-4 space-y-3">
-          <div className="flex justify-end">
-            <Button
-              variant="destructive"
-              size="sm"
-              className="gap-2"
-              onClick={handleEmptyTrash}
-            >
-              <Trash2 className="h-4 w-4" />
-              휴지통 비우기
-            </Button>
-          </div>
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             <AdminMailListPanel
-              title="메일 목록"
-              description="삭제된 메일을 조회합니다."
               q={q}
               setQ={setQ}
               loading={listLoading}
@@ -175,6 +233,9 @@ export const AdminMailPage = () => {
               onDownload={handleDownload}
               onMarkAsRead={handleMarkAsRead}
               onMarkAsUnread={handleMarkAsUnread}
+              onMoveToSpam={handleMoveToSpam}
+              onTrash={handleTrash}
+              onRestoreToSent={handleRestoreToSent}
             />
           </div>
         </TabsContent>
@@ -182,8 +243,6 @@ export const AdminMailPage = () => {
         <TabsContent value="spam" className="mt-4">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
             <AdminMailListPanel
-              title="메일 목록"
-              description="스팸 메일을 조회합니다."
               q={q}
               setQ={setQ}
               loading={listLoading}
@@ -202,7 +261,9 @@ export const AdminMailPage = () => {
               onDownload={handleDownload}
               onMarkAsRead={handleMarkAsRead}
               onMarkAsUnread={handleMarkAsUnread}
+              onMoveToSpam={handleMoveToSpam}
               onTrash={handleTrash}
+              onRestoreToSent={handleRestoreToSent}
             />
           </div>
         </TabsContent>

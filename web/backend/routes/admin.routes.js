@@ -22,7 +22,10 @@ import {
   adminMarkAsUnread,
   adminMoveToSpam,
   adminTrashMail,
+  adminRestoreToSent,
   adminEmptyTrash,
+  adminEmptySpam,
+  adminEmptySent,
 } from "../controllers/mail.controller.js";
 import {
   adminListTaxInvoiceDrafts,
@@ -90,7 +93,10 @@ router.post("/mails/:id/read", adminMarkAsRead);
 router.post("/mails/:id/unread", adminMarkAsUnread);
 router.post("/mails/:id/spam", adminMoveToSpam);
 router.post("/mails/:id/trash", adminTrashMail);
+router.post("/mails/:id/restore-to-sent", adminRestoreToSent);
 router.post("/mails/trash/empty", adminEmptyTrash);
+router.post("/mails/spam/empty", adminEmptySpam);
+router.post("/mails/sent/empty", adminEmptySent);
 
 // 보너스 지급 내역 / 예외 지급
 router.get("/bonus-grants", adminListBonusGrants);

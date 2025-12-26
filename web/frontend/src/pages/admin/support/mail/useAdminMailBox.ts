@@ -6,6 +6,7 @@ import {
   markAsRead,
   markAsUnread,
   moveToSpam,
+  restoreToSent,
   trashMail,
   type MailItem,
 } from "@/features/admin/mail/mailApi";
@@ -247,6 +248,25 @@ export const useAdminMailBox = () => {
     [toast, loadList]
   );
 
+  const handleRestoreToSent = useCallback(
+    async (id: string) => {
+      try {
+        await restoreToSent(id);
+        toast({ title: "발신함으로 복원했습니다" });
+        setSelectedId(null);
+        setSelected(null);
+        loadList(true);
+      } catch (err: any) {
+        toast({
+          title: "복원 실패",
+          description: err.message,
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, loadList]
+  );
+
   return {
     tab,
     setTab,
@@ -267,5 +287,6 @@ export const useAdminMailBox = () => {
     handleMarkAsUnread,
     handleMoveToSpam,
     handleTrash,
+    handleRestoreToSent,
   };
 };

@@ -33,6 +33,7 @@ type Props = {
   onMarkAsUnread?: (id: string) => void;
   onMoveToSpam?: (id: string) => void;
   onTrash?: (id: string) => void;
+  onRestoreToSent?: (id: string) => void;
 };
 
 export const AdminMailDetailPanel = ({
@@ -43,19 +44,14 @@ export const AdminMailDetailPanel = ({
   onMarkAsUnread,
   onMoveToSpam,
   onTrash,
+  onRestoreToSent,
 }: Props) => {
   const selectedDate =
     selected?.createdAt || selected?.receivedAt || selected?.sentAt;
 
   return (
     <Card className="lg:col-span-3">
-      <CardHeader>
-        <CardTitle className="text-base">메일 상세</CardTitle>
-        <CardDescription>
-          {selected ? "선택한 메일의 내용을 확인합니다." : "메일을 선택하세요."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3 mt-6">
         {detailLoading ? (
           <div className="space-y-3">
             <Skeleton className="h-6 w-2/3" />
@@ -107,7 +103,9 @@ export const AdminMailDetailPanel = ({
                     안읽음
                   </Button>
                 ) : null}
-                {onMoveToSpam && selected.folder !== "spam" ? (
+                {onMoveToSpam &&
+                selected.direction === "inbound" &&
+                selected.folder !== "spam" ? (
                   <Button
                     variant="outline"
                     size="sm"
@@ -127,6 +125,19 @@ export const AdminMailDetailPanel = ({
                   >
                     <Trash2 className="h-4 w-4" />
                     삭제
+                  </Button>
+                ) : null}
+                {onRestoreToSent &&
+                selected.direction === "outbound" &&
+                (selected.folder === "trash" || selected.trashedAt) ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => onRestoreToSent(selected._id)}
+                  >
+                    <MailOpen className="h-4 w-4" />
+                    발신함으로 복원
                   </Button>
                 ) : null}
               </div>

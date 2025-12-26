@@ -3,13 +3,7 @@ import type { MailItem } from "@/features/admin/mail/mailApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -18,8 +12,6 @@ import { Paperclip, RefreshCw, Search } from "lucide-react";
 import { formatDateTime, getDirectionBadge, getStatusBadge } from "./mailUi";
 
 type Props = {
-  title: string;
-  description: string;
   q: string;
   setQ: (v: string) => void;
   loading: boolean;
@@ -33,8 +25,6 @@ type Props = {
 };
 
 export const AdminMailListPanel = ({
-  title,
-  description,
   q,
   setQ,
   loading,
@@ -53,10 +43,9 @@ export const AdminMailListPanel = ({
   return (
     <Card className="lg:col-span-2">
       <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <CardTitle className="text-base">메일 목록</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-3 mt-6">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="h-4 w-4 text-muted-foreground absolute left-2 top-2.5" />

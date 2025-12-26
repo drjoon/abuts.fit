@@ -145,6 +145,28 @@ export async function adminTrashMail(req, res) {
   }
 }
 
+export async function adminRestoreToSent(req, res) {
+  try {
+    const { id } = req.params;
+    const mail = await Mail.findById(id);
+    if (!mail) {
+      return res.status(404).json({ success: false, message: "not found" });
+    }
+    if (mail.direction !== "outbound") {
+      return res
+        .status(400)
+        .json({ success: false, message: "발신 메일만 복원할 수 있습니다." });
+    }
+    mail.folder = "sent";
+    mail.trashedAt = null;
+    await mail.save();
+    return res.status(200).json({ success: true, data: mail });
+  } catch (error) {
+    console.error("[adminRestoreToSent] failed", error);
+    return res.status(500).json({ success: false, message: "복원 실패" });
+  }
+}
+
 export async function adminEmptyTrash(req, res) {
   try {
     const { permanently } = req.body || {};
@@ -182,6 +204,56 @@ export async function adminEmptyTrash(req, res) {
   }
 }
 
+async function emptyFolder(folder, permanently = true) {
+  const mails = await Mail.find({ folder });
+  let deletedCount = 0;
+
+  for (const mail of mails) {
+    if (permanently) {
+      if (mail.s3RawKey) {
+        await deleteFileFromS3(mail.s3RawKey);
+      }
+      if (mail.attachments?.length) {
+        for (const att of mail.attachments) {
+          if (att.s3Key) await deleteFileFromS3(att.s3Key);
+        }
+      }
+      await Mail.deleteOne({ _id: mail._id });
+      deletedCount += 1;
+    } else {
+      await mail.save();
+    }
+  }
+
+  return { deletedCount, permanently: !!permanently };
+}
+
+export async function adminEmptySpam(req, res) {
+  try {
+    const { permanently } = req.body || {};
+    const result = await emptyFolder("spam", permanently);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("[adminEmptySpam] failed", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "스팸함 비우기 실패" });
+  }
+}
+
+export async function adminEmptySent(req, res) {
+  try {
+    const { permanently } = req.body || {};
+    const result = await emptyFolder("sent", permanently);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("[adminEmptySent] failed", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "발신함 비우기 실패" });
+  }
+}
+
 export async function adminGetMail(req, res) {
   try {
     const { id } = req.params;
@@ -213,6 +285,7 @@ export async function adminSendMail(req, res) {
     const normalizedBcc = Array.isArray(bcc) ? bcc : [bcc];
 
     const mailDoc = await Mail.create({
+      folder: "sent",
       direction: "outbound",
       status: "pending",
       from: process.env.SES_FROM_EMAIL || process.env.SES_FROM || "",

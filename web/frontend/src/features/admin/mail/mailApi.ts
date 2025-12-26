@@ -131,6 +131,26 @@ export async function emptyTrash(permanently = true) {
   return res.data!.data;
 }
 
+export async function emptySpam(permanently = true) {
+  const res = await request<ApiEnvelope<{ deletedCount: number }>>({
+    path: "/api/admin/mails/spam/empty",
+    method: "POST",
+    jsonBody: { permanently },
+  });
+  if (!res.ok) throw new Error(res.data?.message || "스팸함 비우기 실패");
+  return res.data!.data;
+}
+
+export async function emptySent(permanently = true) {
+  const res = await request<ApiEnvelope<{ deletedCount: number }>>({
+    path: "/api/admin/mails/sent/empty",
+    method: "POST",
+    jsonBody: { permanently },
+  });
+  if (!res.ok) throw new Error(res.data?.message || "발신함 비우기 실패");
+  return res.data!.data;
+}
+
 export async function markAsRead(id: string) {
   const res = await request<ApiEnvelope<MailItem>>({
     path: `/api/admin/mails/${id}/read`,
@@ -155,6 +175,15 @@ export async function moveToSpam(id: string) {
     method: "POST",
   });
   if (!res.ok) throw new Error(res.data?.message || "스팸 이동 실패");
+  return res.data!.data;
+}
+
+export async function restoreToSent(id: string) {
+  const res = await request<ApiEnvelope<MailItem>>({
+    path: `/api/admin/mails/${id}/restore-to-sent`,
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(res.data?.message || "발신함 복원 실패");
   return res.data!.data;
 }
 
