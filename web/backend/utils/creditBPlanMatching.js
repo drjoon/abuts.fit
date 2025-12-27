@@ -17,6 +17,8 @@ export function extractDepositCodeFromText(text) {
 
 export async function upsertBankTransaction({
   externalId,
+  bankCode,
+  accountNumber,
   tranAmt,
   printedContent,
   occurredAt,
@@ -51,6 +53,8 @@ export async function upsertBankTransaction({
     {
       $setOnInsert: { externalId: id },
       $set: {
+        bankCode: String(bankCode || ""),
+        accountNumber: String(accountNumber || ""),
         tranAmt: amount,
         printedContent: String(printedContent || ""),
         depositCode,

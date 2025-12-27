@@ -40,7 +40,7 @@ async function sendPushover({ token, user, title, message, device, priority }) {
 
 export function startHealthMonitor({
   getCreditBPlanStatus,
-  getTaxInvoiceBatchStatus,
+  getPopbillWorkerStatus,
   staleMinutes = 10,
   intervalMinutes = 1,
 }) {
@@ -63,11 +63,11 @@ export function startHealthMonitor({
   const check = async () => {
     const now = Date.now();
     const credit = getCreditBPlanStatus?.() || {};
-    const tax = getTaxInvoiceBatchStatus?.() || {};
+    const popbill = getPopbillWorkerStatus?.() || {};
 
     const items = [
       { name: "creditBPlan", lastRunAt: credit.lastRunAt },
-      { name: "taxInvoiceBatch", lastRunAt: tax.lastRunAt },
+      { name: "popbillWorker", lastRunAt: popbill.lastRunAt },
     ];
 
     const staleTargets = [];

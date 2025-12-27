@@ -155,3 +155,56 @@
 ### 8.3 홈택스 연동(현재 단계)
 
 - 홈택스 API 인증/전자서명/사업자 정보는 아직 연결 전이며, 현재는 **mock 전송**으로 `hometaxTrxId`만 생성합니다.
+
+## 9. 팝빌(Popbill) 처리 아키텍처
+
+### 9.1 큐 기반 아키텍처
+
+- **단일 백그라운드 워커 전담**: 팝빌 관련 작업(세금계산서 발행/재시도, 계좌조회 웹훅 처리, 알림 큐 처리)은 백그라운드 워커가 전담합니다.
+- **web → 큐 → 워커**: 외부 진입(web)에서 팝빌 연동이 필요한 이벤트는 큐(PopbillQueue)를 통해 워커로 전달합니다. web 인스턴스 다중화 시에도 중복 처리를 피하기 위해 직접 발행하지 않습니다.
+- **헬스체크 + 오토리스타트**: 워커는 헬스체크 기반으로 자동 재시작합니다. 워커 장애가 곧 팝빌 기능 중단이므로 필수입니다.
+- **아이덴포턴시**: 세금계산서 발행/취소, 계좌조회 웹훅(bankTxId/receiptNo), 알림 발송 키 등 모든 처리에 unique key + upsert로 중복 실행을 방지합니다.
+- **모니터링/스케일업 준비**: 워커 처리 지연을 감시하는 모니터를 두고, 필요 시 큐 소비 워커를 1→N대로 확장(또는 서버 스케일업)할 수 있도록 합니다.
+
+### 9.2 큐 모델 (PopbillQueue)
+
+- **taskType**: TAX_INVOICE_ISSUE, TAX_INVOICE_CANCEL, BANK_WEBHOOK, NOTIFICATION_KAKAO, NOTIFICATION_SMS, NOTIFICATION_LMS
+- **status**: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
+- **uniqueKey**: 중복 방지를 위한 고유 키 (예: `tax_invoice_issue:${draftId}`)
+- **payload**: 작업 수행에 필요한 데이터
+- **priority**: 우선순위 (높을수록 먼저 처리)
+- **maxAttempts**: 최대 재시도 횟수
+- **scheduledFor**: 예약 실행 시간
+
+### 9.3 큐 사용 방법
+
+**web 백엔드에서 큐에 작업 등록:**
+
+```javascript
+import { enqueueTaxInvoiceIssue } from "../utils/queueClient.js";
+
+const result = await enqueueTaxInvoiceIssue({
+  draftId: "...",
+  corpNum: "...",
+  priority: 10,
+});
+```
+
+**background 워커에서 자동 처리:**
+
+- `popbillWorker.js`가 5초마다 큐를 폴링하여 작업 처리
+- 실패 시 지수 백오프로 자동 재시도
+- 최대 재시도 횟수 초과 시 FAILED 상태로 전환
+
+### 9.4 알림 큐 헬퍼
+
+```javascript
+import { sendNotificationViaQueue } from "../utils/notificationQueue.js";
+
+await sendNotificationViaQueue({
+  type: "SMS",
+  to: ["01012345678"],
+  content: "알림 내용",
+  priority: 0,
+});
+```

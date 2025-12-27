@@ -5,12 +5,12 @@ import {
   startCreditBPlanJobs,
   getCreditBPlanStatus,
 } from "./jobs/creditBPlanJobs.js";
-import {
-  startTaxInvoiceBatchJobs,
-  getTaxInvoiceBatchStatus,
-} from "./jobs/taxInvoiceBatch.js";
-import { startTaxInvoiceScheduler } from "./jobs/taxInvoiceScheduler.js";
 import { startHealthMonitor } from "./monitor/healthMonitor.js";
+import {
+  startPopbillWorker,
+  getPopbillWorkerStatus,
+  getQueueStats,
+} from "./jobs/popbillWorker.js";
 
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const startedAt = new Date();
@@ -27,13 +27,15 @@ function startStatusServer() {
     res.json({ ok: true, startedAt: startedAt.toISOString() });
   });
 
-  app.get("/status", (req, res) => {
+  app.get("/status", async (req, res) => {
+    const queueStats = await getQueueStats().catch(() => ({}));
     res.json({
       ok: true,
       startedAt: startedAt.toISOString(),
       uptimeSec: Math.floor((Date.now() - startedAt.getTime()) / 1000),
       creditBPlan: getCreditBPlanStatus(),
-      taxInvoiceBatch: getTaxInvoiceBatchStatus(),
+      popbillWorker: getPopbillWorkerStatus(),
+      queueStats,
     });
   });
 
@@ -53,15 +55,12 @@ async function main() {
   startCreditBPlanJobs();
   console.log("[worker] credit b-plan jobs started");
 
-  startTaxInvoiceBatchJobs();
-  console.log("[worker] tax invoice batch jobs started");
-
-  startTaxInvoiceScheduler();
-  console.log("[worker] tax invoice scheduler started (daily 12:00)");
+  startPopbillWorker();
+  console.log("[worker] popbill worker started (queue-based)");
 
   startHealthMonitor({
     getCreditBPlanStatus,
-    getTaxInvoiceBatchStatus,
+    getPopbillWorkerStatus,
     staleMinutes: Number(process.env.WORKER_HEALTH_STALE_MINUTES || 10),
     intervalMinutes: Number(process.env.WORKER_HEALTH_INTERVAL_MINUTES || 1),
   });

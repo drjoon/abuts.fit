@@ -12,12 +12,10 @@ import mongoose, { connect } from "mongoose";
 import RequestorOrganization from "./models/requestorOrganization.model.js";
 import ChargeOrder from "./models/chargeOrder.model.js";
 import BankTransaction from "./models/bankTransaction.model.js";
-import BankPollingState from "./models/bankPollingState.model.js";
 import Counter from "./models/counter.model.js";
 import AdminAuditLog from "./models/adminAuditLog.model.js";
 import SignupVerification from "./models/signupVerification.model.js";
 import TaxInvoiceDraft from "./models/taxInvoiceDraft.model.js";
-import JobLock from "./models/jobLock.model.js";
 import { requestFloodBlocker } from "./middlewares/requestFloodBlocker.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -98,9 +96,7 @@ const dbReady = connect(mongoUri)
         ["RequestorOrganization", RequestorOrganization],
         ["ChargeOrder", ChargeOrder],
         ["BankTransaction", BankTransaction],
-        ["BankPollingState", BankPollingState],
         ["TaxInvoiceDraft", TaxInvoiceDraft],
-        ["JobLock", JobLock],
         ["Counter", Counter],
         ["AdminAuditLog", AdminAuditLog],
         ["SignupVerification", SignupVerification],

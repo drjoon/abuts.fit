@@ -6,11 +6,7 @@ import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../models/adminAuditLog.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import { upsertBankTransaction } from "../utils/creditBPlanMatching.js";
-import {
-  requestBankAccountList,
-  getBankAccountTransactions,
-  issueTaxInvoice,
-} from "../utils/popbill.util.js";
+import { enqueueEasyFinBankRequest } from "../utils/queueClient.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -539,16 +535,17 @@ export async function adminUnlockChargeOrder(req, res) {
 
 export async function adminGetBankTransactions(req, res) {
   try {
-    const { corpNum, jobID } = req.query;
+    // 기존: jobID로 팝빌 조회
+    // 변경: DB에서 최근 거래내역 조회 (혹은 필터링)
+    // adminListBankTransactions API가 이미 존재하므로 이 API의 역할이 모호해짐.
+    // 하지만 "수집 결과 확인" 용도라면 DB조회로 대체 가능.
 
-    if (!corpNum || !jobID) {
-      return res.status(400).json({
-        success: false,
-        message: "사업자번호와 작업ID가 필요합니다.",
-      });
-    }
+    const { limit = 100 } = req.query;
 
-    const transactions = await getBankAccountTransactions(corpNum, jobID);
+    const transactions = await BankTransaction.find({})
+      .sort({ occurredAt: -1, _id: -1 })
+      .limit(Number(limit))
+      .lean();
 
     return res.json({ success: true, data: transactions });
   } catch (error) {

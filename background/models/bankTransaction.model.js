@@ -9,6 +9,8 @@ const bankTransactionSchema = new mongoose.Schema(
       index: true,
       trim: true,
     },
+    bankCode: { type: String, default: "", index: true },
+    accountNumber: { type: String, default: "", index: true },
     tranAmt: { type: Number, required: true, min: 0, index: true },
     printedContent: { type: String, default: "" },
     depositCode: { type: String, default: "", index: true },

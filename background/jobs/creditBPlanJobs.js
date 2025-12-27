@@ -1,10 +1,8 @@
 import ChargeOrder from "../models/chargeOrder.model.js";
 import { autoMatchBankTransactionsOnce } from "../utils/creditBPlanMatching.js";
-import { pollNhOpenBankingOnce } from "./nhOpenBankingPoller.js";
 
 const status = {
   lastRunAt: null,
-  lastPoll: null,
   lastExpire: null,
   lastMatch: null,
   lastError: null,
@@ -27,9 +25,6 @@ export async function expireChargeOrdersOnce() {
 export async function runCreditBPlanOnce() {
   status.lastRunAt = new Date().toISOString();
   try {
-    const poll = await pollNhOpenBankingOnce();
-    status.lastPoll = new Date().toISOString();
-
     const expire = await expireChargeOrdersOnce();
     status.lastExpire = new Date().toISOString();
 
@@ -37,12 +32,10 @@ export async function runCreditBPlanOnce() {
     status.lastMatch = new Date().toISOString();
 
     status.lastError = null;
-    return { poll, expire, match };
+    return { expire, match };
   } catch (err) {
     status.lastError = {
       message: err?.message,
-      rpcd: err?.rpcd,
-      rsms: err?.rsms,
     };
     throw err;
   }

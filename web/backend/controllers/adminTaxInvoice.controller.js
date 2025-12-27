@@ -1,10 +1,9 @@
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../models/adminAuditLog.model.js";
 import {
-  issueTaxInvoice,
-  getTaxInvoiceInfo,
-  cancelTaxInvoice,
-} from "../utils/popbill.util.js";
+  enqueueTaxInvoiceIssue,
+  enqueueTaxInvoiceCancel,
+} from "../utils/queueClient.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -252,121 +251,50 @@ export async function adminIssueTaxInvoice(req, res) {
       });
     }
 
-    const taxInvoice = {
-      writeDate: new Date().toISOString().split("T")[0].replace(/-/g, ""),
-      chargeDirection: "정발행",
-      issueType: "정발행",
-      purposeType: "영수",
-      taxType: "과세",
-      invoicerCorpNum: corpNum,
-      invoicerCorpName: process.env.POPBILL_CORP_NAME || "어벗츠 주식회사",
-      invoicerCEOName: process.env.POPBILL_CEO_NAME || "배태완",
-      invoicerAddr: process.env.POPBILL_ADDR || "",
-      invoicerBizType: process.env.POPBILL_BIZ_TYPE || "정보통신업",
-      invoicerBizClass: process.env.POPBILL_BIZ_CLASS || "소프트웨어 개발",
-      invoicerContactName: process.env.POPBILL_CONTACT_NAME || "",
-      invoicerEmail: process.env.POPBILL_EMAIL || "",
-      invoicerTEL: process.env.POPBILL_TEL || "",
-      invoiceeCorpNum: draft.buyer?.bizNo || "",
-      invoiceeCorpName: draft.buyer?.corpName || "",
-      invoiceeCEOName: draft.buyer?.ceoName || "",
-      invoiceeAddr: draft.buyer?.addr || "",
-      invoiceeBizType: draft.buyer?.bizType || "",
-      invoiceeBizClass: draft.buyer?.bizClass || "",
-      invoiceeContactName: draft.buyer?.contactName || "",
-      invoiceeEmail: draft.buyer?.contactEmail || "",
-      invoiceeTEL: draft.buyer?.contactTel || "",
-      supplyCostTotal: String(draft.supplyAmount || 0),
-      taxTotal: String(draft.vatAmount || 0),
-      totalAmount: String(draft.totalAmount || 0),
-      modifyCode: null,
-      detailList: [
-        {
-          serialNum: 1,
-          purchaseDT: new Date().toISOString().split("T")[0].replace(/-/g, ""),
-          itemName: "크레딧 충전",
-          spec: "",
-          qty: "1",
-          unitCost: String(draft.supplyAmount || 0),
-          supplyCost: String(draft.supplyAmount || 0),
-          tax: String(draft.vatAmount || 0),
-          remark: "",
-        },
-      ],
-    };
-
-    const result = await issueTaxInvoice(
+    const queueResult = await enqueueTaxInvoiceIssue({
+      draftId: id,
       corpNum,
-      taxInvoice,
-      "자동발행",
-      false
-    );
+      priority: 10,
+    });
 
-    await TaxInvoiceDraft.updateOne(
-      { _id: id },
-      {
-        $set: {
-          status: "SENT",
-          sentAt: new Date(),
-          hometaxTrxId: result?.ntsconfirmNum || null,
-          attemptCount: (draft.attemptCount || 0) + 1,
-          lastAttemptAt: new Date(),
-        },
-      }
-    );
+    if (!queueResult.enqueued) {
+      return res.status(400).json({
+        success: false,
+        message: `발행 요청 실패: ${queueResult.reason}`,
+        taskId: queueResult.taskId,
+      });
+    }
 
     await writeAuditLog({
       req,
-      action: "TAX_INVOICE_ISSUE",
+      action: "TAX_INVOICE_ISSUE_QUEUED",
       refType: "TaxInvoiceDraft",
       refId: id,
-      details: { result },
+      details: { taskId: queueResult.taskId },
     });
 
-    const updated = await TaxInvoiceDraft.findById(id).lean();
-    return res.json({ success: true, data: updated, popbillResult: result });
+    return res.json({
+      success: true,
+      message:
+        "세금계산서 발행이 큐에 등록되었습니다. 백그라운드 워커가 처리합니다.",
+      taskId: queueResult.taskId,
+    });
   } catch (error) {
-    await TaxInvoiceDraft.updateOne(
-      { _id: req.params.id },
-      {
-        $set: {
-          status: "FAILED",
-          failReason: error.message,
-          attemptCount: { $inc: 1 },
-          lastAttemptAt: new Date(),
-        },
-      }
-    );
-
+    console.error("adminIssueTaxInvoice error:", error);
     return res.status(500).json({
       success: false,
-      message: "세금계산서 발행 실패",
+      message: "세금계산서 발행 요청 실패",
       error: error.message,
     });
   }
 }
 
 export async function adminGetTaxInvoiceStatus(req, res) {
-  try {
-    const { corpNum, mgtKeyType, mgtKey } = req.query;
-
-    if (!corpNum || !mgtKeyType || !mgtKey) {
-      return res.status(400).json({
-        success: false,
-        message: "필수 파라미터가 누락되었습니다.",
-      });
-    }
-
-    const info = await getTaxInvoiceInfo(corpNum, mgtKeyType, mgtKey);
-
-    return res.json({ success: true, data: info });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "세금계산서 상태 조회 실패",
-      error: error.message,
-    });
-  }
+  return res.status(404).json({
+    success: false,
+    message:
+      "직접 상태 조회 기능은 더 이상 지원되지 않습니다. DB 상태를 확인해주세요.",
+  });
 }
 
 export async function adminCancelIssuedTaxInvoice(req, res) {
@@ -380,26 +308,39 @@ export async function adminCancelIssuedTaxInvoice(req, res) {
       });
     }
 
-    const result = await cancelTaxInvoice(
+    // 큐에 취소 요청 등록
+    // mgtKey는 "DRAFT_{draftId}" 형식이므로 draftId 추출 가능.
+    let draftId = "";
+    if (mgtKey.startsWith("DRAFT_")) {
+      draftId = mgtKey.replace("DRAFT_", "");
+    } else {
+      draftId = mgtKey;
+    }
+
+    const result = await enqueueTaxInvoiceCancel({
+      draftId,
       corpNum,
-      mgtKeyType,
       mgtKey,
-      memo || ""
-    );
+      priority: 10,
+    });
 
     await writeAuditLog({
       req,
-      action: "TAX_INVOICE_CANCEL",
+      action: "TAX_INVOICE_CANCEL_QUEUED",
       refType: "POPBILL",
       refId: mgtKey,
-      details: { corpNum, mgtKeyType, memo },
+      details: { corpNum, mgtKeyType, memo, taskId: result.taskId },
     });
 
-    return res.json({ success: true, data: result });
+    return res.json({
+      success: true,
+      message: "세금계산서 발행취소가 큐에 등록되었습니다.",
+      taskId: result.taskId,
+    });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "세금계산서 발행취소 실패",
+      message: "세금계산서 발행취소 요청 실패",
       error: error.message,
     });
   }

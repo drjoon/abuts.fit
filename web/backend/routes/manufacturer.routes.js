@@ -17,10 +17,6 @@ const router = Router();
 router.use(authenticate);
 router.use(authorize(["manufacturer", "admin"]));
 
-// 계좌 입금 확인
-router.post("/bank-transactions/request", requestManufacturerBankTransactions);
-router.get("/bank-transactions/search", getManufacturerBankTransactions);
-
 // 입금 내역 기록
 router.post("/payments", recordManufacturerPayment);
 router.get("/payments", listManufacturerPayments);

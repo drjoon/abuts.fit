@@ -1,11 +1,9 @@
-import { SolapiMessageService } from "solapi";
 import AdminSmsLog from "../models/adminSmsLog.model.js";
 import {
-  sendKakaoATS,
-  sendSMS,
-  sendLMS,
-  listKakaoTemplates,
-} from "../utils/popbill.util.js";
+  sendNotificationViaQueue,
+  sendKakaoOrSMSViaQueue,
+} from "../utils/notificationQueue.js";
+import { listKakaoTemplates } from "../utils/popbill.util.js";
 
 export async function adminSendSms(req, res) {
   try {
@@ -21,61 +19,31 @@ export async function adminSendSms(req, res) {
         .json({ success: false, message: "수신번호/내용을 확인하세요." });
     }
 
-    const apiKey = String(process.env.SOLAPI_API_KEY || "").trim();
-    const apiSecret = String(process.env.SOLAPI_API_SECRET || "").trim();
-    const from = String(process.env.SOLAPI_FROM || "").trim();
-    const hasCreds = apiKey && apiSecret && from;
-    const isProd = process.env.NODE_ENV === "production";
+    // 큐에 등록 (SMS/LMS 자동 판단은 sendNotificationViaQueue나 헬퍼에서 처리하거나 여기서 판단)
+    // 여기서는 단순히 SMS 타입으로 요청하되, 내용은 notificationQueue가 처리하도록 함
+    // 하지만 notificationQueue는 단일 건 처리가 기본일 수 있음.
+    // notificationQueue.js를 보면 to가 배열이면 배열로 처리함.
 
-    const messageService = hasCreds
-      ? new SolapiMessageService(apiKey, apiSecret)
-      : null;
+    // SMS 전송 큐잉
+    await sendNotificationViaQueue({
+      type: text.length > 90 ? "LMS" : "SMS",
+      to: clean,
+      content: text,
+      subject: text.length > 90 ? "관리자 발송" : "",
+    });
 
-    // Solapi sendManyDetail 형식
-    const messages = clean.map((dest) => ({
-      to: dest.startsWith("+") ? dest.replace(/^\+82/, "0") : dest,
-      from,
+    await AdminSmsLog.create({
+      to: clean,
       text,
-    }));
+      status: "PENDING", // 큐에 넣었으므로 PENDING
+      method: text.length > 90 ? "LMS" : "SMS",
+      sentBy: req.user?._id,
+      note: "Queue registered",
+    });
 
-    let sent = null;
-    try {
-      if (messageService) {
-        sent = await messageService.sendManyDetail({ messages });
-      } else {
-        // Dev 환경에서 자격증명 없으면 모의 발송 처리
-        if (isProd) {
-          return res.status(500).json({
-            success: false,
-            message: "문자 발송 설정이 누락되었습니다.(SOLAPI_* env)",
-          });
-        }
-        sent = {
-          mock: true,
-          messages,
-          message: "DEV 모드: SOLAPI_* 미설정, 모의 발송 처리",
-        };
-      }
-
-      await AdminSmsLog.create({
-        to: clean,
-        text,
-        status: "SENT",
-        messageId: sent?.groupId || sent?.messageId,
-        sentBy: req.user?._id,
-      });
-    } catch (err) {
-      await AdminSmsLog.create({
-        to: clean,
-        text,
-        status: "FAILED",
-        errorMessage: err?.message,
-        sentBy: req.user?._id,
-      });
-      throw err;
-    }
-
-    return res.status(200).json({ success: true, data: sent });
+    return res
+      .status(200)
+      .json({ success: true, message: "전송 요청되었습니다." });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -124,142 +92,34 @@ export async function adminSendKakaoOrSms(req, res) {
         .json({ success: false, message: "수신번호/내용을 확인하세요." });
     }
 
-    const corpNum = process.env.POPBILL_CORP_NUM || "";
-    const senderNum = process.env.POPBILL_SENDER_NUM || "";
-    const isProd = process.env.NODE_ENV === "production";
-
-    if (!corpNum || !senderNum) {
-      if (isProd) {
-        return res.status(500).json({
-          success: false,
-          message:
-            "팝빌 설정이 누락되었습니다.(POPBILL_CORP_NUM, POPBILL_SENDER_NUM)",
-        });
-      }
-    }
-
-    let sent = null;
-    let method = "SMS";
-    let error = null;
-
     if (useKakao && templateCode) {
-      try {
-        const receivers = clean.map((dest) => ({
-          rcv: dest.startsWith("+") ? dest.replace(/^\+82/, "0") : dest,
-          rcvnm: "",
-        }));
-
-        const altContent = text.length > 90 ? text.substring(0, 2000) : text;
-        const altSendType = text.length > 90 ? "LMS" : "SMS";
-
-        sent = await sendKakaoATS(
-          corpNum,
-          templateCode,
-          senderNum,
-          text,
-          altContent,
-          altSendType,
-          receivers,
-          "",
-          false
-        );
-        method = "KAKAO";
-
-        await AdminSmsLog.create({
-          to: clean,
-          text,
-          status: "SENT",
-          method: "KAKAO",
-          messageId: sent?.receiptNum || sent?.receiptnum,
-          sentBy: req.user?._id,
-        });
-      } catch (kakaoError) {
-        error = kakaoError;
-        console.warn("카카오톡 전송 실패, SMS로 대체:", kakaoError.message);
-
-        try {
-          const receivers = clean.map((dest) => ({
-            rcv: dest.startsWith("+") ? dest.replace(/^\+82/, "0") : dest,
-            rcvnm: "",
-          }));
-
-          if (text.length > 90) {
-            sent = await sendLMS(
-              corpNum,
-              senderNum,
-              "알림",
-              text,
-              receivers,
-              "",
-              false
-            );
-            method = "LMS";
-          } else {
-            sent = await sendSMS(
-              corpNum,
-              senderNum,
-              text,
-              receivers,
-              "",
-              false
-            );
-            method = "SMS";
-          }
-
-          await AdminSmsLog.create({
-            to: clean,
-            text,
-            status: "SENT",
-            method,
-            messageId: sent?.receiptNum || sent?.receiptnum,
-            sentBy: req.user?._id,
-            note: `카카오톡 실패 후 ${method} 대체 발송`,
-          });
-        } catch (smsError) {
-          await AdminSmsLog.create({
-            to: clean,
-            text,
-            status: "FAILED",
-            method: "SMS",
-            errorMessage: `카카오톡 실패: ${kakaoError.message}, SMS 실패: ${smsError.message}`,
-            sentBy: req.user?._id,
-          });
-          throw smsError;
-        }
-      }
-    } else {
-      const receivers = clean.map((dest) => ({
-        rcv: dest.startsWith("+") ? dest.replace(/^\+82/, "0") : dest,
-        rcvnm: "",
-      }));
-
-      if (text.length > 90) {
-        sent = await sendLMS(
-          corpNum,
-          senderNum,
-          "알림",
-          text,
-          receivers,
-          "",
-          false
-        );
-        method = "LMS";
-      } else {
-        sent = await sendSMS(corpNum, senderNum, text, receivers, "", false);
-        method = "SMS";
-      }
-
-      await AdminSmsLog.create({
+      await sendKakaoOrSMSViaQueue({
         to: clean,
-        text,
-        status: "SENT",
-        method,
-        messageId: sent?.receiptNum || sent?.receiptnum,
-        sentBy: req.user?._id,
+        content: text,
+        templateCode,
+      });
+    } else {
+      await sendNotificationViaQueue({
+        type: text.length > 90 ? "LMS" : "SMS",
+        to: clean,
+        content: text,
+        subject: text.length > 90 ? "알림" : "",
       });
     }
 
-    return res.status(200).json({ success: true, data: sent, method });
+    await AdminSmsLog.create({
+      to: clean,
+      text,
+      status: "PENDING",
+      method:
+        useKakao && templateCode ? "KAKAO" : text.length > 90 ? "LMS" : "SMS",
+      sentBy: req.user?._id,
+      note: "Queue registered",
+    });
+
+    return res
+      .status(200)
+      .json({ success: true, message: "전송 요청되었습니다." });
   } catch (error) {
     return res.status(500).json({
       success: false,
