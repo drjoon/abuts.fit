@@ -153,12 +153,13 @@ export async function enqueueTaxInvoiceIssue({
   corpNum,
   priority = 10,
 }) {
+  const maxAttempts = 5;
   return enqueueTask({
     taskType: "TAX_INVOICE_ISSUE",
     uniqueKey: `tax_invoice_issue:${draftId}`,
     payload: { draftId, corpNum },
     priority,
-    maxAttempts: 5,
+    maxAttempts,
   });
 }
 
@@ -168,12 +169,13 @@ export async function enqueueTaxInvoiceCancel({
   mgtKey,
   priority = 10,
 }) {
+  const maxAttempts = 3;
   return enqueueTask({
     taskType: "TAX_INVOICE_CANCEL",
     uniqueKey: `tax_invoice_cancel:${draftId}`,
     payload: { draftId, corpNum, mgtKey },
     priority,
-    maxAttempts: 3,
+    maxAttempts,
   });
 }
 
@@ -182,12 +184,13 @@ export async function enqueueBankWebhook({
   payload,
   priority = 5,
 }) {
+  const maxAttempts = 3;
   return enqueueTask({
     taskType: "BANK_WEBHOOK",
     uniqueKey: `bank_webhook:${transactionId}`,
     payload,
     priority,
-    maxAttempts: 3,
+    maxAttempts,
   });
 }
 
@@ -196,12 +199,13 @@ export async function enqueueNotificationKakao({
   payload,
   priority = 0,
 }) {
+  const maxAttempts = 3;
   return enqueueTask({
     taskType: "NOTIFICATION_KAKAO",
     uniqueKey: `notification_kakao:${receiptKey}`,
     payload,
     priority,
-    maxAttempts: 3,
+    maxAttempts,
   });
 }
 
@@ -210,12 +214,13 @@ export async function enqueueNotificationSMS({
   payload,
   priority = 0,
 }) {
+  const maxAttempts = 3;
   return enqueueTask({
     taskType: "NOTIFICATION_SMS",
     uniqueKey: `notification_sms:${receiptKey}`,
     payload,
     priority,
-    maxAttempts: 3,
+    maxAttempts,
   });
 }
 
@@ -224,12 +229,13 @@ export async function enqueueNotificationLMS({
   payload,
   priority = 0,
 }) {
+  const maxAttempts = 3;
   return enqueueTask({
     taskType: "NOTIFICATION_LMS",
     uniqueKey: `notification_lms:${receiptKey}`,
     payload,
     priority,
-    maxAttempts: 3,
+    maxAttempts,
   });
 }
 
@@ -242,12 +248,13 @@ export async function enqueueEasyFinBankRequest({
 }) {
   // Unique key includes timestamp to allow multiple requests
   const uniqueKey = `easyfin_request:${bankCode}:${accountNumber}:${Date.now()}`;
+  const maxAttempts = 5;
   return enqueueTask({
     taskType: "EASYFIN_BANK_REQUEST",
     uniqueKey,
     payload: { bankCode, accountNumber, startDate, endDate },
     priority,
-    maxAttempts: 3,
+    maxAttempts,
   });
 }
 
@@ -258,12 +265,13 @@ export async function enqueueEasyFinBankCheck({
   priority = 5,
   scheduledFor,
 }) {
+  const maxAttempts = 20; // 수집 완료까지 여러 번 시도
   return enqueueTask({
     taskType: "EASYFIN_BANK_CHECK",
     uniqueKey: `easyfin_check:${jobID}:${Date.now()}`, // 체크는 여러 번 수행될 수 있으므로 uniqueKey에 시간 포함
     payload: { jobID, bankCode, accountNumber },
     priority,
-    maxAttempts: 20, // 체크는 여러 번 시도해야 함
+    maxAttempts,
     scheduledFor,
   });
 }

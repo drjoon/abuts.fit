@@ -1,6 +1,7 @@
 import Notification from "../models/notification.model.js";
 import User from "../models/user.model.js";
 import { sendNotificationToUser } from "../socket.js";
+import { sendNotificationViaQueue } from "../utils/notificationQueue.js";
 
 /**
  * 알림 생성 및 전송
@@ -39,10 +40,22 @@ export async function createNotification(notificationData) {
     }
 
     if (user?.preferences?.notifications?.sms && !notification.isSMSSent) {
-      // SMS 전송 로직 (추후 구현)
-      // await sendSMSNotification(user.phone, notification);
-      notification.isSMSSent = true;
-      await notification.save();
+      const phone = String(user?.phone || "").replace(/[^0-9+]/g, "");
+      if (phone.length >= 10) {
+        try {
+          await sendNotificationViaQueue({
+            type: "SMS",
+            to: phone,
+            content: notification.message || notification.title || "",
+            subject: "",
+            priority: 5,
+          });
+          notification.isSMSSent = true;
+          await notification.save();
+        } catch (err) {
+          console.error("[notification] SMS enqueue failed:", err?.message);
+        }
+      }
     }
 
     return notification;

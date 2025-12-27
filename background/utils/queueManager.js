@@ -1,6 +1,8 @@
 import PopbillQueue from "../models/popbillQueue.model.js";
 
 const LOCK_TTL_MS = 5 * 60 * 1000;
+const MAX_RETRY_DELAY_MS = 30 * 60 * 1000; // 최대 백오프 30분
+const MAX_RETRY_WINDOW_MS = 6 * 60 * 60 * 1000; // 생성 후 6시간 넘으면 재시도 중단
 
 export async function enqueueTask({
   taskType,
@@ -132,7 +134,14 @@ export async function failTask({ taskId, error, shouldRetry = true }) {
     stack: error?.stack || "",
   };
 
-  if (!shouldRetry || task.attemptCount >= task.maxAttempts) {
+  const elapsedMs = now - (task.createdAt || now);
+  const retryWindowExceeded = elapsedMs > MAX_RETRY_WINDOW_MS;
+
+  if (
+    !shouldRetry ||
+    task.attemptCount >= task.maxAttempts ||
+    retryWindowExceeded
+  ) {
     await PopbillQueue.updateOne(
       { _id: taskId },
       {
@@ -147,7 +156,7 @@ export async function failTask({ taskId, error, shouldRetry = true }) {
     );
   } else {
     const retryDelayMs = Math.min(
-      30 * 60 * 1000,
+      MAX_RETRY_DELAY_MS,
       Math.pow(2, task.attemptCount) * 1000
     );
     const scheduledFor = new Date(now.getTime() + retryDelayMs);

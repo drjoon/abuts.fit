@@ -1,11 +1,16 @@
+import axios from "axios";
 import {
   acquireNextTask,
   completeTask,
   failTask,
   releaseStuckTasks,
+  issueTaxInvoice,
+  getTaxInvoiceInfo,
   requestBankAccountList,
   getBankAccountTransactions,
-  upsertBankTransaction,
+  sendKakaoATS,
+  sendSMS,
+  sendLMS,
 } from "../utils/popbill.util.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import { enqueueEasyFinBankCheck } from "../utils/queueManager.js"; // queueManager에 추가 필요할 수 있음, 없으면 직접 구현
@@ -25,6 +30,36 @@ export function getPopbillWorkerStatus() {
 const WORKER_ID = `popbill-worker:${process.pid}`;
 const POLL_INTERVAL_MS = 5000;
 const STUCK_TASK_CHECK_INTERVAL_MS = 60000;
+const MAX_RETRY_WINDOW_MS = 6 * 60 * 60 * 1000; // 6시간
+
+const pushoverConfig = {
+  token: process.env.PUSHOVER_TOKEN || process.env.WORKER_PUSHOVER_TOKEN || "",
+  user: process.env.PUSHOVER_USER || process.env.WORKER_PUSHOVER_USER || "",
+  device: process.env.PUSHOVER_DEVICE || "",
+  priority: process.env.PUSHOVER_PRIORITY,
+};
+
+async function sendPushover({ title, message }) {
+  const { token, user, device, priority } = pushoverConfig;
+  if (!token || !user) return;
+  try {
+    const body = new URLSearchParams({
+      token,
+      user,
+      title: title || "popbill worker",
+      message,
+    });
+    if (device) body.append("device", device);
+    if (priority !== undefined) body.append("priority", String(priority));
+
+    await axios.post("https://api.pushover.net/1/messages.json", body, {
+      timeout: 5000,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    });
+  } catch (err) {
+    console.error("[popbillWorker] pushover send failed:", err?.message);
+  }
+}
 
 async function processTaxInvoiceIssue(task) {
   const { draftId, corpNum } = task.payload;
@@ -81,7 +116,7 @@ async function processTaxInvoiceIssue(task) {
   };
 
   const mgtKey = `DRAFT_${draft._id}`;
-  const result = await issueTaxInvoice(corpNum, taxInvoice, mgtKey, "", false);
+  const result = await issueTaxInvoice(corpNum, taxInvoice, mgtKey, false);
 
   await TaxInvoiceDraft.updateOne(
     { _id: draft._id },
@@ -135,18 +170,76 @@ async function processBankWebhook(task) {
 }
 
 async function processNotificationKakao(task) {
-  console.log("[popbillWorker] NOTIFICATION_KAKAO processing:", task.payload);
-  return { processed: true };
+  const { templateCode, to, content, altContent, receiverName } = task.payload;
+  console.log(`[popbillWorker] NOTIFICATION_KAKAO: ${to}`);
+
+  const corpNum = process.env.POPBILL_CORP_NUM;
+  const senderNum = process.env.POPBILL_SENDER_NUM || "";
+
+  if (!corpNum || !senderNum) {
+    throw new Error("POPBILL_CORP_NUM or POPBILL_SENDER_NUM not set");
+  }
+
+  const result = await sendKakaoATS(
+    corpNum,
+    templateCode,
+    senderNum,
+    to,
+    receiverName || "",
+    content,
+    altContent || content,
+    "C",
+    ""
+  );
+
+  return { sent: true, receiptNum: result.receiptNum };
 }
 
 async function processNotificationSMS(task) {
-  console.log("[popbillWorker] NOTIFICATION_SMS processing:", task.payload);
-  return { processed: true };
+  const { to, content, receiverName } = task.payload;
+  console.log(`[popbillWorker] NOTIFICATION_SMS: ${to}`);
+
+  const corpNum = process.env.POPBILL_CORP_NUM;
+  const senderNum = process.env.POPBILL_SENDER_NUM || "";
+
+  if (!corpNum || !senderNum) {
+    throw new Error("POPBILL_CORP_NUM or POPBILL_SENDER_NUM not set");
+  }
+
+  const result = await sendSMS(
+    corpNum,
+    senderNum,
+    to,
+    receiverName || "",
+    content,
+    ""
+  );
+
+  return { sent: true, receiptNum: result.receiptNum };
 }
 
 async function processNotificationLMS(task) {
-  console.log("[popbillWorker] NOTIFICATION_LMS processing:", task.payload);
-  return { processed: true };
+  const { to, subject, content, receiverName } = task.payload;
+  console.log(`[popbillWorker] NOTIFICATION_LMS: ${to}`);
+
+  const corpNum = process.env.POPBILL_CORP_NUM;
+  const senderNum = process.env.POPBILL_SENDER_NUM || "";
+
+  if (!corpNum || !senderNum) {
+    throw new Error("POPBILL_CORP_NUM or POPBILL_SENDER_NUM not set");
+  }
+
+  const result = await sendLMS(
+    corpNum,
+    senderNum,
+    to,
+    receiverName || "",
+    subject || "",
+    content,
+    ""
+  );
+
+  return { sent: true, receiptNum: result.receiptNum };
 }
 
 async function processEasyFinBankRequest(task) {
@@ -210,11 +303,17 @@ async function processEasyFinBankCheck(task) {
     for (const tx of transactions) {
       // tx 필드 매핑 필요 (팝빌 응답 -> DB 모델)
       // 팝빌 search 응답 필드: tid, trDate, trTime, withdraw, deposit, balance, remark, branch, etc.
+      const occurredAt = parseTransactionDate(tx.trDate, tx.trTime);
       await upsertTx({
-        externalId: tx.tid, // 거래내역 아이디
-        tranAmt: Number(tx.deposit || 0) > 0 ? Number(tx.deposit) : 0, // 입금액만 관심 있다면
+        bankCode,
+        accountNumber,
+        externalId: tx.tid,
+        tranAmt:
+          Number(tx.deposit || 0) > 0
+            ? Number(tx.deposit)
+            : Number(tx.withdraw || 0),
         printedContent: tx.remark || "",
-        occurredAt: `${tx.trDate}T${tx.trTime}`, // YYYYMMDDTHHMMSS 포맷 가정 (확인 필요) -> 팝빌은 YYYYMMDD, HHMMSS 분리됨
+        occurredAt,
         raw: tx,
       });
       savedCount++;
@@ -222,12 +321,35 @@ async function processEasyFinBankCheck(task) {
 
     return { checked: true, savedCount, status: "COMPLETED" };
   } catch (error) {
-    // 진행 중(수집 중)인 경우 재시도 필요
-    // 팝빌 에러 코드를 확인하여 재시도 여부 결정
-    const isPending = error.message.includes("-99999999"); // 예시 코드, 실제 코드 확인 필요
-    // 팝빌 SDK는 보통 완료되지 않으면 에러를 뱉음 (오류코드 -13000004 등)
-    console.log(`[popbillWorker] Check failed (will retry): ${error.message}`);
-    throw error; // 에러 던지면 큐 매니저가 재시도 처리 (maxAttempts 내에서)
+    // 팝빌 계좌조회 에러 코드 처리
+    // -99999999: 수집 진행중 (재시도 필요)
+    // -14000001: 잡 아이디가 존재하지 않음 (재시도 불필요)
+    const errorMsg = error.message || "";
+
+    if (
+      errorMsg.includes("-99999999") ||
+      errorMsg.includes("진행중") ||
+      errorMsg.includes("수집중")
+    ) {
+      console.log(
+        `[popbillWorker] Bank check still in progress, will retry: ${errorMsg}`
+      );
+      const retryableError = new Error(errorMsg);
+      retryableError.shouldRetry = true;
+      throw retryableError;
+    }
+
+    if (errorMsg.includes("-14000001") || errorMsg.includes("존재하지")) {
+      console.error(
+        `[popbillWorker] Invalid jobID, marking as failed: ${errorMsg}`
+      );
+      const nonRetryable = new Error(`Invalid jobID: ${jobID}`);
+      nonRetryable.shouldRetry = false;
+      throw nonRetryable;
+    }
+
+    console.error(`[popbillWorker] Bank check failed: ${errorMsg}`);
+    throw error;
   }
 }
 
@@ -262,6 +384,17 @@ function formatDate(date) {
   return `${y}${m}${day}`;
 }
 
+function parseTransactionDate(trDate, trTime) {
+  if (!trDate) return new Date();
+  const y = trDate.substring(0, 4);
+  const m = trDate.substring(4, 6);
+  const d = trDate.substring(6, 8);
+  const h = trTime ? trTime.substring(0, 2) : "00";
+  const min = trTime ? trTime.substring(2, 4) : "00";
+  const s = trTime ? trTime.substring(4, 6) : "00";
+  return new Date(`${y}-${m}-${d}T${h}:${min}:${s}Z`);
+}
+
 async function pollAndProcess() {
   try {
     const task = await acquireNextTask({
@@ -294,9 +427,31 @@ async function pollAndProcess() {
       console.log(`[popbillWorker] Task ${task._id} completed`);
     } catch (err) {
       console.error(`[popbillWorker] Task ${task._id} failed:`, err);
-      await failTask({ taskId: task._id, error: err, shouldRetry: true });
+      const shouldRetry = err?.shouldRetry !== false;
+      await failTask({ taskId: task._id, error: err, shouldRetry });
       status.failedCount += 1;
       status.lastError = { message: err?.message, taskId: task._id };
+
+      const attemptCount = task.attemptCount || 1; // acquireNextTask에서 이미 +1
+      const maxAttempts = task.maxAttempts || 5;
+      const elapsedMs = Date.now() - new Date(task.createdAt || Date.now());
+      const retryWindowExceeded = elapsedMs > MAX_RETRY_WINDOW_MS;
+      const shouldNotify =
+        !shouldRetry || attemptCount >= maxAttempts || retryWindowExceeded;
+
+      if (shouldNotify) {
+        const lines = [
+          `taskId: ${task._id}`,
+          `taskType: ${task.taskType}`,
+          `attempt: ${attemptCount}/${maxAttempts}`,
+          `retryWindowExceeded: ${retryWindowExceeded}`,
+          `error: ${err?.message || err}`,
+        ];
+        await sendPushover({
+          title: `[popbill-worker] task failed`,
+          message: lines.join("\n"),
+        });
+      }
     }
   } catch (err) {
     console.error("[popbillWorker] Poll error:", err);
