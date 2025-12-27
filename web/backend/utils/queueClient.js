@@ -7,10 +7,11 @@ const PopbillQueueSchema = new mongoose.Schema(
       enum: [
         "TAX_INVOICE_ISSUE",
         "TAX_INVOICE_CANCEL",
-        "BANK_WEBHOOK",
         "NOTIFICATION_KAKAO",
         "NOTIFICATION_SMS",
         "NOTIFICATION_LMS",
+        "EASYFIN_BANK_REQUEST",
+        "EASYFIN_BANK_CHECK",
       ],
       required: true,
       index: true,
@@ -184,14 +185,7 @@ export async function enqueueBankWebhook({
   payload,
   priority = 5,
 }) {
-  const maxAttempts = 3;
-  return enqueueTask({
-    taskType: "BANK_WEBHOOK",
-    uniqueKey: `bank_webhook:${transactionId}`,
-    payload,
-    priority,
-    maxAttempts,
-  });
+  throw new Error("BANK_WEBHOOK은 웹 백엔드에서 직접 처리합니다.");
 }
 
 export async function enqueueNotificationKakao({

@@ -785,7 +785,6 @@ export default function AdminCreditPage() {
                 allowedTaskTypes={[
                   "EASYFIN_BANK_REQUEST",
                   "EASYFIN_BANK_CHECK",
-                  "BANK_WEBHOOK",
                   "TAX_INVOICE_ISSUE",
                   "TAX_INVOICE_CANCEL",
                   "NOTIFICATION_KAKAO",

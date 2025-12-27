@@ -164,11 +164,6 @@ async function processTaxInvoiceCancel(task) {
   return { cancelled: true, draftId, mgtKey };
 }
 
-async function processBankWebhook(task) {
-  console.log("[popbillWorker] BANK_WEBHOOK processing:", task.payload);
-  return { processed: true };
-}
-
 async function processNotificationKakao(task) {
   const { templateCode, to, content, altContent, receiverName } = task.payload;
   console.log(`[popbillWorker] NOTIFICATION_KAKAO: ${to}`);
@@ -359,8 +354,6 @@ async function processTask(task) {
       return await processTaxInvoiceIssue(task);
     case "TAX_INVOICE_CANCEL":
       return await processTaxInvoiceCancel(task);
-    case "BANK_WEBHOOK":
-      return await processBankWebhook(task);
     case "NOTIFICATION_KAKAO":
       return await processNotificationKakao(task);
     case "NOTIFICATION_SMS":
@@ -401,7 +394,6 @@ async function pollAndProcess() {
       taskTypes: [
         "TAX_INVOICE_ISSUE",
         "TAX_INVOICE_CANCEL",
-        "BANK_WEBHOOK",
         "NOTIFICATION_KAKAO",
         "NOTIFICATION_SMS",
         "NOTIFICATION_LMS",

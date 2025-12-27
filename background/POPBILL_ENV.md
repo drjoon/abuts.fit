@@ -94,7 +94,6 @@ POPBILL_SUPPLIER_TEL=055-1234-5678
 | `NOTIFICATION_KAKAO`   | 카카오톡 알림톡 발송         | 3           |
 | `NOTIFICATION_SMS`     | SMS 발송                     | 3           |
 | `NOTIFICATION_LMS`     | LMS 발송                     | 3           |
-| `BANK_WEBHOOK`         | 은행 웹훅 처리               | 3           |
 
 ### 재시도 정책
 

@@ -33,8 +33,7 @@ export type TaskType =
   | "EASYFIN_BANK_CHECK"
   | "NOTIFICATION_KAKAO"
   | "NOTIFICATION_SMS"
-  | "NOTIFICATION_LMS"
-  | "BANK_WEBHOOK";
+  | "NOTIFICATION_LMS";
 
 type QueueTask = {
   _id: string;
@@ -71,7 +70,6 @@ const taskTypeOptions: Array<{ value: TaskType; label: string }> = [
   { value: "NOTIFICATION_KAKAO", label: "카카오톡" },
   { value: "NOTIFICATION_SMS", label: "SMS" },
   { value: "NOTIFICATION_LMS", label: "LMS" },
-  { value: "BANK_WEBHOOK", label: "은행 웹훅" },
 ];
 
 function statusBadge(status: TaskStatus) {

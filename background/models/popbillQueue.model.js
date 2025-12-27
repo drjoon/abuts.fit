@@ -7,7 +7,6 @@ const PopbillQueueSchema = new mongoose.Schema(
       enum: [
         "TAX_INVOICE_ISSUE",
         "TAX_INVOICE_CANCEL",
-        "BANK_WEBHOOK",
         "NOTIFICATION_KAKAO",
         "NOTIFICATION_SMS",
         "NOTIFICATION_LMS",

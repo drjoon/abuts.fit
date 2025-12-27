@@ -160,15 +160,16 @@
 
 ### 9.1 큐 기반 아키텍처
 
-- **단일 백그라운드 워커 전담**: 팝빌 관련 작업(세금계산서 발행/재시도, 계좌조회 웹훅 처리, 알림 큐 처리)은 백그라운드 워커가 전담합니다.
+- **단일 백그라운드 워커 전담**: 팝빌 관련 작업(세금계산서 발행/재시도, 계좌조회 수집/확인, 알림 큐 처리)은 백그라운드 워커가 전담합니다.
 - **web → 큐 → 워커**: 외부 진입(web)에서 팝빌 연동이 필요한 이벤트는 큐(PopbillQueue)를 통해 워커로 전달합니다. web 인스턴스 다중화 시에도 중복 처리를 피하기 위해 직접 발행하지 않습니다.
 - **헬스체크 + 오토리스타트**: 워커는 헬스체크 기반으로 자동 재시작합니다. 워커 장애가 곧 팝빌 기능 중단이므로 필수입니다.
-- **아이덴포턴시**: 세금계산서 발행/취소, 계좌조회 웹훅(bankTxId/receiptNo), 알림 발송 키 등 모든 처리에 unique key + upsert로 중복 실행을 방지합니다.
+- **아이덴포턴시**: 세금계산서 발행/취소, 계좌조회 수집 job, 알림 발송 키 등 모든 처리에 unique key + upsert로 중복 실행을 방지합니다.
 - **모니터링/스케일업 준비**: 워커 처리 지연을 감시하는 모니터를 두고, 필요 시 큐 소비 워커를 1→N대로 확장(또는 서버 스케일업)할 수 있도록 합니다.
+- **은행 웹훅**: BANK_WEBHOOK은 예외적으로 큐/워커를 거치지 않고 `/api/webhooks/bank`에서 웹 백엔드가 즉시 처리합니다. 큐에 enqueue 하지 않습니다.
 
 ### 9.2 큐 모델 (PopbillQueue)
 
-- **taskType**: TAX_INVOICE_ISSUE, TAX_INVOICE_CANCEL, BANK_WEBHOOK, NOTIFICATION_KAKAO, NOTIFICATION_SMS, NOTIFICATION_LMS
+- **taskType**: TAX_INVOICE_ISSUE, TAX_INVOICE_CANCEL, NOTIFICATION_KAKAO, NOTIFICATION_SMS, NOTIFICATION_LMS, EASYFIN_BANK_REQUEST, EASYFIN_BANK_CHECK
 - **status**: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
 - **uniqueKey**: 중복 방지를 위한 고유 키 (예: `tax_invoice_issue:${draftId}`)
 - **payload**: 작업 수행에 필요한 데이터
