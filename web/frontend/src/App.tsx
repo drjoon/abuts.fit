@@ -58,6 +58,7 @@ import AdminMailPage from "@/pages/admin/support/AdminMailPage";
 import AdminSmsPage from "@/pages/admin/support/AdminSmsPage";
 import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";
 import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
+import AdminPopbillQueue from "@/pages/admin/system/AdminPopbillQueue";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
@@ -238,6 +239,14 @@ const App = () => {
                       element={
                         <RoleProtectedRoute roles={["admin"]}>
                           <AdminTaxInvoices />
+                        </RoleProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="popbill-queue"
+                      element={
+                        <RoleProtectedRoute roles={["admin"]}>
+                          <AdminPopbillQueue />
                         </RoleProtectedRoute>
                       }
                     />

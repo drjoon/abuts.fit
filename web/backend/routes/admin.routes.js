@@ -55,6 +55,13 @@ import {
   adminGetOrganizationCredits,
   adminGetOrganizationCreditDetail,
 } from "../controllers/adminCredit.controller.js";
+import {
+  adminGetQueueStats,
+  adminListQueueTasks,
+  adminGetQueueTask,
+  adminRetryQueueTask,
+  adminCancelQueueTask,
+} from "../controllers/adminPopbillQueue.controller.js";
 
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -157,5 +164,12 @@ router.get("/sms/history", adminListSms);
 // 카카오톡 알림톡 + SMS (팝빌)
 router.post("/messages/send", adminSendKakaoOrSms);
 router.get("/kakao/templates", adminListKakaoTemplates);
+
+// 팝빌 큐 모니터링
+router.get("/popbill-queue/stats", adminGetQueueStats);
+router.get("/popbill-queue/tasks", adminListQueueTasks);
+router.get("/popbill-queue/tasks/:id", adminGetQueueTask);
+router.post("/popbill-queue/tasks/:id/retry", adminRetryQueueTask);
+router.post("/popbill-queue/tasks/:id/cancel", adminCancelQueueTask);
 
 export default router;

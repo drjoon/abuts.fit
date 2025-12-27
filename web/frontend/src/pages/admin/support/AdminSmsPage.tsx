@@ -12,10 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Phone, Send, History, MessageCircle } from "lucide-react";
+import { Phone, Send, History, MessageCircle, Info } from "lucide-react";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 type SmsHistoryItem = {
   id: string;
@@ -71,6 +72,7 @@ export default function AdminSmsPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const loadHistory = async () => {
     if (!token) return;
@@ -174,6 +176,39 @@ export default function AdminSmsPage() {
 
   return (
     <div className="p-4 space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>문자 발송 관리</CardTitle>
+          <CardDescription>
+            SMS/LMS 및 카카오톡 알림톡을 발송하고 이력을 관리합니다.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="text-sm font-medium text-blue-900">
+                메시지 발송은 큐 기반으로 처리됩니다
+              </div>
+              <div className="text-xs text-blue-700">
+                발송 버튼 클릭 시 작업이 큐에 등록되며, 백그라운드 워커가
+                비동기로 처리합니다. 실시간 처리 상태는{" "}
+                <button
+                  onClick={() => navigate("/admin/popbill-queue")}
+                  className="underline font-medium hover:text-blue-900"
+                >
+                  팝빌 큐 모니터링
+                </button>
+                에서 확인하세요.
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Tabs value={tab} onValueChange={(v) => setTab(v as "send" | "history")}>
         <TabsList>
           <TabsTrigger value="send" className="gap-2">
