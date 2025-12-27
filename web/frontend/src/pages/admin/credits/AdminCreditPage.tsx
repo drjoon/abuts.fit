@@ -2,7 +2,13 @@ import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/lib/apiClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -24,6 +30,9 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { AutoMatchVerificationTab } from "./components/AutoMatchVerificationTab";
+import { Info } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { PopbillQueuePanel } from "@/features/admin/popbill/PopbillQueuePanel";
 
 type CreditStats = {
   totalOrgs: number;
@@ -76,6 +85,7 @@ type BankTransaction = {
 export default function AdminCreditPage() {
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [stats, setStats] = useState<CreditStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
@@ -271,6 +281,25 @@ export default function AdminCreditPage() {
 
   return (
     <div className="space-y-6 p-6">
+      {/* 팝빌 큐 안내 */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="text-sm font-medium text-blue-900">
+                크레딧/세금계산서 작업은 큐 기반으로 처리됩니다
+              </div>
+              <div className="text-xs text-blue-700">
+                입금 매칭, 세금계산서 발행 등 팝빌 연동 작업은 백그라운드 워커가
+                비동기로 처리합니다. 상단 탭의 "큐 모니터링"에서 실시간 상태를
+                바로 확인할 수 있습니다.
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
@@ -328,6 +357,7 @@ export default function AdminCreditPage() {
           <TabsTrigger value="orders">충전 주문</TabsTrigger>
           <TabsTrigger value="transactions">입금 내역</TabsTrigger>
           <TabsTrigger value="match">수동 매칭</TabsTrigger>
+          <TabsTrigger value="queue">큐 모니터링</TabsTrigger>
         </TabsList>
 
         <TabsContent value="organizations" className="space-y-4">
@@ -475,10 +505,15 @@ export default function AdminCreditPage() {
 
         <TabsContent value="transactions" className="space-y-4">
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>입금 내역</CardTitle>
-                <div className="flex gap-2">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <CardTitle>입금 내역</CardTitle>
+                  <CardDescription>
+                    팝빌 계좌 수집 결과를 기반으로 매칭 상태를 확인합니다.
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2 flex-wrap">
                   <Button
                     variant={txStatusFilter === "" ? "default" : "outline"}
                     size="sm"
@@ -732,6 +767,32 @@ export default function AdminCreditPage() {
                   입금 내역과 충전 주문을 각각 선택하세요.
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="queue" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>팝빌 큐 모니터링</CardTitle>
+              <CardDescription>
+                입금 수집(EasyFin), 매칭 알림, 세금계산서 발행 관련 큐 상태를
+                확인하고 재시도/취소를 수행합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PopbillQueuePanel
+                allowedTaskTypes={[
+                  "EASYFIN_BANK_REQUEST",
+                  "EASYFIN_BANK_CHECK",
+                  "BANK_WEBHOOK",
+                  "TAX_INVOICE_ISSUE",
+                  "TAX_INVOICE_CANCEL",
+                  "NOTIFICATION_KAKAO",
+                  "NOTIFICATION_SMS",
+                  "NOTIFICATION_LMS",
+                ]}
+              />
             </CardContent>
           </Card>
         </TabsContent>

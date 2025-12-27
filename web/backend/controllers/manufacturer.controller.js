@@ -163,8 +163,6 @@ export async function sendUrgentMessage(req, res) {
 }
 
 export default {
-  requestManufacturerBankTransactions,
-  getManufacturerBankTransactions,
   recordManufacturerPayment,
   listManufacturerPayments,
   sendUrgentMessage,

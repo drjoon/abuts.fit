@@ -183,6 +183,10 @@ const App = () => {
                   <Route path="/credits" element={<CreditsPage />} />
                   <Route path="/refund-policy" element={<RefundPolicyPage />} />
                   <Route
+                    path="/admin/popbill-queue"
+                    element={<Navigate to="/dashboard/popbill-queue" replace />}
+                  />
+                  <Route
                     path="/dashboard"
                     element={
                       <ProtectedRoute>

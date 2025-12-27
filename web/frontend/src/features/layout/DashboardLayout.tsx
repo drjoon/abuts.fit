@@ -57,11 +57,11 @@ const sidebarItems = {
   ],
   admin: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: Users, label: "사용자 관리", href: "/dashboard/user-management" },
+    { icon: Users, label: "사용자 관리", href: "/dashboard/users" },
     {
       icon: FileText,
       label: "의뢰 모니터링",
-      href: "/dashboard/request-monitoring",
+      href: "/dashboard/monitoring",
     },
     {
       icon: Mail,
@@ -75,7 +75,7 @@ const sidebarItems = {
     },
     {
       icon: Send,
-      label: "문자메시지",
+      label: "메시지",
       href: "/dashboard/sms",
     },
     { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },

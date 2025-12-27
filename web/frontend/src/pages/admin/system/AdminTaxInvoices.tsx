@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +22,7 @@ import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { FileText, Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { PopbillQueuePanel } from "@/features/admin/popbill/PopbillQueuePanel";
 
 type DraftStatus =
   | "PENDING_APPROVAL"
@@ -95,6 +96,7 @@ export const AdminTaxInvoices = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  const [tab, setTab] = useState<DraftStatus | "QUEUE">("PENDING_APPROVAL");
   const [status, setStatus] = useState<DraftStatus>("PENDING_APPROVAL");
   const [items, setItems] = useState<TaxInvoiceDraft[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,6 +122,7 @@ export const AdminTaxInvoices = () => {
 
   const load = useCallback(async () => {
     if (!token) return;
+    if (tab === "QUEUE") return;
     setLoading(true);
     try {
       const qs = new URLSearchParams();
@@ -151,11 +154,17 @@ export const AdminTaxInvoices = () => {
     } finally {
       setLoading(false);
     }
-  }, [status, toast, token]);
+  }, [status, tab, toast, token]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab !== "QUEUE") {
+      setStatus(tab);
+    }
+  }, [tab]);
 
   const postAction = useCallback(
     async ({
@@ -230,24 +239,15 @@ export const AdminTaxInvoices = () => {
               </div>
               <div className="text-xs text-blue-700">
                 "팝빌 발행" 버튼 클릭 시 작업이 큐에 등록되며, 백그라운드 워커가
-                비동기로 처리합니다. 실시간 처리 상태는{" "}
-                <button
-                  onClick={() => navigate("/admin/popbill-queue")}
-                  className="underline font-medium hover:text-blue-900"
-                >
-                  팝빌 큐 모니터링
-                </button>
-                에서 확인하세요.
+                비동기로 처리합니다. 이 페이지 상단 탭의 "큐 모니터링"에서 현재
+                상태를 바로 확인할 수 있습니다.
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Tabs
-        value={status}
-        onValueChange={(v: string) => setStatus(v as DraftStatus)}
-      >
+      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="flex flex-wrap">
           {statusTabs.map((s) => (
             <TabsTrigger key={s} value={s}>
@@ -259,162 +259,178 @@ export const AdminTaxInvoices = () => {
               {s === "CANCELLED" && "취소"}
             </TabsTrigger>
           ))}
+          <TabsTrigger value="QUEUE">큐 모니터링</TabsTrigger>
         </TabsList>
-      </Tabs>
 
-      <div className="space-y-3">
-        {loading && (
-          <Card>
-            <CardContent className="p-4 text-sm text-muted-foreground">
-              불러오는 중...
-            </CardContent>
-          </Card>
-        )}
-
-        {!loading && items.length === 0 && (
-          <Card>
-            <CardContent className="p-4 text-sm text-muted-foreground">
-              데이터가 없습니다.
-            </CardContent>
-          </Card>
-        )}
-
-        {!loading &&
-          items.map((d) => {
-            const canEdit = d.status !== "SENT";
-            const isActionLoading = actionLoadingId === d._id;
-            return (
-              <Card key={d._id}>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {statusBadge(d.status)}
-                        <span className="text-xs text-muted-foreground truncate">
-                          {d._id}
-                        </span>
-                      </div>
-                      <div className="text-sm font-medium truncate">
-                        {d.buyer?.corpName || "(매입처 미기재)"}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {d.buyer?.bizNo ? `사업자번호: ${d.buyer.bizNo}` : ""}
-                      </div>
-                      {d.failReason ? (
-                        <div className="text-xs text-destructive truncate">
-                          {d.failReason}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="text-right">
-                      <div className="text-sm font-semibold">
-                        {fmtMoney(d.totalAmount)}원
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        공급가 {fmtMoney(d.supplyAmount)} / VAT{" "}
-                        {fmtMoney(d.vatAmount)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {canEdit && (
-                    <div className="flex flex-wrap gap-2 justify-end">
-                      {d.status === "PENDING_APPROVAL" && (
-                        <>
-                          <Button
-                            size="sm"
-                            disabled={isActionLoading}
-                            onClick={() =>
-                              postAction({ id: d._id, action: "approve" })
-                            }
-                          >
-                            승인
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={isActionLoading}
-                            onClick={() => openReject(d._id)}
-                          >
-                            반려
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isActionLoading}
-                            onClick={() =>
-                              postAction({ id: d._id, action: "cancel" })
-                            }
-                          >
-                            취소
-                          </Button>
-                        </>
-                      )}
-
-                      {d.status === "APPROVED" && (
-                        <>
-                          <Button
-                            size="sm"
-                            disabled={isActionLoading}
-                            onClick={() =>
-                              postAction({ id: d._id, action: "issue" })
-                            }
-                          >
-                            <FileText className="h-4 w-4 mr-1" />
-                            팝빌 발행
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={isActionLoading}
-                            onClick={() => openReject(d._id)}
-                          >
-                            승인 취소(반려)
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isActionLoading}
-                            onClick={() =>
-                              postAction({ id: d._id, action: "cancel" })
-                            }
-                          >
-                            취소
-                          </Button>
-                        </>
-                      )}
-
-                      {d.status === "FAILED" && (
-                        <>
-                          <Button
-                            size="sm"
-                            disabled={isActionLoading}
-                            onClick={() =>
-                              postAction({ id: d._id, action: "approve" })
-                            }
-                          >
-                            재승인
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={isActionLoading}
-                            onClick={() =>
-                              postAction({ id: d._id, action: "cancel" })
-                            }
-                          >
-                            취소
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  )}
+        {statusTabs.map((s) => (
+          <TabsContent key={s} value={s} className="space-y-3 pt-2">
+            {loading && (
+              <Card>
+                <CardContent className="p-4 text-sm text-muted-foreground">
+                  불러오는 중...
                 </CardContent>
               </Card>
-            );
-          })}
-      </div>
+            )}
+
+            {!loading && items.length === 0 && (
+              <Card>
+                <CardContent className="p-4 text-sm text-muted-foreground">
+                  데이터가 없습니다.
+                </CardContent>
+              </Card>
+            )}
+
+            {!loading &&
+              items.map((d) => {
+                const canEdit = d.status !== "SENT";
+                const isActionLoading = actionLoadingId === d._id;
+                return (
+                  <Card key={d._id}>
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {statusBadge(d.status)}
+                            <span className="text-xs text-muted-foreground truncate">
+                              {d._id}
+                            </span>
+                          </div>
+                          <div className="text-sm font-medium truncate">
+                            {d.buyer?.corpName || "(매입처 미기재)"}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {d.buyer?.bizNo
+                              ? `사업자번호: ${d.buyer.bizNo}`
+                              : ""}
+                          </div>
+                          {d.failReason ? (
+                            <div className="text-xs text-destructive truncate">
+                              {d.failReason}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-sm font-semibold">
+                            {fmtMoney(d.totalAmount)}원
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            공급가 {fmtMoney(d.supplyAmount)} / VAT{" "}
+                            {fmtMoney(d.vatAmount)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {canEdit && (
+                        <div className="flex flex-wrap gap-2 justify-end">
+                          {d.status === "PENDING_APPROVAL" && (
+                            <>
+                              <Button
+                                size="sm"
+                                disabled={isActionLoading}
+                                onClick={() =>
+                                  postAction({ id: d._id, action: "approve" })
+                                }
+                              >
+                                승인
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={isActionLoading}
+                                onClick={() => openReject(d._id)}
+                              >
+                                반려
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isActionLoading}
+                                onClick={() =>
+                                  postAction({ id: d._id, action: "cancel" })
+                                }
+                              >
+                                취소
+                              </Button>
+                            </>
+                          )}
+
+                          {d.status === "APPROVED" && (
+                            <>
+                              <Button
+                                size="sm"
+                                disabled={isActionLoading}
+                                onClick={() =>
+                                  postAction({ id: d._id, action: "issue" })
+                                }
+                              >
+                                <FileText className="h-4 w-4 mr-1" />
+                                팝빌 발행
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={isActionLoading}
+                                onClick={() => openReject(d._id)}
+                              >
+                                승인 취소(반려)
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isActionLoading}
+                                onClick={() =>
+                                  postAction({ id: d._id, action: "cancel" })
+                                }
+                              >
+                                취소
+                              </Button>
+                            </>
+                          )}
+
+                          {d.status === "FAILED" && (
+                            <>
+                              <Button
+                                size="sm"
+                                disabled={isActionLoading}
+                                onClick={() =>
+                                  postAction({ id: d._id, action: "approve" })
+                                }
+                              >
+                                재승인
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={isActionLoading}
+                                onClick={() =>
+                                  postAction({ id: d._id, action: "cancel" })
+                                }
+                              >
+                                취소
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+          </TabsContent>
+        ))}
+
+        <TabsContent value="QUEUE" className="pt-4">
+          <PopbillQueuePanel
+            allowedTaskTypes={[
+              "TAX_INVOICE_ISSUE",
+              "TAX_INVOICE_CANCEL",
+              "EASYFIN_BANK_REQUEST",
+              "EASYFIN_BANK_CHECK",
+            ]}
+          />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent>

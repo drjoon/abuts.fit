@@ -1,8 +1,6 @@
 import { Router } from "express";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 import {
-  requestManufacturerBankTransactions,
-  getManufacturerBankTransactions,
   recordManufacturerPayment,
   listManufacturerPayments,
   sendUrgentMessage,

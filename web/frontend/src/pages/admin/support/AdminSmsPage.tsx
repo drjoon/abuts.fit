@@ -17,6 +17,7 @@ import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import { PopbillQueuePanel } from "@/features/admin/popbill/PopbillQueuePanel";
 
 type SmsHistoryItem = {
   id: string;
@@ -60,7 +61,7 @@ const statusBadge = (status: SmsHistoryItem["status"]) => {
 };
 
 export default function AdminSmsPage() {
-  const [tab, setTab] = useState<"send" | "history">("send");
+  const [tab, setTab] = useState<"send" | "history" | "queue">("send");
   const [to, setTo] = useState("");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
@@ -176,15 +177,6 @@ export default function AdminSmsPage() {
 
   return (
     <div className="p-4 space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>문자 발송 관리</CardTitle>
-          <CardDescription>
-            SMS/LMS 및 카카오톡 알림톡을 발송하고 이력을 관리합니다.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-
       <Card className="bg-blue-50 border-blue-200">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
@@ -195,21 +187,18 @@ export default function AdminSmsPage() {
               </div>
               <div className="text-xs text-blue-700">
                 발송 버튼 클릭 시 작업이 큐에 등록되며, 백그라운드 워커가
-                비동기로 처리합니다. 실시간 처리 상태는{" "}
-                <button
-                  onClick={() => navigate("/admin/popbill-queue")}
-                  className="underline font-medium hover:text-blue-900"
-                >
-                  팝빌 큐 모니터링
-                </button>
-                에서 확인하세요.
+                비동기로 처리합니다. 이 페이지 상단 탭의 "큐 모니터링"에서 현재
+                상태를 바로 확인할 수 있습니다.
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "send" | "history")}>
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as "send" | "history" | "queue")}
+      >
         <TabsList>
           <TabsTrigger value="send" className="gap-2">
             <Send className="h-4 w-4" />
@@ -218,6 +207,9 @@ export default function AdminSmsPage() {
           <TabsTrigger value="history" className="gap-2">
             <History className="h-4 w-4" />
             발송 이력
+          </TabsTrigger>
+          <TabsTrigger value="queue" className="gap-2">
+            큐 모니터링
           </TabsTrigger>
         </TabsList>
 
@@ -343,6 +335,27 @@ export default function AdminSmsPage() {
                   발송 이력이 없습니다.
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="queue" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>메시지 큐 상태</CardTitle>
+              <CardDescription>
+                알림톡/SMS/LMS 발송 작업의 큐 상태를 확인하고 재시도/취소할 수
+                있습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PopbillQueuePanel
+                allowedTaskTypes={[
+                  "NOTIFICATION_KAKAO",
+                  "NOTIFICATION_SMS",
+                  "NOTIFICATION_LMS",
+                ]}
+              />
             </CardContent>
           </Card>
         </TabsContent>
