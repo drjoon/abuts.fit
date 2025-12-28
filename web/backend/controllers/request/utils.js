@@ -430,32 +430,43 @@ export function applyStatusMapping(request, status) {
     case "의뢰접수":
       request.status1 = "의뢰접수";
       request.status2 = "없음";
+      request.manufacturerStage = "의뢰";
       break;
     case "가공전":
       request.status1 = "가공";
       request.status2 = "전";
+      request.manufacturerStage = "의뢰";
       break;
     case "가공후":
       request.status1 = "가공";
       request.status2 = "후";
+      request.manufacturerStage = "CAM";
       break;
     case "배송대기":
       request.status1 = "배송";
       request.status2 = "전";
+      request.manufacturerStage = "발송";
       break;
     case "배송중":
       request.status1 = "배송";
       request.status2 = "중";
+      request.manufacturerStage = "발송";
       break;
     case "완료":
       request.status1 = "완료";
       request.status2 = "없음";
+      request.manufacturerStage = "추적관리";
       break;
     case "취소":
       request.status1 = "취소";
       request.status2 = "없음";
+      request.manufacturerStage = "의뢰";
       break;
     default:
+      // 유지하되, 없는 경우 기본 의뢰
+      if (!request.manufacturerStage) {
+        request.manufacturerStage = "의뢰";
+      }
       break;
   }
 }

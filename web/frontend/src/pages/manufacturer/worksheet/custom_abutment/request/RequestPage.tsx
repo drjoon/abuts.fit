@@ -3,6 +3,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type DragEvent,
   type ChangeEvent,
 } from "react";
@@ -57,6 +58,46 @@ const getDiameterBucketIndex = (diameter?: number) => {
   if (diameter <= 8) return 1;
   if (diameter <= 10) return 2;
   return 3;
+};
+
+const computeStageLabel = (
+  req: ManufacturerRequest,
+  opts?: { isCamStage?: boolean; isMachiningStage?: boolean }
+) => {
+  // 서버에 저장된 manufacturerStage만 사용 (백엔드에서 확정)
+  const savedStage = (req.manufacturerStage || "").trim();
+  if (savedStage) return savedStage;
+  // 혹시 누락 시 최소한의 폴백
+  if (opts?.isMachiningStage) return "가공";
+  if (opts?.isCamStage) return "CAM";
+  return "의뢰";
+};
+
+const deriveStageForFilter = (req: ManufacturerRequest) => {
+  const saved = (req.manufacturerStage || "").trim();
+  if (saved) return saved;
+  const s1 = (req.status1 || "").trim();
+  const s2 = (req.status2 || "").trim();
+  const main = (req.status || "").trim();
+
+  if (s1 === "가공") {
+    if (s2 === "후") return "CAM";
+    return "가공";
+  }
+  if (s1 === "세척/검사/포장") return "세척·검사·포장";
+  if (s1 === "배송") return "발송";
+  if (s1 === "완료") return "추적관리";
+  if (main === "가공후") return "CAM";
+  return "의뢰";
+};
+
+const stageOrder: Record<string, number> = {
+  의뢰: 0,
+  CAM: 1,
+  가공: 2,
+  "세척·검사·포장": 3,
+  발송: 4,
+  추적관리: 5,
 };
 
 const WorksheetCardGrid = ({
@@ -124,13 +165,24 @@ const WorksheetCardGrid = ({
 
       // 요청/의뢰/CAM: CAM 결과 업로드(.cam.stl 형태의 STL) / 가공 탭: NC 업로드(.nc)
       const accept = isMachiningStage ? ".nc" : ".stl";
+      const formatCamDisplayName = (name: string) => {
+        if (!name) return "파일명 없음";
+        if (isCamStage) {
+          return name
+            .replace(/\.cam\.stl$/i, ".cam")
+            .replace(/\.stl$/i, ".cam");
+        }
+        return name;
+      };
       const displayFileName = isMachiningStage
         ? caseInfos.ncFile?.fileName || caseInfos.ncFile?.originalName || ""
-        : caseInfos.file?.fileName ||
-          caseInfos.file?.originalName ||
-          caseInfos.camFile?.fileName ||
-          caseInfos.camFile?.originalName ||
-          "파일명 없음";
+        : formatCamDisplayName(
+            caseInfos.file?.fileName ||
+              caseInfos.file?.originalName ||
+              caseInfos.camFile?.fileName ||
+              caseInfos.camFile?.originalName ||
+              ""
+          );
 
       const hasCamFile = !!(
         caseInfos.camFile?.s3Key ||
@@ -145,6 +197,10 @@ const WorksheetCardGrid = ({
         caseInfos.ncFile?.originalName
       );
       const isDeletingNc = !!deletingNc[request._id];
+      const stageLabel = computeStageLabel(request, {
+        isCamStage,
+        isMachiningStage,
+      });
 
       return (
         <Card
@@ -249,10 +305,18 @@ const WorksheetCardGrid = ({
                           className="hidden"
                           onChange={(e) => {
                             e.stopPropagation();
-                            handleSelectFiles(e);
                           }}
+                          disabled={isUploading}
                         />
                       </label>
+                      <div className="ml-auto">
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                        >
+                          {stageLabel}
+                        </Badge>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 flex gap-1">
@@ -341,8 +405,9 @@ export const RequestPage = ({
   filterRequests?: (req: ManufacturerRequest) => boolean;
 }) => {
   const { user, token } = useAuthStore();
-  const { worksheetSearch } = useOutletContext<{
+  const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
+    showCompleted: boolean;
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const isCamStage = (searchParams.get("stage") || "request") === "cam";
@@ -363,6 +428,8 @@ export const RequestPage = ({
   const [previewNcName, setPreviewNcName] = useState<string>("");
   const [deletingCam, setDeletingCam] = useState<Record<string, boolean>>({});
   const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
+  const [visibleCount, setVisibleCount] = useState(9);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     // 우선 UTF-8 시도 후 깨진 경우 EUC-KR로 재시도
@@ -951,25 +1018,49 @@ export const RequestPage = ({
   }, [fetchRequests]);
 
   const searchLower = worksheetSearch.toLowerCase();
-  const filteredBase = filterRequests
-    ? requests.filter((req) => {
-        try {
-          return filterRequests(req);
-        } catch {
-          return false;
-        }
-      })
-    : requests.filter((req) => {
-        const status = (req.status || "").trim();
-        const status1 = (req.status1 || "").trim();
-        const status2 = (req.status2 || "").trim();
-        const camDone =
-          status === "가공후" ||
-          status1 === "가공후" ||
-          status2 === "가공후" ||
-          !!req.caseInfos?.camFile?.s3Key;
-        return !camDone;
+  const currentStageForTab = isMachiningStage
+    ? "가공"
+    : isCamStage
+    ? "CAM"
+    : "의뢰";
+  const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
+
+  const filteredBase = (() => {
+    // 완료포함: 탭 기준 단계 이상 모든 건 포함 (CAM 탭=CAM~추적관리, 가공 탭=가공~추적관리)
+    if (showCompleted) {
+      return requests.filter((req) => {
+        const stage = deriveStageForFilter(req);
+        const order = stageOrder[stage] ?? 0;
+        return order >= currentStageOrder;
       });
+    }
+
+    const base = filterRequests
+      ? requests.filter((req) => {
+          try {
+            return filterRequests(req);
+          } catch {
+            return false;
+          }
+        })
+      : requests;
+
+    // 단계별 필터가 있으면 추가 필터 없이 그 결과 사용
+    if (filterRequests) return base;
+
+    // 기본(의뢰/CAM) 탭에서는 가공후(완료된 CAM) 제외
+    return base.filter((req) => {
+      const status = (req.status || "").trim();
+      const status1 = (req.status1 || "").trim();
+      const status2 = (req.status2 || "").trim();
+      const camDone =
+        status === "가공후" ||
+        status1 === "가공후" ||
+        status2 === "가공후" ||
+        !!req.caseInfos?.camFile?.s3Key;
+      return !camDone;
+    });
+  })();
 
   const filteredAndSorted = filteredBase
     .filter((request) => {
@@ -989,6 +1080,39 @@ export const RequestPage = ({
       return text.includes(searchLower);
     })
     .sort((a, b) => (new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1));
+
+  const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
+
+  const loadMore = useCallback(() => {
+    setVisibleCount((prev) =>
+      Math.min(prev + 9, filteredAndSorted.length || 0)
+    );
+  }, [filteredAndSorted.length]);
+
+  useEffect(() => {
+    setVisibleCount(Math.min(9, filteredAndSorted.length));
+  }, [
+    filteredAndSorted.length,
+    worksheetSearch,
+    showCompleted,
+    isCamStage,
+    isMachiningStage,
+  ]);
+
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    const el = sentinelRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadMore();
+        }
+      },
+      { root: null, threshold: 1 }
+    );
+    observer.observe(el);
+    return () => observer.unobserve(el);
+  }, [loadMore]);
 
   const diameterQueueForReceive = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "10+"];
@@ -1066,7 +1190,7 @@ export const RequestPage = ({
           </div>
         ) : (
           <WorksheetCardGrid
-            requests={filteredAndSorted}
+            requests={paginatedRequests}
             onDownload={handleDownloadOriginal}
             onUpload={handleUploadByStage}
             onOpenPreview={handleOpenPreview}
@@ -1079,6 +1203,9 @@ export const RequestPage = ({
             downloading={downloading}
             uploading={uploading}
           />
+        )}
+        {!isEmpty && paginatedRequests.length < filteredAndSorted.length && (
+          <div ref={sentinelRef} className="h-6 w-full" />
         )}
       </div>
 

@@ -1,3 +1,19 @@
+const mapManufacturerStage = (request) => {
+  const s1 = (request.status1 || "").trim();
+  const s2 = (request.status2 || "").trim();
+  const main = (request.status || "").trim();
+
+  if (s1 === "가공") {
+    if (s2 === "전") return "의뢰";
+    if (s2 === "중") return "가공";
+    if (s2 === "후") return "CAM";
+    return "가공";
+  }
+  if (s1 === "세척/검사/포장") return "세척·검사·포장";
+  if (s1 === "배송") return "발송";
+  if (main === "가공후") return "CAM";
+  return "의뢰";
+};
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -622,6 +638,7 @@ export async function saveCamFileAndCompleteCam(req, res) {
     };
 
     applyStatusMapping(request, "가공후");
+    request.manufacturerStage = mapManufacturerStage(request);
     await request.save();
 
     return res.status(200).json({
@@ -668,7 +685,8 @@ export async function deleteCamFileAndRollback(req, res) {
     request.caseInfos.camFile = undefined;
     request.status = "가공전";
     request.status1 = "가공";
-    request.status2 = undefined;
+    request.status2 = "전";
+    request.manufacturerStage = mapManufacturerStage(request);
 
     await request.save();
 
@@ -820,8 +838,10 @@ export async function saveNcFileAndMoveToMachining(req, res) {
     };
 
     // 제조사 공정: CAM(가공/후) -> 가공(중)
+    request.status = "가공후"; // 메인 상태도 단계에 맞춰 저장
     request.status1 = "가공";
     request.status2 = "중";
+    request.manufacturerStage = mapManufacturerStage(request);
 
     await request.save();
 
@@ -874,8 +894,10 @@ export async function deleteNcFileAndRollbackCam(req, res) {
     request.caseInfos.ncFile = undefined;
 
     // 제조사 공정: 가공(중) -> CAM(가공/후)
+    request.status = "가공후";
     request.status1 = "가공";
     request.status2 = "후";
+    request.manufacturerStage = mapManufacturerStage(request);
 
     await request.save();
 

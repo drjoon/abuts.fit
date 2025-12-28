@@ -52,13 +52,13 @@ export interface RequestBase {
   _id?: string; // Mongo ObjectId
   requestId?: string; // YYYYMMDD-###### 형식의 의뢰 ID
   title?: string;
-  description?: string;
   status?: string;
-  unreadCount?: number;
-
-  // 날짜 계열 (timestamps)
+  manufacturerStage?: string;
+  status1?: string;
+  status2?: string;
   createdAt?: string;
   updatedAt?: string;
+  description?: string;
 
   // 관계 정보 (간단 summary)
   requestor?: RequestUserSummary;

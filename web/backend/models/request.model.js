@@ -117,7 +117,12 @@ const requestSchema = new mongoose.Schema(
       enum: ["없음", "전", "중", "후"],
       default: "없음",
     },
-
+    // 제조사용 스테이지 (UI 표기용)
+    manufacturerStage: {
+      type: String,
+      enum: ["의뢰", "CAM", "가공", "세척·검사·포장", "발송", "추적관리"],
+      default: "의뢰",
+    },
     // 배송 요청 정보
     shippingMode: {
       type: String,
