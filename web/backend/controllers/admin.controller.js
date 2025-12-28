@@ -1410,6 +1410,179 @@ async function getAllFiles(req, res) {
   }
 }
 
+/**
+ * 보안 설정 조회
+ * @route GET /api/admin/security-settings
+ */
+async function getSecuritySettings(req, res) {
+  try {
+    const doc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      { $setOnInsert: { key: "global" } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        securitySettings: doc?.securitySettings || {},
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "보안 설정 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 보안 설정 업데이트
+ * @route PUT /api/admin/security-settings
+ */
+async function updateSecuritySettings(req, res) {
+  try {
+    const payload = req.body && typeof req.body === "object" ? req.body : {};
+    const allowedKeys = [
+      "twoFactorAuth",
+      "loginNotifications",
+      "dataEncryption",
+      "fileUploadScan",
+      "autoLogout",
+      "maxLoginAttempts",
+      "passwordExpiry",
+      "ipWhitelist",
+      "apiRateLimit",
+      "backupFrequency",
+    ];
+
+    const sanitized = {};
+    allowedKeys.forEach((k) => {
+      if (payload[k] === undefined) return;
+      if (
+        [
+          "autoLogout",
+          "maxLoginAttempts",
+          "passwordExpiry",
+          "apiRateLimit",
+        ].includes(k)
+      ) {
+        const num = Number(payload[k]);
+        if (!Number.isNaN(num)) sanitized[k] = num;
+      } else if (
+        typeof payload[k] === "boolean" ||
+        typeof payload[k] === "string"
+      ) {
+        sanitized[k] = payload[k];
+      }
+    });
+
+    const doc = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      {
+        $setOnInsert: { key: "global" },
+        ...(Object.keys(sanitized).length > 0
+          ? { $set: { securitySettings: sanitized } }
+          : {}),
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    res.status(200).json({
+      success: true,
+      message: "보안 설정이 업데이트되었습니다.",
+      data: {
+        securitySettings: doc?.securitySettings || {},
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "보안 설정 업데이트 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 보안 통계 조회 (간단 계산: 최근 30일 활동 로그 기반)
+ * @route GET /api/admin/security-stats
+ */
+async function getSecurityStats(req, res) {
+  try {
+    const now = new Date();
+    const last30 = new Date(now);
+    last30.setDate(now.getDate() - 30);
+
+    const alertsDetected = await ActivityLog.countDocuments({
+      createdAt: { $gte: last30, $lte: now },
+    });
+
+    const blockedAttempts = await ActivityLog.countDocuments({
+      action: "USER_LOGGED_IN_BLOCKED",
+      createdAt: { $gte: last30, $lte: now },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        securityScore: 95,
+        monitoring: "24/7",
+        alertsDetected,
+        blockedAttempts,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "보안 통계 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 보안 로그 조회 (ActivityLog 사용)
+ * @route GET /api/admin/security-logs
+ */
+async function getSecurityLogs(req, res) {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (req.query.action) filter.action = req.query.action;
+
+    const logs = await ActivityLog.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+    const total = await ActivityLog.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        logs,
+        pagination: {
+          total,
+          page,
+          limit,
+          pages: Math.ceil(total / limit),
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "보안 로그 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export default {
   getAllUsers,
   getUserById,
@@ -1428,5 +1601,9 @@ export default {
   getActivityLogs,
   getSystemSettings,
   updateSystemSettings,
+  getSecuritySettings,
+  updateSecuritySettings,
+  getSecurityStats,
+  getSecurityLogs,
   getAllFiles,
 };

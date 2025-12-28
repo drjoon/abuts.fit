@@ -37,58 +37,6 @@ import { useToast } from "@/hooks/use-toast";
 import { request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
-// Mock users data
-const mockUsers = [
-  {
-    id: "1",
-    name: "김철수",
-    email: "kim@dental-lab.co.kr",
-    role: "requestor",
-    companyName: "서울치과기공소",
-    status: "active",
-    joinDate: "2024-01-15",
-    lastLogin: "2024-01-20",
-    totalRequests: 24,
-    profileComplete: 95,
-  },
-  {
-    id: "2",
-    name: "박영희",
-    email: "park@abutment-maker.co.kr",
-    role: "manufacturer",
-    companyName: "프리미엄 어벗먼트",
-    status: "active",
-    joinDate: "2024-01-10",
-    lastLogin: "2024-01-19",
-    totalRequests: 47,
-    profileComplete: 100,
-  },
-  {
-    id: "3",
-    name: "이민수",
-    email: "lee@dental-clinic.co.kr",
-    role: "requestor",
-    companyName: "부산치과기공소",
-    status: "pending",
-    joinDate: "2024-01-18",
-    lastLogin: "2024-01-18",
-    totalRequests: 0,
-    profileComplete: 60,
-  },
-  {
-    id: "4",
-    name: "정수진",
-    email: "jung@precision-ab.co.kr",
-    role: "manufacturer",
-    companyName: "정밀 어벗먼트",
-    status: "suspended",
-    joinDate: "2024-01-05",
-    lastLogin: "2024-01-16",
-    totalRequests: 32,
-    profileComplete: 85,
-  },
-];
-
 const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
@@ -115,7 +63,7 @@ const getRoleBadgeVariant = (role: string) => {
   }
 };
 
-type UiUserStatus = "active" | "pending" | "inactive";
+type UiUserStatus = "active" | "pending" | "inactive" | "suspended";
 
 type ApiUser = {
   _id: string;
@@ -229,7 +177,14 @@ export const AdminUserManagement = () => {
         token,
       });
 
-      if (!res.ok) return;
+      if (!res.ok || !res.data?.success) {
+        toast({
+          title: "사용자 목록 조회 실패",
+          description: res.data?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const body: any = res.data || {};
       const data = body.data || {};
@@ -238,7 +193,7 @@ export const AdminUserManagement = () => {
     } finally {
       setLoadingUsers(false);
     }
-  }, [token]);
+  }, [toast, token]);
 
   const fetchUserDetail = useCallback(
     async (userId: string) => {
@@ -269,7 +224,7 @@ export const AdminUserManagement = () => {
     void fetchUsers();
   }, [fetchUsers]);
 
-  const sourceUsers = users || mockUsers;
+  const sourceUsers = users || [];
 
   const filteredUsers = useMemo(() => {
     return sourceUsers.filter((user: any) => {
@@ -304,6 +259,15 @@ export const AdminUserManagement = () => {
       description: `${userName}님의 상태가 변경되었습니다.`,
     });
   };
+
+  const totalUsers = sourceUsers.length;
+  const totalRequestor = sourceUsers.filter(
+    (u) => u.role === "requestor"
+  ).length;
+  const totalManufacturer = sourceUsers.filter(
+    (u) => u.role === "manufacturer"
+  ).length;
+  const totalPending = sourceUsers.filter((u) => u.status === "pending").length;
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
@@ -382,7 +346,9 @@ export const AdminUserManagement = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">총 사용자</p>
-                  <p className="text-2xl font-bold">234</p>
+                  <p className="text-2xl font-bold">
+                    {totalUsers.toLocaleString()}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -395,7 +361,9 @@ export const AdminUserManagement = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">의뢰자</p>
-                  <p className="text-2xl font-bold">156</p>
+                  <p className="text-2xl font-bold">
+                    {totalRequestor.toLocaleString()}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -408,7 +376,9 @@ export const AdminUserManagement = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">제조사</p>
-                  <p className="text-2xl font-bold">67</p>
+                  <p className="text-2xl font-bold">
+                    {totalManufacturer.toLocaleString()}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -421,7 +391,9 @@ export const AdminUserManagement = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">승인 대기</p>
-                  <p className="text-2xl font-bold">11</p>
+                  <p className="text-2xl font-bold">
+                    {totalPending.toLocaleString()}
+                  </p>
                 </div>
               </div>
             </CardContent>

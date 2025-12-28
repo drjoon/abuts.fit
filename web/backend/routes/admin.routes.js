@@ -62,7 +62,6 @@ import {
   adminRetryQueueTask,
   adminCancelQueueTask,
 } from "../controllers/adminPopbillQueue.controller.js";
-
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
 router.use(authorize(["admin"]));
@@ -133,11 +132,49 @@ router.get("/pricing-stats/users", adminController.getPricingStatsByUser);
 router.get("/logs", adminController.getSystemLogs);
 
 // 활동 로그
-router.get("/activity-logs", adminController.getActivityLogs);
+router.get(
+  "/activity-logs",
+  authorize(["admin"]),
+  adminController.getActivityLogs
+);
 
 // 시스템 설정
-router.get("/settings", adminController.getSystemSettings);
-router.put("/settings", adminController.updateSystemSettings);
+router.get(
+  "/settings",
+  authorize(["admin"]),
+  adminController.getSystemSettings
+);
+router.put(
+  "/settings",
+  authorize(["admin"]),
+  adminController.updateSystemSettings
+);
+
+// 보안 설정
+router.get(
+  "/security-settings",
+  authorize(["admin"]),
+  adminController.getSecuritySettings
+);
+router.put(
+  "/security-settings",
+  authorize(["admin"]),
+  adminController.updateSecuritySettings
+);
+
+// 보안 통계
+router.get(
+  "/security-stats",
+  authorize(["admin"]),
+  adminController.getSecurityStats
+);
+
+// 보안 로그
+router.get(
+  "/security-logs",
+  authorize(["admin"]),
+  adminController.getSecurityLogs
+);
 
 // 메일 관리
 router.get("/mails", adminListMails);

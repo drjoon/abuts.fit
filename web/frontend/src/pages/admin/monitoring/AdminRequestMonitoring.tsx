@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { apiFetch } from "@/lib/apiClient";
 import {
   Card,
   CardContent,
@@ -21,6 +22,8 @@ import {
   User,
   Eye,
   MessageSquare,
+  Truck,
+  XCircle,
 } from "lucide-react";
 
 const getStatusBadge = (status1?: string, status2?: string) => {
@@ -32,6 +35,9 @@ const getStatusBadge = (status1?: string, status2?: string) => {
       return <Badge variant="outline">{statusText}</Badge>;
     case "가공":
       return <Badge variant="default">{statusText}</Badge>;
+    case "가공전":
+    case "가공후":
+      return <Badge variant="default">{statusText}</Badge>;
     case "세척/검사/포장":
       return (
         <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
@@ -39,6 +45,8 @@ const getStatusBadge = (status1?: string, status2?: string) => {
         </Badge>
       );
     case "배송":
+    case "배송대기":
+    case "배송중":
       return (
         <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
           {statusText}
@@ -96,14 +104,18 @@ const getPriorityBadge = (priority: string) => {
 
 const getStatusIcon = (status: string) => {
   switch (status) {
-    case "진행중":
-      return <Clock className="h-4 w-4 text-blue-500" />;
+    case "의뢰접수":
+      return <FileText className="h-4 w-4 text-blue-500" />;
+    case "가공전":
+    case "가공후":
+      return <Clock className="h-4 w-4 text-green-500" />;
+    case "배송대기":
+    case "배송중":
+      return <Truck className="h-4 w-4 text-orange-500" />;
     case "완료":
       return <CheckCircle className="h-4 w-4 text-green-500" />;
-    case "견적 대기":
-      return <FileText className="h-4 w-4 text-orange-500" />;
-    case "지연":
-      return <AlertTriangle className="h-4 w-4 text-red-500" />;
+    case "취소":
+      return <XCircle className="h-4 w-4 text-red-500" />;
     default:
       return <FileText className="h-4 w-4" />;
   }
@@ -114,30 +126,59 @@ export const AdminRequestMonitoring = () => {
   const [requests, setRequests] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [requestStats, setRequestStats] = useState<{
+    total?: number;
+    byStatus?: Record<string, number>;
+  }>({});
 
   useEffect(() => {
     const fetchRequests = async () => {
       if (!token) return;
       try {
-        const res = await fetch("/api/requests", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+        const res = await apiFetch<any>({
+          path: "/api/requests",
+          method: "GET",
+          token,
         });
-        if (res.ok) {
-          const data = await res.json();
-          setRequests(data.data.requests);
+        if (res.ok && res.data?.data?.requests) {
+          setRequests(res.data.data.requests);
         }
       } catch (error) {
         console.error("Failed to fetch requests:", error);
       }
     };
-    fetchRequests();
+    void fetchRequests();
+  }, [token]);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      if (!token) return;
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/admin/dashboard",
+          method: "GET",
+          token,
+          headers:
+            token === "MOCK_DEV_TOKEN"
+              ? {
+                  "x-mock-role": "admin",
+                }
+              : undefined,
+        });
+        if (res.ok && res.data?.success) {
+          setRequestStats(res.data.data?.requestStats || {});
+        }
+      } catch (error) {
+        console.error("Failed to fetch request stats:", error);
+      }
+    };
+    void fetchStats();
   }, [token]);
 
   const filteredRequests = requests.filter((request) => {
     const caseInfos = request.caseInfos || {};
     const requestor = request.requestor || {};
+    const effectiveStatus = request.status || request.status1;
     const matchesSearch =
       (caseInfos.patientName || "")
         .toLowerCase()
@@ -153,10 +194,18 @@ export const AdminRequestMonitoring = () => {
         .includes(searchQuery.toLowerCase());
 
     const matchesStatus =
-      selectedStatus === "all" || request.status1 === selectedStatus;
+      selectedStatus === "all" || effectiveStatus === selectedStatus;
 
     return matchesSearch && matchesStatus;
   });
+
+  const totalCount = requestStats.total ?? 0;
+  const byStatus = requestStats.byStatus || {};
+  const receiveCount = byStatus["의뢰접수"] || 0;
+  const machiningCount = (byStatus["가공전"] || 0) + (byStatus["가공후"] || 0);
+  const shippingCount = (byStatus["배송대기"] || 0) + (byStatus["배송중"] || 0);
+  const doneCount = byStatus["완료"] || 0;
+  const canceledCount = byStatus["취소"] || 0;
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
@@ -183,54 +232,71 @@ export const AdminRequestMonitoring = () => {
                 전체
               </Button>
               <Button
-                variant={selectedStatus === "진행중" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("진행중")}
+                variant={selectedStatus === "의뢰접수" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("의뢰접수")}
                 size="sm"
               >
-                진행중
+                의뢰접수
               </Button>
               <Button
-                variant={selectedStatus === "지연" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("지연")}
+                variant={selectedStatus === "가공전" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("가공전")}
                 size="sm"
               >
-                지연
+                가공전
               </Button>
               <Button
-                variant={selectedStatus === "견적 대기" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("견적 대기")}
+                variant={selectedStatus === "가공후" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("가공후")}
                 size="sm"
               >
-                견적 대기
+                가공후
+              </Button>
+              <Button
+                variant={selectedStatus === "배송대기" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("배송대기")}
+                size="sm"
+              >
+                배송대기
+              </Button>
+              <Button
+                variant={selectedStatus === "배송중" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("배송중")}
+                size="sm"
+              >
+                배송중
+              </Button>
+              <Button
+                variant={selectedStatus === "완료" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("완료")}
+                size="sm"
+              >
+                완료
+              </Button>
+              <Button
+                variant={selectedStatus === "취소" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("취소")}
+                size="sm"
+              >
+                취소
               </Button>
             </div>
           </div>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <FileText className="h-4 w-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">총 의뢰</p>
-                  <p className="text-2xl font-bold">1,234</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-100 rounded-lg">
-                  <Clock className="h-4 w-4 text-green-600" />
+                  <FileText className="h-4 w-4 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">진행중</p>
-                  <p className="text-2xl font-bold">56</p>
+                  <p className="text-sm text-muted-foreground">의뢰접수</p>
+                  <p className="text-2xl font-bold">
+                    {receiveCount.toLocaleString()}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -238,12 +304,14 @@ export const AdminRequestMonitoring = () => {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-100 rounded-lg">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Clock className="h-4 w-4 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">지연</p>
-                  <p className="text-2xl font-bold">8</p>
+                  <p className="text-sm text-muted-foreground">가공(전/후)</p>
+                  <p className="text-2xl font-bold">
+                    {machiningCount.toLocaleString()}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -255,8 +323,55 @@ export const AdminRequestMonitoring = () => {
                   <FileText className="h-4 w-4 text-orange-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">견적 대기</p>
-                  <p className="text-2xl font-bold">23</p>
+                  <p className="text-sm text-muted-foreground">배송(대기/중)</p>
+                  <p className="text-2xl font-bold">
+                    {shippingCount.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <CheckCircle className="h-4 w-4 text-emerald-700" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">완료</p>
+                  <p className="text-2xl font-bold">
+                    {doneCount.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-rose-100 rounded-lg">
+                  <XCircle className="h-4 w-4 text-rose-700" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">취소</p>
+                  <p className="text-2xl font-bold">
+                    {canceledCount.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-dashed">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-100 rounded-lg">
+                  <FileText className="h-4 w-4 text-slate-700" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">총 의뢰</p>
+                  <p className="text-2xl font-bold">
+                    {totalCount.toLocaleString()}
+                  </p>
                 </div>
               </div>
             </CardContent>

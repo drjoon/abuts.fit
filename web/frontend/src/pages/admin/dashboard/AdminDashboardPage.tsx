@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch, request } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
@@ -25,40 +25,6 @@ import {
   MessageSquare,
   DollarSign,
 } from "lucide-react";
-
-const mockAdminData = {
-  stats: [
-    { label: "총 사용자", value: "234", change: "+8%", icon: Users },
-    { label: "활성 의뢰", value: "56", change: "+12%", icon: FileText },
-    { label: "월 거래량", value: "1,234", change: "+25%", icon: TrendingUp },
-    {
-      label: "시스템 상태",
-      value: "정상",
-      change: "99.9%",
-      icon: CheckCircle,
-    },
-  ],
-  systemAlerts: [
-    {
-      id: "ALT-001",
-      message: "새로운 제조사 승인 대기 중",
-      type: "info",
-      date: "2025-07-15",
-    },
-    {
-      id: "ALT-002",
-      message: "월간 보고서 생성 완료",
-      type: "success",
-      date: "2025-07-14",
-    },
-    {
-      id: "ALT-003",
-      message: "서버 점검 예정",
-      type: "warning",
-      date: "2025-07-13",
-    },
-  ],
-};
 
 type PricingSummary = {
   totalOrders?: number;
@@ -83,6 +49,23 @@ type PricingUserRow = {
   baseAmount?: number;
   discountAmount?: number;
   avgUnitPrice?: number;
+};
+
+type DashboardStat = {
+  label: string;
+  value: string;
+  change?: string;
+  icon: any;
+};
+
+type DashboardData = {
+  stats: DashboardStat[];
+  systemAlerts: Array<{
+    id: string;
+    message: string;
+    type: string;
+    date: string;
+  }>;
 };
 
 const getAlertIcon = (type: string) => {
@@ -235,15 +218,23 @@ export const AdminDashboardPage = () => {
       setPricingLoading(true);
       try {
         const [sRes, uRes] = await Promise.all([
-          fetch("/api/admin/pricing-stats", { headers }),
-          fetch("/api/admin/pricing-stats/users", { headers }),
+          request<any>({
+            path: "/api/admin/pricing-stats",
+            method: "GET",
+            headers,
+            token,
+          }),
+          request<any>({
+            path: "/api/admin/pricing-stats/users",
+            method: "GET",
+            headers,
+            token,
+          }),
         ]);
 
-        const sJson = await sRes.json().catch(() => null);
-        const uJson = await uRes.json().catch(() => null);
-
-        if (sRes.ok && sJson?.success) setPricingSummary(sJson.data);
-        if (uRes.ok && uJson?.success) setPricingRows(uJson.data?.items || []);
+        if (sRes.ok && sRes.data?.success) setPricingSummary(sRes.data.data);
+        if (uRes.ok && uRes.data?.success)
+          setPricingRows(uRes.data.data?.items || []);
       } finally {
         setPricingLoading(false);
       }
@@ -252,8 +243,22 @@ export const AdminDashboardPage = () => {
     void run();
   }, [headers, token, user]);
 
-  const baseData = mockAdminData;
-  let data: any = baseData;
+  const baseData: DashboardData = {
+    stats: [
+      { label: "총 사용자", value: "0", change: "+0%", icon: Users },
+      { label: "활성 의뢰", value: "0", change: "+0%", icon: FileText },
+      { label: "월 거래량", value: "0", change: "+0%", icon: TrendingUp },
+      {
+        label: "시스템 상태",
+        value: "정상",
+        change: "99.9%",
+        icon: CheckCircle,
+      },
+    ],
+    systemAlerts: [],
+  };
+
+  let data: DashboardData = baseData;
   const diameterStatsFromApi: DiameterStats | undefined =
     diameterStatsResponse?.success
       ? diameterStatsResponse.data?.diameterStats
@@ -313,34 +318,44 @@ export const AdminDashboardPage = () => {
   );
 
   if (adminDashboardResponse?.success) {
-    const userStats = adminDashboardResponse.data.userStats;
-    const requestStats = adminDashboardResponse.data.requestStats;
+    const userStats = adminDashboardResponse.data.userStats || {};
+    const requestStats = adminDashboardResponse.data.requestStats || {};
+    const systemAlerts = adminDashboardResponse.data.systemAlerts || [];
+    const monthlyVolume = adminDashboardResponse.data.monthlyVolume ?? 0;
+    const systemUptime = adminDashboardResponse.data.systemUptime ?? "99.9%";
 
-    const totalUsers = userStats?.total ?? baseData.stats[0]?.value ?? 0;
-    const totalRequests = requestStats?.total ?? baseData.stats[1]?.value ?? 0;
+    const totalUsers = userStats.total ?? 0;
+    const activeRequests = requestStats.total ?? 0;
 
     data = {
-      ...baseData,
       stats: [
         {
           label: "총 사용자",
           value: String(totalUsers),
-          change: baseData.stats[0]?.change ?? "+0%",
+          change: userStats.change ?? "+0%",
           icon: Users,
         },
         {
           label: "활성 의뢰",
-          value: String(totalRequests),
-          change: baseData.stats[1]?.change ?? "+0%",
+          value: String(activeRequests),
+          change: requestStats.change ?? "+0%",
           icon: FileText,
         },
-        baseData.stats[2],
-        baseData.stats[3],
+        {
+          label: "월 거래량",
+          value: String(monthlyVolume),
+          change: requestStats.monthlyChange ?? "+0%",
+          icon: TrendingUp,
+        },
+        {
+          label: "시스템 상태",
+          value: "정상",
+          change: String(systemUptime),
+          icon: CheckCircle,
+        },
       ],
-      systemAlerts: baseData.systemAlerts,
+      systemAlerts,
     };
-
-    void adminDashboardResponse;
   }
 
   return (

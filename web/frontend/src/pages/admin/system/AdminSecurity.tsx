@@ -11,6 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   Shield,
   Lock,
@@ -22,40 +25,6 @@ import {
   Database,
   Network,
 } from "lucide-react";
-
-// Mock security data
-const mockSecurityLogs = [
-  {
-    id: "SEC-001",
-    type: "login_attempt",
-    severity: "medium",
-    user: "suspicious@email.com",
-    ip: "192.168.1.100",
-    action: "다중 로그인 시도 차단",
-    timestamp: "2024-01-20 14:30:15",
-    status: "blocked",
-  },
-  {
-    id: "SEC-002",
-    type: "data_access",
-    severity: "low",
-    user: "admin@abuts.fit",
-    ip: "10.0.0.1",
-    action: "사용자 데이터 조회",
-    timestamp: "2024-01-20 13:45:20",
-    status: "allowed",
-  },
-  {
-    id: "SEC-003",
-    type: "file_upload",
-    severity: "high",
-    user: "test@test.com",
-    ip: "203.123.45.67",
-    action: "의심스러운 파일 업로드 시도",
-    timestamp: "2024-01-20 12:15:30",
-    status: "blocked",
-  },
-];
 
 const getSeverityBadge = (severity: string) => {
   switch (severity) {
@@ -94,7 +63,8 @@ const getStatusBadge = (status: string) => {
 };
 
 export const AdminSecurity = () => {
-  // Security Settings State
+  const { token } = useAuthStore();
+  const { toast } = useToast();
   const [securitySettings, setSecuritySettings] = useState({
     twoFactorAuth: true,
     loginNotifications: true,
@@ -112,28 +82,81 @@ export const AdminSecurity = () => {
     return "abutsfit:admin-security-settings:v1";
   }, []);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return;
-      setSecuritySettings((prev) => ({
-        ...prev,
-        ...(parsed as any),
-      }));
-    } catch {
-      // ignore
-    }
-  }, [storageKey]);
+  const [stats, setStats] = useState<{
+    securityScore?: number;
+    monitoring?: string;
+    alertsDetected?: number;
+    blockedAttempts?: number;
+  }>({});
+  const [logs, setLogs] = useState<any[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    const fetchAll = async () => {
+      if (!token) return;
+      setLoading(true);
+      try {
+        const [settingsRes, statsRes, logsRes] = await Promise.all([
+          apiFetch<any>({
+            path: "/api/admin/security-settings",
+            method: "GET",
+            token,
+          }),
+          apiFetch<any>({
+            path: "/api/admin/security-stats",
+            method: "GET",
+            token,
+          }),
+          apiFetch<any>({
+            path: "/api/admin/security-logs?limit=10",
+            method: "GET",
+            token,
+          }),
+        ]);
+
+        if (settingsRes.ok && settingsRes.data?.success) {
+          setSecuritySettings((prev) => ({
+            ...prev,
+            ...(settingsRes.data.data?.securitySettings || {}),
+          }));
+        }
+        if (statsRes.ok && statsRes.data?.success) {
+          setStats(statsRes.data.data || {});
+        }
+        if (logsRes.ok && logsRes.data?.success) {
+          setLogs(logsRes.data.data?.logs || []);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    void fetchAll();
+  }, [token, storageKey]);
+
+  const handleSave = async () => {
+    if (!token) return;
+    setSaving(true);
     try {
-      localStorage.setItem(storageKey, JSON.stringify(securitySettings));
-    } catch {
-      // ignore
+      const res = await apiFetch<any>({
+        path: "/api/admin/security-settings",
+        method: "PUT",
+        token,
+        jsonBody: securitySettings,
+      });
+      if (!res.ok || !res.data?.success) {
+        toast({
+          title: "저장 실패",
+          description: res.data?.message || "다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "보안 설정이 저장되었습니다." });
+    } finally {
+      setSaving(false);
     }
-  }, [securitySettings, storageKey]);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
@@ -147,7 +170,9 @@ export const AdminSecurity = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">보안 점수</p>
-                  <p className="text-2xl font-bold text-green-600">95/100</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {stats.securityScore ?? "-"}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -160,7 +185,9 @@ export const AdminSecurity = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">모니터링</p>
-                  <p className="text-2xl font-bold">24/7</p>
+                  <p className="text-2xl font-bold">
+                    {stats.monitoring || "-"}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -173,7 +200,9 @@ export const AdminSecurity = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">위험 탐지</p>
-                  <p className="text-2xl font-bold">3건</p>
+                  <p className="text-2xl font-bold">
+                    {(stats.alertsDetected ?? 0).toLocaleString()}건
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -186,7 +215,9 @@ export const AdminSecurity = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">차단된 시도</p>
-                  <p className="text-2xl font-bold">142건</p>
+                  <p className="text-2xl font-bold">
+                    {(stats.blockedAttempts ?? 0).toLocaleString()}건
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -310,6 +341,12 @@ export const AdminSecurity = () => {
                   />
                 </div>
               </div>
+
+              <div className="flex justify-end">
+                <Button onClick={handleSave} disabled={saving || loading}>
+                  {saving ? "저장 중..." : "저장"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -392,24 +429,36 @@ export const AdminSecurity = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {mockSecurityLogs.map((log) => (
+              {logs.map((log) => (
                 <div
-                  key={log.id}
+                  key={log._id || log.id}
                   className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
                       <AlertTriangle className="h-4 w-4 text-orange-500" />
-                      <h4 className="font-medium">{log.action}</h4>
-                      {getSeverityBadge(log.severity)}
-                      {getStatusBadge(log.status)}
+                      <h4 className="font-medium">{log.action || "이벤트"}</h4>
+                      {log.details?.severity
+                        ? getSeverityBadge(log.details.severity)
+                        : null}
+                      {log.details?.status
+                        ? getStatusBadge(log.details.status)
+                        : null}
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>사용자: {log.user}</span>
+                      {log.userId ? <span>사용자: {log.userId}</span> : null}
+                      {log.ipAddress ? (
+                        <>
+                          <span>•</span>
+                          <span>IP: {log.ipAddress}</span>
+                        </>
+                      ) : null}
                       <span>•</span>
-                      <span>IP: {log.ip}</span>
-                      <span>•</span>
-                      <span>{log.timestamp}</span>
+                      <span>
+                        {log.createdAt
+                          ? new Date(log.createdAt).toLocaleString()
+                          : ""}
+                      </span>
                     </div>
                   </div>
                   <Button variant="outline" size="sm">
@@ -418,6 +467,11 @@ export const AdminSecurity = () => {
                   </Button>
                 </div>
               ))}
+              {!logs.length && (
+                <div className="text-sm text-muted-foreground">
+                  보안 로그가 없습니다.
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
