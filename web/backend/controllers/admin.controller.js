@@ -1,7 +1,7 @@
+import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
 import Request from "../models/request.model.js";
 import File from "../models/file.model.js";
-import { Types } from "mongoose";
 import ActivityLog from "../models/activityLog.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import SystemSettings from "../models/systemSettings.model.js";
@@ -17,6 +17,160 @@ const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d10: 5,
   d10plus: 5,
 };
+
+async function getMongoHealth() {
+  const start = performance.now();
+  try {
+    const adminDb = mongoose.connection.db.admin();
+    const [pingResult, serverStatus] = await Promise.all([
+      adminDb.command({ ping: 1 }),
+      adminDb.command({ serverStatus: 1 }),
+    ]);
+    const latencyMs = Math.round(performance.now() - start);
+    const connections = serverStatus?.connections || {};
+    const current = Number(connections.current || 0);
+    const available = Number(connections.available || 0);
+    const total = current + available || 1;
+    const usageRatio = current / total;
+    const status = latencyMs > 500 || usageRatio > 0.8 ? "warning" : "ok";
+    const message = `ping ${latencyMs}ms, connections ${current}/${
+      current + available
+    }`;
+
+    return {
+      ok: true,
+      latencyMs,
+      status,
+      message,
+      metrics: {
+        connections: { current, available, usageRatio },
+        opCounters: serverStatus?.opcounters || {},
+      },
+      raw: { ping: pingResult },
+    };
+  } catch (error) {
+    return { ok: false, message: error.message, status: "critical" };
+  }
+}
+
+async function fetchHealthJson(url, fallbackMessage) {
+  if (!url) return { status: "unknown", message: fallbackMessage };
+  try {
+    const res = await fetch(url, { timeout: 3000 });
+    if (!res.ok) throw new Error(`http ${res.status}`);
+    const data = await res.json();
+    return {
+      status: data.status || "ok",
+      message: data.message || fallbackMessage,
+      data,
+    };
+  } catch (err) {
+    return { status: "warning", message: fallbackMessage || err.message };
+  }
+}
+
+async function getNetworkHealth() {
+  const tlsUrl = process.env.TLS_HEALTH_URL;
+  const wafUrl = process.env.WAF_HEALTH_URL;
+  const [tls, waf] = await Promise.all([
+    fetchHealthJson(tlsUrl, "TLS 만료 정보를 가져오지 못했습니다"),
+    fetchHealthJson(wafUrl, "WAF 상태 정보를 가져오지 못했습니다"),
+  ]);
+  const status =
+    tls.status === "critical" || waf.status === "critical"
+      ? "critical"
+      : tls.status === "warning" || waf.status === "warning"
+      ? "warning"
+      : "ok";
+  const message = `TLS: ${tls.message || "-"}, WAF: ${waf.message || "-"}`;
+  return { status, message };
+}
+
+async function getApiHealth({ blockedAttempts }) {
+  return {
+    status: blockedAttempts > 0 ? "warning" : "ok",
+    message:
+      blockedAttempts > 0
+        ? "차단 이벤트 감지됨"
+        : "속도 제한 적용, 토큰 관리 중",
+  };
+}
+
+async function getBackupHealth(sec) {
+  const backupUrl = process.env.BACKUP_HEALTH_URL;
+  const backup = await fetchHealthJson(
+    backupUrl,
+    sec.backupFrequency
+      ? `백업 주기: ${sec.backupFrequency}`
+      : "백업 주기가 설정되지 않았습니다"
+  );
+  const status =
+    backup.status && backup.status !== "unknown"
+      ? backup.status
+      : sec.backupFrequency
+      ? "ok"
+      : "warning";
+  return { status, message: backup.message };
+}
+
+export async function logSecurityEvent({
+  userId,
+  action,
+  severity = "info",
+  status = "info",
+  details = null,
+  ipAddress = "",
+}) {
+  try {
+    await ActivityLog.create({
+      userId,
+      action,
+      severity,
+      status,
+      details,
+      ipAddress,
+    });
+    if (
+      (severity === "high" || severity === "critical") &&
+      process.env.PUSHOVER_TOKEN &&
+      process.env.PUSHOVER_USER_KEY
+    ) {
+      try {
+        await fetch("https://api.pushover.net/1/messages.json", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            token: process.env.PUSHOVER_TOKEN,
+            user: process.env.PUSHOVER_USER_KEY,
+            title: `[Security] ${severity.toUpperCase()}`,
+            message: `${action || "event"} - ${status}`,
+            priority: severity === "critical" ? "1" : "0",
+          }).toString(),
+        });
+      } catch (pushErr) {
+        console.error("[logSecurityEvent] pushover send failed", pushErr);
+      }
+    }
+  } catch (err) {
+    console.error("[logSecurityEvent] failed", err);
+  }
+}
+
+export async function logAuthFailure(req, reason, user = null) {
+  const clientIp =
+    req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
+  await logSecurityEvent({
+    userId: user?._id,
+    action: "AUTH_FAILURE",
+    severity: "medium",
+    status: "failed",
+    details: {
+      reason,
+      email: req.body?.email,
+    },
+    ipAddress: clientIp,
+  });
+}
 
 async function formatEtaLabelFromNow(days) {
   const d = typeof days === "number" && !Number.isNaN(days) ? days : 0;
@@ -1238,6 +1392,17 @@ async function getActivityLogs(req, res) {
       filter.user = new Types.ObjectId(req.query.userId);
     }
     if (req.query.action) filter.action = req.query.action;
+    if (req.query.severity) filter.severity = req.query.severity;
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.startDate || req.query.endDate) {
+      filter.createdAt = {};
+      if (req.query.startDate) {
+        filter.createdAt.$gte = new Date(req.query.startDate);
+      }
+      if (req.query.endDate) {
+        filter.createdAt.$lte = new Date(req.query.endDate);
+      }
+    }
     if (req.query.startDate && req.query.endDate) {
       filter.createdAt = {
         $gte: new Date(req.query.startDate),
@@ -1515,22 +1680,135 @@ async function getSecurityStats(req, res) {
     const last30 = new Date(now);
     last30.setDate(now.getDate() - 30);
 
-    const alertsDetected = await ActivityLog.countDocuments({
-      createdAt: { $gte: last30, $lte: now },
-    });
+    const [
+      alertsDetected,
+      blockedAttempts,
+      severityCounts,
+      statusCounts,
+      totalEvents,
+      systemSettings,
+    ] = await Promise.all([
+      ActivityLog.countDocuments({
+        createdAt: { $gte: last30, $lte: now },
+        severity: { $in: ["high", "critical"] },
+      }),
+      ActivityLog.countDocuments({
+        status: "blocked",
+        createdAt: { $gte: last30, $lte: now },
+      }),
+      ActivityLog.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: last30, $lte: now },
+          },
+        },
+        {
+          $group: {
+            _id: "$severity",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      ActivityLog.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: last30, $lte: now },
+          },
+        },
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      ActivityLog.countDocuments({ createdAt: { $gte: last30, $lte: now } }),
+      SystemSettings.findOne({ key: "global" }).lean(),
+    ]);
 
-    const blockedAttempts = await ActivityLog.countDocuments({
-      action: "USER_LOGGED_IN_BLOCKED",
-      createdAt: { $gte: last30, $lte: now },
-    });
+    const severityMap = severityCounts.reduce((acc, cur) => {
+      acc[cur._id || "unknown"] = cur.count;
+      return acc;
+    }, {});
+    const statusMap = statusCounts.reduce((acc, cur) => {
+      acc[cur._id || "unknown"] = cur.count;
+      return acc;
+    }, {});
+
+    const incidentPenalty =
+      (severityMap.high || 0) * 3 + (severityMap.critical || 0) * 5;
+    const blockedPenalty = blockedAttempts * 1;
+    const baseScore = 100;
+    const securityScore = Math.max(
+      50,
+      baseScore - incidentPenalty - blockedPenalty
+    );
+
+    const sec = systemSettings?.securitySettings || {};
+    const policyIssues = [];
+    if (!sec.twoFactorAuth) policyIssues.push("2FA 비활성");
+    if (!sec.loginNotifications) policyIssues.push("로그인 알림 미사용");
+    if (!sec.dataEncryption) policyIssues.push("데이터 암호화 미사용");
+    if (!sec.fileUploadScan) policyIssues.push("파일 업로드 스캔 미사용");
+    if ((sec.autoLogout ?? 0) > 60)
+      policyIssues.push("자동 로그아웃 시간이 김");
+    if ((sec.maxLoginAttempts ?? 0) > 10)
+      policyIssues.push("로그인 시도 허용 횟수 과다");
+    if (!sec.ipWhitelist) policyIssues.push("IP 화이트리스트 미사용");
+    if ((sec.apiRateLimit ?? 0) > 2000)
+      policyIssues.push("API 속도 제한이 높음");
+    if (
+      sec.backupFrequency &&
+      !["daily", "weekly"].includes(sec.backupFrequency)
+    )
+      policyIssues.push("백업 주기 비권장");
+    if ((sec.passwordExpiry ?? 0) > 180)
+      policyIssues.push("비밀번호 만료 주기 과다");
+    const policyScore = Math.max(50, 100 - policyIssues.length * 5);
+
+    const mongoHealth = await getMongoHealth();
+    const networkHealth = await getNetworkHealth();
+    const apiHealth = await getApiHealth({ blockedAttempts });
+    const backupHealth = await getBackupHealth(sec);
+
+    const systemStatus = [
+      {
+        name: "데이터베이스",
+        status: mongoHealth.status,
+        message: mongoHealth.message,
+      },
+      {
+        name: "네트워크",
+        status: networkHealth.status,
+        message: networkHealth.message,
+      },
+      {
+        name: "API 보안",
+        status: apiHealth.status,
+        message: apiHealth.message,
+      },
+      {
+        name: "백업 시스템",
+        status: backupHealth.status,
+        message: backupHealth.message,
+      },
+    ];
 
     res.status(200).json({
       success: true,
       data: {
-        securityScore: 95,
+        securityScore,
+        policyCompliance: {
+          score: policyScore,
+          issues: policyIssues,
+        },
         monitoring: "24/7",
         alertsDetected,
         blockedAttempts,
+        severity: severityMap,
+        status: statusMap,
+        totalEvents,
+        systemStatus,
       },
     });
   } catch (error) {
@@ -1555,11 +1833,24 @@ async function getSecurityLogs(req, res) {
     const filter = {};
     if (req.query.action) filter.action = req.query.action;
 
-    const logs = await ActivityLog.find(filter)
+    const logsRaw = await ActivityLog.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
+    const logs = logsRaw.map((log) => {
+      const severity =
+        log.severity ||
+        (log.details && typeof log.details.severity === "string"
+          ? log.details.severity
+          : "info");
+      const status =
+        log.status ||
+        (log.details && typeof log.details.status === "string"
+          ? log.details.status
+          : "info");
+      return { ...log, severity, status };
+    });
     const total = await ActivityLog.countDocuments(filter);
 
     res.status(200).json({

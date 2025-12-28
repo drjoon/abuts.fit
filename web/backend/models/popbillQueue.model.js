@@ -93,7 +93,6 @@ const PopbillQueueSchema = new mongoose.Schema(
 PopbillQueueSchema.index({ status: 1, priority: -1, createdAt: 1 });
 PopbillQueueSchema.index({ status: 1, scheduledFor: 1 });
 PopbillQueueSchema.index({ taskType: 1, status: 1 });
-PopbillQueueSchema.index({ lockedUntil: 1 });
 
 export default mongoose.models.PopbillQueue ||
   mongoose.model("PopbillQueue", PopbillQueueSchema, "PopbillQueue");

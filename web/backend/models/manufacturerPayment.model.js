@@ -28,7 +28,6 @@ const manufacturerPaymentSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
-      index: true,
     },
     printedContent: {
       type: String,

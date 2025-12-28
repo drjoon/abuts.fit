@@ -11,6 +11,7 @@ import {
   assertSignupVerifications,
   consumeSignupVerifications,
 } from "./signupVerification.controller.js";
+import { logSecurityEvent, logAuthFailure } from "./admin.controller.js";
 import { sendEmail } from "../utils/email.util.js";
 import { getFrontendBaseUrl } from "../utils/url.util.js";
 
@@ -485,6 +486,8 @@ async function register(req, res) {
 async function login(req, res) {
   try {
     const { email, password } = req.body;
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
 
     // 이메일 정규화
     const normalizedEmail = String(email || "")
@@ -496,6 +499,13 @@ async function login(req, res) {
       "+password"
     );
     if (!user) {
+      await logSecurityEvent({
+        action: "LOGIN_FAILED_USER_NOT_FOUND",
+        severity: "medium",
+        status: "failed",
+        details: { email: normalizedEmail },
+        ipAddress: clientIp,
+      });
       return res.status(401).json({
         success: false,
         message: "이메일 또는 비밀번호가 올바르지 않습니다.",
@@ -521,6 +531,14 @@ async function login(req, res) {
       console.log(`비밀번호 검증 결과: ${isPasswordValid}`);
 
       if (!isPasswordValid) {
+        await logSecurityEvent({
+          userId: user._id,
+          action: "LOGIN_FAILED_BAD_PASSWORD",
+          severity: "medium",
+          status: "failed",
+          details: { email: normalizedEmail },
+          ipAddress: clientIp,
+        });
         return res.status(401).json({
           success: false,
           message: "이메일 또는 비밀번호가 올바르지 않습니다.",
@@ -536,6 +554,14 @@ async function login(req, res) {
 
     // 비활성화된 계정 확인
     if (!user.active) {
+      await logSecurityEvent({
+        userId: user._id,
+        action: "LOGIN_FAILED_INACTIVE_USER",
+        severity: "low",
+        status: "blocked",
+        details: { email: normalizedEmail },
+        ipAddress: clientIp,
+      });
       return res.status(401).json({
         success: false,
         message: "비활성화된 계정입니다.",
@@ -566,7 +592,22 @@ async function login(req, res) {
         refreshToken,
       },
     });
+    await logSecurityEvent({
+      userId: user._id,
+      action: "LOGIN_SUCCESS",
+      severity: "info",
+      status: "success",
+      details: { email: normalizedEmail },
+      ipAddress: clientIp,
+    });
   } catch (error) {
+    await logSecurityEvent({
+      action: "LOGIN_FAILED_ERROR",
+      severity: "high",
+      status: "failed",
+      details: { email: req.body?.email, error: error.message },
+      ipAddress: req.ip || "",
+    });
     res.status(500).json({
       success: false,
       message: "로그인 중 오류가 발생했습니다.",
@@ -670,6 +711,8 @@ async function changePassword(req, res) {
   try {
     const { currentPassword, newPassword } = req.body;
     const userId = req.user._id;
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
 
     // 사용자 조회 (비밀번호 포함)
     const user = await User.findById(userId).select("+password");
@@ -677,6 +720,7 @@ async function changePassword(req, res) {
     // 현재 비밀번호 확인
     const isPasswordValid = await user.comparePassword(currentPassword);
     if (!isPasswordValid) {
+      await logAuthFailure(req, "CHANGE_PASSWORD_BAD_CURRENT", user);
       return res.status(400).json({
         success: false,
         message: "현재 비밀번호가 올바르지 않습니다.",
@@ -693,7 +737,16 @@ async function changePassword(req, res) {
       success: true,
       message: "비밀번호가 성공적으로 변경되었습니다.",
     });
+    await logSecurityEvent({
+      userId: user._id,
+      action: "CHANGE_PASSWORD_SUCCESS",
+      severity: "info",
+      status: "success",
+      details: { userId, email: user.email },
+      ipAddress: clientIp,
+    });
   } catch (error) {
+    await logAuthFailure(req, "CHANGE_PASSWORD_ERROR", req.user);
     res.status(500).json({
       success: false,
       message: "비밀번호 변경 중 오류가 발생했습니다.",
@@ -709,10 +762,13 @@ async function changePassword(req, res) {
 async function forgotPassword(req, res) {
   try {
     const { email } = req.body;
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
 
     // 사용자 조회
     const user = await User.findOne({ email });
     if (!user) {
+      await logAuthFailure(req, "FORGOT_PASSWORD_USER_NOT_FOUND");
       return res.status(404).json({
         success: false,
         message: "해당 이메일로 등록된 사용자가 없습니다.",
@@ -753,6 +809,7 @@ async function forgotPassword(req, res) {
       });
     } catch (error) {
       console.error("[forgotPassword] email send failed:", error);
+      await logAuthFailure(req, "FORGOT_PASSWORD_EMAIL_SEND_FAIL", user);
       return res.status(500).json({
         success: false,
         message: "이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.",
@@ -763,7 +820,16 @@ async function forgotPassword(req, res) {
       success: true,
       message: "비밀번호 재설정 링크가 이메일로 전송되었습니다.",
     });
+    await logSecurityEvent({
+      userId: user._id,
+      action: "FORGOT_PASSWORD_REQUEST",
+      severity: "info",
+      status: "success",
+      details: { email },
+      ipAddress: clientIp,
+    });
   } catch (error) {
+    await logAuthFailure(req, "FORGOT_PASSWORD_ERROR");
     res.status(500).json({
       success: false,
       message: "비밀번호 재설정 요청 중 오류가 발생했습니다.",
@@ -780,8 +846,11 @@ async function resetPassword(req, res) {
   try {
     const token = req.params?.token || req.body?.token;
     const { newPassword } = req.body;
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
 
     if (!token || !newPassword) {
+      await logAuthFailure(req, "RESET_PASSWORD_MISSING_FIELDS");
       return res.status(400).json({
         success: false,
         message: "토큰과 새 비밀번호를 모두 입력해주세요.",
@@ -789,6 +858,7 @@ async function resetPassword(req, res) {
     }
 
     if (!isStrongPassword(newPassword)) {
+      await logAuthFailure(req, "RESET_PASSWORD_WEAK_PASSWORD");
       return res.status(400).json({
         success: false,
         message: "비밀번호는 10자 이상이며 특수문자를 포함해야 합니다.",
@@ -802,6 +872,7 @@ async function resetPassword(req, res) {
     });
 
     if (!user) {
+      await logAuthFailure(req, "RESET_PASSWORD_TOKEN_NOT_FOUND");
       return res.status(400).json({
         success: false,
         message: "비밀번호 재설정 토큰이 유효하지 않거나 만료되었습니다.",
@@ -811,6 +882,7 @@ async function resetPassword(req, res) {
     // 토큰 검증
     const isTokenValid = await bcrypt.compare(token, user.resetPasswordToken);
     if (!isTokenValid) {
+      await logAuthFailure(req, "RESET_PASSWORD_TOKEN_INVALID", user);
       return res.status(400).json({
         success: false,
         message: "비밀번호 재설정 토큰이 유효하지 않습니다.",
@@ -827,7 +899,16 @@ async function resetPassword(req, res) {
       success: true,
       message: "비밀번호가 성공적으로 재설정되었습니다.",
     });
+    await logSecurityEvent({
+      userId: user._id,
+      action: "RESET_PASSWORD_SUCCESS",
+      severity: "info",
+      status: "success",
+      details: { email: user.email },
+      ipAddress: clientIp,
+    });
   } catch (error) {
+    await logAuthFailure(req, "RESET_PASSWORD_ERROR");
     res.status(500).json({
       success: false,
       message: "비밀번호 재설정 중 오류가 발생했습니다.",

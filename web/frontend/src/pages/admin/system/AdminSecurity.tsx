@@ -11,6 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -24,6 +31,7 @@ import {
   Server,
   Database,
   Network,
+  AlertCircle,
 } from "lucide-react";
 
 const getSeverityBadge = (severity: string) => {
@@ -51,10 +59,26 @@ const getStatusBadge = (status: string) => {
   switch (status) {
     case "blocked":
       return <Badge variant="destructive">차단됨</Badge>;
+    case "critical":
+      return (
+        <Badge className="bg-red-100 text-red-700 border-red-200">심각</Badge>
+      );
     case "allowed":
       return (
         <Badge className="bg-green-100 text-green-700 border-green-200">
           허용됨
+        </Badge>
+      );
+    case "warning":
+      return (
+        <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
+          주의
+        </Badge>
+      );
+    case "ok":
+      return (
+        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+          정상
         </Badge>
       );
     default:
@@ -87,10 +111,22 @@ export const AdminSecurity = () => {
     monitoring?: string;
     alertsDetected?: number;
     blockedAttempts?: number;
+    systemStatus?: Array<{
+      name: string;
+      status: string;
+      message?: string;
+    }>;
   }>({});
   const [logs, setLogs] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [logFilters, setLogFilters] = useState<{
+    severity?: string;
+    action?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }>({});
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -108,11 +144,7 @@ export const AdminSecurity = () => {
             method: "GET",
             token,
           }),
-          apiFetch<any>({
-            path: "/api/admin/security-logs?limit=10",
-            method: "GET",
-            token,
-          }),
+          fetchLogs(logFilters),
         ]);
 
         if (settingsRes.ok && settingsRes.data?.success) {
@@ -124,15 +156,40 @@ export const AdminSecurity = () => {
         if (statsRes.ok && statsRes.data?.success) {
           setStats(statsRes.data.data || {});
         }
-        if (logsRes.ok && logsRes.data?.success) {
-          setLogs(logsRes.data.data?.logs || []);
+        const logsData = (logsRes as any)?.data;
+        if ((logsRes as any)?.ok && logsData?.success) {
+          setLogs(logsData.data?.logs || []);
         }
       } finally {
         setLoading(false);
       }
     };
     void fetchAll();
-  }, [token, storageKey]);
+  }, [token, storageKey, toast]);
+
+  const fetchLogs = async (filters?: typeof logFilters) => {
+    const params = new URLSearchParams({ limit: "10" });
+    if (filters?.severity) params.set("severity", filters.severity);
+    if (filters?.action) params.set("action", filters.action);
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.startDate) params.set("startDate", filters.startDate);
+    if (filters?.endDate) params.set("endDate", filters.endDate);
+    return apiFetch<any>({
+      path: `/api/admin/security-logs?${params.toString()}`,
+      method: "GET",
+      token,
+    });
+  };
+
+  const handleFilterChange = async (partial: Partial<typeof logFilters>) => {
+    const next = { ...logFilters, ...partial };
+    setLogFilters(next);
+    const res = await fetchLogs(next);
+    const data = (res as any)?.data;
+    if ((res as any)?.ok && data?.success) {
+      setLogs(data.data?.logs || []);
+    }
+  };
 
   const handleSave = async () => {
     if (!token) return;
@@ -363,57 +420,45 @@ export const AdminSecurity = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Database className="h-5 w-5 text-green-500" />
-                    <div>
-                      <p className="font-medium">데이터베이스</p>
-                      <p className="text-sm text-muted-foreground">
-                        암호화 활성화, 정상 작동
-                      </p>
+                {(stats.systemStatus || []).map((item) => {
+                  const isOk = item.status === "ok";
+                  const isWarn = item.status === "warning";
+                  const icon = isOk ? (
+                    <CheckCircle className="h-5 w-5 text-emerald-600" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-amber-600" />
+                  );
+                  return (
+                    <div
+                      key={item.name}
+                      className="flex items-center justify-between p-3 border border-border rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        {item.name.includes("데이터") ? (
+                          <Database className="h-5 w-5 text-emerald-600" />
+                        ) : item.name.includes("네트워크") ? (
+                          <Network className="h-5 w-5 text-emerald-600" />
+                        ) : item.name.includes("API") ? (
+                          <Key className="h-5 w-5 text-amber-600" />
+                        ) : (
+                          <Shield className="h-5 w-5 text-emerald-600" />
+                        )}
+                        <div>
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {item.message || "-"}
+                          </p>
+                        </div>
+                      </div>
+                      {icon}
                     </div>
+                  );
+                })}
+                {!stats.systemStatus?.length && (
+                  <div className="text-sm text-muted-foreground">
+                    상태 정보를 불러올 수 없습니다.
                   </div>
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                </div>
-
-                <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Network className="h-5 w-5 text-green-500" />
-                    <div>
-                      <p className="font-medium">네트워크</p>
-                      <p className="text-sm text-muted-foreground">
-                        SSL 인증서 유효, 방화벽 활성화
-                      </p>
-                    </div>
-                  </div>
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                </div>
-
-                <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Key className="h-5 w-5 text-yellow-500" />
-                    <div>
-                      <p className="font-medium">API 보안</p>
-                      <p className="text-sm text-muted-foreground">
-                        속도 제한 적용, 토큰 관리 중
-                      </p>
-                    </div>
-                  </div>
-                  <AlertTriangle className="h-5 w-5 text-yellow-500" />
-                </div>
-
-                <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Shield className="h-5 w-5 text-green-500" />
-                    <div>
-                      <p className="font-medium">백업 시스템</p>
-                      <p className="text-sm text-muted-foreground">
-                        일일 백업 완료, 복구 테스트 완료
-                      </p>
-                    </div>
-                  </div>
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -424,10 +469,92 @@ export const AdminSecurity = () => {
           <CardHeader>
             <CardTitle>보안 로그</CardTitle>
             <CardDescription>
-              최근 보안 이벤트 및 위협 탐지 기록
+              최근 보안 이벤트와 로그 기록을 확인하세요
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <div className="space-y-1">
+                <Label>Severity</Label>
+                <Select
+                  value={logFilters.severity || "all"}
+                  onValueChange={(v) =>
+                    handleFilterChange({
+                      severity: v === "all" ? undefined : v,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="전체" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
+                    <SelectItem value="critical">critical</SelectItem>
+                    <SelectItem value="high">high</SelectItem>
+                    <SelectItem value="medium">medium</SelectItem>
+                    <SelectItem value="low">low</SelectItem>
+                    <SelectItem value="info">info</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Status</Label>
+                <Select
+                  value={logFilters.status || "all"}
+                  onValueChange={(v) =>
+                    handleFilterChange({ status: v === "all" ? undefined : v })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="전체" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
+                    <SelectItem value="blocked">blocked</SelectItem>
+                    <SelectItem value="failed">failed</SelectItem>
+                    <SelectItem value="success">success</SelectItem>
+                    <SelectItem value="allowed">allowed</SelectItem>
+                    <SelectItem value="info">info</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Action</Label>
+                <Input
+                  placeholder="ex) LOGIN_FAILED"
+                  value={logFilters.action || ""}
+                  onChange={(e) =>
+                    handleFilterChange({
+                      action: e.target.value || undefined,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>시작일</Label>
+                <Input
+                  type="date"
+                  value={logFilters.startDate || ""}
+                  onChange={(e) =>
+                    handleFilterChange({
+                      startDate: e.target.value || undefined,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>종료일</Label>
+                <Input
+                  type="date"
+                  value={logFilters.endDate || ""}
+                  onChange={(e) =>
+                    handleFilterChange({
+                      endDate: e.target.value || undefined,
+                    })
+                  }
+                />
+              </div>
+            </div>
             <div className="space-y-4">
               {logs.map((log) => (
                 <div
@@ -438,12 +565,8 @@ export const AdminSecurity = () => {
                     <div className="flex items-center gap-3">
                       <AlertTriangle className="h-4 w-4 text-orange-500" />
                       <h4 className="font-medium">{log.action || "이벤트"}</h4>
-                      {log.details?.severity
-                        ? getSeverityBadge(log.details.severity)
-                        : null}
-                      {log.details?.status
-                        ? getStatusBadge(log.details.status)
-                        : null}
+                      {log.severity ? getSeverityBadge(log.severity) : null}
+                      {log.status ? getStatusBadge(log.status) : null}
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       {log.userId ? <span>사용자: {log.userId}</span> : null}
