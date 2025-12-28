@@ -54,6 +54,7 @@ export interface RequestBase {
   title?: string;
   status?: string;
   manufacturerStage?: string;
+  lotNumber?: string;
   status1?: string;
   status2?: string;
   createdAt?: string;

@@ -4,6 +4,7 @@ import User from "../../models/user.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import Connection from "../../models/connection.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
+import LotCounter from "../../models/lotCounter.model.js";
 import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -286,11 +287,31 @@ export async function normalizeRequestForResponse(requestDoc) {
 }
 
 export async function ensureLotNumberForMachining(requestDoc) {
-  // patientCases 필드를 더 이상 사용하지 않으므로, 현재는 lotNumber를 자동 부여하지 않는다.
-  // 기존 데이터에 lotNumber가 이미 있다면 그대로 유지하고, 없다면 변경하지 않는다.
-  if (requestDoc.lotNumber) {
-    return;
-  }
+  if (!requestDoc || requestDoc.lotNumber) return;
+
+  // 로트 규칙: AB + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
+  const todayYmd = getTodayYmdInKst(); // YYYY-MM-DD
+  const yyMMdd = todayYmd.replace(/-/g, "").slice(2); // YYMMDD
+
+  const counter = await LotCounter.findOneAndUpdate(
+    { key: "global" },
+    { $inc: { seq: 1 }, $setOnInsert: { seq: -1 } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  const seqRaw = typeof counter?.seq === "number" ? counter.seq : 0;
+  const total = 26 * 26 * 26;
+  const seq = ((seqRaw % total) + total) % total; // 안전한 모듈로 (음수 방지)
+  const toLetters = (n) => {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const a = Math.floor(n / (26 * 26)) % 26;
+    const b = Math.floor(n / 26) % 26;
+    const c = n % 26;
+    return `${alphabet[a]}${alphabet[b]}${alphabet[c]}`;
+  };
+
+  const letters = toLetters(Math.max(seq, 0));
+  requestDoc.lotNumber = `AB${yyMMdd}-${letters}`;
 }
 
 export async function computePriceForRequest({

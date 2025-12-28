@@ -224,6 +224,7 @@ const WorksheetCardGrid = ({
         caseInfos.ncFile?.originalName
       );
       const isDeletingNc = !!deletingNc[request._id];
+      const lotNumber = (request.lotNumber || "").trim();
       const requestStageLabel = stageLabel;
       const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
@@ -345,6 +346,11 @@ const WorksheetCardGrid = ({
                         >
                           {stageLabel}
                         </Badge>
+                        {lotNumber && (
+                          <Badge className="text-[11px] px-2 py-0.5 bg-slate-800 text-white">
+                            LOT {lotNumber}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

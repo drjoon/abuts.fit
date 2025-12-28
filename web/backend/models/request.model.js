@@ -21,10 +21,10 @@ const requestSchema = new mongoose.Schema(
       index: true, // 32에서는 42,45의 requestId를 referenceIds에 추가
     },
     lotNumber: {
-      // 제조사가 관리하는 로트 넘어
-      type: String, // YYYYMMDD-AAA 형식
-      unique: true, // 년도월날짜-세글자 알파벳 대문자
-      sparse: true, // 마지막 3글자는 26진법 표기법이라 보면 도달할 수 없는 값
+      // 제조사가 관리하는 로트 번호 (ABYYMMDD-AAA 형식)
+      type: String,
+      unique: true,
+      sparse: true,
     },
     requestorOrganizationId: {
       type: mongoose.Schema.Types.ObjectId,

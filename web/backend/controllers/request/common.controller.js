@@ -638,6 +638,7 @@ export async function saveCamFileAndCompleteCam(req, res) {
     };
 
     applyStatusMapping(request, "가공후");
+    await ensureLotNumberForMachining(request);
     request.manufacturerStage = mapManufacturerStage(request);
     await request.save();
 
@@ -841,6 +842,7 @@ export async function saveNcFileAndMoveToMachining(req, res) {
     request.status = "가공후"; // 메인 상태도 단계에 맞춰 저장
     request.status1 = "가공";
     request.status2 = "중";
+    await ensureLotNumberForMachining(request);
     request.manufacturerStage = mapManufacturerStage(request);
 
     await request.save();
