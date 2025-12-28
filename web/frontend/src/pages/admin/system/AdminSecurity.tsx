@@ -243,7 +243,7 @@ export const AdminSecurity = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">모니터링</p>
                   <p className="text-2xl font-bold">
-                    {stats.monitoring || "-"}
+                    {stats.monitoring || "헬스 모니터링 비활성화"}
                   </p>
                 </div>
               </div>
