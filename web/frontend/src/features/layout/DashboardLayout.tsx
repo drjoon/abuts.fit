@@ -349,6 +349,40 @@ export const DashboardLayout = () => {
     user,
   ]);
 
+  // 요청자 온보딩 투어 자동 시작 (설정 페이지 진입 시)
+  useEffect(() => {
+    if (!user || user.role !== "requestor") return;
+    if (!onboardingStatus.checked) return;
+    if (!onboardingStatus.firstIncomplete) return;
+    if (guideActive) return;
+    if (!location.pathname.startsWith("/dashboard/settings")) return;
+    startTour("requestor-onboarding", onboardingStatus.firstIncomplete);
+  }, [
+    guideActive,
+    location.pathname,
+    onboardingStatus.checked,
+    onboardingStatus.firstIncomplete,
+    startTour,
+    user,
+  ]);
+
+  // 신규 의뢰 투어 자동 시작 (신규 의뢰 페이지 진입 시)
+  useEffect(() => {
+    if (!user || user.role !== "requestor") return;
+    if (!newRequestTourStatus.checked) return;
+    if (!newRequestTourStatus.firstIncomplete) return;
+    if (guideActive) return;
+    if (!location.pathname.startsWith("/dashboard/new-request")) return;
+    startTour("requestor-new-request", newRequestTourStatus.firstIncomplete);
+  }, [
+    guideActive,
+    location.pathname,
+    newRequestTourStatus.checked,
+    newRequestTourStatus.firstIncomplete,
+    startTour,
+    user,
+  ]);
+
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
     try {
