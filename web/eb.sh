@@ -10,6 +10,9 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 ZIP_NAME="deploy-$TIMESTAMP.zip"
 ZIP_PATH="$PARENT_DIR/$ZIP_NAME"
 
+BACKEND_NODE_MODULES_DIR="$BACKEND_DIR/node_modules"
+BACKEND_NODE_MODULES_BACKUP_DIR="$PARENT_DIR/.backend_node_modules__eb_deploy_backup"
+
 # 로그 출력 함수
 info() {
   echo -e "\033[1;34m[INFO]\033[0m $1"
@@ -52,6 +55,15 @@ fi
 
 command -v eb >/dev/null 2>&1 || error "Elastic Beanstalk CLI(eb)가 설치되어 있지 않습니다."
 
+restore_backend_node_modules() {
+  if [[ -d "$BACKEND_NODE_MODULES_BACKUP_DIR" && ! -d "$BACKEND_NODE_MODULES_DIR" ]]; then
+    mv "$BACKEND_NODE_MODULES_BACKUP_DIR" "$BACKEND_NODE_MODULES_DIR" || true
+    info "backend/node_modules 복구 완료"
+  fi
+}
+
+trap restore_backend_node_modules EXIT
+
 info "프론트엔드 빌드"
 (cd "$FRONTEND_DIR" && npm install && npm run build)
 
@@ -65,8 +77,10 @@ cat <<'EOF' > "$WEB_DIR/.ebignore"
 /package-lock.json
 !backend/package.json
 !backend/package-lock.json
-node_modules
+/node_modules
 frontend/node_modules
+backend/node_modules
+**/node_modules/**
 *.zip
 .DS_Store
 *.env
@@ -86,6 +100,7 @@ rm -f "$ZIP_PATH"
   backend \
   Procfile \
   .platform \
+  -x "**/node_modules/*" \
   -x "backend/node_modules/*" \
   -x "backend/coverage/*" \
   -x "backend/.nyc_output/*" \
@@ -121,7 +136,15 @@ fi
 
 # 1. 먼저 앱 배포 (predeploy 훅에서 npm install 실행됨)
 info "EB 배포"
+if [[ -d "$BACKEND_NODE_MODULES_DIR" ]]; then
+  info "EB CLI 패키징 RecursionError 방지를 위해 backend/node_modules 임시 이동"
+  rm -rf "$BACKEND_NODE_MODULES_BACKUP_DIR" || true
+  mv "$BACKEND_NODE_MODULES_DIR" "$BACKEND_NODE_MODULES_BACKUP_DIR"
+fi
+
 (cd "$WEB_DIR" && eb deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)") || error "eb deploy 실패"
+
+restore_backend_node_modules
 
 # 2. 배포 후 환경변수 설정
 info "EBS 환경변수 적용 중..."
