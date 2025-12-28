@@ -23,6 +23,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { Badge } from "@/components/ui/badge";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
+import { StlPreviewViewer } from "@/components/StlPreviewViewer";
+import { getFileBlob, setFileBlob } from "@/utils/stlIndexedDb";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +42,13 @@ type ManufacturerRequest = RequestBase & {
 type FilePreviewInfo = {
   originalName: string;
   url: string;
+};
+
+type PreviewFiles = {
+  original?: File | null;
+  cam?: File | null;
+  title?: string;
+  request?: ManufacturerRequest | null;
 };
 
 const getDiameterBucketIndex = (diameter?: number) => {
@@ -136,7 +145,6 @@ const WorksheetCardGrid = ({
                 e.stopPropagation();
               }}
               onDrop={handleDrop}
-              onClick={(e) => e.stopPropagation()}
             >
               {request.referenceIds && request.referenceIds.length > 0 && (
                 <div className="mb-1">
@@ -313,11 +321,8 @@ export const RequestPage = ({
   const [downloading, setDownloading] = useState<Record<string, boolean>>({});
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewFiles, setPreviewFiles] = useState<{
-    original?: FilePreviewInfo | null;
-    cam?: FilePreviewInfo | null;
-    title?: string;
-  }>({});
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewFiles, setPreviewFiles] = useState<PreviewFiles>({});
   const [deletingCam, setDeletingCam] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
   const { uploadFiles } = useS3TempUpload({ token });
@@ -509,55 +514,129 @@ export const RequestPage = ({
     async (req: ManufacturerRequest) => {
       if (!token) return;
       try {
-        const [origRes, camRes] = await Promise.all([
-          fetch(`/api/requests/${req._id}/original-file-url`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`/api/requests/${req._id}/cam-file-url`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }).catch(() => null),
-        ]);
-        let original: FilePreviewInfo | null = null;
-        let cam: FilePreviewInfo | null = null;
+        setPreviewLoading(true);
+        toast({
+          title: "다운로드 중...",
+          description: "STL을 불러오고 있습니다.",
+          duration: 60000,
+        });
 
-        if (origRes?.ok) {
-          const body = await origRes.json();
-          const url = body?.data?.url;
-          const name =
-            req.caseInfos?.file?.fileName ||
-            req.caseInfos?.file?.originalName ||
-            "original.stl";
-          if (url) original = { originalName: name, url };
-        }
-        if (camRes && camRes.ok) {
-          const body = await camRes.json();
-          const url = body?.data?.url;
-          const name =
+        const blobToFile = (blob: Blob, filename: string) =>
+          new File([blob], filename, {
+            type: blob.type || "model/stl",
+          });
+
+        const fetchAsFileWithCache = async (
+          cacheKey: string | null,
+          signedUrl: string,
+          filename: string
+        ) => {
+          if (cacheKey) {
+            const cached = await getFileBlob(cacheKey);
+            if (cached) {
+              return blobToFile(cached, filename);
+            }
+          }
+
+          const r = await fetch(signedUrl);
+          if (!r.ok) throw new Error("file fetch failed");
+          const blob = await r.blob();
+
+          if (cacheKey) {
+            try {
+              await setFileBlob(cacheKey, blob);
+            } catch {
+              // ignore cache write errors
+            }
+          }
+
+          return blobToFile(blob, filename);
+        };
+
+        const title =
+          req.caseInfos?.patientName ||
+          req.requestor?.organization ||
+          req.requestor?.name ||
+          "파일 미리보기";
+
+        const originalName =
+          req.caseInfos?.file?.fileName ||
+          req.caseInfos?.file?.originalName ||
+          "original.stl";
+
+        const originalCacheKey = req.caseInfos?.file?.s3Key || null;
+
+        const originalUrlRes = await fetch(
+          `/api/requests/${req._id}/original-file-url`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!originalUrlRes.ok) throw new Error("original url failed");
+        const originalUrlBody = await originalUrlRes.json();
+        const originalSignedUrl = originalUrlBody?.data?.url;
+        if (!originalSignedUrl) throw new Error("no original url");
+
+        const originalFile = await fetchAsFileWithCache(
+          originalCacheKey,
+          originalSignedUrl,
+          originalName
+        );
+
+        let camFile: File | null = null;
+        const hasCamFile = !!(
+          req.caseInfos?.camFile?.s3Key ||
+          req.caseInfos?.camFile?.fileName ||
+          req.caseInfos?.camFile?.originalName
+        );
+
+        if (isCamStage && hasCamFile) {
+          const camName =
             req.caseInfos?.camFile?.fileName ||
             req.caseInfos?.camFile?.originalName ||
-            "cam.stl";
-          if (url) cam = { originalName: name, url };
+            originalName;
+
+          const camCacheKey = req.caseInfos?.camFile?.s3Key || null;
+          const camUrlRes = await fetch(
+            `/api/requests/${req._id}/cam-file-url`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          if (camUrlRes.ok) {
+            const camUrlBody = await camUrlRes.json();
+            const camSignedUrl = camUrlBody?.data?.url;
+            if (camSignedUrl) {
+              camFile = await fetchAsFileWithCache(
+                camCacheKey,
+                camSignedUrl,
+                camName
+              );
+            }
+          }
         }
 
         setPreviewFiles({
-          original,
-          cam,
-          title:
-            req.caseInfos?.patientName ||
-            req.requestor?.organization ||
-            req.requestor?.name ||
-            "파일 미리보기",
+          original: originalFile,
+          cam: camFile,
+          title,
+          request: req,
         });
         setPreviewOpen(true);
+        toast({
+          title: "다운로드 완료",
+          description: "캐시에서 재사용됩니다.",
+          duration: 2000,
+        });
       } catch (error) {
         toast({
           title: "미리보기 실패",
-          description: "파일 URL을 불러올 수 없습니다.",
+          description: "파일을 불러올 수 없습니다.",
           variant: "destructive",
         });
+      } finally {
+        setPreviewLoading(false);
       }
     },
-    [token, toast]
+    [token, toast, isCamStage]
   );
 
   useEffect(() => {
@@ -704,47 +783,89 @@ export const RequestPage = ({
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>{previewFiles.title || "파일 미리보기"}</DialogTitle>
-            <DialogDescription>
-              원본 STL / 수정본 STL을 좌우로 비교해 다운로드할 수 있습니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded-lg p-3 space-y-2">
-              <div className="text-sm font-semibold text-slate-700">
-                원본 파일
+          <div className="space-y-4">
+            <div className="rounded-lg border p-3 text-sm text-slate-700">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div>
+                  <span className="font-semibold">환자</span>:{" "}
+                  {previewFiles.request?.caseInfos?.patientName || "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">치아번호</span>:{" "}
+                  {previewFiles.request?.caseInfos?.tooth || "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">치과</span>:{" "}
+                  {previewFiles.request?.caseInfos?.clinicName || "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">커넥션 직경</span>:{" "}
+                  {previewFiles.request?.caseInfos?.connectionDiameter != null
+                    ? previewFiles.request.caseInfos.connectionDiameter.toFixed(
+                        2
+                      )
+                    : "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">임플란트</span>:{" "}
+                  {previewFiles.request?.caseInfos?.implantManufacturer || "-"}{" "}
+                  / {previewFiles.request?.caseInfos?.implantSystem || "-"} /{" "}
+                  {previewFiles.request?.caseInfos?.implantType || "-"}
+                </div>
+                <div>
+                  <span className="font-semibold">최대 직경</span>:{" "}
+                  {previewFiles.request?.caseInfos?.maxDiameter != null
+                    ? previewFiles.request.caseInfos.maxDiameter.toFixed(2)
+                    : "-"}
+                </div>
               </div>
-              {previewFiles.original ? (
-                <a
-                  href={previewFiles.original.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center px-3 py-2 rounded-md border border-slate-200 bg-white text-sm font-medium text-blue-600 hover:bg-blue-50"
-                >
-                  {previewFiles.original.originalName}
-                </a>
-              ) : (
-                <div className="text-xs text-slate-500">원본 파일 없음</div>
-              )}
             </div>
-            <div className="border rounded-lg p-3 space-y-2">
-              <div className="text-sm font-semibold text-slate-700">
-                수정본(CAM) 파일
+
+            {previewLoading ? (
+              <div className="rounded-lg border border-dashed p-8 flex flex-col items-center gap-2 text-sm text-slate-500">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+                <div>STL 불러오는 중...</div>
               </div>
-              {previewFiles.cam ? (
-                <a
-                  href={previewFiles.cam.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center px-3 py-2 rounded-md border border-slate-200 bg-white text-sm font-medium text-blue-600 hover:bg-blue-50"
-                >
-                  {previewFiles.cam.originalName}
-                </a>
-              ) : (
-                <div className="text-xs text-slate-500">수정본 파일 없음</div>
-              )}
-            </div>
+            ) : (
+              <div
+                className={`grid gap-4 ${
+                  isCamStage ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"
+                }`}
+              >
+                <div className="border rounded-lg p-3 space-y-2">
+                  <div className="text-sm font-semibold text-slate-700">
+                    원본 STL
+                  </div>
+                  {previewFiles.original ? (
+                    <StlPreviewViewer
+                      file={previewFiles.original}
+                      showOverlay={false}
+                    />
+                  ) : (
+                    <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
+                      원본 파일 없음
+                    </div>
+                  )}
+                </div>
+                {isCamStage && (
+                  <div className="border rounded-lg p-3 space-y-2">
+                    <div className="text-sm font-semibold text-slate-700">
+                      수정본(CAM) STL
+                    </div>
+                    {previewFiles.cam ? (
+                      <StlPreviewViewer
+                        file={previewFiles.cam}
+                        showOverlay={false}
+                      />
+                    ) : (
+                      <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
+                        수정본 파일 없음
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
