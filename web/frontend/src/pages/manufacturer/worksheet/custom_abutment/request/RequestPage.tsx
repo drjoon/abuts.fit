@@ -130,6 +130,7 @@ const WorksheetCardGrid = ({
   deletingNc,
   isCamStage,
   isMachiningStage,
+  currentStageOrder,
 }: {
   requests: ManufacturerRequest[];
   onDownload: (req: ManufacturerRequest) => void;
@@ -143,6 +144,7 @@ const WorksheetCardGrid = ({
   uploading: Record<string, boolean>;
   deletingCam: Record<string, boolean>;
   deletingNc: Record<string, boolean>;
+  currentStageOrder: number;
 }) => (
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
     {requests.map((request) => {
@@ -222,10 +224,17 @@ const WorksheetCardGrid = ({
         caseInfos.ncFile?.originalName
       );
       const isDeletingNc = !!deletingNc[request._id];
+      const requestStageLabel = stageLabel;
+      const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
+      const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
       return (
         <Card
           key={request._id}
-          className="shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed border-slate-200"
+          className={`shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed ${
+            isCompletedForCurrentStage
+              ? "border-emerald-200 bg-emerald-50/40"
+              : "border-slate-200"
+          }`}
           onClick={() => onOpenPreview(request)}
         >
           <CardContent className="p-3 flex-1 flex flex-col gap-2">
@@ -1102,6 +1111,33 @@ export const RequestPage = ({
     .sort((a, b) => (new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1));
 
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
+  const groupedByOrg = useMemo(() => {
+    if (!isMachiningStage) return null;
+    const map = new Map<
+      string,
+      { org: string; requests: ManufacturerRequest[]; complete: boolean }
+    >();
+    for (const req of paginatedRequests) {
+      const org =
+        req.requestor?.organization ||
+        req.requestor?.name ||
+        req.requestor?._id ||
+        "기공소 미지정";
+      const stageLabel = computeStageLabel(req, {
+        isCamStage,
+        isMachiningStage,
+      });
+      const order = stageOrder[stageLabel] ?? 0;
+      const isComplete = order > currentStageOrder;
+      if (!map.has(org)) {
+        map.set(org, { org, requests: [], complete: true });
+      }
+      const entry = map.get(org)!;
+      entry.requests.push(req);
+      if (!isComplete) entry.complete = false;
+    }
+    return map;
+  }, [paginatedRequests, isCamStage, isMachiningStage, currentStageOrder]);
 
   const loadMore = useCallback(() => {
     setVisibleCount((prev) =>
@@ -1208,6 +1244,53 @@ export const RequestPage = ({
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
             표시할 의뢰가 없습니다.
           </div>
+        ) : isMachiningStage && groupedByOrg ? (
+          <div className="space-y-4">
+            {Array.from(groupedByOrg.values()).map((group) => (
+              <div
+                key={group.org}
+                className={`rounded-2xl border p-4 space-y-3 ${
+                  group.complete
+                    ? "border-emerald-300 bg-emerald-50/60"
+                    : "border-slate-200 bg-white"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-semibold text-slate-800">
+                    {group.org}
+                  </div>
+                  <Badge
+                    variant={group.complete ? "default" : "outline"}
+                    className={`text-[11px] ${
+                      group.complete
+                        ? "bg-emerald-500 text-white"
+                        : "bg-white text-slate-600"
+                    }`}
+                  >
+                    {group.complete ? "그룹 완료" : "진행 중"}
+                  </Badge>
+                  <span className="text-xs text-slate-500">
+                    모든 카드 완료 시 다음 단계 가능
+                  </span>
+                </div>
+                <WorksheetCardGrid
+                  requests={group.requests}
+                  onDownload={handleDownloadOriginal}
+                  onUpload={handleUploadByStage}
+                  onOpenPreview={handleOpenPreview}
+                  onDeleteCam={handleDeleteCam}
+                  onDeleteNc={handleDeleteNc}
+                  deletingCam={deletingCam}
+                  deletingNc={deletingNc}
+                  isCamStage={isCamStage}
+                  isMachiningStage={isMachiningStage}
+                  downloading={downloading}
+                  uploading={uploading}
+                  currentStageOrder={currentStageOrder}
+                />
+              </div>
+            ))}
+          </div>
         ) : (
           <WorksheetCardGrid
             requests={paginatedRequests}
@@ -1222,6 +1305,7 @@ export const RequestPage = ({
             isMachiningStage={isMachiningStage}
             downloading={downloading}
             uploading={uploading}
+            currentStageOrder={currentStageOrder}
           />
         )}
         {!isEmpty && paginatedRequests.length < filteredAndSorted.length && (
