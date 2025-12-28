@@ -35,13 +35,8 @@ export const SettingsScaffold = ({
         >
           <TabsList
             className={cn(
-              "grid w-full",
-              totalTabs === 1 && "grid-cols-1",
-              totalTabs === 2 && "grid-cols-2",
-              totalTabs === 3 && "grid-cols-3",
-              totalTabs === 4 && "grid-cols-4",
-              totalTabs === 5 && "grid-cols-5",
-              totalTabs === 6 && "grid-cols-6"
+              "flex w-full flex-nowrap gap-2 overflow-x-auto",
+              "py-1"
             )}
           >
             {tabs.map((t) => (
@@ -49,7 +44,7 @@ export const SettingsScaffold = ({
                 key={t.key}
                 value={t.key}
                 className={cn(
-                  "flex items-center gap-2",
+                  "flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2",
                   highlightTabKey === t.key &&
                     "ring-2 ring-primary/60 shadow-[0_10px_40px_rgba(14,92,228,0.18)]"
                 )}

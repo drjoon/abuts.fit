@@ -5,11 +5,12 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { AccountTab } from "./components/AccountTab";
+import { AccountTab } from "@/components/settings/AccountTab";
+import { StaffTab } from "@/components/settings/StaffTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
-import { User, Bell } from "lucide-react";
+import { User, Users, Bell } from "lucide-react";
 
-type TabKey = "account" | "notifications";
+type TabKey = "account" | "staff" | "notifications";
 
 export const AdminSettingsPage = () => {
   const { user } = useAuthStore();
@@ -22,6 +23,12 @@ export const AdminSettingsPage = () => {
         label: "계정",
         icon: User,
         content: <AccountTab userData={user} />,
+      },
+      {
+        key: "staff",
+        label: "임직원",
+        icon: Users,
+        content: <StaffTab userData={user} />,
       },
       {
         key: "notifications",
@@ -42,8 +49,6 @@ export const AdminSettingsPage = () => {
 
   return (
     <SettingsScaffold
-      title="설정"
-      subtitle="시스템 설정을 관리하세요"
       tabs={tabs}
       activeTab={activeTab}
       onTabChange={(next) => setSearchParams({ tab: next })}

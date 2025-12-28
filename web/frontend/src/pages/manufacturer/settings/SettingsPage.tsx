@@ -5,16 +5,18 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { AccountTab } from "./components/AccountTab";
+import { AccountTab } from "@/components/settings/AccountTab";
+import { StaffTab } from "@/components/settings/StaffTab";
 import { BusinessTab } from "./components/BusinessTab";
 import { PricingTab } from "@/components/settings/PricingTab";
 import { PaymentTab } from "@/components/settings/CreditPaymentTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
-import { User, Building2, CreditCard, Bell, Shield } from "lucide-react";
+import { User, Users, Building2, CreditCard, Bell, Shield } from "lucide-react";
 import { ManufacturerSecurity } from "./Security";
 
 type TabKey =
   | "account"
+  | "staff"
   | "business"
   | "pricing"
   | "payment"
@@ -32,6 +34,12 @@ export const ManufacturerSettingsPage = () => {
         label: "계정",
         icon: User,
         content: <AccountTab userData={user} />,
+      },
+      {
+        key: "staff",
+        label: "임직원",
+        icon: Users,
+        content: <StaffTab userData={user} />,
       },
       {
         key: "business",
