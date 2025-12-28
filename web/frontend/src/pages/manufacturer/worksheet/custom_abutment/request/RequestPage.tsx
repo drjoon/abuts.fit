@@ -100,6 +100,23 @@ const stageOrder: Record<string, number> = {
   추적관리: 5,
 };
 
+const getAcceptByStage = (stage: string) => {
+  switch (stage) {
+    case "의뢰":
+      return ".stl";
+    case "CAM":
+      return ".cam.stl";
+    case "가공":
+      return ".png,.jpg,.jpeg,.webp,.bmp";
+    case "세척·검사·포장":
+    case "발송":
+    case "추적관리":
+      return ".png,.jpg,.jpeg,.webp,.bmp";
+    default:
+      return ".stl";
+  }
+};
+
 const WorksheetCardGrid = ({
   requests,
   onDownload,
@@ -163,8 +180,16 @@ const WorksheetCardGrid = ({
         }
       };
 
-      // 요청/의뢰/CAM: CAM 결과 업로드(.cam.stl 형태의 STL) / 가공 탭: NC 업로드(.nc)
-      const accept = isMachiningStage ? ".nc" : ".stl";
+      const currentStageForTab = isMachiningStage
+        ? "가공"
+        : isCamStage
+        ? "CAM"
+        : "의뢰";
+      const stageLabel = computeStageLabel(request, {
+        isCamStage,
+        isMachiningStage,
+      });
+      const accept = getAcceptByStage(stageLabel || currentStageForTab);
       const formatCamDisplayName = (name: string) => {
         if (!name) return "파일명 없음";
         if (isCamStage) {
@@ -197,11 +222,6 @@ const WorksheetCardGrid = ({
         caseInfos.ncFile?.originalName
       );
       const isDeletingNc = !!deletingNc[request._id];
-      const stageLabel = computeStageLabel(request, {
-        isCamStage,
-        isMachiningStage,
-      });
-
       return (
         <Card
           key={request._id}
