@@ -7,21 +7,11 @@ import {
 } from "@/features/components/SettingsScaffold";
 import { AccountTab } from "@/components/settings/AccountTab";
 import { StaffTab } from "@/components/settings/StaffTab";
-import { BusinessTab } from "./components/BusinessTab";
-import { PricingTab } from "@/components/settings/PricingTab";
-import { PaymentTab } from "@/components/settings/CreditPaymentTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
-import { User, Users, Building2, CreditCard, Bell, Shield } from "lucide-react";
+import { User, Users, Bell, Shield } from "lucide-react";
 import { ManufacturerSecurity } from "./Security";
 
-type TabKey =
-  | "account"
-  | "staff"
-  | "business"
-  | "pricing"
-  | "payment"
-  | "notifications"
-  | "security";
+type TabKey = "account" | "staff" | "notifications" | "security";
 
 export const ManufacturerSettingsPage = () => {
   const { user } = useAuthStore();
@@ -40,24 +30,6 @@ export const ManufacturerSettingsPage = () => {
         label: "임직원",
         icon: Users,
         content: <StaffTab userData={user} />,
-      },
-      {
-        key: "business",
-        label: "사업자",
-        icon: Building2,
-        content: <BusinessTab userData={user} />,
-      },
-      {
-        key: "pricing",
-        label: "가격",
-        icon: CreditCard,
-        content: <PricingTab />,
-      },
-      {
-        key: "payment",
-        label: "결제",
-        icon: CreditCard,
-        content: <PaymentTab userData={user} />,
       },
       {
         key: "notifications",
