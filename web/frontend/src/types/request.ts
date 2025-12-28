@@ -16,6 +16,25 @@ export interface RequestCaseInfos {
   maxDiameter?: number;
   connectionDiameter?: number;
   workType?: string;
+  file?: {
+    fileName?: string;
+    originalName?: string;
+    fileType?: string;
+    fileSize?: number;
+    filePath?: string;
+    s3Key?: string;
+    s3Url?: string;
+  };
+  camFile?: {
+    fileName?: string;
+    originalName?: string;
+    fileType?: string;
+    fileSize?: number;
+    filePath?: string;
+    s3Key?: string;
+    s3Url?: string;
+    uploadedAt?: string;
+  };
 }
 
 // 프론트에서 공통으로 사용하는 의뢰 타입 (백엔드 Request 모델의 부분집합)

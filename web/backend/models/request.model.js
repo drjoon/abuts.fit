@@ -65,6 +65,18 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      camFile: {
+        fileName: String,
+        fileType: String,
+        fileSize: Number,
+        filePath: String,
+        s3Key: String,
+        s3Url: String,
+        uploadedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
     },
     status: {
       // 의뢰인용 상태

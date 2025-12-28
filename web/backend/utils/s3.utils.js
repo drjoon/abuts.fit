@@ -243,7 +243,11 @@ const deleteFileFromS3 = async (key, bucketOverride) => {
   }
 };
 
-const getSignedUrl = async (key, expires = 3600) => {
+const getSignedUrl = async (
+  key,
+  expires = 3600,
+  { responseDisposition, responseContentType } = {}
+) => {
   const guardKey = `s3-signedUrl:${key}`;
   const { blocked, count } = shouldBlockExternalCall(guardKey);
   if (blocked) {
@@ -258,6 +262,12 @@ const getSignedUrl = async (key, expires = 3600) => {
   const command = new GetObjectCommand({
     Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
     Key: key,
+    ...(responseDisposition
+      ? { ResponseContentDisposition: responseDisposition }
+      : {}),
+    ...(responseContentType
+      ? { ResponseContentType: responseContentType }
+      : {}),
   });
   const { getSignedUrl: getSignedUrlV3 } = await import(
     "@aws-sdk/s3-request-presigner"

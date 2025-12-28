@@ -31,8 +31,12 @@ router.get("/", (req, res) => {
   return requestController.getMyRequests(req, res);
 });
 
-// 모든 의뢰 목록 조회 (관리자만 가능)
-router.get("/all", authorize(["admin"]), requestController.getAllRequests);
+// 모든 의뢰 목록 조회 (제조사/관리자)
+router.get(
+  "/all",
+  authorize(["manufacturer", "admin"]),
+  requestController.getAllRequests
+);
 
 // 내 의뢰 목록 조회 (의뢰자용)
 router.get(
@@ -112,6 +116,34 @@ router.put("/:id", requestController.updateRequest);
 
 // 의뢰 상태 변경 (권한 검증은 컨트롤러에서 처리)
 router.patch("/:id/status", requestController.updateRequestStatus);
+
+// 제조사/관리자: 원본 STL 다운로드 URL
+router.get(
+  "/:id/original-file-url",
+  authorize(["manufacturer", "admin"]),
+  requestController.getOriginalFileUrl
+);
+
+// 제조사/관리자: CAM STL 다운로드 URL
+router.get(
+  "/:id/cam-file-url",
+  authorize(["manufacturer", "admin"]),
+  requestController.getCamFileUrl
+);
+
+// 제조사/관리자: CAM 결과 업로드 메타 저장 및 상태 전환
+router.post(
+  "/:id/cam-file",
+  authorize(["manufacturer", "admin"]),
+  requestController.saveCamFileAndCompleteCam
+);
+
+// 제조사/관리자: CAM 결과 파일 삭제 및 상태 롤백
+router.delete(
+  "/:id/cam-file",
+  authorize(["manufacturer", "admin"]),
+  requestController.deleteCamFileAndRollback
+);
 
 // 의뢰를 Draft로 복제 (의뢰자/관리자)
 router.post(
