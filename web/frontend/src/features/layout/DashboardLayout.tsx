@@ -57,20 +57,17 @@ const sidebarItems = {
   ],
   admin: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
-    { icon: Users, label: "사용자 관리", href: "/dashboard/users" },
+    { icon: Users, label: "사용자", href: "/dashboard/users" },
+    { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
     {
       icon: FileText,
-      label: "의뢰 모니터링",
+      label: "의뢰",
       href: "/dashboard/monitoring",
     },
-    {
-      icon: Mail,
-      label: "메일",
-      href: "/dashboard/mail",
-    },
+    { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     {
       icon: MessageSquare,
-      label: "채팅 관리",
+      label: "채팅",
       href: "/dashboard/chat-management",
     },
     {
@@ -78,13 +75,12 @@ const sidebarItems = {
       label: "메시지",
       href: "/dashboard/sms",
     },
-    { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
-    { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
     {
-      icon: Shield,
-      label: "보안 설정",
-      href: "/dashboard/security-settings",
+      icon: Mail,
+      label: "메일",
+      href: "/dashboard/mail",
     },
+    { icon: Shield, label: "보안", href: "/dashboard/security-settings" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
 } as const;
