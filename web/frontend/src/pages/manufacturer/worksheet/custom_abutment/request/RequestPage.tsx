@@ -275,11 +275,11 @@ const WorksheetCardGrid = ({
                       {isMachiningStage ? (
                         <FunctionalItemCard
                           onRemove={() => onDeleteNc(request)}
-                          confirmTitle="NC 파일을 삭제할까요?"
+                          confirmTitle="이전 단계로 돌아갈까요?"
                           confirmDescription={
-                            "삭제 시 CAM 단계로 되돌아가며 CAM 탭으로 다시 이동합니다."
+                            "되돌리면 업로드된 NC 파일이 삭제되고 CAM 단계로 되돌아가 CAM 탭으로 이동합니다."
                           }
-                          confirmLabel="삭제"
+                          confirmLabel="되돌리기"
                           cancelLabel="취소"
                           disabled={isDeletingNc}
                           className="border-0 bg-transparent hover:shadow-none"
@@ -291,11 +291,11 @@ const WorksheetCardGrid = ({
                       ) : isCamStage && hasCamFile ? (
                         <FunctionalItemCard
                           onRemove={() => onDeleteCam(request)}
-                          confirmTitle="CAM 수정본을 삭제할까요?"
+                          confirmTitle="이전 단계로 돌아갈까요?"
                           confirmDescription={
-                            "삭제 시 상태가 가공전으로 돌아가며 의뢰 탭으로 다시 이동합니다."
+                            "되돌리면 업로드된 CAM 파일이 삭제되고 상태가 의뢰 단계로 돌아가며 의뢰 탭으로 이동합니다."
                           }
-                          confirmLabel="삭제"
+                          confirmLabel="되돌리기"
                           cancelLabel="취소"
                           disabled={isDeletingCam}
                           className="border-0 bg-transparent hover:shadow-none"
