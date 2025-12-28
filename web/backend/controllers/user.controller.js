@@ -1,7 +1,9 @@
 import User from "../models/user.model.js";
+import ActivityLog from "../models/activityLog.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import crypto from "crypto";
 import { SolapiMessageService } from "solapi";
+import { Types } from "mongoose";
 
 /**
  * 사용자 프로필 조회
@@ -555,4 +557,54 @@ export {
   verifyPhoneVerification,
   getNotificationSettings,
   updateNotificationSettings,
+  getMySecurityLogs,
 };
+
+/**
+ * 내 보안 로그 조회 (최근 로그인 기록 등)
+ * @route GET /api/users/security-logs
+ * @query limit?: number (default 10, max 100)
+ */
+async function getMySecurityLogs(req, res) {
+  try {
+    const userId = req.user?._id;
+    if (!userId || !Types.ObjectId.isValid(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: "인증이 필요합니다.",
+      });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+
+    const logsRaw = await ActivityLog.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    const logs = logsRaw.map((log) => {
+      const severity =
+        log.severity ||
+        (log.details && typeof log.details.severity === "string"
+          ? log.details.severity
+          : "info");
+      const status =
+        log.status ||
+        (log.details && typeof log.details.status === "string"
+          ? log.details.status
+          : "info");
+      return { ...log, severity, status };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { logs },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "보안 로그 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}

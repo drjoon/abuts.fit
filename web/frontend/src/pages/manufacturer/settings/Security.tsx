@@ -7,39 +7,32 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, CheckCircle, Shield, AlertCircle } from "lucide-react";
+import { Shield } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/lib/apiClient";
 import { useToast } from "@/hooks/use-toast";
 
-type SystemStatusItem = { name: string; status: string; message?: string };
-
 const getStatusBadge = (status: string) => {
-  switch (status) {
-    case "ok":
-      return (
-        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-          정상
-        </Badge>
-      );
-    case "warning":
-      return (
-        <Badge className="bg-amber-100 text-amber-700 border-amber-200">
-          주의
-        </Badge>
-      );
-    case "critical":
-      return <Badge variant="destructive">심각</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
+  if (!status) return null;
+  const normalized = String(status).toLowerCase();
+  const label = status === "ok" ? "성공" : status;
+  if (normalized === "ok" || normalized === "success") {
+    return (
+      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+        {label}
+      </Badge>
+    );
   }
+  if (normalized === "fail" || normalized === "error") {
+    return <Badge variant="destructive">{label}</Badge>;
+  }
+  return <Badge variant="outline">{label}</Badge>;
 };
 
 export const ManufacturerSecurity = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [statusItems, setStatusItems] = useState<SystemStatusItem[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
@@ -47,31 +40,20 @@ export const ManufacturerSecurity = () => {
       if (!token) return;
       setLoading(true);
       try {
-        const [statsRes, logsRes] = await Promise.all([
-          apiFetch<any>({
-            path: "/api/admin/security-stats",
-            method: "GET",
-            token,
-          }),
-          apiFetch<any>({
-            path: "/api/admin/security-logs?limit=10",
-            method: "GET",
-            token,
-          }),
-        ]);
-
-        if (statsRes.ok && statsRes.data?.success) {
-          setStatusItems(statsRes.data.data?.systemStatus || []);
-        } else if (statsRes.status === 403) {
-          toast({ title: "접근 권한이 없습니다.", variant: "destructive" });
-        }
+        const logsRes = await apiFetch<any>({
+          path: "/api/users/security-logs?limit=10",
+          method: "GET",
+          token,
+        });
 
         if (logsRes.ok && logsRes.data?.success) {
           setLogs(logsRes.data.data?.logs || []);
+        } else if (logsRes.status === 403) {
+          toast({ title: "접근 권한이 없습니다.", variant: "destructive" });
         }
       } catch (error: any) {
         toast({
-          title: "보안 정보 불러오기 실패",
+          title: "최근 로그인 기록을 불러오지 못했습니다",
           description: String(error),
           variant: "destructive",
         });
@@ -87,7 +69,7 @@ export const ManufacturerSecurity = () => {
       <div>
         <h1 className="text-2xl font-semibold">보안</h1>
         <p className="text-muted-foreground mt-1">
-          시스템 상태와 최근 보안 이벤트를 확인하세요.
+          최근 로그인 기록만 표시합니다.
         </p>
       </div>
 
@@ -95,49 +77,16 @@ export const ManufacturerSecurity = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
-            시스템 상태
+            최근 로그인 기록
           </CardTitle>
-          <CardDescription>네트워크, 백업 등 주요 상태</CardDescription>
+          <CardDescription>
+            마지막 10건의 로그인 시도를 표시합니다.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {loading && (
             <div className="text-sm text-muted-foreground">불러오는 중...</div>
           )}
-          {!loading && statusItems.length === 0 && (
-            <div className="text-sm text-muted-foreground">
-              표시할 상태 정보가 없습니다.
-            </div>
-          )}
-          {!loading &&
-            statusItems.map((item) => (
-              <div
-                key={item.name}
-                className="flex items-center justify-between p-3 border rounded-lg"
-              >
-                <div>
-                  <div className="font-medium">{item.name}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {item.message || "-"}
-                  </div>
-                </div>
-                {item.status === "ok" ? (
-                  <CheckCircle className="h-5 w-5 text-emerald-600" />
-                ) : item.status === "warning" ? (
-                  <AlertCircle className="h-5 w-5 text-amber-600" />
-                ) : (
-                  <AlertTriangle className="h-5 w-5 text-rose-600" />
-                )}
-              </div>
-            ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>최근 보안 로그</CardTitle>
-          <CardDescription>마지막 10건의 이벤트를 표시합니다.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
           {logs.map((log) => (
             <div
               key={log._id || log.id}

@@ -27,4 +27,7 @@ router.get("/notification-settings", userController.getNotificationSettings);
 // 알림 설정 수정
 router.put("/notification-settings", userController.updateNotificationSettings);
 
+// 내 보안 로그 (로그인 기록 등)
+router.get("/security-logs", userController.getMySecurityLogs);
+
 export default router;

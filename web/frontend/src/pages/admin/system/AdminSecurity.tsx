@@ -567,6 +567,9 @@ export const AdminSecurity = () => {
                       <h4 className="font-medium">{log.action || "이벤트"}</h4>
                       {log.severity ? getSeverityBadge(log.severity) : null}
                       {log.status ? getStatusBadge(log.status) : null}
+                      {!log.userId && (
+                        <Badge variant="secondary">계정 없음</Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       {log.userId ? <span>사용자: {log.userId}</span> : null}

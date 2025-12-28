@@ -1831,6 +1831,14 @@ async function getSecurityLogs(req, res) {
     const skip = (page - 1) * limit;
 
     const filter = {};
+    if (req.query.userId) {
+      if (!Types.ObjectId.isValid(req.query.userId)) {
+        return res
+          .status(400)
+          .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
+      }
+      filter.userId = new Types.ObjectId(req.query.userId);
+    }
     if (req.query.action) filter.action = req.query.action;
 
     const logsRaw = await ActivityLog.find(filter)
