@@ -26,14 +26,9 @@ export const ManufacturerWorksheetPage = () => {
                 const status = String(req.status || "").trim();
                 const s1 = String(req.status1 || "").trim();
                 const s2 = String(req.status2 || "").trim();
-                // 가공 단계: status1이 가공이거나 상태가 가공전/가공후인 모든 건
+                // 가공 단계: status=가공/중 이면서 NC 파일이 실제로 존재(s3Key)하는 건만 노출
                 return (
-                  s1 === "가공" ||
-                  status === "가공전" ||
-                  status === "가공후" ||
-                  s2 === "전" ||
-                  s2 === "중" ||
-                  s2 === "후"
+                  s1 === "가공" && s2 === "중" && !!req.caseInfos?.ncFile?.s3Key
                 );
               }}
             />
@@ -46,7 +41,13 @@ export const ManufacturerWorksheetPage = () => {
                 const status = String(req.status || "").trim();
                 const s1 = String(req.status1 || "").trim();
                 const s2 = String(req.status2 || "").trim();
-                return status === "가공후" || (s1 === "가공" && s2 === "후");
+                // CAM 단계: 가공 후 상태이며 NC가 아직 없는 건만 노출
+                const isCamStage =
+                  status === "가공후" || (s1 === "가공" && s2 === "후");
+                const hasNcKey = !!req.caseInfos?.ncFile?.s3Key;
+                const isMachiningButMissingNc =
+                  s1 === "가공" && s2 === "중" && !hasNcKey;
+                return (isCamStage && !hasNcKey) || isMachiningButMissingNc;
               }}
             />
           );

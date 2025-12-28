@@ -18,6 +18,9 @@ export const {
   updateRequest,
   updateRequestStatus,
   deleteRequest,
+  getNcFileUrl,
+  saveNcFileAndMoveToMachining,
+  deleteNcFileAndRollbackCam,
 } = commonController;
 
 export const {

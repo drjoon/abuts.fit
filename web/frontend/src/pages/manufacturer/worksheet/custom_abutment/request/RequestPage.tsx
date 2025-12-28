@@ -65,20 +65,26 @@ const WorksheetCardGrid = ({
   onUpload,
   onOpenPreview,
   onDeleteCam,
+  onDeleteNc,
   downloading,
   uploading,
   deletingCam,
+  deletingNc,
   isCamStage,
+  isMachiningStage,
 }: {
   requests: ManufacturerRequest[];
   onDownload: (req: ManufacturerRequest) => void;
   onUpload: (req: ManufacturerRequest, files: File[]) => void;
   onOpenPreview: (req: ManufacturerRequest) => void;
   onDeleteCam: (req: ManufacturerRequest) => void;
+  onDeleteNc: (req: ManufacturerRequest) => void;
   isCamStage: boolean;
+  isMachiningStage: boolean;
   downloading: Record<string, boolean>;
   uploading: Record<string, boolean>;
   deletingCam: Record<string, boolean>;
+  deletingNc: Record<string, boolean>;
 }) => (
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
     {requests.map((request) => {
@@ -116,13 +122,15 @@ const WorksheetCardGrid = ({
         }
       };
 
-      const accept = ".stl,.obj,.zip";
-      const displayFileName =
-        caseInfos.file?.fileName ||
-        caseInfos.file?.originalName ||
-        caseInfos.camFile?.fileName ||
-        caseInfos.camFile?.originalName ||
-        "파일명 없음";
+      // 요청/의뢰/CAM: CAM 결과 업로드(.cam.stl 형태의 STL) / 가공 탭: NC 업로드(.nc)
+      const accept = isMachiningStage ? ".nc" : ".stl";
+      const displayFileName = isMachiningStage
+        ? caseInfos.ncFile?.fileName || caseInfos.ncFile?.originalName || ""
+        : caseInfos.file?.fileName ||
+          caseInfos.file?.originalName ||
+          caseInfos.camFile?.fileName ||
+          caseInfos.camFile?.originalName ||
+          "파일명 없음";
 
       const hasCamFile = !!(
         caseInfos.camFile?.s3Key ||
@@ -130,6 +138,13 @@ const WorksheetCardGrid = ({
         caseInfos.camFile?.originalName
       );
       const isDeletingCam = !!deletingCam[request._id];
+
+      const hasNcFile = !!(
+        caseInfos.ncFile?.s3Key ||
+        caseInfos.ncFile?.fileName ||
+        caseInfos.ncFile?.originalName
+      );
+      const isDeletingNc = !!deletingNc[request._id];
 
       return (
         <Card
@@ -171,8 +186,24 @@ const WorksheetCardGrid = ({
 
                 return (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      {isCamStage && hasCamFile ? (
+                    <div>
+                      {isMachiningStage ? (
+                        <FunctionalItemCard
+                          onRemove={() => onDeleteNc(request)}
+                          confirmTitle="NC 파일을 삭제할까요?"
+                          confirmDescription={
+                            "삭제 시 CAM 단계로 되돌아가며 CAM 탭으로 다시 이동합니다."
+                          }
+                          confirmLabel="삭제"
+                          cancelLabel="취소"
+                          disabled={isDeletingNc}
+                          className="border-0 bg-transparent hover:shadow-none"
+                        >
+                          <div className="text-xs font-semibold text-blue-700 pr-8">
+                            {badgeLabel}
+                          </div>
+                        </FunctionalItemCard>
+                      ) : isCamStage && hasCamFile ? (
                         <FunctionalItemCard
                           onRemove={() => onDeleteCam(request)}
                           confirmTitle="CAM 수정본을 삭제할까요?"
@@ -193,32 +224,35 @@ const WorksheetCardGrid = ({
                           {badgeLabel}
                         </div>
                       )}
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-[13px] min-w-[78px] hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700"
-                          onClick={(e) => {
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-[13px] min-w-[104px] hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDownload(request);
+                        }}
+                        disabled={isDownloading}
+                      >
+                        {isDownloading ? "다운로드중..." : "다운로드"}
+                      </Button>
+                      <label
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center justify-center min-w-[104px] px-3 py-1.5 rounded-md border border-slate-200 bg-white text-[13px] font-medium text-slate-700 cursor-pointer hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700 transition"
+                      >
+                        {isUploading ? "업로드 중..." : "업로드"}
+                        <input
+                          type="file"
+                          accept={accept}
+                          className="hidden"
+                          onChange={(e) => {
                             e.stopPropagation();
-                            onDownload(request);
+                            handleSelectFiles(e);
                           }}
-                          disabled={isDownloading}
-                        >
-                          {isDownloading ? "다운로드중..." : "다운로드"}
-                        </Button>
-                        <label className="inline-flex items-center justify-center min-w-[78px] px-3 py-1.5 rounded-md border border-slate-200 bg-white text-[13px] font-medium text-slate-700 cursor-pointer hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700 transition">
-                          {isUploading ? "업로드 중..." : "업로드"}
-                          <input
-                            type="file"
-                            accept={accept}
-                            className="hidden"
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              handleSelectFiles(e);
-                            }}
-                          />
-                        </label>
-                      </div>
+                        />
+                      </label>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 flex gap-1">
@@ -310,8 +344,10 @@ export const RequestPage = ({
   const { worksheetSearch } = useOutletContext<{
     worksheetSearch: string;
   }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isCamStage = (searchParams.get("stage") || "request") === "cam";
+  const isMachiningStage =
+    (searchParams.get("stage") || "request") === "machining";
 
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -323,7 +359,23 @@ export const RequestPage = ({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewFiles, setPreviewFiles] = useState<PreviewFiles>({});
+  const [previewNcText, setPreviewNcText] = useState<string>("");
+  const [previewNcName, setPreviewNcName] = useState<string>("");
   const [deletingCam, setDeletingCam] = useState<Record<string, boolean>>({});
+  const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
+
+  const decodeNcText = useCallback((buffer: ArrayBuffer) => {
+    // 우선 UTF-8 시도 후 깨진 경우 EUC-KR로 재시도
+    const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
+    const utf8Text = utf8Decoder.decode(buffer);
+    if (!utf8Text.includes("\uFFFD")) return utf8Text;
+    try {
+      const eucKrDecoder = new TextDecoder("euc-kr", { fatal: false });
+      return eucKrDecoder.decode(buffer);
+    } catch {
+      return utf8Text;
+    }
+  }, []);
   const { toast } = useToast();
   const { uploadFiles } = useS3TempUpload({ token });
 
@@ -334,7 +386,7 @@ export const RequestPage = ({
       setIsLoading(true);
       const url =
         user?.role === "admin" ? "/api/admin/requests" : "/api/requests";
-
+      const params = new URLSearchParams();
       const res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -351,8 +403,29 @@ export const RequestPage = ({
       }
 
       const data = await res.json();
-      if (data.success && Array.isArray(data.data?.requests)) {
-        setRequests(data.data.requests);
+      const raw = data?.data;
+      const list = Array.isArray(raw?.requests)
+        ? raw.requests
+        : Array.isArray(raw)
+        ? raw
+        : [];
+      // DB 메타 확인용 로그
+      if (list.length) {
+        console.groupCollapsed("[request files] 목록");
+        list.forEach((req: ManufacturerRequest) => {
+          console.log(req._id, {
+            file: req.caseInfos?.file,
+            camFile: req.caseInfos?.camFile,
+            ncFile: req.caseInfos?.ncFile,
+            status: req.status,
+            status1: req.status1,
+            status2: req.status2,
+          });
+        });
+        console.groupEnd();
+      }
+      if (data.success && Array.isArray(raw?.requests)) {
+        setRequests(raw.requests);
       }
     } catch (error) {
       console.error("Error fetching requests:", error);
@@ -371,7 +444,13 @@ export const RequestPage = ({
       if (!token) return;
       setDownloading((prev) => ({ ...prev, [req._id]: true }));
       try {
-        const res = await fetch(`/api/requests/${req._id}/original-file-url`, {
+        const endpoint = isMachiningStage
+          ? `/api/requests/${req._id}/nc-file-url`
+          : isCamStage
+          ? `/api/requests/${req._id}/cam-file-url`
+          : `/api/requests/${req._id}/original-file-url`;
+
+        const res = await fetch(endpoint, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -379,8 +458,8 @@ export const RequestPage = ({
         if (!res.ok) {
           throw new Error("download url failed");
         }
-        const body = await res.json();
-        const url = body?.data?.url;
+        const data = await res.json();
+        const url = data?.data?.url;
         if (url) {
           window.open(url, "_blank");
         } else {
@@ -389,14 +468,18 @@ export const RequestPage = ({
       } catch (error) {
         toast({
           title: "다운로드 실패",
-          description: "원본 STL을 가져올 수 없습니다.",
+          description: isMachiningStage
+            ? "NC 파일을 가져올 수 없습니다."
+            : isCamStage
+            ? "CAM STL을 가져올 수 없습니다."
+            : "원본 STL을 가져올 수 없습니다.",
           variant: "destructive",
         });
       } finally {
         setDownloading((prev) => ({ ...prev, [req._id]: false }));
       }
     },
-    [token, toast]
+    [token, toast, isCamStage, isMachiningStage]
   );
 
   const handleDeleteCam = useCallback(
@@ -418,6 +501,19 @@ export const RequestPage = ({
           description: "CAM 수정본을 삭제하고 상태를 가공전으로 되돌렸습니다.",
         });
         await fetchRequests();
+        // 의뢰 탭으로 이동하고 모달/프리뷰 초기화
+        setPreviewOpen(false);
+        setPreviewFiles({});
+        setPreviewNcText("");
+        setPreviewNcName("");
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("stage", "receive");
+            return next;
+          },
+          { replace: true }
+        );
       } catch (error) {
         toast({
           title: "삭제 실패",
@@ -431,40 +527,91 @@ export const RequestPage = ({
     [token, toast, fetchRequests]
   );
 
+  const handleDeleteNc = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!token) return;
+      setDeletingNc((prev) => ({ ...prev, [req._id]: true }));
+      try {
+        const res = await fetch(`/api/requests/${req._id}/nc-file`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!res.ok) {
+          throw new Error("delete nc file failed");
+        }
+        toast({
+          title: "삭제 완료",
+          description: "NC 파일을 삭제하고 CAM 단계로 되돌렸습니다.",
+        });
+        await fetchRequests();
+        // CAM 탭으로 이동하고 모달/프리뷰 초기화
+        setPreviewOpen(false);
+        setPreviewFiles({});
+        setPreviewNcText("");
+        setPreviewNcName("");
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("stage", "cam");
+            return next;
+          },
+          { replace: true }
+        );
+      } catch (error) {
+        toast({
+          title: "삭제 실패",
+          description: "NC 파일 삭제에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setDeletingNc((prev) => ({ ...prev, [req._id]: false }));
+      }
+    },
+    [token, toast, fetchRequests]
+  );
+
   const handleUploadCam = useCallback(
     async (req: ManufacturerRequest, files: File[]) => {
       if (!token) return;
       const normalize = (name: string) =>
         name.trim().toLowerCase().normalize("NFC");
-      const expectedName =
+      const originalName =
         req.caseInfos?.file?.fileName ||
         req.caseInfos?.file?.originalName ||
         req.caseInfos?.camFile?.fileName ||
         req.caseInfos?.camFile?.originalName ||
         "";
+      // 원본 확장자(.stl 또는 .cam.stl)가 섞여 있어도 마지막 확장자만 제거
+      const originalBase = originalName
+        .replace(/(\.cam\.stl|\.stl)$/i, "")
+        .trim();
+      const expectedCamName = originalBase ? `${originalBase}.cam.stl` : "";
+
       const filtered = files.filter((f) =>
-        [".stl", ".obj", ".zip"].some((ext) =>
-          f.name.toLowerCase().endsWith(ext)
-        )
+        f.name.toLowerCase().endsWith(".cam.stl")
       );
       if (!filtered.length) {
         toast({
           title: "업로드 실패",
-          description: "STL/OBJ/ZIP 파일만 업로드할 수 있습니다.",
+          description: "CAM 파일(.cam.stl)만 업로드할 수 있습니다.",
           variant: "destructive",
         });
         return;
       }
-      if (
-        expectedName &&
-        filtered.some((f) => normalize(f.name) !== normalize(expectedName))
-      ) {
-        toast({
-          title: "파일명 불일치",
-          description: `다운로드한 원본 파일명(${expectedName})과 동일한 파일명으로 업로드해주세요.`,
-          variant: "destructive",
-        });
-        return;
+      if (expectedCamName) {
+        const mismatch = filtered.some(
+          (f) => normalize(f.name) !== normalize(expectedCamName)
+        );
+        if (mismatch) {
+          toast({
+            title: "파일명 불일치",
+            description: `CAM 파일명은 ${expectedCamName} 으로 업로드해주세요.`,
+            variant: "destructive",
+          });
+          return;
+        }
       }
 
       setUploading((prev) => ({ ...prev, [req._id]: true }));
@@ -481,7 +628,7 @@ export const RequestPage = ({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            fileName: first.originalName,
+            fileName: expectedCamName || first.originalName,
             fileType: first.mimetype,
             fileSize: first.size,
             s3Key: first.key,
@@ -510,11 +657,121 @@ export const RequestPage = ({
     [token, uploadFiles, toast, fetchRequests]
   );
 
+  const handleUploadNc = useCallback(
+    async (req: ManufacturerRequest, files: File[]) => {
+      if (!token) return;
+
+      const normalize = (name: string) =>
+        String(name || "")
+          .trim()
+          .toLowerCase()
+          .normalize("NFC");
+
+      const originalName =
+        req.caseInfos?.file?.fileName ||
+        req.caseInfos?.file?.originalName ||
+        "";
+      const base = originalName.includes(".")
+        ? originalName.split(".").slice(0, -1).join(".")
+        : originalName;
+      const expectedNcName = base ? `${base}.nc` : "";
+
+      const filtered = files.filter((f) =>
+        f.name.toLowerCase().endsWith(".nc")
+      );
+      if (!filtered.length) {
+        toast({
+          title: "업로드 실패",
+          description: "NC(.nc) 파일만 업로드할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const firstLocal = filtered[0];
+      if (
+        expectedNcName &&
+        normalize(firstLocal.name) !== normalize(expectedNcName)
+      ) {
+        toast({
+          title: "파일명 불일치",
+          description: `원본과 동일한 파일명(${expectedNcName})으로 업로드해주세요.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setUploading((prev) => ({ ...prev, [req._id]: true }));
+      try {
+        const uploaded = await uploadFiles([firstLocal]);
+        if (!uploaded || !uploaded.length) {
+          throw new Error("upload failed");
+        }
+        const first = uploaded[0];
+        const res = await fetch(`/api/requests/${req._id}/nc-file`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            fileName: expectedNcName || first.originalName,
+            fileType: first.mimetype,
+            fileSize: first.size,
+            s3Key: first.key,
+            s3Url: first.location,
+          }),
+        });
+        if (!res.ok) {
+          throw new Error("save nc file failed");
+        }
+        toast({
+          title: "업로드 완료",
+          description: "CAM 수정본을 업로드했습니다.",
+        });
+        await fetchRequests();
+        // CAM 탭으로 이동하고 모달/프리뷰 초기화
+        setPreviewOpen(false);
+        setPreviewFiles({});
+        setPreviewNcText("");
+        setPreviewNcName("");
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("stage", "cam");
+            return next;
+          },
+          { replace: true }
+        );
+      } catch (error) {
+        console.error(error);
+        toast({
+          title: "업로드 실패",
+          description: "CAM 수정본 업로드에 실패했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setUploading((prev) => ({ ...prev, [req._id]: false }));
+      }
+    },
+    [token, uploadFiles, toast, fetchRequests, setSearchParams]
+  );
+
+  const handleUploadByStage = useCallback(
+    (req: ManufacturerRequest, files: File[]) => {
+      if (isCamStage) return handleUploadNc(req, files);
+      return handleUploadCam(req, files);
+    },
+    [isCamStage, handleUploadNc, handleUploadCam]
+  );
+
   const handleOpenPreview = useCallback(
     async (req: ManufacturerRequest) => {
       if (!token) return;
       try {
         setPreviewLoading(true);
+        setPreviewNcText("");
+        setPreviewNcName("");
         toast({
           title: "다운로드 중...",
           description: "STL을 불러오고 있습니다.",
@@ -588,7 +845,7 @@ export const RequestPage = ({
           req.caseInfos?.camFile?.originalName
         );
 
-        if (isCamStage && hasCamFile) {
+        if ((isCamStage || isMachiningStage) && hasCamFile) {
           const camName =
             req.caseInfos?.camFile?.fileName ||
             req.caseInfos?.camFile?.originalName ||
@@ -614,6 +871,56 @@ export const RequestPage = ({
           }
         }
 
+        if (isMachiningStage) {
+          const ncMeta = req.caseInfos?.ncFile;
+          if (!ncMeta?.s3Key) {
+            toast({
+              title: "NC 파일 정보가 없습니다.",
+              description:
+                "CAM 탭에서 NC 파일을 업로드한 뒤 다시 시도해주세요.",
+              variant: "destructive",
+            });
+            setPreviewLoading(false);
+            return;
+          }
+          const ncUrlRes = await fetch(`/api/requests/${req._id}/nc-file-url`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (ncUrlRes.ok) {
+            const ncUrlBody = await ncUrlRes.json();
+            const ncSignedUrl = ncUrlBody?.data?.url;
+            if (ncSignedUrl) {
+              const ncName =
+                ncMeta?.fileName || ncMeta?.originalName || "program.nc";
+              const r = await fetch(ncSignedUrl);
+              if (r.ok) {
+                const buf = await r.arrayBuffer();
+                const text = decodeNcText(buf);
+                setPreviewNcText(text);
+                setPreviewNcName(ncName);
+              } else {
+                toast({
+                  title: "NC 파일을 불러올 수 없습니다.",
+                  description: "파일이 삭제되었거나 경로가 잘못되었습니다.",
+                  variant: "destructive",
+                });
+              }
+            } else {
+              toast({
+                title: "NC URL 생성 실패",
+                description: "NC 파일 다운로드 URL을 가져오지 못했습니다.",
+                variant: "destructive",
+              });
+            }
+          } else {
+            toast({
+              title: "NC 파일 정보 없음",
+              description: "NC 파일이 존재하지 않습니다.",
+              variant: "destructive",
+            });
+          }
+        }
+
         setPreviewFiles({
           original: originalFile,
           cam: camFile,
@@ -636,7 +943,7 @@ export const RequestPage = ({
         setPreviewLoading(false);
       }
     },
-    [token, toast, isCamStage]
+    [token, toast, isCamStage, isMachiningStage]
   );
 
   useEffect(() => {
@@ -761,11 +1068,14 @@ export const RequestPage = ({
           <WorksheetCardGrid
             requests={filteredAndSorted}
             onDownload={handleDownloadOriginal}
-            onUpload={handleUploadCam}
+            onUpload={handleUploadByStage}
             onOpenPreview={handleOpenPreview}
             onDeleteCam={handleDeleteCam}
+            onDeleteNc={handleDeleteNc}
             deletingCam={deletingCam}
+            deletingNc={deletingNc}
             isCamStage={isCamStage}
+            isMachiningStage={isMachiningStage}
             downloading={downloading}
             uploading={uploading}
           />
@@ -783,6 +1093,10 @@ export const RequestPage = ({
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-4xl">
+          <DialogTitle className="sr-only">의뢰 미리보기</DialogTitle>
+          <DialogDescription className="sr-only">
+            의뢰 파일과 NC 내용을 확인하는 영역입니다.
+          </DialogDescription>
           <div className="space-y-4">
             <div className="rounded-lg border p-3 text-sm text-slate-700">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -829,37 +1143,57 @@ export const RequestPage = ({
             ) : (
               <div
                 className={`grid gap-4 ${
-                  isCamStage ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"
+                  isMachiningStage || isCamStage
+                    ? "grid-cols-1 md:grid-cols-2"
+                    : "grid-cols-1"
                 }`}
               >
                 <div className="border rounded-lg p-3 space-y-2">
                   <div className="text-sm font-semibold text-slate-700">
-                    원본 STL
+                    {isMachiningStage ? "수정본(CAM) STL" : "원본 STL"}
                   </div>
-                  {previewFiles.original ? (
+                  {(
+                    isMachiningStage ? previewFiles.cam : previewFiles.original
+                  ) ? (
                     <StlPreviewViewer
-                      file={previewFiles.original}
+                      file={
+                        (isMachiningStage
+                          ? previewFiles.cam
+                          : previewFiles.original) as File
+                      }
                       showOverlay={false}
                     />
                   ) : (
                     <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
-                      원본 파일 없음
+                      파일 없음
                     </div>
                   )}
                 </div>
-                {isCamStage && (
+                {(isCamStage || isMachiningStage) && (
                   <div className="border rounded-lg p-3 space-y-2">
                     <div className="text-sm font-semibold text-slate-700">
-                      수정본(CAM) STL
+                      {isMachiningStage ? "NC 파일" : "수정본(CAM) STL"}
                     </div>
-                    {previewFiles.cam ? (
+                    {isMachiningStage ? (
+                      <div className="space-y-2">
+                        {/* NC 파일명은 보이지 않도록 숨김 */}
+                        <div className="text-xs text-slate-500 sr-only">
+                          {previewNcName || ""}
+                        </div>
+                        <textarea
+                          className="w-full h-[300px] rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700"
+                          value={previewNcText}
+                          readOnly
+                        />
+                      </div>
+                    ) : previewFiles.cam ? (
                       <StlPreviewViewer
                         file={previewFiles.cam}
                         showOverlay={false}
                       />
                     ) : (
                       <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
-                        수정본 파일 없음
+                        파일 없음
                       </div>
                     )}
                   </div>

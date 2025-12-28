@@ -145,6 +145,27 @@ router.delete(
   requestController.deleteCamFileAndRollback
 );
 
+// 제조사/관리자: NC 파일 다운로드 URL
+router.get(
+  "/:id/nc-file-url",
+  authorize(["manufacturer", "admin"]),
+  requestController.getNcFileUrl
+);
+
+// 제조사/관리자: NC 파일 업로드 메타 저장 (가공 단계 이동)
+router.post(
+  "/:id/nc-file",
+  authorize(["manufacturer", "admin"]),
+  requestController.saveNcFileAndMoveToMachining
+);
+
+// 제조사/관리자: NC 파일 삭제 (CAM 단계 롤백)
+router.delete(
+  "/:id/nc-file",
+  authorize(["manufacturer", "admin"]),
+  requestController.deleteNcFileAndRollbackCam
+);
+
 // 의뢰를 Draft로 복제 (의뢰자/관리자)
 router.post(
   "/:id/clone-to-draft",

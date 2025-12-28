@@ -1,7 +1,8 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
-import { normalizeCaseInfosImplantFields } from "./utils.js";
+import { ApiResponse } from "../../utils/ApiResponse.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { asyncHandler } from "../../utils/asyncHandler.js";
 import {
   applyStatusMapping,
   canAccessRequestAsRequestor,
@@ -9,7 +10,10 @@ import {
   ensureLotNumberForMachining,
   buildRequestorOrgScopeFilter,
 } from "./utils.js";
-import s3Utils from "../../utils/s3.utils.js";
+import s3Utils, {
+  deleteFileFromS3,
+  getSignedUrl as getSignedUrlForS3Key,
+} from "../../utils/s3.utils.js";
 
 /**
  * 모든 의뢰 목록 조회 (관리자용)
@@ -597,31 +601,13 @@ export async function saveCamFileAndCompleteCam(req, res) {
     const { id } = req.params;
     const { fileName, fileType, fileSize, s3Key, s3Url, filePath } = req.body;
 
-    if (!Types.ObjectId.isValid(id)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
-    }
-
-    if (!fileName || !fileType || !fileSize || !(s3Key || s3Url)) {
-      return res.status(400).json({
-        success: false,
-        message: "fileName, fileType, fileSize, s3Key/s3Url는 필수입니다.",
-      });
+    if (!fileName || !s3Key || !s3Url) {
+      throw new ApiError(400, "필수 파일 정보가 없습니다.");
     }
 
     const request = await Request.findById(id);
     if (!request) {
-      return res
-        .status(404)
-        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
-    }
-
-    // 제조사 또는 관리자만 접근
-    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
-      return res
-        .status(403)
-        .json({ success: false, message: "업로드 권한이 없습니다." });
+      throw new ApiError(404, "의뢰를 찾을 수 없습니다.");
     }
 
     request.caseInfos = request.caseInfos || {};
@@ -651,7 +637,6 @@ export async function saveCamFileAndCompleteCam(req, res) {
     });
   }
 }
-
 /**
  * 제조사/관리자: CAM 결과 파일 제거 및 상태 가공전으로 롤백
  * @route DELETE /api/requests/:id/cam-file
@@ -695,6 +680,214 @@ export async function deleteCamFileAndRollback(req, res) {
     res.status(500).json({
       success: false,
       message: "CAM 파일 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getNcFileUrl(req, res) {
+  try {
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "다운로드 권한이 없습니다." });
+    }
+
+    const s3Key = request?.caseInfos?.ncFile?.s3Key;
+    const fileName =
+      request?.caseInfos?.ncFile?.fileName ||
+      request?.caseInfos?.ncFile?.originalName ||
+      "program.nc";
+    if (!s3Key) {
+      return res.status(404).json({
+        success: false,
+        message: "NC 파일 정보가 없습니다.",
+      });
+    }
+
+    const disposition = `attachment; filename="${encodeURIComponent(
+      fileName
+    )}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+
+    const url = await s3Utils.getSignedUrl(s3Key, 900, {
+      responseDisposition: disposition,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { url },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "NC 파일 URL 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function saveNcFileAndMoveToMachining(req, res) {
+  try {
+    const { id } = req.params;
+    const { fileName, fileType, fileSize, s3Key, s3Url, filePath } = req.body;
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    if (!fileName || !s3Key || !s3Url) {
+      return res
+        .status(400)
+        .json({ success: false, message: "필수 파일 정보가 없습니다." });
+    }
+
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "업로드 권한이 없습니다." });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const normalize = (name) => {
+      try {
+        return String(name || "")
+          .trim()
+          .normalize("NFC")
+          .toLowerCase();
+      } catch {
+        return String(name || "")
+          .trim()
+          .toLowerCase();
+      }
+    };
+
+    const rawOriginal =
+      request.caseInfos?.file?.fileName ||
+      request.caseInfos?.file?.originalName;
+
+    const getBaseName = (n) => {
+      const s = String(n || "");
+      if (!s.includes(".")) return s;
+      return s.split(".").slice(0, -1).join(".");
+    };
+
+    const expectedNcName = rawOriginal ? `${getBaseName(rawOriginal)}.nc` : "";
+
+    const lowerName = normalize(fileName);
+    if (!lowerName.endsWith(".nc")) {
+      return res.status(400).json({
+        success: false,
+        message: "NC 파일(.nc)만 업로드할 수 있습니다.",
+      });
+    }
+    if (expectedNcName && normalize(expectedNcName) !== lowerName) {
+      return res.status(400).json({
+        success: false,
+        message: `파일명 불일치: 원본과 동일한 파일명(${expectedNcName})으로 업로드해주세요.`,
+      });
+    }
+
+    request.caseInfos = request.caseInfos || {};
+    request.caseInfos.ncFile = {
+      fileName: expectedNcName || fileName,
+      originalName: expectedNcName || fileName,
+      fileType,
+      fileSize,
+      filePath: filePath || "",
+      s3Key: s3Key || "",
+      s3Url: s3Url || "",
+      uploadedAt: new Date(),
+    };
+
+    // 제조사 공정: CAM(가공/후) -> 가공(중)
+    request.status1 = "가공";
+    request.status2 = "중";
+
+    await request.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "NC 파일이 저장되고 가공 단계로 이동합니다.",
+      data: await normalizeRequestForResponse(request),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "NC 파일 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function deleteNcFileAndRollbackCam(req, res) {
+  try {
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "삭제 권한이 없습니다." });
+    }
+
+    const s3Key = request?.caseInfos?.ncFile?.s3Key;
+    if (s3Key) {
+      try {
+        await deleteFileFromS3(s3Key);
+      } catch (e) {
+        console.warn("delete nc file s3 failed", e);
+      }
+    }
+
+    request.caseInfos = request.caseInfos || {};
+    request.caseInfos.ncFile = undefined;
+
+    // 제조사 공정: 가공(중) -> CAM(가공/후)
+    request.status1 = "가공";
+    request.status2 = "후";
+
+    await request.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "NC 파일이 삭제되고 CAM 단계로 되돌아갑니다.",
+      data: await normalizeRequestForResponse(request),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "NC 파일 삭제 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
