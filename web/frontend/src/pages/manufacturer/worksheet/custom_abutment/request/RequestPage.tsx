@@ -1,7 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { ExpandedRequestCard } from "@/components/ExpandedRequestCard";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   WorksheetDiameterQueueBar,
@@ -19,6 +18,25 @@ type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
 };
 
+const renderStatusBadge = (request: ManufacturerRequest) => {
+  const { status1, status2, status } = request;
+  let label = status;
+
+  if (status1) {
+    if (status2 && status2 !== "없음") {
+      label = `${status1}(${status2})`;
+    } else {
+      label = status1;
+    }
+  }
+
+  return (
+    <div className="inline-flex items-center px-3 py-1 rounded-full border border-slate-200 bg-slate-50 text-[15px] font-medium text-slate-700">
+      {label}
+    </div>
+  );
+};
+
 const getDiameterBucketIndex = (diameter?: number) => {
   if (diameter == null) return -1;
   if (diameter <= 6) return 0;
@@ -29,12 +47,10 @@ const getDiameterBucketIndex = (diameter?: number) => {
 
 const WorksheetCardGrid = ({
   requests,
-  onSelect,
 }: {
   requests: ManufacturerRequest[];
-  onSelect: (request: ManufacturerRequest) => void;
 }) => (
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
     {requests.map((request) => {
       const caseInfos = request.caseInfos || {};
       const workType = (() => {
@@ -56,11 +72,10 @@ const WorksheetCardGrid = ({
       return (
         <Card
           key={request._id}
-          className="shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer h-full flex flex-col"
-          onClick={() => onSelect(request)}
+          className="shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col"
         >
           <CardContent className="pt-6 flex-1 flex flex-col justify-between">
-            <div className="space-y-2 text-[12px] text-slate-700">
+            <div className="space-y-3 text-[18px] text-slate-700">
               {request.referenceIds && request.referenceIds.length > 0 && (
                 <div className="mb-2">
                   {(() => {
@@ -69,7 +84,7 @@ const WorksheetCardGrid = ({
                     const label =
                       extraCount > 0 ? `${first} 외 ${extraCount}건` : first;
                     return (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-100">
+                      <span className="inline-flex items-center px-3 py-1 rounded text-[15px] font-medium bg-purple-50 text-purple-700 border border-purple-100">
                         Ref: {label}
                       </span>
                     );
@@ -78,57 +93,55 @@ const WorksheetCardGrid = ({
               )}
               {(() => {
                 const bucketIndex = getDiameterBucketIndex(
-                  caseInfos.connectionDiameter
+                  caseInfos.maxDiameter
                 );
                 const labels = ["6", "8", "10", "10+"];
 
+                const badgeLabel =
+                  caseInfos.maxDiameter != null
+                    ? `최대직경: ${caseInfos.maxDiameter.toFixed(2)}mm`
+                    : workType === "crown"
+                    ? "크라운"
+                    : "기타";
+
                 if (bucketIndex === -1) {
                   return (
-                    <div className="mb-2">
+                    <div className="mb-2 flex items-center justify-between gap-2">
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                        {workType === "crown" ? "크라운" : "기타"}
+                        {badgeLabel}
                       </span>
+                      {renderStatusBadge(request)}
                     </div>
                   );
                 }
 
                 return (
                   <div className="space-y-1">
-                    <div className="text-xs font-semibold text-blue-700">
-                      {caseInfos.connectionDiameter?.toFixed(2)}mm
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-semibold text-blue-700">
+                        {badgeLabel}
+                      </div>
+                      {renderStatusBadge(request)}
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 flex gap-1">
-                        {labels.map((label, index) => (
-                          <div
-                            key={label}
-                            className={`flex-1 h-1.5 rounded-full ${
-                              index <= bucketIndex
-                                ? "bg-blue-500"
-                                : "bg-slate-200"
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      <div className="flex gap-1 text-[11px] text-slate-500">
-                        {labels.map((label, index) => (
-                          <span
-                            key={label}
-                            className={
-                              index === bucketIndex
-                                ? "font-semibold text-slate-700"
-                                : ""
-                            }
-                          >
-                            {label}
-                          </span>
-                        ))}
+                        {labels.map((label, index) => {
+                          const isActive = index === bucketIndex;
+                          return (
+                            <div
+                              key={label}
+                              className={`flex-1 h-1.5 rounded-full ${
+                                isActive ? "bg-blue-500" : "bg-slate-200"
+                              }`}
+                            />
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
                 );
               })()}
-              <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+              <div className="flex flex-wrap items-center gap-2 text-[16px] text-slate-600">
                 <span>
                   {request.requestor?.organization || request.requestor?.name}
                 </span>
@@ -147,11 +160,14 @@ const WorksheetCardGrid = ({
                   </>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-1">
+              <div className="flex flex-wrap items-center gap-2 text-[16px] text-slate-600">
                 <span>환자 {caseInfos.patientName || "미지정"}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1">
-                <span>치아번호 {caseInfos.tooth || "-"}</span>
+                {caseInfos.tooth && (
+                  <>
+                    <span>•</span>
+                    <span>치아번호 {caseInfos.tooth}</span>
+                  </>
+                )}
                 {caseInfos.connectionDiameter && (
                   <>
                     <span>•</span>
@@ -161,7 +177,7 @@ const WorksheetCardGrid = ({
                   </>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
+              <div className="flex flex-wrap items-center gap-1 text-[15px] text-slate-500">
                 {(caseInfos.implantManufacturer ||
                   caseInfos.implantSystem ||
                   caseInfos.implantType) && (
@@ -172,24 +188,6 @@ const WorksheetCardGrid = ({
                   </span>
                 )}
               </div>
-              {(() => {
-                const { status1, status2, status } = request;
-                let label = status;
-
-                if (status1) {
-                  if (status2 && status2 !== "없음") {
-                    label = `${status1}(${status2})`;
-                  } else {
-                    label = status1;
-                  }
-                }
-
-                return (
-                  <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-[10px] font-medium text-slate-700">
-                    {label}
-                  </div>
-                );
-              })()}
             </div>
           </CardContent>
         </Card>
@@ -210,7 +208,6 @@ export const RequestPage = ({
 
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
   const [receiveQueueModalOpen, setReceiveQueueModalOpen] = useState(false);
   const [receiveSelectedBucket, setReceiveSelectedBucket] =
     useState<DiameterBucketKey | null>(null);
@@ -281,7 +278,7 @@ export const RequestPage = ({
 
     for (const req of filteredAndSorted) {
       const caseInfos = req.caseInfos || {};
-      const bucketIndex = getDiameterBucketIndex(caseInfos.connectionDiameter);
+      const bucketIndex = getDiameterBucketIndex(caseInfos.maxDiameter);
       const item: WorksheetQueueItem = {
         id: req._id,
         client: req.requestor?.organization || req.requestor?.name || "",
@@ -330,20 +327,8 @@ export const RequestPage = ({
       )}
 
       <div className="space-y-4 mt-6">
-        <WorksheetCardGrid
-          requests={filteredAndSorted}
-          onSelect={(request) => setSelectedRequest(request)}
-        />
+        <WorksheetCardGrid requests={filteredAndSorted} />
       </div>
-
-      {selectedRequest && (
-        <ExpandedRequestCard
-          request={selectedRequest}
-          onClose={() => setSelectedRequest(null)}
-          currentUserId={user?.id}
-          currentUserRole={user?.role}
-        />
-      )}
 
       <WorksheetDiameterQueueModal
         open={receiveQueueModalOpen}
