@@ -10,9 +10,16 @@ import { BusinessTab } from "./components/BusinessTab";
 import { PricingTab } from "@/components/settings/PricingTab";
 import { PaymentTab } from "@/components/settings/CreditPaymentTab";
 import { NotificationsTab } from "@/components/settings/NotificationsTab";
-import { User, Building2, CreditCard, Bell } from "lucide-react";
+import { User, Building2, CreditCard, Bell, Shield } from "lucide-react";
+import { ManufacturerSecurity } from "./Security";
 
-type TabKey = "account" | "business" | "pricing" | "payment" | "notifications";
+type TabKey =
+  | "account"
+  | "business"
+  | "pricing"
+  | "payment"
+  | "notifications"
+  | "security";
 
 export const ManufacturerSettingsPage = () => {
   const { user } = useAuthStore();
@@ -49,6 +56,12 @@ export const ManufacturerSettingsPage = () => {
         label: "알림",
         icon: Bell,
         content: <NotificationsTab />,
+      },
+      {
+        key: "security",
+        label: "보안",
+        icon: Shield,
+        content: <ManufacturerSecurity />,
       },
     ],
     [user]

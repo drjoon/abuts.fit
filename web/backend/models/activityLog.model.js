@@ -33,6 +33,8 @@ const activityLogSchema = new Schema(
         "FILE_DELETED",
         "COMMENT_ADDED",
         "테스트 액션",
+        "CHARGE_APPROVED",
+        "CHARGE_REJECTED",
       ],
     },
     details: {

@@ -143,8 +143,9 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
               bankTransactionId: tx._id,
               matchedAt: new Date(),
               matchedBy: "AUTO",
-              adminApproved: true,
-              adminApprovedAt: new Date(),
+              adminApprovalStatus: "APPROVED",
+              adminApprovalAt: new Date(),
+              adminApprovalBy: null,
             },
           },
           { session }

@@ -12,6 +12,8 @@ import {
   adminVerifyChargeOrder,
   adminLockChargeOrder,
   adminUnlockChargeOrder,
+  adminApproveChargeOrder,
+  adminRejectChargeOrder,
 } from "../controllers/adminCreditBPlan.controller.js";
 import {
   adminListBonusGrants,
@@ -122,6 +124,16 @@ router.post(
   "/credits/b-plan/charge-orders/unlock",
   authorize(["admin"], { adminRoles: ["owner"] }),
   adminUnlockChargeOrder
+);
+router.post(
+  "/credits/b-plan/charge-orders/:id/approve",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminApproveChargeOrder
+);
+router.post(
+  "/credits/b-plan/charge-orders/:id/reject",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminRejectChargeOrder
 );
 
 // 가격/리퍼럴 정책 통계

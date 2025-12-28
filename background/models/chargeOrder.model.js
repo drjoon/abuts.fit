@@ -22,9 +22,15 @@ const chargeOrderSchema = new mongoose.Schema(
       default: "PENDING",
       index: true,
     },
-    adminApproved: { type: Boolean, default: false },
-    adminApprovedAt: { type: Date, default: null },
-    adminApprovedBy: {
+    adminApprovalStatus: {
+      type: String,
+      enum: ["PENDING", "APPROVED", "REJECTED"],
+      default: "PENDING",
+      index: true,
+    },
+    adminApprovalNote: { type: String, default: "" },
+    adminApprovalAt: { type: Date, default: null },
+    adminApprovalBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,

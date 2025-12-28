@@ -27,6 +27,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { AutoMatchVerificationTab } from "./components/AutoMatchVerificationTab";
@@ -68,6 +69,10 @@ type ChargeOrder = {
   matchedAt?: string;
   createdAt?: string;
   organizationId?: string;
+  adminApprovalStatus?: "PENDING" | "APPROVED" | "REJECTED";
+  adminApprovalNote?: string;
+  adminApprovalAt?: string;
+  adminApprovalBy?: { name?: string; email?: string };
 };
 
 type BankTransaction = {
@@ -109,6 +114,10 @@ export default function AdminCreditPage() {
   const [matchNote, setMatchNote] = useState("");
   const [matchForce, setMatchForce] = useState(false);
   const [matching, setMatching] = useState(false);
+  const [approveModalOpen, setApproveModalOpen] = useState(false);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectNote, setRejectNote] = useState("");
+  const [processingApproval, setProcessingApproval] = useState(false);
 
   const loadStats = async () => {
     if (!token) return;
@@ -419,41 +428,46 @@ export default function AdminCreditPage() {
         <TabsContent value="orders" className="space-y-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  variant={orderStatusFilter === "" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setOrderStatusFilter("");
-                    loadChargeOrders();
-                  }}
-                >
-                  전체
-                </Button>
-                <Button
-                  variant={
-                    orderStatusFilter === "PENDING" ? "default" : "outline"
-                  }
-                  size="sm"
-                  onClick={() => {
-                    setOrderStatusFilter("PENDING");
-                    loadChargeOrders("PENDING");
-                  }}
-                >
-                  대기중
-                </Button>
-                <Button
-                  variant={
-                    orderStatusFilter === "MATCHED" ? "default" : "outline"
-                  }
-                  size="sm"
-                  onClick={() => {
-                    setOrderStatusFilter("MATCHED");
-                    loadChargeOrders("MATCHED");
-                  }}
-                >
-                  매칭완료
-                </Button>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="text-sm text-muted-foreground">
+                  승인 상태: 대기(PENDING), 승인(APPROVED), 거절(REJECTED)
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button
+                    variant={orderStatusFilter === "" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setOrderStatusFilter("");
+                      loadChargeOrders();
+                    }}
+                  >
+                    전체
+                  </Button>
+                  <Button
+                    variant={
+                      orderStatusFilter === "PENDING" ? "default" : "outline"
+                    }
+                    size="sm"
+                    onClick={() => {
+                      setOrderStatusFilter("PENDING");
+                      loadChargeOrders("PENDING");
+                    }}
+                  >
+                    대기중
+                  </Button>
+                  <Button
+                    variant={
+                      orderStatusFilter === "MATCHED" ? "default" : "outline"
+                    }
+                    size="sm"
+                    onClick={() => {
+                      setOrderStatusFilter("MATCHED");
+                      loadChargeOrders("MATCHED");
+                    }}
+                  >
+                    매칭완료
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -473,9 +487,12 @@ export default function AdminCreditPage() {
                       <TableHead>입금코드</TableHead>
                       <TableHead className="text-right">공급가</TableHead>
                       <TableHead className="text-right">총액</TableHead>
+                      <TableHead>승인 상태</TableHead>
+                      <TableHead>승인자/시각</TableHead>
                       <TableHead>생성일</TableHead>
                       <TableHead>만료일</TableHead>
                       <TableHead>매칭일</TableHead>
+                      <TableHead className="text-right">액션</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -491,9 +508,63 @@ export default function AdminCreditPage() {
                         <TableCell className="text-right font-semibold">
                           {order.amountTotal.toLocaleString()}원
                         </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              order.adminApprovalStatus === "APPROVED"
+                                ? "default"
+                                : order.adminApprovalStatus === "REJECTED"
+                                ? "destructive"
+                                : "outline"
+                            }
+                          >
+                            {order.adminApprovalStatus || "PENDING"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {order.adminApprovalBy?.name
+                            ? `${order.adminApprovalBy.name} (${
+                                order.adminApprovalBy.email || "-"
+                              })`
+                            : "-"}
+                          <div className="text-xs text-muted-foreground">
+                            {formatDate(order.adminApprovalAt)}
+                          </div>
+                        </TableCell>
                         <TableCell>{formatDate(order.createdAt)}</TableCell>
                         <TableCell>{formatDate(order.expiresAt)}</TableCell>
                         <TableCell>{formatDate(order.matchedAt)}</TableCell>
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              order.adminApprovalStatus !== "PENDING" ||
+                              order.status === "CANCELED"
+                            }
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setApproveModalOpen(true);
+                            }}
+                          >
+                            승인
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={
+                              order.adminApprovalStatus !== "PENDING" ||
+                              order.status === "CANCELED"
+                            }
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setRejectNote("");
+                              setRejectModalOpen(true);
+                            }}
+                          >
+                            거절
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -796,6 +867,146 @@ export default function AdminCreditPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={approveModalOpen} onOpenChange={setApproveModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>충전 주문 승인</DialogTitle>
+            <DialogDescription>
+              승인 시 조직 크레딧 적립이 유지됩니다. 승인자는 작성자가 될 수
+              없습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div className="font-mono">
+              코드: {selectedOrder?.depositCode || "-"}
+            </div>
+            <div>금액: {selectedOrder?.amountTotal.toLocaleString()}원</div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setApproveModalOpen(false)}
+              disabled={processingApproval}
+            >
+              취소
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!selectedOrder || !token) return;
+                setProcessingApproval(true);
+                try {
+                  const res = await request<any>({
+                    path: `/api/admin/credits/b-plan/charge-orders/${selectedOrder._id}/approve`,
+                    method: "POST",
+                    token,
+                    jsonBody: { note: matchNote || "" },
+                  });
+                  if (!res.ok)
+                    throw new Error((res.data as any)?.message || "승인 실패");
+                  toast({
+                    title: "승인 완료",
+                    description: "충전 주문을 승인했습니다.",
+                  });
+                  setApproveModalOpen(false);
+                  setSelectedOrder(null);
+                  loadChargeOrders(orderStatusFilter);
+                } catch (error: any) {
+                  toast({
+                    title: "승인 실패",
+                    description: error?.message || "승인에 실패했습니다.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setProcessingApproval(false);
+                }
+              }}
+              disabled={!selectedOrder || processingApproval}
+            >
+              {processingApproval ? "처리 중..." : "승인"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>충전 주문 거절</DialogTitle>
+            <DialogDescription>거절 사유를 남겨주세요.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <div className="text-sm font-mono">
+              코드: {selectedOrder?.depositCode || "-"}
+            </div>
+            <div className="text-sm">
+              금액: {selectedOrder?.amountTotal.toLocaleString()}원
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reject-note">거절 사유</Label>
+              <Input
+                id="reject-note"
+                value={rejectNote}
+                onChange={(e) => setRejectNote(e.target.value)}
+                placeholder="사유 입력"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRejectModalOpen(false)}
+              disabled={processingApproval}
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!selectedOrder || !token) return;
+                if (!rejectNote.trim()) {
+                  toast({
+                    title: "거절 사유 필요",
+                    description: "note를 입력해주세요.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                setProcessingApproval(true);
+                try {
+                  const res = await request<any>({
+                    path: `/api/admin/credits/b-plan/charge-orders/${selectedOrder._id}/reject`,
+                    method: "POST",
+                    token,
+                    jsonBody: { note: rejectNote },
+                  });
+                  if (!res.ok)
+                    throw new Error((res.data as any)?.message || "거절 실패");
+                  toast({
+                    title: "거절 완료",
+                    description: "충전 주문을 거절했습니다.",
+                  });
+                  setRejectModalOpen(false);
+                  setSelectedOrder(null);
+                  setRejectNote("");
+                  loadChargeOrders(orderStatusFilter);
+                } catch (error: any) {
+                  toast({
+                    title: "거절 실패",
+                    description: error?.message || "거절에 실패했습니다.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setProcessingApproval(false);
+                }
+              }}
+              disabled={!selectedOrder || processingApproval}
+            >
+              {processingApproval ? "처리 중..." : "거절"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

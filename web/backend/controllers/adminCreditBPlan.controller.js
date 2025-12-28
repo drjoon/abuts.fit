@@ -5,6 +5,7 @@ import CreditLedger from "../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../models/adminAuditLog.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
+import ActivityLog from "../models/activityLog.model.js";
 import { upsertBankTransaction } from "../utils/creditBPlanMatching.js";
 import { enqueueEasyFinBankRequest } from "../utils/queueClient.js";
 
@@ -22,6 +23,46 @@ async function writeAuditLog({ req, action, refType, refId, details }) {
   });
 }
 
+async function sendPushover({ title, message, priority = "0" }) {
+  if (!process.env.PUSHOVER_TOKEN || !process.env.PUSHOVER_USER_KEY) return;
+  try {
+    await fetch("https://api.pushover.net/1/messages.json", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        token: process.env.PUSHOVER_TOKEN,
+        user: process.env.PUSHOVER_USER_KEY,
+        title,
+        message,
+        priority,
+      }).toString(),
+    });
+  } catch (err) {
+    console.error("[sendPushover] failed", err);
+  }
+}
+
+async function logActivity({
+  userId,
+  action,
+  details,
+  severity = "info",
+  status = "info",
+}) {
+  if (!userId) return;
+  try {
+    await ActivityLog.create({
+      userId,
+      action,
+      details: details ?? null,
+      severity,
+      status,
+    });
+  } catch (err) {
+    console.error("[logActivity] failed", err);
+  }
+}
+
 export async function adminListChargeOrders(req, res) {
   const status = String(req.query.status || "")
     .trim()
@@ -35,11 +76,203 @@ export async function adminListChargeOrders(req, res) {
   }
 
   const items = await ChargeOrder.find(match)
+    .populate("adminApprovalBy", "name email")
     .sort({ createdAt: -1, _id: -1 })
     .limit(500)
     .lean();
 
   return res.json({ success: true, data: items });
+}
+
+export async function adminApproveChargeOrder(req, res) {
+  const id = String(req.params?.id || "").trim();
+  const note = String(req.body?.note || "");
+  const actorUserId = req.user?._id;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "chargeOrderId가 유효하지 않습니다.",
+    });
+  }
+
+  const order = await ChargeOrder.findById(id).lean();
+  if (!order) {
+    return res.status(404).json({
+      success: false,
+      message: "ChargeOrder를 찾을 수 없습니다.",
+    });
+  }
+
+  if (!["PENDING", "AUTO_MATCHED"].includes(String(order.status))) {
+    return res.status(400).json({
+      success: false,
+      message: "대기 또는 자동매칭 상태만 승인할 수 있습니다.",
+    });
+  }
+  if (order.adminApprovalStatus !== "PENDING") {
+    return res.status(400).json({
+      success: false,
+      message: "이미 처리된 승인 건입니다.",
+    });
+  }
+  if (order.userId && String(order.userId) === String(actorUserId)) {
+    return res.status(403).json({
+      success: false,
+      message: "작성자는 본인 주문을 승인할 수 없습니다.",
+    });
+  }
+
+  await ChargeOrder.updateOne(
+    { _id: order._id, adminApprovalStatus: "PENDING" },
+    {
+      $set: {
+        adminApprovalStatus: "APPROVED",
+        adminApprovalNote: note,
+        adminApprovalAt: new Date(),
+        adminApprovalBy: actorUserId,
+      },
+    }
+  );
+
+  const updated = await ChargeOrder.findById(order._id)
+    .populate("adminApprovalBy", "name email")
+    .lean();
+
+  await writeAuditLog({
+    req,
+    action: "CREDIT_B_PLAN_CHARGE_APPROVE",
+    refType: "CHARGE_ORDER",
+    refId: order._id,
+    details: {
+      chargeOrderId: String(order._id),
+      organizationId: String(order.organizationId),
+      amountTotal: order.amountTotal,
+      note,
+    },
+  });
+
+  await logActivity({
+    userId: actorUserId,
+    action: "CHARGE_APPROVED",
+    details: {
+      chargeOrderId: String(order._id),
+      organizationId: String(order.organizationId),
+      amountTotal: order.amountTotal,
+      note,
+    },
+    severity: "high",
+    status: "success",
+  });
+
+  await sendPushover({
+    title: "[Charge] 승인 완료",
+    message: `ChargeOrder ${order.depositCode || order._id} 승인 (총액 ${
+      order.amountTotal
+    }원)`,
+    priority: "1",
+  });
+
+  return res.json({ success: true, data: updated });
+}
+
+export async function adminRejectChargeOrder(req, res) {
+  const id = String(req.params?.id || "").trim();
+  const note = String(req.body?.note || "");
+  const actorUserId = req.user?._id;
+
+  if (!note.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: "거절 사유(note)가 필요합니다.",
+    });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "chargeOrderId가 유효하지 않습니다.",
+    });
+  }
+
+  const order = await ChargeOrder.findById(id).lean();
+  if (!order) {
+    return res.status(404).json({
+      success: false,
+      message: "ChargeOrder를 찾을 수 없습니다.",
+    });
+  }
+
+  if (!["PENDING", "AUTO_MATCHED"].includes(String(order.status))) {
+    return res.status(400).json({
+      success: false,
+      message: "대기 또는 자동매칭 상태만 거절할 수 있습니다.",
+    });
+  }
+  if (order.adminApprovalStatus !== "PENDING") {
+    return res.status(400).json({
+      success: false,
+      message: "이미 처리된 승인 건입니다.",
+    });
+  }
+  if (order.userId && String(order.userId) === String(actorUserId)) {
+    return res.status(403).json({
+      success: false,
+      message: "작성자는 본인 주문을 거절할 수 없습니다.",
+    });
+  }
+
+  await ChargeOrder.updateOne(
+    { _id: order._id, adminApprovalStatus: "PENDING" },
+    {
+      $set: {
+        adminApprovalStatus: "REJECTED",
+        adminApprovalNote: note,
+        adminApprovalAt: new Date(),
+        adminApprovalBy: actorUserId,
+      },
+    }
+  );
+
+  const updated = await ChargeOrder.findById(order._id)
+    .populate("adminApprovalBy", "name email")
+    .lean();
+
+  await writeAuditLog({
+    req,
+    action: "CREDIT_B_PLAN_CHARGE_REJECT",
+    refType: "CHARGE_ORDER",
+    refId: order._id,
+    details: {
+      chargeOrderId: String(order._id),
+      organizationId: String(order.organizationId),
+      amountTotal: order.amountTotal,
+      note,
+    },
+  });
+
+  await logActivity({
+    userId: actorUserId,
+    action: "CHARGE_REJECTED",
+    details: {
+      chargeOrderId: String(order._id),
+      organizationId: String(order.organizationId),
+      amountTotal: order.amountTotal,
+      note,
+    },
+    severity: "medium",
+    status: "allowed",
+  });
+
+  await sendPushover({
+    title: "[Charge] 승인 거절",
+    message: `ChargeOrder ${order.depositCode || order._id} 거절 (총액 ${
+      order.amountTotal
+    }원)\n사유: ${note}`,
+    priority: "0",
+  });
+
+  return res.json({ success: true, data: updated });
 }
 
 export async function adminListBankTransactions(req, res) {

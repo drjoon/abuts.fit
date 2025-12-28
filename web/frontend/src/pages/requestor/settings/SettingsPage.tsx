@@ -15,6 +15,8 @@ import { NotificationsTab } from "./components/NotificationsTab";
 import { ShippingTab } from "./components/ShippingTab";
 import { User, Building2, CreditCard, Bell, Truck, Users } from "lucide-react";
 import { request } from "@/lib/apiClient";
+import { RequestorSecurity } from "./Security";
+import { Shield } from "lucide-react";
 
 type TabKey =
   | "account"
@@ -22,7 +24,8 @@ type TabKey =
   | "staff"
   | "shipping"
   | "payment"
-  | "notifications";
+  | "notifications"
+  | "security";
 
 export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
@@ -163,6 +166,12 @@ export const RequestorSettingsPage = () => {
         label: "알림",
         icon: Bell,
         content: <NotificationsTab />,
+      },
+      {
+        key: "security",
+        label: "보안",
+        icon: Shield,
+        content: <RequestorSecurity />,
       }
     );
 
