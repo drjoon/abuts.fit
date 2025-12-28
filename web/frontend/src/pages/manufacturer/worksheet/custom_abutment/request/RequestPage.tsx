@@ -198,8 +198,10 @@ const WorksheetCardGrid = ({
 
 export const RequestPage = ({
   showQueueBar = true,
+  filterRequests,
 }: {
   showQueueBar?: boolean;
+  filterRequests?: (req: ManufacturerRequest) => boolean;
 }) => {
   const { user, token } = useAuthStore();
   const { worksheetSearch } = useOutletContext<{
@@ -247,7 +249,17 @@ export const RequestPage = ({
   }, [token]);
 
   const searchLower = worksheetSearch.toLowerCase();
-  const filteredAndSorted = requests
+  const filteredBase = filterRequests
+    ? requests.filter((req) => {
+        try {
+          return filterRequests(req);
+        } catch {
+          return false;
+        }
+      })
+    : requests;
+
+  const filteredAndSorted = filteredBase
     .filter((request) => {
       const caseInfos = request.caseInfos || {};
       const text = (
@@ -311,23 +323,38 @@ export const RequestPage = ({
     return <div className="p-8 text-center">Loading...</div>;
   }
 
+  const isEmpty = filteredAndSorted.length === 0;
+
   return (
     <>
       {showQueueBar && (
-        <WorksheetDiameterQueueBar
-          title={`진행중인 의뢰 총 ${diameterQueueForReceive.total}건`}
-          labels={diameterQueueForReceive.labels}
-          counts={diameterQueueForReceive.counts}
-          total={diameterQueueForReceive.total}
-          onBucketClick={(label) => {
-            setReceiveSelectedBucket(label);
-            setReceiveQueueModalOpen(true);
-          }}
-        />
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+          <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
+            진행중인 의뢰 총 {diameterQueueForReceive.total}건
+          </div>
+          <div className="flex-1">
+            <WorksheetDiameterQueueBar
+              title=""
+              labels={diameterQueueForReceive.labels}
+              counts={diameterQueueForReceive.counts}
+              total={diameterQueueForReceive.total}
+              onBucketClick={(label) => {
+                setReceiveSelectedBucket(label);
+                setReceiveQueueModalOpen(true);
+              }}
+            />
+          </div>
+        </div>
       )}
 
       <div className="space-y-4 mt-6">
-        <WorksheetCardGrid requests={filteredAndSorted} />
+        {isEmpty ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
+            표시할 의뢰가 없습니다.
+          </div>
+        ) : (
+          <WorksheetCardGrid requests={filteredAndSorted} />
+        )}
       </div>
 
       <WorksheetDiameterQueueModal

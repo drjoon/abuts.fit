@@ -19,12 +19,36 @@ export const ManufacturerWorksheetPage = () => {
         case "receive": // Legacy alias
           return <RequestPage showQueueBar={true} />;
         case "machining":
-          return <MachiningPage />;
+          return (
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) => {
+                const status = String(req.status || "").trim();
+                const s1 = String(req.status1 || "").trim();
+                const s2 = String(req.status2 || "").trim();
+                // 가공 단계: status1이 가공이거나 상태가 가공전/가공후인 모든 건
+                return (
+                  s1 === "가공" ||
+                  status === "가공전" ||
+                  status === "가공후" ||
+                  s2 === "전" ||
+                  s2 === "중" ||
+                  s2 === "후"
+                );
+              }}
+            />
+          );
         case "cam":
           return (
-            <div className="p-8 text-center text-slate-500">
-              CAM 공정 페이지 준비중...
-            </div>
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) => {
+                const status = String(req.status || "").trim();
+                const s1 = String(req.status1 || "").trim();
+                const s2 = String(req.status2 || "").trim();
+                return status === "가공후" || (s1 === "가공" && s2 === "후");
+              }}
+            />
           );
         default:
           return <RequestPage showQueueBar={true} />;
