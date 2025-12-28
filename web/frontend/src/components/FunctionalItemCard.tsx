@@ -51,7 +51,7 @@ export const FunctionalItemCard = ({
         }`}
       >
         {(onUpdate || (onRemove && !disabled)) && (
-          <div className="absolute top-1 right-1 z-10 inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute top-1 right-1 z-10 inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 group-hover/card:opacity-100 transition-opacity">
             {onUpdate && (
               <button
                 type="button"
@@ -72,7 +72,7 @@ export const FunctionalItemCard = ({
                 className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white shadow-sm"
                 title="삭제"
               >
-                ×
+                ←
               </button>
             )}
           </div>

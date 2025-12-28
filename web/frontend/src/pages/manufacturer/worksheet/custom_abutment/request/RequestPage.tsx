@@ -230,7 +230,7 @@ const WorksheetCardGrid = ({
       return (
         <Card
           key={request._id}
-          className={`shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed ${
+          className={`shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed group/card ${
             isCompletedForCurrentStage
               ? "border-emerald-200 bg-emerald-50/40"
               : "border-slate-200"
