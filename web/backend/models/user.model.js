@@ -30,6 +30,21 @@ const userSchema = new mongoose.Schema(
       enum: ["requestor", "manufacturer", "admin"],
       default: "requestor",
     },
+    requestorRole: {
+      type: String,
+      enum: ["owner", "staff"],
+      default: null,
+    },
+    manufacturerRole: {
+      type: String,
+      enum: ["owner", "staff"],
+      default: null,
+    },
+    adminRole: {
+      type: String,
+      enum: ["owner", "staff"],
+      default: null,
+    },
     referralCode: {
       type: String,
       unique: true,
@@ -163,6 +178,21 @@ const userSchema = new mongoose.Schema(
     timestamps: true, // createdAt, updatedAt 자동 생성
   }
 );
+
+// 역할별 서브역할 필수 검사
+userSchema.pre("validate", function (next) {
+  const role = this.role;
+  if (role === "requestor" && !this.requestorRole) {
+    this.requestorRole = "owner";
+  }
+  if (role === "manufacturer" && !this.manufacturerRole) {
+    this.manufacturerRole = "owner";
+  }
+  if (role === "admin" && !this.adminRole) {
+    this.adminRole = "owner";
+  }
+  next();
+});
 
 // 비밀번호 저장 전 해싱
 userSchema.pre("save", async function (next) {

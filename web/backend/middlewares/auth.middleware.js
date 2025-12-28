@@ -193,9 +193,10 @@ export const authenticate = async (req, res, next) => {
 
 /**
  * 권한 확인 미들웨어
- * @param {Array} roles - 허용된 역할 배열
+ * @param {Array<string>} roles - 허용된 역할 배열
+ * @param {{adminRoles?: string[], manufacturerRoles?: string[], requestorRoles?: string[]}} options
  */
-export const authorize = (roles = []) => {
+export const authorize = (roles = [], options = {}) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
@@ -204,7 +205,45 @@ export const authorize = (roles = []) => {
       });
     }
 
-    if (roles.length && !roles.includes(req.user.role)) {
+    const roleAllowed = roles.length === 0 || roles.includes(req.user.role);
+    if (!roleAllowed) {
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    }
+
+    const { adminRoles, manufacturerRoles, requestorRoles } = options;
+    if (
+      req.user.role === "admin" &&
+      Array.isArray(adminRoles) &&
+      adminRoles.length > 0 &&
+      !adminRoles.includes(req.user.adminRole)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    }
+
+    if (
+      req.user.role === "manufacturer" &&
+      Array.isArray(manufacturerRoles) &&
+      manufacturerRoles.length > 0 &&
+      !manufacturerRoles.includes(req.user.manufacturerRole)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    }
+
+    if (
+      req.user.role === "requestor" &&
+      Array.isArray(requestorRoles) &&
+      requestorRoles.length > 0 &&
+      !requestorRoles.includes(req.user.requestorRole)
+    ) {
       return res.status(403).json({
         success: false,
         message: "이 작업을 수행할 권한이 없습니다.",

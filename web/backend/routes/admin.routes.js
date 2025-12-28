@@ -92,20 +92,38 @@ router.get("/credits/b-plan/charge-orders", adminListChargeOrders);
 router.get("/credits/b-plan/bank-transactions", adminListBankTransactions);
 router.post(
   "/credits/b-plan/bank-transactions/upsert",
+  authorize(["admin"], { adminRoles: ["owner"] }),
   adminUpsertBankTransaction
 );
-router.post("/credits/b-plan/match", adminManualMatch);
+router.post(
+  "/credits/b-plan/match",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminManualMatch
+);
 router.post(
   "/credits/b-plan/bank-transactions/request",
+  authorize(["admin"], { adminRoles: ["owner"] }),
   adminRequestBankTransactions
 );
 router.get(
   "/credits/b-plan/bank-transactions/search",
   adminGetBankTransactions
 );
-router.post("/credits/b-plan/charge-orders/verify", adminVerifyChargeOrder);
-router.post("/credits/b-plan/charge-orders/lock", adminLockChargeOrder);
-router.post("/credits/b-plan/charge-orders/unlock", adminUnlockChargeOrder);
+router.post(
+  "/credits/b-plan/charge-orders/verify",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminVerifyChargeOrder
+);
+router.post(
+  "/credits/b-plan/charge-orders/lock",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminLockChargeOrder
+);
+router.post(
+  "/credits/b-plan/charge-orders/unlock",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminUnlockChargeOrder
+);
 
 // 가격/리퍼럴 정책 통계
 router.get("/pricing-stats", adminController.getPricingStats);
@@ -138,7 +156,11 @@ router.post("/mails/sent/empty", adminEmptySent);
 
 // 보너스 지급 내역 / 예외 지급
 router.get("/bonus-grants", adminListBonusGrants);
-router.post("/bonus-grants/welcome-bonus/override", adminOverrideWelcomeBonus);
+router.post(
+  "/bonus-grants/welcome-bonus/override",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  adminOverrideWelcomeBonus
+);
 
 // 세금계산서(드래프트) 관리
 router.get("/tax-invoices/drafts", adminListTaxInvoiceDrafts);

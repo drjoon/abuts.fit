@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../middlewares/auth.middleware.js";
+import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 import * as requestorOrganizationController from "../controllers/requestorOrganization.controller.js";
 
 const router = Router();
@@ -11,7 +11,11 @@ router.get("/me", requestorOrganizationController.getMyOrganization);
 router.get("/search", requestorOrganizationController.searchOrganizations);
 
 // 조직 정보 수정
-router.put("/me", requestorOrganizationController.updateMyOrganization);
+router.put(
+  "/me",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
+  requestorOrganizationController.updateMyOrganization
+);
 
 router.delete(
   "/me/business-license",
@@ -19,9 +23,21 @@ router.delete(
 );
 
 // 대표(owners) 관리
-router.get("/owners", requestorOrganizationController.getRepresentatives);
-router.post("/owners", requestorOrganizationController.addOwner);
-router.delete("/owners/:userId", requestorOrganizationController.removeOwner);
+router.get(
+  "/owners",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
+  requestorOrganizationController.getRepresentatives
+);
+router.post(
+  "/owners",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
+  requestorOrganizationController.addOwner
+);
+router.delete(
+  "/owners/:userId",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
+  requestorOrganizationController.removeOwner
+);
 
 // 가입 요청/탈퇴: 일반 기능 (직원도 가입 요청 취소/탈퇴는 가능해야 함)
 router.post(
@@ -30,10 +46,12 @@ router.post(
 );
 router.post(
   "/join-requests/:organizationId/cancel",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestorOrganizationController.cancelJoinRequest
 );
 router.post(
   "/join-requests/:organizationId/leave",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestorOrganizationController.leaveOrganization
 );
 router.get(
@@ -44,19 +62,27 @@ router.get(
 // 직원 관리 (가입 승인/거절/목록/삭제)
 router.get(
   "/join-requests/pending",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
   requestorOrganizationController.getPendingJoinRequestsForOwner
 );
-router.get("/staff", requestorOrganizationController.getMyStaffMembers);
+router.get(
+  "/staff",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
+  requestorOrganizationController.getMyStaffMembers
+);
 router.delete(
   "/staff/:userId",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
   requestorOrganizationController.removeStaffMember
 );
 router.post(
   "/join-requests/:userId/approve",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
   requestorOrganizationController.approveJoinRequest
 );
 router.post(
   "/join-requests/:userId/reject",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner"] }),
   requestorOrganizationController.rejectJoinRequest
 );
 

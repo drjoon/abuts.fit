@@ -9,14 +9,14 @@ router.use(authenticate);
 // 새 의뢰 생성 (의뢰자만 가능)
 router.post(
   "/",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.createRequest
 );
 
 // Draft에서 의뢰 생성 (의뢰자만 가능)
 router.post(
   "/from-draft",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.createRequestsFromDraft
 );
 
@@ -37,14 +37,14 @@ router.get("/all", authorize(["admin"]), requestController.getAllRequests);
 // 내 의뢰 목록 조회 (의뢰자용)
 router.get(
   "/my",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.getMyRequests
 );
 
 // 내 대시보드 요약 (의뢰자용)
 router.get(
   "/my/dashboard-summary",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.getMyDashboardSummary
 );
 
@@ -58,21 +58,21 @@ router.get(
 // 가격/리퍼럴 통계 (의뢰자용)
 router.get(
   "/my/pricing-referral-stats",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.getMyPricingReferralStats
 );
 
 // 동일 환자/치아 커스텀 어벗 의뢰 존재 여부 확인 (재의뢰 판단용)
 router.get(
   "/my/has-duplicate",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.hasDuplicateCase
 );
 
 // 묶음 배송 후보 조회 (의뢰자용)
 router.get(
   "/my/bulk-shipping",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.getMyBulkShipping
 );
 
@@ -86,7 +86,7 @@ router.get(
 // 배송 방식 변경 (의뢰자용)
 router.patch(
   "/my/shipping-mode",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.updateMyShippingMode
 );
 
@@ -100,7 +100,7 @@ router.get(
 // 묶음 배송 생성/신청 (의뢰자용)
 router.post(
   "/my/bulk-shipping",
-  authorize(["requestor", "admin"]),
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
   requestController.createMyBulkShipping
 );
 

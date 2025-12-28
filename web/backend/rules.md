@@ -199,6 +199,36 @@ const result = await enqueueTaxInvoiceIssue({
 
 ### 9.4 알림 큐 헬퍼
 
+## 10. 역할/서브역할 정책 (Admin/Manufacturer/Requestor)
+
+- User.role: `requestor` | `manufacturer` | `admin`
+- 서브역할: 각 역할별로 `owner` / `staff`
+  - requestorRole, manufacturerRole, adminRole 필수 (role별로만 의미 있음)
+- 기본값: 가입 시 role=requestor, requestorRole=owner
+- self-upgrade 금지: 본인은 role/서브역할 변경 불가
+
+### 10.1 Admin 권한
+
+- owner만: 금전 관련(크레딧 수동 처리, B-Plan 수동 매칭/입금 upsert/검증/락), 시스템 설정, 보너스 예외 지급
+- staff 허용: 사용자 CRUD/role 변경, 의뢰 상태/배정, 세금계산서 승인/발행/취소(자동 처리된 건), 메일/SMS/알림톡 발송, 팝빌 큐 재시도/취소 등 비금전 영역
+
+### 10.2 Manufacturer 권한
+
+- owner만: 입금 기록 등 금전 관련
+- staff 허용: 입금 조회, 긴급 메시지, 전화 인증
+- 제조 워크플로(배정 수락/거절/상태 변경/출고/메타 수정) 권한은 별도 라우트에서 manufacturerRole로 분리 적용할 것
+
+### 10.3 Requestor 권한
+
+- owner: 조직 설정 수정, 대표/직원 관리, 환불 승인, 크레딧/조직 정보 수정
+- staff: 본인 의뢰 생성/조회/취소 가능(조직 크레딧 사용 가능), 조직 설정/멤버 관리/환불 승인 불가
+- 가입/탈퇴/조인 취소는 owner·staff 모두 가능
+
+### 10.4 미들웨어/라우트 적용 원칙
+
+- `authorize(roles, { adminRoles, manufacturerRoles, requestorRoles })`로 서브역할 체크
+- 돈 관련은 owner 제한, 그 외는 명시 정책에 따라 staff 허용 여부 결정
+
 ```javascript
 import { sendNotificationViaQueue } from "../utils/notificationQueue.js";
 

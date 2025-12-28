@@ -529,7 +529,12 @@ async function toggleUserActive(req, res) {
 async function changeUserRole(req, res) {
   try {
     const userId = req.params.id;
-    const { role } = req.body;
+    const {
+      role,
+      requestorRole = null,
+      manufacturerRole = null,
+      adminRole = null,
+    } = req.body || {};
 
     // ObjectId 유효성 검사
     if (!Types.ObjectId.isValid(userId)) {
@@ -558,20 +563,49 @@ async function changeUserRole(req, res) {
       });
     }
 
-    // 자기 자신의 관리자 권한 제거 방지
-    if (
-      user._id.equals(req.user._id) &&
-      user.role === "admin" &&
-      role !== "admin"
-    ) {
+    const isSelf = user._id.equals(req.user._id);
+    // 자기 자신의 role 전환 금지
+    if (isSelf && role !== user.role) {
       return res.status(400).json({
         success: false,
-        message: "자기 자신의 관리자 권한을 제거할 수 없습니다.",
+        message: "자기 자신의 역할을 변경할 수 없습니다.",
       });
     }
 
-    // 역할 변경
+    // 자기 자신의 서브역할 승격/변경 금지
+    if (isSelf) {
+      if (
+        (user.role === "admin" && adminRole && adminRole !== user.adminRole) ||
+        (user.role === "manufacturer" &&
+          manufacturerRole &&
+          manufacturerRole !== user.manufacturerRole) ||
+        (user.role === "requestor" &&
+          requestorRole &&
+          requestorRole !== user.requestorRole)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "자기 자신의 서브역할을 변경할 수 없습니다.",
+        });
+      }
+    }
+
+    // 역할 변경 및 서브역할 설정
     user.role = role;
+    if (role === "admin") {
+      user.adminRole = adminRole || "owner";
+      user.manufacturerRole = null;
+      user.requestorRole = null;
+    } else if (role === "manufacturer") {
+      user.manufacturerRole = manufacturerRole || "owner";
+      user.adminRole = null;
+      user.requestorRole = null;
+    } else {
+      user.requestorRole = requestorRole || "owner";
+      user.adminRole = null;
+      user.manufacturerRole = null;
+    }
+
     await user.save();
 
     res.status(200).json({
