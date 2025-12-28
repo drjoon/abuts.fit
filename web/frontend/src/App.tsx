@@ -224,10 +224,17 @@ const App = () => {
                         </RoleProtectedRoute>
                       }
                     />
+                    <Route path="users" element={<AdminUserManagement />} />
+                    {/* 호환용: 기존 경로 유지 */}
                     <Route
                       path="user-management"
                       element={<AdminUserManagement />}
                     />
+                    <Route
+                      path="monitoring"
+                      element={<AdminRequestMonitoring />}
+                    />
+                    {/* 호환용: 기존 경로 유지 */}
                     <Route
                       path="request-monitoring"
                       element={<AdminRequestMonitoring />}
