@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -5,60 +6,40 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
-import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
+import {
+  WorksheetDiameterCard,
+  type DiameterStats,
+} from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Clock,
   CheckCircle,
-  TrendingUp,
   FileText,
-  MessageSquare,
-  Building2,
-  Users,
+  AlertTriangle,
+  Boxes,
+  Wrench,
+  Factory,
+  PackageCheck,
 } from "lucide-react";
-
-const mockManufacturerData = {
-  stats: [
-    { label: "총 주문", value: "47", change: "+15%", icon: Building2 },
-    { label: "제작 중", value: "12", change: "+20%", icon: Clock },
-    { label: "완료", value: "32", change: "+22%", icon: CheckCircle },
-    { label: "고객사", value: "18", change: "+5%", icon: Users },
-  ],
-  recentOrders: [
-    {
-      id: "ORD-001",
-      title: "서울치과기공소 - 상악 어벗먼트",
-      status: "제작중",
-      client: "서울치과기공소",
-      date: "2025-07-15",
-    },
-    {
-      id: "ORD-002",
-      title: "부산치과기공소 - 하악 어벗먼트",
-      status: "완료",
-      client: "부산치과기공소",
-      date: "2025-07-14",
-    },
-    {
-      id: "ORD-003",
-      title: "대구치과기공소 - 전치부 어벗먼트",
-      status: "의뢰접수",
-      client: "대구치과기공소",
-      date: "2025-07-13",
-    },
-  ],
-};
 
 export const ManufacturerDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
+  const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "all">("30d");
+  const [riskModalOpen, setRiskModalOpen] = useState(false);
 
   if (!user || user.role !== "manufacturer") return null;
 
@@ -85,18 +66,13 @@ export const ManufacturerDashboardPage = () => {
   });
 
   const { data: riskSummaryResponse } = useQuery({
-    queryKey: ["manufacturer-dashboard-risk-summary"],
+    queryKey: ["manufacturer-dashboard-risk-summary", period],
     enabled: Boolean(token),
     queryFn: async () => {
       const res = await apiFetch<any>({
-        path: "/api/requests/dashboard-risk-summary?period=30d",
+        path: `/api/requests/dashboard-risk-summary?period=${period}`,
         method: "GET",
         token,
-        headers: token
-          ? {
-              "x-mock-role": "manufacturer",
-            }
-          : undefined,
       });
       if (!res.ok) {
         throw new Error("지연 위험 요약 조회에 실패했습니다.");
@@ -106,8 +82,6 @@ export const ManufacturerDashboardPage = () => {
     retry: false,
   });
 
-  const baseData = mockManufacturerData;
-  let data: any = baseData;
   const diameterStatsFromApi: DiameterStats | undefined =
     diameterStatsResponse?.success
       ? diameterStatsResponse.data?.diameterStats
@@ -116,133 +90,232 @@ export const ManufacturerDashboardPage = () => {
   const riskSummary = riskSummaryResponse?.success
     ? riskSummaryResponse.data?.riskSummary ?? null
     : null;
-  let manufacturingSummaryFromApi:
-    | {
-        totalActive: number;
-        stages: {
-          key: string;
-          label: string;
-          count: number;
-          percent: number;
-        }[];
-      }
-    | undefined;
 
-  void manufacturingSummaryFromApi;
+  const stats = [
+    {
+      key: "in-progress",
+      label: "진행중",
+      value: String(diameterStatsFromApi?.total ?? 0),
+      icon: FileText,
+      change: "",
+    },
+    {
+      key: "risk",
+      label: "지연 위험",
+      value: String(riskSummary?.delayedCount ?? 0),
+      icon: AlertTriangle,
+      change: "",
+    },
+    {
+      key: "warning",
+      label: "주의 대상",
+      value: String(riskSummary?.warningCount ?? 0),
+      icon: Clock,
+      change: "",
+    },
+    {
+      key: "on-time",
+      label: "정시율",
+      value: `${riskSummary?.onTimeRate ?? 0}%`,
+      icon: CheckCircle,
+      change: "",
+    },
+  ];
+
+  const managementCards = [
+    {
+      key: "material",
+      label: "소재 관리",
+      description: "소재 재고/로트 관리",
+      href: "/dashboard/materials",
+      icon: Boxes,
+      meta: ["보유 소재 수량/로트 확인"],
+      hasIssue: false,
+      status: "이상 없음",
+    },
+    {
+      key: "tools",
+      label: "공구 관리",
+      description: "공구 수명/오프셋 관리",
+      href: "/dashboard/tools",
+      icon: Wrench,
+      meta: ["마모/교체 주기 확인"],
+      hasIssue: false,
+      status: "이상 없음",
+    },
+    {
+      key: "machines",
+      label: "장비 관리",
+      description: "CNC · 프린터 장비 관리",
+      href: "/dashboard/machines",
+      icon: Factory,
+      meta: ["장비 상태/알람 확인"],
+      hasIssue: false,
+      status: "이상 없음",
+    },
+    {
+      key: "products",
+      label: "제품 관리",
+      description: "제품/가공 프로파일 관리",
+      href: "/dashboard/products",
+      icon: PackageCheck,
+      meta: ["프로파일/템플릿 관리"],
+      hasIssue: false,
+      status: "이상 없음",
+    },
+  ];
 
   return (
-    <DashboardShell
-      title={`안녕하세요, ${user.name}님!`}
-      subtitle="제작 현황을 확인하세요."
-      topSection={
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
-            <WorksheetDiameterCard stats={diameterStatsFromApi} />
-            <RequestorRiskSummaryCard riskSummary={riskSummary} />
+    <>
+      <DashboardShell
+        title={`안녕하세요, ${user.name}님!`}
+        subtitle="제작 현황을 확인하세요."
+        headerRight={
+          <div className="flex flex-wrap items-center gap-2">
+            <PeriodFilter value={period} onChange={setPeriod} />
           </div>
-          {manufacturingSummaryFromApi && (
-            <div className="flex flex-wrap items-center justify-end gap-3 text-xs text-muted-foreground px-1">
-              {manufacturingSummaryFromApi.stages.map((s) => (
-                <div key={s.key} className="flex items-center gap-1">
-                  <span className="font-medium text-slate-700">{s.label}</span>
-                  <span>{s.count.toLocaleString()}건</span>
-                </div>
-              ))}
+        }
+        topSection={
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
+              <WorksheetDiameterCard stats={diameterStatsFromApi} />
+              <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+                <CardContent>
+                  <div className="grid grid-cols-1 gap-3 mt-6">
+                    {managementCards.map((item) => (
+                      <div
+                        key={item.key}
+                        onClick={() => navigate(item.href)}
+                        className="cursor-pointer rounded-xl border border-border bg-white/70 px-3 py-3 transition-all hover:shadow-md"
+                      >
+                        <div className="flex items-center gap-3">
+                          <item.icon className="h-4 w-4 text-primary" />
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm font-semibold text-slate-900">
+                                {item.label}
+                              </div>
+                              <span
+                                className={`text-[11px] font-semibold ${
+                                  item.hasIssue
+                                    ? "text-red-600"
+                                    : "text-green-600"
+                                }`}
+                              >
+                                {item.hasIssue
+                                  ? item.status || "이상 있음"
+                                  : "이상 없음"}
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground flex flex-col gap-1">
+                              <span>{item.description}</span>
+                              {item.meta?.map((line) => (
+                                <span
+                                  key={line}
+                                  className="text-[11px] text-slate-500"
+                                >
+                                  {line}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        }
+        stats={
+          <>
+            {stats.map((stat, index) => (
+              <Card
+                key={index}
+                onClick={() => {
+                  if (stat.key === "risk") setRiskModalOpen(true);
+                }}
+                className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
+              >
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    {stat.label}
+                  </CardTitle>
+                  <stat.icon className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stat.value}</div>
+                  {stat.change && (
+                    <p className="text-xs text-muted-foreground">
+                      {stat.change}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        }
+        mainLeft={null}
+        mainRight={null}
+      />
+      <RiskDetailModal
+        open={riskModalOpen}
+        onOpenChange={setRiskModalOpen}
+        riskSummary={riskSummary}
+      />
+    </>
+  );
+};
+
+const RiskDetailModal = ({
+  open,
+  onOpenChange,
+  riskSummary,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  riskSummary: any;
+}) => {
+  const items = riskSummary?.items || [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>지연 위험 상세</DialogTitle>
+          <DialogDescription>
+            지연/주의 의뢰를 확인하고 조치하세요.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {items.map((item: any) => (
+            <div
+              key={item.id}
+              className="rounded-lg border border-border p-3 space-y-1"
+            >
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline" className="text-[10px]">
+                  {item.riskLevel === "danger" ? "지연" : "주의"}
+                </Badge>
+                <span>{item.dueDate ? `도착예정 ${item.dueDate}` : "-"}</span>
+              </div>
+              <div className="font-medium text-sm">{item.title}</div>
+              <div className="text-xs text-muted-foreground">
+                {item.status} • {item.manufacturer || "-"}
+              </div>
+              <div className="text-xs text-muted-foreground line-clamp-2">
+                {item.message}
+              </div>
+            </div>
+          ))}
+          {items.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">
+              표시할 지연/주의 의뢰가 없습니다.
             </div>
           )}
         </div>
-      }
-      stats={
-        <>
-          {data.stats.map((stat: any, index: number) => (
-            <Card
-              key={index}
-              className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
-            >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">
-                  {stat.label}
-                </CardTitle>
-                <stat.icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-muted-foreground">
-                  <span className="text-green-600">{stat.change}</span> 지난 달
-                  대비
-                </p>
-              </CardContent>
-            </Card>
-          ))}
-        </>
-      }
-      mainLeft={
-        <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
-          <CardHeader>
-            <CardTitle>최근 주문</CardTitle>
-            <CardDescription>최근 받은 주문 목록입니다.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {data.recentOrders?.map((item: any) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-3 border border-border rounded-lg"
-                >
-                  <div className="flex-1">
-                    <div className="font-medium">{item.title}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {item.client} • {item.date}
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {item.status}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <Button variant="outline" className="w-full mt-4">
-              전체 보기
-            </Button>
-          </CardContent>
-        </Card>
-      }
-      mainRight={
-        <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
-          <CardHeader>
-            <CardTitle>빠른 작업</CardTitle>
-            <CardDescription>자주 사용하는 기능들입니다.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => navigate("/dashboard/worksheet")}
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                작업 보드 열기
-              </Button>
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => navigate("/dashboard/cnc")}
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                CNC 대시보드 열기
-              </Button>
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => navigate("/dashboard/printer")}
-              >
-                <TrendingUp className="mr-2 h-4 w-4" />
-                프린터 현황
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      }
-    />
+      </DialogContent>
+    </Dialog>
   );
 };
