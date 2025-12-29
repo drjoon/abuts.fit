@@ -49,6 +49,7 @@ import {
 } from "./utils";
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
 import { PreviewModal } from "./PreviewModal";
+import { useRequestFileHandlers } from "./useRequestFileHandlers";
 
 type FilePreviewInfo = {
   originalName: string;
@@ -118,7 +119,6 @@ export const RequestPage = ({
     }
   }, []);
   const { toast } = useToast();
-  const { uploadFiles } = useS3TempUpload({ token });
 
   const fetchRequests = useCallback(async () => {
     if (!token) return;
@@ -180,6 +180,55 @@ export const RequestPage = ({
     }
   }, [token, user?.role, toast]);
 
+  const {
+    handleDownloadOriginalStl,
+    handleDownloadCamStl,
+    handleDownloadNcFile,
+    handleDownloadStageFile,
+    handleUpdateReviewStatus,
+    handleDeleteCam,
+    handleDeleteNc,
+    handleUploadCam,
+    handleUploadNc,
+    handleUploadStageFile,
+    handleDeleteStageFile,
+  } = useRequestFileHandlers({
+    token,
+    isCamStage,
+    isMachiningStage,
+    fetchRequests,
+    setDownloading,
+    setUploading,
+    setDeletingCam,
+    setDeletingNc,
+    setReviewSaving,
+    setPreviewOpen,
+    setPreviewFiles,
+    setPreviewNcText,
+    setPreviewNcName,
+    setPreviewStageUrl,
+    setPreviewStageName,
+    setPreviewLoading,
+    setSearchParams,
+    decodeNcText,
+  });
+
+  const handleUploadByStage = useCallback(
+    (req: ManufacturerRequest, files: File[]) => {
+      if (isCamStage) return handleUploadNc(req, files);
+      return handleUploadCam(req, files);
+    },
+    [isCamStage, handleUploadNc, handleUploadCam]
+  );
+
+  const handleUploadFromModal = useCallback(
+    (req: ManufacturerRequest, file: File) => {
+      if (!req?._id) return;
+      void handleUploadByStage(req, [file]);
+    },
+    [handleUploadByStage]
+  );
+
   const handleDownloadOriginal = useCallback(
     async (req: ManufacturerRequest) => {
       if (!token) return;
@@ -221,619 +270,6 @@ export const RequestPage = ({
       }
     },
     [token, toast, isCamStage, isMachiningStage]
-  );
-
-  const downloadByEndpoint = useCallback(
-    async (endpoint: string, errorMessage: string) => {
-      if (!token) return;
-      const res = await fetch(endpoint, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (!res.ok) {
-        toast({
-          title: "다운로드 실패",
-          description: errorMessage,
-          variant: "destructive",
-        });
-        return;
-      }
-      const data = await res.json();
-      const url = data?.data?.url;
-      if (!url) {
-        toast({
-          title: "다운로드 실패",
-          description: errorMessage,
-          variant: "destructive",
-        });
-        return;
-      }
-      window.open(url, "_blank");
-    },
-    [token, toast]
-  );
-
-  const handleDownloadOriginalStl = useCallback(
-    async (req: ManufacturerRequest) => {
-      await downloadByEndpoint(
-        `/api/requests/${req._id}/original-file-url`,
-        "원본 STL을 가져올 수 없습니다."
-      );
-    },
-    [downloadByEndpoint]
-  );
-
-  const handleDownloadCamStl = useCallback(
-    async (req: ManufacturerRequest) => {
-      await downloadByEndpoint(
-        `/api/requests/${req._id}/cam-file-url`,
-        "CAM STL을 가져올 수 없습니다."
-      );
-    },
-    [downloadByEndpoint]
-  );
-
-  const handleDownloadNcFile = useCallback(
-    async (req: ManufacturerRequest) => {
-      await downloadByEndpoint(
-        `/api/requests/${req._id}/nc-file-url`,
-        "NC 파일을 가져올 수 없습니다."
-      );
-    },
-    [downloadByEndpoint]
-  );
-
-  const handleDownloadStageFile = useCallback(
-    async (req: ManufacturerRequest, stage: string) => {
-      await downloadByEndpoint(
-        `/api/requests/${req._id}/stage-file-url?stage=${encodeURIComponent(
-          stage
-        )}`,
-        "파일을 가져올 수 없습니다."
-      );
-    },
-    [downloadByEndpoint]
-  );
-
-  const handleUpdateReviewStatus = useCallback(
-    async (params: {
-      req: ManufacturerRequest;
-      status: "PENDING" | "APPROVED" | "REJECTED";
-      reason?: string;
-      stageOverride?: ReviewStageKey;
-    }) => {
-      if (!token) return;
-      setReviewSaving(true);
-      try {
-        const stageKey =
-          params.stageOverride ||
-          getReviewStageKeyByTab({
-            isCamStage,
-            isMachiningStage,
-          });
-
-        const res = await fetch(
-          `/api/requests/${params.req._id}/review-status`,
-          {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              stage: stageKey,
-              status: params.status,
-              reason: params.reason || "",
-            }),
-          }
-        );
-
-        if (!res.ok) {
-          throw new Error("review status update failed");
-        }
-
-        await fetchRequests();
-
-        toast({
-          title: "검토 상태 변경 완료",
-          description:
-            params.status === "APPROVED"
-              ? "승인되었습니다."
-              : params.status === "REJECTED"
-              ? "반려되었습니다."
-              : "미승인 상태로 변경되었습니다.",
-        });
-
-        if (params.status === "APPROVED") {
-          // 승인 시 다음 공정 탭으로만 이동 (stageOverride 기준)
-          if (stageKey === "request") {
-            setSearchParams(
-              (prev) => {
-                const next = new URLSearchParams(prev);
-                next.set("stage", "cam");
-                return next;
-              },
-              { replace: true }
-            );
-          }
-          if (stageKey === "cam") {
-            setSearchParams(
-              (prev) => {
-                const next = new URLSearchParams(prev);
-                next.set("stage", "machining");
-                return next;
-              },
-              { replace: true }
-            );
-          }
-        }
-
-        setPreviewOpen(false);
-      } catch {
-        toast({
-          title: "검토 상태 변경 실패",
-          description: "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      } finally {
-        setReviewSaving(false);
-      }
-    },
-    [
-      token,
-      toast,
-      fetchRequests,
-      isCamStage,
-      isMachiningStage,
-      setSearchParams,
-      setPreviewOpen,
-    ]
-  );
-
-  const handleDeleteCam = useCallback(
-    async (req: ManufacturerRequest) => {
-      if (!token) return;
-      setDeletingCam((prev) => ({ ...prev, [req._id]: true }));
-      try {
-        const res = await fetch(`/api/requests/${req._id}/cam-file`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (!res.ok) {
-          throw new Error("delete cam file failed");
-        }
-        toast({
-          title: "삭제 완료",
-          description: "CAM 수정본을 삭제하고 상태를 가공전으로 되돌렸습니다.",
-        });
-
-        // 모달을 먼저 닫아 상태 불일치로 인한 화면 깜빡임 방지
-        setPreviewOpen(false);
-
-        await fetchRequests();
-
-        // 프리뷰 상태 초기화
-        setPreviewFiles({});
-        setPreviewNcText("");
-        setPreviewNcName("");
-
-        // 의뢰 탭(receive)으로 이동
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev);
-            next.set("stage", "receive");
-            return next;
-          },
-          { replace: true }
-        );
-      } catch (error) {
-        toast({
-          title: "삭제 실패",
-          description: "CAM 수정본 삭제에 실패했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setDeletingCam((prev) => ({ ...prev, [req._id]: false }));
-      }
-    },
-    [token, toast, fetchRequests]
-  );
-
-  const handleDeleteNc = useCallback(
-    async (req: ManufacturerRequest, opts?: { nextStage?: string }) => {
-      if (!token) return;
-      setDeletingNc((prev) => ({ ...prev, [req._id]: true }));
-      try {
-        const targetStage = opts?.nextStage || "cam";
-        const res = await fetch(
-          `/api/requests/${req._id}/nc-file?nextStage=${targetStage}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        if (!res.ok) {
-          throw new Error("delete nc file failed");
-        }
-        const stageLabel = targetStage === "request" ? "의뢰" : "CAM";
-        toast({
-          title: "삭제 완료",
-          description: `NC 파일을 삭제하고 ${stageLabel} 단계로 되돌렸습니다.`,
-        });
-        // 모달을 먼저 닫아 상태 불일치로 인한 화면 깜빡임 방지
-        setPreviewOpen(false);
-
-        await fetchRequests();
-
-        // 프리뷰 상태 초기화
-        setPreviewNcText("");
-        setPreviewNcName("");
-        setPreviewFiles({});
-
-        // 탭 이동
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev);
-            next.set("stage", targetStage === "request" ? "receive" : "cam");
-            return next;
-          },
-          { replace: true }
-        );
-      } catch (error) {
-        toast({
-          title: "삭제 실패",
-          description: "NC 파일 삭제에 실패했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setDeletingNc((prev) => ({ ...prev, [req._id]: false }));
-      }
-    },
-    [token, toast, fetchRequests, setSearchParams]
-  );
-
-  const handleUploadCam = useCallback(
-    async (
-      req: ManufacturerRequest,
-      files: File[],
-      options?: { autoApprove?: boolean; approveStage?: ReviewStageKey }
-    ) => {
-      if (!token) return;
-      const normalize = (name: string) =>
-        name.trim().toLowerCase().normalize("NFC");
-      const originalName =
-        req.caseInfos?.file?.fileName ||
-        req.caseInfos?.file?.originalName ||
-        req.caseInfos?.camFile?.fileName ||
-        req.caseInfos?.camFile?.originalName ||
-        "";
-      // 원본 확장자(.stl 또는 .cam.stl)가 섞여 있어도 마지막 확장자만 제거
-      const originalBase = originalName
-        .replace(/(\.cam\.stl|\.stl)$/i, "")
-        .trim();
-      const expectedCamName = originalBase ? `${originalBase}.cam.stl` : "";
-
-      const filtered = files.filter((f) =>
-        f.name.toLowerCase().endsWith(".cam.stl")
-      );
-      if (!filtered.length) {
-        toast({
-          title: "업로드 실패",
-          description: "CAM 파일(.cam.stl)만 업로드할 수 있습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      if (expectedCamName) {
-        const mismatch = filtered.some(
-          (f) => normalize(f.name) !== normalize(expectedCamName)
-        );
-        if (mismatch) {
-          toast({
-            title: "파일명 불일치",
-            description: `CAM 파일명은 ${expectedCamName} 으로 업로드해주세요.`,
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-
-      setUploading((prev) => ({ ...prev, [req._id]: true }));
-      try {
-        const uploaded = await uploadFiles(filtered);
-        if (!uploaded || !uploaded.length) {
-          throw new Error("upload failed");
-        }
-        const first = uploaded[0];
-        const finalFileName = expectedCamName || first.originalName;
-        const res = await fetch(`/api/requests/${req._id}/cam-file`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fileName: finalFileName,
-            fileType: first.mimetype,
-            fileSize: first.size,
-            s3Key: first.key,
-            s3Url: first.location,
-          }),
-        });
-        if (!res.ok) {
-          throw new Error("save cam file failed");
-        }
-        toast({
-          title: "업로드 완료",
-          description: "CAM STL이 저장되었습니다.",
-        });
-        await fetchRequests();
-
-        // 즉시 프리뷰 반영(서명 URL 재다운로드 없이 로컬 파일로 표시)
-        setPreviewFiles((prev) => ({
-          ...prev,
-          cam: filtered[0] || prev.cam,
-        }));
-        // 파일명 즉시 업데이트
-        setPreviewNcName(finalFileName);
-      } catch (error) {
-        console.error(error);
-        toast({
-          title: "업로드 실패",
-          description: "파일 업로드 또는 저장에 실패했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setUploading((prev) => ({ ...prev, [req._id]: false }));
-      }
-    },
-    [token, uploadFiles, toast, fetchRequests, handleUpdateReviewStatus]
-  );
-
-  const handleUploadStageFile = useCallback(
-    async (params: {
-      req: ManufacturerRequest;
-      stage: "machining" | "packaging" | "shipping" | "tracking";
-      file: File;
-      source: "manual" | "worker";
-    }) => {
-      if (!token) return;
-      if (!params.req?._id) return;
-
-      setUploading((prev) => ({ ...prev, [params.req._id as string]: true }));
-      try {
-        const uploaded = await uploadFiles([params.file]);
-        if (!uploaded || !uploaded.length) {
-          throw new Error("upload failed");
-        }
-
-        const first = uploaded[0];
-        const res = await fetch(`/api/requests/${params.req._id}/stage-file`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            stage: params.stage,
-            fileName: first.originalName,
-            fileType: first.mimetype,
-            fileSize: first.size,
-            s3Key: first.key,
-            s3Url: first.location,
-            source: params.source,
-          }),
-        });
-
-        if (!res.ok) {
-          throw new Error("save stage file failed");
-        }
-
-        toast({
-          title: "업로드 완료",
-          description: "파일이 저장되었습니다.",
-        });
-
-        await fetchRequests();
-
-        // 즉시 프리뷰 반영(이미지)
-        if (params.stage === "machining") {
-          try {
-            setPreviewStageUrl(URL.createObjectURL(params.file));
-            setPreviewStageName(params.file.name);
-          } catch {
-            // ignore
-          }
-        }
-      } catch (error) {
-        console.error(error);
-        toast({
-          title: "업로드 실패",
-          description: "파일 업로드 또는 저장에 실패했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setUploading((prev) => ({
-          ...prev,
-          [params.req._id as string]: false,
-        }));
-      }
-    },
-    [token, uploadFiles, toast, fetchRequests]
-  );
-
-  const handleDeleteStageFile = useCallback(
-    async (params: {
-      req: ManufacturerRequest;
-      stage: "machining" | "packaging" | "shipping" | "tracking";
-    }) => {
-      if (!token) return;
-      if (!params.req?._id) return;
-
-      setUploading((prev) => ({ ...prev, [params.req._id as string]: true }));
-      try {
-        const res = await fetch(
-          `/api/requests/${
-            params.req._id
-          }/stage-file?stage=${encodeURIComponent(params.stage)}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        if (!res.ok) {
-          throw new Error("delete stage file failed");
-        }
-
-        toast({
-          title: "삭제 완료",
-          description: "파일을 삭제했습니다.",
-        });
-        await fetchRequests();
-        if (params.stage === "machining") {
-          setPreviewStageUrl("");
-          setPreviewStageName("");
-        }
-      } catch (error) {
-        console.error(error);
-        toast({
-          title: "삭제 실패",
-          description: "파일 삭제에 실패했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setUploading((prev) => ({
-          ...prev,
-          [params.req._id as string]: false,
-        }));
-      }
-    },
-    [token, toast, fetchRequests]
-  );
-
-  const handleUploadNc = useCallback(
-    async (
-      req: ManufacturerRequest,
-      files: File[],
-      options?: { autoApprove?: boolean; approveStage?: ReviewStageKey }
-    ) => {
-      if (!token) return;
-
-      const normalize = (name: string) =>
-        String(name || "")
-          .trim()
-          .toLowerCase()
-          .normalize("NFC");
-
-      const originalName =
-        req.caseInfos?.file?.fileName ||
-        req.caseInfos?.file?.originalName ||
-        "";
-      const base = originalName.includes(".")
-        ? originalName.split(".").slice(0, -1).join(".")
-        : originalName;
-      const expectedNcName = base ? `${base}.nc` : "";
-
-      const filtered = files.filter((f) =>
-        f.name.toLowerCase().endsWith(".nc")
-      );
-      if (!filtered.length) {
-        toast({
-          title: "업로드 실패",
-          description: "NC(.nc) 파일만 업로드할 수 있습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const firstLocal = filtered[0];
-      if (
-        expectedNcName &&
-        normalize(firstLocal.name) !== normalize(expectedNcName)
-      ) {
-        toast({
-          title: "파일명 불일치",
-          description: `원본과 동일한 파일명(${expectedNcName})으로 업로드해주세요.`,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setUploading((prev) => ({ ...prev, [req._id]: true }));
-      try {
-        const uploaded = await uploadFiles([firstLocal]);
-        if (!uploaded || !uploaded.length) {
-          throw new Error("upload failed");
-        }
-        const first = uploaded[0];
-        const res = await fetch(`/api/requests/${req._id}/nc-file`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fileName: expectedNcName || first.originalName,
-            fileType: first.mimetype,
-            fileSize: first.size,
-            s3Key: first.key,
-            s3Url: first.location,
-          }),
-        });
-        if (!res.ok) {
-          throw new Error("save nc file failed");
-        }
-        toast({
-          title: "업로드 완료",
-          description: "NC 파일을 업로드했습니다.",
-        });
-        await fetchRequests();
-
-        // 즉시 프리뷰 반영(로컬 NC 텍스트)
-        try {
-          const buf = await firstLocal.arrayBuffer();
-          const text = decodeNcText(buf);
-          setPreviewNcText(text);
-          setPreviewNcName(expectedNcName || firstLocal.name);
-        } catch {
-          // ignore
-        }
-      } catch (error) {
-        console.error(error);
-        toast({
-          title: "업로드 실패",
-          description: "NC 파일 업로드에 실패했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setUploading((prev) => ({ ...prev, [req._id]: false }));
-      }
-    },
-    [token, uploadFiles, toast, fetchRequests, handleUpdateReviewStatus]
-  );
-
-  const handleUploadByStage = useCallback(
-    (req: ManufacturerRequest, files: File[]) => {
-      if (isCamStage) return handleUploadNc(req, files);
-      return handleUploadCam(req, files);
-    },
-    [isCamStage, handleUploadNc, handleUploadCam]
-  );
-
-  const handleUploadFromModal = useCallback(
-    (req: ManufacturerRequest, file: File) => {
-      if (!req?._id) return;
-      void handleUploadByStage(req, [file]);
-    },
-    [handleUploadByStage]
   );
 
   const handleOpenPreview = useCallback(
