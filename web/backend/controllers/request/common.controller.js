@@ -687,6 +687,7 @@ export async function deleteCamFileAndRollback(req, res) {
     request.status = "가공전";
     request.status1 = "가공";
     request.status2 = "전";
+    request.lotNumber = undefined; // 의뢰 단계(가공전)로 복귀 시 로트번호 반납
     request.manufacturerStage = mapManufacturerStage(request);
 
     await request.save();

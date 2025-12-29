@@ -295,7 +295,7 @@ export async function ensureLotNumberForMachining(requestDoc) {
 
   const counter = await LotCounter.findOneAndUpdate(
     { key: "global" },
-    { $inc: { seq: 1 }, $setOnInsert: { seq: -1 } },
+    { $inc: { seq: 1 }, $setOnInsert: { key: "global" } },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).lean();
 

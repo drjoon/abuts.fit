@@ -339,18 +339,13 @@ const WorksheetCardGrid = ({
                           disabled={isUploading}
                         />
                       </label>
-                      <div className="ml-auto">
+                      <div className="ml-auto flex items-center gap-2">
                         <Badge
                           variant="outline"
                           className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
                         >
                           {stageLabel}
                         </Badge>
-                        {lotNumber && (
-                          <Badge className="text-[11px] px-2 py-0.5 bg-slate-800 text-white">
-                            LOT {lotNumber}
-                          </Badge>
-                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -413,15 +408,25 @@ const WorksheetCardGrid = ({
                   </>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-1 text-[12px] text-slate-500">
-                {(caseInfos.implantManufacturer ||
-                  caseInfos.implantSystem ||
-                  caseInfos.implantType) && (
-                  <span>
-                    임플란트 {caseInfos.implantManufacturer || "-"} /{" "}
-                    {caseInfos.implantSystem || "-"} /{" "}
-                    {caseInfos.implantType || "-"}
-                  </span>
+              <div className="flex flex-wrap items-center justify-between gap-1 text-[12px] text-slate-500">
+                <div className="flex items-center gap-1">
+                  {(caseInfos.implantManufacturer ||
+                    caseInfos.implantSystem ||
+                    caseInfos.implantType) && (
+                    <span>
+                      {caseInfos.implantManufacturer || "-"} /{" "}
+                      {caseInfos.implantSystem || "-"} /{" "}
+                      {caseInfos.implantType || "-"}
+                    </span>
+                  )}
+                </div>
+                {lotNumber && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                  >
+                    {lotNumber}
+                  </Badge>
                 )}
               </div>
             </div>
