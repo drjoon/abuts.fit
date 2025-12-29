@@ -26,6 +26,11 @@ const requestSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    assignedMachine: {
+      // 가공 직전 배정된 장비 (M3, M4 등)
+      type: String,
+      default: null,
+    },
     requestorOrganizationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "RequestorOrganization",

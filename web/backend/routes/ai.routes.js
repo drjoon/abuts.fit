@@ -11,5 +11,10 @@ router.post(
   authenticate,
   aiController.parseBusinessLicense
 );
+router.post(
+  "/recognize-lot-number",
+  authenticate,
+  aiController.recognizeLotNumber
+);
 
 export default router;

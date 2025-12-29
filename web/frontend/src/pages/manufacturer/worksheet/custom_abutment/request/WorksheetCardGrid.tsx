@@ -14,6 +14,7 @@ type WorksheetCardGridProps = {
   onOpenPreview: (req: ManufacturerRequest) => void;
   onDeleteCam: (req: ManufacturerRequest) => void;
   onDeleteNc: (req: ManufacturerRequest) => void;
+  onUploadNc?: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   isCamStage: boolean;
   isMachiningStage: boolean;
   downloading: Record<string, boolean>;
@@ -28,6 +29,7 @@ export const WorksheetCardGrid = ({
   onOpenPreview,
   onDeleteCam,
   onDeleteNc,
+  onUploadNc,
   downloading,
   deletingCam,
   deletingNc,
@@ -100,6 +102,45 @@ export const WorksheetCardGrid = ({
       const requestStageLabel = stageLabel;
       const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
+
+      const handleDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (!isCamStage || !onUploadNc) return;
+
+        const files = Array.from(e.dataTransfer.files);
+        const ncFiles = files.filter((f) =>
+          f.name.toLowerCase().endsWith(".nc")
+        );
+
+        if (ncFiles.length === 0) return;
+
+        const getBaseName = (name: string) => {
+          const s = String(name || "");
+          if (!s.includes(".")) return s;
+          return s.split(".").slice(0, -1).join(".");
+        };
+
+        const camFileName =
+          caseInfos.camFile?.fileName || caseInfos.camFile?.originalName || "";
+        const expectedBaseName = getBaseName(camFileName).toLowerCase();
+
+        const matchingFile = ncFiles.find((f) => {
+          const fileBaseName = getBaseName(f.name).toLowerCase();
+          return fileBaseName === expectedBaseName;
+        });
+
+        if (matchingFile) {
+          await onUploadNc(request, [matchingFile]);
+        }
+      };
+
+      const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
       return (
         <Card
           key={request._id}
@@ -109,6 +150,8 @@ export const WorksheetCardGrid = ({
               : "border-slate-200"
           }`}
           onClick={() => onOpenPreview(request)}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
         >
           <CardContent className="p-3 flex-1 flex flex-col gap-2">
             <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
@@ -215,14 +258,24 @@ export const WorksheetCardGrid = ({
                     </span>
                   )}
                 </div>
-                {lotNumber && (
-                  <Badge
-                    variant="outline"
-                    className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
-                  >
-                    {lotNumber}
-                  </Badge>
-                )}
+                <div className="flex items-center gap-1">
+                  {request.assignedMachine && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
+                    >
+                      {request.assignedMachine}
+                    </Badge>
+                  )}
+                  {lotNumber && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                    >
+                      {lotNumber}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>

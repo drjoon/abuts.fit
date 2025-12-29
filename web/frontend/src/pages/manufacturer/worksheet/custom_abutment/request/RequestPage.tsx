@@ -105,6 +105,8 @@ export const RequestPage = ({
   const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
   const [visibleCount, setVisibleCount] = useState(9);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     // 우선 UTF-8 시도 후 깨진 경우 EUC-KR로 재시도
@@ -119,6 +121,7 @@ export const RequestPage = ({
     }
   }, []);
   const { toast } = useToast();
+  const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
 
   const fetchRequests = useCallback(async () => {
     if (!token) return;
@@ -212,6 +215,140 @@ export const RequestPage = ({
     setSearchParams,
     decodeNcText,
   });
+
+  const handleImageDropForOCR = useCallback(
+    async (files: File[]) => {
+      if (!isMachiningStage || !token) return;
+
+      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+
+      if (imageFiles.length === 0) {
+        toast({
+          title: "이미지 파일이 아닙니다",
+          description: "이미지 파일(.png, .jpg 등)만 업로드할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setOcrProcessing(true);
+
+      try {
+        // S3에 이미지 업로드
+        const uploaded = await uploadToS3(imageFiles);
+        if (!uploaded || uploaded.length === 0) {
+          throw new Error("이미지 업로드 실패");
+        }
+
+        const uploadedFile = uploaded[0];
+
+        // OCR API 호출
+        const ocrRes = await fetch("/api/ai/recognize-lot-number", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            s3Key: uploadedFile.key,
+            originalName: uploadedFile.originalName,
+          }),
+        });
+
+        if (!ocrRes.ok) {
+          throw new Error("OCR 처리 실패");
+        }
+
+        const ocrData = await ocrRes.json();
+        const recognizedLotNumber = ocrData?.data?.lotNumber;
+
+        if (!recognizedLotNumber) {
+          toast({
+            title: "로트넘버를 인식하지 못했습니다",
+            description:
+              "이미지에서 로트넘버를 찾을 수 없습니다. 수동으로 업로드해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // 로트넘버와 일치하는 request 찾기
+        const matchingRequest = requests.find(
+          (req) => req.lotNumber?.trim() === recognizedLotNumber.trim()
+        );
+
+        if (!matchingRequest) {
+          toast({
+            title: "일치하는 의뢰를 찾을 수 없습니다",
+            description: `인식된 로트넘버: ${recognizedLotNumber}`,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // 해당 request에 이미지 업로드
+        await handleUploadStageFile({
+          req: matchingRequest,
+          stage: "machining",
+          file: imageFiles[0],
+          source: "manual",
+        });
+
+        toast({
+          title: "업로드 완료",
+          description: `로트넘버 ${recognizedLotNumber}에 이미지가 업로드되었습니다.`,
+        });
+      } catch (error: any) {
+        console.error("OCR 처리 오류:", error);
+        toast({
+          title: "OCR 처리 실패",
+          description: error.message || "오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setOcrProcessing(false);
+      }
+    },
+    [
+      isMachiningStage,
+      token,
+      uploadToS3,
+      requests,
+      handleUploadStageFile,
+      toast,
+    ]
+  );
+
+  const handlePageDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingOver(false);
+
+      if (!isMachiningStage) return;
+
+      const files = Array.from(e.dataTransfer.files);
+      void handleImageDropForOCR(files);
+    },
+    [isMachiningStage, handleImageDropForOCR]
+  );
+
+  const handlePageDragOver = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isMachiningStage) {
+        setIsDraggingOver(true);
+      }
+    },
+    [isMachiningStage]
+  );
+
+  const handlePageDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  }, []);
 
   const handleUploadByStage = useCallback(
     (req: ManufacturerRequest, files: File[]) => {
@@ -626,7 +763,34 @@ export const RequestPage = ({
   const isEmpty = filteredAndSorted.length === 0;
 
   return (
-    <>
+    <div
+      onDrop={handlePageDrop}
+      onDragOver={handlePageDragOver}
+      onDragLeave={handlePageDragLeave}
+      className="relative"
+    >
+      {isMachiningStage && isDraggingOver && (
+        <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-dashed border-blue-500">
+            <div className="text-2xl font-bold text-blue-700 mb-2">
+              이미지를 여기에 드롭하세요
+            </div>
+            <div className="text-sm text-slate-600">
+              로트넘버를 자동으로 인식하여 해당 파일에 업로드합니다
+            </div>
+          </div>
+        </div>
+      )}
+      {ocrProcessing && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8">
+            <div className="text-xl font-bold text-slate-800 mb-2">
+              로트넘버 인식 중...
+            </div>
+            <div className="text-sm text-slate-600">잠시만 기다려주세요</div>
+          </div>
+        </div>
+      )}
       {showQueueBar && (
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
           <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
@@ -687,6 +851,7 @@ export const RequestPage = ({
                   onOpenPreview={handleOpenPreview}
                   onDeleteCam={handleDeleteCam}
                   onDeleteNc={handleDeleteNc}
+                  onUploadNc={handleUploadNc}
                   deletingCam={deletingCam}
                   deletingNc={deletingNc}
                   isCamStage={isCamStage}
@@ -704,6 +869,7 @@ export const RequestPage = ({
             onOpenPreview={handleOpenPreview}
             onDeleteCam={handleDeleteCam}
             onDeleteNc={handleDeleteNc}
+            onUploadNc={handleUploadNc}
             deletingCam={deletingCam}
             deletingNc={deletingNc}
             isCamStage={isCamStage}
@@ -781,6 +947,6 @@ export const RequestPage = ({
           setConfirmAction(null);
         }}
       />
-    </>
+    </div>
   );
 };

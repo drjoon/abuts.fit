@@ -139,6 +139,7 @@ export interface RequestBase {
   status?: string;
   manufacturerStage?: string;
   lotNumber?: string;
+  assignedMachine?: string; // 가공 직전 배정된 장비 (M3, M4 등)
   status1?: string;
   status2?: string;
   createdAt?: string;

@@ -625,4 +625,169 @@ export async function parseFilenames(req, res) {
   }
 }
 
-export default { parseFilenames, parseBusinessLicense };
+/**
+ * 제조사/관리자: 생산 이미지에서 로트넘버(각인코드) 인식
+ * @route POST /api/ai/recognize-lot-number
+ * body: { s3Key, originalName }
+ */
+export async function recognizeLotNumber(req, res) {
+  try {
+    const { s3Key, originalName } = req.body || {};
+
+    if (!s3Key) {
+      return res.status(400).json({
+        success: false,
+        message: "s3Key가 필요합니다.",
+      });
+    }
+
+    if (!req.user || !["manufacturer", "admin"].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "접근 권한이 없습니다.",
+      });
+    }
+
+    const genAI = getGenAI();
+    if (!genAI) {
+      return res.status(503).json({
+        success: false,
+        message: "AI 서비스가 구성되지 않았습니다.",
+      });
+    }
+
+    // S3에서 이미지 다운로드
+    const buffer = await s3Utils.downloadFile(s3Key);
+    if (!buffer) {
+      return res.status(404).json({
+        success: false,
+        message: "S3에서 파일을 찾을 수 없습니다.",
+      });
+    }
+
+    // Rate guard
+    const clientIp =
+      req.ip ||
+      req.headers["x-forwarded-for"] ||
+      (req.connection && req.connection.remoteAddress) ||
+      "unknown";
+    const guardKey = `gemini-recognizeLotNumber:${clientIp}`;
+    const guard = shouldBlockExternalCall(guardKey);
+    if (guard?.blocked) {
+      return res.status(429).json({
+        success: false,
+        message:
+          "AI 외부 API가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
+      });
+    }
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.1,
+      },
+    });
+
+    const imageBase64 = buffer.toString("base64");
+    const mimeType = String(originalName || "")
+      .toLowerCase()
+      .endsWith(".png")
+      ? "image/png"
+      : "image/jpeg";
+
+    const prompt =
+      "너는 치과 임플란트 어벗먼트 생산 이미지에서 각인된 로트넘버(Lot Number)를 읽어 JSON으로 추출하는 도우미야.\n" +
+      "로트넘버는 보통 'L' 또는 'LOT'으로 시작하고 뒤에 숫자가 따라온다. 예: L250101-001, LOT250101-002 등\n" +
+      "이미지에서 로트넘버로 보이는 텍스트를 찾아서 정확히 추출해줘.\n" +
+      "반드시 JSON만 반환하고 다른 설명은 하지 마.\n\n" +
+      "스키마:\n" +
+      "{\n" +
+      '  "lotNumber": string,  // 인식된 로트넘버, 없으면 빈 문자열\n' +
+      '  "confidence": string  // "high", "medium", "low" 중 하나\n' +
+      "}";
+
+    const result = await model.generateContent([
+      { text: prompt },
+      {
+        inlineData: {
+          data: imageBase64,
+          mimeType,
+        },
+      },
+    ]);
+
+    const text = result?.response?.text?.() || "";
+
+    let cleaned = String(text || "").trim();
+    if (cleaned.startsWith("```")) {
+      const firstNewline = cleaned.indexOf("\n");
+      const lastFence = cleaned.lastIndexOf("```");
+      if (firstNewline !== -1 && lastFence !== -1 && lastFence > firstNewline) {
+        cleaned = cleaned.slice(firstNewline + 1, lastFence).trim();
+      }
+    }
+
+    const tryParseJsonObject = (input) => {
+      if (!input) return null;
+      const s = String(input).trim();
+      try {
+        return JSON.parse(s);
+      } catch {}
+
+      const firstBrace = s.indexOf("{");
+      const lastBrace = s.lastIndexOf("}");
+      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        return null;
+      }
+      const slice = s.slice(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(slice);
+      } catch {
+        return null;
+      }
+    };
+
+    const parsed = tryParseJsonObject(cleaned);
+    const parseOk =
+      !!parsed && typeof parsed === "object" && !Array.isArray(parsed);
+
+    if (!parseOk) {
+      console.error("[AI] recognizeLotNumber: JSON parse failed", {
+        originalName,
+        s3Key,
+        sample: cleaned.slice(0, 400),
+      });
+      return res.json({
+        success: true,
+        data: {
+          lotNumber: "",
+          confidence: "low",
+        },
+        message: "로트넘버를 인식하지 못했습니다.",
+      });
+    }
+
+    const extracted = {
+      lotNumber: String(parsed.lotNumber || "").trim(),
+      confidence: String(parsed.confidence || "low").trim(),
+    };
+
+    return res.json({
+      success: true,
+      data: extracted,
+      message: extracted.lotNumber
+        ? "로트넘버를 인식했습니다."
+        : "로트넘버를 찾지 못했습니다.",
+    });
+  } catch (error) {
+    console.error("[AI] recognizeLotNumber error", error);
+    return res.status(500).json({
+      success: false,
+      message: "로트넘버 인식 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export default { parseFilenames, parseBusinessLicense, recognizeLotNumber };

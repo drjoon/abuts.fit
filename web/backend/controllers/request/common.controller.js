@@ -1182,6 +1182,8 @@ export async function saveNcFileAndMoveToMachining(req, res) {
     };
 
     const rawOriginal =
+      request.caseInfos?.camFile?.fileName ||
+      request.caseInfos?.camFile?.originalName ||
       request.caseInfos?.file?.fileName ||
       request.caseInfos?.file?.originalName;
 
