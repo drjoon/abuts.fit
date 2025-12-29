@@ -52,6 +52,172 @@ const requestSchema = new mongoose.Schema(
       maxDiameter: Number,
       connectionDiameter: Number,
       workType: String,
+      reviewByStage: {
+        request: {
+          status: {
+            type: String,
+            enum: ["PENDING", "APPROVED", "REJECTED"],
+            default: "PENDING",
+          },
+          updatedAt: Date,
+          updatedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          reason: String,
+        },
+        cam: {
+          status: {
+            type: String,
+            enum: ["PENDING", "APPROVED", "REJECTED"],
+            default: "PENDING",
+          },
+          updatedAt: Date,
+          updatedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          reason: String,
+        },
+        machining: {
+          status: {
+            type: String,
+            enum: ["PENDING", "APPROVED", "REJECTED"],
+            default: "PENDING",
+          },
+          updatedAt: Date,
+          updatedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          reason: String,
+        },
+        packaging: {
+          status: {
+            type: String,
+            enum: ["PENDING", "APPROVED", "REJECTED"],
+            default: "PENDING",
+          },
+          updatedAt: Date,
+          updatedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          reason: String,
+        },
+        shipping: {
+          status: {
+            type: String,
+            enum: ["PENDING", "APPROVED", "REJECTED"],
+            default: "PENDING",
+          },
+          updatedAt: Date,
+          updatedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          reason: String,
+        },
+        tracking: {
+          status: {
+            type: String,
+            enum: ["PENDING", "APPROVED", "REJECTED"],
+            default: "PENDING",
+          },
+          updatedAt: Date,
+          updatedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          reason: String,
+        },
+      },
+      stageFiles: {
+        machining: {
+          fileName: String,
+          fileType: String,
+          fileSize: Number,
+          filePath: String,
+          s3Key: String,
+          s3Url: String,
+          source: {
+            type: String,
+            enum: ["worker", "manual"],
+            default: "manual",
+          },
+          uploadedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          uploadedAt: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+        packaging: {
+          fileName: String,
+          fileType: String,
+          fileSize: Number,
+          filePath: String,
+          s3Key: String,
+          s3Url: String,
+          source: {
+            type: String,
+            enum: ["worker", "manual"],
+            default: "manual",
+          },
+          uploadedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          uploadedAt: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+        shipping: {
+          fileName: String,
+          fileType: String,
+          fileSize: Number,
+          filePath: String,
+          s3Key: String,
+          s3Url: String,
+          source: {
+            type: String,
+            enum: ["worker", "manual"],
+            default: "manual",
+          },
+          uploadedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          uploadedAt: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+        tracking: {
+          fileName: String,
+          fileType: String,
+          fileSize: Number,
+          filePath: String,
+          s3Key: String,
+          s3Url: String,
+          source: {
+            type: String,
+            enum: ["worker", "manual"],
+            default: "manual",
+          },
+          uploadedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+          },
+          uploadedAt: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+      },
       file: {
         // s3에 저장된 파일의 메타 데이터를 DB에서 관리
         fileName: String,

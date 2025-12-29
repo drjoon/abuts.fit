@@ -16,6 +16,90 @@ export interface RequestCaseInfos {
   maxDiameter?: number;
   connectionDiameter?: number;
   workType?: string;
+  reviewByStage?: {
+    request?: {
+      status?: "PENDING" | "APPROVED" | "REJECTED";
+      updatedAt?: string;
+      updatedBy?: string;
+      reason?: string;
+    };
+    cam?: {
+      status?: "PENDING" | "APPROVED" | "REJECTED";
+      updatedAt?: string;
+      updatedBy?: string;
+      reason?: string;
+    };
+    machining?: {
+      status?: "PENDING" | "APPROVED" | "REJECTED";
+      updatedAt?: string;
+      updatedBy?: string;
+      reason?: string;
+    };
+    packaging?: {
+      status?: "PENDING" | "APPROVED" | "REJECTED";
+      updatedAt?: string;
+      updatedBy?: string;
+      reason?: string;
+    };
+    shipping?: {
+      status?: "PENDING" | "APPROVED" | "REJECTED";
+      updatedAt?: string;
+      updatedBy?: string;
+      reason?: string;
+    };
+    tracking?: {
+      status?: "PENDING" | "APPROVED" | "REJECTED";
+      updatedAt?: string;
+      updatedBy?: string;
+      reason?: string;
+    };
+  };
+  stageFiles?: {
+    machining?: {
+      fileName?: string;
+      fileType?: string;
+      fileSize?: number;
+      filePath?: string;
+      s3Key?: string;
+      s3Url?: string;
+      source?: "worker" | "manual";
+      uploadedBy?: string;
+      uploadedAt?: string;
+    };
+    packaging?: {
+      fileName?: string;
+      fileType?: string;
+      fileSize?: number;
+      filePath?: string;
+      s3Key?: string;
+      s3Url?: string;
+      source?: "worker" | "manual";
+      uploadedBy?: string;
+      uploadedAt?: string;
+    };
+    shipping?: {
+      fileName?: string;
+      fileType?: string;
+      fileSize?: number;
+      filePath?: string;
+      s3Key?: string;
+      s3Url?: string;
+      source?: "worker" | "manual";
+      uploadedBy?: string;
+      uploadedAt?: string;
+    };
+    tracking?: {
+      fileName?: string;
+      fileType?: string;
+      fileSize?: number;
+      filePath?: string;
+      s3Key?: string;
+      s3Url?: string;
+      source?: "worker" | "manual";
+      uploadedBy?: string;
+      uploadedAt?: string;
+    };
+  };
   file?: {
     fileName?: string;
     originalName?: string;

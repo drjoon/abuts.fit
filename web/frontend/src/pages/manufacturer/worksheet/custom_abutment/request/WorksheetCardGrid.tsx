@@ -1,0 +1,233 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  type ManufacturerRequest,
+  computeStageLabel,
+  getAcceptByStage,
+  getDiameterBucketIndex,
+  stageOrder,
+} from "./utils";
+
+type WorksheetCardGridProps = {
+  requests: ManufacturerRequest[];
+  onDownload: (req: ManufacturerRequest) => void;
+  onOpenPreview: (req: ManufacturerRequest) => void;
+  onDeleteCam: (req: ManufacturerRequest) => void;
+  onDeleteNc: (req: ManufacturerRequest) => void;
+  isCamStage: boolean;
+  isMachiningStage: boolean;
+  downloading: Record<string, boolean>;
+  deletingCam: Record<string, boolean>;
+  deletingNc: Record<string, boolean>;
+  currentStageOrder: number;
+};
+
+export const WorksheetCardGrid = ({
+  requests,
+  onDownload,
+  onOpenPreview,
+  onDeleteCam,
+  onDeleteNc,
+  downloading,
+  deletingCam,
+  deletingNc,
+  isCamStage,
+  isMachiningStage,
+  currentStageOrder,
+}: WorksheetCardGridProps) => (
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {requests.map((request) => {
+      const caseInfos = request.caseInfos || {};
+      const workType = (() => {
+        const ciWorkType = caseInfos.workType as
+          | "abutment"
+          | "crown"
+          | "mixed"
+          | "unknown"
+          | undefined;
+        if (ciWorkType === "abutment" || ciWorkType === "crown") {
+          return ciWorkType;
+        }
+        if (ciWorkType === "mixed") return "mixed";
+        return "unknown";
+      })();
+
+      const isDownloading = !!downloading[request._id];
+
+      const currentStageForTab = isMachiningStage
+        ? "가공"
+        : isCamStage
+        ? "CAM"
+        : "의뢰";
+      const stageLabel = computeStageLabel(request, {
+        isCamStage,
+        isMachiningStage,
+      });
+      const accept = getAcceptByStage(stageLabel || currentStageForTab);
+      const formatCamDisplayName = (name: string) => {
+        if (!name) return "파일명 없음";
+        if (isCamStage) {
+          return name
+            .replace(/\.cam\.stl$/i, ".cam")
+            .replace(/\.stl$/i, ".cam");
+        }
+        return name;
+      };
+      const displayFileName = isMachiningStage
+        ? caseInfos.ncFile?.fileName || caseInfos.ncFile?.originalName || ""
+        : formatCamDisplayName(
+            caseInfos.file?.fileName ||
+              caseInfos.file?.originalName ||
+              caseInfos.camFile?.fileName ||
+              caseInfos.camFile?.originalName ||
+              ""
+          );
+
+      const hasCamFile = !!(
+        caseInfos.camFile?.s3Key ||
+        caseInfos.camFile?.fileName ||
+        caseInfos.camFile?.originalName
+      );
+      const isDeletingCam = !!deletingCam[request._id];
+
+      const hasNcFile = !!(
+        caseInfos.ncFile?.s3Key ||
+        caseInfos.ncFile?.fileName ||
+        caseInfos.ncFile?.originalName
+      );
+      const isDeletingNc = !!deletingNc[request._id];
+      const lotNumber = (request.lotNumber || "").trim();
+      const requestStageLabel = stageLabel;
+      const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
+      const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
+      return (
+        <Card
+          key={request._id}
+          className={`shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed group/card ${
+            isCompletedForCurrentStage
+              ? "border-emerald-200 bg-emerald-50/40"
+              : "border-slate-200"
+          }`}
+          onClick={() => onOpenPreview(request)}
+        >
+          <CardContent className="p-3 flex-1 flex flex-col gap-2">
+            <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
+              {request.referenceIds && request.referenceIds.length > 0 && (
+                <div className="mb-1">
+                  {(() => {
+                    const first = request.referenceIds![0];
+                    const extraCount = request.referenceIds!.length - 1;
+                    const label =
+                      extraCount > 0 ? `${first} 외 ${extraCount}건` : first;
+                    return (
+                      <span className="inline-flex items-center px-3 py-1 rounded text-[15px] font-medium bg-purple-50 text-purple-700 border border-purple-100">
+                        Ref: {label}
+                      </span>
+                    );
+                  })()}
+                </div>
+              )}
+              {(() => {
+                const bucketIndex = getDiameterBucketIndex(
+                  caseInfos.maxDiameter
+                );
+                const labels = ["6", "8", "10", "10+"];
+
+                return (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-5 items-center gap-2">
+                      <div className="col-span-4 flex gap-1">
+                        {labels.map((label, index) => {
+                          const isActive = index === bucketIndex;
+                          return (
+                            <div
+                              key={label}
+                              className={`relative flex-1 h-4 rounded-full ${
+                                isActive ? "bg-blue-500" : "bg-slate-200"
+                              }`}
+                            >
+                              {isActive && caseInfos.maxDiameter != null && (
+                                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white">
+                                  {caseInfos.maxDiameter.toFixed(2)}mm
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="col-span-1 flex justify-end">
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                        >
+                          {stageLabel}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
+                <span>
+                  {request.requestor?.organization || request.requestor?.name}
+                </span>
+                {caseInfos.clinicName && (
+                  <>
+                    <span>•</span>
+                    <span>{caseInfos.clinicName}</span>
+                  </>
+                )}
+                {request.createdAt && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      {new Date(request.createdAt).toLocaleDateString()}
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
+                <span>환자 {caseInfos.patientName || "미지정"}</span>
+                {caseInfos.tooth && (
+                  <>
+                    <span>•</span>
+                    <span>치아번호 {caseInfos.tooth}</span>
+                  </>
+                )}
+                {caseInfos.connectionDiameter && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      커넥션 직경 {caseInfos.connectionDiameter.toFixed(2)}
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-1 text-[12px] text-slate-500">
+                <div className="flex items-center gap-1">
+                  {(caseInfos.implantManufacturer ||
+                    caseInfos.implantSystem ||
+                    caseInfos.implantType) && (
+                    <span>
+                      {caseInfos.implantManufacturer || "-"} /{" "}
+                      {caseInfos.implantSystem || "-"} /{" "}
+                      {caseInfos.implantType || "-"}
+                    </span>
+                  )}
+                </div>
+                {lotNumber && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                  >
+                    {lotNumber}
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      );
+    })}
+  </div>
+);

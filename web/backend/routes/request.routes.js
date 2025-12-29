@@ -117,6 +117,13 @@ router.put("/:id", requestController.updateRequest);
 // 의뢰 상태 변경 (권한 검증은 컨트롤러에서 처리)
 router.patch("/:id/status", requestController.updateRequestStatus);
 
+// 제조사/관리자: 단계별 검토 상태 변경
+router.patch(
+  "/:id/review-status",
+  authorize(["manufacturer", "admin"]),
+  requestController.updateReviewStatusByStage
+);
+
 // 제조사/관리자: 원본 STL 다운로드 URL
 router.get(
   "/:id/original-file-url",
@@ -150,6 +157,27 @@ router.get(
   "/:id/nc-file-url",
   authorize(["manufacturer", "admin"]),
   requestController.getNcFileUrl
+);
+
+// 제조사/관리자: stageFiles(이미지 등) 다운로드 URL
+router.get(
+  "/:id/stage-file-url",
+  authorize(["manufacturer", "admin"]),
+  requestController.getStageFileUrl
+);
+
+// 제조사/관리자: stageFiles(이미지 등) 업로드 메타 저장
+router.post(
+  "/:id/stage-file",
+  authorize(["manufacturer", "admin"]),
+  requestController.saveStageFile
+);
+
+// 제조사/관리자: stageFiles(이미지 등) 삭제
+router.delete(
+  "/:id/stage-file",
+  authorize(["manufacturer", "admin"]),
+  requestController.deleteStageFile
 );
 
 // 제조사/관리자: NC 파일 업로드 메타 저장 (가공 단계 이동)

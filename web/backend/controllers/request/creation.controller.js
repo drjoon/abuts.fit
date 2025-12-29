@@ -163,6 +163,18 @@ export async function createRequest(req, res) {
       price: computedPrice,
     });
 
+    newRequest.caseInfos = newRequest.caseInfos || {};
+    if (newRequest.caseInfos?.file?.s3Key) {
+      newRequest.caseInfos.reviewByStage =
+        newRequest.caseInfos.reviewByStage || {};
+      newRequest.caseInfos.reviewByStage.request = {
+        status: "PENDING",
+        updatedAt: new Date(),
+        updatedBy: req.user?._id,
+        reason: "",
+      };
+    }
+
     applyStatusMapping(newRequest, newRequest.status);
 
     await newRequest.save();

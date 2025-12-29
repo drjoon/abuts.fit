@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -21,14 +22,26 @@ export const ConfirmDialog = ({
 }: ConfirmDialogProps) => {
   if (!open) return null;
 
-  return (
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      confirmRef.current?.focus();
+    }
+  }, [open]);
+
+  return createPortal(
     <div
-      className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[200] p-4 backdrop-blur-sm pointer-events-auto"
+      role="dialog"
+      aria-modal="true"
       onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <div
-        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all"
+        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all z-[201]"
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         <h2 className="text-xl font-bold mb-4 text-gray-900">{title}</h2>
         {description && (
@@ -49,16 +62,18 @@ export const ConfirmDialog = ({
           </button>
           <button
             type="button"
+            ref={confirmRef}
             onClick={(e) => {
               e.stopPropagation();
               void onConfirm();
             }}
-            className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors"
+            className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
           >
             {confirmLabel}
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

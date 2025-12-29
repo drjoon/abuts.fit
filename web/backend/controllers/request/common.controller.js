@@ -1,19 +1,3 @@
-const mapManufacturerStage = (request) => {
-  const s1 = (request.status1 || "").trim();
-  const s2 = (request.status2 || "").trim();
-  const main = (request.status || "").trim();
-
-  if (s1 === "가공") {
-    if (s2 === "전") return "의뢰";
-    if (s2 === "중") return "가공";
-    if (s2 === "후") return "CAM";
-    return "가공";
-  }
-  if (s1 === "세척/검사/포장") return "세척·검사·포장";
-  if (s1 === "배송") return "발송";
-  if (main === "가공후") return "CAM";
-  return "의뢰";
-};
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -30,6 +14,397 @@ import s3Utils, {
   deleteFileFromS3,
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
+
+const mapManufacturerStage = (request) => {
+  const s1 = (request.status1 || "").trim();
+  const s2 = (request.status2 || "").trim();
+  const main = (request.status || "").trim();
+
+  if (s1 === "가공") {
+    if (s2 === "전") return "의뢰";
+    if (s2 === "중") return "가공";
+    if (s2 === "후") return "CAM";
+    return "가공";
+  }
+  if (s1 === "세척/검사/포장") return "세척·검사·포장";
+  if (s1 === "배송") return "발송";
+  if (main === "가공후") return "CAM";
+  return "의뢰";
+};
+
+const ensureReviewByStageDefaults = (request) => {
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+  request.caseInfos.reviewByStage.request = request.caseInfos.reviewByStage
+    .request || { status: "PENDING" };
+  request.caseInfos.reviewByStage.cam = request.caseInfos.reviewByStage.cam || {
+    status: "PENDING",
+  };
+  request.caseInfos.reviewByStage.machining = request.caseInfos.reviewByStage
+    .machining || { status: "PENDING" };
+  request.caseInfos.reviewByStage.packaging = request.caseInfos.reviewByStage
+    .packaging || { status: "PENDING" };
+  request.caseInfos.reviewByStage.shipping = request.caseInfos.reviewByStage
+    .shipping || { status: "PENDING" };
+  request.caseInfos.reviewByStage.tracking = request.caseInfos.reviewByStage
+    .tracking || { status: "PENDING" };
+};
+
+const revertManufacturerStageByReviewStage = (request, stage) => {
+  const map = {
+    request: "의뢰",
+    cam: "CAM",
+    machining: "가공",
+    packaging: "세척·검사·포장",
+    shipping: "발송",
+    tracking: "추적관리",
+  };
+  const target = map[String(stage || "").trim()];
+  if (target) {
+    request.manufacturerStage = target;
+  }
+};
+
+export async function deleteStageFile(req, res) {
+  try {
+    const { id } = req.params;
+    const stage = String(req.query.stage || "").trim();
+    const allowed = ["machining", "packaging", "shipping", "tracking"];
+
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    if (!allowed.includes(stage)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 stage 입니다.",
+      });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "삭제 권한이 없습니다." });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    request.caseInfos = request.caseInfos || {};
+    request.caseInfos.stageFiles = request.caseInfos.stageFiles || {};
+    ensureReviewByStageDefaults(request);
+
+    const meta = request.caseInfos.stageFiles?.[stage] || null;
+    const s3Key = meta?.s3Key;
+    if (!s3Key) {
+      return res.status(404).json({
+        success: false,
+        message: "삭제할 파일이 없습니다.",
+      });
+    }
+
+    try {
+      await deleteFileFromS3(s3Key);
+    } catch {
+      // ignore S3 delete errors
+    }
+
+    delete request.caseInfos.stageFiles[stage];
+
+    request.caseInfos.reviewByStage[stage] = {
+      status: "PENDING",
+      updatedAt: new Date(),
+      updatedBy: req.user?._id,
+      reason: "",
+    };
+
+    // stageFiles의 stage는 reviewByStage 키와 동일한 문자열을 사용
+    revertManufacturerStageByReviewStage(request, stage);
+
+    await request.save();
+
+    return res.status(200).json({
+      success: true,
+      data: await normalizeRequestForResponse(request),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "파일 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+const advanceManufacturerStageByReviewStage = async ({ request, stage }) => {
+  if (stage === "request") {
+    applyStatusMapping(request, "가공전");
+    request.manufacturerStage = "CAM";
+    return;
+  }
+
+  if (stage === "cam") {
+    request.status = "가공후";
+    request.status1 = "가공";
+    request.status2 = "중";
+    await ensureLotNumberForMachining(request);
+    request.manufacturerStage = "가공";
+    return;
+  }
+
+  if (stage === "machining") {
+    request.status1 = "세척/검사/포장";
+    request.status2 = "전";
+    request.manufacturerStage = "세척·검사·포장";
+    return;
+  }
+
+  if (stage === "packaging") {
+    applyStatusMapping(request, "배송대기");
+    request.manufacturerStage = "발송";
+    return;
+  }
+
+  if (stage === "shipping") {
+    applyStatusMapping(request, "배송중");
+    request.manufacturerStage = "발송";
+    return;
+  }
+
+  if (stage === "tracking") {
+    applyStatusMapping(request, "완료");
+    request.manufacturerStage = "추적관리";
+  }
+};
+
+export async function updateReviewStatusByStage(req, res) {
+  try {
+    const { id } = req.params;
+    const { stage, status, reason } = req.body || {};
+
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "변경 권한이 없습니다." });
+    }
+
+    const allowedStages = [
+      "request",
+      "cam",
+      "machining",
+      "packaging",
+      "shipping",
+      "tracking",
+    ];
+    if (!allowedStages.includes(String(stage || "").trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 stage 입니다.",
+      });
+    }
+
+    const allowedStatuses = ["PENDING", "APPROVED", "REJECTED"];
+    if (!allowedStatuses.includes(String(status || "").trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 status 입니다.",
+      });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    ensureReviewByStageDefaults(request);
+    request.caseInfos.reviewByStage[stage] = {
+      status,
+      updatedAt: new Date(),
+      updatedBy: req.user?._id,
+      reason: String(reason || ""),
+    };
+
+    // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
+    if (status === "APPROVED") {
+      await advanceManufacturerStageByReviewStage({ request, stage });
+    } else if (status === "PENDING") {
+      revertManufacturerStageByReviewStage(request, stage);
+    }
+
+    await request.save();
+
+    return res.status(200).json({
+      success: true,
+      data: await normalizeRequestForResponse(request),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "검토 상태 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getStageFileUrl(req, res) {
+  try {
+    const { id } = req.params;
+    const stage = String(req.query.stage || "").trim();
+    const allowed = ["machining", "packaging", "shipping", "tracking"];
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    if (!allowed.includes(stage)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 stage 입니다.",
+      });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "다운로드 권한이 없습니다." });
+    }
+
+    const request = await Request.findById(id).lean();
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const meta = request?.caseInfos?.stageFiles?.[stage];
+    const s3Key = meta?.s3Key;
+    const fileName = meta?.fileName || `${stage}-file`;
+    if (!s3Key) {
+      return res.status(404).json({
+        success: false,
+        message: "파일 정보가 없습니다.",
+      });
+    }
+
+    const disposition = `attachment; filename="${encodeURIComponent(
+      fileName
+    )}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+
+    const url = await s3Utils.getSignedUrl(s3Key, 900, {
+      responseDisposition: disposition,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { url },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "파일 URL 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function saveStageFile(req, res) {
+  try {
+    const { id } = req.params;
+    const {
+      stage,
+      fileName,
+      fileType,
+      fileSize,
+      s3Key,
+      s3Url,
+      filePath,
+      source,
+    } = req.body || {};
+
+    const allowed = ["machining", "packaging", "shipping", "tracking"];
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    if (!allowed.includes(String(stage || "").trim())) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 stage 입니다.",
+      });
+    }
+    if (!fileName || !s3Key || !s3Url) {
+      return res
+        .status(400)
+        .json({ success: false, message: "필수 파일 정보가 없습니다." });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "업로드 권한이 없습니다." });
+    }
+
+    const normalizedStage = String(stage || "").trim();
+    const normalizedSource =
+      String(source || "manual").trim() === "worker" ? "worker" : "manual";
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    request.caseInfos = request.caseInfos || {};
+    request.caseInfos.stageFiles = request.caseInfos.stageFiles || {};
+    ensureReviewByStageDefaults(request);
+
+    request.caseInfos.stageFiles[normalizedStage] = {
+      fileName,
+      fileType,
+      fileSize,
+      filePath: filePath || "",
+      s3Key: s3Key || "",
+      s3Url: s3Url || "",
+      source: normalizedSource,
+      uploadedBy: req.user?._id,
+      uploadedAt: new Date(),
+    };
+
+    request.caseInfos.reviewByStage[normalizedStage] = {
+      status: "PENDING",
+      updatedAt: new Date(),
+      updatedBy: req.user?._id,
+      reason: "",
+    };
+
+    await request.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "파일이 저장되었습니다.",
+      data: await normalizeRequestForResponse(request),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "파일 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
 
 /**
  * 모든 의뢰 목록 조회 (관리자용)
@@ -627,6 +1002,13 @@ export async function saveCamFileAndCompleteCam(req, res) {
     }
 
     request.caseInfos = request.caseInfos || {};
+    request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+    request.caseInfos.reviewByStage.cam = {
+      status: "PENDING",
+      updatedAt: new Date(),
+      updatedBy: req.user?._id,
+      reason: "",
+    };
     request.caseInfos.camFile = {
       fileName,
       fileType,
@@ -637,14 +1019,13 @@ export async function saveCamFileAndCompleteCam(req, res) {
       uploadedAt: new Date(),
     };
 
-    applyStatusMapping(request, "가공후");
-    await ensureLotNumberForMachining(request);
-    request.manufacturerStage = mapManufacturerStage(request);
+    // 업로드 시 공정 전환은 하지 않고, 기존 단계 유지 (수동 승인 버튼 클릭 시에만 전환)
+    // request.manufacturerStage = "CAM";
     await request.save();
 
     return res.status(200).json({
       success: true,
-      message: "CAM 결과가 저장되고 상태가 가공후로 변경되었습니다.",
+      message: "CAM 파일이 저장되었습니다.",
       data: await normalizeRequestForResponse(request),
     });
   } catch (error) {
@@ -684,10 +1065,10 @@ export async function deleteCamFileAndRollback(req, res) {
     // camFile 제거, 상태 롤백
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.camFile = undefined;
-    request.status = "가공전";
+    request.status = "의뢰접수";
     request.status1 = "가공";
     request.status2 = "전";
-    request.lotNumber = undefined; // 의뢰 단계(가공전)로 복귀 시 로트번호 반납
+    request.lotNumber = undefined; // 의뢰 단계로 복귀 시 로트번호 반납
     request.manufacturerStage = mapManufacturerStage(request);
 
     await request.save();
@@ -828,6 +1209,13 @@ export async function saveNcFileAndMoveToMachining(req, res) {
     }
 
     request.caseInfos = request.caseInfos || {};
+    request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+    request.caseInfos.reviewByStage.machining = {
+      status: "PENDING",
+      updatedAt: new Date(),
+      updatedBy: req.user?._id,
+      reason: "",
+    };
     request.caseInfos.ncFile = {
       fileName: expectedNcName || fileName,
       originalName: expectedNcName || fileName,
@@ -839,18 +1227,14 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       uploadedAt: new Date(),
     };
 
-    // 제조사 공정: CAM(가공/후) -> 가공(중)
-    request.status = "가공후"; // 메인 상태도 단계에 맞춰 저장
-    request.status1 = "가공";
-    request.status2 = "중";
-    await ensureLotNumberForMachining(request);
-    request.manufacturerStage = mapManufacturerStage(request);
+    // 업로드 시 공정 전환은 하지 않고, 가공(검토) 대상으로만 전환
+    request.manufacturerStage = "가공";
 
     await request.save();
 
     return res.status(200).json({
       success: true,
-      message: "NC 파일이 저장되고 가공 단계로 이동합니다.",
+      message: "NC 파일이 저장되었습니다.",
       data: await normalizeRequestForResponse(request),
     });
   } catch (error) {
@@ -895,11 +1279,24 @@ export async function deleteNcFileAndRollbackCam(req, res) {
 
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.ncFile = undefined;
+    if (request.caseInfos.reviewByStage?.machining) {
+      request.caseInfos.reviewByStage.machining.status = "PENDING";
+      request.caseInfos.reviewByStage.machining.updatedAt = new Date();
+      request.caseInfos.reviewByStage.machining.updatedBy = req.user?._id;
+      request.caseInfos.reviewByStage.machining.reason = "";
+    }
 
-    // 제조사 공정: 가공(중) -> CAM(가공/후)
-    request.status = "가공후";
-    request.status1 = "가공";
-    request.status2 = "후";
+    // 제조사 공정: 가공(중) -> CAM(가공/후) 또는 의뢰(의뢰접수)
+    const isRollbackToRequest = req.query.nextStage === "request";
+    if (isRollbackToRequest) {
+      request.status = "의뢰접수";
+      request.status1 = "가공";
+      request.status2 = "전";
+    } else {
+      request.status = "가공후";
+      request.status1 = "가공";
+      request.status2 = "후";
+    }
     request.manufacturerStage = mapManufacturerStage(request);
 
     await request.save();

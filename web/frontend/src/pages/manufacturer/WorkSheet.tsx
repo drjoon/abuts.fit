@@ -17,19 +17,22 @@ export const ManufacturerWorksheetPage = () => {
       switch (worksheetStage) {
         case "request":
         case "receive": // Legacy alias
-          return <RequestPage showQueueBar={true} />;
+          return (
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) => {
+                const stage = String(req.manufacturerStage || "").trim();
+                return !stage || stage === "의뢰";
+              }}
+            />
+          );
         case "machining":
           return (
             <RequestPage
               showQueueBar={true}
               filterRequests={(req) => {
-                const status = String(req.status || "").trim();
-                const s1 = String(req.status1 || "").trim();
-                const s2 = String(req.status2 || "").trim();
-                // 가공 단계: status=가공/중 이면서 NC 파일이 실제로 존재(s3Key)하는 건만 노출
-                return (
-                  s1 === "가공" && s2 === "중" && !!req.caseInfos?.ncFile?.s3Key
-                );
+                const stage = String(req.manufacturerStage || "").trim();
+                return stage === "가공" && !!req.caseInfos?.ncFile?.s3Key;
               }}
             />
           );
@@ -38,16 +41,8 @@ export const ManufacturerWorksheetPage = () => {
             <RequestPage
               showQueueBar={true}
               filterRequests={(req) => {
-                const status = String(req.status || "").trim();
-                const s1 = String(req.status1 || "").trim();
-                const s2 = String(req.status2 || "").trim();
-                // CAM 단계: 가공 후 상태이며 NC가 아직 없는 건만 노출
-                const isCamStage =
-                  status === "가공후" || (s1 === "가공" && s2 === "후");
-                const hasNcKey = !!req.caseInfos?.ncFile?.s3Key;
-                const isMachiningButMissingNc =
-                  s1 === "가공" && s2 === "중" && !hasNcKey;
-                return (isCamStage && !hasNcKey) || isMachiningButMissingNc;
+                const stage = String(req.manufacturerStage || "").trim();
+                return stage === "CAM" && !!req.caseInfos?.camFile?.s3Key;
               }}
             />
           );
