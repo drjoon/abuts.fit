@@ -17,6 +17,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   LayoutDashboard,
   MessageSquare,
   Mail,
@@ -899,36 +905,31 @@ export const DashboardLayout = () => {
                             >
                               CAM
                             </Button>
-                            <Button
-                              variant={
-                                worksheetStage === "machining"
-                                  ? "default"
-                                  : "ghost"
-                              }
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() =>
-                                navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=machining"
-                                )
-                              }
-                            >
-                              가공
-                            </Button>
-                            <Button
-                              variant={
-                                worksheetStage === "qc" ? "default" : "ghost"
-                              }
-                              size="sm"
-                              className="h-7 px-2 text-xs"
-                              onClick={() =>
-                                navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=qc"
-                                )
-                              }
-                            >
-                              세척·검사·포장
-                            </Button>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant={
+                                      worksheetStage === "machining"
+                                        ? "default"
+                                        : "ghost"
+                                    }
+                                    size="sm"
+                                    className="h-7 px-2 text-xs"
+                                    onClick={() =>
+                                      navigate(
+                                        "/dashboard/worksheet?type=cnc&stage=machining"
+                                      )
+                                    }
+                                  >
+                                    생산
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>가공·세척·검사·포장</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             <Button
                               variant={
                                 worksheetStage === "shipping"

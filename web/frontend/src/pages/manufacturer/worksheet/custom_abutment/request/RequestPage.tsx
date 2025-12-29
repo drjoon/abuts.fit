@@ -380,7 +380,7 @@ export const RequestPage = ({
           }
         }
 
-        // CAM / 가공 탭에서 NC 프리뷰를 보여주기 위해 NC를 읽어온다.
+        // CAM / 생산 탭에서 NC 프리뷰를 보여주기 위해 NC를 읽어온다.
         if (isCamStage || isMachiningStage) {
           const ncMeta = req.caseInfos?.ncFile;
           if (ncMeta?.s3Key) {
@@ -406,7 +406,7 @@ export const RequestPage = ({
           }
         }
 
-        // 가공 탭: stageFiles(machining) 이미지 URL도 불러온다.
+        // 생산 탭: stageFiles(machining) 이미지 URL도 불러온다.
         if (isMachiningStage) {
           const stageMeta = req.caseInfos?.stageFiles?.machining;
           if (stageMeta?.s3Key) {
@@ -456,14 +456,14 @@ export const RequestPage = ({
 
   const searchLower = worksheetSearch.toLowerCase();
   const currentStageForTab = isMachiningStage
-    ? "가공"
+    ? "생산"
     : isCamStage
     ? "CAM"
     : "의뢰";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const filteredBase = (() => {
-    // 완료포함: 탭 기준 단계 이상 모든 건 포함 (CAM 탭=CAM~추적관리, 가공 탭=가공~추적관리)
+    // 완료포함: 탭 기준 단계 이상 모든 건 포함 (CAM 탭=CAM~추적관리, 생산 탭=생산~추적관리)
     if (showCompleted) {
       return requests.filter((req) => {
         const stage = deriveStageForFilter(req);

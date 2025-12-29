@@ -55,7 +55,7 @@ export const computeStageLabel = (
 ) => {
   const savedStage = (req.manufacturerStage || "").trim();
   if (savedStage) return savedStage;
-  if (opts?.isMachiningStage) return "가공";
+  if (opts?.isMachiningStage) return "생산";
   if (opts?.isCamStage) return "CAM";
   return "의뢰";
 };
@@ -69,22 +69,22 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
 
   if (s1 === "가공") {
     if (s2 === "후") return "CAM";
-    return "가공";
+    return "생산";
   }
-  if (s1 === "세척/검사/포장") return "세척·검사·포장";
+  if (s1 === "세척/검사/포장") return "생산";
   if (s1 === "배송") return "발송";
   if (s1 === "완료") return "추적관리";
   if (main === "가공후") return "CAM";
+  if (main === "세척/검사/포장") return "생산";
   return "의뢰";
 };
 
 export const stageOrder: Record<string, number> = {
   의뢰: 0,
   CAM: 1,
-  가공: 2,
-  "세척·검사·포장": 3,
-  발송: 4,
-  추적관리: 5,
+  생산: 2,
+  발송: 3,
+  추적관리: 4,
 };
 
 export const getAcceptByStage = (stage: string) => {
@@ -93,9 +93,8 @@ export const getAcceptByStage = (stage: string) => {
       return ".stl";
     case "CAM":
       return ".cam.stl";
-    case "가공":
+    case "생산":
       return ".png,.jpg,.jpeg,.webp,.bmp";
-    case "세척·검사·포장":
     case "발송":
     case "추적관리":
       return ".png,.jpg,.jpeg,.webp,.bmp";

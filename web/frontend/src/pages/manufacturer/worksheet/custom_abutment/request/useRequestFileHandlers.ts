@@ -238,8 +238,8 @@ export const useRequestFileHandlers = ({
           throw new Error("delete cam file failed");
         }
         toast({
-          title: "삭제 완료",
-          description: "CAM 수정본을 삭제하고 상태를 가공전으로 되돌렸습니다.",
+          title: "롤백 완료",
+          description: "의뢰 단계로 되돌렸습니다.",
         });
 
         setPreviewOpen(false);
@@ -300,8 +300,8 @@ export const useRequestFileHandlers = ({
         }
         const stageLabel = targetStage === "request" ? "의뢰" : "CAM";
         toast({
-          title: "삭제 완료",
-          description: `NC 파일을 삭제하고 ${stageLabel} 단계로 되돌렸습니다.`,
+          title: "롤백 완료",
+          description: `${stageLabel} 단계로 되돌렸습니다.`,
         });
 
         setPreviewOpen(false);

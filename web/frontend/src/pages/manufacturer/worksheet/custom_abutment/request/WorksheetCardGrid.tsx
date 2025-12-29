@@ -55,7 +55,7 @@ export const WorksheetCardGrid = ({
       const isDownloading = !!downloading[request._id];
 
       const currentStageForTab = isMachiningStage
-        ? "가공"
+        ? "생산"
         : isCamStage
         ? "CAM"
         : "의뢰";

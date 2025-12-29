@@ -22,11 +22,11 @@ const mapManufacturerStage = (request) => {
 
   if (s1 === "가공") {
     if (s2 === "전") return "의뢰";
-    if (s2 === "중") return "가공";
+    if (s2 === "중") return "생산";
     if (s2 === "후") return "CAM";
-    return "가공";
+    return "생산";
   }
-  if (s1 === "세척/검사/포장") return "세척·검사·포장";
+  if (s1 === "세척/검사/포장") return "생산";
   if (s1 === "배송") return "발송";
   if (main === "가공후") return "CAM";
   return "의뢰";
@@ -54,8 +54,8 @@ const revertManufacturerStageByReviewStage = (request, stage) => {
   const map = {
     request: "의뢰",
     cam: "CAM",
-    machining: "가공",
-    packaging: "세척·검사·포장",
+    machining: "생산",
+    packaging: "생산",
     shipping: "발송",
     tracking: "추적관리",
   };
@@ -153,14 +153,13 @@ const advanceManufacturerStageByReviewStage = async ({ request, stage }) => {
     request.status1 = "가공";
     request.status2 = "중";
     await ensureLotNumberForMachining(request);
-    request.manufacturerStage = "가공";
+    request.manufacturerStage = "생산";
     return;
   }
 
   if (stage === "machining") {
-    request.status1 = "세척/검사/포장";
-    request.status2 = "전";
-    request.manufacturerStage = "세척·검사·포장";
+    applyStatusMapping(request, "배송대기");
+    request.manufacturerStage = "발송";
     return;
   }
 
@@ -1227,8 +1226,8 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       uploadedAt: new Date(),
     };
 
-    // 업로드 시 공정 전환은 하지 않고, 가공(검토) 대상으로만 전환
-    request.manufacturerStage = "가공";
+    // 업로드 시 공정 전환은 하지 않고, 생산(검토) 대상으로만 전환
+    request.manufacturerStage = "생산";
 
     await request.save();
 

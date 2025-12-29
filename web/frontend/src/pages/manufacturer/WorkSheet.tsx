@@ -32,7 +32,7 @@ export const ManufacturerWorksheetPage = () => {
               showQueueBar={true}
               filterRequests={(req) => {
                 const stage = String(req.manufacturerStage || "").trim();
-                return stage === "가공" && !!req.caseInfos?.ncFile?.s3Key;
+                return stage === "생산" && !!req.caseInfos?.ncFile?.s3Key;
               }}
             />
           );
