@@ -435,7 +435,20 @@ export const useRequestFileHandlers = ({
           }),
         });
         if (!res.ok) {
-          throw new Error("save cam file failed");
+          let message = "CAM 파일 저장에 실패했습니다.";
+          try {
+            const ct = res.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              const errorData = await res.json();
+              if (errorData?.message) message = String(errorData.message);
+            } else {
+              const text = await res.text();
+              if (text) message = text;
+            }
+          } catch {
+            // ignore
+          }
+          throw new Error(message);
         }
         toast({
           title: "업로드 완료",
@@ -452,7 +465,9 @@ export const useRequestFileHandlers = ({
         console.error(error);
         toast({
           title: "업로드 실패",
-          description: "파일 업로드 또는 저장에 실패했습니다.",
+          description:
+            (error as Error)?.message ||
+            "파일 업로드 또는 저장에 실패했습니다.",
           variant: "destructive",
         });
       } finally {
@@ -629,7 +644,20 @@ export const useRequestFileHandlers = ({
         });
 
         if (!res.ok) {
-          throw new Error("save stage file failed");
+          let message = "파일 저장에 실패했습니다.";
+          try {
+            const ct = res.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              const errorData = await res.json();
+              if (errorData?.message) message = String(errorData.message);
+            } else {
+              const text = await res.text();
+              if (text) message = text;
+            }
+          } catch {
+            // ignore
+          }
+          throw new Error(message);
         }
 
         toast({

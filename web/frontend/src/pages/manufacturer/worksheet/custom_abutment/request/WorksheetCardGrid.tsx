@@ -155,7 +155,7 @@ export const WorksheetCardGrid = ({
           key={request._id}
           className={`relative shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed group/card ${
             isCompletedForCurrentStage
-              ? "border-emerald-200 bg-emerald-50/40"
+              ? "border-emerald-300 bg-emerald-50/80 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
               : "border-slate-200"
           }`}
           onClick={() => onOpenPreview(request)}
@@ -273,22 +273,6 @@ export const WorksheetCardGrid = ({
                     <span>치아번호 {caseInfos.tooth}</span>
                   </>
                 )}
-                {!!request.assignedMachine && (
-                  <Badge
-                    variant="outline"
-                    className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
-                  >
-                    {request.assignedMachine}
-                  </Badge>
-                )}
-                {lotNumber && (
-                  <Badge
-                    variant="outline"
-                    className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
-                  >
-                    {lotNumber}
-                  </Badge>
-                )}
                 {caseInfos.connectionDiameter && (
                   <>
                     <span>•</span>
@@ -310,7 +294,24 @@ export const WorksheetCardGrid = ({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1"></div>
+                <div className="flex items-center gap-1">
+                  {!!request.assignedMachine && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
+                    >
+                      {request.assignedMachine}
+                    </Badge>
+                  )}
+                  {lotNumber && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                    >
+                      {lotNumber}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>
