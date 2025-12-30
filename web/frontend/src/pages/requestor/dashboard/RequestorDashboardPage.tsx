@@ -287,6 +287,7 @@ export const RequestorDashboardPage = () => {
         { label: "CAM", value: "0", icon: Clock },
         { label: "생산", value: "0", icon: Clock },
         { label: "발송", value: "0", icon: TrendingUp },
+        { label: "완료/취소", value: "0", icon: CheckCircle },
       ];
     }
 
@@ -315,6 +316,12 @@ export const RequestorDashboardPage = () => {
         value: String(s.inShipping ?? 0),
         change: s.inShippingChange ?? "+0%",
         icon: TrendingUp,
+      },
+      {
+        label: "완료/취소",
+        value: String(s.doneOrCanceled ?? 0),
+        change: s.doneOrCanceledChange ?? "+0%",
+        icon: CheckCircle,
       },
     ];
   })();

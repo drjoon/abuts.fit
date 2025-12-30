@@ -73,30 +73,57 @@ export async function getMyDashboardSummary(req, res) {
       .lean();
 
     // 커스텀 어벗(Request.caseInfos.implantSystem 존재)만 대시보드 통계 대상
-    // 취소 건은 대시보드(최근 의뢰/통계)에서 제외
     const abutmentRequests = requests.filter((r) => {
-      if (r.status === "취소") return false;
       const ci = r.caseInfos || {};
       return typeof ci.implantSystem === "string" && ci.implantSystem.trim();
     });
 
-    const total = abutmentRequests.length;
-    const inProduction = abutmentRequests.filter(
-      (r) => r.status === "생산" || r.manufacturerStage === "machining"
-    ).length;
-    const inCam = abutmentRequests.filter(
-      (r) => r.status === "CAM" || r.manufacturerStage === "cam"
-    ).length;
-    const completed = abutmentRequests.filter(
-      (r) => r.status === "완료"
-    ).length;
-    const inShipping = abutmentRequests.filter(
-      (r) => r.status === "발송" || r.manufacturerStage === "shipping"
-    ).length;
+    const normalizeStage = (r) => {
+      const status = String(r.status || "");
+      const stage = String(r.manufacturerStage || "");
+      const status2 = String(r.status2 || "");
 
-    const active = abutmentRequests.filter((r) =>
-      ["의뢰", "CAM", "생산", "발송"].includes(r.status)
-    );
+      if (status === "취소") return "cancel";
+      if (status === "완료" || status2 === "완료") return "completed";
+      if (
+        ["발송", "배송대기", "배송중"].includes(status) ||
+        ["shipping", "발송"].includes(stage)
+      ) {
+        return "shipping";
+      }
+      if (
+        ["생산", "가공후"].includes(status) ||
+        ["machining", "생산", "packaging"].includes(stage)
+      ) {
+        return "production";
+      }
+      if (
+        ["CAM", "가공전"].includes(status) ||
+        ["cam", "CAM", "가공전"].includes(stage)
+      ) {
+        return "cam";
+      }
+      return "request";
+    };
+
+    const stages = abutmentRequests.map((r) => ({
+      stage: normalizeStage(r),
+      request: r,
+    }));
+
+    const total = abutmentRequests.length;
+    const canceledCount = abutmentRequests.filter(
+      (r) => r.status === "취소"
+    ).length;
+    const inProduction = stages.filter((s) => s.stage === "production").length;
+    const inCam = stages.filter((s) => s.stage === "cam").length;
+    const completed = stages.filter((s) => s.stage === "completed").length;
+    const inShipping = stages.filter((s) => s.stage === "shipping").length;
+    const doneOrCanceled = completed + canceledCount;
+
+    const active = stages
+      .filter((s) => !["completed", "cancel"].includes(s.stage))
+      .map((s) => s.request);
 
     const stageCounts = {
       design: 0,
@@ -106,14 +133,14 @@ export async function getMyDashboardSummary(req, res) {
     };
 
     active.forEach((r) => {
-      const status = r.status;
-      if (status === "의뢰") {
+      const stage = normalizeStage(r);
+      if (stage === "request") {
         stageCounts.design += 1;
-      } else if (status === "CAM") {
+      } else if (stage === "cam") {
         stageCounts.cam += 1;
-      } else if (status === "생산") {
+      } else if (stage === "production") {
         stageCounts.production += 1;
-      } else if (status === "발송") {
+      } else if (stage === "shipping") {
         stageCounts.shipping += 1;
       }
     });
@@ -286,11 +313,13 @@ export async function getMyDashboardSummary(req, res) {
       success: true,
       data: {
         stats: {
-          totalRequests: total,
+          // '의뢰' 카드에는 접수 단계(의뢰)만 표시
+          totalRequests: stageCounts.design,
           inCam,
           inProduction,
           inShipping,
           completed,
+          doneOrCanceled,
         },
         manufacturingSummary,
         riskSummary,

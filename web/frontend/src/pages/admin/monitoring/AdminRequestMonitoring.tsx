@@ -26,58 +26,61 @@ import {
   XCircle,
 } from "lucide-react";
 
-const getStatusBadge = (status?: string, manufacturerStage?: string) => {
-  // 5단계 공정이 있으면 우선 사용
-  if (manufacturerStage) {
-    switch (manufacturerStage) {
-      case "의뢰":
-        return <Badge variant="outline">의뢰</Badge>;
-      case "CAM":
-        return <Badge variant="default">CAM</Badge>;
-      case "생산":
-        return (
-          <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
-            생산
-          </Badge>
-        );
-      case "발송":
-        return (
-          <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
-            발송
-          </Badge>
-        );
-      case "추적관리":
-        return <Badge variant="secondary">추적관리</Badge>;
-      default:
-        break;
-    }
-  }
+const normalizeStage = (
+  status?: string,
+  manufacturerStage?: string,
+  status2?: string
+) => {
+  const s = String(status || "");
+  const stage = String(manufacturerStage || "");
+  const s2 = String(status2 || "");
 
-  // Fallback: 기존 status 필드 기준
-  switch (status) {
-    case "의뢰접수":
+  if (s === "취소") return "취소";
+  if (s === "완료" || s2 === "완료") return "완료";
+  if (
+    ["발송", "배송대기", "배송중"].includes(s) ||
+    ["shipping", "발송"].includes(stage)
+  )
+    return "발송";
+  if (
+    ["생산", "가공후"].includes(s) ||
+    ["machining", "생산", "packaging"].includes(stage)
+  )
+    return "생산";
+  if (["CAM", "가공전"].includes(s) || ["cam", "CAM", "가공전"].includes(stage))
+    return "CAM";
+  return "의뢰";
+};
+
+const getStatusBadge = (
+  status?: string,
+  manufacturerStage?: string,
+  status2?: string
+) => {
+  const norm = normalizeStage(status, manufacturerStage, status2);
+  switch (norm) {
+    case "의뢰":
       return <Badge variant="outline">의뢰</Badge>;
-    case "가공전":
+    case "CAM":
       return <Badge variant="default">CAM</Badge>;
-    case "가공후":
+    case "생산":
       return (
         <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
           생산
         </Badge>
       );
-    case "배송대기":
-    case "배송중":
+    case "발송":
       return (
         <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
           발송
         </Badge>
       );
     case "완료":
-      return <Badge variant="secondary">추적관리</Badge>;
+      return <Badge variant="secondary">완료</Badge>;
     case "취소":
       return <Badge variant="destructive">취소</Badge>;
     default:
-      return <Badge>{status || "상태 미지정"}</Badge>;
+      return <Badge>{norm || "상태 미지정"}</Badge>;
   }
 };
 
@@ -106,21 +109,20 @@ const getPriorityBadge = (priority: string) => {
   }
 };
 
-const getStatusIcon = (status: string) => {
-  switch (status) {
+const getStatusIcon = (
+  status: string,
+  manufacturerStage?: string,
+  status2?: string
+) => {
+  const norm = normalizeStage(status, manufacturerStage, status2);
+  switch (norm) {
     case "의뢰":
-    case "의뢰접수":
       return <FileText className="h-4 w-4 text-blue-500" />;
     case "CAM":
-    case "가공전":
     case "생산":
-    case "가공후":
       return <Clock className="h-4 w-4 text-green-500" />;
     case "발송":
-    case "배송대기":
-    case "배송중":
       return <Truck className="h-4 w-4 text-orange-500" />;
-    case "추적관리":
     case "완료":
       return <CheckCircle className="h-4 w-4 text-green-500" />;
     case "취소":
@@ -187,8 +189,11 @@ export const AdminRequestMonitoring = () => {
   const filteredRequests = requests.filter((request) => {
     const caseInfos = request.caseInfos || {};
     const requestor = request.requestor || {};
-    const effectiveStatus =
-      request.manufacturerStage || request.status || request.status1;
+    const effectiveStatus = normalizeStage(
+      request.status,
+      request.manufacturerStage,
+      request.status2
+    );
     const matchesSearch =
       (caseInfos.patientName || "")
         .toLowerCase()
@@ -211,14 +216,11 @@ export const AdminRequestMonitoring = () => {
 
   const totalCount = requestStats.total ?? 0;
   const byStatus = requestStats.byStatus || {};
-  const receiveCount = byStatus["의뢰"] || byStatus["의뢰접수"] || 0;
-  const camCount = byStatus["CAM"] || byStatus["가공전"] || 0;
-  const productionCount = byStatus["생산"] || byStatus["가공후"] || 0;
-  const shippingCount =
-    (byStatus["발송"] || 0) +
-    (byStatus["배송대기"] || 0) +
-    (byStatus["배송중"] || 0);
-  const doneCount = byStatus["추적관리"] || byStatus["완료"] || 0;
+  const receiveCount = byStatus["의뢰"] || 0;
+  const camCount = byStatus["CAM"] || 0;
+  const productionCount = byStatus["생산"] || 0;
+  const shippingCount = byStatus["발송"] || 0;
+  const doneCount = byStatus["완료"] || 0;
   const canceledCount = byStatus["취소"] || 0;
 
   return (
@@ -403,7 +405,11 @@ export const AdminRequestMonitoring = () => {
                   <div className="flex items-start justify-between mb-3">
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                        {getStatusIcon(request.status)}
+                        {getStatusIcon(
+                          request.status,
+                          request.manufacturerStage,
+                          request.status2
+                        )}
                         <h3 className="font-medium">
                           {request.caseInfos?.patientName} (
                           {request.caseInfos?.tooth})
@@ -427,7 +433,8 @@ export const AdminRequestMonitoring = () => {
                     <div className="flex flex-col items-end gap-2">
                       {getStatusBadge(
                         request.status,
-                        request.manufacturerStage
+                        request.manufacturerStage,
+                        request.status2
                       )}
                       <div className="text-right text-sm">
                         <p className="font-medium text-primary">

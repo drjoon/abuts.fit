@@ -883,43 +883,57 @@ async function getDashboardStats(req, res) {
     const totalUsers = await User.countDocuments();
     const activeUsers = await User.countDocuments({ active: true });
 
-    // 의뢰 통계 (manufacturerStage 기준)
-    const stageStats = await Request.aggregate([
-      {
-        $group: {
-          _id: "$manufacturerStage",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    // 의뢰 통계 (4단계 공정 + 완료/취소)
+    const allRequestsForStats = await Request.find()
+      .select({ status: 1, status1: 1, status2: 1, manufacturerStage: 1 })
+      .lean();
 
-    const requestStatsByStage = {};
-    stageStats.forEach((stat) => {
-      if (stat._id) {
-        requestStatsByStage[stat._id] = stat.count;
+    const normalizeStage = (r) => {
+      const status = String(r.status || "");
+      const stage = String(r.manufacturerStage || "");
+      const status2 = String(r.status2 || "");
+
+      if (status === "취소") return "취소";
+      if (status === "완료" || status2 === "완료") return "완료";
+      if (
+        ["발송", "배송대기", "배송중"].includes(status) ||
+        ["shipping", "발송"].includes(stage)
+      ) {
+        return "발송";
       }
-    });
+      if (
+        ["생산", "가공후"].includes(status) ||
+        ["machining", "생산", "packaging"].includes(stage)
+      ) {
+        return "생산";
+      }
+      if (
+        ["CAM", "가공전"].includes(status) ||
+        ["cam", "CAM", "가공전"].includes(stage)
+      ) {
+        return "CAM";
+      }
+      return "의뢰";
+    };
 
-    // 기존 status 기반 통계 (하위 호환성 유지)
-    const requestStats = await Request.aggregate([
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    const requestStatsByStatus = {
+      의뢰: 0,
+      CAM: 0,
+      생산: 0,
+      발송: 0,
+      완료: 0,
+      취소: 0,
+    };
 
-    // 의뢰 통계 가공
-    const requestStatsByStatus = { ...requestStatsByStage };
-    requestStats.forEach((stat) => {
-      if (stat._id) {
-        requestStatsByStatus[stat._id] = stat.count;
+    allRequestsForStats.forEach((r) => {
+      const s = normalizeStage(r);
+      if (requestStatsByStatus[s] != null) {
+        requestStatsByStatus[s] += 1;
       }
     });
 
     // 총 의뢰 수
-    const totalRequests = await Request.countDocuments();
+    const totalRequests = allRequestsForStats.length;
 
     // 최근 의뢰 (최대 5개)
     const recentRequests = await Request.find()
