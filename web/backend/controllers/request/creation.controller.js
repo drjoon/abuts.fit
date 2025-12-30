@@ -623,12 +623,12 @@ export async function createRequestsFromDraft(req, res) {
       !duplicateResolutions
     ) {
       const st = String(first?.existingRequest?.status || "");
-      const mode = st === "완료" || st === "추적관리" ? "completed" : "active";
+      const mode = st === "완료" ? "completed" : "active";
       return res.status(409).json({
         success: false,
         code: "DUPLICATE_REQUEST",
         message:
-          st === "완료" || st === "추적관리"
+          st === "완료"
             ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
             : "동일한 정보의 의뢰가 이미 진행 중입니다. 기존 의뢰를 취소하고 다시 의뢰할까요?",
         data: {
@@ -643,13 +643,12 @@ export async function createRequestsFromDraft(req, res) {
       // 프론트에서 duplicateResolutions(케이스별)를 보내도록 유도한다.
       if (duplicates.length > 1) {
         const st = String(first?.existingRequest?.status || "");
-        const mode =
-          st === "완료" || st === "추적관리" ? "completed" : "active";
+        const mode = st === "완료" ? "completed" : "active";
         return res.status(409).json({
           success: false,
           code: "DUPLICATE_REQUEST",
           message:
-            st === "완료" || st === "추적관리"
+            st === "완료"
               ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 중복 의뢰 처리 방법을 선택해주세요."
               : "동일한 정보의 의뢰가 이미 진행 중입니다. 중복 의뢰 처리 방법을 선택해주세요.",
           data: {
@@ -682,13 +681,12 @@ export async function createRequestsFromDraft(req, res) {
       );
       if (unresolved.length > 0) {
         const st = String(first?.existingRequest?.status || "");
-        const mode =
-          st === "완료" || st === "추적관리" ? "completed" : "active";
+        const mode = st === "완료" ? "completed" : "active";
         return res.status(409).json({
           success: false,
           code: "DUPLICATE_REQUEST",
           message:
-            st === "완료" || st === "추적관리"
+            st === "완료"
               ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 중복 의뢰 처리 방법을 선택해주세요."
               : "동일한 정보의 의뢰가 이미 진행 중입니다. 중복 의뢰 처리 방법을 선택해주세요.",
           data: {
@@ -790,7 +788,7 @@ export async function createRequestsFromDraft(req, res) {
 
           const existingStatus = String(existingDoc.status || "");
           if (strategy === "replace") {
-            if (existingStatus === "완료" || existingStatus === "추적관리") {
+            if (existingStatus === "완료") {
               const err = new Error(
                 "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요."
               );
@@ -827,7 +825,7 @@ export async function createRequestsFromDraft(req, res) {
               );
             }
           } else if (strategy === "remake") {
-            if (existingStatus !== "완료" && existingStatus !== "추적관리") {
+            if (existingStatus !== "완료") {
               const err = new Error(
                 "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요."
               );
@@ -872,7 +870,7 @@ export async function createRequestsFromDraft(req, res) {
             }
 
             const existingStatus = String(existingDoc.status || "");
-            if (existingStatus === "완료" || existingStatus === "추적관리") {
+            if (existingStatus === "완료") {
               const err = new Error(
                 "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요."
               );
@@ -928,7 +926,7 @@ export async function createRequestsFromDraft(req, res) {
               throw err;
             }
             const existingStatus = String(existingDoc.status || "");
-            if (existingStatus !== "완료" && existingStatus !== "추적관리") {
+            if (existingStatus !== "완료") {
               const err = new Error(
                 "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요."
               );

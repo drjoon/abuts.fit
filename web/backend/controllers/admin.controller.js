@@ -1252,8 +1252,8 @@ async function updateRequestStatus(req, res) {
       });
     }
 
-    // 상태 유효성 검사 (최신 워크플로우)
-    const validStatuses = ["의뢰", "CAM", "생산", "발송", "추적관리", "취소"];
+    // 상태 유효성 검사 (4단계 공통 공정)
+    const validStatuses = ["의뢰", "CAM", "생산", "발송", "완료", "취소"];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,

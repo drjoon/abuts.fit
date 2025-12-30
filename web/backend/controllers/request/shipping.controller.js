@@ -36,7 +36,7 @@ export async function updateMyShippingMode(req, res) {
       {
         ...requestFilter,
         requestId: { $in: requestIds },
-        status: { $nin: ["취소", "추적관리", "완료"] },
+        status: { $nin: ["취소", "완료"] },
       },
       {
         $set: { shippingMode },
@@ -148,7 +148,7 @@ export async function getMyBulkShipping(req, res) {
 
     const requests = await Request.find({
       ...requestFilter,
-      status: { $in: ["CAM", "생산", "발송", "가공전", "가공후", "배송대기"] },
+      status: { $in: ["CAM", "생산", "발송"] },
     })
       .populate("requestor", "name organization")
       .populate("manufacturer", "name organization")
@@ -182,15 +182,9 @@ export async function getMyBulkShipping(req, res) {
       };
     };
 
-    const pre = requests
-      .filter((r) => r.status === "CAM" || r.status === "가공전")
-      .map(mapItem);
-    const post = requests
-      .filter((r) => r.status === "생산" || r.status === "가공후")
-      .map(mapItem);
-    const waiting = requests
-      .filter((r) => r.status === "발송" || r.status === "배송대기")
-      .map(mapItem);
+    const pre = requests.filter((r) => r.status === "CAM").map(mapItem);
+    const post = requests.filter((r) => r.status === "생산").map(mapItem);
+    const waiting = requests.filter((r) => r.status === "발송").map(mapItem);
 
     return res.status(200).json({
       success: true,
@@ -225,7 +219,7 @@ export async function createMyBulkShipping(req, res) {
     const requests = await Request.find({
       ...requestFilter,
       requestId: { $in: requestIds },
-      status: { $in: ["CAM", "생산", "발송", "가공전", "가공후", "배송대기"] },
+      status: { $in: ["CAM", "생산", "발송"] },
     });
 
     if (!requests.length) {
@@ -242,7 +236,7 @@ export async function createMyBulkShipping(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: `${requests.length}건의 의뢰가 배송대기 상태로 변경되었습니다.`,
+      message: `${requests.length}건의 의뢰가 발송 상태로 변경되었습니다.`,
       data: {
         updatedIds: requests.map((r) => r.requestId),
       },

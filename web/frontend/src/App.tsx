@@ -46,6 +46,11 @@ const ManufacturerWorksheetPage = lazy(() =>
     default: m.ManufacturerWorksheetPage,
   }))
 );
+const TrackingPage = lazy(() =>
+  import("./pages/manufacturer/tracking/TrackingPage").then((m) => ({
+    default: m.TrackingPage,
+  }))
+);
 
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((m) => ({
@@ -221,6 +226,14 @@ const App = () => {
                       element={
                         <RoleProtectedRoute roles={["manufacturer"]}>
                           <CncDashboardPage />
+                        </RoleProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="tracking"
+                      element={
+                        <RoleProtectedRoute roles={["manufacturer"]}>
+                          <TrackingPage />
                         </RoleProtectedRoute>
                       }
                     />

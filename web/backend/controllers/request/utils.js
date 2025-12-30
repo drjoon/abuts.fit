@@ -447,52 +447,48 @@ export async function computePriceForRequest({
 export function applyStatusMapping(request, status) {
   request.status = status;
 
+  // 4단계 공통 공정: 의뢰 → CAM → 생산 → 발송
   switch (status) {
     case "의뢰":
     case "의뢰접수":
       request.status = "의뢰";
       request.status1 = "의뢰접수";
       request.status2 = "없음";
-      request.manufacturerStage = "의뢰";
+      request.manufacturerStage = "request";
       break;
     case "CAM":
     case "가공전":
       request.status = "CAM";
       request.status1 = "가공";
       request.status2 = "전";
-      request.manufacturerStage = "CAM";
+      request.manufacturerStage = "cam";
       break;
     case "생산":
     case "가공후":
       request.status = "생산";
       request.status1 = "가공";
       request.status2 = "후";
-      request.manufacturerStage = "생산";
+      request.manufacturerStage = "machining";
       break;
     case "발송":
     case "배송대기":
     case "배송중":
+    case "완료":
       request.status = "발송";
       request.status1 = "배송";
-      request.status2 = status === "배송중" ? "중" : "전";
-      request.manufacturerStage = "발송";
-      break;
-    case "추적관리":
-    case "완료":
-      request.status = "추적관리";
-      request.status1 = "완료";
-      request.status2 = "없음";
-      request.manufacturerStage = "추적관리";
+      request.status2 =
+        status === "배송중" ? "중" : status === "완료" ? "완료" : "전";
+      request.manufacturerStage = "shipping";
       break;
     case "취소":
       request.status = "취소";
       request.status1 = "취소";
       request.status2 = "없음";
-      request.manufacturerStage = "의뢰";
+      request.manufacturerStage = "request";
       break;
     default:
       if (!request.manufacturerStage) {
-        request.manufacturerStage = "의뢰";
+        request.manufacturerStage = "request";
       }
       break;
   }

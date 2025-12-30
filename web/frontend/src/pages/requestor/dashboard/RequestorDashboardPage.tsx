@@ -60,13 +60,11 @@ export const RequestorDashboardPage = () => {
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
 
   const statusGroupByLabel: Record<string, string[] | null> = {
-    // 현재 카드 표시값과 일치하도록(요약 통계 기준) 그룹을 정의
-    // '의뢰' 카드는 실제로 totalRequests(전체)라 status filter 없이 전체를 보여준다.
+    // 4단계 공통 공정: 의뢰 → CAM → 생산 → 발송
     의뢰: null,
     CAM: ["CAM", "가공전"],
     생산: ["생산", "가공후"],
-    발송: ["발송", "배송중", "배송대기"],
-    추적관리: ["추적관리", "완료"],
+    발송: ["발송", "배송중", "배송대기", "완료"],
   };
 
   const filterAbutmentRequest = (r: any) => {
@@ -289,7 +287,6 @@ export const RequestorDashboardPage = () => {
         { label: "CAM", value: "0", icon: Clock },
         { label: "생산", value: "0", icon: Clock },
         { label: "발송", value: "0", icon: TrendingUp },
-        { label: "추적관리", value: "0", icon: CheckCircle },
       ];
     }
 
@@ -318,12 +315,6 @@ export const RequestorDashboardPage = () => {
         value: String(s.inShipping ?? 0),
         change: s.inShippingChange ?? "+0%",
         icon: TrendingUp,
-      },
-      {
-        label: "추적관리",
-        value: String(s.completed ?? 0),
-        change: s.completedChange ?? "+0%",
-        icon: CheckCircle,
       },
     ];
   })();

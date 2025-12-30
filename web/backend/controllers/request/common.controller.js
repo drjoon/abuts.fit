@@ -19,17 +19,16 @@ const mapManufacturerStage = (request) => {
   const main = (request.status || "").trim();
 
   switch (main) {
+    case "의뢰":
     case "의뢰접수":
       return "의뢰";
-    case "가공전":
+    case "CAM":
       return "CAM";
-    case "가공후":
+    case "생산":
       return "생산";
-    case "배송대기":
-    case "배송중":
-      return "발송";
+    case "발송":
     case "완료":
-      return "추적관리";
+      return "발송";
     case "취소":
       return "의뢰";
     default:
@@ -181,27 +180,27 @@ export async function deleteStageFile(req, res) {
 
 const advanceManufacturerStageByReviewStage = async ({ request, stage }) => {
   if (stage === "request") {
-    applyStatusMapping(request, "가공전");
+    applyStatusMapping(request, "CAM");
     return;
   }
 
   if (stage === "cam") {
-    applyStatusMapping(request, "가공후");
+    applyStatusMapping(request, "생산");
     return;
   }
 
   if (stage === "machining" || stage === "packaging") {
-    applyStatusMapping(request, "배송대기");
+    applyStatusMapping(request, "발송");
     return;
   }
 
   if (stage === "shipping") {
-    applyStatusMapping(request, "배송중");
+    applyStatusMapping(request, "발송"); // '발송' 상태 내에서 상세 단계(status2)만 변경됨
     return;
   }
 
   if (stage === "tracking") {
-    applyStatusMapping(request, "완료");
+    applyStatusMapping(request, "추적관리");
   }
 };
 
@@ -666,9 +665,12 @@ export async function updateRequest(req, res) {
     delete updateData.createdAt;
     delete updateData.updatedAt;
 
-    // 의뢰 상태가 '의뢰접수' 또는 '가공전'일 때만 일부 필드 수정 가능
+    // 의뢰 상태가 '의뢰' 또는 'CAM'일 때만 일부 필드 수정 가능
     // (requestor는 가공 시작 전까지 환자/임플란트 정보를 수정 가능)
-    if (!isAdmin && !["의뢰접수", "가공전"].includes(request.status)) {
+    if (
+      !isAdmin &&
+      !["의뢰", "CAM", "의뢰접수", "가공전"].includes(request.status)
+    ) {
       const allowedFields = ["messages"];
       Object.keys(updateData).forEach((key) => {
         if (!allowedFields.includes(key)) {

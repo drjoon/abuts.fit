@@ -82,42 +82,20 @@ export async function getMyDashboardSummary(req, res) {
 
     const total = abutmentRequests.length;
     const inProduction = abutmentRequests.filter(
-      (r) =>
-        r.status === "생산" ||
-        r.manufacturerStage === "생산" ||
-        r.status === "가공후"
+      (r) => r.status === "생산" || r.manufacturerStage === "machining"
     ).length;
     const inCam = abutmentRequests.filter(
-      (r) =>
-        r.status === "CAM" ||
-        r.manufacturerStage === "CAM" ||
-        r.status === "가공전"
+      (r) => r.status === "CAM" || r.manufacturerStage === "cam"
     ).length;
     const completed = abutmentRequests.filter(
-      (r) =>
-        r.status === "추적관리" ||
-        r.manufacturerStage === "추적관리" ||
-        r.status === "완료"
+      (r) => r.status === "완료"
     ).length;
     const inShipping = abutmentRequests.filter(
-      (r) =>
-        r.status === "발송" ||
-        r.manufacturerStage === "발송" ||
-        ["배송중", "배송대기"].includes(r.status)
+      (r) => r.status === "발송" || r.manufacturerStage === "shipping"
     ).length;
 
     const active = abutmentRequests.filter((r) =>
-      [
-        "의뢰",
-        "CAM",
-        "생산",
-        "발송",
-        "의뢰접수",
-        "가공전",
-        "가공후",
-        "배송대기",
-        "배송중",
-      ].includes(r.status)
+      ["의뢰", "CAM", "생산", "발송"].includes(r.status)
     );
 
     const stageCounts = {
@@ -129,17 +107,13 @@ export async function getMyDashboardSummary(req, res) {
 
     active.forEach((r) => {
       const status = r.status;
-      if (status === "의뢰" || status === "의뢰접수") {
+      if (status === "의뢰") {
         stageCounts.design += 1;
-      } else if (status === "CAM" || status === "가공전") {
+      } else if (status === "CAM") {
         stageCounts.cam += 1;
-      } else if (status === "생산" || status === "가공후") {
+      } else if (status === "생산") {
         stageCounts.production += 1;
-      } else if (
-        status === "발송" ||
-        status === "배송대기" ||
-        status === "배송중"
-      ) {
+      } else if (status === "발송") {
         stageCounts.shipping += 1;
       }
     });
