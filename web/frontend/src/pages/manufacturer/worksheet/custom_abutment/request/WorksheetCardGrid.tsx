@@ -1,5 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ArrowLeft } from "lucide-react";
 import {
   type ManufacturerRequest,
   computeStageLabel,
@@ -14,9 +15,12 @@ type WorksheetCardGridProps = {
   onOpenPreview: (req: ManufacturerRequest) => void;
   onDeleteCam: (req: ManufacturerRequest) => void;
   onDeleteNc: (req: ManufacturerRequest) => void;
+  onRollback?: (req: ManufacturerRequest) => void;
   onUploadNc?: (req: ManufacturerRequest, files: File[]) => Promise<void>;
+  uploadProgress: Record<string, number>;
   isCamStage: boolean;
   isMachiningStage: boolean;
+  uploading: Record<string, boolean>;
   downloading: Record<string, boolean>;
   deletingCam: Record<string, boolean>;
   deletingNc: Record<string, boolean>;
@@ -29,7 +33,10 @@ export const WorksheetCardGrid = ({
   onOpenPreview,
   onDeleteCam,
   onDeleteNc,
+  onRollback,
   onUploadNc,
+  uploadProgress,
+  uploading,
   downloading,
   deletingCam,
   deletingNc,
@@ -99,6 +106,8 @@ export const WorksheetCardGrid = ({
       );
       const isDeletingNc = !!deletingNc[request._id];
       const lotNumber = (request.lotNumber || "").trim();
+      const progress = uploadProgress[request._id];
+      const isUploading = uploading[request._id];
       const requestStageLabel = stageLabel;
       const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
@@ -144,7 +153,7 @@ export const WorksheetCardGrid = ({
       return (
         <Card
           key={request._id}
-          className={`shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed group/card ${
+          className={`relative shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed group/card ${
             isCompletedForCurrentStage
               ? "border-emerald-200 bg-emerald-50/40"
               : "border-slate-200"
@@ -153,6 +162,33 @@ export const WorksheetCardGrid = ({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
+          {onRollback && !isCompletedForCurrentStage && (
+            <button
+              type="button"
+              className="absolute right-2 top-2 z-20 hidden h-7 w-7 items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50 group-hover/card:flex"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onRollback(request);
+              }}
+              aria-label="롤백"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          {isUploading && progress !== undefined && (
+            <div className="absolute inset-0 z-10 bg-white/80 flex flex-col items-center justify-center p-4 rounded-xl">
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-2">
+                <div
+                  className="bg-blue-500 h-full transition-all duration-300 ease-out"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-xs font-semibold text-blue-600">
+                {progress}% 업로드 중...
+              </span>
+            </div>
+          )}
           <CardContent className="p-3 flex-1 flex flex-col gap-2">
             <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
               {request.referenceIds && request.referenceIds.length > 0 && (
@@ -237,6 +273,22 @@ export const WorksheetCardGrid = ({
                     <span>치아번호 {caseInfos.tooth}</span>
                   </>
                 )}
+                {!!request.assignedMachine && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
+                  >
+                    {request.assignedMachine}
+                  </Badge>
+                )}
+                {lotNumber && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                  >
+                    {lotNumber}
+                  </Badge>
+                )}
                 {caseInfos.connectionDiameter && (
                   <>
                     <span>•</span>
@@ -258,24 +310,7 @@ export const WorksheetCardGrid = ({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1">
-                  {request.assignedMachine && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
-                    >
-                      {request.assignedMachine}
-                    </Badge>
-                  )}
-                  {lotNumber && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
-                    >
-                      {lotNumber}
-                    </Badge>
-                  )}
-                </div>
+                <div className="flex items-center gap-1"></div>
               </div>
             </div>
           </CardContent>

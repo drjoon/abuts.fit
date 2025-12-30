@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
-import { getFileBlob, setFileBlob } from "@/utils/stlIndexedDb";
 import {
   type ManufacturerRequest,
   type ReviewStageKey,
@@ -15,6 +14,9 @@ type UseRequestFileHandlersProps = {
   fetchRequests: () => Promise<void>;
   setDownloading: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setUploading: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setUploadProgress: React.Dispatch<
+    React.SetStateAction<Record<string, number>>
+  >;
   setDeletingCam: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setDeletingNc: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setReviewSaving: React.Dispatch<React.SetStateAction<boolean>>;
@@ -39,6 +41,7 @@ export const useRequestFileHandlers = ({
   fetchRequests,
   setDownloading,
   setUploading,
+  setUploadProgress,
   setDeletingCam,
   setDeletingNc,
   setReviewSaving,
@@ -224,16 +227,26 @@ export const useRequestFileHandlers = ({
   );
 
   const handleDeleteCam = useCallback(
-    async (req: ManufacturerRequest) => {
+    async (
+      req: ManufacturerRequest,
+      opts?: { rollbackOnly?: boolean; navigate?: boolean }
+    ) => {
       if (!token) return;
       setDeletingCam((prev) => ({ ...prev, [req._id]: true }));
       try {
-        const res = await fetch(`/api/requests/${req._id}/cam-file`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const rollbackOnly = !!opts?.rollbackOnly;
+        const navigate = opts?.navigate !== false;
+        const res = await fetch(
+          `/api/requests/${req._id}/cam-file${
+            rollbackOnly ? "?rollbackOnly=1" : ""
+          }`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
         if (!res.ok) {
           throw new Error("delete cam file failed");
         }
@@ -242,21 +255,23 @@ export const useRequestFileHandlers = ({
           description: "의뢰 단계로 되돌렸습니다.",
         });
 
-        setPreviewOpen(false);
         await fetchRequests();
 
-        setPreviewFiles({});
-        setPreviewNcText("");
-        setPreviewNcName("");
+        if (navigate) {
+          setPreviewOpen(false);
+          setPreviewFiles({});
+          setPreviewNcText("");
+          setPreviewNcName("");
 
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev);
-            next.set("stage", "receive");
-            return next;
-          },
-          { replace: true }
-        );
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set("stage", "receive");
+              return next;
+            },
+            { replace: true }
+          );
+        }
       } catch (error) {
         toast({
           title: "삭제 실패",
@@ -281,13 +296,20 @@ export const useRequestFileHandlers = ({
   );
 
   const handleDeleteNc = useCallback(
-    async (req: ManufacturerRequest, opts?: { nextStage?: string }) => {
+    async (
+      req: ManufacturerRequest,
+      opts?: { nextStage?: string; rollbackOnly?: boolean; navigate?: boolean }
+    ) => {
       if (!token) return;
       setDeletingNc((prev) => ({ ...prev, [req._id]: true }));
       try {
         const targetStage = opts?.nextStage || "cam";
+        const rollbackOnly = !!opts?.rollbackOnly;
+        const navigate = opts?.navigate !== false;
         const res = await fetch(
-          `/api/requests/${req._id}/nc-file?nextStage=${targetStage}`,
+          `/api/requests/${req._id}/nc-file?nextStage=${targetStage}${
+            rollbackOnly ? "&rollbackOnly=1" : ""
+          }`,
           {
             method: "DELETE",
             headers: {
@@ -303,22 +325,23 @@ export const useRequestFileHandlers = ({
           title: "롤백 완료",
           description: `${stageLabel} 단계로 되돌렸습니다.`,
         });
-
-        setPreviewOpen(false);
         await fetchRequests();
 
-        setPreviewNcText("");
-        setPreviewNcName("");
-        setPreviewFiles({});
+        if (navigate) {
+          setPreviewOpen(false);
+          setPreviewNcText("");
+          setPreviewNcName("");
+          setPreviewFiles({});
 
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev);
-            next.set("stage", targetStage === "request" ? "receive" : "cam");
-            return next;
-          },
-          { replace: true }
-        );
+          setSearchParams(
+            (prev) => {
+              const next = new URLSearchParams(prev);
+              next.set("stage", targetStage === "request" ? "receive" : "cam");
+              return next;
+            },
+            { replace: true }
+          );
+        }
       } catch (error) {
         toast({
           title: "삭제 실패",
@@ -350,8 +373,6 @@ export const useRequestFileHandlers = ({
       const originalName =
         req.caseInfos?.file?.fileName ||
         req.caseInfos?.file?.originalName ||
-        req.caseInfos?.camFile?.fileName ||
-        req.caseInfos?.camFile?.originalName ||
         "";
       const originalBase = originalName
         .replace(/(\.cam\.stl|\.stl)$/i, "")
@@ -384,8 +405,16 @@ export const useRequestFileHandlers = ({
       }
 
       setUploading((prev) => ({ ...prev, [req._id]: true }));
+      setUploadProgress((prev) => ({ ...prev, [req._id]: 0 }));
       try {
-        const uploaded = await uploadFiles(filtered);
+        const uploaded = await uploadFiles(filtered, (p) => {
+          if (p[filtered[0].name] !== undefined) {
+            setUploadProgress((prev) => ({
+              ...prev,
+              [req._id]: p[filtered[0].name],
+            }));
+          }
+        });
         if (!uploaded || !uploaded.length) {
           throw new Error("upload failed");
         }
@@ -428,6 +457,11 @@ export const useRequestFileHandlers = ({
         });
       } finally {
         setUploading((prev) => ({ ...prev, [req._id]: false }));
+        setUploadProgress((prev) => {
+          const next = { ...prev };
+          delete next[req._id];
+          return next;
+        });
       }
     },
     [
@@ -436,6 +470,7 @@ export const useRequestFileHandlers = ({
       toast,
       fetchRequests,
       setUploading,
+      setUploadProgress,
       setPreviewFiles,
       setPreviewNcName,
     ]
@@ -444,21 +479,6 @@ export const useRequestFileHandlers = ({
   const handleUploadNc = useCallback(
     async (req: ManufacturerRequest, files: File[]) => {
       if (!token) return;
-
-      const normalize = (name: string) =>
-        String(name || "")
-          .trim()
-          .toLowerCase()
-          .normalize("NFC");
-
-      const originalName =
-        req.caseInfos?.file?.fileName ||
-        req.caseInfos?.file?.originalName ||
-        "";
-      const base = originalName.includes(".")
-        ? originalName.split(".").slice(0, -1).join(".")
-        : originalName;
-      const expectedNcName = base ? `${base}.nc` : "";
 
       const filtered = files.filter((f) =>
         f.name.toLowerCase().endsWith(".nc")
@@ -473,21 +493,18 @@ export const useRequestFileHandlers = ({
       }
 
       const firstLocal = filtered[0];
-      if (
-        expectedNcName &&
-        normalize(firstLocal.name) !== normalize(expectedNcName)
-      ) {
-        toast({
-          title: "파일명 불일치",
-          description: `원본과 동일한 파일명(${expectedNcName})으로 업로드해주세요.`,
-          variant: "destructive",
-        });
-        return;
-      }
 
       setUploading((prev) => ({ ...prev, [req._id]: true }));
+      setUploadProgress((prev) => ({ ...prev, [req._id]: 0 }));
       try {
-        const uploaded = await uploadFiles([firstLocal]);
+        const uploaded = await uploadFiles([firstLocal], (p) => {
+          if (p[firstLocal.name] !== undefined) {
+            setUploadProgress((prev) => ({
+              ...prev,
+              [req._id]: p[firstLocal.name],
+            }));
+          }
+        });
         if (!uploaded || !uploaded.length) {
           throw new Error("upload failed");
         }
@@ -499,7 +516,7 @@ export const useRequestFileHandlers = ({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            fileName: expectedNcName || first.originalName,
+            fileName: firstLocal.name,
             fileType: first.mimetype,
             fileSize: first.size,
             s3Key: first.key,
@@ -507,7 +524,20 @@ export const useRequestFileHandlers = ({
           }),
         });
         if (!res.ok) {
-          throw new Error("save nc file failed");
+          let message = "NC 파일 저장에 실패했습니다.";
+          try {
+            const ct = res.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              const errorData = await res.json();
+              if (errorData?.message) message = String(errorData.message);
+            } else {
+              const text = await res.text();
+              if (text) message = text;
+            }
+          } catch {
+            // ignore
+          }
+          throw new Error(message);
         }
         toast({
           title: "업로드 완료",
@@ -519,19 +549,24 @@ export const useRequestFileHandlers = ({
           const buf = await firstLocal.arrayBuffer();
           const text = decodeNcText(buf);
           setPreviewNcText(text);
-          setPreviewNcName(expectedNcName || firstLocal.name);
+          setPreviewNcName(firstLocal.name);
         } catch {
           // ignore
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error(error);
         toast({
           title: "업로드 실패",
-          description: "NC 파일 업로드에 실패했습니다.",
+          description: error.message || "NC 파일 업로드에 실패했습니다.",
           variant: "destructive",
         });
       } finally {
         setUploading((prev) => ({ ...prev, [req._id]: false }));
+        setUploadProgress((prev) => {
+          const next = { ...prev };
+          delete next[req._id];
+          return next;
+        });
       }
     },
     [
@@ -541,6 +576,7 @@ export const useRequestFileHandlers = ({
       fetchRequests,
       decodeNcText,
       setUploading,
+      setUploadProgress,
       setPreviewNcText,
       setPreviewNcName,
     ]
@@ -557,8 +593,19 @@ export const useRequestFileHandlers = ({
       if (!params.req?._id) return;
 
       setUploading((prev) => ({ ...prev, [params.req._id as string]: true }));
+      setUploadProgress((prev) => ({
+        ...prev,
+        [params.req._id as string]: 0,
+      }));
       try {
-        const uploaded = await uploadFiles([params.file]);
+        const uploaded = await uploadFiles([params.file], (p) => {
+          if (p[params.file.name] !== undefined) {
+            setUploadProgress((prev) => ({
+              ...prev,
+              [params.req._id as string]: p[params.file.name],
+            }));
+          }
+        });
         if (!uploaded || !uploaded.length) {
           throw new Error("upload failed");
         }
@@ -612,6 +659,11 @@ export const useRequestFileHandlers = ({
           ...prev,
           [params.req._id as string]: false,
         }));
+        setUploadProgress((prev) => {
+          const next = { ...prev };
+          delete next[params.req._id as string];
+          return next;
+        });
       }
     },
     [
@@ -620,6 +672,7 @@ export const useRequestFileHandlers = ({
       toast,
       fetchRequests,
       setUploading,
+      setUploadProgress,
       setPreviewStageUrl,
       setPreviewStageName,
     ]
@@ -629,16 +682,21 @@ export const useRequestFileHandlers = ({
     async (params: {
       req: ManufacturerRequest;
       stage: "machining" | "packaging" | "shipping" | "tracking";
+      rollbackOnly?: boolean;
     }) => {
       if (!token) return;
       if (!params.req?._id) return;
+
+      const rollbackOnly = !!params.rollbackOnly;
 
       setUploading((prev) => ({ ...prev, [params.req._id as string]: true }));
       try {
         const res = await fetch(
           `/api/requests/${
             params.req._id
-          }/stage-file?stage=${encodeURIComponent(params.stage)}`,
+          }/stage-file?stage=${encodeURIComponent(params.stage)}${
+            rollbackOnly ? "&rollbackOnly=1" : ""
+          }`,
           {
             method: "DELETE",
             headers: {
@@ -651,20 +709,29 @@ export const useRequestFileHandlers = ({
           throw new Error("delete stage file failed");
         }
 
-        toast({
-          title: "삭제 완료",
-          description: "파일을 삭제했습니다.",
-        });
+        toast(
+          rollbackOnly
+            ? {
+                title: "롤백 완료",
+                description: "공정 단계를 되돌렸습니다.",
+              }
+            : {
+                title: "삭제 완료",
+                description: "파일을 삭제했습니다.",
+              }
+        );
         await fetchRequests();
-        if (params.stage === "machining") {
+        if (params.stage === "machining" && !rollbackOnly) {
           setPreviewStageUrl("");
           setPreviewStageName("");
         }
       } catch (error) {
         console.error(error);
         toast({
-          title: "삭제 실패",
-          description: "파일 삭제에 실패했습니다.",
+          title: rollbackOnly ? "롤백 실패" : "삭제 실패",
+          description: rollbackOnly
+            ? "공정 롤백에 실패했습니다."
+            : "파일 삭제에 실패했습니다.",
           variant: "destructive",
         });
       } finally {

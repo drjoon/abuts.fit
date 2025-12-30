@@ -15,9 +15,14 @@ export type ReviewStageKey =
   | "tracking";
 
 export const getReviewStageKeyByTab = (opts: {
+  stage?: string;
   isCamStage: boolean;
   isMachiningStage: boolean;
 }): ReviewStageKey => {
+  const stage = String(opts.stage || "").trim();
+  if (stage === "tracking") return "tracking";
+  if (stage === "shipping") return "shipping";
+  if (stage === "packaging") return "packaging";
   if (opts.isMachiningStage) return "machining";
   if (opts.isCamStage) return "cam";
   return "request";

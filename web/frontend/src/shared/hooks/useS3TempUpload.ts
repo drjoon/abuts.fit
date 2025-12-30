@@ -24,7 +24,10 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
   const { token } = options;
 
   const uploadFiles = useCallback(
-    async (files: File[]): Promise<TempUploadedFile[]> => {
+    async (
+      files: File[],
+      onProgress?: (progress: Record<string, number>) => void
+    ): Promise<TempUploadedFile[]> => {
       if (!files.length) return [];
 
       const res = await apiFetch<any>({
@@ -49,31 +52,43 @@ export function useS3TempUpload(options: UseS3TempUploadOptions) {
       if (!Array.isArray(data)) return [];
 
       const presigned = data as PresignResponseItem[];
-
       const uploadedFiles: TempUploadedFile[] = [];
-      for (let i = 0; i < presigned.length; i += 1) {
-        const item = presigned[i];
+      const currentProgress: Record<string, number> = {};
+
+      const uploadPromises = presigned.map((item, i) => {
         const file = files[i];
-        if (!item?.uploadUrl || !item?.file?._id) {
-          throw new Error("업로드 URL 응답이 올바르지 않습니다.");
-        }
+        return new Promise<TempUploadedFile>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", item.uploadUrl);
+          xhr.setRequestHeader(
+            "Content-Type",
+            file?.type || "application/octet-stream"
+          );
 
-        const putRes = await fetch(item.uploadUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Type": file?.type || "application/octet-stream",
-          },
-          body: file,
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable && onProgress) {
+              const percentComplete = Math.round(
+                (event.loaded / event.total) * 100
+              );
+              currentProgress[file.name] = percentComplete;
+              onProgress({ ...currentProgress });
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(item.file);
+            } else {
+              reject(new Error("S3 업로드에 실패했습니다."));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error("S3 업로드 중 오류 발생"));
+          xhr.send(file);
         });
+      });
 
-        if (!putRes.ok) {
-          throw new Error("S3 업로드에 실패했습니다.");
-        }
-
-        uploadedFiles.push(item.file);
-      }
-
-      return uploadedFiles;
+      return Promise.all(uploadPromises);
     },
     [token]
   );

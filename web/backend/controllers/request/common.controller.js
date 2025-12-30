@@ -69,6 +69,11 @@ export async function deleteStageFile(req, res) {
   try {
     const { id } = req.params;
     const stage = String(req.query.stage || "").trim();
+    const rollbackOnly =
+      String(req.query.rollbackOnly || "").trim() === "1" ||
+      String(req.query.rollbackOnly || "")
+        .trim()
+        .toLowerCase() === "true";
     const allowed = ["machining", "packaging", "shipping", "tracking"];
 
     if (!Types.ObjectId.isValid(id)) {
@@ -101,6 +106,34 @@ export async function deleteStageFile(req, res) {
 
     const meta = request.caseInfos.stageFiles?.[stage] || null;
     const s3Key = meta?.s3Key;
+
+    if (rollbackOnly) {
+      request.caseInfos.reviewByStage[stage] = {
+        status: "PENDING",
+        updatedAt: new Date(),
+        updatedBy: req.user?._id,
+        reason: "",
+      };
+
+      const prevStageMap = {
+        machining: "CAM",
+        packaging: "CAM",
+        shipping: "생산",
+        tracking: "발송",
+      };
+      const prevStage = prevStageMap[stage];
+      if (prevStage) {
+        request.manufacturerStage = prevStage;
+      }
+
+      await request.save();
+
+      return res.status(200).json({
+        success: true,
+        data: await normalizeRequestForResponse(request),
+      });
+    }
+
     if (!s3Key) {
       return res.status(404).json({
         success: false,
@@ -152,7 +185,6 @@ const advanceManufacturerStageByReviewStage = async ({ request, stage }) => {
     request.status = "가공후";
     request.status1 = "가공";
     request.status2 = "중";
-    await ensureLotNumberForMachining(request);
     request.manufacturerStage = "생산";
     return;
   }
@@ -1042,6 +1074,11 @@ export async function saveCamFileAndCompleteCam(req, res) {
 export async function deleteCamFileAndRollback(req, res) {
   try {
     const { id } = req.params;
+    const rollbackOnly =
+      String(req.query.rollbackOnly || "").trim() === "1" ||
+      String(req.query.rollbackOnly || "")
+        .trim()
+        .toLowerCase() === "true";
     if (!Types.ObjectId.isValid(id)) {
       return res
         .status(400)
@@ -1059,6 +1096,24 @@ export async function deleteCamFileAndRollback(req, res) {
       return res
         .status(403)
         .json({ success: false, message: "삭제 권한이 없습니다." });
+    }
+
+    // 롤백 전용 모드: 파일/정보 삭제 없이 공정 단계만 변경
+    if (rollbackOnly) {
+      ensureReviewByStageDefaults(request);
+      request.caseInfos.reviewByStage.cam = {
+        status: "PENDING",
+        updatedAt: new Date(),
+        updatedBy: req.user?._id,
+        reason: "",
+      };
+      request.manufacturerStage = "의뢰";
+      await request.save();
+
+      return res.status(200).json({
+        success: true,
+        data: await normalizeRequestForResponse(request),
+      });
     }
 
     // camFile 제거, 상태 롤백
@@ -1181,33 +1236,55 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       }
     };
 
-    const rawOriginal =
+    const getBaseName = (n) => {
+      let s = String(n || "").trim();
+      if (!s) return "";
+      // .cam.stl, .stl, .nc 등 모든 확장자 제거
+      // 가장 마지막 점부터 제거하는 것이 아니라, 알려진 확장자들을 순차적으로 제거
+      s = s.replace(/\.cam\.stl$/i, "");
+      s = s.replace(/\.stl$/i, "");
+      s = s.replace(/\.nc$/i, "");
+      return s;
+    };
+
+    const originalBase = getBaseName(
+      request.caseInfos?.file?.fileName || request.caseInfos?.file?.originalName
+    );
+    const camBase = getBaseName(
+      request.caseInfos?.camFile?.fileName ||
+        request.caseInfos?.camFile?.originalName
+    );
+
+    const originalName =
       request.caseInfos?.camFile?.fileName ||
       request.caseInfos?.camFile?.originalName ||
       request.caseInfos?.file?.fileName ||
-      request.caseInfos?.file?.originalName;
-
-    const getBaseName = (n) => {
-      const s = String(n || "");
-      if (!s.includes(".")) return s;
-      return s.split(".").slice(0, -1).join(".");
-    };
-
-    const expectedNcName = rawOriginal ? `${getBaseName(rawOriginal)}.nc` : "";
+      request.caseInfos?.file?.originalName ||
+      "";
 
     const lowerName = normalize(fileName);
+    const uploadedBase = getBaseName(lowerName);
+
     if (!lowerName.endsWith(".nc")) {
       return res.status(400).json({
         success: false,
         message: "NC 파일(.nc)만 업로드할 수 있습니다.",
       });
     }
-    if (expectedNcName && normalize(expectedNcName) !== lowerName) {
-      return res.status(400).json({
-        success: false,
-        message: `파일명 불일치: 원본과 동일한 파일명(${expectedNcName})으로 업로드해주세요.`,
-      });
-    }
+
+    // 파일명 매칭 검사 (자동 매칭 드롭 시에만 엄격하게 적용하기 위해,
+    // 여기서는 최소한의 검증만 수행하거나 경고 메시지 정도로 완화 가능)
+    const matchesOriginal =
+      originalBase && normalize(originalBase) === normalize(uploadedBase);
+    const matchesCam =
+      camBase && normalize(camBase) === normalize(uploadedBase);
+
+    // 상세 페이지에서 직접 업로드하는 경우(파일명이 program.nc 등일 수 있음)를 위해
+    // 매칭 실패 시에도 업로드는 허용하되, 가급적 매칭을 권장
+    // 단, 아예 다른 환자의 파일이 올라가는 것을 방지하기 위해 최소한의 식별자가 있다면 체크하는 것이 좋으나
+    // 현재는 사용자 편의를 위해 매칭 실패 시에도 저장을 허용하도록 수정합니다.
+
+    const finalNcName = lowerName;
 
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
@@ -1218,8 +1295,8 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       reason: "",
     };
     request.caseInfos.ncFile = {
-      fileName: expectedNcName || fileName,
-      originalName: expectedNcName || fileName,
+      fileName: finalNcName,
+      originalName: originalName || fileName,
       fileType,
       fileSize,
       filePath: filePath || "",
@@ -1250,6 +1327,11 @@ export async function saveNcFileAndMoveToMachining(req, res) {
 export async function deleteNcFileAndRollbackCam(req, res) {
   try {
     const { id } = req.params;
+    const rollbackOnly =
+      String(req.query.rollbackOnly || "").trim() === "1" ||
+      String(req.query.rollbackOnly || "")
+        .trim()
+        .toLowerCase() === "true";
     if (!Types.ObjectId.isValid(id)) {
       return res
         .status(400)

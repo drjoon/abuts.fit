@@ -46,6 +46,26 @@ export const ManufacturerWorksheetPage = () => {
               }}
             />
           );
+        case "shipping":
+          return (
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) => {
+                const stage = String(req.manufacturerStage || "").trim();
+                return stage === "발송";
+              }}
+            />
+          );
+        case "tracking":
+          return (
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) => {
+                const stage = String(req.manufacturerStage || "").trim();
+                return stage === "추적관리";
+              }}
+            />
+          );
         default:
           return <RequestPage showQueueBar={true} />;
       }

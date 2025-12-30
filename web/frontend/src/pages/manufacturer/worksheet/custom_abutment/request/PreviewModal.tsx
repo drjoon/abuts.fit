@@ -46,6 +46,7 @@ type PreviewModalProps = {
   onDeleteStageFile: (params: {
     req: ManufacturerRequest;
     stage: "machining" | "packaging" | "shipping" | "tracking";
+    rollbackOnly?: boolean;
   }) => Promise<void>;
   onUploadCam: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   onUploadNc: (req: ManufacturerRequest, files: File[]) => Promise<void>;
@@ -276,6 +277,7 @@ export const PreviewModal = ({
                     await onDeleteStageFile({
                       req,
                       stage: "machining",
+                      rollbackOnly: true,
                     });
                     setSearchParams(
                       (prev) => {

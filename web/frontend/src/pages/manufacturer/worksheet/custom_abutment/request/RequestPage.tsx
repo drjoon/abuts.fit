@@ -79,6 +79,7 @@ export const RequestPage = ({
   const isCamStage = (searchParams.get("stage") || "request") === "cam";
   const isMachiningStage =
     (searchParams.get("stage") || "request") === "machining";
+  const tabStage = String(searchParams.get("stage") || "request").trim();
 
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -103,6 +104,9 @@ export const RequestPage = ({
   >(null);
   const [deletingCam, setDeletingCam] = useState<Record<string, boolean>>({});
   const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
+    {}
+  );
   const [visibleCount, setVisibleCount] = useState(9);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -213,6 +217,7 @@ export const RequestPage = ({
     setPreviewStageName,
     setPreviewLoading,
     setSearchParams,
+    setUploadProgress,
     decodeNcText,
   });
 
@@ -319,29 +324,158 @@ export const RequestPage = ({
     ]
   );
 
+  useEffect(() => {
+    if (!(isMachiningStage || isCamStage)) return;
+
+    const onWindowDragOver = (e: globalThis.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingOver(true);
+    };
+
+    const onWindowDragLeave = (e: globalThis.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingOver(false);
+    };
+
+    const onWindowDrop = (e: globalThis.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingOver(false);
+
+      const files = Array.from(e.dataTransfer?.files || []);
+      if (files.length === 0) return;
+
+      if (isMachiningStage) {
+        void handleImageDropForOCR(files);
+        return;
+      }
+
+      if (isCamStage) {
+        const ncFiles = files.filter((f) =>
+          f.name.toLowerCase().endsWith(".nc")
+        );
+        if (ncFiles.length === 0) return;
+
+        const getBase = (n: string) => {
+          const s = String(n || "").trim();
+          return s
+            .replace(/\.cam\.stl$/i, "")
+            .replace(/\.stl$/i, "")
+            .replace(/\.nc$/i, "");
+        };
+
+        const normalize = (n: string) =>
+          n.trim().toLowerCase().normalize("NFC");
+
+        ncFiles.forEach((file) => {
+          const fileBase = normalize(getBase(file.name));
+          const matchingReq = requests.find((r) => {
+            const rBase = normalize(
+              getBase(
+                r.caseInfos?.camFile?.fileName ||
+                  r.caseInfos?.camFile?.originalName ||
+                  r.caseInfos?.file?.fileName ||
+                  r.caseInfos?.file?.originalName ||
+                  ""
+              )
+            );
+            return rBase === fileBase;
+          });
+
+          if (matchingReq) {
+            void handleUploadNc(matchingReq, [file]);
+          }
+        });
+      }
+    };
+
+    window.addEventListener("dragover", onWindowDragOver);
+    window.addEventListener("dragleave", onWindowDragLeave);
+    window.addEventListener("drop", onWindowDrop);
+
+    return () => {
+      window.removeEventListener("dragover", onWindowDragOver);
+      window.removeEventListener("dragleave", onWindowDragLeave);
+      window.removeEventListener("drop", onWindowDrop);
+    };
+  }, [
+    isMachiningStage,
+    isCamStage,
+    handleImageDropForOCR,
+    handleUploadNc,
+    requests,
+  ]);
+
   const handlePageDrop = useCallback(
     (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDraggingOver(false);
 
-      if (!isMachiningStage) return;
-
       const files = Array.from(e.dataTransfer.files);
-      void handleImageDropForOCR(files);
+      if (files.length === 0) return;
+
+      if (isMachiningStage) {
+        void handleImageDropForOCR(files);
+      } else if (isCamStage) {
+        // .nc 파일 매칭 업로드
+        const ncFiles = files.filter((f) =>
+          f.name.toLowerCase().endsWith(".nc")
+        );
+        if (ncFiles.length === 0) return;
+
+        const getBase = (n: string) => {
+          const s = String(n || "").trim();
+          return s
+            .replace(/\.cam\.stl$/i, "")
+            .replace(/\.stl$/i, "")
+            .replace(/\.nc$/i, "");
+        };
+
+        const normalize = (n: string) =>
+          n.trim().toLowerCase().normalize("NFC");
+
+        ncFiles.forEach((file) => {
+          const fileBase = normalize(getBase(file.name));
+          const matchingReq = requests.find((r) => {
+            const rBase = normalize(
+              getBase(
+                r.caseInfos?.camFile?.fileName ||
+                  r.caseInfos?.camFile?.originalName ||
+                  r.caseInfos?.file?.fileName ||
+                  r.caseInfos?.file?.originalName ||
+                  ""
+              )
+            );
+            return rBase === fileBase;
+          });
+
+          if (matchingReq) {
+            void handleUploadNc(matchingReq, [file]);
+          }
+        });
+      }
     },
-    [isMachiningStage, handleImageDropForOCR]
+    [
+      isMachiningStage,
+      isCamStage,
+      handleImageDropForOCR,
+      handleUploadNc,
+      requests,
+    ]
   );
 
   const handlePageDragOver = useCallback(
     (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       e.stopPropagation();
-      if (isMachiningStage) {
+      if (isMachiningStage || isCamStage) {
         setIsDraggingOver(true);
       }
     },
-    [isMachiningStage]
+    [isMachiningStage, isCamStage]
   );
 
   const handlePageDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -365,6 +499,55 @@ export const RequestPage = ({
     },
     [handleUploadByStage]
   );
+
+  const handleCardRollback = useCallback(
+    (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+
+      if (tabStage === "machining") {
+        void handleDeleteStageFile({
+          req,
+          stage: "machining",
+          rollbackOnly: true,
+        });
+        return;
+      }
+
+      if (tabStage === "cam") {
+        void handleDeleteNc(req, {
+          nextStage: "request",
+          rollbackOnly: true,
+          navigate: false,
+        });
+        return;
+      }
+
+      if (tabStage === "shipping") {
+        void handleDeleteStageFile({
+          req,
+          stage: "shipping",
+          rollbackOnly: true,
+        });
+        return;
+      }
+
+      if (tabStage === "tracking") {
+        void handleDeleteStageFile({
+          req,
+          stage: "tracking",
+          rollbackOnly: true,
+        });
+        return;
+      }
+    },
+    [tabStage, handleDeleteStageFile, handleDeleteNc]
+  );
+
+  const enableCardRollback =
+    tabStage === "cam" ||
+    tabStage === "machining" ||
+    tabStage === "shipping" ||
+    tabStage === "tracking";
 
   const handleDownloadOriginal = useCallback(
     async (req: ManufacturerRequest) => {
@@ -769,14 +952,18 @@ export const RequestPage = ({
       onDragLeave={handlePageDragLeave}
       className="relative"
     >
-      {isMachiningStage && isDraggingOver && (
+      {(isMachiningStage || isCamStage) && isDraggingOver && (
         <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-dashed border-blue-500">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-dashed border-blue-500 text-center">
             <div className="text-2xl font-bold text-blue-700 mb-2">
-              이미지를 여기에 드롭하세요
+              {isMachiningStage
+                ? "생산 이미지를 드롭하세요"
+                : "NC 파일을 드롭하세요"}
             </div>
             <div className="text-sm text-slate-600">
-              로트넘버를 자동으로 인식하여 해당 파일에 업로드합니다
+              {isMachiningStage
+                ? "로트넘버를 자동으로 인식하여 해당 파일에 업로드합니다"
+                : "파일명이 일치하는 의뢰건에 자동으로 업로드됩니다"}
             </div>
           </div>
         </div>
@@ -851,7 +1038,12 @@ export const RequestPage = ({
                   onOpenPreview={handleOpenPreview}
                   onDeleteCam={handleDeleteCam}
                   onDeleteNc={handleDeleteNc}
+                  onRollback={
+                    enableCardRollback ? handleCardRollback : undefined
+                  }
                   onUploadNc={handleUploadNc}
+                  uploadProgress={uploadProgress}
+                  uploading={uploading}
                   deletingCam={deletingCam}
                   deletingNc={deletingNc}
                   isCamStage={isCamStage}
@@ -869,7 +1061,10 @@ export const RequestPage = ({
             onOpenPreview={handleOpenPreview}
             onDeleteCam={handleDeleteCam}
             onDeleteNc={handleDeleteNc}
+            onRollback={enableCardRollback ? handleCardRollback : undefined}
             onUploadNc={handleUploadNc}
+            uploadProgress={uploadProgress}
+            uploading={uploading}
             deletingCam={deletingCam}
             deletingNc={deletingNc}
             isCamStage={isCamStage}
