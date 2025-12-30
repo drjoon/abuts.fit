@@ -60,7 +60,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
                 </div>
                 <div
                   className="w-full h-36 bg-muted rounded-md flex items-end overflow-hidden border border-border"
-                  title="가공 대기중인 어벗먼트 개수"
+                  title="생산 대기중인 어벗먼트 개수"
                 >
                   <div
                     className="w-full relative rounded-t-md border border-white/60 bg-gradient-to-t from-blue-600 via-blue-500 to-blue-400"

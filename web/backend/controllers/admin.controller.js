@@ -883,7 +883,24 @@ async function getDashboardStats(req, res) {
     const totalUsers = await User.countDocuments();
     const activeUsers = await User.countDocuments({ active: true });
 
-    // 의뢰 통계
+    // 의뢰 통계 (manufacturerStage 기준)
+    const stageStats = await Request.aggregate([
+      {
+        $group: {
+          _id: "$manufacturerStage",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const requestStatsByStage = {};
+    stageStats.forEach((stat) => {
+      if (stat._id) {
+        requestStatsByStage[stat._id] = stat.count;
+      }
+    });
+
+    // 기존 status 기반 통계 (하위 호환성 유지)
     const requestStats = await Request.aggregate([
       {
         $group: {
@@ -894,9 +911,11 @@ async function getDashboardStats(req, res) {
     ]);
 
     // 의뢰 통계 가공
-    const requestStatsByStatus = {};
+    const requestStatsByStatus = { ...requestStatsByStage };
     requestStats.forEach((stat) => {
-      requestStatsByStatus[stat._id] = stat.count;
+      if (stat._id) {
+        requestStatsByStatus[stat._id] = stat.count;
+      }
     });
 
     // 총 의뢰 수
@@ -1234,15 +1253,7 @@ async function updateRequestStatus(req, res) {
     }
 
     // 상태 유효성 검사 (최신 워크플로우)
-    const validStatuses = [
-      "의뢰접수",
-      "가공전",
-      "가공후",
-      "배송대기",
-      "배송중",
-      "완료",
-      "취소",
-    ];
+    const validStatuses = ["의뢰", "CAM", "생산", "발송", "추적관리", "취소"];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,

@@ -262,18 +262,10 @@ const requestSchema = new mongoose.Schema(
       },
     },
     status: {
-      // 의뢰인용 상태
+      // 의뢰인용 상태 (의뢰, CAM, 생산, 발송, 추적관리, 취소)
       type: String,
-      enum: [
-        "의뢰접수",
-        "가공전",
-        "가공후",
-        "배송대기",
-        "배송중",
-        "완료",
-        "취소",
-      ],
-      default: "의뢰접수",
+      enum: ["의뢰", "CAM", "생산", "발송", "추적관리", "취소"],
+      default: "의뢰",
     },
     // 아래 status1, 2는 제조사 및 관리자용 상태
     // 상위 공정 상태 (의뢰접수, 가공, 세척/검사/포장, 배송, 완료, 취소)
@@ -291,15 +283,7 @@ const requestSchema = new mongoose.Schema(
     // 제조사용 스테이지 (UI 표기용)
     manufacturerStage: {
       type: String,
-      enum: [
-        "의뢰",
-        "CAM",
-        "가공",
-        "세척·검사·포장",
-        "생산",
-        "발송",
-        "추적관리",
-      ],
+      enum: ["의뢰", "CAM", "생산", "발송", "추적관리"],
       default: "의뢰",
     },
     // 배송 요청 정보

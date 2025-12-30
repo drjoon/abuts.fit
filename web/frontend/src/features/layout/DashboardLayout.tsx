@@ -877,6 +877,7 @@ export const DashboardLayout = () => {
                           <div className="flex flex-wrap gap-1 text-xs flex-shrink-0">
                             <Button
                               variant={
+                                worksheetStage === "request" ||
                                 worksheetStage === "receive"
                                   ? "default"
                                   : "ghost"
@@ -885,7 +886,7 @@ export const DashboardLayout = () => {
                               className="h-7 px-2 text-xs"
                               onClick={() =>
                                 navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=receive"
+                                  "/dashboard/worksheet?type=cnc&stage=request"
                                 )
                               }
                             >
@@ -905,31 +906,22 @@ export const DashboardLayout = () => {
                             >
                               CAM
                             </Button>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant={
-                                      worksheetStage === "machining"
-                                        ? "default"
-                                        : "ghost"
-                                    }
-                                    size="sm"
-                                    className="h-7 px-2 text-xs"
-                                    onClick={() =>
-                                      navigate(
-                                        "/dashboard/worksheet?type=cnc&stage=machining"
-                                      )
-                                    }
-                                  >
-                                    생산
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>가공·세척·검사·포장</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
+                            <Button
+                              variant={
+                                worksheetStage === "machining"
+                                  ? "default"
+                                  : "ghost"
+                              }
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() =>
+                                navigate(
+                                  "/dashboard/worksheet?type=cnc&stage=machining"
+                                )
+                              }
+                            >
+                              생산
+                            </Button>
                             <Button
                               variant={
                                 worksheetStage === "shipping"

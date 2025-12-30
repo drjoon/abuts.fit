@@ -81,35 +81,65 @@ export async function getMyDashboardSummary(req, res) {
     });
 
     const total = abutmentRequests.length;
-    const inProduction = abutmentRequests.filter((r) =>
-      ["가공전", "가공후"].includes(r.status)
+    const inProduction = abutmentRequests.filter(
+      (r) =>
+        r.status === "생산" ||
+        r.manufacturerStage === "생산" ||
+        r.status === "가공후"
+    ).length;
+    const inCam = abutmentRequests.filter(
+      (r) =>
+        r.status === "CAM" ||
+        r.manufacturerStage === "CAM" ||
+        r.status === "가공전"
     ).length;
     const completed = abutmentRequests.filter(
-      (r) => r.status === "완료"
+      (r) =>
+        r.status === "추적관리" ||
+        r.manufacturerStage === "추적관리" ||
+        r.status === "완료"
     ).length;
     const inShipping = abutmentRequests.filter(
-      (r) => r.status === "배송중"
+      (r) =>
+        r.status === "발송" ||
+        r.manufacturerStage === "발송" ||
+        ["배송중", "배송대기"].includes(r.status)
     ).length;
 
     const active = abutmentRequests.filter((r) =>
-      ["의뢰접수", "가공전", "가공후", "배송대기", "배송중"].includes(r.status)
+      [
+        "의뢰",
+        "CAM",
+        "생산",
+        "발송",
+        "의뢰접수",
+        "가공전",
+        "가공후",
+        "배송대기",
+        "배송중",
+      ].includes(r.status)
     );
 
     const stageCounts = {
       design: 0,
-      cnc: 0,
-      post: 0,
+      cam: 0,
+      production: 0,
       shipping: 0,
     };
 
     active.forEach((r) => {
-      if (r.status === "의뢰접수") {
+      const status = r.status;
+      if (status === "의뢰" || status === "의뢰접수") {
         stageCounts.design += 1;
-      } else if (r.status === "가공전") {
-        stageCounts.cnc += 1;
-      } else if (r.status === "가공후") {
-        stageCounts.post += 1;
-      } else if (r.status === "배송대기" || r.status === "배송중") {
+      } else if (status === "CAM" || status === "가공전") {
+        stageCounts.cam += 1;
+      } else if (status === "생산" || status === "가공후") {
+        stageCounts.production += 1;
+      } else if (
+        status === "발송" ||
+        status === "배송대기" ||
+        status === "배송중"
+      ) {
         stageCounts.shipping += 1;
       }
     });
@@ -118,12 +148,12 @@ export async function getMyDashboardSummary(req, res) {
     const manufacturingSummary = {
       totalActive: active.length,
       stages: [
-        { key: "design", label: "디자인 검토", count: stageCounts.design },
-        { key: "cnc", label: "CNC 가공", count: stageCounts.cnc },
-        { key: "post", label: "후처리/폴리싱", count: stageCounts.post },
+        { key: "design", label: "의뢰 접수", count: stageCounts.design },
+        { key: "cam", label: "CAM", count: stageCounts.cam },
+        { key: "production", label: "생산", count: stageCounts.production },
         {
           key: "shipping",
-          label: "출고/배송 준비",
+          label: "발송",
           count: stageCounts.shipping,
         },
       ].map((s) => ({
@@ -283,6 +313,7 @@ export async function getMyDashboardSummary(req, res) {
       data: {
         stats: {
           totalRequests: total,
+          inCam,
           inProduction,
           inShipping,
           completed,

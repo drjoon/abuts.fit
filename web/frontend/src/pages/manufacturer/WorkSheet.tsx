@@ -26,23 +26,23 @@ export const ManufacturerWorksheetPage = () => {
               }}
             />
           );
-        case "machining":
-          return (
-            <RequestPage
-              showQueueBar={true}
-              filterRequests={(req) => {
-                const stage = String(req.manufacturerStage || "").trim();
-                return stage === "생산" && !!req.caseInfos?.ncFile?.s3Key;
-              }}
-            />
-          );
         case "cam":
           return (
             <RequestPage
               showQueueBar={true}
               filterRequests={(req) => {
                 const stage = String(req.manufacturerStage || "").trim();
-                return stage === "CAM" && !!req.caseInfos?.camFile?.s3Key;
+                return stage === "CAM";
+              }}
+            />
+          );
+        case "machining":
+          return (
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) => {
+                const stage = String(req.manufacturerStage || "").trim();
+                return stage === "생산";
               }}
             />
           );

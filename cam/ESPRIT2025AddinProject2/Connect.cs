@@ -349,23 +349,25 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         internal static DentalAddinHost DentalHost { get; } = new DentalAddinHost();
 
-        // New flag to ensure toolbar position is applied only once
-        private bool _toolbarPositionLoaded = false;
-        private System.Windows.Forms.Timer _heartbeatTimer;
-        private AddInStatusForm _statusForm;
-        private const int HeartbeatIntervalMs = 60 * 1000;
-        
-        public void _ConnectionManager_AddInConnect(Esprit.Application espritApplication)
+        public override void AddInConnect(Esprit.Application espritApplication, int connectMode, ref bool custom)
         {
-            // If an Esprit.Application object property or variable is declared in your project you can assign it from here.
-            //        
-            // Since the EspritAddIn base class that is inherited handles the Document related Application events for you,
-            // you should only need a WithEvents Esprit.Application for other non-Document related events, like AfterCommandRun.
-            //        
-            // This event can be removed if it does not need to be used (e.g. if you only need an Esprit.Document or Esprit.Document members).
             _espApp = espritApplication;
             _pm = _espApp.ProjectManager;
             DentalHost.Initialize(_espApp);
+
+            // 서버 자동 시작
+            if (_repeatProcess == null)
+            {
+                try
+                {
+                    _repeatProcess = new RepeatProcess(_espApp);
+                    _repeatProcess.Run();
+                }
+                catch (Exception ex)
+                {
+                    LogToEspritOutputs($"[Addin] Failed to auto-start RepeatProcess: {ex.Message}");
+                }
+            }
 
             // -------------------------
             // 1. Apply commands
@@ -487,10 +489,11 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     // DentalAddin 옵션 패널을 먼저 노출해 사용자가 설정 파일을 확인/수정할 수 있게 한다.
                     DentalHost.ShowPanel();
 
-                    // TODO : put your folder path as second argument of RepeatProcess constructor
-                    // e.g.: RepeatProcess rp = new RepeatProcess(_espApp, @"C:\STLFiles");
-                    var rp = new RepeatProcess(_espApp);
-                    rp.Run();
+                    if (_repeatProcess == null)
+                    {
+                        _repeatProcess = new RepeatProcess(_espApp);
+                        _repeatProcess.Run();
+                    }
 
                     break;
             }
@@ -512,6 +515,12 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     System.Diagnostics.Trace.WriteLine($"Connect: PMTab remove failed - {ex.Message}");
                 }
                 exTab = null;
+            }
+
+            if (_repeatProcess != null)
+            {
+                _repeatProcess.Dispose();
+                _repeatProcess = null;
             }
 
             HideStatusPanel();
@@ -562,6 +571,13 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             // Triggered when the Add-In disconnects explicitly because ESPRIT is shutting down.
             // This event can be removed if it does not need to be used.
             Toolbar_PositionSave(_toolbarName, _newToolbar);
+            
+            if (_repeatProcess != null)
+            {
+                _repeatProcess.Dispose();
+                _repeatProcess = null;
+            }
+
             StopHeartbeat();
         }
 

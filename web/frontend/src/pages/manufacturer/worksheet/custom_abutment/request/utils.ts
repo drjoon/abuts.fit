@@ -68,20 +68,26 @@ export const computeStageLabel = (
 export const deriveStageForFilter = (req: ManufacturerRequest) => {
   const saved = (req.manufacturerStage || "").trim();
   if (saved) return saved;
-  const s1 = (req.status1 || "").trim();
-  const s2 = (req.status2 || "").trim();
-  const main = (req.status || "").trim();
 
-  if (s1 === "가공") {
-    if (s2 === "후") return "CAM";
-    return "생산";
+  // Fallback for legacy data (should be rare after backend updates)
+  const status = (req.status || "").trim();
+  switch (status) {
+    case "의뢰접수":
+      return "의뢰";
+    case "가공전":
+      return "CAM";
+    case "가공후":
+      return "생산";
+    case "배송대기":
+    case "배송중":
+      return "발송";
+    case "완료":
+      return "추적관리";
+    case "취소":
+      return "의뢰";
+    default:
+      return "의뢰";
   }
-  if (s1 === "세척/검사/포장") return "생산";
-  if (s1 === "배송") return "발송";
-  if (s1 === "완료") return "추적관리";
-  if (main === "가공후") return "CAM";
-  if (main === "세척/검사/포장") return "생산";
-  return "의뢰";
 };
 
 export const stageOrder: Record<string, number> = {

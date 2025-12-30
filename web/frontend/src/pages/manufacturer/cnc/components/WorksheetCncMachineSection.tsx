@@ -30,7 +30,7 @@ const getMachineStatusChip = (status: string) => {
 
   if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
     color = "bg-emerald-500";
-    label = "가공 중";
+    label = "생산 중";
   } else if (["WARN", "WARNING"].some((k) => s.includes(k))) {
     color = "bg-amber-400";
     label = "주의";
@@ -263,11 +263,11 @@ const WorksheetCncMachineCard = ({
 
       <div className="mt-auto pt-1 text-sm text-slate-800 space-y-1">
         <div className="flex justify-between">
-          <span className="font-medium">가공중</span>
+          <span className="font-medium">생산중</span>
           <span className="text-slate-900">-</span>
         </div>
         <div className="flex justify-between">
-          <span className="font-medium">다음 가공</span>
+          <span className="font-medium">다음 생산</span>
           <span className="text-slate-900">-</span>
         </div>
       </div>
@@ -461,12 +461,12 @@ export const WorksheetCncMachineSection = ({
       (statusByUid[uid] as string | undefined) ?? (machine?.status as string);
     const s = (rawStatus || "").toUpperCase();
 
-    // RUN/OK 계열은 실제로 "가공 중" 상태로 보고 직경 변경을 막는다.
+    // RUN/OK 계열은 실제로 "생산 중" 상태로 보고 직경 변경을 막는다.
     if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
       toast({
-        title: "가공 중에는 소재 직경을 변경할 수 없습니다.",
+        title: "생산 중에는 소재 직경을 변경할 수 없습니다.",
         description:
-          "가공이 완료되면 직경을 변경하고, 다음 가공 리스트는 대기 큐로 올려 같은 소재 직경 장비로 옮겨주세요.",
+          "생산이 완료되면 직경을 변경하고, 다음 생산 리스트는 대기 큐로 올려 같은 소재 직경 장비로 옮겨주세요.",
         variant: "destructive",
       });
       return;
@@ -480,7 +480,7 @@ export const WorksheetCncMachineSection = ({
     toast({
       title: "소재 직경이 변경되었습니다.",
       description:
-        "이 장비의 다음 가공 리스트는 대기 큐로 되돌리고, 새로운 소재 직경에 맞는 다른 장비로 재배치할 수 있습니다.",
+        "이 장비의 다음 생산 리스트는 대기 큐로 되돌리고, 새로운 소재 직경에 맞는 다른 장비로 재배치할 수 있습니다.",
     });
   };
 
@@ -548,7 +548,7 @@ export const WorksheetCncMachineSection = ({
         <WorksheetDiameterQueueModal
           open={queueModalOpen}
           onOpenChange={setQueueModalOpen}
-          processLabel="커스텀어벗 > 가공"
+          processLabel="커스텀어벗 > 생산"
           queues={machiningQueues}
           selectedBucket={selectedBucket}
           onSelectBucket={setSelectedBucket}

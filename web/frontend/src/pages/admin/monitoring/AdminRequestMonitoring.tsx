@@ -26,54 +26,58 @@ import {
   XCircle,
 } from "lucide-react";
 
-const getStatusBadge = (status1?: string, status2?: string) => {
-  const statusText =
-    status2 && status2 !== "없음" ? `${status1}(${status2})` : status1;
+const getStatusBadge = (status?: string, manufacturerStage?: string) => {
+  // 5단계 공정이 있으면 우선 사용
+  if (manufacturerStage) {
+    switch (manufacturerStage) {
+      case "의뢰":
+        return <Badge variant="outline">의뢰</Badge>;
+      case "CAM":
+        return <Badge variant="default">CAM</Badge>;
+      case "생산":
+        return (
+          <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
+            생산
+          </Badge>
+        );
+      case "발송":
+        return (
+          <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+            발송
+          </Badge>
+        );
+      case "추적관리":
+        return <Badge variant="secondary">추적관리</Badge>;
+      default:
+        break;
+    }
+  }
 
-  switch (status1) {
+  // Fallback: 기존 status 필드 기준
+  switch (status) {
     case "의뢰접수":
-      return <Badge variant="outline">{statusText}</Badge>;
-    case "가공":
-      return <Badge variant="default">{statusText}</Badge>;
+      return <Badge variant="outline">의뢰</Badge>;
     case "가공전":
+      return <Badge variant="default">CAM</Badge>;
     case "가공후":
-      return <Badge variant="default">{statusText}</Badge>;
-    case "세척/검사/포장":
       return (
         <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
-          {statusText}
+          생산
         </Badge>
       );
-    case "배송":
     case "배송대기":
     case "배송중":
       return (
         <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
-          {statusText}
+          발송
         </Badge>
       );
     case "완료":
-      return <Badge variant="secondary">{statusText}</Badge>;
+      return <Badge variant="secondary">추적관리</Badge>;
     case "취소":
-      return <Badge variant="destructive">{statusText}</Badge>;
+      return <Badge variant="destructive">취소</Badge>;
     default:
-      return <Badge>{statusText || "상태 미지정"}</Badge>;
-  }
-  switch (status) {
-    case "진행중":
-      return <Badge variant="default">{status}</Badge>;
-    case "완료":
-      return <Badge variant="secondary">{status}</Badge>;
-    case "견적 대기":
-      return (
-        <Badge className="bg-orange-100 text-orange-700 border-orange-200">
-          {status}
-        </Badge>
-      );
-    case "지연":
-      return <Badge variant="destructive">{status}</Badge>;
-    default:
-      return <Badge>{status}</Badge>;
+      return <Badge>{status || "상태 미지정"}</Badge>;
   }
 };
 
@@ -104,14 +108,19 @@ const getPriorityBadge = (priority: string) => {
 
 const getStatusIcon = (status: string) => {
   switch (status) {
+    case "의뢰":
     case "의뢰접수":
       return <FileText className="h-4 w-4 text-blue-500" />;
+    case "CAM":
     case "가공전":
+    case "생산":
     case "가공후":
       return <Clock className="h-4 w-4 text-green-500" />;
+    case "발송":
     case "배송대기":
     case "배송중":
       return <Truck className="h-4 w-4 text-orange-500" />;
+    case "추적관리":
     case "완료":
       return <CheckCircle className="h-4 w-4 text-green-500" />;
     case "취소":
@@ -178,7 +187,8 @@ export const AdminRequestMonitoring = () => {
   const filteredRequests = requests.filter((request) => {
     const caseInfos = request.caseInfos || {};
     const requestor = request.requestor || {};
-    const effectiveStatus = request.status || request.status1;
+    const effectiveStatus =
+      request.manufacturerStage || request.status || request.status1;
     const matchesSearch =
       (caseInfos.patientName || "")
         .toLowerCase()
@@ -201,10 +211,14 @@ export const AdminRequestMonitoring = () => {
 
   const totalCount = requestStats.total ?? 0;
   const byStatus = requestStats.byStatus || {};
-  const receiveCount = byStatus["의뢰접수"] || 0;
-  const machiningCount = (byStatus["가공전"] || 0) + (byStatus["가공후"] || 0);
-  const shippingCount = (byStatus["배송대기"] || 0) + (byStatus["배송중"] || 0);
-  const doneCount = byStatus["완료"] || 0;
+  const receiveCount = byStatus["의뢰"] || byStatus["의뢰접수"] || 0;
+  const camCount = byStatus["CAM"] || byStatus["가공전"] || 0;
+  const productionCount = byStatus["생산"] || byStatus["가공후"] || 0;
+  const shippingCount =
+    (byStatus["발송"] || 0) +
+    (byStatus["배송대기"] || 0) +
+    (byStatus["배송중"] || 0);
+  const doneCount = byStatus["추적관리"] || byStatus["완료"] || 0;
   const canceledCount = byStatus["취소"] || 0;
 
   return (
@@ -232,46 +246,39 @@ export const AdminRequestMonitoring = () => {
                 전체
               </Button>
               <Button
-                variant={selectedStatus === "의뢰접수" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("의뢰접수")}
+                variant={selectedStatus === "의뢰" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("의뢰")}
                 size="sm"
               >
-                의뢰접수
+                의뢰
               </Button>
               <Button
-                variant={selectedStatus === "가공전" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("가공전")}
+                variant={selectedStatus === "CAM" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("CAM")}
                 size="sm"
               >
-                가공전
+                CAM
               </Button>
               <Button
-                variant={selectedStatus === "가공후" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("가공후")}
+                variant={selectedStatus === "생산" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("생산")}
                 size="sm"
               >
-                가공후
+                생산
               </Button>
               <Button
-                variant={selectedStatus === "배송대기" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("배송대기")}
+                variant={selectedStatus === "발송" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("발송")}
                 size="sm"
               >
-                배송대기
+                발송
               </Button>
               <Button
-                variant={selectedStatus === "배송중" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("배송중")}
+                variant={selectedStatus === "추적관리" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("추적관리")}
                 size="sm"
               >
-                배송중
-              </Button>
-              <Button
-                variant={selectedStatus === "완료" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("완료")}
-                size="sm"
-              >
-                완료
+                추적관리
               </Button>
               <Button
                 variant={selectedStatus === "취소" ? "default" : "outline"}
@@ -293,7 +300,7 @@ export const AdminRequestMonitoring = () => {
                   <FileText className="h-4 w-4 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">의뢰접수</p>
+                  <p className="text-sm text-muted-foreground">의뢰</p>
                   <p className="text-2xl font-bold">
                     {receiveCount.toLocaleString()}
                   </p>
@@ -308,9 +315,24 @@ export const AdminRequestMonitoring = () => {
                   <Clock className="h-4 w-4 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">가공(전/후)</p>
+                  <p className="text-sm text-muted-foreground">CAM</p>
                   <p className="text-2xl font-bold">
-                    {machiningCount.toLocaleString()}
+                    {camCount.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-cyan-100 rounded-lg">
+                  <Clock className="h-4 w-4 text-cyan-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">생산</p>
+                  <p className="text-2xl font-bold">
+                    {productionCount.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -323,7 +345,7 @@ export const AdminRequestMonitoring = () => {
                   <FileText className="h-4 w-4 text-orange-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">배송(대기/중)</p>
+                  <p className="text-sm text-muted-foreground">발송</p>
                   <p className="text-2xl font-bold">
                     {shippingCount.toLocaleString()}
                   </p>
@@ -338,24 +360,9 @@ export const AdminRequestMonitoring = () => {
                   <CheckCircle className="h-4 w-4 text-emerald-700" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">완료</p>
+                  <p className="text-sm text-muted-foreground">추적관리</p>
                   <p className="text-2xl font-bold">
                     {doneCount.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-rose-100 rounded-lg">
-                  <XCircle className="h-4 w-4 text-rose-700" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">취소</p>
-                  <p className="text-2xl font-bold">
-                    {canceledCount.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -418,7 +425,10 @@ export const AdminRequestMonitoring = () => {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
-                      {getStatusBadge(request.status1, request.status2)}
+                      {getStatusBadge(
+                        request.status,
+                        request.manufacturerStage
+                      )}
                       <div className="text-right text-sm">
                         <p className="font-medium text-primary">
                           {request.price?.amount?.toLocaleString()}원

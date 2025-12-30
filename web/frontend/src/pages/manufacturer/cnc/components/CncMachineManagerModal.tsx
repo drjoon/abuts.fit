@@ -100,7 +100,7 @@ export const CncMachineManagerModal = ({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-700">
-                가공 시작 허용
+                생산 시작 허용
               </span>
               <button
                 type="button"

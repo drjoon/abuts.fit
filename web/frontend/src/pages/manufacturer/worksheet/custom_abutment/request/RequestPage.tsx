@@ -805,17 +805,12 @@ export const RequestPage = ({
     // 단계별 필터가 있으면 추가 필터 없이 그 결과 사용
     if (filterRequests) return base;
 
-    // 기본(의뢰/CAM) 탭에서는 가공후(완료된 CAM) 제외
+    // 기본(의뢰/CAM) 탭에서는 생산(가공후) 단계 이상은 제외
     return base.filter((req) => {
-      const status = (req.status || "").trim();
-      const status1 = (req.status1 || "").trim();
-      const status2 = (req.status2 || "").trim();
-      const camDone =
-        status === "가공후" ||
-        status1 === "가공후" ||
-        status2 === "가공후" ||
-        !!req.caseInfos?.camFile?.s3Key;
-      return !camDone;
+      const stage = deriveStageForFilter(req);
+      const order = stageOrder[stage] ?? 0;
+      // 현재 탭보다 높은 단계의 의뢰는 숨김 (단, showCompleted가 꺼져있을 때)
+      return order <= currentStageOrder;
     });
   })();
 
@@ -1081,7 +1076,7 @@ export const RequestPage = ({
       <WorksheetDiameterQueueModal
         open={receiveQueueModalOpen}
         onOpenChange={setReceiveQueueModalOpen}
-        processLabel="커스텀어벗 > 의뢰, CAM"
+        processLabel={`커스텀어벗 > ${currentStageForTab}`}
         queues={diameterQueueForReceive.buckets}
         selectedBucket={receiveSelectedBucket}
         onSelectBucket={setReceiveSelectedBucket}

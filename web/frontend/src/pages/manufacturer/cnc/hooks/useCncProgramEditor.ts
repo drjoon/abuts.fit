@@ -38,8 +38,8 @@ export const useCncProgramEditor = ({
       const current = programSummary?.current ?? null;
       const curNo = current?.programNo ?? current?.no;
       const progNo = prog?.programNo ?? prog?.no;
-      // 가공 중일 때는 현재 가공중인 프로그램만 read-only로 열고,
-      // 다음 가공(번호가 다른 프로그램)은 편집을 허용한다.
+      // 생산 중일 때는 현재 생산중인 프로그램만 read-only로 열고,
+      // 다음 생산(번호가 다른 프로그램)은 편집을 허용한다.
       if (curNo != null && progNo != null && curNo === progNo) {
         readOnly = true;
       }

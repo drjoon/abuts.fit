@@ -124,7 +124,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                 statusUpper.includes(k)
               );
 
-              // '가공중' 버튼은 비가공중 상태에서 현재 프로그램을 열어 편집할 때만 사용한다.
+              // '생산중' 버튼은 비생산중 상태에서 현재 프로그램을 열어 편집할 때만 사용한다.
               if (isRunning) return;
               onOpenProgramDetail(currentProg);
             }}

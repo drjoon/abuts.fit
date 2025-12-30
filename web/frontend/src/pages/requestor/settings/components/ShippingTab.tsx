@@ -235,7 +235,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
               옵션 A: 정해진 수량이 모이면 자동 묶음 배송
             </Label>
             <div className="text-base text-blue-800 leading-relaxed">
-              생산완료되어 배송대기 중인 제품이 설정한 개수 이상 모이면 한
+              생산 완료되어 발송 대기 중인 제품이 설정한 개수 이상 모이면 한
               박스로 묶어 출고합니다.
             </div>
             <div className="text-base text-blue-800 leading-relaxed">
@@ -287,7 +287,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
               옵션 B: 주간 묶음 요일
             </Label>
             <p className="text-base text-green-800 leading-relaxed">
-              선택한(녹색) 요일 오후에 배송대기 중인 제품을 한 박스에 담아
+              선택한(녹색) 요일 오후에 발송 대기 중인 제품을 한 박스에 담아
               출고합니다.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">

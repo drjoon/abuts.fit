@@ -61,11 +61,12 @@ export const RequestorDashboardPage = () => {
 
   const statusGroupByLabel: Record<string, string[] | null> = {
     // 현재 카드 표시값과 일치하도록(요약 통계 기준) 그룹을 정의
-    // '의뢰접수' 카드는 실제로 totalRequests(전체)라 status filter 없이 전체를 보여준다.
-    의뢰접수: null,
-    생산중: ["가공전", "가공후"],
-    배송중: ["배송중"],
-    완료: ["완료"],
+    // '의뢰' 카드는 실제로 totalRequests(전체)라 status filter 없이 전체를 보여준다.
+    의뢰: null,
+    CAM: ["CAM", "가공전"],
+    생산: ["생산", "가공후"],
+    발송: ["발송", "배송중", "배송대기"],
+    추적관리: ["추적관리", "완료"],
   };
 
   const filterAbutmentRequest = (r: any) => {
@@ -241,7 +242,7 @@ export const RequestorDashboardPage = () => {
         toast({
           title: "의뢰 취소 실패",
           description:
-            serverMsg || "의뢰접수/가공전 상태에서만 취소할 수 있습니다.",
+            serverMsg || "의뢰 또는 CAM 단계에서만 취소할 수 있습니다.",
           variant: "destructive",
           duration: 3000,
         });
@@ -284,35 +285,42 @@ export const RequestorDashboardPage = () => {
   const stats: RequestorDashboardStat[] = (() => {
     if (!summaryResponse?.success) {
       return [
-        { label: "의뢰접수", value: "0", icon: FileText },
-        { label: "생산중", value: "0", icon: Clock },
-        { label: "배송중", value: "0", icon: TrendingUp },
-        { label: "완료", value: "0", icon: CheckCircle },
+        { label: "의뢰", value: "0", icon: FileText },
+        { label: "CAM", value: "0", icon: Clock },
+        { label: "생산", value: "0", icon: Clock },
+        { label: "발송", value: "0", icon: TrendingUp },
+        { label: "추적관리", value: "0", icon: CheckCircle },
       ];
     }
 
     const s = summaryResponse.data.stats ?? {};
     return [
       {
-        label: "의뢰접수",
+        label: "의뢰",
         value: String(s.totalRequests ?? 0),
         change: s.totalRequestsChange ?? "+0%",
         icon: FileText,
       },
       {
-        label: "생산중",
+        label: "CAM",
+        value: String(s.inCam ?? 0),
+        change: s.inCamChange ?? "+0%",
+        icon: Clock,
+      },
+      {
+        label: "생산",
         value: String(s.inProduction ?? 0),
         change: s.inProductionChange ?? "+0%",
         icon: Clock,
       },
       {
-        label: "배송중",
+        label: "발송",
         value: String(s.inShipping ?? 0),
         change: s.inShippingChange ?? "+0%",
         icon: TrendingUp,
       },
       {
-        label: "완료",
+        label: "추적관리",
         value: String(s.completed ?? 0),
         change: s.completedChange ?? "+0%",
         icon: CheckCircle,

@@ -16,20 +16,25 @@ import s3Utils, {
 } from "../../utils/s3.utils.js";
 
 const mapManufacturerStage = (request) => {
-  const s1 = (request.status1 || "").trim();
-  const s2 = (request.status2 || "").trim();
   const main = (request.status || "").trim();
 
-  if (s1 === "가공") {
-    if (s2 === "전") return "의뢰";
-    if (s2 === "중") return "생산";
-    if (s2 === "후") return "CAM";
-    return "생산";
+  switch (main) {
+    case "의뢰접수":
+      return "의뢰";
+    case "가공전":
+      return "CAM";
+    case "가공후":
+      return "생산";
+    case "배송대기":
+    case "배송중":
+      return "발송";
+    case "완료":
+      return "추적관리";
+    case "취소":
+      return "의뢰";
+    default:
+      return "의뢰";
   }
-  if (s1 === "세척/검사/포장") return "생산";
-  if (s1 === "배송") return "발송";
-  if (main === "가공후") return "CAM";
-  return "의뢰";
 };
 
 const ensureReviewByStageDefaults = (request) => {
@@ -177,39 +182,26 @@ export async function deleteStageFile(req, res) {
 const advanceManufacturerStageByReviewStage = async ({ request, stage }) => {
   if (stage === "request") {
     applyStatusMapping(request, "가공전");
-    request.manufacturerStage = "CAM";
     return;
   }
 
   if (stage === "cam") {
-    request.status = "가공후";
-    request.status1 = "가공";
-    request.status2 = "중";
-    request.manufacturerStage = "생산";
+    applyStatusMapping(request, "가공후");
     return;
   }
 
-  if (stage === "machining") {
+  if (stage === "machining" || stage === "packaging") {
     applyStatusMapping(request, "배송대기");
-    request.manufacturerStage = "발송";
-    return;
-  }
-
-  if (stage === "packaging") {
-    applyStatusMapping(request, "배송대기");
-    request.manufacturerStage = "발송";
     return;
   }
 
   if (stage === "shipping") {
     applyStatusMapping(request, "배송중");
-    request.manufacturerStage = "발송";
     return;
   }
 
   if (stage === "tracking") {
     applyStatusMapping(request, "완료");
-    request.manufacturerStage = "추적관리";
   }
 };
 
@@ -737,15 +729,7 @@ export async function updateRequestStatus(req, res) {
     const { status } = req.body;
 
     // 상태 유효성 검사 (새 워크플로우)
-    const validStatuses = [
-      "의뢰접수",
-      "가공전",
-      "가공후",
-      "배송대기",
-      "배송중",
-      "완료",
-      "취소",
-    ];
+    const validStatuses = ["의뢰", "CAM", "생산", "발송", "추적관리", "취소"];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -793,11 +777,14 @@ export async function updateRequestStatus(req, res) {
       });
     }
 
-    // 취소는 의뢰접수/가공전 상태에서만 가능
-    if (status === "취소" && !["의뢰접수", "가공전"].includes(request.status)) {
+    // 취소는 의뢰 또는 CAM 상태에서만 가능
+    if (
+      status === "취소" &&
+      !["의뢰", "CAM", "의뢰접수", "가공전"].includes(request.status)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "의뢰접수 또는 가공전 상태에서만 취소할 수 있습니다.",
+        message: "의뢰 또는 CAM 상태에서만 취소할 수 있습니다.",
       });
     }
 
@@ -828,8 +815,8 @@ export async function updateRequestStatus(req, res) {
       );
     }
 
-    // 가공 시작 시점(가공전 진입)에서만 로트넘버 부여
-    if (status === "가공전") {
+    // 가공 시작 시점(CAM 진입)에서만 로트넘버 부여
+    if (status === "CAM" || status === "가공전") {
       await ensureLotNumberForMachining(request);
     }
 

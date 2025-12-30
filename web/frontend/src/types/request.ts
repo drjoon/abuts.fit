@@ -137,7 +137,7 @@ export interface RequestBase {
   requestId?: string; // YYYYMMDD-###### 형식의 의뢰 ID
   title?: string;
   status?: string;
-  manufacturerStage?: string;
+  manufacturerStage?: "의뢰" | "CAM" | "생산" | "발송" | "추적관리" | string;
   lotNumber?: string;
   assignedMachine?: string; // 가공 직전 배정된 장비 (M3, M4 등)
   status1?: string;

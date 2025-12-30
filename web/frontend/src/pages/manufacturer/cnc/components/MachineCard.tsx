@@ -48,7 +48,7 @@ const getMachineStatusChip = (status: string) => {
 
   if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
     color = "bg-emerald-500";
-    label = "가공 중";
+    label = "생산 중";
   } else if (["WARN", "WARNING"].some((k) => s.includes(k))) {
     color = "bg-amber-400";
     label = "주의";
@@ -120,18 +120,18 @@ export const MachineCard: React.FC<MachineCardProps> = ({
     ? nextProgs.reduce((sum, p: any) => sum + (p.qty || 1), 0)
     : 0;
 
-  // 이 장비 전체 예약 개수 중에서 현재까지 몇 개를 가공했는지를 계산하기 위해 originalTotal/remainingTotal을 사용한다.
-  // 단, 표시되는 분모는 현재 "다음 가공" 프로그램 하나의 예약 개수(nextProg.qty)가 되어야 한다.
+  // 이 장비 전체 예약 개수 중에서 현재까지 몇 개를 생산했는지를 계산하기 위해 originalTotal/remainingTotal을 사용한다.
+  // 단, 표시되는 분모는 현재 "다음 생산" 프로그램 하나의 예약 개수(nextProg.qty)가 되어야 한다.
   const currentJobQty = (nextProg as any)?.qty ?? 0;
   let totalReservedCount = currentJobQty;
   let currentIndex =
-    originalTotal && originalTotal > 0
-      ? Math.max(1, originalTotal - remainingTotal + 1)
-      : totalReservedCount > 0
+    totalReservedCount - remainingTotal > 0
+      ? totalReservedCount - remainingTotal + 1
+      : remainingTotal === 0 && totalReservedCount > 0
       ? 1
       : 0;
 
-  // 예약이 모두 삭제되었거나 다음 가공이 없으면 진행 표시를 숨기기 위해 0으로 리셋한다.
+  // 예약이 모두 삭제되었거나 다음 생산이 없으면 진행 표시를 숨기기 위해 0으로 리셋한다.
   if (!hasNextProgs) {
     totalReservedCount = 0;
     currentIndex = 0;
@@ -214,8 +214,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           >
             <span>
               {currentProg
-                ? `가공중: ${currentProg.name ?? "쉬는 중"}`
-                : "가공중: 쉬는 중"}
+                ? `생산중: ${currentProg.name ?? "쉬는 중"}`
+                : "생산중: 쉬는 중"}
             </span>
             {currentProg && isActive && isRunning && (
               <button
@@ -254,12 +254,12 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                 {nextProg
                   ? (() => {
                       const name = String(nextProg.name ?? "");
-                      const full = `다음 가공: ${name}`.trim();
+                      const full = `다음 생산: ${name}`.trim();
                       return full.length > 24
                         ? `${full.slice(0, 21)}...`
                         : full;
                     })()
-                  : "다음 가공: 없음"}
+                  : "다음 생산: 없음"}
               </span>
               <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
                 {showReservationCounter && (
@@ -278,7 +278,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                   disabled={!isActive || !nextProg}
                 >
                   {nextProg && (nextProg as any).paused ? (
-                    // 예약이 일시정지(paused=true) 상태이면 Play 아이콘으로 표시하여 가공 시작을 의미하게 한다.
+                    // 예약이 일시정지(paused=true) 상태이면 Play 아이콘으로 표시하여 생산 시작을 의미하게 한다.
                     <Play className="h-3.5 w-3.5" />
                   ) : (
                     // 예약이 재생(paused=false) 상태이면 Pause 아이콘으로 표시하여 일시정지를 의미하게 한다.
@@ -329,7 +329,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             disabled={loading}
             className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            가공 예약하기
+            생산 예약하기
           </button>
         </div>
       </div>

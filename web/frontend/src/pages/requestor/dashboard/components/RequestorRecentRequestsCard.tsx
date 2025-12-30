@@ -18,22 +18,41 @@ import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNew
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
 import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 
-const EDITABLE_STATUSES = new Set(["의뢰접수", "가공전"]);
+const EDITABLE_STATUSES = new Set(["의뢰", "CAM", "의뢰접수", "가공전"]); // 의뢰, CAM 단계만 수정 가능
 
-const getStatusBadge = (status: string) => {
+const getStatusBadge = (status: string, manufacturerStage?: string) => {
+  if (manufacturerStage) {
+    switch (manufacturerStage) {
+      case "의뢰":
+        return <Badge variant="outline">의뢰</Badge>;
+      case "CAM":
+        return <Badge variant="default">CAM</Badge>;
+      case "생산":
+        return <Badge variant="default">생산</Badge>;
+      case "발송":
+        return <Badge variant="default">발송</Badge>;
+      case "추적관리":
+        return <Badge variant="secondary">추적관리</Badge>;
+      default:
+        break;
+    }
+  }
+
   switch (status) {
     case "의뢰접수":
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="outline">의뢰</Badge>;
     case "가공전":
+      return <Badge variant="default">CAM</Badge>;
     case "가공후":
+      return <Badge variant="default">생산</Badge>;
     case "배송중":
-      return <Badge variant="default">{status}</Badge>;
+      return <Badge variant="default">발송</Badge>;
     case "완료":
-      return <Badge variant="secondary">{status}</Badge>;
-    case "배송대기":
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="secondary">완료</Badge>;
+    case "취소":
+      return <Badge variant="destructive">취소</Badge>;
     default:
-      return <Badge>{status}</Badge>;
+      return <Badge variant="outline">{status}</Badge>;
   }
 };
 
@@ -218,7 +237,7 @@ export const RequestorRecentRequestsCard = ({
       if (status && !canEditRequest(status)) {
         toast({
           title: "변경 불가",
-          description: "의뢰접수/가공전 상태에서만 변경할 수 있습니다.",
+          description: "의뢰 또는 CAM 단계에서만 변경할 수 있습니다.",
           variant: "destructive",
           duration: 3000,
         });
@@ -384,9 +403,13 @@ export const RequestorRecentRequestsCard = ({
                 confirmDescription={
                   <div className="text-md">
                     <div className="font-medium mb-1 truncate">
-                      {item.title || displayId}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
+                      <div className="flex items-center justify-between gap-4 mb-2">
+                        {getStatusBadge(item.status, item.manufacturerStage)}
+                        <span className="text-xs text-muted-foreground">
+                          {item.createdAt &&
+                            new Date(item.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
                       {item.caseInfos?.clinicName && (
                         <span>{item.caseInfos.clinicName}</span>
                       )}

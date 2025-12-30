@@ -166,7 +166,7 @@ export const CncReservationModal = ({
       prog.name ??
       (programNo != null ? `#${programNo}` : "-");
 
-    // 이미 같은 소스/프로그램 번호(또는 이름)가 가공 목록에 있으면 재추가하지 않고 해당 항목을 강조 표시한다.
+    // 이미 같은 소스/프로그램 번호(또는 이름)가 생산 목록에 있으면 재추가하지 않고 해당 항목을 강조 표시한다.
     const existing = jobs.find((j) => {
       if (j.source !== activeTab) return false;
       const sameNo =
@@ -212,7 +212,7 @@ export const CncReservationModal = ({
 
   useEffect(() => {
     if (!open) {
-      // 모달이 닫힐 때는 항상 로컬 가공 목록을 초기화한다.
+      // 모달이 닫힐 때는 항상 로컬 생산 목록을 초기화한다.
       setJobs([]);
       setSelectedEntry(null);
       setMkdirName("");
@@ -612,11 +612,11 @@ export const CncReservationModal = ({
             )}
           </div>
 
-          {/* 우측: 가공 목록 */}
+          {/* 우측: 생산 목록 */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-600">
-                가공 목록
+                생산 목록
               </span>
               <button
                 type="button"
@@ -629,7 +629,7 @@ export const CncReservationModal = ({
             <div className="rounded-xl border border-slate-100 bg-slate-50/80 min-h-[120px] max-h-64 overflow-y-auto">
               {jobs.length === 0 ? (
                 <div className="px-3 py-4 text-xs text-slate-500">
-                  프로그램을 선택해 가공 목록에 추가하세요.
+                  프로그램을 선택해 생산 목록에 추가하세요.
                 </div>
               ) : (
                 <ul className="p-3 grid grid-cols-1 gap-2 text-xs sm:text-[13px]">
@@ -730,7 +730,7 @@ export const CncReservationModal = ({
               }}
               className="flex-1 sm:flex-none px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              가공 예약
+              생산 예약
             </button>
           </div>
         </div>

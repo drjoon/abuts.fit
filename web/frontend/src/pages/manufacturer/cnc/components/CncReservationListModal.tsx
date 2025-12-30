@@ -42,7 +42,7 @@ export const CncReservationListModal: React.FC<
         <div className="flex items-start justify-between mb-4 gap-4 border-b border-slate-100 pb-3">
           <div className="space-y-1 min-w-0">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight flex items-baseline gap-2">
-              <span>가공 예약 목록</span>
+              <span>생산 예약 목록</span>
               {target && (
                 <span className="text-xs sm:text-sm text-slate-500 font-normal truncate">
                   <span className="font-semibold">{target.name}</span>
@@ -126,7 +126,7 @@ export const CncReservationListModal: React.FC<
             </div>
           ) : (
             <div className="text-slate-500 text-center">
-              이 장비에 등록된 가공 예약이 없습니다.
+              이 장비에 등록된 생산 예약이 없습니다.
             </div>
           )}
 

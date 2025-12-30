@@ -78,37 +78,62 @@ export const ExpandedRequestCard = ({
     }
   };
 
-  const getStatusBadge = (status1?: string, status2?: string) => {
-    const statusText =
-      status2 && status2 !== "없음" ? `${status1}(${status2})` : status1;
+  const getStatusBadge = (status?: string, manufacturerStage?: string) => {
+    // 5단계 공정이 있으면 우선 사용
+    if (manufacturerStage) {
+      switch (manufacturerStage) {
+        case "의뢰":
+          return <Badge variant="outline">의뢰</Badge>;
+        case "CAM":
+          return <Badge variant="default">CAM</Badge>;
+        case "생산":
+          return (
+            <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
+              생산
+            </Badge>
+          );
+        case "발송":
+          return (
+            <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+              발송
+            </Badge>
+          );
+        case "추적관리":
+          return <Badge variant="secondary">추적관리</Badge>;
+        default:
+          break;
+      }
+    }
 
-    switch (status1) {
+    // Fallback: 기존 status 필드 기준 (레거시 대응)
+    switch (status) {
       case "의뢰접수":
-        return <Badge variant="outline">{statusText}</Badge>;
-      case "가공":
-        return <Badge variant="default">{statusText}</Badge>;
-      case "세척/검사/포장":
+        return <Badge variant="outline">의뢰</Badge>;
+      case "가공전":
+        return <Badge variant="default">CAM</Badge>;
+      case "가공후":
         return (
           <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
-            {statusText}
+            생산
           </Badge>
         );
-      case "배송":
+      case "배송대기":
+      case "배송중":
         return (
           <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
-            {statusText}
+            발송
           </Badge>
         );
       case "완료":
-        return <Badge variant="secondary">{statusText}</Badge>;
+        return <Badge variant="secondary">추적관리</Badge>;
       case "취소":
         return (
           <Badge className="bg-red-50 text-red-700 border-red-200 text-xs">
-            {statusText}
+            취소
           </Badge>
         );
       default:
-        return <Badge>{statusText || "상태 미지정"}</Badge>;
+        return <Badge>{status || "상태 미지정"}</Badge>;
     }
   };
 
@@ -246,10 +271,7 @@ export const ExpandedRequestCard = ({
                 <Building2 className="h-3 w-3" />
                 {request.manufacturer || request.client || "미배정"}
               </span>
-              {getStatusBadge(
-                request.status1 || request.status,
-                request.status2
-              )}
+              {getStatusBadge(request.status, request.manufacturerStage)}
             </div>
             {isDragOver && (
               <div className="text-sm text-primary font-medium">

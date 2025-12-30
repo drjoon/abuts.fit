@@ -156,7 +156,7 @@ export const ManufacturerDashboardPage = () => {
     {
       key: "products",
       label: "제품 관리",
-      description: "제품/가공 프로파일 관리",
+      description: "제품/생산 프로파일 관리",
       href: "/dashboard/products",
       icon: PackageCheck,
       meta: ["프로파일/템플릿 관리"],

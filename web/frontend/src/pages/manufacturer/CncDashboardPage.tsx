@@ -414,7 +414,7 @@ export const CncDashboardPage = () => {
 
                     if (!isRunning) {
                       toast({
-                        title: "가공 중단",
+                        title: "생산 중단",
                         description: "현재 정지 상태입니다.",
                       });
                       return;
@@ -469,7 +469,7 @@ export const CncDashboardPage = () => {
                         (first?.programNo != null
                           ? `#${first.programNo}`
                           : "-");
-                      next[machine.uid] = `[가공예약 : ${baseName}]`;
+                      next[machine.uid] = `[생산예약 : ${baseName}]`;
                     }
                     return next;
                   });
@@ -504,7 +504,7 @@ export const CncDashboardPage = () => {
                       const wasPaused = !!j.paused;
                       const nextPaused = !wasPaused;
                       if (wasPaused && !nextPaused) {
-                        // 일시정지 → 재생으로 전환될 때만 실제 가공 시작 명령을 보낸다.
+                        // 일시정지 → 재생으로 전환될 때만 실제 생산 시작 명령을 보낸다.
                         shouldStart = true;
                       }
                       return { ...j, paused: nextPaused };
@@ -533,23 +533,23 @@ export const CncDashboardPage = () => {
                       const msg =
                         body?.message ||
                         body?.error ||
-                        "가공 시작(Start) 명령 실패";
+                        "생산 시작(Start) 명령 실패";
                       setError(msg);
                       toast({
-                        title: "가공 시작 실패",
+                        title: "생산 시작 실패",
                         description: msg,
                         variant: "destructive",
                       });
                       return;
                     }
 
-                    // 가공 시작 후 상태를 한 번 갱신해준다.
+                    // 생산 시작 후 상태를 한 번 갱신해준다.
                     void refreshStatusFor(uid);
                   } catch (e: any) {
-                    const msg = e?.message ?? "가공 시작 요청 중 오류";
+                    const msg = e?.message ?? "생산 시작 요청 중 오류";
                     setError(msg);
                     toast({
-                      title: "가공 시작 오류",
+                      title: "생산 시작 오류",
                       description: msg,
                       variant: "destructive",
                     });
@@ -614,8 +614,8 @@ export const CncDashboardPage = () => {
 
         <ConfirmDialog
           open={resetConfirmOpen}
-          title="가공 중단"
-          description={resetTarget ? "가공이 중단되고 초기화됩니다." : null}
+          title="생산 중단"
+          description={resetTarget ? "생산이 중단되고 초기화됩니다." : null}
           confirmLabel="중단"
           cancelLabel="취소"
           onConfirm={async () => {
@@ -685,8 +685,8 @@ export const CncDashboardPage = () => {
                 }
               }
               const summary = whenLabel
-                ? `[가공예약 : ${baseName}, 일시(${whenLabel})]`
-                : `[가공예약 : ${baseName}]`;
+                ? `[생산예약 : ${baseName}, 일시(${whenLabel})]`
+                : `[생산예약 : ${baseName}]`;
               setReservationSummaryMap((prev) => ({
                 ...prev,
                 [target.uid]: summary,
@@ -707,7 +707,7 @@ export const CncDashboardPage = () => {
                 [target.uid]: totalQty,
               }));
             } else {
-              // 즉시가공일 때는 예약 요약을 제거한다.
+              // 즉시생산일 때는 예약 요약을 제거한다.
               setReservationSummaryMap((prev) => {
                 const next = { ...prev };
                 delete next[target.uid];
