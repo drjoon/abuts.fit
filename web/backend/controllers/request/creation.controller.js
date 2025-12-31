@@ -10,8 +10,80 @@ import {
   applyStatusMapping,
   canAccessRequestAsRequestor,
   buildRequestorOrgScopeFilter,
+  getDeliveryEtaLeadDays,
+  addKoreanBusinessDays,
+  normalizeKoreanBusinessDay,
+  getTodayYmdInKst,
+  calculateExpressShipYmd,
+  DEFAULT_DELIVERY_ETA_LEAD_DAYS,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
+
+const toKstYmd = (d) => {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+};
+
+const ymdToKstDate = (ymd) => {
+  if (!ymd) return null;
+  const d = new Date(`${ymd}T00:00:00+09:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const resolveNormalLeadDays = ({ leadDays, maxDiameter }) => {
+  const effective = {
+    ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+    ...(leadDays || {}),
+  };
+  const d =
+    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
+      ? maxDiameter
+      : maxDiameter != null && String(maxDiameter).trim()
+      ? Number(maxDiameter)
+      : null;
+  if (d == null || Number.isNaN(d)) return effective.d10;
+  if (d <= 6) return effective.d6;
+  if (d <= 8) return effective.d8;
+  if (d <= 10) return effective.d10;
+  return effective.d10plus;
+};
+
+const resolveEstimatedCompletionDate = async ({
+  baseYmd,
+  shippingMode,
+  requestedShipDate,
+  maxDiameter,
+}) => {
+  const leadDays = await getDeliveryEtaLeadDays();
+  const requestedShipYmd = toKstYmd(requestedShipDate);
+  const todayYmd = getTodayYmdInKst();
+  const seedYmd = baseYmd || todayYmd;
+
+  const rawShipDateYmd =
+    shippingMode === "express"
+      ? requestedShipYmd ||
+        (await calculateExpressShipYmd({ maxDiameter, baseYmd: todayYmd }))
+      : requestedShipYmd || seedYmd;
+
+  const shipDateYmd = await normalizeKoreanBusinessDay({ ymd: rawShipDateYmd });
+
+  const arrivalYmd =
+    shippingMode === "express"
+      ? await addKoreanBusinessDays({ startYmd: shipDateYmd, days: 1 })
+      : await addKoreanBusinessDays({
+          startYmd: shipDateYmd,
+          days: resolveNormalLeadDays({ leadDays, maxDiameter }),
+        });
+
+  return ymdToKstDate(arrivalYmd);
+};
 
 async function getOrganizationCreditBalanceBreakdown({
   organizationId,
@@ -162,6 +234,19 @@ export async function createRequest(req, res) {
           : null,
       price: computedPrice,
     });
+
+    // 생성 시점(의뢰일) 기준으로 도착 예정일을 확정 저장
+    newRequest.timeline = newRequest.timeline || {};
+    if (!newRequest.timeline.estimatedCompletion) {
+      const baseYmd = getTodayYmdInKst();
+      const etaDate = await resolveEstimatedCompletionDate({
+        baseYmd,
+        shippingMode: newRequest.shippingMode || "normal",
+        requestedShipDate: newRequest.requestedShipDate,
+        maxDiameter: newRequest.caseInfos?.maxDiameter,
+      });
+      if (etaDate) newRequest.timeline.estimatedCompletion = etaDate;
+    }
 
     newRequest.caseInfos = newRequest.caseInfos || {};
     if (newRequest.caseInfos?.file?.s3Key) {
@@ -964,6 +1049,19 @@ export async function createRequestsFromDraft(req, res) {
             shippingMode: item.shippingMode,
             requestedShipDate: item.requestedShipDate,
           });
+
+          // 생성 시점 기준으로 도착 예정일을 확정 저장
+          newRequest.timeline = newRequest.timeline || {};
+          if (!newRequest.timeline.estimatedCompletion) {
+            const baseYmd = getTodayYmdInKst();
+            const etaDate = await resolveEstimatedCompletionDate({
+              baseYmd,
+              shippingMode: newRequest.shippingMode || "normal",
+              requestedShipDate: newRequest.requestedShipDate,
+              maxDiameter: newRequest.caseInfos?.maxDiameter,
+            });
+            if (etaDate) newRequest.timeline.estimatedCompletion = etaDate;
+          }
 
           // 완료된 기존 의뢰에 대한 재의뢰(리메이크): referenceIds에 기존 requestId를 남긴다.
           if (duplicateResolution && !duplicateResolutions) {

@@ -25,6 +25,8 @@ const getStatusBadge = (status: string, manufacturerStage?: string) => {
     switch (manufacturerStage) {
       case "의뢰":
         return <Badge variant="outline">의뢰</Badge>;
+      case "의뢰접수":
+        return <Badge variant="outline">의뢰접수</Badge>;
       case "CAM":
         return <Badge variant="default">CAM</Badge>;
       case "생산":
@@ -39,8 +41,10 @@ const getStatusBadge = (status: string, manufacturerStage?: string) => {
   }
 
   switch (status) {
-    case "의뢰접수":
+    case "의뢰":
       return <Badge variant="outline">의뢰</Badge>;
+    case "의뢰접수":
+      return <Badge variant="outline">의뢰접수</Badge>;
     case "가공전":
       return <Badge variant="default">CAM</Badge>;
     case "가공후":
@@ -66,7 +70,7 @@ type Props = {
 export const RequestorRecentRequestsCard = ({
   items,
   onRefresh,
-  onEdit: _onEdit,
+  onEdit,
   onCancel,
 }: Props) => {
   const { token, user } = useAuthStore();
@@ -368,6 +372,11 @@ export const RequestorRecentRequestsCard = ({
     }
   }, [open]);
 
+  const isCancelableRequest = (r: any) => {
+    // 백엔드 정책: request.status === "의뢰" 일 때만 취소 가능
+    return String(r?.status || "") === "의뢰";
+  };
+
   return (
     <Card
       className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg flex-1 min-h-[220px] cursor-pointer"
@@ -382,11 +391,13 @@ export const RequestorRecentRequestsCard = ({
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
             const displayId = rawRequestId || String(item.id || item._id || "");
+            const canCancel = isCancelableRequest(item);
 
             return (
               <FunctionalItemCard
                 key={stableKey || displayId}
                 className="flex items-center justify-between p-3 border border-border rounded-lg"
+                alwaysShowActions={canCancel}
                 onClick={(e) => {
                   e.stopPropagation();
                   const reqId = item._id || item.id;
@@ -395,7 +406,7 @@ export const RequestorRecentRequestsCard = ({
                   setOpen(true);
                 }}
                 onRemove={
-                  item._id || item.id
+                  canCancel && (item._id || item.id)
                     ? () => handleCancelRequest(item._id || (item.id as string))
                     : undefined
                 }
@@ -446,11 +457,14 @@ export const RequestorRecentRequestsCard = ({
                 confirmLabel="의뢰 취소"
                 cancelLabel="닫기"
               >
-                <div className="flex-1">
-                  <div className="text-md font-medium truncate">
-                    {item.title || displayId}
+                <div className="flex-1 min-w-0 mr-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="text-sm font-medium truncate">
+                      {item.title || displayId}
+                    </div>
+                    {getStatusBadge(item.status, item.manufacturerStage)}
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-[11px] text-muted-foreground truncate">
                     {item.caseInfos?.clinicName && (
                       <span>{item.caseInfos.clinicName}</span>
                     )}
@@ -469,14 +483,24 @@ export const RequestorRecentRequestsCard = ({
                         return `${m || "-"} / ${s || "-"} / ${t || "-"}`;
                       })()}
                     </span>
-                    {item.caseInfos?.maxDiameter && (
-                      <span className="ml-1">
-                        {item.caseInfos.maxDiameter.toFixed(1)}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
+                    <span>
+                      의뢰:{" "}
+                      {item.createdAt &&
+                        new Date(item.createdAt).toLocaleDateString()}
+                    </span>
+                    {item.estimatedCompletion && (
+                      <span className="text-blue-600">
+                        예정: {item.estimatedCompletion}
                       </span>
                     )}
-                    {item.caseInfos?.connectionDiameter && (
-                      <span className="ml-1">
-                        {item.caseInfos.connectionDiameter.toFixed(1)}
+                    {item.deliveryInfoRef?.deliveredAt && (
+                      <span className="text-green-600 font-medium">
+                        완료:{" "}
+                        {new Date(
+                          item.deliveryInfoRef.deliveredAt
+                        ).toLocaleDateString()}
                       </span>
                     )}
                   </div>
@@ -509,10 +533,66 @@ export const RequestorRecentRequestsCard = ({
                   <div>불러오는 중...</div>
                 ) : (
                   <>
-                    <div className="absolute right-12 top-4">
-                      {getStatusBadge(
-                        detail?.status || selectedSummary?.status || "-"
-                      )}
+                    <div className="flex items-center justify-between mb-4 border-b pb-4">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-slate-700">
+                            의뢰번호:
+                          </span>
+                          <span>
+                            {detail?.requestId ||
+                              selectedSummary?.requestId ||
+                              "-"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-slate-700">
+                            의뢰일:
+                          </span>
+                          <span>
+                            {detail?.createdAt
+                              ? new Date(detail.createdAt).toLocaleString()
+                              : selectedSummary?.createdAt
+                              ? new Date(
+                                  selectedSummary.createdAt
+                                ).toLocaleString()
+                              : "-"}
+                          </span>
+                        </div>
+                        {(detail?.timeline?.estimatedCompletion ||
+                          selectedSummary?.estimatedCompletion) && (
+                          <div className="flex items-center gap-2 text-blue-600 font-medium">
+                            <span>도착 예정일:</span>
+                            <span>
+                              {(() => {
+                                const raw =
+                                  detail?.timeline?.estimatedCompletion ||
+                                  selectedSummary?.estimatedCompletion;
+                                if (!raw) return "-";
+                                const d = new Date(raw);
+                                return d.toLocaleString();
+                              })()}
+                            </span>
+                          </div>
+                        )}
+                        {detail?.deliveryInfoRef?.deliveredAt && (
+                          <div className="flex items-center gap-2 text-green-600 font-medium">
+                            <span>배송 완료일:</span>
+                            <span>
+                              {new Date(
+                                detail.deliveryInfoRef.deliveredAt
+                              ).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="self-start">
+                        {getStatusBadge(
+                          detail?.status || selectedSummary?.status || "-",
+                          detail?.manufacturerStage ||
+                            selectedSummary?.manufacturerStage
+                        )}
+                      </div>
                     </div>
 
                     {(() => {
@@ -589,14 +669,16 @@ export const RequestorRecentRequestsCard = ({
                       >
                         의뢰 변경
                       </Button>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        onClick={openCancelConfirmFromDetail}
-                        disabled={loadingDetail}
-                      >
-                        의뢰 취소
-                      </Button>
+                      {isCancelableRequest(detail || selectedSummary) && (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          onClick={openCancelConfirmFromDetail}
+                          disabled={loadingDetail}
+                        >
+                          의뢰 취소
+                        </Button>
+                      )}
                     </div>
                   </>
                 )}

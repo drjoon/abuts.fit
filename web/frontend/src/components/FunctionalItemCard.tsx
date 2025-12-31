@@ -12,6 +12,8 @@ interface FunctionalItemCardProps {
   cancelLabel?: string;
   disabled?: boolean;
   className?: string;
+  removeIcon?: ReactNode;
+  alwaysShowActions?: boolean;
 }
 
 export const FunctionalItemCard = ({
@@ -25,6 +27,8 @@ export const FunctionalItemCard = ({
   cancelLabel = "닫기",
   disabled,
   className,
+  removeIcon = "X",
+  alwaysShowActions,
 }: FunctionalItemCardProps) => {
   const [open, setOpen] = useState(false);
 
@@ -51,7 +55,13 @@ export const FunctionalItemCard = ({
         }`}
       >
         {(onUpdate || (onRemove && !disabled)) && (
-          <div className="absolute top-1 right-1 z-10 inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 group-hover/card:opacity-100 transition-opacity">
+          <div
+            className={`absolute top-1 right-1 z-10 inline-flex items-center gap-1 transition-opacity ${
+              alwaysShowActions
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100"
+            }`}
+          >
             {onUpdate && (
               <button
                 type="button"
@@ -72,7 +82,7 @@ export const FunctionalItemCard = ({
                 className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-[11px] font-bold text-white shadow-sm"
                 title="삭제"
               >
-                ←
+                {removeIcon}
               </button>
             )}
           </div>

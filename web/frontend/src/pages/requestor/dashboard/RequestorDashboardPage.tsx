@@ -59,27 +59,75 @@ export const RequestorDashboardPage = () => {
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
 
-  const statusGroupByLabel: Record<string, string[] | null> = {
+  const normalizeStage = (r: any) => {
+    const status = String(r?.status || "");
+    const stage = String(r?.manufacturerStage || "");
+    const status1 = String(r?.status1 || "");
+    const status2 = String(r?.status2 || "");
+
+    if (status === "취소") return "cancel";
+    if (status === "완료" || status2 === "완료") return "completed";
+    if (
+      ["발송", "배송대기", "배송중"].includes(status) ||
+      ["shipping", "발송"].includes(stage)
+    ) {
+      return "shipping";
+    }
+    if (
+      ["생산", "가공후"].includes(status) ||
+      ["machining", "생산", "packaging"].includes(stage)
+    ) {
+      return "production";
+    }
+    if (
+      ["CAM", "가공전"].includes(status) ||
+      ["cam", "CAM", "가공전"].includes(stage)
+    ) {
+      return "cam";
+    }
+    if (
+      ["의뢰", "의뢰접수"].includes(status) ||
+      ["의뢰", "request", "receive"].includes(stage) ||
+      ["의뢰", "의뢰접수"].includes(status1) ||
+      ["의뢰", "의뢰접수"].includes(status2)
+    ) {
+      return "request";
+    }
+    return "request";
+  };
+
+  const stageGroupByLabel: Record<string, string[] | null> = {
     // 4단계 공통 공정: 의뢰 → CAM → 생산 → 발송
-    의뢰: null,
-    CAM: ["CAM", "가공전"],
-    생산: ["생산", "가공후"],
-    발송: ["발송", "배송중", "배송대기", "완료"],
+    의뢰: ["request"],
+    CAM: ["cam"],
+    생산: ["production"],
+    발송: ["shipping"],
+    "완료/취소": ["completed", "cancel"],
   };
 
   const filterAbutmentRequest = (r: any) => {
     if (!r) return false;
-    if (String(r.status || "") === "취소") return false;
     const ci = r.caseInfos || {};
     const implantSystem = String(ci.implantSystem || "").trim();
     return Boolean(implantSystem);
   };
 
   const getModalItems = (all: any[], label: string) => {
-    const group = statusGroupByLabel[label];
+    const group = stageGroupByLabel[label];
     const base = (all || []).filter(filterAbutmentRequest);
     if (!group) return base;
-    return base.filter((r) => group.includes(String(r.status || "")));
+    return base.filter((r) => group.includes(normalizeStage(r)));
+  };
+
+  const stageLabel = (r: any) => {
+    const s = normalizeStage(r);
+    if (s === "request") return "의뢰";
+    if (s === "cam") return "CAM";
+    if (s === "production") return "생산";
+    if (s === "shipping") return "발송";
+    if (s === "completed") return "완료";
+    if (s === "cancel") return "취소";
+    return "의뢰";
   };
 
   const { data: myRequestsForModal, isFetching: loadingMyRequestsForModal } =
@@ -181,6 +229,10 @@ export const RequestorDashboardPage = () => {
 
     setEditingRequest({
       id: mongoId,
+      requestId: request.requestId || displayId,
+      createdAt: request.createdAt,
+      estimatedCompletion:
+        request.timeline?.estimatedCompletion || request.estimatedCompletion,
       title: request.title || displayId,
       description: request.description,
       clinicName:
@@ -239,8 +291,7 @@ export const RequestorDashboardPage = () => {
         console.error("의뢰 취소 실패", await res.raw.text().catch(() => ""));
         toast({
           title: "의뢰 취소 실패",
-          description:
-            serverMsg || "의뢰 또는 CAM 단계에서만 취소할 수 있습니다.",
+          description: serverMsg || "의뢰 단계에서만 취소할 수 있습니다.",
           variant: "destructive",
           duration: 3000,
         });
@@ -542,7 +593,7 @@ export const RequestorDashboardPage = () => {
                       {title}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      상태: {String(r?.status || "")} / 의뢰번호:{" "}
+                      상태: {stageLabel(r)} / 의뢰번호:{" "}
                       {String(r?.requestId || "")}
                     </div>
                   </button>

@@ -338,6 +338,17 @@ export const RequestorPricingReferralPolicyCard = () => {
                     </li>
                   </ul>
                 </section>
+
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    6. 의뢰 취소
+                  </h3>
+                  <p>
+                    의뢰 취소는 <b>의뢰</b> 단계에서만 가능합니다.{" "}
+                    <b>CAM 단계부터는</b>
+                    취소할 수 없습니다.
+                  </p>
+                </section>
               </div>
             </DialogDescription>
           </DialogHeader>

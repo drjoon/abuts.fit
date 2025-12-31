@@ -9,6 +9,9 @@ import { useCallback, useEffect, useRef } from "react";
 
 export type EditingRequestState = {
   id: string;
+  requestId?: string;
+  createdAt?: string;
+  estimatedCompletion?: string;
   title?: string;
   description?: string;
   clinicName?: string;
@@ -113,6 +116,20 @@ export const RequestorEditRequestDialog = ({
     }
   }, [computeKey, editingRequest?.id, scheduleSave]);
 
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "-";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("ko-KR", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    } catch {
+      return "-";
+    }
+  };
+
   return (
     <Dialog
       open={!!editingRequest}
@@ -125,6 +142,20 @@ export const RequestorEditRequestDialog = ({
           <DialogTitle>의뢰 정보 수정</DialogTitle>
         </DialogHeader>
         <div className="mt-2 text-md text-muted-foreground">
+          <div className="mb-4 p-3 bg-muted rounded-md space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="font-medium">의뢰번호:</span>
+              <span>{editingRequest?.requestId || "-"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-medium">의뢰일:</span>
+              <span>{formatDate(editingRequest?.createdAt)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-medium">도착 예정일:</span>
+              <span>{formatDate(editingRequest?.estimatedCompletion)}</span>
+            </div>
+          </div>
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1">

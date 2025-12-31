@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -7,13 +7,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ChevronRight, ArrowRightLeft } from "lucide-react";
+import { ArrowRightLeft } from "lucide-react";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +50,8 @@ type ShippingItemApi = {
   status2?: string;
   shippingMode?: "normal" | "express";
   requestedShipDate?: string;
+  shipDateYmd?: string | null;
+  estimatedArrivalDate?: string | null;
 };
 
 export const RequestorBulkShippingBannerCard = ({
@@ -60,6 +63,12 @@ export const RequestorBulkShippingBannerCard = ({
   const { toast } = useToast();
   const [policy, setPolicy] = useState<ShippingPolicy | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEtaReady, setIsEtaReady] = useState(false);
+  const etaWaitStartRef = useRef<number | null>(null);
+
+  const [originalBulkEtaById, setOriginalBulkEtaById] = useState<
+    Record<string, string | null>
+  >({});
 
   // 샘플 데이터 (실제로는 API에서 가져올 데이터)
   const [items, setItems] = useState<ShippingItemApi[]>([]);
@@ -87,12 +96,77 @@ export const RequestorBulkShippingBannerCard = ({
     setItems(next);
   }, [bulkData]);
 
+  const hasAnyEta = useMemo(() => {
+    return items.some((it) => Boolean(it.estimatedArrivalDate));
+  }, [items]);
+
+  useEffect(() => {
+    if (!isModalOpen) {
+      etaWaitStartRef.current = null;
+      setIsEtaReady(false);
+      return;
+    }
+
+    if (!items.length) {
+      setIsEtaReady(true);
+      return;
+    }
+
+    if (hasAnyEta) {
+      setIsEtaReady(true);
+      return;
+    }
+
+    // ETA가 아직 도착하지 않은 경우: 중간 화면(ETA '-') 노출을 막고 스켈레톤을 유지
+    // 다만 refetch가 반복되면 타이머가 계속 취소될 수 있으므로, 모달 오픈 시점부터 최대 대기시간을 보장한다.
+    if (etaWaitStartRef.current == null) {
+      etaWaitStartRef.current = Date.now();
+    }
+
+    const elapsed = Date.now() - etaWaitStartRef.current;
+    const remaining = Math.max(500 - elapsed, 0);
+
+    setIsEtaReady(false);
+    const t = window.setTimeout(() => {
+      setIsEtaReady(true);
+    }, remaining);
+
+    return () => window.clearTimeout(t);
+  }, [isModalOpen, items.length, hasAnyEta]);
+
+  useEffect(() => {
+    // 묶음 배송(normal)인 아이템의 "원래 ETA"를 1회 저장 (신속→묶음 복귀 시 사용)
+    setOriginalBulkEtaById((prev) => {
+      const next = { ...prev };
+      for (const it of items) {
+        const mode = it.shippingMode || "normal";
+        if (mode !== "normal") continue;
+        if (!it.id) continue;
+        if (next[it.id] !== undefined) continue;
+        next[it.id] = it.estimatedArrivalDate ?? null;
+      }
+      return next;
+    });
+  }, [items]);
+
   const bulkItems = items.filter(
     (i) => (i.shippingMode || "normal") === "normal"
   );
   const expressItems = items.filter(
     (i) => (i.shippingMode || "normal") === "express"
   );
+
+  const earliestEta = (list: ShippingItemApi[]) => {
+    const dates = list
+      .map((i) => i.estimatedArrivalDate)
+      .filter(Boolean)
+      .map((d) => new Date(d as string).getTime())
+      .filter((t) => !Number.isNaN(t));
+    if (!dates.length) return "-";
+    const ts = Math.min(...dates);
+    const d = new Date(ts);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
 
   const getNextSummary = () => {
     const bulkCount = bulkItems.length;
@@ -112,65 +186,7 @@ export const RequestorBulkShippingBannerCard = ({
     // 신속 배송이 하나라도 있으면: 전체를 신속 기준으로 안내
     if (hasExpress) {
       const modeLabel = "신속 배송";
-
-      const today = new Date();
-      const dayOfWeek = today.getDay();
-
-      let nextText = "-";
-
-      if (
-        policy?.shippingMode === "weeklyBased" &&
-        policy.weeklyBatchDays?.length
-      ) {
-        const order: Record<string, number> = {
-          sun: 0,
-          mon: 1,
-          tue: 2,
-          wed: 3,
-          thu: 4,
-          fri: 5,
-          sat: 6,
-        };
-
-        const labels: Record<string, string> = {
-          sun: "일",
-          mon: "월",
-          tue: "화",
-          wed: "수",
-          thu: "목",
-          fri: "금",
-          sat: "토",
-        };
-
-        const sorted = [...policy.weeklyBatchDays].sort(
-          (a, b) => order[a] - order[b]
-        );
-
-        let minDiff = 7;
-        let targetDay: string | null = null;
-
-        for (const d of sorted) {
-          const diff = (order[d] - dayOfWeek + 7) % 7 || 7;
-          if (diff < minDiff) {
-            minDiff = diff;
-            targetDay = d;
-          }
-        }
-
-        if (targetDay) {
-          const next = new Date(today);
-          next.setDate(today.getDate() + minDiff);
-          const month = next.getMonth() + 1;
-          const date = next.getDate();
-          nextText = `${month}/${date}(${labels[targetDay]}) 예정`;
-        }
-      } else {
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-        const month = tomorrow.getMonth() + 1;
-        const date = tomorrow.getDate();
-        nextText = `${month}/${date} 예정`;
-      }
+      const nextText = earliestEta(expressItems);
 
       return {
         modeLabel,
@@ -251,7 +267,7 @@ export const RequestorBulkShippingBannerCard = ({
     return {
       modeLabel,
       countLabel: `총 ${bulkCount}개 묶음 대기`,
-      dateLabel: "다음 일정 준비 중",
+      dateLabel: earliestEta(bulkItems),
     };
   };
 
@@ -284,11 +300,36 @@ export const RequestorBulkShippingBannerCard = ({
     onOpenBulkModal();
   };
 
+  const isExpressEligible = (it: ShippingItemApi) => {
+    const raw = it.diameter;
+    if (!raw) return true;
+    const n = Number(String(raw).replace(/[^0-9.]/g, ""));
+    if (Number.isNaN(n) || n < 10) return true;
+
+    // 10mm 이상: 공정 단계가 CAM 이상(의뢰 단계 아님)이면 허용
+    const stage = it.status || it.status1 || "";
+    return [
+      "CAM",
+      "가공전",
+      "생산",
+      "가공후",
+      "발송",
+      "배송대기",
+      "배송중",
+    ].includes(stage);
+  };
+
   const patchShippingMode = async (
     requestIds: string[],
     shippingMode: "normal" | "express"
   ) => {
-    if (!requestIds.length) return true;
+    if (!requestIds.length) {
+      return {
+        ok: true as const,
+        updatedIds: [] as string[],
+        rejectedIds: [] as string[],
+      };
+    }
 
     if (!token) {
       toast({
@@ -296,7 +337,11 @@ export const RequestorBulkShippingBannerCard = ({
         variant: "destructive",
         duration: 3000,
       });
-      return false;
+      return {
+        ok: false as const,
+        updatedIds: [] as string[],
+        rejectedIds: [] as string[],
+      };
     }
 
     const res = await apiFetch<any>({
@@ -321,40 +366,151 @@ export const RequestorBulkShippingBannerCard = ({
         variant: "destructive",
         duration: 3000,
       });
-      return false;
+      return {
+        ok: false as const,
+        updatedIds: [] as string[],
+        rejectedIds: [] as string[],
+      };
     }
 
-    return true;
+    const rejectedIds = Array.isArray(res.data?.data?.rejectedIds)
+      ? (res.data.data.rejectedIds as string[])
+      : [];
+    const updatedIds = Array.isArray(res.data?.data?.updatedIds)
+      ? (res.data.data.updatedIds as string[])
+      : requestIds;
+    const shipDateYmd =
+      typeof res.data?.data?.shipDateYmd === "string" &&
+      res.data.data.shipDateYmd
+        ? (res.data.data.shipDateYmd as string)
+        : null;
+
+    if (shippingMode === "express" && rejectedIds.length) {
+      toast({
+        title: "일부 제품은 신속배송 제외",
+        description: `10mm 이상(10mm, 10+mm) ${rejectedIds.length}건은 묶음 배송으로 유지됩니다.`,
+        duration: 3500,
+      });
+    }
+
+    return { ok: true as const, updatedIds, rejectedIds, shipDateYmd };
   };
 
-  // 아이템 클릭 시 반대쪽으로 이동
-  const handleMoveItem = async (itemId: string, fromBulk: boolean) => {
-    const nextMode: "normal" | "express" = fromBulk ? "express" : "normal";
-    const ok = await patchShippingMode([itemId], nextMode);
-    if (!ok) return;
-
-    setItems((prev) =>
-      prev.map((it) =>
-        it.id === itemId ? { ...it, shippingMode: nextMode } : it
-      )
-    );
-    onRefresh?.();
+  const getEtaKey = (it: ShippingItemApi) => {
+    const raw = it.estimatedArrivalDate;
+    if (!raw) return "-";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toISOString().slice(0, 10);
   };
 
-  // 전체 넘김
-  const handleMoveAll = async (fromBulk: boolean) => {
-    const source = fromBulk ? bulkItems : expressItems;
-    const targetMode: "normal" | "express" = fromBulk ? "express" : "normal";
-    const requestIds = source.map((i) => i.id).filter(Boolean);
-    const ok = await patchShippingMode(requestIds, targetMode);
-    if (!ok) return;
+  const formatEta = (raw?: string | null) => {
+    if (!raw) return "-";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("ko-KR");
+  };
 
+  const formatShipDate = (raw?: string | null) => {
+    if (!raw) return "-";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("ko-KR");
+  };
+
+  const getExpressShipDateText = () => {
+    if (!expressItems.length) return "-";
+
+    const times = expressItems
+      .map((it) => it.shipDateYmd || it.requestedShipDate)
+      .filter(Boolean)
+      .map((d) => new Date(d as string).getTime())
+      .filter((t) => !Number.isNaN(t));
+
+    if (!times.length) return "-";
+    const ts = Math.min(...times);
+    return formatShipDate(new Date(ts).toISOString());
+  };
+
+  const bulkGroups = (() => {
+    const map = new Map<string, ShippingItemApi[]>();
+    for (const it of bulkItems) {
+      const key = getEtaKey(it);
+      const list = map.get(key) || [];
+      list.push(it);
+      map.set(key, list);
+    }
+    const keys = Array.from(map.keys()).sort((a, b) => {
+      if (a === "-") return 1;
+      if (b === "-") return -1;
+      return a.localeCompare(b);
+    });
+    return keys.map((k) => ({ etaKey: k, items: map.get(k) || [] }));
+  })();
+
+  const toggleAllShippingMode = async () => {
+    const requestIds = items.map((i) => i.id).filter(Boolean);
+    if (!requestIds.length) return;
+
+    const hasExpress = expressItems.length > 0;
+    const nextMode: "normal" | "express" = hasExpress ? "normal" : "express";
+
+    // 신속배송 전환 시 프론트에서 선제 필터링
+    const eligibleIds =
+      nextMode === "express"
+        ? items.filter((it) => isExpressEligible(it)).map((it) => it.id)
+        : requestIds;
+
+    const rejectedCount =
+      nextMode === "express" ? requestIds.length - eligibleIds.length : 0;
+
+    if (nextMode === "express") {
+      setOriginalBulkEtaById((prev) => {
+        const next = { ...prev };
+        for (const it of bulkItems) {
+          if (!it.id) continue;
+          if (next[it.id] !== undefined) continue;
+          next[it.id] = it.estimatedArrivalDate ?? null;
+        }
+        return next;
+      });
+
+      if (rejectedCount > 0) {
+        toast({
+          title: "일부 제품은 신속배송 제외",
+          description: `의뢰 단계의 10mm 이상 ${rejectedCount}건은 묶음 배송으로 유지됩니다.`,
+          duration: 3500,
+        });
+      }
+    }
+
+    const result = await patchShippingMode(eligibleIds, nextMode);
+    if (!result.ok) return;
+
+    const updatedSet = new Set(result.updatedIds);
+    // 체감 속도 개선: 서버 응답 기준으로 즉시 리스트를 갱신
     setItems((prev) =>
-      prev.map((it) =>
-        requestIds.includes(it.id) ? { ...it, shippingMode: targetMode } : it
-      )
+      prev.map((it) => {
+        if (!updatedSet.has(it.id)) return it;
+        if (nextMode === "normal") {
+          const originalEta = originalBulkEtaById[it.id];
+          return {
+            ...it,
+            shippingMode: "normal",
+            shipDateYmd: null,
+            estimatedArrivalDate:
+              originalEta !== undefined ? originalEta : it.estimatedArrivalDate,
+          };
+        }
+        return {
+          ...it,
+          shippingMode: "express",
+          shipDateYmd: result.shipDateYmd ?? it.shipDateYmd ?? null,
+        };
+      })
     );
-    onRefresh?.();
+
+    // 토글은 PATCH 1회로 끝내서 체감 속도를 극대화
   };
 
   return (
@@ -403,118 +559,156 @@ export const RequestorBulkShippingBannerCard = ({
               신속 배송시 묶음 배송 제품도 동봉합니다.
             </p>
           </DialogHeader>
-          <div className="relative flex items-stretch gap-6 py-6">
-            {/* 왼쪽: 묶음 배송 */}
-            <div
-              className="flex-1 space-y-4"
-              role="button"
-              tabIndex={0}
-              onClick={() => handleMoveAll(true)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  handleMoveAll(true);
-                }
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-1 w-1 rounded-full bg-blue-600"></div>
-                  <h3 className="font-bold text-lg text-gray-900">묶음 배송</h3>
+          {!isEtaReady ? (
+            <div className="py-6 space-y-4">
+              <div className="flex items-center justify-between gap-6">
+                <div className="flex-1">
+                  <Skeleton className="h-5 w-24" />
+                  <div className="mt-4 space-y-2">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-center w-16">
+                  <Skeleton className="h-12 w-12 rounded-full" />
+                </div>
+                <div className="flex-1">
+                  <Skeleton className="h-5 w-24" />
+                  <div className="mt-4 space-y-2">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
                 </div>
               </div>
-              <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-2 max-h-96 overflow-y-auto">
-                {bulkItems.length === 0 ? (
-                  <div className="text-sm text-gray-500 text-center py-8">
-                    묶음 배송 대기 중인 제품이 없습니다.
+            </div>
+          ) : (
+            <div className="relative flex items-stretch gap-6 py-6">
+              {/* 왼쪽: 묶음 배송 */}
+              <div className="flex-1 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-blue-600"></div>
+                    <h3 className="font-bold text-lg text-gray-900">
+                      묶음 배송
+                    </h3>
                   </div>
-                ) : (
-                  bulkItems.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMoveItem(item.id, true);
-                      }}
-                      className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:border-blue-300 transition-all cursor-pointer group"
-                    >
-                      <div className="flex-1 text-left">
-                        <p className="text-sm font-medium text-gray-900">
-                          {item.title || item.id}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {item.clinic || ""}
-                          {(item.patient || item.tooth || item.diameter) &&
-                            ` • ${item.patient || "-"} / ${
-                              item.tooth || "-"
-                            } / ${item.diameter || "-"}`}
-                        </p>
+                </div>
+                <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-3 max-h-96 overflow-y-auto">
+                  {bulkItems.length === 0 ? (
+                    <div className="text-sm text-gray-500 text-center py-8">
+                      묶음 배송 대기 중인 제품이 없습니다.
+                    </div>
+                  ) : (
+                    bulkGroups.map((group) => (
+                      <div
+                        key={group.etaKey}
+                        className="rounded-xl border border-gray-100 bg-gray-50 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-xs text-gray-600">
+                            <span className="font-medium">도착 예정일:</span>{" "}
+                            <span className="text-gray-900">
+                              {group.etaKey === "-"
+                                ? "-"
+                                : formatEta(group.etaKey)}
+                            </span>
+                            <span className="ml-2 text-gray-500">
+                              ({group.items.length}개)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 space-y-2">
+                          {group.items.map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-white"
+                            >
+                              <div className="flex-1 text-left">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {item.title || item.id}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {item.clinic || ""}
+                                  {(item.patient ||
+                                    item.tooth ||
+                                    item.diameter) &&
+                                    ` • ${item.patient || "-"} / ${
+                                      item.tooth || "-"
+                                    } / ${item.diameter || "-"}`}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" />
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* 중앙: 화살표 */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 translate-y-1/2 z-10">
-              <ArrowRightLeft className="w-5 h-5 text-gray-400" />
-            </div>
-
-            {/* 오른쪽: 신속 배송 */}
-            <div
-              className="flex-1 space-y-4"
-              role="button"
-              tabIndex={0}
-              onClick={() => handleMoveAll(false)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  handleMoveAll(false);
-                }
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-1 w-1 rounded-full bg-red-600"></div>
-                  <h3 className="font-bold text-lg text-gray-900">신속 배송</h3>
+                    ))
+                  )}
                 </div>
               </div>
-              <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-2 max-h-96 overflow-y-auto">
-                {expressItems.length === 0 ? (
-                  <div className="text-sm text-gray-500 text-center py-8">
-                    신속 배송 제품이 없습니다.
+
+              {/* 중앙: 화살표 */}
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 translate-y-1/2 z-10">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 w-12 rounded-full border-2 border-blue-500 bg-white shadow-md hover:bg-blue-50"
+                  onClick={toggleAllShippingMode}
+                >
+                  <ArrowRightLeft className="h-6 w-6 text-blue-600" />
+                </Button>
+              </div>
+
+              {/* 오른쪽: 신속 배송 */}
+              <div className="flex-1 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1 w-1 rounded-full bg-red-600"></div>
+                    <h3 className="font-bold text-lg text-gray-900">
+                      신속 배송
+                    </h3>
                   </div>
-                ) : (
-                  expressItems.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMoveItem(item.id, false);
-                      }}
-                      className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50 hover:bg-red-50 hover:border-red-300 transition-all cursor-pointer group"
-                    >
-                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-red-600 transition-colors rotate-180" />
-                      <div className="flex-1 text-right">
-                        <p className="text-sm font-medium text-gray-900">
-                          {item.title || item.id}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {item.clinic || ""}
-                          {(item.patient || item.tooth || item.diameter) &&
-                            ` • ${item.patient || "-"} / ${
-                              item.tooth || "-"
-                            } / ${item.diameter || "-"}`}
-                        </p>
+                  {expressItems.length > 0 && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
+                      <span className="font-medium">도착 예정일:</span>{" "}
+                      <span className="text-red-900">
+                        {getExpressShipDateText()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-2 max-h-96 overflow-y-auto">
+                  {expressItems.length === 0 ? (
+                    <div className="text-sm text-gray-500 text-center py-8">
+                      신속 배송 제품이 없습니다.
+                    </div>
+                  ) : (
+                    expressItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50"
+                      >
+                        <div className="flex-1 text-right">
+                          <p className="text-sm font-medium text-gray-900">
+                            {item.title || item.id}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {item.clinic || ""}
+                            {(item.patient || item.tooth || item.diameter) &&
+                              ` • ${item.patient || "-"} / ${
+                                item.tooth || "-"
+                              } / ${item.diameter || "-"}`}
+                          </p>
+                        </div>
                       </div>
-                    </button>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

@@ -6,7 +6,27 @@ import {
   getDeliveryEtaLeadDays,
   computeDiameterStats,
   normalizeCaseInfosImplantFields,
+  addKoreanBusinessDays,
+  getTodayYmdInKst,
 } from "./utils.js";
+
+const toKstYmd = (d) => {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+};
+
+const ymdToKstMidnight = (ymd) => {
+  if (!ymd) return null;
+  const d = new Date(`${ymd}T00:00:00+09:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
 
 /**
  * 최대 직경별 통계 (공용)
@@ -66,7 +86,13 @@ export async function getMyDashboardSummary(req, res) {
 
     const requestFilterWithPeriod = { ...requestFilter, ...dateFilter };
 
-    const requests = await Request.find(requestFilterWithPeriod)
+    const requests = await Request.find({
+      ...requestFilter,
+      $or: [
+        { status: { $nin: ["완료", "취소"] } }, // 진행 중인 건은 전체 기간 대상
+        dateFilter, // 완료/취소 건은 기간 내 대상
+      ],
+    })
       .populate("requestor", "name organization")
       .populate("manufacturer", "name organization")
       .populate("deliveryInfoRef")
@@ -81,6 +107,7 @@ export async function getMyDashboardSummary(req, res) {
     const normalizeStage = (r) => {
       const status = String(r.status || "");
       const stage = String(r.manufacturerStage || "");
+      const status1 = String(r.status1 || "");
       const status2 = String(r.status2 || "");
 
       if (status === "취소") return "cancel";
@@ -102,6 +129,14 @@ export async function getMyDashboardSummary(req, res) {
         ["cam", "CAM", "가공전"].includes(stage)
       ) {
         return "cam";
+      }
+      if (
+        ["의뢰", "의뢰접수"].includes(status) ||
+        ["의뢰", "request", "receive"].includes(stage) ||
+        ["의뢰", "의뢰접수"].includes(status1) ||
+        ["의뢰", "의뢰접수"].includes(status2)
+      ) {
+        return "request";
       }
       return "request";
     };
@@ -163,7 +198,8 @@ export async function getMyDashboardSummary(req, res) {
       })),
     };
 
-    const now = new Date();
+    const nowYmd = getTodayYmdInKst();
+    const nowMidnight = ymdToKstMidnight(nowYmd) || new Date();
     const delayedItems = [];
     const warningItems = [];
 
@@ -181,15 +217,22 @@ export async function getMyDashboardSummary(req, res) {
         : null;
       const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
 
-      const diffMs = now.getTime() - est.getTime();
-      const diffDays = diffMs / (1000 * 60 * 60 * 24);
-      const daysOverdue = diffDays > 0 ? Math.floor(diffDays) : 0;
-      const daysUntilDue = diffDays < 0 ? Math.ceil(-diffDays) : 0;
+      const estYmd = toKstYmd(est);
+      const estMidnight = ymdToKstMidnight(estYmd);
+      if (!estMidnight) return;
 
-      if (!isDone && diffDays >= 1) {
-        delayedItems.push({ r, est, daysOverdue, daysUntilDue });
-      } else if (!isDone && diffDays >= 0 && diffDays < 1) {
-        warningItems.push({ r, est, daysOverdue, daysUntilDue });
+      const diffDays = Math.floor(
+        (nowMidnight.getTime() - estMidnight.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const daysOverdue = diffDays > 0 ? diffDays : 0;
+      const daysUntilDue = diffDays < 0 ? Math.abs(diffDays) : 0;
+
+      if (!isDone) {
+        if (diffDays > 0) {
+          delayedItems.push({ r, est, daysOverdue, daysUntilDue });
+        } else if (diffDays === 0 || diffDays === -1) {
+          warningItems.push({ r, est, daysOverdue, daysUntilDue });
+        }
       }
     });
 
@@ -280,34 +323,47 @@ export async function getMyDashboardSummary(req, res) {
       leadDays
     );
 
-    const recentRequests = await Promise.all(
-      abutmentRequests
-        .slice()
-        .sort((a, b) => {
-          const aDate = new Date(a.createdAt || a.updatedAt || 0).getTime();
-          const bDate = new Date(b.createdAt || b.updatedAt || 0).getTime();
-          return bDate - aDate;
-        })
-        .slice(0, 5)
-        .map(async (r) => {
-          const ci = r.caseInfos || {};
-          const normalizedCi = await normalizeCaseInfosImplantFields(ci);
-          return {
-            // 기본 식별자
-            _id: r._id,
-            requestId: r.requestId,
-            // 표시용 필드
-            title: r.title,
-            status: r.status,
-            date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
-            // 편집 다이얼로그에서 사용할 세부 정보
-            patientName: ci.patientName || "",
-            tooth: ci.tooth || "",
-            caseInfos: normalizedCi,
-            requestor: r.requestor || null,
-          };
-        })
-    );
+    const resolveEstimatedCompletionYmd = (r, ci) => {
+      // ETA가 이미 있으면 즉시 반환(async 제거)
+      if (r?.timeline?.estimatedCompletion) {
+        return new Date(r.timeline.estimatedCompletion)
+          .toISOString()
+          .slice(0, 10);
+      }
+      // ETA 없으면 null 반환(fallback 계산 제거로 속도 확보)
+      return null;
+    };
+
+    const recentRequests = abutmentRequests
+      .slice()
+      .sort((a, b) => {
+        const aDate = new Date(a.createdAt || a.updatedAt || 0).getTime();
+        const bDate = new Date(b.createdAt || b.updatedAt || 0).getTime();
+        return bDate - aDate;
+      })
+      .slice(0, 5)
+      .map((r) => {
+        const ci = r.caseInfos || {};
+        const etaYmd = resolveEstimatedCompletionYmd(r, ci);
+        return {
+          // 기본 식별자
+          _id: r._id,
+          requestId: r.requestId,
+          // 표시용 필드
+          title: r.title,
+          status: r.status,
+          manufacturerStage: r.manufacturerStage,
+          date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
+          estimatedCompletion: etaYmd || null,
+          // 편집 다이얼로그에서 사용할 세부 정보
+          patientName: ci.patientName || "",
+          tooth: ci.tooth || "",
+          caseInfos: ci,
+          requestor: r.requestor || null,
+          deliveryInfoRef: r.deliveryInfoRef || null,
+          createdAt: r.createdAt,
+        };
+      });
 
     return res.status(200).json({
       success: true,
@@ -353,7 +409,6 @@ export async function getDashboardRiskSummary(req, res) {
     }
 
     const baseFilter = {
-      ...dateFilter,
       status: { $ne: "취소" },
       "caseInfos.implantSystem": { $exists: true, $ne: "" },
     };
@@ -361,16 +416,34 @@ export async function getDashboardRiskSummary(req, res) {
     const filter =
       req.user?.role === "manufacturer"
         ? {
-            ...baseFilter,
-            $or: [
-              { manufacturer: req.user._id },
-              { manufacturer: null },
-              { manufacturer: { $exists: false } },
+            $and: [
+              baseFilter,
+              {
+                $or: [
+                  { manufacturer: req.user._id },
+                  { manufacturer: null },
+                  { manufacturer: { $exists: false } },
+                ],
+              },
+              {
+                $or: [
+                  { status: { $ne: "완료" } }, // 미완료 건 전체 (기간 필터 무시)
+                  { $and: [{ status: "완료" }, dateFilter] }, // 완료된 건은 기간 내만
+                ],
+              },
             ],
           }
         : {
-            ...baseFilter,
-            ...buildRequestorOrgFilter(req),
+            $and: [
+              baseFilter,
+              await buildRequestorOrgScopeFilter(req),
+              {
+                $or: [
+                  { status: { $ne: "완료" } }, // 미완료 건 전체 (기간 필터 무시)
+                  { $and: [{ status: "완료" }, dateFilter] }, // 완료된 건은 기간 내만
+                ],
+              },
+            ],
           };
 
     const requests = await Request.find(filter)
@@ -379,11 +452,13 @@ export async function getDashboardRiskSummary(req, res) {
       .populate("deliveryInfoRef")
       .lean();
 
-    const now = new Date();
+    const nowYmd = getTodayYmdInKst();
+    const nowMidnight = ymdToKstMidnight(nowYmd) || new Date();
     const delayedItems = [];
     const warningItems = [];
 
     requests.forEach((r) => {
+      if (!r) return;
       const est = r.timeline?.estimatedCompletion
         ? new Date(r.timeline.estimatedCompletion)
         : null;
@@ -397,15 +472,22 @@ export async function getDashboardRiskSummary(req, res) {
         : null;
       const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
 
-      const diffMs = now.getTime() - est.getTime();
-      const diffDays = diffMs / (1000 * 60 * 60 * 24);
-      const daysOverdue = diffDays > 0 ? Math.floor(diffDays) : 0;
-      const daysUntilDue = diffDays < 0 ? Math.ceil(-diffDays) : 0;
+      const estYmd = toKstYmd(est);
+      const estMidnight = ymdToKstMidnight(estYmd);
+      if (!estMidnight) return;
 
-      if (!isDone && diffDays >= 1) {
-        delayedItems.push({ r, est, daysOverdue, daysUntilDue });
-      } else if (!isDone && diffDays >= 0 && diffDays < 1) {
-        warningItems.push({ r, est, daysOverdue, daysUntilDue });
+      const diffDays = Math.floor(
+        (nowMidnight.getTime() - estMidnight.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const daysOverdue = diffDays > 0 ? diffDays : 0;
+      const daysUntilDue = diffDays < 0 ? Math.abs(diffDays) : 0;
+
+      if (!isDone) {
+        if (diffDays > 0) {
+          delayedItems.push({ r, est, daysOverdue, daysUntilDue });
+        } else if (diffDays === 0 || diffDays === -1) {
+          warningItems.push({ r, est, daysOverdue, daysUntilDue });
+        }
       }
     });
 

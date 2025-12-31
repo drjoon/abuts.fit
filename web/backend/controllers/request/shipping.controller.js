@@ -6,8 +6,21 @@ import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+  getDeliveryEtaLeadDays,
   applyStatusMapping,
 } from "./utils.js";
+
+const __cache = new Map();
+const memo = async ({ key, ttlMs, fn }) => {
+  const now = Date.now();
+  const hit = __cache.get(key);
+  if (hit && typeof hit.expiresAt === "number" && hit.expiresAt > now) {
+    return hit.value;
+  }
+  const value = await fn();
+  __cache.set(key, { value, expiresAt: now + ttlMs });
+  return value;
+};
 
 /**
  * 배송 방식 변경 (의뢰자용)
@@ -32,25 +45,48 @@ export async function updateMyShippingMode(req, res) {
       });
     }
 
-    const result = await Request.updateMany(
-      {
-        ...requestFilter,
-        requestId: { $in: requestIds },
-        status: { $nin: ["취소", "완료"] },
-      },
-      {
-        $set: { shippingMode },
-      }
-    );
+    const todayYmd = getTodayYmdInKst();
+    let shipDateYmd = null;
 
-    const modified = result?.modifiedCount ?? result?.nModified ?? 0;
+    if (shippingMode === "express") {
+      // UI용 express 발송일(간단 계산)
+      const rawShip = await memo({
+        key: `expressShip:${todayYmd}:-`,
+        ttlMs: 6 * 60 * 60 * 1000,
+        fn: () =>
+          calculateExpressShipYmd({ maxDiameter: null, baseYmd: todayYmd }),
+      });
+      shipDateYmd = await memo({
+        key: `krbiz:normalize:${rawShip}`,
+        ttlMs: 6 * 60 * 60 * 1000,
+        fn: () => normalizeKoreanBusinessDay({ ymd: rawShip }),
+      });
+    }
+
+    // 즉시 응답 후 DB 업데이트는 비동기로
+    setImmediate(() => {
+      Request.updateMany(
+        {
+          ...requestFilter,
+          requestId: { $in: requestIds },
+          status: { $nin: ["취소", "완료"] },
+        },
+        {
+          $set: { shippingMode },
+        }
+      ).catch((err) => {
+        console.error("Error in async updateMany:", err);
+      });
+    });
 
     return res.status(200).json({
       success: true,
-      message: `${modified}건의 배송 방식이 변경되었습니다.`,
+      message: `${requestIds.length}건의 배송 방식이 변경되었습니다.`,
       data: {
         updatedIds: requestIds,
+        rejectedIds: [],
         shippingMode,
+        shipDateYmd,
       },
     });
   } catch (error) {
@@ -146,16 +182,129 @@ export async function getMyBulkShipping(req, res) {
   try {
     const requestFilter = await buildRequestorOrgScopeFilter(req);
 
+    const leadDays = await getDeliveryEtaLeadDays();
+    const effectiveLeadDays = {
+      ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+      ...(leadDays || {}),
+    };
+
+    const resolveNormalLeadDays = (maxDiameter) => {
+      const d =
+        typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
+          ? maxDiameter
+          : maxDiameter != null && String(maxDiameter).trim()
+          ? Number(maxDiameter)
+          : null;
+      if (d == null || Number.isNaN(d)) return effectiveLeadDays.d10;
+      if (d <= 6) return effectiveLeadDays.d6;
+      if (d <= 8) return effectiveLeadDays.d8;
+      if (d <= 10) return effectiveLeadDays.d10;
+      return effectiveLeadDays.d10plus;
+    };
+
+    const toYmd = (d) => {
+      if (!d) return null;
+      const date = d instanceof Date ? d : new Date(d);
+      if (Number.isNaN(date.getTime())) return null;
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(date);
+    };
+
+    // 배치 최적화: 같은 diameter는 1회만 계산
+    const todayYmd = getTodayYmdInKst();
+    const diameterCache = new Map();
+
+    const getExpressShipYmd = async (maxDiameter) => {
+      const key = String(maxDiameter ?? "-");
+      if (!diameterCache.has(key)) {
+        const raw = await memo({
+          key: `expressShip:${todayYmd}:${key}`,
+          ttlMs: 6 * 60 * 60 * 1000,
+          fn: () => calculateExpressShipYmd({ maxDiameter, baseYmd: todayYmd }),
+        });
+        const normalized = await memo({
+          key: `krbiz:normalize:${raw}`,
+          ttlMs: 6 * 60 * 60 * 1000,
+          fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
+        });
+        diameterCache.set(key, normalized);
+      }
+      return diameterCache.get(key);
+    };
+
+    const resolveShippingYmds = async (r) => {
+      const ci = r.caseInfos || {};
+      const maxDiameter = ci.maxDiameter;
+      const mode = r.shippingMode || "normal";
+
+      const createdYmd = toYmd(r.createdAt);
+      const baseYmd = createdYmd || todayYmd;
+      const requestedShipYmd = toYmd(r.requestedShipDate);
+
+      // ETA가 이미 있으면 계산 생략
+      const existing = r.timeline?.estimatedCompletion;
+      const existingEtaYmd =
+        existing instanceof Date
+          ? existing.toISOString().slice(0, 10)
+          : typeof existing === "string" && existing.trim()
+          ? existing.trim()
+          : null;
+
+      let shipDateYmd;
+      if (mode === "express") {
+        shipDateYmd =
+          requestedShipYmd || (await getExpressShipYmd(maxDiameter));
+      } else {
+        const raw = requestedShipYmd || baseYmd;
+        shipDateYmd = await memo({
+          key: `krbiz:normalize:${raw}`,
+          ttlMs: 6 * 60 * 60 * 1000,
+          fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
+        });
+      }
+
+      if (existingEtaYmd) {
+        return { shipDateYmd, arrivalDateYmd: existingEtaYmd };
+      }
+
+      // ETA 없는 경우만 계산
+      const days = mode === "express" ? 1 : resolveNormalLeadDays(maxDiameter);
+      const arrivalDateYmd = await memo({
+        key: `krbiz:add:${shipDateYmd}:${days}`,
+        ttlMs: 6 * 60 * 60 * 1000,
+        fn: () => addKoreanBusinessDays({ startYmd: shipDateYmd, days }),
+      });
+
+      return { shipDateYmd, arrivalDateYmd };
+    };
+
     const requests = await Request.find({
       ...requestFilter,
-      status: { $in: ["CAM", "생산", "발송"] },
+      status: {
+        $in: [
+          "의뢰",
+          "의뢰접수",
+          "CAM",
+          "가공전",
+          "생산",
+          "가공후",
+          "발송",
+          "배송대기",
+          "배송중",
+        ],
+      },
     })
+      .select(
+        "requestId title status status1 status2 caseInfos shippingMode requestedShipDate createdAt timeline.estimatedCompletion requestor"
+      )
       .populate("requestor", "name organization")
-      .populate("manufacturer", "name organization")
-      .populate("deliveryInfoRef")
       .lean();
 
-    const mapItem = (r) => {
+    const mapItem = async (r) => {
       const ci = r.caseInfos || {};
       const clinic =
         r.requestor?.organization || r.requestor?.name || req.user?.name || "";
@@ -165,6 +314,10 @@ export async function getMyBulkShipping(req, res) {
           : ci.maxDiameter != null
           ? `${Number(ci.maxDiameter)}mm`
           : "";
+
+      const ymds = await resolveShippingYmds(r);
+      const eta = ymds?.arrivalDateYmd;
+      const shipDateYmd = ymds?.shipDateYmd;
 
       return {
         id: r.requestId,
@@ -179,12 +332,30 @@ export async function getMyBulkShipping(req, res) {
         status2: r.status2,
         shippingMode: r.shippingMode || "normal",
         requestedShipDate: r.requestedShipDate,
+        shipDateYmd,
+        estimatedArrivalDate: eta,
       };
     };
 
-    const pre = requests.filter((r) => r.status === "CAM").map(mapItem);
-    const post = requests.filter((r) => r.status === "생산").map(mapItem);
-    const waiting = requests.filter((r) => r.status === "발송").map(mapItem);
+    const [pre, post, waiting] = await Promise.all([
+      Promise.all(
+        requests
+          .filter((r) =>
+            ["의뢰", "의뢰접수", "CAM", "가공전"].includes(r.status)
+          )
+          .map(mapItem)
+      ),
+      Promise.all(
+        requests
+          .filter((r) => ["생산", "가공후"].includes(r.status))
+          .map(mapItem)
+      ),
+      Promise.all(
+        requests
+          .filter((r) => ["발송", "배송대기", "배송중"].includes(r.status))
+          .map(mapItem)
+      ),
+    ]);
 
     return res.status(200).json({
       success: true,

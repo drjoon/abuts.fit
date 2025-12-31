@@ -780,13 +780,10 @@ export async function updateRequestStatus(req, res) {
     }
 
     // 취소는 의뢰 또는 CAM 상태에서만 가능
-    if (
-      status === "취소" &&
-      !["의뢰", "CAM", "의뢰접수", "가공전"].includes(request.status)
-    ) {
+    if (status === "취소" && request.status !== "의뢰") {
       return res.status(400).json({
         success: false,
-        message: "의뢰 또는 CAM 상태에서만 취소할 수 있습니다.",
+        message: "의뢰 단계에서만 취소할 수 있습니다.",
       });
     }
 

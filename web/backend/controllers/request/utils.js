@@ -151,8 +151,11 @@ export async function formatEtaLabelFromNow(days) {
   return ymdToMmDd(etaYmd);
 }
 
-export async function calculateExpressShipYmd({ maxDiameter }) {
-  const todayYmd = getTodayYmdInKst();
+export async function calculateExpressShipYmd({ maxDiameter, baseYmd }) {
+  const todayYmd =
+    typeof baseYmd === "string" && baseYmd.trim()
+      ? baseYmd.trim()
+      : getTodayYmdInKst();
   const d =
     typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
       ? maxDiameter
@@ -164,8 +167,8 @@ export async function calculateExpressShipYmd({ maxDiameter }) {
   }
 
   // d10 이상: 다음 수요일 출고(기존 정책 유지) + 해당 날짜가 휴일/주말이면 다음 영업일로 보정
-  const today = new Date();
-  const currentDow = today.getDay();
+  const baseDate = new Date(`${todayYmd}T00:00:00+09:00`);
+  const currentDow = baseDate.getDay();
   const targetDow = 3; // Wed
 
   let daysToAdd = targetDow - currentDow;
@@ -176,8 +179,8 @@ export async function calculateExpressShipYmd({ maxDiameter }) {
     daysToAdd += 7;
   }
 
-  const candidate = new Date(today);
-  candidate.setDate(today.getDate() + daysToAdd);
+  const candidate = new Date(baseDate);
+  candidate.setDate(baseDate.getDate() + daysToAdd);
   const candidateYmd = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
