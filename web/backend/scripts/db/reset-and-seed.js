@@ -61,22 +61,6 @@ async function seedDev() {
     adminStaff: "As!4mJ#7tK@9pW3$",
   };
 
-  // 기존 샘플 계정/조직 정리
-  const legacyEmails = [
-    "requestor.principal@demo.abuts.fit",
-    "requestor.staff@demo.abuts.fit",
-    "requestor.owner@demo.abuts.fit",
-    "requestor.staff@demo.abuts.fit",
-    "manufacturer.master@demo.abuts.fit",
-    "manufacturer.owner@demo.abuts.fit",
-    "manufacturer.staff@demo.abuts.fit",
-    "admin.master@demo.abuts.fit",
-    "admin.owner@demo.abuts.fit",
-    "admin.staff@demo.abuts.fit",
-  ];
-  await User.deleteMany({ email: { $in: legacyEmails } });
-  await RequestorOrganization.deleteMany({ name: "데모기공소" });
-
   const requestorOwnerEmail = "requestor.owner@demo.abuts.fit";
   const requestorOwner = await User.create({
     name: "데모 의뢰자 대표",

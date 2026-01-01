@@ -133,7 +133,11 @@ export const RequestPage = ({
     try {
       setIsLoading(true);
       const url =
-        user?.role === "admin" ? "/api/admin/requests" : "/api/requests";
+        user?.role === "admin"
+          ? "/api/admin/requests"
+          : user?.role === "manufacturer"
+          ? "/api/requests/all"
+          : "/api/requests";
       const params = new URLSearchParams();
       const res = await fetch(url, {
         headers: {
