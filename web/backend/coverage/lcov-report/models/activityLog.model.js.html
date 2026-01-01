@@ -105,7 +105,28 @@
 <a name='L40'></a><a href='#L40'>40</a>
 <a name='L41'></a><a href='#L41'>41</a>
 <a name='L42'></a><a href='#L42'>42</a>
-<a name='L43'></a><a href='#L43'>43</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -144,16 +165,37 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Schema, model } from 'mongoose';
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Schema, model } from "mongoose";
 &nbsp;
 const activityLogSchema = <span class="cstat-no" title="statement not covered" >new Schema(</span>
   {
     userId: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
       index: true,
     },
@@ -161,18 +203,29 @@ const activityLogSchema = <span class="cstat-no" title="statement not covered" >
       type: String,
       required: true,
       enum: [
-        'USER_REGISTERED',
-        'USER_LOGGED_IN',
-        'USER_LOGGED_OUT',
-        'PROFILE_UPDATED',
-        'REQUEST_CREATED',
-        'REQUEST_UPDATED',
-        'REQUEST_DELETED',
-        'FILE_UPLOADED',
-        'FILE_DOWNLOADED',
-        'FILE_DELETED',
-        'COMMENT_ADDED',
-        '테스트 액션'
+        "USER_REGISTERED",
+        "USER_LOGGED_IN",
+        "USER_LOGGED_OUT",
+        "LOGIN_SUCCESS",
+        "LOGIN_FAILED_USER_NOT_FOUND",
+        "LOGIN_FAILED_BAD_PASSWORD",
+        "LOGIN_FAILED_INACTIVE_USER",
+        "LOGIN_FAILED_ERROR",
+        "AUTH_FAILURE",
+        "CHANGE_PASSWORD_SUCCESS",
+        "RESET_PASSWORD_SUCCESS",
+        "FORGOT_PASSWORD_REQUEST",
+        "PROFILE_UPDATED",
+        "REQUEST_CREATED",
+        "REQUEST_UPDATED",
+        "REQUEST_DELETED",
+        "FILE_UPLOADED",
+        "FILE_DOWNLOADED",
+        "FILE_DELETED",
+        "COMMENT_ADDED",
+        "테스트 액션",
+        "CHARGE_APPROVED",
+        "CHARGE_REJECTED",
       ],
     },
     details: {
@@ -182,11 +235,21 @@ const activityLogSchema = <span class="cstat-no" title="statement not covered" >
     ipAddress: {
       type: String,
     },
+    severity: {
+      type: String,
+      enum: ["critical", "high", "medium", "low", "info"],
+      default: "info",
+    },
+    status: {
+      type: String,
+      enum: ["blocked", "allowed", "failed", "success", "info"],
+      default: "info",
+    },
   },
   { timestamps: true }
 );
 &nbsp;
-const ActivityLog = <span class="cstat-no" title="statement not covered" >model('ActivityLog', activityLogSchema);</span>
+const ActivityLog = <span class="cstat-no" title="statement not covered" >model("ActivityLog", activityLogSchema);</span>
 &nbsp;
 export default ActivityLog;
 &nbsp;</pre></td></tr></table></pre>
@@ -196,7 +259,7 @@ export default ActivityLog;
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-23T03:03:53.757Z
+                at 2026-01-01T03:23:57.404Z
             </div>
         <script src="../prettify.js"></script>
         <script>

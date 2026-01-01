@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/117</span>
+                <span class='fraction'>0/118</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/81</span>
+                <span class='fraction'>0/87</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/111</span>
+                <span class='fraction'>0/112</span>
             </div>
         
             
@@ -368,7 +368,20 @@
 <a name='L303'></a><a href='#L303'>303</a>
 <a name='L304'></a><a href='#L304'>304</a>
 <a name='L305'></a><a href='#L305'>305</a>
-<a name='L306'></a><a href='#L306'>306</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L306'></a><a href='#L306'>306</a>
+<a name='L307'></a><a href='#L307'>307</a>
+<a name='L308'></a><a href='#L308'>308</a>
+<a name='L309'></a><a href='#L309'>309</a>
+<a name='L310'></a><a href='#L310'>310</a>
+<a name='L311'></a><a href='#L311'>311</a>
+<a name='L312'></a><a href='#L312'>312</a>
+<a name='L313'></a><a href='#L313'>313</a>
+<a name='L314'></a><a href='#L314'>314</a>
+<a name='L315'></a><a href='#L315'>315</a>
+<a name='L316'></a><a href='#L316'>316</a>
+<a name='L317'></a><a href='#L317'>317</a>
+<a name='L318'></a><a href='#L318'>318</a>
+<a name='L319'></a><a href='#L319'>319</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -598,7 +611,9 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -612,6 +627,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -627,6 +646,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -655,6 +680,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -892,7 +918,7 @@ export const uploadFileToS3 = <span class="cstat-no" title="statement not covere
   }
 };
 &nbsp;
-const deleteFileFromS3 = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (key) =&gt; {</span>
+const deleteFileFromS3 = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (key, bucketOverride) =&gt; {</span>
   const guardKey = <span class="cstat-no" title="statement not covered" >`s3-delete:${key}`;</span>
   const { blocked, count } = <span class="cstat-no" title="statement not covered" >shouldBlockExternalCall(guardKey);</span>
 <span class="cstat-no" title="statement not covered" >  if (blocked) {</span>
@@ -903,9 +929,11 @@ const deleteFileFromS3 = <span class="cstat-no" title="statement not covered" ><
 <span class="cstat-no" title="statement not covered" >    return false;</span>
   }
 <span class="cstat-no" title="statement not covered" >  try {</span>
+    const Bucket =
+<span class="cstat-no" title="statement not covered" >      bucketOverride || process.env.AWS_S3_BUCKET_NAME || "abuts-fit";</span>
 <span class="cstat-no" title="statement not covered" >    await getS3Client().send(</span>
       new DeleteObjectCommand({
-        Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+        Bucket,
         Key: key,
       })
     );
@@ -916,7 +944,11 @@ const deleteFileFromS3 = <span class="cstat-no" title="statement not covered" ><
   }
 };
 &nbsp;
-const getSignedUrl = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (key, expires = <span class="branch-0 cbranch-no" title="branch not covered" >3600)</span> =&gt; {</span>
+const getSignedUrl = <span class="cstat-no" title="statement not covered" ><span class="fstat-no" title="function not covered" >as</span>ync (</span>
+  key,
+  expires = <span class="branch-0 cbranch-no" title="branch not covered" >3600,</span>
+  { responseDisposition, responseContentType } = <span class="branch-0 cbranch-no" title="branch not covered" >{}</span>
+) =&gt; {
   const guardKey = <span class="cstat-no" title="statement not covered" >`s3-signedUrl:${key}`;</span>
   const { blocked, count } = <span class="cstat-no" title="statement not covered" >shouldBlockExternalCall(guardKey);</span>
 <span class="cstat-no" title="statement not covered" >  if (blocked) {</span>
@@ -931,6 +963,12 @@ const getSignedUrl = <span class="cstat-no" title="statement not covered" ><span
   const command = <span class="cstat-no" title="statement not covered" >new GetObjectCommand({</span>
     Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
     Key: key,
+    ...(responseDisposition
+      ? { ResponseContentDisposition: responseDisposition }
+      : {}),
+    ...(responseContentType
+      ? { ResponseContentType: responseContentType }
+      : {}),
   });
   const { getSignedUrl: getSignedUrlV3 } = <span class="cstat-no" title="statement not covered" >await import(</span>
     "@aws-sdk/s3-request-presigner"
@@ -963,6 +1001,7 @@ const getUploadSignedUrl = <span class="cstat-no" title="statement not covered" 
 };
 &nbsp;
 export { s3Upload };
+export { deleteFileFromS3 };
 &nbsp;
 export default {
   s3Upload,
@@ -985,7 +1024,7 @@ export { getSignedUrl };
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-12-23T03:03:53.757Z
+                at 2026-01-01T03:23:57.404Z
             </div>
         <script src="../prettify.js"></script>
         <script>

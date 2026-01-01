@@ -254,7 +254,7 @@ export async function createRequest(req, res) {
     const { calculateInitialProductionSchedule } = await import(
       "./production.utils.js"
     );
-    const productionSchedule = calculateInitialProductionSchedule({
+    const productionSchedule = await calculateInitialProductionSchedule({
       shippingMode,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
@@ -1086,7 +1086,7 @@ export async function createRequestsFromDraft(req, res) {
           };
 
           // 생산 스케줄 계산 (시각 기반)
-          const productionSchedule = calculateInitialProductionSchedule({
+          const productionSchedule = await calculateInitialProductionSchedule({
             shippingMode,
             maxDiameter: item.caseInfosWithFile?.maxDiameter,
             requestedAt,

@@ -32,7 +32,10 @@ function startStatusServer() {
   });
 
   app.get("/status", async (req, res) => {
-    const queueStats = await getQueueStats().catch(() => ({}));
+    // getQueueStats가 sync라도 안전하게 Promise.resolve로 래핑
+    const queueStats = await Promise.resolve()
+      .then(() => getQueueStats())
+      .catch(() => ({}));
     res.json({
       ok: true,
       startedAt: startedAt.toISOString(),

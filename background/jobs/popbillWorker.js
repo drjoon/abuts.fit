@@ -501,7 +501,7 @@ export function stopPopbillWorker() {
 
 export function getQueueStats() {
   return {
-    pending: queue.length,
-    processing: processingCount,
+    pending: 0, // DB 기반이므로 고정값 대신 0 또는 제거
+    processing: 0,
   };
 }

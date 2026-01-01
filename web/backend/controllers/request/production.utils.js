@@ -34,9 +34,28 @@ const DAILY_PICKUP_HOUR = 14; // 택배 수거 시각 (14:00)
  * KST 시각 생성
  */
 function createKstDateTime(ymd, hour = 0, minute = 0) {
-  const [year, month, day] = ymd.split("-").map(Number);
-  const date = new Date(year, month - 1, day, hour, minute, 0);
-  return date;
+  let ymdString = ymd;
+  if (ymd instanceof Date) {
+    ymdString = ymd.toISOString().slice(0, 10);
+  }
+  ymdString =
+    typeof ymdString === "string" ? ymdString : String(ymdString || "");
+
+  const parts = ymdString.split("-").map((n) => Number(n));
+  if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+    const [year, month, day] = parts;
+    return new Date(year, month - 1, day, hour, minute, 0);
+  }
+
+  // fallback: Date 파싱 후 KST 기준으로 재생성
+  const parsed = new Date(ymdString);
+  if (!Number.isNaN(parsed.getTime())) {
+    const iso = parsed.toISOString().slice(0, 10).split("-").map(Number);
+    const [year, month, day] = iso;
+    return new Date(year, month - 1, day, hour, minute, 0);
+  }
+
+  throw new Error(`Invalid ymd for createKstDateTime: ${ymdString}`);
 }
 
 /**
@@ -91,7 +110,7 @@ function getBulkWaitHours(diameterGroup) {
  * @param {Date} params.requestedAt - 의뢰 생성 시각
  * @returns {Object} productionSchedule
  */
-export function calculateInitialProductionSchedule({
+export async function calculateInitialProductionSchedule({
   shippingMode,
   maxDiameter,
   requestedAt,
@@ -128,7 +147,7 @@ export function calculateInitialProductionSchedule({
   const machiningCompleteYmd = scheduledMachiningComplete
     .toISOString()
     .slice(0, 10);
-  const batchProcessingYmd = addKoreanBusinessDays({
+  const batchProcessingYmd = await addKoreanBusinessDays({
     startYmd: machiningCompleteYmd,
     days: BATCH_PROCESSING_DAYS,
   });
@@ -139,7 +158,7 @@ export function calculateInitialProductionSchedule({
 
   // 택배 수거 → 도착 (1영업일)
   const pickupYmd = scheduledShipPickup.toISOString().slice(0, 10);
-  const deliveryYmd = addKoreanBusinessDays({
+  const deliveryYmd = await addKoreanBusinessDays({
     startYmd: pickupYmd,
     days: 1,
   });

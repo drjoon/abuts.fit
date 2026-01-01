@@ -9,6 +9,7 @@ import {
   normalizeRequestForResponse,
   ensureLotNumberForMachining,
   buildRequestorOrgScopeFilter,
+  normalizeCaseInfosImplantFields,
 } from "./utils.js";
 import s3Utils, {
   deleteFileFromS3,
@@ -597,6 +598,8 @@ export async function getRequestById(req, res) {
     // 접근 권한 확인 (의뢰자, 관리자만 조회 가능)
     const isRequestor = await canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
+    const camApproved =
+      request.caseInfos?.reviewByStage?.cam?.status === "APPROVED";
 
     if (!isRequestor && !isAdmin) {
       return res.status(403).json({
@@ -651,6 +654,8 @@ export async function updateRequest(req, res) {
     // 접근 권한 확인 (의뢰자, 관리자만 수정 가능)
     const isRequestor = await canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
+    const camApproved =
+      request.caseInfos?.reviewByStage?.cam?.status === "APPROVED";
 
     if (!isRequestor && !isAdmin) {
       return res.status(403).json({
@@ -665,71 +670,60 @@ export async function updateRequest(req, res) {
     delete updateData.createdAt;
     delete updateData.updatedAt;
 
-    // 의뢰 상태별 수정 가능 필드 제한
+    // CAM 승인 후 임플란트 정보 수정 차단 (관리자 제외)
+    if (!isAdmin && camApproved && updateData.caseInfos) {
+      return res.status(400).json({
+        success: false,
+        message: "CAM 승인 후 임플란트 정보는 수정할 수 없습니다.",
+      });
+    }
+
+    // 의뢰 상태별 수정 가능 필드 제한 (비관리자)
+    let caseInfosAllowed = true;
     if (!isAdmin) {
       const currentStatus = String(request.status || "");
+      const stageStatus = String(request.manufacturerStage || "");
 
-      // CAM 완료 여부 확인
-      const camCompleted =
-        request.caseInfos?.reviewByStage?.cam?.status === "APPROVED";
+      // CAM 승인 이후(또는 생산/발송/추적 단계)는 caseInfos 수정 전면 차단
+      const afterCam =
+        camApproved ||
+        ["생산", "발송", "추적관리"].includes(currentStatus) ||
+        ["생산", "발송", "추적관리"].includes(stageStatus) ||
+        (currentStatus === "CAM" && camApproved);
 
-      if (currentStatus === "의뢰") {
-        // 의뢰 단계: 모든 정보 수정 가능 (제한 없음)
-      } else if (currentStatus === "CAM" && !camCompleted) {
-        // CAM 단계 (승인 전): 모든 정보 수정 가능
-      } else if (currentStatus === "CAM" && camCompleted) {
-        // CAM 완료 후: 환자 정보만 수정 가능, 임플란트 정보 수정 불가
-        const allowedFields = [
+      if (afterCam) {
+        const allowedTopLevelFields = [
           "messages",
           "patientName",
           "patientAge",
           "patientGender",
         ];
         Object.keys(updateData).forEach((key) => {
-          if (!allowedFields.includes(key)) {
+          if (key !== "caseInfos" && !allowedTopLevelFields.includes(key)) {
             delete updateData[key];
           }
         });
-        // caseInfos 내부에서도 임플란트 관련 필드 제거
         if (updateData.caseInfos) {
-          const implantFields = [
-            "implantType",
-            "implantBrand",
-            "implantDiameter",
-            "implantLength",
-            "maxDiameter",
-            "connectionDiameter",
-            "toothNumber",
-            "abutType",
-          ];
-          implantFields.forEach((field) => {
-            delete updateData.caseInfos[field];
+          return res.status(400).json({
+            success: false,
+            message: "CAM 승인 후 임플란트 정보는 수정할 수 없습니다.",
           });
         }
-      } else if (["생산", "발송", "추적관리"].includes(currentStatus)) {
-        // 생산 단계 이후: 환자 정보만 수정 가능
-        const allowedFields = [
-          "messages",
-          "patientName",
-          "patientAge",
-          "patientGender",
-        ];
-        Object.keys(updateData).forEach((key) => {
-          if (!allowedFields.includes(key)) {
-            delete updateData[key];
-          }
-        });
-        // caseInfos 수정 완전 차단
-        delete updateData.caseInfos;
+        caseInfosAllowed = false;
+      } else if (currentStatus === "의뢰") {
+        // 제한 없음
+      } else if (currentStatus === "CAM") {
+        // CAM 승인 전: 제한 없음 (caseInfos 허용)
       }
     }
 
+    // caseInfos 정규화 (허용되는 단계에서만)
     if (
+      caseInfosAllowed &&
       updateData &&
       updateData.caseInfos &&
       typeof updateData.caseInfos === "object"
     ) {
-      // 레거시 connectionType이 넘어오면 implantType으로 흡수
       if (
         typeof updateData.caseInfos.connectionType === "string" &&
         !updateData.caseInfos.implantType
@@ -741,14 +735,17 @@ export async function updateRequest(req, res) {
       updateData.caseInfos = await normalizeCaseInfosImplantFields(
         updateData.caseInfos
       );
+    } else if (!caseInfosAllowed && updateData?.caseInfos) {
+      // 허용되지 않는 경우 caseInfos 삭제
+      delete updateData.caseInfos;
     }
 
     // 의뢰 수정
-    const updatedRequest = await Request.findByIdAndUpdate(
-      requestId,
-      { $set: updateData },
-      { new: true, runValidators: true }
-    );
+    const updatedRequest = await Request.findById(requestId);
+    if (updatedRequest) {
+      Object.assign(updatedRequest, updateData);
+      await updatedRequest.save();
+    }
 
     const normalized = await normalizeRequestForResponse(updatedRequest);
 
@@ -1467,13 +1464,20 @@ export async function deleteRequest(req, res) {
       });
     }
 
-    // 단계 검증: 의뢰/CAM 단계에서만 취소 가능
+    // 단계 검증: 관리자면 생산(machining) 단계 이전까지, 의뢰자면 의뢰/CAM 단계까지만 허용
     const currentStatus = String(request.status || "");
-    if (!["의뢰", "CAM"].includes(currentStatus)) {
+    const isAdmin = req.user.role === "admin";
+
+    const deletableStatuses = isAdmin
+      ? ["의뢰", "CAM", "생산"]
+      : ["의뢰", "CAM"];
+
+    if (!deletableStatuses.includes(currentStatus)) {
       return res.status(400).json({
         success: false,
-        message:
-          "생산 단계 이후의 의뢰는 취소할 수 없습니다. 고객센터에 문의해주세요.",
+        message: isAdmin
+          ? "발송 단계 이후의 의뢰는 삭제할 수 없습니다."
+          : "생산 단계 이후의 의뢰는 직접 삭제할 수 없습니다. 고객센터에 문의해주세요.",
       });
     }
 

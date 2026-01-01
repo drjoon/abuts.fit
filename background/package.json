@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node worker.js",
-    "dev": "ENV_FILE=local.env node worker.js"
+    "dev": "ENV_FILE=local.env nodemon worker.js"
   },
   "dependencies": {
     "abuts-fit-shared": "file:../shared",
