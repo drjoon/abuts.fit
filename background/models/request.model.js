@@ -305,33 +305,20 @@ const requestSchema = new mongoose.Schema(
     },
     // 생산 스케줄 (생산자 관점, 시각 단위 관리)
     productionSchedule: {
-      // 예정 시각
+      // 생산 스케줄 (생산자 관점, 시각 단위 관리)
       scheduledCamStart: Date, // CAM 시작 예정 시각
-      scheduledCamComplete: Date, // CAM 완료 예정 시각 (CAM 시작 + 5분)
-      scheduledMachiningStart: Date, // 가공 시작 예정 시각
-      scheduledMachiningComplete: Date, // 가공 완료 예정 시각 (가공 시작 + 15분)
-      scheduledBatchProcessing: Date, // 세척/검사/포장 예정 시각 (50~100개 모아서 처리)
+      scheduledProductionComplete: Date, // 생산 완료 예정 시각 (CAM 시작 + 20분)
       scheduledShipPickup: Date, // 택배 수거 시각 (매일 14:00)
       estimatedDelivery: Date, // 도착 예정 시각 (택배 수거일 + 1영업일)
 
       // 실제 시각
-      actualCamStart: Date,
-      actualCamComplete: Date,
-      actualMachiningStart: Date,
-      actualMachiningComplete: Date,
-      actualBatchProcessing: Date,
-      actualShipPickup: Date,
+      actualCamStart: Date, // 실제 CAM 시작 시각
+      actualProductionComplete: Date, // 실제 생산 완료 시각
+      actualShipPickup: Date, // 실제 택배 수거 시각
 
-      // 장비 할당
-      assignedMachine: {
-        type: String, // machineId (M3, M4 등)
-        ref: "CncMachine",
-      },
-      queuePosition: Number, // 해당 장비 큐에서의 위치
-
-      // 직경 정보
-      diameter: Number, // 실제 직경 (mm)
-      diameterGroup: String, // "6" | "8" | "10" | "10+"
+      // 우선순위 계산용
+      priority: Number, // 생산 우선순위 점수
+      diameterGroup: String, // 직경 그룹 (6-8 | 10+)
     },
 
     price: {

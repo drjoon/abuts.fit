@@ -21,6 +21,12 @@ let isRunning = false;
 
 /**
  * 공정 단계 자동 진행 (시각 기반)
+ *
+ * 프로세스:
+ * 1. 의뢰 → CAM: scheduledCamStart <= 현재
+ * 2. CAM → 생산: CAM 승인 완료 + scheduledMachiningStart <= 현재
+ * 3. 생산 → 발송: scheduledBatchProcessing <= 현재 (배치 처리 완료)
+ * 4. 발송 → 완료: deliveryInfoRef.deliveredAt 존재
  */
 async function progressProductionStages() {
   if (isRunning) {
@@ -51,47 +57,53 @@ async function progressProductionStages() {
       await req.save();
       updatedCount++;
       console.log(
-        `  [의뢰→CAM] ${
-          req.requestId
-        } (scheduled: ${req.productionSchedule.scheduledCamStart.toISOString()})`
+        `  [의뢰→CAM] ${req.requestId} machine:${
+          req.productionSchedule.assignedMachine || "unassigned"
+        }`
       );
     }
 
-    // 2. CAM → 생산: CAM 승인 완료 (즉시 생산 시작)
+    // 2. CAM → 생산: CAM 승인 완료 + 가공 시작 시각 도달
     const camToProduction = await Request.find({
       status: "CAM",
       "caseInfos.reviewByStage.cam.status": "APPROVED",
+      "productionSchedule.scheduledMachiningStart": {
+        $exists: true,
+        $lte: now,
+      },
     });
 
     for (const req of camToProduction) {
       updateStage(req, "생산");
-      if (!req.productionSchedule.actualProductionComplete) {
-        // 생산 완료 시각 기록 (CAM 승인 후 20분 내 완료)
-        req.productionSchedule.actualProductionComplete = now;
-      }
-      await req.save();
-      updatedCount++;
-      console.log(`  [CAM→생산] ${req.requestId} (CAM 승인 완료)`);
-    }
-
-    // 3. 생산 → 발송: 택배 수거 시각(14:00) 도달
-    const productionToShipping = await Request.find({
-      status: "생산",
-      "productionSchedule.scheduledShipPickup": { $exists: true, $lte: now },
-    });
-
-    for (const req of productionToShipping) {
-      updateStage(req, "발송");
-      if (!req.productionSchedule.actualShipPickup) {
-        req.productionSchedule.actualShipPickup = now;
+      if (!req.productionSchedule.actualMachiningStart) {
+        req.productionSchedule.actualMachiningStart = now;
       }
       await req.save();
       updatedCount++;
       console.log(
-        `  [생산→발송] ${
-          req.requestId
-        } (pickup: ${req.productionSchedule.scheduledShipPickup.toISOString()})`
+        `  [CAM→생산] ${req.requestId} machine:${
+          req.productionSchedule.assignedMachine || "unassigned"
+        }`
       );
+    }
+
+    // 3. 생산 → 발송: 배치 처리 완료 (세척/검사/포장)
+    const productionToShipping = await Request.find({
+      status: "생산",
+      "productionSchedule.scheduledBatchProcessing": {
+        $exists: true,
+        $lte: now,
+      },
+    });
+
+    for (const req of productionToShipping) {
+      updateStage(req, "발송");
+      if (!req.productionSchedule.actualBatchProcessing) {
+        req.productionSchedule.actualBatchProcessing = now;
+      }
+      await req.save();
+      updatedCount++;
+      console.log(`  [생산→발송] ${req.requestId} (batch processing complete)`);
     }
 
     // 4. 발송 → 완료: 배송 완료 (배송 완료 API에서 처리)

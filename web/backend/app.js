@@ -209,6 +209,7 @@ import webhookRoutes from "./routes/webhook.routes.js";
 import chatRoutes from "./routes/chat.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import manufacturerRoutes from "./routes/manufacturer.routes.js";
+import cncMachineRoutes from "./routes/cncMachine.routes.js";
 
 // 라우트 설정
 app.use("/api/auth", authRoutes);
@@ -232,6 +233,7 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/manufacturer", manufacturerRoutes);
+app.use("/api/cnc-machines", cncMachineRoutes);
 
 const FRONTEND_DIST_PATH = resolve(__dirname, "../frontend/dist");
 const shouldServeFrontendDist =

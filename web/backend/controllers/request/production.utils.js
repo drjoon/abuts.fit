@@ -9,16 +9,25 @@ import {
  *
  * 생산 프로세스:
  * 1. 의뢰 → (대기) → CAM 시작
- * 2. CAM 시작 → 생산 완료 (20분 내)
- * 3. 생산 완료 → 택배 수거 (매일 14:00)
- * 4. 택배 수거 → 도착 (1영업일)
+ * 2. CAM 시작 → CAM 완료 (5분)
+ * 3. CAM 완료 → 가공 시작 → 가공 완료 (15분)
+ * 4. 가공 완료 → 세척/검사/포장 대기 (50~100개 모아서 처리, 1일 소요)
+ * 5. 배치 처리 완료 → 택배 수거 (다음날 14:00)
+ * 6. 택배 수거 → 도착 (1영업일)
  *
- * CNC 장비별 소재:
- * - 6mm, 8mm: 여러 장비에 세팅 (자주 사용)
- * - 10mm, 10mm+: 모여서 한꺼번에 생산 (소재 교체 시간 많이 걸림)
+ * CNC 장비별 소재 세팅:
+ * - M3: 6mm 전용
+ * - M4: 8mm 전용
+ * - 10mm, 10+: 일주일에 1~2회 M3 또는 M4 소재 교체하여 생산
+ *
+ * 장비별 생산 큐:
+ * - 각 장비마다 독립적인 큐 관리
+ * - 우선순위: 도착 예정시각 순서만 고려 (FIFO)
  */
 
-const PRODUCTION_DURATION_MINUTES = 20; // CAM 시작 → 생산 완료
+const CAM_DURATION_MINUTES = 5; // CAM 시작 → 완료
+const MACHINING_DURATION_MINUTES = 15; // 가공 시작 → 완료
+const BATCH_PROCESSING_DAYS = 1; // 세척/검사/포장 (50~100개 모아서)
 const DAILY_PICKUP_HOUR = 14; // 택배 수거 시각 (14:00)
 
 /**
@@ -46,22 +55,32 @@ function getNextPickupTime(fromDateTime) {
 }
 
 /**
- * 직경 그룹 분류
+ * 직경 그룹 분류 및 장비 할당
  */
-function getDiameterGroup(maxDiameter) {
+function getDiameterGroupAndMachine(maxDiameter) {
   const d =
     typeof maxDiameter === "number" && !isNaN(maxDiameter) ? maxDiameter : 8;
-  if (d <= 8) return "6-8"; // 자주 사용, 여러 장비에 세팅
-  return "10+"; // 모여서 한꺼번에 생산
+
+  if (d <= 6) {
+    return { diameter: 6, diameterGroup: "6", preferredMachine: "M3" };
+  } else if (d <= 8) {
+    return { diameter: 8, diameterGroup: "8", preferredMachine: "M4" };
+  } else if (d <= 10) {
+    return { diameter: 10, diameterGroup: "10", preferredMachine: null }; // 소재 교체 필요
+  } else {
+    return { diameter: d, diameterGroup: "10+", preferredMachine: null }; // 소재 교체 필요
+  }
 }
 
 /**
  * 묶음배송 대기 시간 계산 (직경별)
  */
-function getBulkWaitHours(maxDiameter) {
-  const group = getDiameterGroup(maxDiameter);
-  if (group === "6-8") return 0; // 즉시 생산 가능
-  return 72; // 10+ 그룹은 3일(72시간) 대기
+function getBulkWaitHours(diameterGroup) {
+  // 6mm, 8mm: 즉시 생산 가능 (전용 장비 있음)
+  if (diameterGroup === "6" || diameterGroup === "8") return 0;
+
+  // 10mm, 10+: 일주일에 1~2회 소재 교체 (평균 3일 대기)
+  return 72; // 3일(72시간) 대기
 }
 
 /**
@@ -78,7 +97,8 @@ export function calculateInitialProductionSchedule({
   requestedAt,
 }) {
   const now = requestedAt || new Date();
-  const diameterGroup = getDiameterGroup(maxDiameter);
+  const { diameter, diameterGroup, preferredMachine } =
+    getDiameterGroupAndMachine(maxDiameter);
 
   let scheduledCamStart;
 
@@ -87,17 +107,35 @@ export function calculateInitialProductionSchedule({
     scheduledCamStart = new Date(now);
   } else {
     // 묶음배송: 직경별 대기
-    const waitHours = getBulkWaitHours(maxDiameter);
+    const waitHours = getBulkWaitHours(diameterGroup);
     scheduledCamStart = new Date(now.getTime() + waitHours * 60 * 60 * 1000);
   }
 
-  // CAM 시작 → 생산 완료 (20분)
-  const scheduledProductionComplete = new Date(
-    scheduledCamStart.getTime() + PRODUCTION_DURATION_MINUTES * 60 * 1000
+  // CAM 시작 → CAM 완료 (5분)
+  const scheduledCamComplete = new Date(
+    scheduledCamStart.getTime() + CAM_DURATION_MINUTES * 60 * 1000
   );
 
-  // 생산 완료 → 택배 수거 (다음 14:00)
-  const scheduledShipPickup = getNextPickupTime(scheduledProductionComplete);
+  // CAM 완료 → 가공 시작 (즉시)
+  const scheduledMachiningStart = new Date(scheduledCamComplete);
+
+  // 가공 시작 → 가공 완료 (15분)
+  const scheduledMachiningComplete = new Date(
+    scheduledMachiningStart.getTime() + MACHINING_DURATION_MINUTES * 60 * 1000
+  );
+
+  // 가공 완료 → 배치 처리 (세척/검사/포장, 1일 소요)
+  const machiningCompleteYmd = scheduledMachiningComplete
+    .toISOString()
+    .slice(0, 10);
+  const batchProcessingYmd = addKoreanBusinessDays({
+    startYmd: machiningCompleteYmd,
+    days: BATCH_PROCESSING_DAYS,
+  });
+  const scheduledBatchProcessing = createKstDateTime(batchProcessingYmd, 12, 0);
+
+  // 배치 처리 완료 → 택배 수거 (다음날 14:00)
+  const scheduledShipPickup = getNextPickupTime(scheduledBatchProcessing);
 
   // 택배 수거 → 도착 (1영업일)
   const pickupYmd = scheduledShipPickup.toISOString().slice(0, 10);
@@ -105,53 +143,48 @@ export function calculateInitialProductionSchedule({
     startYmd: pickupYmd,
     days: 1,
   });
-  const estimatedDelivery = createKstDateTime(deliveryYmd, 12, 0); // 정오 도착 가정
-
-  // 우선순위 계산
-  const priority = calculatePriority({
-    shippingMode,
-    scheduledCamStart,
-    diameterGroup,
-  });
+  const estimatedDelivery = createKstDateTime(deliveryYmd, 12, 0);
 
   return {
     scheduledCamStart,
-    scheduledProductionComplete,
+    scheduledCamComplete,
+    scheduledMachiningStart,
+    scheduledMachiningComplete,
+    scheduledBatchProcessing,
     scheduledShipPickup,
     estimatedDelivery,
-    priority,
+    assignedMachine: preferredMachine, // M3, M4, 또는 null
+    diameter,
     diameterGroup,
   };
 }
 
 /**
- * 우선순위 계산
+ * 장비별 생산 큐 조회 및 정렬
+ * @param {string} machineId - M3, M4 등
+ * @param {Array} requests - Request 문서 배열
+ * @returns {Array} 도착 예정시각 순으로 정렬된 배열
  */
-function calculatePriority({ shippingMode, scheduledCamStart, diameterGroup }) {
-  const now = new Date();
-  let priority = 0;
+export function getProductionQueueForMachine(machineId, requests) {
+  return requests
+    .filter((req) => {
+      const schedule = req.productionSchedule;
+      if (!schedule) return false;
 
-  // 1. 신속배송 최우선
-  if (shippingMode === "express") {
-    priority += 10000;
-  }
+      // 해당 장비에 할당된 의뢰만
+      if (schedule.assignedMachine !== machineId) return false;
 
-  // 2. 예정 시각 지남 (긴급)
-  if (scheduledCamStart <= now) {
-    const delayHours = (now - scheduledCamStart) / (1000 * 60 * 60);
-    priority += 5000 + delayHours * 100; // 지연 시간만큼 우선순위 상승
-  }
+      // 의뢰, CAM, 생산 단계만 (발송 이후는 제외)
+      if (!["의뢰", "CAM", "생산"].includes(req.status)) return false;
 
-  // 3. 예정 시각이 가까운 순
-  const hoursUntil = (scheduledCamStart - now) / (1000 * 60 * 60);
-  priority -= hoursUntil * 10;
-
-  // 4. 직경 그룹 (6-8이 우선)
-  if (diameterGroup === "6-8") {
-    priority += 100;
-  }
-
-  return Math.round(priority);
+      return true;
+    })
+    .sort((a, b) => {
+      // 도착 예정시각 순서만 고려 (FIFO)
+      const aTime = a.productionSchedule?.estimatedDelivery || new Date(0);
+      const bTime = b.productionSchedule?.estimatedDelivery || new Date(0);
+      return aTime - bTime;
+    });
 }
 
 /**
@@ -175,6 +208,42 @@ export function recalculateProductionSchedule({
     maxDiameter,
     requestedAt,
   });
+}
+
+/**
+ * 장비 소재 세팅 변경 시 해당 장비의 큐 재계산
+ * @param {string} machineId - M3, M4 등
+ * @param {string} newDiameterGroup - "6" | "8" | "10" | "10+"
+ */
+export async function recalculateQueueOnMaterialChange(
+  machineId,
+  newDiameterGroup
+) {
+  const Request = (await import("../../models/request.model.js")).default;
+
+  // 해당 직경 그룹의 unassigned 의뢰 조회
+  const unassignedRequests = await Request.find({
+    status: { $in: ["의뢰", "CAM", "생산"] },
+    "productionSchedule.assignedMachine": null,
+    "productionSchedule.diameterGroup": newDiameterGroup,
+  });
+
+  // 도착 예정시각 순으로 정렬하여 장비에 할당
+  const sortedRequests = unassignedRequests.sort((a, b) => {
+    const aTime = a.productionSchedule?.estimatedDelivery || new Date(0);
+    const bTime = b.productionSchedule?.estimatedDelivery || new Date(0);
+    return aTime - bTime;
+  });
+
+  // 장비 할당 업데이트
+  for (let i = 0; i < sortedRequests.length; i++) {
+    const req = sortedRequests[i];
+    req.productionSchedule.assignedMachine = machineId;
+    req.productionSchedule.queuePosition = i + 1;
+    await req.save();
+  }
+
+  return sortedRequests.length;
 }
 
 /**

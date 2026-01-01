@@ -56,16 +56,18 @@
 **생산 프로세스 타임라인**:
 
 ```
-[의뢰] → (대기) → [CAM 시작] → (20분) → [생산 완료] → (택배 수거 14:00 대기) → [발송] → (택배 1영업일) → [완료]
+[의뢰] → (대기) → [CAM 시작] → (5분) → [CAM 완료] → [가공 시작] → (15분) → [가공 완료] → (배치 처리 1일) → [발송] → (택배 1영업일) → [완료]
 ```
 
 **핵심 개념**:
 
 - **대기 단계**: 의뢰 단계는 생산 시작을 기다리는 대기 단계 (한참 걸릴 수 있음)
-- **생산 단계**: CAM 시작 → 생산 완료까지 20분 내 수행 (빠르게 진행)
-- **택배 수거**: 매일 14:00에 택배사 방문하여 수거
+- **CAM 단계**: CAM 시작 → CAM 완료까지 5분 소요
+- **가공 단계**: CNC 가공 시작 → 가공 완료까지 15분 소요
+- **배치 처리**: 가공 완료된 반제품 50~100개를 모아서 세척/검사/포장 (1일 소요)
+- **택배 수거**: 배치 처리 완료 후 다음날 14:00에 택배사 방문하여 수거
 - **배송**: 택배 수거일 다음 영업일 도착
-- **시각 단위 관리**: 모든 스케줄을 시각(DateTime) 단위로 관리하여 정밀한 우선순위 계산
+- **시각 단위 관리**: 모든 스케줄을 시각(DateTime) 단위로 관리
 
 **배송 모드별 스케줄 계산 (시각 기반)**:
 
@@ -73,15 +75,19 @@
 
    - 대기 없이 즉시 CAM 시작
    - `scheduledCamStart` = 의뢰 시각
-   - `scheduledProductionComplete` = CAM 시작 + 20분
-   - `scheduledShipPickup` = 다음 14:00
+   - `scheduledCamComplete` = CAM 시작 + 5분
+   - `scheduledMachiningStart` = CAM 완료 (즉시)
+   - `scheduledMachiningComplete` = 가공 시작 + 15분
+   - `scheduledBatchProcessing` = 가공 완료 + 1영업일 (세척/검사/포장)
+   - `scheduledShipPickup` = 배치 처리 완료 후 다음날 14:00
    - `estimatedDelivery` = 택배 수거일 + 1영업일
 
 2. **묶음배송** (`originalShipping.mode: "normal"`):
-   - 직경별 대기 시간 적용 (CNC 소재 관리 고려)
-   - **6-8mm 그룹**: 대기 0시간 (여러 장비에 세팅되어 있음)
-   - **10mm+ 그룹**: 대기 72시간 (모여서 한꺼번에 생산, 소재 교체 시간 많이 걸림)
-   - 대기 후 CAM 시작 → +20분 생산 완료 → 다음 14:00 택배 수거 → +1영업일 도착
+   - 직경별 대기 시간 적용 (CNC 장비별 소재 세팅 고려)
+   - **6mm**: M3 전용 장비, 대기 0시간
+   - **8mm**: M4 전용 장비, 대기 0시간
+   - **10mm, 10mm+**: 일주일에 1~2회 소재 교체하여 생산, 평균 대기 72시간
+   - 대기 후 CAM 시작 → +5분 CAM 완료 → +15분 가공 완료 → +1일 배치 처리 → 다음날 14:00 택배 수거 → +1영업일 도착
 
 **배송 옵션 데이터 구조**:
 
@@ -93,12 +99,17 @@
   - `updatedAt`: 마지막 변경 시각 (Date)
 - `productionSchedule`: 생산자 관점의 스케줄 (시각 단위, 생산 큐 관리용)
   - `scheduledCamStart`: CAM 시작 예정 시각 (Date)
-  - `scheduledProductionComplete`: 생산 완료 예정 시각 (Date, CAM 시작 + 20분)
-  - `scheduledShipPickup`: 택배 수거 시각 (Date, 매일 14:00)
+  - `scheduledCamComplete`: CAM 완료 예정 시각 (Date, CAM 시작 + 5분)
+  - `scheduledMachiningStart`: 가공 시작 예정 시각 (Date)
+  - `scheduledMachiningComplete`: 가공 완료 예정 시각 (Date, 가공 시작 + 15분)
+  - `scheduledBatchProcessing`: 배치 처리 예정 시각 (Date, 가공 완료 + 1영업일)
+  - `scheduledShipPickup`: 택배 수거 시각 (Date, 배치 처리 완료 후 다음날 14:00)
   - `estimatedDelivery`: 도착 예정 시각 (Date, 택배 수거일 + 1영업일)
-  - `actualCamStart`, `actualProductionComplete`, `actualShipPickup`: 실제 시각 (Date)
-  - `priority`: 생산 우선순위 점수 (Number)
-  - `diameterGroup`: 직경 그룹 (String, "6-8" | "10+")
+  - `actualCamStart`, `actualCamComplete`, `actualMachiningStart`, `actualMachiningComplete`, `actualBatchProcessing`, `actualShipPickup`: 실제 시각 (Date)
+  - `assignedMachine`: 할당된 CNC 장비 (String, "M3" | "M4" | null)
+  - `queuePosition`: 해당 장비 큐에서의 위치 (Number)
+  - `diameter`: 실제 직경 (Number, mm)
+  - `diameterGroup`: 직경 그룹 (String, "6" | "8" | "10" | "10+")
 
 **배송 옵션 변경 규칙 (Fire & Forget)**:
 
@@ -111,16 +122,27 @@
 **공정 단계 자동 진행 규칙 (시각 기반)**:
 
 1. **의뢰 → CAM**: `productionSchedule.scheduledCamStart <= 현재 시각`
-2. **CAM → 생산**: `caseInfos.reviewByStage.cam.status === 'APPROVED'` (즉시 생산 시작)
-3. **생산 → 발송**: `productionSchedule.scheduledShipPickup <= 현재 시각` (14:00 택배 수거)
+2. **CAM → 생산**: `caseInfos.reviewByStage.cam.status === 'APPROVED'` + `scheduledMachiningStart <= 현재 시각`
+3. **생산 → 발송**: `productionSchedule.scheduledBatchProcessing <= 현재 시각` (배치 처리 완료)
 4. **발송 → 완료**: `deliveryInfoRef.deliveredAt` 존재 (배송 완료 API에서 처리)
 
-**생산 우선순위 (시각 기반 점수 계산)**:
+**CNC 장비별 생산 큐 시스템**:
 
-1. **신속배송**: +10,000점 (`finalShipping.mode === "express"`)
-2. **예정 시각 지남 (긴급)**: +5,000점 + (지연 시간 × 100점)
-3. **예정 시각 가까운 순**: -(남은 시간 × 10점)
-4. **직경 그룹**: 6-8mm 그룹 +100점 (여러 장비에 세팅)
+- **M3 장비**: 6mm 전용 (기본 세팅)
+- **M4 장비**: 8mm 전용 (기본 세팅)
+- **10mm, 10mm+**: 소재 교체 필요 (unassigned 상태로 대기)
+
+**장비별 큐 우선순위**:
+
+- 각 장비마다 독립적인 큐 관리
+- **우선순위**: 도착 예정시각(`estimatedDelivery`) 순서만 고려 (FIFO)
+- 점수 계산 없음, 단순 시각 순서
+
+**소재 세팅 변경**:
+
+- 제조사가 M3 또는 M4의 소재를 10mm/10mm+로 변경 시
+- 해당 직경 그룹의 unassigned 의뢰를 자동으로 장비에 할당
+- 도착 예정시각 순으로 큐에 추가
 
 **지연 위험 요약**:
 
