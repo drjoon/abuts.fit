@@ -29,6 +29,20 @@ router.patch(
   cncMachineController.updateMachineMaterial
 );
 
+// 소재 교체 예약 (제조사, 관리자)
+router.post(
+  "/:machineId/schedule-material-change",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.scheduleMaterialChange
+);
+
+// 소재 교체 예약 취소 (제조사, 관리자)
+router.delete(
+  "/:machineId/schedule-material-change",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.cancelScheduledMaterialChange
+);
+
 // 장비 초기화 (개발용, 관리자만)
 router.post(
   "/initialize",

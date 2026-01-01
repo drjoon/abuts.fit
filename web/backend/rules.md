@@ -119,11 +119,11 @@
 - **Fire & Forget 방식**: API는 즉시 응답 반환, 백그라운드에서 비동기 처리
 - UI 대기 시간 없음 (사용자 경험 개선)
 
-**공정 단계 자동 진행 규칙 (시각 기반)**:
+**공정 단계 진행 규칙 (시각 기반)**:
 
-1. **의뢰 → CAM**: `productionSchedule.scheduledCamStart <= 현재 시각`
-2. **CAM → 생산**: `caseInfos.reviewByStage.cam.status === 'APPROVED'` + `scheduledMachiningStart <= 현재 시각`
-3. **생산 → 발송**: `productionSchedule.scheduledBatchProcessing <= 현재 시각` (배치 처리 완료)
+1. **의뢰 → CAM**: **수동 처리** (제조사가 직접 CAM 작업 시작)
+2. **CAM → 생산**: **수동 처리** (제조사가 CAM 승인 후 가공 큐에 추가)
+3. **생산 → 발송**: `productionSchedule.scheduledBatchProcessing <= 현재 시각` (배치 처리 완료, 자동 진행)
 4. **발송 → 완료**: `deliveryInfoRef.deliveredAt` 존재 (배송 완료 API에서 처리)
 
 **CNC 장비별 생산 큐 시스템**:
@@ -144,6 +144,22 @@
 - 해당 직경 그룹의 unassigned 의뢰를 자동으로 장비에 할당
 - 도착 예정시각 순으로 큐에 추가
 
+**소재 교체 예약 기능**:
+
+- **목적**: 10mm/10mm+ 의뢰가 쌓여있을 때, 특정 시각에 소재를 교체하여 대기 중인 의뢰를 처리
+- **예약 방법**: `POST /api/cnc-machines/:machineId/schedule-material-change`
+  - `targetTime`: 교체 목표 시각 (Date)
+  - `newDiameter`: 새 소재 직경 (Number)
+  - `newDiameterGroup`: 새 직경 그룹 (String, "6" | "8" | "10" | "10+")
+  - `notes`: 메모 (String, optional)
+- **예약 취소**: `DELETE /api/cnc-machines/:machineId/schedule-material-change`
+- **자동 처리 로직** (productionScheduler 워커):
+  1. 예약된 교체 시각 도래 시 자동 실행
+  2. 현재 장비에 할당된 의뢰 중 교체 시각 이전에 완료 불가능한 의뢰는 unassigned로 변경
+  3. 소재 교체 실행 (currentMaterial 업데이트)
+  4. 새 직경 그룹의 unassigned 의뢰를 해당 장비에 자동 할당
+- **UI 표시**: 제조사 대시보드에서 장비별 예약된 소재 교체 정보 표시
+
 **지연 위험 요약**:
 
 - **지연(delayed)**: `scheduledCamStart < 현재 시각`
@@ -163,10 +179,25 @@
 - `timeline.estimatedCompletion`: `productionSchedule.estimatedDelivery.toISOString().slice(0, 10)` (String, YYYY-MM-DD)
 - 기존 날짜 기반 로직과의 호환성 유지
 
-### 5.3 의뢰 취소 정책
+### 5.3 의뢰 취소 및 정보 변경 정책
 
-- **취소 가능 단계**: `의뢰` 단계에서만 취소 가능
-- **취소 불가 단계**: `CAM` 단계부터는 취소 불가
+**취소 정책**:
+
+- **취소 가능 단계**: `의뢰`, `CAM` 단계에서 취소 가능
+- **취소 불가 단계**: `생산` 단계부터는 취소 불가 (고객센터 문의 필요)
+- **취소 방법**: `DELETE /api/requests/:id` (상태를 '취소'로 변경, 실제 삭제 아님)
+- **크레딧 환불**: 취소 시 조직 크레딧으로 자동 환불
+
+**정보 변경 정책**:
+
+- **의뢰 단계**: 모든 정보 수정 가능 (환자 정보, 임플란트 정보)
+- **CAM 단계 (승인 전)**: 모든 정보 수정 가능
+- **CAM 완료 후**: 환자 정보만 수정 가능, 임플란트 정보 수정 불가
+  - 수정 가능: `patientName`, `patientAge`, `patientGender`, `messages`
+  - 수정 불가: `implantType`, `implantBrand`, `implantDiameter`, `implantLength`, `maxDiameter`, `connectionDiameter`, `toothNumber`, `abutType`
+- **생산 단계 이후**: 환자 정보만 수정 가능, `caseInfos` 전체 수정 불가
+- **변경 방법**: `PUT /api/requests/:id`
+- **관리자**: 모든 단계에서 모든 정보 수정 가능
 
 ### 5.2 의뢰건 조회 권한 정책
 

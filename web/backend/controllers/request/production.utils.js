@@ -188,6 +188,47 @@ export function getProductionQueueForMachine(machineId, requests) {
 }
 
 /**
+ * 모든 장비별 생산 큐 조회
+ * @param {Array} requests - Request 문서 배열
+ * @returns {Object} { M3: [...], M4: [...], unassigned: [...] }
+ */
+export function getAllProductionQueues(requests) {
+  const queues = {
+    M3: [],
+    M4: [],
+    unassigned: [],
+  };
+
+  for (const req of requests) {
+    const schedule = req.productionSchedule;
+    if (!schedule) continue;
+
+    // 의뢰, CAM, 생산 단계만
+    if (!["의뢰", "CAM", "생산"].includes(req.status)) continue;
+
+    const machine = schedule.assignedMachine;
+    if (machine === "M3") {
+      queues.M3.push(req);
+    } else if (machine === "M4") {
+      queues.M4.push(req);
+    } else {
+      queues.unassigned.push(req);
+    }
+  }
+
+  // 각 큐를 도착 예정시각 순으로 정렬
+  for (const key in queues) {
+    queues[key].sort((a, b) => {
+      const aTime = a.productionSchedule?.estimatedDelivery || new Date(0);
+      const bTime = b.productionSchedule?.estimatedDelivery || new Date(0);
+      return aTime - bTime;
+    });
+  }
+
+  return queues;
+}
+
+/**
  * 배송 모드 변경 시 생산 스케줄 재계산
  * 의뢰 단계에서만 변경 가능
  */

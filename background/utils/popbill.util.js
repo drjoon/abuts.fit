@@ -1,29 +1,20 @@
 import popbill from "popbill";
 
-const taxinvoiceService = new popbill.TaxinvoiceService();
-const easyFinBankService = new popbill.EasyFinBankService();
-const kakaoService = new popbill.KakaoService();
-const messageService = new popbill.MessageService();
-
 const linkID = process.env.POPBILL_LINK_ID || "";
 const secretKey = process.env.POPBILL_SECRET_KEY || "";
 const isTest = process.env.POPBILL_IS_TEST === "true";
 
-taxinvoiceService.setLinkID(linkID);
-taxinvoiceService.setSecretKey(secretKey);
-taxinvoiceService.setTest(isTest);
+const taxinvoiceService = new popbill.TaxinvoiceService(linkID, secretKey);
+taxinvoiceService.IsTest = isTest;
 
-easyFinBankService.setLinkID(linkID);
-easyFinBankService.setSecretKey(secretKey);
-easyFinBankService.setTest(isTest);
+const easyFinBankService = new popbill.EasyFinBankService(linkID, secretKey);
+easyFinBankService.IsTest = isTest;
 
-kakaoService.setLinkID(linkID);
-kakaoService.setSecretKey(secretKey);
-kakaoService.setTest(isTest);
+const kakaoService = new popbill.KakaoService(linkID, secretKey);
+kakaoService.IsTest = isTest;
 
-messageService.setLinkID(linkID);
-messageService.setSecretKey(secretKey);
-messageService.setTest(isTest);
+const messageService = new popbill.MessageService(linkID, secretKey);
+messageService.IsTest = isTest;
 
 export async function issueTaxInvoice(corpNum, taxInvoice, memo, forceIssue) {
   return new Promise((resolve, reject) => {

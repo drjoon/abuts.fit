@@ -34,6 +34,20 @@ const cncMachineSchema = new mongoose.Schema(
         ref: "User",
       },
     },
+    scheduledMaterialChange: {
+      targetTime: Date,
+      newDiameter: Number,
+      newDiameterGroup: {
+        type: String,
+        enum: ["6", "8", "10", "10+"],
+      },
+      scheduledBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      scheduledAt: Date,
+      notes: String,
+    },
     specifications: {
       maxDiameter: Number,
       minDiameter: Number,

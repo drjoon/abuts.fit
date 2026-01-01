@@ -125,6 +125,94 @@ export async function updateMachineMaterial(req, res) {
 }
 
 /**
+ * 소재 교체 예약
+ */
+export async function scheduleMaterialChange(req, res) {
+  try {
+    const { machineId } = req.params;
+    const { targetTime, newDiameter, newDiameterGroup, notes } = req.body;
+
+    if (!targetTime || !newDiameterGroup) {
+      return res.status(400).json({
+        success: false,
+        message: "목표 시각과 직경 그룹은 필수입니다.",
+      });
+    }
+
+    if (!["6", "8", "10", "10+"].includes(newDiameterGroup)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 직경 그룹입니다.",
+      });
+    }
+
+    const machine = await CncMachine.findOne({ machineId });
+    if (!machine) {
+      return res.status(404).json({
+        success: false,
+        message: "장비를 찾을 수 없습니다.",
+      });
+    }
+
+    machine.scheduledMaterialChange = {
+      targetTime: new Date(targetTime),
+      newDiameter: newDiameter || parseInt(newDiameterGroup),
+      newDiameterGroup,
+      scheduledBy: req.user?._id,
+      scheduledAt: new Date(),
+      notes: notes || "",
+    };
+    await machine.save();
+
+    res.status(200).json({
+      success: true,
+      message: `${machineId} 소재 교체가 예약되었습니다.`,
+      data: machine,
+    });
+  } catch (error) {
+    console.error("Error in scheduleMaterialChange:", error);
+    res.status(500).json({
+      success: false,
+      message: "소재 교체 예약 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 소재 교체 예약 취소
+ */
+export async function cancelScheduledMaterialChange(req, res) {
+  try {
+    const { machineId } = req.params;
+
+    const machine = await CncMachine.findOne({ machineId });
+    if (!machine) {
+      return res.status(404).json({
+        success: false,
+        message: "장비를 찾을 수 없습니다.",
+      });
+    }
+
+    machine.scheduledMaterialChange = undefined;
+    await machine.save();
+
+    res.status(200).json({
+      success: true,
+      message: `${machineId} 소재 교체 예약이 취소되었습니다.`,
+      data: machine,
+    });
+  } catch (error) {
+    console.error("Error in cancelScheduledMaterialChange:", error);
+    res.status(500).json({
+      success: false,
+      message: "소재 교체 예약 취소 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 장비 초기 데이터 생성 (개발용)
  */
 export async function initializeMachines(req, res) {

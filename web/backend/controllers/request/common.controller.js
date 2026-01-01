@@ -665,18 +665,63 @@ export async function updateRequest(req, res) {
     delete updateData.createdAt;
     delete updateData.updatedAt;
 
-    // 의뢰 상태가 '의뢰' 또는 'CAM'일 때만 일부 필드 수정 가능
-    // (requestor는 가공 시작 전까지 환자/임플란트 정보를 수정 가능)
-    if (
-      !isAdmin &&
-      !["의뢰", "CAM", "의뢰접수", "가공전"].includes(request.status)
-    ) {
-      const allowedFields = ["messages"];
-      Object.keys(updateData).forEach((key) => {
-        if (!allowedFields.includes(key)) {
-          delete updateData[key];
+    // 의뢰 상태별 수정 가능 필드 제한
+    if (!isAdmin) {
+      const currentStatus = String(request.status || "");
+
+      // CAM 완료 여부 확인
+      const camCompleted =
+        request.caseInfos?.reviewByStage?.cam?.status === "APPROVED";
+
+      if (currentStatus === "의뢰") {
+        // 의뢰 단계: 모든 정보 수정 가능 (제한 없음)
+      } else if (currentStatus === "CAM" && !camCompleted) {
+        // CAM 단계 (승인 전): 모든 정보 수정 가능
+      } else if (currentStatus === "CAM" && camCompleted) {
+        // CAM 완료 후: 환자 정보만 수정 가능, 임플란트 정보 수정 불가
+        const allowedFields = [
+          "messages",
+          "patientName",
+          "patientAge",
+          "patientGender",
+        ];
+        Object.keys(updateData).forEach((key) => {
+          if (!allowedFields.includes(key)) {
+            delete updateData[key];
+          }
+        });
+        // caseInfos 내부에서도 임플란트 관련 필드 제거
+        if (updateData.caseInfos) {
+          const implantFields = [
+            "implantType",
+            "implantBrand",
+            "implantDiameter",
+            "implantLength",
+            "maxDiameter",
+            "connectionDiameter",
+            "toothNumber",
+            "abutType",
+          ];
+          implantFields.forEach((field) => {
+            delete updateData.caseInfos[field];
+          });
         }
-      });
+      } else if (["생산", "발송", "추적관리"].includes(currentStatus)) {
+        // 생산 단계 이후: 환자 정보만 수정 가능
+        const allowedFields = [
+          "messages",
+          "patientName",
+          "patientAge",
+          "patientGender",
+        ];
+        Object.keys(updateData).forEach((key) => {
+          if (!allowedFields.includes(key)) {
+            delete updateData[key];
+          }
+        });
+        // caseInfos 수정 완전 차단
+        delete updateData.caseInfos;
+      }
     }
 
     if (
@@ -1422,8 +1467,19 @@ export async function deleteRequest(req, res) {
       });
     }
 
-    // 의뢰 삭제
-    await Request.findByIdAndDelete(requestId);
+    // 단계 검증: 의뢰/CAM 단계에서만 취소 가능
+    const currentStatus = String(request.status || "");
+    if (!["의뢰", "CAM"].includes(currentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "생산 단계 이후의 의뢰는 취소할 수 없습니다. 고객센터에 문의해주세요.",
+      });
+    }
+
+    // 의뢰 취소 처리 (상태를 '취소'로 변경)
+    applyStatusMapping(request, "취소");
+    await request.save();
 
     res.status(200).json({
       success: true,
