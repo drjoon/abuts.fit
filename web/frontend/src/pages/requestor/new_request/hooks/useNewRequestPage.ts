@@ -88,6 +88,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       setFiles([]);
       setDraftFiles([]);
       setSelectedPreviewIndex(null);
+      setDuplicatePrompt(null);
     }
 
     prevDraftIdRef.current = draftId ?? null;

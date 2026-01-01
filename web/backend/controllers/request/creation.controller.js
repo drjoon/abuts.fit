@@ -720,6 +720,8 @@ export async function createRequestsFromDraft(req, res) {
       }
     }
 
+    const first = duplicates[0];
+
     if (
       duplicates.length > 0 &&
       !duplicateResolution &&

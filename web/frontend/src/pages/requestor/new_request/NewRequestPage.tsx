@@ -292,9 +292,19 @@ export const NewRequestPage = () => {
       return;
     }
 
-    const all = nextResolutions;
     setDuplicatePrompt(null);
-    await handleSubmitWithDuplicateResolutions(all);
+
+    if (nextResolutions.length === 1) {
+      // 단일 중복 케이스는 legacy duplicateResolution 경로로 처리해 서버 409 반복을 방지
+      const single = nextResolutions[0];
+      await handleSubmitWithDuplicateResolution({
+        strategy: single.strategy === "skip" ? "replace" : single.strategy,
+        existingRequestId: single.existingRequestId,
+      });
+      return;
+    }
+
+    await handleSubmitWithDuplicateResolutions(nextResolutions);
   };
 
   const { summary: bulkShippingSummary } = useBulkShippingPolicy(user?.email);

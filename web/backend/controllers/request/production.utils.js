@@ -130,6 +130,13 @@ export async function calculateInitialProductionSchedule({
     scheduledCamStart = new Date(now.getTime() + waitHours * 60 * 60 * 1000);
   }
 
+  // 최소 리드타임 보정: 방금 생성된 의뢰가 즉시 '지연'으로 잡히는 것을 방지
+  const MIN_LEAD_MINUTES = 30;
+  const minStart = new Date(now.getTime() + MIN_LEAD_MINUTES * 60 * 1000);
+  if (scheduledCamStart < minStart) {
+    scheduledCamStart = minStart;
+  }
+
   // CAM 시작 → CAM 완료 (5분)
   const scheduledCamComplete = new Date(
     scheduledCamStart.getTime() + CAM_DURATION_MINUTES * 60 * 1000
@@ -343,7 +350,8 @@ export function sortByProductionPriority(requests) {
  */
 export function calculateRiskSummary(requests) {
   const now = new Date();
-  const warningThresholdHours = 4; // 4시간 이내 시작 예정이면 경고
+  const warningThresholdDays = 2; // 도착예정일 -2일부터 경고
+  const delayGraceDays = 0; // 도착예정일 당일 미발송이면 지연
 
   let delayedCount = 0;
   let warningCount = 0;
@@ -351,27 +359,49 @@ export function calculateRiskSummary(requests) {
 
   for (const req of requests) {
     const schedule = req.productionSchedule;
-    if (!schedule || !schedule.scheduledCamStart) continue;
+    if (!schedule || !schedule.estimatedDelivery) continue;
 
-    const hoursUntil = (schedule.scheduledCamStart - now) / (1000 * 60 * 60);
+    const status = String(req.status || "");
+    const estimatedDelivery = new Date(schedule.estimatedDelivery);
+    const startOfDayDelivery = new Date(estimatedDelivery);
+    startOfDayDelivery.setHours(0, 0, 0, 0);
 
-    if (hoursUntil < 0) {
-      // 이미 지연
+    const warningStart = new Date(startOfDayDelivery);
+    warningStart.setDate(warningStart.getDate() - warningThresholdDays);
+
+    const isShippedOrLater = [
+      "발송",
+      "배송대기",
+      "배송중",
+      "완료",
+      "취소",
+    ].includes(status);
+
+    // 지연 확정: 도착예정일 당일까지 발송되지 않음
+    if (!isShippedOrLater && now >= startOfDayDelivery) {
       delayedCount++;
       riskItems.push({
         requestId: req.requestId,
         type: "delayed",
-        delayHours: Math.abs(hoursUntil),
         scheduledCamStart: schedule.scheduledCamStart,
+        estimatedDelivery: schedule.estimatedDelivery,
       });
-    } else if (hoursUntil <= warningThresholdHours) {
-      // 경고 (곧 시작 예정)
+      continue;
+    }
+
+    // 지연 위험: 도착예정일 - 2일까지 CAM 완료가 안 된 경우 (status가 의뢰/CAM/생산)
+    const isPreCamOrCamOrProd = ["의뢰", "CAM", "생산"].includes(status);
+    if (
+      isPreCamOrCamOrProd &&
+      now >= warningStart &&
+      now < startOfDayDelivery
+    ) {
       warningCount++;
       riskItems.push({
         requestId: req.requestId,
         type: "warning",
-        hoursUntil,
         scheduledCamStart: schedule.scheduledCamStart,
+        estimatedDelivery: schedule.estimatedDelivery,
       });
     }
   }
