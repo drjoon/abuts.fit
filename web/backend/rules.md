@@ -201,20 +201,12 @@
 
 ### 5.2 의뢰건 조회 권한 정책
 
-**기본 원칙**: 조직(RequestorOrganization) 내 역할에 따라 의뢰 조회 권한 차등 적용
-
-- **대표 (owner, owners)**:
-  - 조직 내 모든 의뢰 조회 가능 (전체 멤버가 생성한 의뢰)
-  - 조직 내 모든 의뢰 수정/취소/삭제 권한
-- **직원 (members)**:
-  - 본인이 생성한 의뢰만 조회 가능
-  - 본인이 생성한 의뢰만 수정/취소/삭제 가능
-  - 타 직원의 의뢰는 조회 불가
+**기본 원칙**: 동일 조직(RequestorOrganization) 소속이면 역할(owner/staff)과 무관하게 조직 내 모든 의뢰를 조회/접근할 수 있습니다.
 
 **구현**:
 
-- `buildRequestorOrgScopeFilter()`: 역할 기반 필터링
-- `canAccessRequestAsRequestor()`: 개별 의뢰 접근 권한 검증
+- `buildRequestorOrgScopeFilter()`: 조직 단위 필터링
+- `canAccessRequestAsRequestor()`: 동일 조직이면 접근 허용
 
 ## 6. 채팅 API 규칙
 

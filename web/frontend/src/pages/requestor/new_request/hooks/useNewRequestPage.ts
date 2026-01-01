@@ -319,13 +319,29 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             continue;
           }
 
-          const stageOrder = Number(data?.stageOrder);
+          const stageOrderRaw = data?.stageOrder;
+          const stageOrder = Number(stageOrderRaw);
           const existingRequest = data?.existingRequest;
 
           console.log("[중복체크] 중복 발견!", {
             stageOrder,
+            stageOrderRaw,
             status: existingRequest?.status,
           });
+
+          // stageOrder가 누락/비정상(NaN)인데 exists=true인 경우
+          // - 다중 업로드에서 UI가 조용히 넘어가는 것을 방지하기 위해
+          // - 안전하게 "모달" 플로우로 처리한다.
+          if (!Number.isFinite(stageOrder)) {
+            console.log("[중복체크] stageOrder 비정상 -> 모달로 처리");
+            modalDuplicates.push({
+              caseId: `${f.name}:${f.size}`,
+              fileName: f.name,
+              existingRequest,
+            });
+            eligibleFiles.push(f);
+            continue;
+          }
 
           // 0: 의뢰, 1: CAM, 2: 생산, 3: 발송, 4: 완료
           if (stageOrder === 2 || stageOrder === 3) {

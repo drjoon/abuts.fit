@@ -56,36 +56,22 @@ export async function buildRequestorOrgScopeFilter(req) {
     return { requestor: req.user._id };
   }
 
-  const myId = String(req.user._id);
   const ownerId = String(org.owner || "");
-  const ownerIds = Array.isArray(org.owners)
-    ? org.owners.map((id) => String(id))
-    : [];
+  const ownerIds = Array.isArray(org.owners) ? org.owners.map(String) : [];
+  const memberIdsRaw = Array.isArray(org.members) ? org.members : [];
+  const memberIds = [ownerId, ...ownerIds, ...memberIdsRaw]
+    .map((id) => String(id))
+    .filter((id) => Types.ObjectId.isValid(id));
 
-  // 대표(owner 또는 owners) 여부 확인
-  const isRepresentative = myId === ownerId || ownerIds.includes(myId);
+  const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
+  const orgObjectId = new Types.ObjectId(orgId);
 
-  if (isRepresentative) {
-    // 대표: 조직 전체 의뢰 조회 (모든 멤버의 의뢰)
-    const memberIdsRaw = Array.isArray(org.members) ? org.members : [];
-    const memberIds = [ownerId, ...ownerIds, ...memberIdsRaw]
-      .map((id) => String(id))
-      .filter((id) => Types.ObjectId.isValid(id));
-
-    const memberObjectIds = memberIds.map((id) => new Types.ObjectId(id));
-    const orgObjectId = new Types.ObjectId(orgId);
-
-    // 레거시 데이터까지 조직 단위로 포함
-    return {
-      $or: [
-        { requestorOrganizationId: orgObjectId },
-        { requestor: { $in: memberObjectIds } },
-      ],
-    };
-  } else {
-    // 직원: 본인이 생성한 의뢰만 조회
-    return { requestor: req.user._id };
-  }
+  return {
+    $or: [
+      { requestorOrganizationId: orgObjectId },
+      { requestor: { $in: memberObjectIds } },
+    ],
+  };
 }
 
 export function normalizeRequestStage(requestLike) {
@@ -162,7 +148,7 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
     return true;
   }
 
-  // 2. 조직이 같은 경우, 대표 여부 확인
+  // 2. 조직이 같은 경우 접근 허용
   if (!myOrgId || !Types.ObjectId.isValid(myOrgId)) {
     return false;
   }
@@ -177,24 +163,7 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
     return false;
   }
 
-  // 3. 같은 조직인 경우, 대표(owner, owners)인지 확인
-  const org = await RequestorOrganization.findById(myOrgId)
-    .select({ owner: 1, owners: 1 })
-    .lean();
-
-  if (!org) {
-    return false;
-  }
-
-  const ownerId = String(org.owner || "");
-  const ownerIds = Array.isArray(org.owners)
-    ? org.owners.map((id) => String(id))
-    : [];
-
-  const isRepresentative = myId === ownerId || ownerIds.includes(myId);
-
-  // 대표이면 조직 내 모든 의뢰 접근 가능, 직원이면 본인 의뢰만 (이미 1번에서 체크됨)
-  return isRepresentative;
+  return true;
 }
 
 export async function formatEtaLabelFromNow(days) {

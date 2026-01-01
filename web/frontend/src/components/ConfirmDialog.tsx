@@ -20,8 +20,6 @@ export const ConfirmDialog = ({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) => {
-  if (!open) return null;
-
   const confirmRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -29,6 +27,8 @@ export const ConfirmDialog = ({
       confirmRef.current?.focus();
     }
   }, [open]);
+
+  if (!open) return null;
 
   return createPortal(
     <div

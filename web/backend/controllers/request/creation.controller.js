@@ -1387,7 +1387,7 @@ export async function hasDuplicateCase(req, res) {
     const computeStageOrder = (doc) => {
       const st = String(doc?.manufacturerStage || "").trim();
       const status = String(doc?.status || "").trim();
-      return stageOrderMap[st] ?? stageOrderMap[status] ?? 0;
+      return stageOrderMap[status] ?? stageOrderMap[st] ?? 0;
     };
 
     let existing = null;

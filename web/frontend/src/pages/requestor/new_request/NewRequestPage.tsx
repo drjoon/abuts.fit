@@ -25,7 +25,7 @@ import { NewRequestPageSkeleton } from "@/components/common/NewRequestPageSkelet
 export const NewRequestPage = () => {
   const { id: existingRequestId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const FILE_SIZE_THRESHOLD_BYTES = 1 * 1024 * 1024; // 1MB
+  const FILE_SIZE_THRESHOLD_BYTES = 3 * 1024 * 1024; // 1MB
 
   const { toast } = useToast();
 
@@ -432,7 +432,7 @@ export const NewRequestPage = () => {
       return {
         valid: false,
         message:
-          "1MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
+          "3MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
       };
     }
     return { valid: true };
@@ -455,7 +455,7 @@ export const NewRequestPage = () => {
       toast({
         title: "파일 업로드 실패",
         description:
-          "1MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
+          "3MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
         variant: "destructive",
         duration: 3000,
       });
