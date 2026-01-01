@@ -65,6 +65,12 @@ const chatSchema = new mongoose.Schema(
 // 특정 채팅방의 메시지 조회를 위한 인덱스
 chatSchema.index({ roomId: 1, createdAt: -1 });
 
+// 미읽음 메시지 조회 최적화를 위한 복합 인덱스
+chatSchema.index({ roomId: 1, sender: 1, "readBy.userId": 1 });
+
+// 삭제되지 않은 메시지 조회를 위한 인덱스
+chatSchema.index({ roomId: 1, isDeleted: 1, createdAt: -1 });
+
 // 메시지 전송 후 채팅방 lastMessageAt 업데이트
 chatSchema.post("save", async function (doc) {
   const ChatRoom = mongoose.model("ChatRoom");

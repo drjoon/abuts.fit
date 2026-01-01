@@ -8,7 +8,10 @@ import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   getDeliveryEtaLeadDays,
   applyStatusMapping,
+  normalizeRequestStage,
+  normalizeRequestStageLabel,
 } from "./utils.js";
+import cache, { CacheKeys, CacheTTL } from "../../utils/cache.utils.js";
 
 const __cache = new Map();
 const memo = async ({ key, ttlMs, fn }) => {
@@ -45,48 +48,63 @@ export async function updateMyShippingMode(req, res) {
       });
     }
 
-    const todayYmd = getTodayYmdInKst();
-    let shipDateYmd = null;
+    // Fire & Forget: 즉시 응답 반환, 백그라운드에서 처리
+    setImmediate(async () => {
+      try {
+        const { recalculateProductionSchedule, calculatePriority } =
+          await import("./production.utils.js");
 
-    if (shippingMode === "express") {
-      // UI용 express 발송일(간단 계산)
-      const rawShip = await memo({
-        key: `expressShip:${todayYmd}:-`,
-        ttlMs: 6 * 60 * 60 * 1000,
-        fn: () =>
-          calculateExpressShipYmd({ maxDiameter: null, baseYmd: todayYmd }),
-      });
-      shipDateYmd = await memo({
-        key: `krbiz:normalize:${rawShip}`,
-        ttlMs: 6 * 60 * 60 * 1000,
-        fn: () => normalizeKoreanBusinessDay({ ymd: rawShip }),
-      });
-    }
-
-    // 즉시 응답 후 DB 업데이트는 비동기로
-    setImmediate(() => {
-      Request.updateMany(
-        {
+        const requests = await Request.find({
           ...requestFilter,
           requestId: { $in: requestIds },
-          status: { $nin: ["취소", "완료"] },
-        },
-        {
-          $set: { shippingMode },
+          status: "의뢰", // 의뢰 단계만 변경 가능
+        });
+
+        for (const req of requests) {
+          const maxDiameter = req.caseInfos?.maxDiameter;
+          const requestedAt = req.createdAt || new Date();
+
+          // 생산 스케줄 재계산
+          const newSchedule = recalculateProductionSchedule({
+            currentStage: req.status,
+            newShippingMode: shippingMode,
+            maxDiameter,
+            requestedAt,
+          });
+
+          if (!newSchedule) continue;
+
+          // finalShipping 업데이트 (원본 originalShipping은 보존)
+          req.finalShipping = {
+            mode: shippingMode,
+            updatedAt: new Date(),
+          };
+
+          // 생산 스케줄 업데이트
+          req.productionSchedule = newSchedule;
+
+          // 하위 호환성을 위해 timeline.estimatedCompletion도 업데이트
+          req.timeline = req.timeline || {};
+          req.timeline.estimatedCompletion = newSchedule.estimatedDelivery
+            .toISOString()
+            .slice(0, 10);
+
+          await req.save();
         }
-      ).catch((err) => {
-        console.error("Error in async updateMany:", err);
-      });
+
+        console.log(`[Fire&Forget] Updated ${requests.length} shipping modes`);
+      } catch (err) {
+        console.error("[Fire&Forget] Error in shipping mode update:", err);
+      }
     });
 
+    // 즉시 응답 (UI 대기 없음)
     return res.status(200).json({
       success: true,
-      message: `${requestIds.length}건의 배송 방식이 변경되었습니다.`,
+      message: `배송 방식 변경이 처리 중입니다.`,
       data: {
-        updatedIds: requestIds,
-        rejectedIds: [],
+        requestedCount: requestIds.length,
         shippingMode,
-        shipDateYmd,
       },
     });
   } catch (error) {
@@ -180,6 +198,19 @@ export async function getShippingEstimate(req, res) {
  */
 export async function getMyBulkShipping(req, res) {
   try {
+    const userId = req.user?._id?.toString();
+    const cacheKey = `bulk-shipping:${userId}`;
+
+    // 캐시 확인 (1분)
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true,
+      });
+    }
+
     const requestFilter = await buildRequestorOrgScopeFilter(req);
 
     const leadDays = await getDeliveryEtaLeadDays();
@@ -299,7 +330,7 @@ export async function getMyBulkShipping(req, res) {
       },
     })
       .select(
-        "requestId title status status1 status2 caseInfos shippingMode requestedShipDate createdAt timeline.estimatedCompletion requestor"
+        "requestId title status manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedCompletion requestor"
       )
       .populate("requestor", "name organization")
       .lean();
@@ -319,6 +350,9 @@ export async function getMyBulkShipping(req, res) {
       const eta = ymds?.arrivalDateYmd;
       const shipDateYmd = ymds?.shipDateYmd;
 
+      const stageKey = normalizeRequestStage(r);
+      const stageLabel = normalizeRequestStageLabel(r);
+
       return {
         id: r.requestId,
         mongoId: r._id,
@@ -328,8 +362,8 @@ export async function getMyBulkShipping(req, res) {
         tooth: ci.tooth || "",
         diameter: maxDiameter,
         status: r.status,
-        status1: r.status1,
-        status2: r.status2,
+        stageKey,
+        stageLabel,
         shippingMode: r.shippingMode || "normal",
         requestedShipDate: r.requestedShipDate,
         shipDateYmd,
@@ -357,9 +391,15 @@ export async function getMyBulkShipping(req, res) {
       ),
     ]);
 
+    const responseData = { pre, post, waiting };
+
+    // 캐시 저장 (1분)
+    cache.set(cacheKey, responseData, CacheTTL.MEDIUM);
+
     return res.status(200).json({
       success: true,
-      data: { pre, post, waiting },
+      data: responseData,
+      cached: false,
     });
   } catch (error) {
     console.error("Error in getMyBulkShipping:", error);

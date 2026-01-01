@@ -490,11 +490,21 @@ export const RequestorRecentRequestsCard = ({
                       {item.createdAt &&
                         new Date(item.createdAt).toLocaleDateString()}
                     </span>
-                    {item.estimatedCompletion && (
-                      <span className="text-blue-600">
-                        예정: {item.estimatedCompletion}
-                      </span>
-                    )}
+                    {(() => {
+                      const eta =
+                        item.timeline?.estimatedCompletion ||
+                        item.estimatedCompletion;
+                      if (!eta) return null;
+                      const etaDate =
+                        typeof eta === "string"
+                          ? eta
+                          : new Date(eta).toLocaleDateString();
+                      return (
+                        <span className="text-blue-600 font-medium">
+                          도착 예정: {etaDate}
+                        </span>
+                      );
+                    })()}
                     {item.deliveryInfoRef?.deliveredAt && (
                       <span className="text-green-600 font-medium">
                         완료:{" "}

@@ -286,13 +286,40 @@ const requestSchema = new mongoose.Schema(
       enum: ["의뢰", "CAM", "생산", "발송", "추적관리"],
       default: "의뢰",
     },
-    // 배송 요청 정보
-    shippingMode: {
-      type: String,
-      enum: ["normal", "express"],
-      default: "normal",
+    // 배송 요청 정보 (원본 - 의뢰자가 신규 의뢰 시 선택)
+    originalShipping: {
+      mode: {
+        type: String,
+        enum: ["normal", "express"],
+        default: "normal",
+      },
+      requestedAt: Date, // 의뢰 생성 시각
     },
-    requestedShipDate: Date,
+    // 최종 배송 옵션 (의뢰자가 배송 대기 중 변경 가능)
+    finalShipping: {
+      mode: {
+        type: String,
+        enum: ["normal", "express"],
+      },
+      updatedAt: Date, // 마지막 변경 시각
+    },
+    // 생산 스케줄 (생산자 관점, 시각 단위 관리)
+    productionSchedule: {
+      // 생산 스케줄 (생산자 관점, 시각 단위 관리)
+      scheduledCamStart: Date, // CAM 시작 예정 시각
+      scheduledProductionComplete: Date, // 생산 완료 예정 시각 (CAM 시작 + 20분)
+      scheduledShipPickup: Date, // 택배 수거 시각 (매일 14:00)
+      estimatedDelivery: Date, // 도착 예정 시각 (택배 수거일 + 1영업일)
+
+      // 실제 시각
+      actualCamStart: Date, // 실제 CAM 시작 시각
+      actualProductionComplete: Date, // 실제 생산 완료 시각
+      actualShipPickup: Date, // 실제 택배 수거 시각
+
+      // 우선순위 계산용
+      priority: Number, // 생산 우선순위 점수
+      diameterGroup: String, // 직경 그룹 (6-8 | 10+)
+    },
 
     price: {
       amount: {
@@ -325,7 +352,7 @@ const requestSchema = new mongoose.Schema(
     },
 
     timeline: {
-      estimatedCompletion: Date,
+      estimatedCompletion: String, // YYYY-MM-DD 형식 (deprecated - productionSchedule.estimatedDelivery 사용)
       actualCompletion: Date,
     },
 
@@ -382,6 +409,29 @@ requestSchema.index({
   "caseInfos.tooth": 1,
   status: 1,
   createdAt: -1,
+});
+
+// 대시보드 조회 최적화를 위한 복합 인덱스
+requestSchema.index({
+  requestorOrganizationId: 1,
+  status: 1,
+  "caseInfos.implantSystem": 1,
+  createdAt: -1,
+});
+
+// 제조사 대시보드 조회를 위한 인덱스
+requestSchema.index({
+  manufacturer: 1,
+  status: 1,
+  "caseInfos.implantSystem": 1,
+  createdAt: -1,
+});
+
+// 배송 모드 및 상태 기반 조회를 위한 인덱스
+requestSchema.index({
+  requestorOrganizationId: 1,
+  status: 1,
+  shippingMode: 1,
 });
 
 // 의뢰 ID 자동 생성 (YYYYMMDD-XXXXXXXX)

@@ -387,8 +387,37 @@ export const RequestorDashboardPage = () => {
       )
     : [];
 
-  const diameterStatsFromApi: DiameterStats | undefined =
-    summaryResponse?.success ? summaryResponse.data.diameterStats : undefined;
+  const diameterStatsFromApi: DiameterStats | undefined = (() => {
+    if (!summaryResponse?.success) return undefined;
+    const apiStats = summaryResponse.data.diameterStats;
+
+    // 백엔드 응답이 배열 형식인 경우 변환
+    if (Array.isArray(apiStats)) {
+      const buckets = apiStats.map((stat: any, index: number) => ({
+        diameter: stat.range?.includes("≤")
+          ? 6
+          : stat.range?.includes("6-8")
+          ? 8
+          : stat.range?.includes("8-10")
+          ? 10
+          : 10,
+        shipLabel: stat.leadDays ? `${stat.leadDays}일` : "-",
+        ratio: 0, // 계산 필요
+        count: stat.count || 0,
+      }));
+
+      const total = buckets.reduce((sum, b) => sum + b.count, 0);
+      const maxCount = Math.max(...buckets.map((b) => b.count), 1);
+
+      buckets.forEach((b) => {
+        b.ratio = b.count / maxCount;
+      });
+
+      return { buckets, total };
+    }
+
+    return apiStats;
+  })();
 
   const canOpenCreditLedger = user.role === "requestor";
 

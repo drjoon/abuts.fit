@@ -88,6 +88,59 @@ export async function buildRequestorOrgScopeFilter(req) {
   }
 }
 
+export function normalizeRequestStage(requestLike) {
+  const status = String(requestLike?.status || "");
+  const stage = String(requestLike?.manufacturerStage || "");
+  const status1 = String(requestLike?.status1 || "");
+  const status2 = String(requestLike?.status2 || "");
+
+  if (status === "취소") return "cancel";
+  if (status === "완료" || status2 === "완료") return "completed";
+
+  if (
+    ["발송", "배송대기", "배송중"].includes(status) ||
+    ["shipping", "tracking", "발송", "추적관리"].includes(stage)
+  ) {
+    return "shipping";
+  }
+
+  if (
+    ["생산", "가공후"].includes(status) ||
+    ["machining", "packaging", "production", "생산"].includes(stage)
+  ) {
+    return "production";
+  }
+
+  if (
+    ["CAM", "가공전"].includes(status) ||
+    ["cam", "CAM", "가공전"].includes(stage)
+  ) {
+    return "cam";
+  }
+
+  if (
+    ["의뢰", "의뢰접수"].includes(status) ||
+    ["request", "receive", "의뢰", "의뢰접수"].includes(stage) ||
+    ["의뢰", "의뢰접수"].includes(status1) ||
+    ["의뢰", "의뢰접수"].includes(status2)
+  ) {
+    return "request";
+  }
+
+  return "request";
+}
+
+export function normalizeRequestStageLabel(requestLike) {
+  const s = normalizeRequestStage(requestLike);
+  if (s === "request") return "의뢰";
+  if (s === "cam") return "CAM";
+  if (s === "production") return "생산";
+  if (s === "shipping") return "발송";
+  if (s === "completed") return "완료";
+  if (s === "cancel") return "취소";
+  return "의뢰";
+}
+
 export async function canAccessRequestAsRequestor(req, requestDoc) {
   if (!req?.user || req.user.role !== "requestor") return false;
   if (!requestDoc) return false;
@@ -455,43 +508,32 @@ export function applyStatusMapping(request, status) {
     case "의뢰":
     case "의뢰접수":
       request.status = "의뢰";
-      request.status1 = "의뢰접수";
-      request.status2 = "없음";
-      request.manufacturerStage = "request";
+      request.manufacturerStage = "의뢰";
       break;
     case "CAM":
     case "가공전":
       request.status = "CAM";
-      request.status1 = "가공";
-      request.status2 = "전";
-      request.manufacturerStage = "cam";
+      request.manufacturerStage = "CAM";
       break;
     case "생산":
     case "가공후":
       request.status = "생산";
-      request.status1 = "가공";
-      request.status2 = "후";
-      request.manufacturerStage = "machining";
+      request.manufacturerStage = "생산";
       break;
     case "발송":
     case "배송대기":
     case "배송중":
     case "완료":
       request.status = "발송";
-      request.status1 = "배송";
-      request.status2 =
-        status === "배송중" ? "중" : status === "완료" ? "완료" : "전";
-      request.manufacturerStage = "shipping";
+      request.manufacturerStage = "발송";
       break;
     case "취소":
       request.status = "취소";
-      request.status1 = "취소";
-      request.status2 = "없음";
-      request.manufacturerStage = "request";
+      request.manufacturerStage = "의뢰";
       break;
     default:
       if (!request.manufacturerStage) {
-        request.manufacturerStage = "request";
+        request.manufacturerStage = "의뢰";
       }
       break;
   }

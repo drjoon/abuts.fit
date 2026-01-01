@@ -4,6 +4,10 @@ import app, { dbReady } from "./app.js";
 import supportRoutes from "./routes/support.routes.js";
 import implantPresetRoutes from "./routes/implantPreset.routes.js";
 import { initializeSocket } from "./socket.js";
+import {
+  warmupCache,
+  startPeriodicCacheRefresh,
+} from "./utils/cacheWarming.js";
 
 // 포트 설정 (EB 기본 upstream 포트는 8080)
 const PORT = process.env.PORT || 8080;
@@ -21,8 +25,16 @@ server.listen(PORT, () => {
 });
 
 dbReady
-  .then(() => {
+  .then(async () => {
     console.log("MongoDB 연결 준비 완료");
+
+    // 캐시 워밍 실행
+    await warmupCache();
+
+    // 주기적 캐시 갱신 시작 (선택적)
+    if (process.env.NODE_ENV === "production") {
+      startPeriodicCacheRefresh();
+    }
   })
   .catch((err) => {
     console.error("MongoDB 연결 실패(서버는 계속 실행):", err);

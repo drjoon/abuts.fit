@@ -11,6 +11,10 @@ import {
   getPopbillWorkerStatus,
   getQueueStats,
 } from "./jobs/popbillWorker.js";
+import {
+  startProductionScheduler,
+  getProductionSchedulerStatus,
+} from "./jobs/productionScheduler.js";
 
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const startedAt = new Date();
@@ -35,6 +39,7 @@ function startStatusServer() {
       uptimeSec: Math.floor((Date.now() - startedAt.getTime()) / 1000),
       creditBPlan: getCreditBPlanStatus(),
       popbillWorker: getPopbillWorkerStatus(),
+      productionScheduler: getProductionSchedulerStatus(),
       queueStats,
     });
   });
@@ -57,6 +62,9 @@ async function main() {
 
   startPopbillWorker();
   console.log("[worker] popbill worker started (queue-based)");
+
+  startProductionScheduler();
+  console.log("[worker] production scheduler started");
 
   startHealthMonitor({
     getCreditBPlanStatus,

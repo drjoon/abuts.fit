@@ -20,28 +20,85 @@ export async function getMyChatRooms(req, res) {
       .sort({ lastMessageAt: -1 })
       .lean();
 
-    // 각 채팅방의 미읽음 메시지 수 계산
-    const roomsWithUnread = await Promise.all(
-      rooms.map(async (room) => {
-        const unreadCount = await Chat.countDocuments({
-          roomId: room._id,
-          sender: { $ne: userId },
-          readBy: { $not: { $elemMatch: { userId } } },
-        });
+    if (rooms.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+      });
+    }
 
-        // 마지막 메시지 조회
-        const lastMessage = await Chat.findOne({ roomId: room._id })
-          .sort({ createdAt: -1 })
-          .populate("sender", "name role")
-          .lean();
+    const roomIds = rooms.map((r) => r._id);
 
-        return {
-          ...room,
-          unreadCount,
-          lastMessage,
-        };
-      })
-    );
+    // 모든 채팅방의 통계를 한 번의 집계 쿼리로 조회
+    const statsMap = new Map();
+    const stats = await Chat.aggregate([
+      { $match: { roomId: { $in: roomIds }, isDeleted: false } },
+      {
+        $group: {
+          _id: "$roomId",
+          unreadCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: ["$sender", userId] },
+                    { $not: { $in: [userId, "$readBy.userId"] } },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          lastMessage: { $last: "$$ROOT" },
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "lastMessage.sender",
+          foreignField: "_id",
+          as: "lastMessage.sender",
+        },
+      },
+      {
+        $unwind: {
+          path: "$lastMessage.sender",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          unreadCount: 1,
+          "lastMessage._id": 1,
+          "lastMessage.content": 1,
+          "lastMessage.createdAt": 1,
+          "lastMessage.sender._id": 1,
+          "lastMessage.sender.name": 1,
+          "lastMessage.sender.role": 1,
+        },
+      },
+    ]);
+
+    stats.forEach((stat) => {
+      statsMap.set(stat._id.toString(), {
+        unreadCount: stat.unreadCount || 0,
+        lastMessage: stat.lastMessage || null,
+      });
+    });
+
+    const roomsWithUnread = rooms.map((room) => {
+      const stat = statsMap.get(room._id.toString()) || {
+        unreadCount: 0,
+        lastMessage: null,
+      };
+      return {
+        ...room,
+        unreadCount: stat.unreadCount,
+        lastMessage: stat.lastMessage,
+      };
+    });
 
     res.status(200).json({
       success: true,
@@ -88,16 +145,49 @@ export async function getSupportRoom(req, res) {
       .lean();
 
     const enrichRoom = async (room) => {
-      const unreadCount = await Chat.countDocuments({
-        roomId: room._id,
-        sender: { $ne: userId },
-        readBy: { $not: { $elemMatch: { userId } } },
-      });
+      // 집계 쿼리로 unreadCount와 lastMessage를 한 번에 조회
+      const [stats] = await Chat.aggregate([
+        { $match: { roomId: room._id, isDeleted: false } },
+        {
+          $facet: {
+            unread: [
+              {
+                $match: {
+                  sender: { $ne: userId },
+                  "readBy.userId": { $ne: userId },
+                },
+              },
+              { $count: "count" },
+            ],
+            lastMessage: [
+              { $sort: { createdAt: -1 } },
+              { $limit: 1 },
+              {
+                $lookup: {
+                  from: "users",
+                  localField: "sender",
+                  foreignField: "_id",
+                  as: "sender",
+                },
+              },
+              { $unwind: "$sender" },
+              {
+                $project: {
+                  _id: 1,
+                  content: 1,
+                  createdAt: 1,
+                  "sender._id": 1,
+                  "sender.name": 1,
+                  "sender.role": 1,
+                },
+              },
+            ],
+          },
+        },
+      ]);
 
-      const lastMessage = await Chat.findOne({ roomId: room._id })
-        .sort({ createdAt: -1 })
-        .populate("sender", "name role")
-        .lean();
+      const unreadCount = stats?.unread?.[0]?.count || 0;
+      const lastMessage = stats?.lastMessage?.[0] || null;
 
       return {
         ...room,

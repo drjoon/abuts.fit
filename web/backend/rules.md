@@ -51,6 +51,96 @@
 - **환불**: 의뢰 취소 시 조직 크레딧으로 복원
 - **조회**: 조직 내 모든 멤버가 동일한 잔액 조회 (`GET /api/credits/balance`)
 
+### 5.2 생산 프로세스 및 스케줄 관리 정책 (시각 단위)
+
+**생산 프로세스 타임라인**:
+
+```
+[의뢰] → (대기) → [CAM 시작] → (20분) → [생산 완료] → (택배 수거 14:00 대기) → [발송] → (택배 1영업일) → [완료]
+```
+
+**핵심 개념**:
+
+- **대기 단계**: 의뢰 단계는 생산 시작을 기다리는 대기 단계 (한참 걸릴 수 있음)
+- **생산 단계**: CAM 시작 → 생산 완료까지 20분 내 수행 (빠르게 진행)
+- **택배 수거**: 매일 14:00에 택배사 방문하여 수거
+- **배송**: 택배 수거일 다음 영업일 도착
+- **시각 단위 관리**: 모든 스케줄을 시각(DateTime) 단위로 관리하여 정밀한 우선순위 계산
+
+**배송 모드별 스케줄 계산 (시각 기반)**:
+
+1. **신속배송** (`originalShipping.mode: "express"`):
+
+   - 대기 없이 즉시 CAM 시작
+   - `scheduledCamStart` = 의뢰 시각
+   - `scheduledProductionComplete` = CAM 시작 + 20분
+   - `scheduledShipPickup` = 다음 14:00
+   - `estimatedDelivery` = 택배 수거일 + 1영업일
+
+2. **묶음배송** (`originalShipping.mode: "normal"`):
+   - 직경별 대기 시간 적용 (CNC 소재 관리 고려)
+   - **6-8mm 그룹**: 대기 0시간 (여러 장비에 세팅되어 있음)
+   - **10mm+ 그룹**: 대기 72시간 (모여서 한꺼번에 생산, 소재 교체 시간 많이 걸림)
+   - 대기 후 CAM 시작 → +20분 생산 완료 → 다음 14:00 택배 수거 → +1영업일 도착
+
+**배송 옵션 데이터 구조**:
+
+- `originalShipping`: 신규 의뢰 시 의뢰자가 선택한 원본 배송 옵션 (불변)
+  - `mode`: "normal" | "express"
+  - `requestedAt`: 의뢰 생성 시각 (Date)
+- `finalShipping`: 의뢰자가 배송 대기 중 변경 가능한 최종 배송 옵션
+  - `mode`: "normal" | "express"
+  - `updatedAt`: 마지막 변경 시각 (Date)
+- `productionSchedule`: 생산자 관점의 스케줄 (시각 단위, 생산 큐 관리용)
+  - `scheduledCamStart`: CAM 시작 예정 시각 (Date)
+  - `scheduledProductionComplete`: 생산 완료 예정 시각 (Date, CAM 시작 + 20분)
+  - `scheduledShipPickup`: 택배 수거 시각 (Date, 매일 14:00)
+  - `estimatedDelivery`: 도착 예정 시각 (Date, 택배 수거일 + 1영업일)
+  - `actualCamStart`, `actualProductionComplete`, `actualShipPickup`: 실제 시각 (Date)
+  - `priority`: 생산 우선순위 점수 (Number)
+  - `diameterGroup`: 직경 그룹 (String, "6-8" | "10+")
+
+**배송 옵션 변경 규칙 (Fire & Forget)**:
+
+- 의뢰 단계에서만 변경 가능 (CAM 단계부터는 변경 불가)
+- 변경 시 `originalShipping`은 보존, `finalShipping`만 업데이트
+- `productionSchedule` 재계산하여 생산 큐 반영
+- **Fire & Forget 방식**: API는 즉시 응답 반환, 백그라운드에서 비동기 처리
+- UI 대기 시간 없음 (사용자 경험 개선)
+
+**공정 단계 자동 진행 규칙 (시각 기반)**:
+
+1. **의뢰 → CAM**: `productionSchedule.scheduledCamStart <= 현재 시각`
+2. **CAM → 생산**: `caseInfos.reviewByStage.cam.status === 'APPROVED'` (즉시 생산 시작)
+3. **생산 → 발송**: `productionSchedule.scheduledShipPickup <= 현재 시각` (14:00 택배 수거)
+4. **발송 → 완료**: `deliveryInfoRef.deliveredAt` 존재 (배송 완료 API에서 처리)
+
+**생산 우선순위 (시각 기반 점수 계산)**:
+
+1. **신속배송**: +10,000점 (`finalShipping.mode === "express"`)
+2. **예정 시각 지남 (긴급)**: +5,000점 + (지연 시간 × 100점)
+3. **예정 시각 가까운 순**: -(남은 시간 × 10점)
+4. **직경 그룹**: 6-8mm 그룹 +100점 (여러 장비에 세팅)
+
+**지연 위험 요약**:
+
+- **지연(delayed)**: `scheduledCamStart < 현재 시각`
+- **경고(warning)**: `scheduledCamStart - 현재 시각 <= 4시간`
+- 모든 role 대시보드에 지연 위험 요약 표시 (눈에 띄게 UI 처리)
+- 제조사/관리자가 긴급 상황 인지 가능
+
+**자동화 구현**:
+
+- 백그라운드 워커: `/background/jobs/productionScheduler.js`
+- 5분 간격으로 실행
+- 생산 스케줄 기준으로 공정 단계 자동 진행
+- 상태 조회: `GET /status` (background worker)
+
+**하위 호환성**:
+
+- `timeline.estimatedCompletion`: `productionSchedule.estimatedDelivery.toISOString().slice(0, 10)` (String, YYYY-MM-DD)
+- 기존 날짜 기반 로직과의 호환성 유지
+
 ### 5.3 의뢰 취소 정책
 
 - **취소 가능 단계**: `의뢰` 단계에서만 취소 가능

@@ -8,7 +8,9 @@ import {
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
   getTodayYmdInKst,
+  normalizeKoreanBusinessDay,
 } from "./utils.js";
+import cache, { CacheKeys, CacheTTL } from "../../utils/cache.utils.js";
 
 const toKstYmd = (d) => {
   if (!d) return null;
@@ -34,6 +36,20 @@ const ymdToKstMidnight = (ymd) => {
  */
 export async function getDiameterStats(req, res) {
   try {
+    const userId = req.user?._id?.toString() || "anonymous";
+    const role = req.user?.role || "public";
+    const cacheKey = CacheKeys.diameterStats(userId, role);
+
+    // 캐시 확인
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: { diameterStats: cached },
+        cached: true,
+      });
+    }
+
     const leadDays = await getDeliveryEtaLeadDays();
     const baseFilter = {
       status: { $ne: "취소" },
@@ -45,15 +61,88 @@ export async function getDiameterStats(req, res) {
         ? { ...baseFilter, ...(await buildRequestorOrgScopeFilter(req)) }
         : baseFilter;
 
-    const requests = await Request.find(filter).select({ caseInfos: 1 }).lean();
+    // 집계 쿼리로 직경별 통계 계산 (메모리 사용량 대폭 감소)
+    const stats = await Request.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          d6Count: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $lte: ["$caseInfos.maxDiameter", 6] },
+                    { $gt: ["$caseInfos.maxDiameter", 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          d8Count: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $gt: ["$caseInfos.maxDiameter", 6] },
+                    { $lte: ["$caseInfos.maxDiameter", 8] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          d10Count: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $gt: ["$caseInfos.maxDiameter", 8] },
+                    { $lte: ["$caseInfos.maxDiameter", 10] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          d10plusCount: {
+            $sum: {
+              $cond: [{ $gt: ["$caseInfos.maxDiameter", 10] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]);
 
-    const diameterStats = await computeDiameterStats(requests, leadDays);
+    const result = stats[0] || {
+      d6Count: 0,
+      d8Count: 0,
+      d10Count: 0,
+      d10plusCount: 0,
+    };
+
+    const diameterStats = [
+      { range: "≤6mm", count: result.d6Count, leadDays: leadDays.d6 },
+      { range: "6-8mm", count: result.d8Count, leadDays: leadDays.d8 },
+      { range: "8-10mm", count: result.d10Count, leadDays: leadDays.d10 },
+      {
+        range: ">10mm",
+        count: result.d10plusCount,
+        leadDays: leadDays.d10plus,
+      },
+    ];
+
+    // 캐시 저장 (5분)
+    cache.set(cacheKey, diameterStats, CacheTTL.LONG);
 
     return res.status(200).json({
       success: true,
-      data: {
-        diameterStats,
-      },
+      data: { diameterStats },
+      cached: false,
     });
   } catch (error) {
     return res.status(500).json({
@@ -70,8 +159,21 @@ export async function getDiameterStats(req, res) {
  */
 export async function getMyDashboardSummary(req, res) {
   try {
-    const requestFilter = await buildRequestorOrgScopeFilter(req);
     const { period = "30d" } = req.query;
+    const userId = req.user?._id?.toString();
+    const cacheKey = CacheKeys.dashboardSummary(userId, period);
+
+    // 캐시 확인 (1분)
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true,
+      });
+    }
+
+    const requestFilter = await buildRequestorOrgScopeFilter(req);
 
     let dateFilter = {};
     if (period && period !== "all") {
@@ -84,304 +186,325 @@ export async function getMyDashboardSummary(req, res) {
       dateFilter = { createdAt: { $gte: from } };
     }
 
-    const requestFilterWithPeriod = { ...requestFilter, ...dateFilter };
+    // 집계 쿼리로 통계와 최근 의뢰를 병렬로 조회
+    const [deliveryLeadDays, statsResult, recentRequestsResult] =
+      await Promise.all([
+        getDeliveryEtaLeadDays(),
+        Request.aggregate([
+          {
+            $match: {
+              ...requestFilter,
+              "caseInfos.implantSystem": { $exists: true, $ne: "" },
+              $or: [{ status: { $nin: ["완료", "취소"] } }, dateFilter],
+            },
+          },
+          {
+            $addFields: {
+              normalizedStage: {
+                $switch: {
+                  branches: [
+                    { case: { $eq: ["$status", "취소"] }, then: "cancel" },
+                    { case: { $eq: ["$status", "완료"] }, then: "completed" },
+                    {
+                      case: {
+                        $in: ["$status", ["발송", "배송대기", "배송중"]],
+                      },
+                      then: "shipping",
+                    },
+                    {
+                      case: { $in: ["$status", ["생산", "가공후"]] },
+                      then: "production",
+                    },
+                    {
+                      case: { $in: ["$status", ["CAM", "가공전"]] },
+                      then: "cam",
+                    },
+                  ],
+                  default: "request",
+                },
+              },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              canceledCount: {
+                $sum: { $cond: [{ $eq: ["$status", "취소"] }, 1, 0] },
+              },
+              completed: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "completed"] }, 1, 0],
+                },
+              },
+              designCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
+                },
+              },
+              camCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0],
+                },
+              },
+              productionCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "production"] }, 1, 0],
+                },
+              },
+              shippingCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
+                },
+              },
+            },
+          },
+        ]),
+        Request.find({
+          ...requestFilter,
+          "caseInfos.implantSystem": { $exists: true, $ne: "" },
+          status: { $ne: "취소" },
+        })
+          .select({
+            _id: 1,
+            requestId: 1,
+            title: 1,
+            status: 1,
+            manufacturerStage: 1,
+            createdAt: 1,
+            caseInfos: 1,
+            timeline: 1,
+            estimatedCompletion: 1,
+            deliveryInfoRef: 1,
+          })
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .populate("requestor", "name organization")
+          .lean(),
+      ]);
 
-    const requests = await Request.find({
-      ...requestFilter,
-      $or: [
-        { status: { $nin: ["완료", "취소"] } }, // 진행 중인 건은 전체 기간 대상
-        dateFilter, // 완료/취소 건은 기간 내 대상
-      ],
-    })
-      .populate("requestor", "name organization")
-      .populate("manufacturer", "name organization")
-      .populate("deliveryInfoRef")
-      .lean();
-
-    // 커스텀 어벗(Request.caseInfos.implantSystem 존재)만 대시보드 통계 대상
-    const abutmentRequests = requests.filter((r) => {
-      const ci = r.caseInfos || {};
-      return typeof ci.implantSystem === "string" && ci.implantSystem.trim();
-    });
-
-    const normalizeStage = (r) => {
-      const status = String(r.status || "");
-      const stage = String(r.manufacturerStage || "");
-      const status1 = String(r.status1 || "");
-      const status2 = String(r.status2 || "");
-
-      if (status === "취소") return "cancel";
-      if (status === "완료" || status2 === "완료") return "completed";
-      if (
-        ["발송", "배송대기", "배송중"].includes(status) ||
-        ["shipping", "발송"].includes(stage)
-      ) {
-        return "shipping";
-      }
-      if (
-        ["생산", "가공후"].includes(status) ||
-        ["machining", "생산", "packaging"].includes(stage)
-      ) {
-        return "production";
-      }
-      if (
-        ["CAM", "가공전"].includes(status) ||
-        ["cam", "CAM", "가공전"].includes(stage)
-      ) {
-        return "cam";
-      }
-      if (
-        ["의뢰", "의뢰접수"].includes(status) ||
-        ["의뢰", "request", "receive"].includes(stage) ||
-        ["의뢰", "의뢰접수"].includes(status1) ||
-        ["의뢰", "의뢰접수"].includes(status2)
-      ) {
-        return "request";
-      }
-      return "request";
+    const stats = statsResult[0] || {
+      total: 0,
+      canceledCount: 0,
+      completed: 0,
+      designCount: 0,
+      camCount: 0,
+      productionCount: 0,
+      shippingCount: 0,
     };
 
-    const stages = abutmentRequests.map((r) => ({
-      stage: normalizeStage(r),
-      request: r,
-    }));
+    const totalActive =
+      stats.designCount +
+        stats.camCount +
+        stats.productionCount +
+        stats.shippingCount || 1;
 
-    const total = abutmentRequests.length;
-    const canceledCount = abutmentRequests.filter(
-      (r) => r.status === "취소"
-    ).length;
-    const inProduction = stages.filter((s) => s.stage === "production").length;
-    const inCam = stages.filter((s) => s.stage === "cam").length;
-    const completed = stages.filter((s) => s.stage === "completed").length;
-    const inShipping = stages.filter((s) => s.stage === "shipping").length;
-    const doneOrCanceled = completed + canceledCount;
-
-    const active = stages
-      .filter((s) => !["completed", "cancel"].includes(s.stage))
-      .map((s) => s.request);
-
-    const stageCounts = {
-      design: 0,
-      cam: 0,
-      production: 0,
-      shipping: 0,
-    };
-
-    active.forEach((r) => {
-      const stage = normalizeStage(r);
-      if (stage === "request") {
-        stageCounts.design += 1;
-      } else if (stage === "cam") {
-        stageCounts.cam += 1;
-      } else if (stage === "production") {
-        stageCounts.production += 1;
-      } else if (stage === "shipping") {
-        stageCounts.shipping += 1;
-      }
-    });
-
-    const totalActive = active.length || 1;
     const manufacturingSummary = {
-      totalActive: active.length,
+      totalActive,
       stages: [
-        { key: "design", label: "의뢰 접수", count: stageCounts.design },
-        { key: "cam", label: "CAM", count: stageCounts.cam },
-        { key: "production", label: "생산", count: stageCounts.production },
-        {
-          key: "shipping",
-          label: "발송",
-          count: stageCounts.shipping,
-        },
+        { key: "design", label: "의뢰 접수", count: stats.designCount },
+        { key: "cam", label: "CAM", count: stats.camCount },
+        { key: "production", label: "생산", count: stats.productionCount },
+        { key: "shipping", label: "발송", count: stats.shippingCount },
       ].map((s) => ({
         ...s,
         percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
       })),
     };
 
-    const nowYmd = getTodayYmdInKst();
-    const nowMidnight = ymdToKstMidnight(nowYmd) || new Date();
-    const delayedItems = [];
-    const warningItems = [];
+    // Risk Summary: 지연 위험 요약 (시각 기반)
+    const { calculateRiskSummary } = await import("./production.utils.js");
+    const activeRequests = await Request.find({
+      ...requestFilter,
+      status: { $in: ["의뢰", "CAM", "생산"] },
+    }).select("requestId productionSchedule");
 
-    abutmentRequests.forEach((r) => {
-      const est = r.timeline?.estimatedCompletion
-        ? new Date(r.timeline.estimatedCompletion)
-        : null;
-      if (!est) return;
+    const riskSummary = calculateRiskSummary(activeRequests);
 
-      const shippedAt = r.deliveryInfoRef?.shippedAt
-        ? new Date(r.deliveryInfoRef.shippedAt)
-        : null;
-      const deliveredAt = r.deliveryInfoRef?.deliveredAt
-        ? new Date(r.deliveryInfoRef.deliveredAt)
-        : null;
-      const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
+    // 직경별 통계 실제 집계
+    const diameterAggResult = await Request.aggregate([
+      {
+        $match: {
+          ...requestFilter,
+          "caseInfos.implantSystem": { $exists: true, $ne: "" },
+          status: { $ne: "취소" },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          d6Count: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $lte: ["$caseInfos.maxDiameter", 6] },
+                    { $gt: ["$caseInfos.maxDiameter", 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          d8Count: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $gt: ["$caseInfos.maxDiameter", 6] },
+                    { $lte: ["$caseInfos.maxDiameter", 8] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          d10Count: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $gt: ["$caseInfos.maxDiameter", 8] },
+                    { $lte: ["$caseInfos.maxDiameter", 10] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          d10plusCount: {
+            $sum: {
+              $cond: [{ $gt: ["$caseInfos.maxDiameter", 10] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]);
 
-      const estYmd = toKstYmd(est);
-      const estMidnight = ymdToKstMidnight(estYmd);
-      if (!estMidnight) return;
-
-      const diffDays = Math.floor(
-        (nowMidnight.getTime() - estMidnight.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const daysOverdue = diffDays > 0 ? diffDays : 0;
-      const daysUntilDue = diffDays < 0 ? Math.abs(diffDays) : 0;
-
-      if (!isDone) {
-        if (diffDays > 0) {
-          delayedItems.push({ r, est, daysOverdue, daysUntilDue });
-        } else if (diffDays === 0 || diffDays === -1) {
-          warningItems.push({ r, est, daysOverdue, daysUntilDue });
-        }
-      }
-    });
-
-    const totalWithEta = abutmentRequests.filter(
-      (r) => r.timeline?.estimatedCompletion
-    ).length;
-    const delayedCount = delayedItems.length;
-    const warningCount = warningItems.length;
-    const onTimeBase = totalWithEta || 1;
-    const onTimeRate = Math.max(
-      0,
-      Math.min(
-        100,
-        Math.round(
-          ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100
-        )
-      )
-    );
-
-    const toRiskItem = (entry, level) => {
-      const r = entry?.r || entry;
-      const est = entry?.est
-        ? entry.est
-        : r?.timeline?.estimatedCompletion
-        ? new Date(r.timeline.estimatedCompletion)
-        : null;
-      const daysOverdue = entry?.daysOverdue || 0;
-      const daysUntilDue = entry?.daysUntilDue || 0;
-
-      const ci = r?.caseInfos || {};
-      const manufacturerText =
-        r?.manufacturer?.organization || r?.manufacturer?.name || "";
-      const title =
-        (r?.title || "").trim() ||
-        [ci.patientName, ci.tooth].filter(Boolean).join(" ") ||
-        r?.requestId ||
-        "";
-
-      const mm = est ? String(est.getMonth() + 1).padStart(2, "0") : "";
-      const dd = est ? String(est.getDate()).padStart(2, "0") : "";
-      const dueLabel = est ? `${mm}/${dd}` : "";
-
-      let message = "";
-      if (level === "danger") {
-        message = `예상 도착일(${dueLabel}) 기준 ${daysOverdue}일 지연 중입니다.`;
-      } else {
-        message = `예상 도착일(${dueLabel})이 임박했습니다. (D-${daysUntilDue})`;
-      }
-
-      return {
-        id: r?.requestId,
-        title,
-        manufacturer: manufacturerText,
-        riskLevel: level,
-        status: r?.status,
-        status1: r?.status1,
-        status2: r?.status2,
-        dueDate: est ? est.toISOString().slice(0, 10) : null,
-        daysOverdue,
-        daysUntilDue,
-        message,
-      };
+    const diameterResult = diameterAggResult[0] || {
+      d6Count: 0,
+      d8Count: 0,
+      d10Count: 0,
+      d10plusCount: 0,
     };
 
-    const riskItems = [
-      ...delayedItems
-        .slice()
-        .sort((a, b) => (b?.daysOverdue || 0) - (a?.daysOverdue || 0))
-        .slice(0, 3)
-        .map((entry) => toRiskItem(entry, "danger")),
-      ...warningItems
-        .slice()
-        .sort((a, b) => (a?.daysUntilDue || 0) - (b?.daysUntilDue || 0))
-        .slice(0, 3)
-        .map((entry) => toRiskItem(entry, "warning")),
+    const diameterStats = [
+      {
+        range: "≤6mm",
+        count: diameterResult.d6Count,
+        leadDays: deliveryLeadDays.d6,
+      },
+      {
+        range: "6-8mm",
+        count: diameterResult.d8Count,
+        leadDays: deliveryLeadDays.d8,
+      },
+      {
+        range: "8-10mm",
+        count: diameterResult.d10Count,
+        leadDays: deliveryLeadDays.d10,
+      },
+      {
+        range: ">10mm",
+        count: diameterResult.d10plusCount,
+        leadDays: deliveryLeadDays.d10plus,
+      },
     ];
 
-    const riskSummary = {
-      delayedCount,
-      warningCount,
-      onTimeRate,
-      items: riskItems,
+    const effectiveLeadDays = {
+      d6: deliveryLeadDays?.d6 ?? 2,
+      d8: deliveryLeadDays?.d8 ?? 2,
+      d10: deliveryLeadDays?.d10 ?? 5,
+      d10plus: deliveryLeadDays?.d10plus ?? 5,
     };
 
-    const leadDays = await getDeliveryEtaLeadDays();
-    const diameterStats = await computeDiameterStats(
-      abutmentRequests,
-      leadDays
+    const resolveNormalLeadDays = (maxDiameter) => {
+      const d =
+        typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
+          ? maxDiameter
+          : maxDiameter != null && String(maxDiameter).trim()
+          ? Number(maxDiameter)
+          : null;
+      if (d == null || Number.isNaN(d)) return effectiveLeadDays.d10;
+      if (d <= 6) return effectiveLeadDays.d6;
+      if (d <= 8) return effectiveLeadDays.d8;
+      if (d <= 10) return effectiveLeadDays.d10;
+      return effectiveLeadDays.d10plus;
+    };
+
+    const recentRequests = await Promise.all(
+      (recentRequestsResult || []).map(async (r) => {
+        const ci = r.caseInfos || {};
+        const timelineEta = r.timeline?.estimatedCompletion
+          ? new Date(r.timeline.estimatedCompletion).toISOString().slice(0, 10)
+          : null;
+
+        if (timelineEta) {
+          return {
+            ...r,
+            caseInfos: ci,
+            estimatedCompletion: timelineEta,
+          };
+        }
+
+        const createdYmd = toKstYmd(r.createdAt) || getTodayYmdInKst();
+        const baseYmd = await normalizeKoreanBusinessDay({ ymd: createdYmd });
+        const days = resolveNormalLeadDays(ci?.maxDiameter);
+        const etaYmd = await addKoreanBusinessDays({ startYmd: baseYmd, days });
+
+        return {
+          ...r,
+          caseInfos: ci,
+          estimatedCompletion: etaYmd,
+        };
+      })
     );
 
-    const resolveEstimatedCompletionYmd = (r, ci) => {
-      // ETA가 이미 있으면 즉시 반환(async 제거)
-      if (r?.timeline?.estimatedCompletion) {
-        return new Date(r.timeline.estimatedCompletion)
-          .toISOString()
-          .slice(0, 10);
-      }
-      // ETA 없으면 null 반환(fallback 계산 제거로 속도 확보)
-      return null;
+    const recentRequestsData = recentRequests.map((r) => {
+      const ci = r.caseInfos || {};
+
+      return {
+        _id: r._id,
+        requestId: r.requestId,
+        title: r.title,
+        status: r.status,
+        manufacturerStage: r.manufacturerStage,
+        date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
+        estimatedCompletion: r.estimatedCompletion || null,
+        patientName: ci.patientName || "",
+        tooth: ci.tooth || "",
+        caseInfos: ci,
+        requestor: r.requestor || null,
+        deliveryInfoRef: r.deliveryInfoRef || null,
+        createdAt: r.createdAt,
+      };
+    });
+
+    const responseData = {
+      stats: {
+        totalRequests: stats.designCount,
+        inCam: stats.camCount,
+        inProduction: stats.productionCount,
+        inShipping: stats.shippingCount,
+        completed: stats.completed,
+        doneOrCanceled: stats.completed + stats.canceledCount,
+      },
+      manufacturingSummary,
+      riskSummary,
+      diameterStats,
+      recentRequests,
     };
 
-    const recentRequests = abutmentRequests
-      .slice()
-      .sort((a, b) => {
-        const aDate = new Date(a.createdAt || a.updatedAt || 0).getTime();
-        const bDate = new Date(b.createdAt || b.updatedAt || 0).getTime();
-        return bDate - aDate;
-      })
-      .slice(0, 5)
-      .map((r) => {
-        const ci = r.caseInfos || {};
-        const etaYmd = resolveEstimatedCompletionYmd(r, ci);
-        return {
-          // 기본 식별자
-          _id: r._id,
-          requestId: r.requestId,
-          // 표시용 필드
-          title: r.title,
-          status: r.status,
-          manufacturerStage: r.manufacturerStage,
-          date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
-          estimatedCompletion: etaYmd || null,
-          // 편집 다이얼로그에서 사용할 세부 정보
-          patientName: ci.patientName || "",
-          tooth: ci.tooth || "",
-          caseInfos: ci,
-          requestor: r.requestor || null,
-          deliveryInfoRef: r.deliveryInfoRef || null,
-          createdAt: r.createdAt,
-        };
-      });
+    // 캐시 저장 (1분)
+    cache.set(cacheKey, responseData, CacheTTL.MEDIUM);
 
     return res.status(200).json({
       success: true,
-      data: {
-        stats: {
-          // '의뢰' 카드에는 접수 단계(의뢰)만 표시
-          totalRequests: stageCounts.design,
-          inCam,
-          inProduction,
-          inShipping,
-          completed,
-          doneOrCanceled,
-        },
-        manufacturingSummary,
-        riskSummary,
-        diameterStats,
-        recentRequests,
-      },
+      data: responseData,
+      cached: false,
     });
   } catch (error) {
     console.error("Error in getMyDashboardSummary:", error);
@@ -602,23 +725,36 @@ export async function getDashboardRiskSummary(req, res) {
 export async function getMyPricingReferralStats(req, res) {
   try {
     const requestorId = req.user._id;
+    const cacheKey = CacheKeys.pricingStats(requestorId.toString());
+
+    // 캐시 확인 (5분)
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true,
+      });
+    }
 
     const now = new Date();
     const last30Cutoff = new Date(now);
     last30Cutoff.setDate(last30Cutoff.getDate() - 30);
 
-    const myLast30DaysOrders = await Request.countDocuments({
-      requestor: requestorId,
-      status: "완료",
-      createdAt: { $gte: last30Cutoff },
-    });
-
-    const referredUsers = await User.find({
-      referredByUserId: requestorId,
-      active: true,
-    })
-      .select({ _id: 1 })
-      .lean();
+    // 병렬로 조회하여 성능 개선
+    const [myLast30DaysOrders, referredUsers] = await Promise.all([
+      Request.countDocuments({
+        requestor: requestorId,
+        status: "완료",
+        createdAt: { $gte: last30Cutoff },
+      }),
+      User.find({
+        referredByUserId: requestorId,
+        active: true,
+      })
+        .select({ _id: 1 })
+        .lean(),
+    ]);
 
     const referredUserIds = referredUsers.map((u) => u._id).filter(Boolean);
 
@@ -694,39 +830,45 @@ export async function getMyPricingReferralStats(req, res) {
       });
     }
 
+    const responseData = {
+      last30Cutoff,
+      myLast30DaysOrders,
+      referralLast30DaysOrders,
+      totalOrders,
+      baseUnitPrice,
+      discountPerOrder,
+      maxDiscountPerUnit,
+      discountAmount,
+      effectiveUnitPrice,
+      rule,
+      ...(process.env.NODE_ENV !== "production"
+        ? {
+            debug: {
+              requestorId,
+              isMockDevToken,
+              now,
+              baseDate,
+              fixedUntil,
+              userDates: user
+                ? {
+                    createdAt: user.createdAt,
+                    updatedAt: user.updatedAt,
+                    approvedAt: user.approvedAt,
+                    active: user.active,
+                  }
+                : null,
+            },
+          }
+        : {}),
+    };
+
+    // 캐시 저장 (5분)
+    cache.set(cacheKey, responseData, CacheTTL.LONG);
+
     return res.status(200).json({
       success: true,
-      data: {
-        last30Cutoff,
-        myLast30DaysOrders,
-        referralLast30DaysOrders,
-        totalOrders,
-        baseUnitPrice,
-        discountPerOrder,
-        maxDiscountPerUnit,
-        discountAmount,
-        effectiveUnitPrice,
-        rule,
-        ...(process.env.NODE_ENV !== "production"
-          ? {
-              debug: {
-                requestorId,
-                isMockDevToken,
-                now,
-                baseDate,
-                fixedUntil,
-                userDates: user
-                  ? {
-                      createdAt: user.createdAt,
-                      updatedAt: user.updatedAt,
-                      approvedAt: user.approvedAt,
-                      active: user.active,
-                    }
-                  : null,
-              },
-            }
-          : {}),
-      },
+      data: responseData,
+      cached: false,
     });
   } catch (error) {
     console.error("Error in getMyPricingReferralStats:", error);

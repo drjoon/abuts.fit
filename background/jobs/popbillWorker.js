@@ -499,4 +499,9 @@ export function stopPopbillWorker() {
   console.log("[popbillWorker] Stopped");
 }
 
-export { getQueueStats };
+export function getQueueStats() {
+  return {
+    pending: queue.length,
+    processing: processingCount,
+  };
+}

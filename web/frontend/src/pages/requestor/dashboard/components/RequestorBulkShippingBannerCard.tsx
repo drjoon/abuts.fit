@@ -46,8 +46,14 @@ type ShippingItemApi = {
   tooth?: string;
   diameter?: string;
   status?: string;
-  status1?: string;
-  status2?: string;
+  stageKey?:
+    | "request"
+    | "cam"
+    | "production"
+    | "shipping"
+    | "completed"
+    | "cancel";
+  stageLabel?: string;
   shippingMode?: "normal" | "express";
   requestedShipDate?: string;
   shipDateYmd?: string | null;
@@ -307,7 +313,11 @@ export const RequestorBulkShippingBannerCard = ({
     if (Number.isNaN(n) || n < 10) return true;
 
     // 10mm 이상: 공정 단계가 CAM 이상(의뢰 단계 아님)이면 허용
-    const stage = it.status || it.status1 || "";
+    if (it.stageKey) {
+      return it.stageKey !== "request" && it.stageKey !== "cancel";
+    }
+
+    const status = it.status || "";
     return [
       "CAM",
       "가공전",
@@ -316,7 +326,8 @@ export const RequestorBulkShippingBannerCard = ({
       "발송",
       "배송대기",
       "배송중",
-    ].includes(stage);
+      "완료",
+    ].includes(status);
   };
 
   const patchShippingMode = async (

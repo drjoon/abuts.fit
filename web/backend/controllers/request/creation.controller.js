@@ -224,6 +224,9 @@ export async function createRequest(req, res) {
       tooth,
     });
 
+    const shippingMode = bodyRest.shippingMode || "normal";
+    const requestedAt = new Date();
+
     const newRequest = new Request({
       ...bodyRest,
       caseInfos: normalizedCaseInfos,
@@ -235,18 +238,33 @@ export async function createRequest(req, res) {
       price: computedPrice,
     });
 
-    // 생성 시점(의뢰일) 기준으로 도착 예정일을 확정 저장
+    // 원본 배송 옵션 저장
+    newRequest.originalShipping = {
+      mode: shippingMode,
+      requestedAt,
+    };
+
+    // 최종 배송 옵션 초기화 (처음에는 원본과 동일)
+    newRequest.finalShipping = {
+      mode: shippingMode,
+      updatedAt: requestedAt,
+    };
+
+    // 생산 스케줄 계산 (시각 기반)
+    const { calculateInitialProductionSchedule } = await import(
+      "./production.utils.js"
+    );
+    const productionSchedule = calculateInitialProductionSchedule({
+      shippingMode,
+      maxDiameter: normalizedCaseInfos?.maxDiameter,
+      requestedAt,
+    });
+    newRequest.productionSchedule = productionSchedule;
+
+    // 하위 호환성을 위해 timeline.estimatedCompletion도 설정 (YYYY-MM-DD)
     newRequest.timeline = newRequest.timeline || {};
-    if (!newRequest.timeline.estimatedCompletion) {
-      const baseYmd = getTodayYmdInKst();
-      const etaDate = await resolveEstimatedCompletionDate({
-        baseYmd,
-        shippingMode: newRequest.shippingMode || "normal",
-        requestedShipDate: newRequest.requestedShipDate,
-        maxDiameter: newRequest.caseInfos?.maxDiameter,
-      });
-      if (etaDate) newRequest.timeline.estimatedCompletion = etaDate;
-    }
+    newRequest.timeline.estimatedCompletion =
+      productionSchedule.estimatedDelivery.toISOString().slice(0, 10);
 
     newRequest.caseInfos = newRequest.caseInfos || {};
     if (newRequest.caseInfos?.file?.s3Key) {
@@ -1037,7 +1055,14 @@ export async function createRequestsFromDraft(req, res) {
           duplicates.map((d) => [String(d.caseId || ""), d])
         );
 
+        const { calculateInitialProductionSchedule } = await import(
+          "./production.utils.js"
+        );
+
         for (const item of preparedCasesForCreate) {
+          const shippingMode = item.shippingMode || "normal";
+          const requestedAt = new Date();
+
           const newRequest = new Request({
             requestor: req.user._id,
             requestorOrganizationId:
@@ -1046,22 +1071,32 @@ export async function createRequestsFromDraft(req, res) {
                 : null,
             caseInfos: item.caseInfosWithFile,
             price: item.computedPrice,
-            shippingMode: item.shippingMode,
-            requestedShipDate: item.requestedShipDate,
           });
 
-          // 생성 시점 기준으로 도착 예정일을 확정 저장
+          // 원본 배송 옵션 저장
+          newRequest.originalShipping = {
+            mode: shippingMode,
+            requestedAt,
+          };
+
+          // 최종 배송 옵션 초기화
+          newRequest.finalShipping = {
+            mode: shippingMode,
+            updatedAt: requestedAt,
+          };
+
+          // 생산 스케줄 계산 (시각 기반)
+          const productionSchedule = calculateInitialProductionSchedule({
+            shippingMode,
+            maxDiameter: item.caseInfosWithFile?.maxDiameter,
+            requestedAt,
+          });
+          newRequest.productionSchedule = productionSchedule;
+
+          // 하위 호환성을 위해 timeline.estimatedCompletion도 설정 (YYYY-MM-DD)
           newRequest.timeline = newRequest.timeline || {};
-          if (!newRequest.timeline.estimatedCompletion) {
-            const baseYmd = getTodayYmdInKst();
-            const etaDate = await resolveEstimatedCompletionDate({
-              baseYmd,
-              shippingMode: newRequest.shippingMode || "normal",
-              requestedShipDate: newRequest.requestedShipDate,
-              maxDiameter: newRequest.caseInfos?.maxDiameter,
-            });
-            if (etaDate) newRequest.timeline.estimatedCompletion = etaDate;
-          }
+          newRequest.timeline.estimatedCompletion =
+            productionSchedule.estimatedDelivery.toISOString().slice(0, 10);
 
           // 완료된 기존 의뢰에 대한 재의뢰(리메이크): referenceIds에 기존 requestId를 남긴다.
           if (duplicateResolution && !duplicateResolutions) {
