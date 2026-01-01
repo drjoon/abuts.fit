@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -183,6 +183,11 @@ export const RequestorDashboardPage = () => {
       return res.data;
     },
     retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
+    enabled: !!token,
   });
 
   const {
@@ -194,7 +199,7 @@ export const RequestorDashboardPage = () => {
     queryKey: ["requestor-bulk-shipping"],
     queryFn: async () => {
       const res = await apiFetch<any>({
-        path: `/api/requests/my/bulk-shipping`,
+        path: "/api/requests/my/bulk-shipping",
         method: "GET",
         token,
         headers: token
@@ -208,7 +213,24 @@ export const RequestorDashboardPage = () => {
       }
       return res.data;
     },
+    retry: false,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
+    enabled: !!token,
   });
+
+  const refreshDashboard = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: ["requestor-dashboard-summary-page"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["requestor-my-requests"],
+    });
+    void refetchSummary();
+    void refetchBulk();
+  }, [queryClient, refetchBulk, refetchSummary]);
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
 
@@ -310,14 +332,7 @@ export const RequestorDashboardPage = () => {
       } catch {}
 
       // UI는 즉시 해제하고, 데이터 갱신은 백그라운드에서 처리
-      void queryClient.invalidateQueries({
-        queryKey: ["requestor-dashboard-summary-page"],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["requestor-my-requests"],
-      });
-      void refetchSummary();
-      void refetchBulk();
+      refreshDashboard();
     } catch (error) {
       console.error("의뢰 취소 중 오류", error);
       toast({
@@ -568,12 +583,7 @@ export const RequestorDashboardPage = () => {
                 await res.raw.text().catch(() => "")
               );
             } else {
-              await queryClient.invalidateQueries({
-                queryKey: ["requestor-dashboard-summary-page"],
-              });
-              await queryClient.invalidateQueries({
-                queryKey: ["requestor-my-requests"],
-              });
+              await refreshDashboard();
             }
           } catch (e) {
             console.error("의뢰 수정 중 오류", e);

@@ -51,7 +51,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
 
             return (
               <div
-                key={bucket.diameter}
+                key={`${bucket.diameter}-${index}`}
                 className="flex flex-col items-center gap-1 w-16"
                 title="지금 의뢰 시 예상 도착일을 표시합니다."
               >

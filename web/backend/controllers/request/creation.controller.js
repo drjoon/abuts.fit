@@ -3,6 +3,7 @@ import Request from "../../models/request.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import ClinicImplantPreset from "../../models/clinicImplantPreset.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import {
   getRequestorOrgId,
   normalizeCaseInfosImplantFields,
@@ -644,12 +645,33 @@ export async function createRequestsFromDraft(req, res) {
       }))
       .filter((k) => k.clinicName && k.patientName && k.tooth);
 
+    // 동일 제출 내 중복(치과/환자/치아) 방지
     const tupleByKey = new Map();
+    const duplicateInPayload = [];
     for (const item of keyTuplesRaw) {
       const key = `${item.clinicName}|${item.patientName}|${item.tooth}`;
       if (!tupleByKey.has(key)) {
         tupleByKey.set(key, item);
+      } else {
+        duplicateInPayload.push(item);
       }
+    }
+
+    if (duplicateInPayload.length > 0) {
+      return res.status(400).json({
+        success: false,
+        code: "DUPLICATE_IN_PAYLOAD",
+        message:
+          "제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다. 중복 항목을 제거하고 다시 제출해주세요.",
+        data: {
+          duplicates: duplicateInPayload.map((d) => ({
+            caseId: d.caseId,
+            clinicName: d.clinicName,
+            patientName: d.patientName,
+            tooth: d.tooth,
+          })),
+        },
+      });
     }
 
     const keyTuples = Array.from(tupleByKey.values());
@@ -892,10 +914,29 @@ export async function createRequestsFromDraft(req, res) {
           }
 
           const existingStatus = String(existingDoc.status || "");
+          const existingStage = String(
+            existingDoc.manufacturerStage || ""
+          ).trim();
+          const stageOrder = {
+            의뢰: 0,
+            CAM: 1,
+            생산: 2,
+            발송: 3,
+            완료: 4,
+          };
+          const currentStageOrder =
+            stageOrder[existingStage] ?? stageOrder[existingStatus] ?? 0;
           if (strategy === "replace") {
             if (existingStatus === "완료") {
               const err = new Error(
                 "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요."
+              );
+              err.statusCode = 400;
+              throw err;
+            }
+            if (currentStageOrder > 1) {
+              const err = new Error(
+                "생산 이후 단계에서는 기존 의뢰를 교체할 수 없습니다."
               );
               err.statusCode = 400;
               throw err;
@@ -975,9 +1016,28 @@ export async function createRequestsFromDraft(req, res) {
             }
 
             const existingStatus = String(existingDoc.status || "");
+            const existingStage = String(
+              existingDoc.manufacturerStage || ""
+            ).trim();
+            const stageOrder = {
+              의뢰: 0,
+              CAM: 1,
+              생산: 2,
+              발송: 3,
+              완료: 4,
+            };
+            const currentStageOrder =
+              stageOrder[existingStage] ?? stageOrder[existingStatus] ?? 0;
             if (existingStatus === "완료") {
               const err = new Error(
                 "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요."
+              );
+              err.statusCode = 400;
+              throw err;
+            }
+            if (currentStageOrder > 1) {
+              const err = new Error(
+                "생산 이후 단계에서는 기존 의뢰를 교체할 수 없습니다."
               );
               err.statusCode = 400;
               throw err;
@@ -1215,39 +1275,198 @@ export async function createRequestsFromDraft(req, res) {
   }
 }
 
-// 동일 환자/치아 커스텀 어벗 의뢰 존재 여부 확인 (재의뢰 판단용)
 export async function hasDuplicateCase(req, res) {
   try {
-    const requestFilter = await buildRequestorOrgScopeFilter(req);
-    const patientName = (req.query.patientName || "").trim();
-    const tooth = (req.query.tooth || "").trim();
-    const clinicName = (req.query.clinicName || "").trim();
+    const { fileName } = req.query;
 
-    if (!patientName || !tooth || !clinicName) {
+    // 중복 체크는 “조회 화면 권한”과 별개로 조직 단위로 판단해야 한다.
+    // - staff 계정이라도 같은 조직의 기존 의뢰 진행 상태를 기준으로 업로드를 제한해야 함
+    // - 레거시 데이터(requestorOrganizationId 누락)도 requestor(member) 기준으로 포함
+    let requestFilter = {};
+    if (req?.user?.role === "requestor") {
+      const orgId = getRequestorOrgId(req);
+      if (orgId && Types.ObjectId.isValid(orgId)) {
+        const org = await RequestorOrganization.findById(orgId)
+          .select({ owner: 1, owners: 1, members: 1 })
+          .lean();
+
+        const memberIdsRaw = [
+          String(org?.owner || ""),
+          ...(Array.isArray(org?.owners)
+            ? org.owners.map((id) => String(id))
+            : []),
+          ...(Array.isArray(org?.members)
+            ? org.members.map((id) => String(id))
+            : []),
+        ]
+          .filter((id) => Types.ObjectId.isValid(id))
+          .map((id) => new Types.ObjectId(id));
+
+        requestFilter = {
+          $or: [
+            { requestorOrganizationId: new Types.ObjectId(orgId) },
+            { requestor: { $in: memberIdsRaw } },
+          ],
+        };
+      } else {
+        requestFilter = { requestor: req.user._id };
+      }
+    }
+
+    if (!fileName) {
       return res.status(400).json({
         success: false,
-        message: "patientName, tooth, clinicName은 필수입니다.",
+        message: "fileName은 필수입니다.",
       });
     }
 
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 90);
 
-    const existing = await Request.findOne({
+    const normalizeFileName = (v) => {
+      if (!v) return "";
+      const s = String(v);
+      let candidate = s;
+      try {
+        const hasHangul = /[가-힣]/.test(s);
+        const bytes = new Uint8Array(
+          Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff)
+        );
+        const decoded = new TextDecoder("utf-8").decode(bytes);
+        const decodedHasHangul = /[가-힣]/.test(decoded);
+        candidate = !hasHangul && decodedHasHangul ? decoded : s;
+      } catch {
+        candidate = s;
+      }
+
+      const base = String(candidate)
+        .replace(/\\/g, "/")
+        .split("/")
+        .filter(Boolean)
+        .slice(-1)[0];
+
+      return base
+        .normalize("NFC")
+        .replace(/\.[^/.]+$/, "")
+        .trim()
+        .toLowerCase();
+    };
+
+    const normalizedFileName = normalizeFileName(fileName);
+
+    // 모든 Request를 검색하여 파일명 매칭 확인
+    const allRequests = await Request.find({
       ...requestFilter,
-      "caseInfos.patientName": patientName,
-      "caseInfos.tooth": tooth,
-      "caseInfos.clinicName": clinicName,
-      "caseInfos.implantSystem": { $exists: true, $ne: "" },
       status: { $ne: "취소" },
       createdAt: { $gte: cutoff },
     })
-      .select({ _id: 1 })
+      .select({
+        _id: 1,
+        requestId: 1,
+        status: 1,
+        manufacturerStage: 1,
+        caseInfos: 1,
+        price: 1,
+        createdAt: 1,
+      })
       .lean();
+
+    const stageOrderMap = {
+      의뢰: 0,
+      의뢰접수: 0,
+      CAM: 1,
+      가공전: 1,
+      생산: 2,
+      가공후: 2,
+      발송: 3,
+      배송대기: 3,
+      배송중: 3,
+      완료: 4,
+    };
+
+    const computeStageOrder = (doc) => {
+      const st = String(doc?.manufacturerStage || "").trim();
+      const status = String(doc?.status || "").trim();
+      return stageOrderMap[st] ?? stageOrderMap[status] ?? 0;
+    };
+
+    let existing = null;
+    let existingStageOrder = -1;
+    let existingCreatedAt = null;
+
+    for (const r of allRequests) {
+      const caseInfosList = Array.isArray(r?.caseInfos)
+        ? r.caseInfos
+        : r?.caseInfos
+        ? [r.caseInfos]
+        : [];
+
+      const matched = caseInfosList.some((ci) => {
+        const storedName =
+          ci?.file?.fileName ||
+          ci?.file?.originalName ||
+          ci?.fileName ||
+          ci?.file_name;
+        const normalizedStoredName = normalizeFileName(storedName);
+        if (!normalizedStoredName) return false;
+        return normalizedStoredName === normalizedFileName;
+      });
+
+      if (!matched) continue;
+
+      const so = computeStageOrder(r);
+      const ca = r?.createdAt ? new Date(r.createdAt) : null;
+      const shouldReplace =
+        existing == null ||
+        so > existingStageOrder ||
+        (so === existingStageOrder &&
+          ca &&
+          (!existingCreatedAt || ca.getTime() > existingCreatedAt.getTime()));
+
+      if (shouldReplace) {
+        existing = r;
+        existingStageOrder = so;
+        existingCreatedAt = ca;
+      }
+    }
+
+    if (!existing) {
+      // 매칭되는 파일명이 없으면 중복 아님
+      return res.status(200).json({
+        success: true,
+        data: {
+          exists: false,
+          hasDuplicate: false,
+          stageOrder: -1,
+          status: null,
+          manufacturerStage: null,
+          existingRequest: null,
+        },
+      });
+    }
+
+    const stageOrder = existing ? computeStageOrder(existing) : -1;
 
     return res.status(200).json({
       success: true,
-      data: { hasDuplicate: Boolean(existing) },
+      data: {
+        exists: Boolean(existing),
+        hasDuplicate: Boolean(existing),
+        stageOrder,
+        status: existing?.status,
+        manufacturerStage: existing?.manufacturerStage,
+        existingRequest: existing
+          ? {
+              _id: existing._id,
+              requestId: existing.requestId,
+              status: existing.status,
+              manufacturerStage: existing.manufacturerStage,
+              caseInfos: existing.caseInfos,
+              price: existing.price ? { amount: existing.price.amount } : null,
+              createdAt: existing.createdAt,
+            }
+          : null,
+      },
     });
   } catch (error) {
     console.error("Error in hasDuplicateCase:", error);

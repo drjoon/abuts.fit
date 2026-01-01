@@ -181,26 +181,8 @@ export const useRequestFileHandlers = ({
         });
 
         if (params.status === "APPROVED") {
-          if (stageKey === "request") {
-            setSearchParams(
-              (prev) => {
-                const next = new URLSearchParams(prev);
-                next.set("stage", "cam");
-                return next;
-              },
-              { replace: true }
-            );
-          }
-          if (stageKey === "cam") {
-            setSearchParams(
-              (prev) => {
-                const next = new URLSearchParams(prev);
-                next.set("stage", "machining");
-                return next;
-              },
-              { replace: true }
-            );
-          }
+          // 자동 탭 이동을 막기 위해 stage 변경을 하지 않는다.
+          // 필요 시 수동으로 탭 전환하도록 유지
         }
 
         setPreviewOpen(false);

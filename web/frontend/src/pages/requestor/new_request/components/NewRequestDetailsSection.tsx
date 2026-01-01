@@ -339,9 +339,55 @@ export function NewRequestDetailsSection({
                                     nextIndex = index;
                                   }
 
-                                  setFileVerificationStatus(nextStatus);
-                                  setSelectedPreviewIndex(nextIndex);
-                                  setHighlightUnverifiedArrows(false);
+                                  // 중복 의뢰 체크 (확인 전 -> 확인 후 이동 시점)
+                                  (async () => {
+                                    try {
+                                      const query = new URLSearchParams({
+                                        clinicName:
+                                          fileCaseInfos?.clinicName || "",
+                                        patientName:
+                                          fileCaseInfos?.patientName || "",
+                                        tooth: fileCaseInfos?.tooth || "",
+                                      }).toString();
+
+                                      const res = await fetch(
+                                        `/api/requests/check-duplicate?${query}`,
+                                        {
+                                          headers: {
+                                            Authorization: `Bearer ${localStorage.getItem(
+                                              "token"
+                                            )}`,
+                                          },
+                                        }
+                                      );
+
+                                      if (res.ok) {
+                                        const data = await res.json();
+                                        // CAM(status: CAM or 가공전) 이상 단계가 있으면 차단
+                                        if (
+                                          data.exists &&
+                                          data.stageOrder > 0
+                                        ) {
+                                          toast({
+                                            title: "중복 의뢰가 감지되었습니다",
+                                            description:
+                                              "이미 진행 중(CAM 이상)인 의뢰가 있습니다. 기존 의뢰를 확인해주세요.",
+                                            variant: "destructive",
+                                          });
+                                          return;
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.error(
+                                        "Duplicate check error:",
+                                        err
+                                      );
+                                    }
+
+                                    setFileVerificationStatus(nextStatus);
+                                    setSelectedPreviewIndex(nextIndex);
+                                    setHighlightUnverifiedArrows(false);
+                                  })();
                                 }}
                                 title="확인 완료"
                               >

@@ -376,6 +376,40 @@ export const useNewRequestFilesV2 = ({
             continue;
           }
 
+          // [추가] 업로드 전 파일명 기반 중복 체크 (생산 이후 단계 차단)
+          const parsed = parseFilenameWithRules(tempFile.originalName);
+          if (parsed.clinicName && parsed.patientName && parsed.tooth) {
+            try {
+              const query = new URLSearchParams({
+                clinicName: parsed.clinicName,
+                patientName: parsed.patientName,
+                tooth: parsed.tooth,
+              }).toString();
+              const checkRes = await fetch(
+                `${API_BASE_URL}/requests/my/has-duplicate?${query}`,
+                {
+                  headers: getHeaders(),
+                }
+              );
+              if (checkRes.ok) {
+                const checkData = await checkRes.json();
+                const { exists, stageOrder } = checkData.data || {};
+                if (exists && stageOrder > 1) {
+                  // 생산 이후 단계(stageOrder > 1: 생산, 발송, 완료)는 업로드 차단
+                  toast({
+                    title: "중복 의뢰 불가",
+                    description: `${parsed.patientName}(${parsed.tooth})님은 이미 생산 단계 이상으로 진행 중인 의뢰가 있어 추가할 수 없습니다.`,
+                    variant: "destructive",
+                    duration: 5000,
+                  });
+                  continue; // 다음 파일로 넘어가고 현재 파일은 Draft에 추가하지 않음
+                }
+              }
+            } catch (err) {
+              console.error("Duplicate check error during upload:", err);
+            }
+          }
+
           try {
             const res = await fetch(
               `${API_BASE_URL}/requests/drafts/${draftId}/files`,
@@ -629,11 +663,17 @@ export const useNewRequestFilesV2 = ({
           }
         );
 
+        let localOnlyMessage: string | null = null;
         if (!res.ok) {
-          throw new Error(`Failed to delete file: ${res.status}`);
+          if (res.status === 404) {
+            localOnlyMessage = "임시 의뢰가 만료되어 로컬 파일만 정리했습니다.";
+          } else {
+            localOnlyMessage =
+              "서버와 동기화되지 않았지만 로컬 파일을 정리했습니다.";
+          }
         }
 
-        // 상태 동기화
+        // 상태 동기화 (서버 성공/실패와 무관하게 로컬은 제거)
         setDraftFiles((prev) =>
           prev.filter((ci) => ci._id !== draftCaseInfoId)
         );
@@ -649,11 +689,19 @@ export const useNewRequestFilesV2 = ({
           setSelectedPreviewIndex(selectedPreviewIndexRef.current - 1);
         }
 
-        toast({
-          title: "성공",
-          description: "파일이 삭제되었습니다.",
-          duration: 2000,
-        });
+        if (localOnlyMessage) {
+          toast({
+            title: "삭제 완료",
+            description: localOnlyMessage,
+            duration: 2000,
+          });
+        } else {
+          toast({
+            title: "성공",
+            description: "파일이 삭제되었습니다.",
+            duration: 2000,
+          });
+        }
       } catch (err) {
         console.error("Delete error:", err);
         toast({

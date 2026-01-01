@@ -181,6 +181,12 @@ export const useAuthStore = create<AuthState>((set, get) => {
         } catch {
           // ignore
         }
+        try {
+          localStorage.setItem(AUTH_TOKEN_KEY, mockToken);
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(mockUser));
+        } catch {
+          // ignore localStorage errors
+        }
         set({
           user: mockUser,
           isAuthenticated: true,

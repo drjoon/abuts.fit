@@ -40,14 +40,18 @@ export async function getDiameterStats(req, res) {
     const role = req.user?.role || "public";
     const cacheKey = CacheKeys.diameterStats(userId, role);
 
-    // 캐시 확인
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.status(200).json({
-        success: true,
-        data: { diameterStats: cached },
-        cached: true,
-      });
+    const isManufacturer = role === "manufacturer";
+
+    // 캐시 확인 (제조사는 실시간 반영을 위해 캐시 사용 안 함)
+    if (!isManufacturer) {
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        return res.status(200).json({
+          success: true,
+          data: cached,
+          cached: true,
+        });
+      }
     }
 
     const leadDays = await getDeliveryEtaLeadDays();
@@ -57,8 +61,21 @@ export async function getDiameterStats(req, res) {
     };
 
     const filter =
-      req.user?.role === "requestor"
+      role === "requestor"
         ? { ...baseFilter, ...(await buildRequestorOrgScopeFilter(req)) }
+        : isManufacturer
+        ? {
+            $and: [
+              baseFilter,
+              {
+                $or: [
+                  { manufacturer: req.user._id },
+                  { manufacturer: null },
+                  { manufacturer: { $exists: false } },
+                ],
+              },
+            ],
+          }
         : baseFilter;
 
     // 집계 쿼리로 직경별 통계 계산 (메모리 사용량 대폭 감소)
@@ -114,6 +131,7 @@ export async function getDiameterStats(req, res) {
               $cond: [{ $gt: ["$caseInfos.maxDiameter", 10] }, 1, 0],
             },
           },
+          totalCount: { $sum: 1 },
         },
       },
     ]);
@@ -123,6 +141,7 @@ export async function getDiameterStats(req, res) {
       d8Count: 0,
       d10Count: 0,
       d10plusCount: 0,
+      totalCount: 0,
     };
 
     const diameterStats = [
@@ -136,12 +155,18 @@ export async function getDiameterStats(req, res) {
       },
     ];
 
-    // 캐시 저장 (5분)
-    cache.set(cacheKey, diameterStats, CacheTTL.LONG);
+    // 캐시 저장 (5분) — 제조사는 생략
+    if (!isManufacturer) {
+      cache.set(
+        cacheKey,
+        { diameterStats, total: result.totalCount },
+        CacheTTL.LONG
+      );
+    }
 
     return res.status(200).json({
       success: true,
-      data: { diameterStats },
+      data: { diameterStats, total: result.totalCount },
       cached: false,
     });
   } catch (error) {
@@ -163,15 +188,15 @@ export async function getMyDashboardSummary(req, res) {
     const userId = req.user?._id?.toString();
     const cacheKey = CacheKeys.dashboardSummary(userId, period);
 
-    // 캐시 확인 (1분)
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.status(200).json({
-        success: true,
-        data: cached,
-        cached: true,
-      });
-    }
+    // 캐시 비활성화 (실시간 반영 위해)
+    // const cached = cache.get(cacheKey);
+    // if (cached) {
+    //   return res.status(200).json({
+    //     success: true,
+    //     data: cached,
+    //     cached: true,
+    //   });
+    // }
 
     const requestFilter = await buildRequestorOrgScopeFilter(req);
 
@@ -498,8 +523,8 @@ export async function getMyDashboardSummary(req, res) {
       recentRequests,
     };
 
-    // 캐시 저장 (1분)
-    cache.set(cacheKey, responseData, CacheTTL.MEDIUM);
+    // 캐시 저장 비활성화 (실시간 반영 위해)
+    // cache.set(cacheKey, responseData, CacheTTL.MEDIUM);
 
     return res.status(200).json({
       success: true,

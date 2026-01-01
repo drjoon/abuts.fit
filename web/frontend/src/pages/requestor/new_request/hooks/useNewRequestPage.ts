@@ -37,6 +37,14 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     number | null
   >(null);
 
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[] | null>(
+    null
+  );
+
+  const [pendingUploadDecisions, setPendingUploadDecisions] = useState<
+    Record<string, { strategy: "replace"; existingRequestId: string }>
+  >({});
+
   const clinicStorageKey = useMemo(() => {
     const userId = user?.id ? String(user.id) : "guest";
     return `${NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX}${userId}`;
@@ -81,10 +89,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       prevDraftIdRef.current !== draftId
     ) {
       // Draft가 바뀌었으면 파일/케이스 관련 상태를 즉시 비움
-      console.log("[useNewRequestPage] draftId changed, clearing files", {
-        prev: prevDraftIdRef.current,
-        next: draftId,
-      });
       setFiles([]);
       setDraftFiles([]);
       setSelectedPreviewIndex(null);
@@ -261,6 +265,129 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     caseInfosMap,
     updateCaseInfos,
   });
+
+  const handleUploadUnchecked = useCallback(
+    async (incomingFiles: File[]) => {
+      await rawHandleUpload(incomingFiles);
+    },
+    [rawHandleUpload]
+  );
+
+  const handleUpload = useCallback(
+    async (incomingFiles: File[]) => {
+      if (!token || !incomingFiles || incomingFiles.length === 0) {
+        await rawHandleUpload(incomingFiles);
+        return;
+      }
+
+      const modalDuplicates: any[] = [];
+      const blockedFiles: File[] = [];
+      const eligibleFiles: File[] = [];
+
+      for (const f of incomingFiles) {
+        try {
+          const query = new URLSearchParams({
+            fileName: f.name,
+          }).toString();
+
+          console.log("[중복체크] API 호출", { fileName: f.name, query });
+
+          const res = await request<any>({
+            path: `/api/requests/my/has-duplicate?${query}`,
+            method: "GET",
+            token,
+          });
+
+          console.log("[중복체크] API 응답", { ok: res.ok, data: res.data });
+
+          if (!res.ok) {
+            console.log("[중복체크] API 실패");
+            continue;
+          }
+
+          const body: any = res.data || {};
+          const data = body?.data || body;
+
+          console.log("[중복체크] 데이터 파싱", {
+            exists: data?.exists,
+            stageOrder: data?.stageOrder,
+          });
+
+          if (!data?.exists) {
+            console.log("[중복체크] 중복 없음");
+            eligibleFiles.push(f);
+            continue;
+          }
+
+          const stageOrder = Number(data?.stageOrder);
+          const existingRequest = data?.existingRequest;
+
+          console.log("[중복체크] 중복 발견!", {
+            stageOrder,
+            status: existingRequest?.status,
+          });
+
+          // 0: 의뢰, 1: CAM, 2: 생산, 3: 발송, 4: 완료
+          if (stageOrder === 2 || stageOrder === 3) {
+            console.log("[중복체크] 생산/발송 단계 -> 차단");
+            blockedFiles.push(f);
+            continue;
+          }
+
+          if (stageOrder === 0 || stageOrder === 1) {
+            console.log("[중복체크] 의뢰/CAM 단계 -> 모달 추가");
+            modalDuplicates.push({
+              caseId: `${f.name}:${f.size}`,
+              fileName: f.name,
+              existingRequest,
+            });
+            eligibleFiles.push(f);
+            continue;
+          }
+
+          // 완료(4) 등은 여기서 차단하지 않는다. (완료 후 재의뢰 정책은 제출 시점에서 처리)
+          eligibleFiles.push(f);
+        } catch (err) {
+          console.error("[중복체크] 에러", err);
+          // 중복체크가 실패하더라도 UX를 막지 않고 업로드는 허용한다.
+          eligibleFiles.push(f);
+        }
+      }
+
+      console.log("[중복체크] 최종 결과", {
+        blockedCount: blockedFiles.length,
+        modalCount: modalDuplicates.length,
+        eligibleCount: eligibleFiles.length,
+      });
+
+      if (blockedFiles.length > 0) {
+        console.log("[중복체크] 차단 토스트 표시");
+        toast({
+          title: "중복 의뢰 불가",
+          description:
+            "생산/발송 단계의 기존 의뢰는 변경/취소할 수 없습니다. 기존 의뢰를 확인해주세요.",
+          variant: "destructive",
+          duration: 4500,
+        });
+      }
+
+      if (eligibleFiles.length === 0) {
+        return;
+      }
+
+      if (modalDuplicates.length > 0) {
+        setDuplicatePrompt({
+          mode: "active",
+          duplicates: modalDuplicates,
+        });
+        setPendingUploadFiles(eligibleFiles);
+        return;
+      }
+
+      await rawHandleUpload(eligibleFiles);
+    },
+    [rawHandleUpload, setDuplicatePrompt, setPendingUploadFiles, toast, token]
+  );
 
   const setupNextPath = "/dashboard/new-request";
 
@@ -439,13 +566,6 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     user?.id,
   ]);
 
-  const handleUpload = useCallback(
-    async (filesToUpload: File[]) => {
-      await rawHandleUpload(filesToUpload);
-    },
-    [rawHandleUpload]
-  );
-
   // Draft에서 caseInfos 동기화 (임플란트 정보 -> Draft)
   // 주의: 이 동기화는 사용자가 명시적으로 임플란트 정보를 선택할 때만 호출되어야 함
   // 자동 동기화는 무한 루프를 유발할 수 있으므로 제거됨
@@ -560,8 +680,37 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const handleSubmit = useCallback(async () => {
     const ok = await ensureSetupForUpload();
     if (!ok) return;
+
+    const decisionKeys = Object.keys(pendingUploadDecisions || {});
+    if (decisionKeys.length > 0) {
+      const resolutions = (files || [])
+        .map((f) => {
+          const fileKey = `${f.name}:${f.size}`;
+          const decision = pendingUploadDecisions[fileKey];
+          const caseId = String((f as any)?._draftCaseInfoId || "").trim();
+          if (!decision || !caseId) return null;
+          return {
+            caseId,
+            strategy: decision.strategy,
+            existingRequestId: decision.existingRequestId,
+          };
+        })
+        .filter(Boolean) as any[];
+
+      if (resolutions.length > 0) {
+        await rawHandleSubmitWithDuplicateResolutions(resolutions as any);
+        return;
+      }
+    }
+
     await rawHandleSubmit();
-  }, [ensureSetupForUpload, rawHandleSubmit]);
+  }, [
+    ensureSetupForUpload,
+    files,
+    pendingUploadDecisions,
+    rawHandleSubmit,
+    rawHandleSubmitWithDuplicateResolutions,
+  ]);
 
   const handleSubmitWithDuplicateResolution = useCallback(
     async (opts: {
@@ -628,6 +777,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     handleDragLeave: isReady ? handleDragLeave : () => {},
     handleDrop: isReady ? handleDrop : () => {},
     handleUpload: isReady ? handleUpload : () => {},
+    handleUploadUnchecked: isReady ? handleUploadUnchecked : () => {},
     handleRemoveFile: isReady ? handleRemoveFile : () => {},
 
     // 임플란트 정보
@@ -656,5 +806,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     selectedRequest,
     duplicatePrompt,
     setDuplicatePrompt,
+
+    pendingUploadFiles,
+    setPendingUploadFiles,
+    pendingUploadDecisions,
+    setPendingUploadDecisions,
   };
 };

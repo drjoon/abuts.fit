@@ -441,9 +441,27 @@ export async function getAllRequests(req, res) {
     const skip = (page - 1) * limit;
 
     // 필터링 파라미터
+    const role = req.user?.role;
     let filter = {};
     if (req.query.status) filter.status = req.query.status;
     if (req.query.implantType) filter.implantType = req.query.implantType;
+
+    // 제조사: 본인에게 배정되었거나 미배정된 의뢰 + 취소 제외
+    if (role === "manufacturer") {
+      filter = {
+        $and: [
+          filter,
+          { status: { $ne: "취소" } },
+          {
+            $or: [
+              { manufacturer: req.user._id },
+              { manufacturer: null },
+              { manufacturer: { $exists: false } },
+            ],
+          },
+        ],
+      };
+    }
 
     // 개발 환경 + MOCK_DEV_TOKEN 인 경우, 기존 시드 데이터 확인을 위해
     // requestor 필터를 제거하고 나머지 필터만 적용한다.
@@ -821,12 +839,17 @@ export async function updateRequestStatus(req, res) {
       });
     }
 
-    // 취소는 의뢰 또는 CAM 상태에서만 가능
-    if (status === "취소" && request.status !== "의뢰") {
-      return res.status(400).json({
-        success: false,
-        message: "의뢰 단계에서만 취소할 수 있습니다.",
-      });
+    // 취소는 의뢰 또는 CAM 상태에서만 가능 (생산 단계부터는 취소 불가)
+    if (status === "취소") {
+      const currentStatus = String(request.status || "").trim();
+      const allowedCancelStatuses = ["의뢰", "의뢰접수", "CAM", "가공전"];
+      if (!allowedCancelStatuses.includes(currentStatus)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "의뢰 또는 CAM 단계에서만 취소할 수 있습니다. 생산 단계부터는 취소가 불가능합니다.",
+        });
+      }
     }
 
     // 의뢰 상태 변경 (status1/status2 동기화 포함)

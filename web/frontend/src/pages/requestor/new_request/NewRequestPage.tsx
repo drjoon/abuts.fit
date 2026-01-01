@@ -41,6 +41,7 @@ export const NewRequestPage = () => {
     handleDragOver,
     handleDragLeave,
     handleUpload,
+    handleUploadUnchecked,
     handleRemoveFile,
     typeOptions,
     implantManufacturer,
@@ -62,6 +63,10 @@ export const NewRequestPage = () => {
     handleAddOrSelectClinic,
     duplicatePrompt,
     setDuplicatePrompt,
+    pendingUploadFiles,
+    setPendingUploadFiles,
+    pendingUploadDecisions,
+    setPendingUploadDecisions,
     handleSubmitWithDuplicateResolution,
     handleSubmitWithDuplicateResolutions,
     draftStatus,
@@ -274,6 +279,59 @@ export const NewRequestPage = () => {
     caseId: string;
     existingRequestId: string;
   }) => {
+    // 업로드 전 중복 체크에서 뜬 모달인 경우:
+    // - skip(기존의뢰 유지): 업로드 자체를 진행하지 않음
+    // - replace(새의뢰로 교체): 업로드 진행 + 제출 시 duplicateResolutions 반영을 위해 decision 저장
+    const isPreUploadCase = String(choice.caseId || "").includes(":");
+    if (
+      isPreUploadCase &&
+      pendingUploadFiles &&
+      pendingUploadFiles.length > 0
+    ) {
+      const fileKey = String(choice.caseId || "");
+      const nextPendingUploadFiles =
+        choice.strategy === "skip"
+          ? (pendingUploadFiles || []).filter(
+              (f) => `${f.name}:${f.size}` !== fileKey
+            )
+          : [...pendingUploadFiles];
+
+      if (choice.strategy === "replace") {
+        setPendingUploadDecisions((prev) => ({
+          ...(prev || {}),
+          [fileKey]: {
+            strategy: "replace",
+            existingRequestId: choice.existingRequestId,
+          },
+        }));
+      }
+
+      if (choice.strategy === "skip") {
+        setPendingUploadDecisions((prev) => {
+          const next = { ...(prev || {}) };
+          delete next[fileKey];
+          return next;
+        });
+      }
+
+      const totalDup = duplicatePrompt?.duplicates?.length || 0;
+      const nextCursor = duplicateCursor + 1;
+
+      if (nextCursor < totalDup) {
+        setPendingUploadFiles(nextPendingUploadFiles);
+        setDuplicateCursor(nextCursor);
+        return;
+      }
+
+      setPendingUploadFiles(null);
+      setDuplicatePrompt(null);
+
+      if (nextPendingUploadFiles.length > 0) {
+        await handleUploadUnchecked(nextPendingUploadFiles);
+      }
+      return;
+    }
+
     const nextResolutions = (() => {
       const next = (duplicateResolutions || []).filter(
         (r) => r.caseId !== choice.caseId
