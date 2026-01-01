@@ -25,10 +25,38 @@ dotenv.config({ path: backgroundEnvPath });
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
 const WORKER_URL = process.env.WORKER_STATUS_URL || "http://localhost:4001";
 
-// 테스트용 사용자 인증 정보
+// 테스트용 사용자 인증 정보 (reset-and-seed.js 참조)
 let adminToken = "";
 let requestorToken = "";
 let manufacturerToken = "";
+
+// 테스트 계정 정보
+const TEST_ACCOUNTS = {
+  requestorOwner: {
+    email: "requestor.owner@demo.abuts.fit",
+    password: "Rq!8zY#4fQ@7nC5$",
+  },
+  requestorStaff: {
+    email: "requestor.staff@demo.abuts.fit",
+    password: "Rs!9xT#5gA@6mD4$",
+  },
+  manufacturerOwner: {
+    email: "manufacturer.owner@demo.abuts.fit",
+    password: "Mo!7vL#6pR@3sB8$",
+  },
+  manufacturerStaff: {
+    email: "manufacturer.staff@demo.abuts.fit",
+    password: "Ms!5kP#8wQ@2nZ7$",
+  },
+  adminOwner: {
+    email: "admin.owner@demo.abuts.fit",
+    password: "Ao!6fN#9rV@4cH2$",
+  },
+  adminStaff: {
+    email: "admin.staff@demo.abuts.fit",
+    password: "As!4mJ#7tK@9pW3$",
+  },
+};
 
 // 테스트 데이터
 let testRequestId = "";
@@ -83,24 +111,24 @@ async function authenticate() {
   try {
     // Admin 로그인
     const adminRes = await api.post("/api/auth/login", {
-      email: process.env.TEST_ADMIN_EMAIL || "admin@test.com",
-      password: process.env.TEST_ADMIN_PASSWORD || "admin123",
+      email: TEST_ACCOUNTS.adminOwner.email,
+      password: TEST_ACCOUNTS.adminOwner.password,
     });
     adminToken = adminRes.data.token;
     logSuccess(`Admin 로그인 성공: ${adminRes.data.user.email}`);
 
     // Requestor 로그인
     const requestorRes = await api.post("/api/auth/login", {
-      email: process.env.TEST_REQUESTOR_EMAIL || "requestor@test.com",
-      password: process.env.TEST_REQUESTOR_PASSWORD || "requestor123",
+      email: TEST_ACCOUNTS.requestorOwner.email,
+      password: TEST_ACCOUNTS.requestorOwner.password,
     });
     requestorToken = requestorRes.data.token;
     logSuccess(`Requestor 로그인 성공: ${requestorRes.data.user.email}`);
 
     // Manufacturer 로그인
     const manufacturerRes = await api.post("/api/auth/login", {
-      email: process.env.TEST_MANUFACTURER_EMAIL || "manufacturer@test.com",
-      password: process.env.TEST_MANUFACTURER_PASSWORD || "manufacturer123",
+      email: TEST_ACCOUNTS.manufacturerOwner.email,
+      password: TEST_ACCOUNTS.manufacturerOwner.password,
     });
     manufacturerToken = manufacturerRes.data.token;
     logSuccess(`Manufacturer 로그인 성공: ${manufacturerRes.data.user.email}`);

@@ -26,6 +26,7 @@ import {
 } from "@/pages/manufacturer/cnc/components/CncReservationModal";
 import { CncReservationListModal } from "@/pages/manufacturer/cnc/components/CncReservationListModal";
 import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
+import { CncMaterialChangeModal } from "@/pages/manufacturer/cnc/components/CncMaterialChangeModal";
 
 export const CncDashboardPage = () => {
   const { user, token } = useAuthStore();
@@ -77,6 +78,10 @@ export const CncDashboardPage = () => {
 
   const [deleteTarget, setDeleteTarget] = useState<Machine | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
+  const [materialChangeModalOpen, setMaterialChangeModalOpen] = useState(false);
+  const [materialChangeTarget, setMaterialChangeTarget] =
+    useState<Machine | null>(null);
 
   const [tempHealthMap, setTempHealthMap] = useState<
     Record<string, HealthLevel>
@@ -295,6 +300,67 @@ export const CncDashboardPage = () => {
     setDeleteConfirmOpen(false);
     setDeleteTarget(null);
     setAddModalOpen(false);
+  };
+
+  const handleScheduleMaterialChange = async (data: {
+    targetTime: Date;
+    newDiameter: number;
+    newDiameterGroup: string;
+    notes?: string;
+  }) => {
+    if (!materialChangeTarget || !token) return;
+
+    const res = await fetch(
+      `/api/cnc-machines/${materialChangeTarget.uid}/schedule-material-change`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(data),
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error("소재 교체 예약에 실패했습니다.");
+    }
+
+    // 장비 목록 새로고침
+    const updatedMachines = await fetch("/api/cnc-machines", {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((r) => r.json());
+
+    if (updatedMachines.success) {
+      setMachines(updatedMachines.data);
+    }
+  };
+
+  const handleCancelMaterialChange = async () => {
+    if (!materialChangeTarget || !token) return;
+
+    const res = await fetch(
+      `/api/cnc-machines/${materialChangeTarget.uid}/schedule-material-change`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error("소재 교체 예약 취소에 실패했습니다.");
+    }
+
+    // 장비 목록 새로고침
+    const updatedMachines = await fetch("/api/cnc-machines", {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((r) => r.json());
+
+    if (updatedMachines.success) {
+      setMachines(updatedMachines.data);
+    }
   };
 
   return (
@@ -853,6 +919,20 @@ export const CncDashboardPage = () => {
           }}
           onOpenToolOffsetEditor={() => openToolOffsetEditor()}
           onSave={() => handleToolLifeSaveConfirm()}
+        />
+
+        <CncMaterialChangeModal
+          open={materialChangeModalOpen}
+          onClose={() => {
+            setMaterialChangeModalOpen(false);
+            setMaterialChangeTarget(null);
+          }}
+          machineId={materialChangeTarget?.uid || ""}
+          machineName={materialChangeTarget?.name || ""}
+          currentDiameter={8}
+          currentDiameterGroup="8"
+          onSchedule={handleScheduleMaterialChange}
+          onCancel={handleCancelMaterialChange}
         />
       </main>
     </div>
