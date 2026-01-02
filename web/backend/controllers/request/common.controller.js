@@ -17,27 +17,6 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 
-const mapManufacturerStage = (request) => {
-  const main = (request.status || "").trim();
-
-  switch (main) {
-    case "의뢰":
-    case "의뢰접수":
-      return "의뢰";
-    case "CAM":
-      return "CAM";
-    case "생산":
-      return "생산";
-    case "발송":
-    case "완료":
-      return "발송";
-    case "취소":
-      return "의뢰";
-    default:
-      return "의뢰";
-  }
-};
-
 const ensureReviewByStageDefaults = (request) => {
   request.caseInfos = request.caseInfos || {};
   request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
@@ -853,7 +832,7 @@ export async function updateRequestStatus(req, res) {
       }
     }
 
-    // 의뢰 상태 변경 (status1/status2 동기화 포함)
+    // 의뢰 상태 변경 (status2 동기화 포함)
     applyStatusMapping(request, status);
 
     // 신속 배송이 출고(배송중)로 전환되면, 그동안 쌓인 묶음(일반) 배송대기 건도 함께 출고 처리
@@ -873,8 +852,8 @@ export async function updateRequestStatus(req, res) {
         {
           $set: {
             status: "배송중",
-            status1: "배송",
             status2: "중",
+            manufacturerStage: "발송",
           },
         }
       );
@@ -1171,11 +1150,10 @@ export async function deleteCamFileAndRollback(req, res) {
     // camFile 제거, 상태 롤백
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.camFile = undefined;
-    request.status = "의뢰접수";
-    request.status1 = "가공";
-    request.status2 = "전";
+    request.status = "의뢰";
+    request.status2 = "없음";
     request.lotNumber = undefined; // 의뢰 단계로 복귀 시 로트번호 반납
-    request.manufacturerStage = mapManufacturerStage(request);
+    request.manufacturerStage = "의뢰";
 
     await request.save();
 
@@ -1424,15 +1402,14 @@ export async function deleteNcFileAndRollbackCam(req, res) {
     // 제조사 공정: 가공(중) -> CAM(가공/후) 또는 의뢰(의뢰접수)
     const isRollbackToRequest = req.query.nextStage === "request";
     if (isRollbackToRequest) {
-      request.status = "의뢰접수";
-      request.status1 = "가공";
-      request.status2 = "전";
+      request.status = "의뢰";
+      request.status2 = "없음";
+      request.manufacturerStage = "의뢰";
     } else {
-      request.status = "가공후";
-      request.status1 = "가공";
-      request.status2 = "후";
+      request.status = "CAM";
+      request.status2 = "없음";
+      request.manufacturerStage = "CAM";
     }
-    request.manufacturerStage = mapManufacturerStage(request);
 
     await request.save();
 

@@ -914,6 +914,7 @@ export async function createRequestsFromDraft(req, res) {
           }
 
           const existingStatus = String(existingDoc.status || "");
+          const existingStatus2 = String(existingDoc.status2 || "");
           const existingStage = String(
             existingDoc.manufacturerStage || ""
           ).trim();
@@ -925,9 +926,11 @@ export async function createRequestsFromDraft(req, res) {
             완료: 4,
           };
           const currentStageOrder =
-            stageOrder[existingStage] ?? stageOrder[existingStatus] ?? 0;
+            existingStatus2 === "완료"
+              ? 4
+              : stageOrder[existingStage] ?? stageOrder[existingStatus] ?? 0;
           if (strategy === "replace") {
-            if (existingStatus === "완료") {
+            if (existingStatus2 === "완료") {
               const err = new Error(
                 "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요."
               );
@@ -971,7 +974,7 @@ export async function createRequestsFromDraft(req, res) {
               );
             }
           } else if (strategy === "remake") {
-            if (existingStatus !== "완료") {
+            if (existingStatus2 !== "완료") {
               const err = new Error(
                 "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요."
               );
@@ -1078,7 +1081,7 @@ export async function createRequestsFromDraft(req, res) {
             if (!existingRequestId) continue;
 
             const existingDoc = await Request.findById(existingRequestId)
-              .select({ _id: 1, status: 1 })
+              .select({ _id: 1, status: 1, status2: 1 })
               .session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
@@ -1091,7 +1094,8 @@ export async function createRequestsFromDraft(req, res) {
               throw err;
             }
             const existingStatus = String(existingDoc.status || "");
-            if (existingStatus !== "완료") {
+            const existingStatus2 = String(existingDoc.status2 || "");
+            if (existingStatus2 !== "완료") {
               const err = new Error(
                 "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요."
               );
@@ -1364,6 +1368,7 @@ export async function hasDuplicateCase(req, res) {
         _id: 1,
         requestId: 1,
         status: 1,
+        status2: 1,
         manufacturerStage: 1,
         caseInfos: 1,
         price: 1,
@@ -1379,6 +1384,7 @@ export async function hasDuplicateCase(req, res) {
       생산: 2,
       가공후: 2,
       발송: 3,
+      추적관리: 3,
       배송대기: 3,
       배송중: 3,
       완료: 4,
@@ -1387,7 +1393,12 @@ export async function hasDuplicateCase(req, res) {
     const computeStageOrder = (doc) => {
       const st = String(doc?.manufacturerStage || "").trim();
       const status = String(doc?.status || "").trim();
-      return stageOrderMap[status] ?? stageOrderMap[st] ?? 0;
+      const status2 = String(doc?.status2 || "").trim();
+
+      if (status2 === "완료") return 4;
+
+      // manufacturerStage가 authoritative. 레거시 status는 fallback으로만 사용.
+      return stageOrderMap[st] ?? stageOrderMap[status] ?? 0;
     };
 
     let existing = null;
@@ -1454,12 +1465,14 @@ export async function hasDuplicateCase(req, res) {
         hasDuplicate: Boolean(existing),
         stageOrder,
         status: existing?.status,
+        status2: existing?.status2,
         manufacturerStage: existing?.manufacturerStage,
         existingRequest: existing
           ? {
               _id: existing._id,
               requestId: existing.requestId,
               status: existing.status,
+              status2: existing.status2,
               manufacturerStage: existing.manufacturerStage,
               caseInfos: existing.caseInfos,
               price: existing.price ? { amount: existing.price.amount } : null,

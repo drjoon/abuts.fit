@@ -885,7 +885,7 @@ async function getDashboardStats(req, res) {
 
     // 의뢰 통계 (4단계 공정 + 완료/취소)
     const allRequestsForStats = await Request.find()
-      .select({ status: 1, status1: 1, status2: 1, manufacturerStage: 1 })
+      .select({ status: 1, status2: 1, manufacturerStage: 1 })
       .lean();
 
     const normalizeStage = (r) => {
@@ -894,25 +894,13 @@ async function getDashboardStats(req, res) {
       const status2 = String(r.status2 || "");
 
       if (status === "취소") return "취소";
-      if (status === "완료" || status2 === "완료") return "완료";
-      if (
-        ["발송", "배송대기", "배송중"].includes(status) ||
-        ["shipping", "발송"].includes(stage)
-      ) {
+      if (status2 === "완료") return "완료";
+
+      if (["shipping", "tracking", "발송", "추적관리"].includes(stage))
         return "발송";
-      }
-      if (
-        ["생산", "가공후"].includes(status) ||
-        ["machining", "생산", "packaging"].includes(stage)
-      ) {
+      if (["machining", "packaging", "production", "생산"].includes(stage))
         return "생산";
-      }
-      if (
-        ["CAM", "가공전"].includes(status) ||
-        ["cam", "CAM", "가공전"].includes(stage)
-      ) {
-        return "CAM";
-      }
+      if (["cam", "CAM", "가공전"].includes(stage)) return "CAM";
       return "의뢰";
     };
 

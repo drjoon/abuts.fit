@@ -10,7 +10,6 @@ import {
   getTodayYmdInKst,
   normalizeKoreanBusinessDay,
 } from "./utils.js";
-import cache, { CacheKeys, CacheTTL } from "../../utils/cache.utils.js";
 
 const toKstYmd = (d) => {
   if (!d) return null;
@@ -38,21 +37,7 @@ export async function getDiameterStats(req, res) {
   try {
     const userId = req.user?._id?.toString() || "anonymous";
     const role = req.user?.role || "public";
-    const cacheKey = CacheKeys.diameterStats(userId, role);
-
     const isManufacturer = role === "manufacturer";
-
-    // 캐시 확인 (제조사는 실시간 반영을 위해 캐시 사용 안 함)
-    if (!isManufacturer) {
-      const cached = cache.get(cacheKey);
-      if (cached) {
-        return res.status(200).json({
-          success: true,
-          data: cached,
-          cached: true,
-        });
-      }
-    }
 
     const leadDays = await getDeliveryEtaLeadDays();
     const baseFilter = {
@@ -155,15 +140,6 @@ export async function getDiameterStats(req, res) {
       },
     ];
 
-    // 캐시 저장 (5분) — 제조사는 생략
-    if (!isManufacturer) {
-      cache.set(
-        cacheKey,
-        { diameterStats, total: result.totalCount },
-        CacheTTL.LONG
-      );
-    }
-
     return res.status(200).json({
       success: true,
       data: { diameterStats, total: result.totalCount },
@@ -186,17 +162,8 @@ export async function getMyDashboardSummary(req, res) {
   try {
     const { period = "30d" } = req.query;
     const userId = req.user?._id?.toString();
-    const cacheKey = CacheKeys.dashboardSummary(userId, period);
-
-    // 캐시 비활성화 (실시간 반영 위해)
-    // const cached = cache.get(cacheKey);
-    // if (cached) {
-    //   return res.status(200).json({
-    //     success: true,
-    //     data: cached,
-    //     cached: true,
-    //   });
-    // }
+    const debug =
+      process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
 
     const requestFilter = await buildRequestorOrgScopeFilter(req);
 
@@ -226,26 +193,81 @@ export async function getMyDashboardSummary(req, res) {
           {
             $addFields: {
               normalizedStage: {
-                $switch: {
-                  branches: [
-                    { case: { $eq: ["$status", "취소"] }, then: "cancel" },
-                    { case: { $eq: ["$status", "완료"] }, then: "completed" },
-                    {
-                      case: {
-                        $in: ["$status", ["발송", "배송대기", "배송중"]],
-                      },
-                      then: "shipping",
+                $let: {
+                  vars: {
+                    status: { $ifNull: ["$status", ""] },
+                    stage: { $ifNull: ["$manufacturerStage", ""] },
+                    status2: { $ifNull: ["$status2", ""] },
+                  },
+                  in: {
+                    $switch: {
+                      branches: [
+                        {
+                          case: { $eq: ["$$status", "취소"] },
+                          then: "cancel",
+                        },
+                        {
+                          case: {
+                            $or: [{ $eq: ["$$status2", "완료"] }],
+                          },
+                          then: "completed",
+                        },
+                        {
+                          case: {
+                            $or: [
+                              {
+                                $in: [
+                                  "$$stage",
+                                  ["shipping", "tracking", "발송", "추적관리"],
+                                ],
+                              },
+                            ],
+                          },
+                          then: "shipping",
+                        },
+                        {
+                          case: {
+                            $or: [
+                              {
+                                $in: [
+                                  "$$stage",
+                                  [
+                                    "machining",
+                                    "packaging",
+                                    "production",
+                                    "생산",
+                                  ],
+                                ],
+                              },
+                            ],
+                          },
+                          then: "production",
+                        },
+                        {
+                          case: {
+                            $or: [
+                              { $in: ["$$stage", ["cam", "CAM", "가공전"]] },
+                            ],
+                          },
+                          then: "cam",
+                        },
+                        {
+                          case: {
+                            $or: [
+                              {
+                                $in: [
+                                  "$$stage",
+                                  ["request", "receive", "의뢰", "의뢰접수"],
+                                ],
+                              },
+                            ],
+                          },
+                          then: "request",
+                        },
+                      ],
+                      default: "request",
                     },
-                    {
-                      case: { $in: ["$status", ["생산", "가공후"]] },
-                      then: "production",
-                    },
-                    {
-                      case: { $in: ["$status", ["CAM", "가공전"]] },
-                      then: "cam",
-                    },
-                  ],
-                  default: "request",
+                  },
                 },
               },
             },
@@ -523,8 +545,93 @@ export async function getMyDashboardSummary(req, res) {
       recentRequests,
     };
 
-    // 캐시 저장 비활성화 (실시간 반영 위해)
-    // cache.set(cacheKey, responseData, CacheTTL.MEDIUM);
+    if (debug) {
+      const stageBreakdown = await Request.aggregate([
+        {
+          $match: {
+            ...requestFilter,
+            "caseInfos.implantSystem": { $exists: true, $ne: "" },
+            $or: [{ status: { $nin: ["완료", "취소"] } }, dateFilter],
+          },
+        },
+        {
+          $addFields: {
+            normalizedStage: {
+              $let: {
+                vars: {
+                  status: { $ifNull: ["$status", ""] },
+                  stage: { $ifNull: ["$manufacturerStage", ""] },
+                  status2: { $ifNull: ["$status2", ""] },
+                },
+                in: {
+                  $switch: {
+                    branches: [
+                      { case: { $eq: ["$$status", "취소"] }, then: "cancel" },
+                      {
+                        case: {
+                          $or: [{ $eq: ["$$status2", "완료"] }],
+                        },
+                        then: "completed",
+                      },
+                      {
+                        case: {
+                          $in: [
+                            "$$stage",
+                            ["shipping", "tracking", "발송", "추적관리"],
+                          ],
+                        },
+                        then: "shipping",
+                      },
+                      {
+                        case: {
+                          $in: [
+                            "$$stage",
+                            ["machining", "packaging", "production", "생산"],
+                          ],
+                        },
+                        then: "production",
+                      },
+                      {
+                        case: { $in: ["$$stage", ["cam", "CAM", "가공전"]] },
+                        then: "cam",
+                      },
+                      {
+                        case: {
+                          $in: [
+                            "$$stage",
+                            ["request", "receive", "의뢰", "의뢰접수"],
+                          ],
+                        },
+                        then: "request",
+                      },
+                    ],
+                    default: "request",
+                  },
+                },
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              status: "$status",
+              manufacturerStage: "$manufacturerStage",
+              status2: "$status2",
+              normalizedStage: "$normalizedStage",
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { count: -1 } },
+        { $limit: 50 },
+      ]);
+
+      responseData.debug = {
+        period,
+        stageBreakdown,
+      };
+    }
 
     return res.status(200).json({
       success: true,
@@ -700,7 +807,6 @@ export async function getDashboardRiskSummary(req, res) {
         manufacturer: secondaryText,
         riskLevel: level,
         status: r?.status,
-        status1: r?.status1,
         status2: r?.status2,
         dueDate: est ? est.toISOString().slice(0, 10) : null,
         daysOverdue,
@@ -750,17 +856,6 @@ export async function getDashboardRiskSummary(req, res) {
 export async function getMyPricingReferralStats(req, res) {
   try {
     const requestorId = req.user._id;
-    const cacheKey = CacheKeys.pricingStats(requestorId.toString());
-
-    // 캐시 확인 (5분)
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.status(200).json({
-        success: true,
-        data: cached,
-        cached: true,
-      });
-    }
 
     const now = new Date();
     const last30Cutoff = new Date(now);
@@ -886,9 +981,6 @@ export async function getMyPricingReferralStats(req, res) {
           }
         : {}),
     };
-
-    // 캐시 저장 (5분)
-    cache.set(cacheKey, responseData, CacheTTL.LONG);
 
     return res.status(200).json({
       success: true,

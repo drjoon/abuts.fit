@@ -36,19 +36,13 @@ const normalizeStage = (
   const s2 = String(status2 || "");
 
   if (s === "취소") return "취소";
-  if (s === "완료" || s2 === "완료") return "완료";
-  if (
-    ["발송", "배송대기", "배송중"].includes(s) ||
-    ["shipping", "발송"].includes(stage)
-  )
+  if (s2 === "완료") return "완료";
+
+  if (["shipping", "tracking", "발송", "추적관리"].includes(stage))
     return "발송";
-  if (
-    ["생산", "가공후"].includes(s) ||
-    ["machining", "생산", "packaging"].includes(stage)
-  )
+  if (["machining", "packaging", "production", "생산"].includes(stage))
     return "생산";
-  if (["CAM", "가공전"].includes(s) || ["cam", "CAM", "가공전"].includes(stage))
-    return "CAM";
+  if (["cam", "CAM", "가공전"].includes(stage)) return "CAM";
   return "의뢰";
 };
 

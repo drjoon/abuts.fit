@@ -24,7 +24,15 @@ type UseNewRequestFilesV2Params = {
   updateCaseInfos?: (fileKey: string, updates: any) => void;
 };
 
-type FileWithDraftId = File & { _draftCaseInfoId?: string };
+const toFileKey = (name: string, size: number) => {
+  return `${normalize(name)}:${size}`;
+};
+
+type FileWithDraftId = File & {
+  _draftCaseInfoId?: string;
+  _sourceFileKey?: string;
+  _sourceFileKeyNfc?: string;
+};
 
 // 한글 파일명이 UTF-8 → Latin-1 등으로 잘못 디코딩된 경우를 최대한 복구한 뒤 NFC로 정규화한다.
 const normalize = (s: string) => {
@@ -329,6 +337,7 @@ export const useNewRequestFilesV2 = ({
         // 현재 화면에 보이는 파일들
         filesRef.current.forEach((f) => {
           existingKeys.add(`${f.name}:${f.size}`);
+          existingKeys.add(toFileKey(f.name, f.size));
         });
 
         // 현재 Draft에 이미 연결된 파일들
@@ -336,11 +345,13 @@ export const useNewRequestFilesV2 = ({
           const fileMeta = ci.file;
           if (!fileMeta) return;
           existingKeys.add(`${fileMeta.originalName}:${fileMeta.size}`);
+          existingKeys.add(toFileKey(fileMeta.originalName, fileMeta.size));
         });
 
         const filesToProcess = filesToUpload.filter((f) => {
           const key = `${f.name}:${f.size}`;
-          return !existingKeys.has(key);
+          const keyNfc = toFileKey(f.name, f.size);
+          return !existingKeys.has(key) && !existingKeys.has(keyNfc);
         });
 
         if (filesToProcess.length === 0) {
@@ -495,6 +506,16 @@ export const useNewRequestFilesV2 = ({
                 type: mimeType,
               }) as FileWithDraftId;
               file._draftCaseInfoId = draftCase._id;
+
+              const sourceKey = `${originalFile.name}:${originalFile.size}`;
+              file._sourceFileKey = sourceKey;
+              try {
+                file._sourceFileKeyNfc = `${String(
+                  originalFile.name || ""
+                ).normalize("NFC")}:${originalFile.size}`;
+              } catch {
+                file._sourceFileKeyNfc = sourceKey;
+              }
               return file;
             }
           );

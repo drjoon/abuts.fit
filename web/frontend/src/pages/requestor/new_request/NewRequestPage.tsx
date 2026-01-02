@@ -289,6 +289,18 @@ export const NewRequestPage = () => {
       pendingUploadFiles.length > 0
     ) {
       const fileKey = String(choice.caseId || "");
+      const fileKeyNfc = (() => {
+        const k = String(choice.caseId || "");
+        const idx = k.lastIndexOf(":");
+        if (idx <= 0) return k;
+        const name = k.slice(0, idx);
+        const size = k.slice(idx + 1);
+        try {
+          return `${name.normalize("NFC")}:${size}`;
+        } catch {
+          return k;
+        }
+      })();
       const nextPendingUploadFiles =
         choice.strategy === "skip"
           ? (pendingUploadFiles || []).filter(
@@ -296,11 +308,16 @@ export const NewRequestPage = () => {
             )
           : [...pendingUploadFiles];
 
-      if (choice.strategy === "replace") {
+      if (choice.strategy === "replace" || choice.strategy === "remake") {
+        const strategy: "replace" | "remake" = choice.strategy;
         setPendingUploadDecisions((prev) => ({
           ...(prev || {}),
           [fileKey]: {
-            strategy: "replace",
+            strategy,
+            existingRequestId: choice.existingRequestId,
+          },
+          [fileKeyNfc]: {
+            strategy,
             existingRequestId: choice.existingRequestId,
           },
         }));
@@ -310,6 +327,7 @@ export const NewRequestPage = () => {
         setPendingUploadDecisions((prev) => {
           const next = { ...(prev || {}) };
           delete next[fileKey];
+          delete next[fileKeyNfc];
           return next;
         });
       }
@@ -565,7 +583,14 @@ export const NewRequestPage = () => {
                     )}
                     <span className="truncate">
                       상태:{" "}
-                      {String(currentDuplicate?.existingRequest?.status || "")}
+                      {String(
+                        currentDuplicate?.existingRequest?.status2 === "완료"
+                          ? "완료"
+                          : currentDuplicate?.existingRequest
+                              ?.manufacturerStage ||
+                              currentDuplicate?.existingRequest?.status ||
+                              ""
+                      )}
                     </span>
                     {currentDuplicate?.existingRequest?.price?.amount !=
                       null && (

@@ -105,39 +105,30 @@ export async function getMyDashboardSummary(req, res) {
     });
 
     const normalizeStage = (r) => {
+      // stage 분류는 manufacturerStage가 authoritative (status 기반 로직은 레거시)
       const status = String(r.status || "");
       const stage = String(r.manufacturerStage || "");
-      const status1 = String(r.status1 || "");
       const status2 = String(r.status2 || "");
 
       if (status === "취소") return "cancel";
-      if (status === "완료" || status2 === "완료") return "completed";
-      if (
-        ["발송", "배송대기", "배송중"].includes(status) ||
-        ["shipping", "발송"].includes(stage)
-      ) {
+      if (status2 === "완료") return "completed";
+
+      if (["shipping", "tracking", "발송", "추적관리"].includes(stage)) {
         return "shipping";
       }
-      if (
-        ["생산", "가공후"].includes(status) ||
-        ["machining", "생산", "packaging"].includes(stage)
-      ) {
+
+      if (["machining", "packaging", "production", "생산"].includes(stage)) {
         return "production";
       }
-      if (
-        ["CAM", "가공전"].includes(status) ||
-        ["cam", "CAM", "가공전"].includes(stage)
-      ) {
+
+      if (["cam", "CAM", "가공전"].includes(stage)) {
         return "cam";
       }
-      if (
-        ["의뢰", "의뢰접수"].includes(status) ||
-        ["의뢰", "request", "receive"].includes(stage) ||
-        ["의뢰", "의뢰접수"].includes(status1) ||
-        ["의뢰", "의뢰접수"].includes(status2)
-      ) {
+
+      if (["request", "receive", "의뢰", "의뢰접수"].includes(stage)) {
         return "request";
       }
+
       return "request";
     };
 
@@ -288,7 +279,6 @@ export async function getMyDashboardSummary(req, res) {
         manufacturer: manufacturerText,
         riskLevel: level,
         status: r?.status,
-        status1: r?.status1,
         status2: r?.status2,
         dueDate: est ? est.toISOString().slice(0, 10) : null,
         daysOverdue,
@@ -552,7 +542,6 @@ export async function getDashboardRiskSummary(req, res) {
         manufacturer: secondaryText,
         riskLevel: level,
         status: r?.status,
-        status1: r?.status1,
         status2: r?.status2,
         dueDate: est ? est.toISOString().slice(0, 10) : null,
         daysOverdue,

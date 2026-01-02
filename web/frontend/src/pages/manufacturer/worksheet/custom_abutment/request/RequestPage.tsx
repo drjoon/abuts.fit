@@ -170,7 +170,6 @@ export const RequestPage = ({
             camFile: req.caseInfos?.camFile,
             ncFile: req.caseInfos?.ncFile,
             status: req.status,
-            status1: req.status1,
             status2: req.status2,
           });
         });

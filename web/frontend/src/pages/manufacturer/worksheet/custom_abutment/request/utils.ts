@@ -1,7 +1,6 @@
 import type { RequestBase } from "@/types/request";
 
 export type ManufacturerRequest = RequestBase & {
-  status1?: string;
   status2?: string;
   referenceIds?: string[];
 };

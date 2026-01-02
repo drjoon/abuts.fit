@@ -11,7 +11,6 @@ import {
   normalizeRequestStage,
   normalizeRequestStageLabel,
 } from "./utils.js";
-import cache, { CacheKeys, CacheTTL } from "../../utils/cache.utils.js";
 
 const __cache = new Map();
 const memo = async ({ key, ttlMs, fn }) => {
@@ -199,17 +198,6 @@ export async function getShippingEstimate(req, res) {
 export async function getMyBulkShipping(req, res) {
   try {
     const userId = req.user?._id?.toString();
-    const cacheKey = `bulk-shipping:${userId}`;
-
-    // 캐시 확인 (1분)
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.status(200).json({
-        success: true,
-        data: cached,
-        cached: true,
-      });
-    }
 
     const requestFilter = await buildRequestorOrgScopeFilter(req);
 
@@ -392,9 +380,6 @@ export async function getMyBulkShipping(req, res) {
     ]);
 
     const responseData = { pre, post, waiting };
-
-    // 캐시 저장 (1분)
-    cache.set(cacheKey, responseData, CacheTTL.MEDIUM);
 
     return res.status(200).json({
       success: true,

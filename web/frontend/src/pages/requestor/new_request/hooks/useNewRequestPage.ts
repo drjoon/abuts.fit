@@ -42,7 +42,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   );
 
   const [pendingUploadDecisions, setPendingUploadDecisions] = useState<
-    Record<string, { strategy: "replace"; existingRequestId: string }>
+    Record<
+      string,
+      { strategy: "replace" | "remake"; existingRequestId: string }
+    >
   >({});
 
   const clinicStorageKey = useMemo(() => {
@@ -702,7 +705,22 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       const resolutions = (files || [])
         .map((f) => {
           const fileKey = `${f.name}:${f.size}`;
-          const decision = pendingUploadDecisions[fileKey];
+          const fileKeyNfc = (() => {
+            try {
+              return `${String(f.name || "").normalize("NFC")}:${f.size}`;
+            } catch {
+              return fileKey;
+            }
+          })();
+
+          const sourceKey = String((f as any)?._sourceFileKey || "");
+          const sourceKeyNfc = String((f as any)?._sourceFileKeyNfc || "");
+
+          const decision =
+            pendingUploadDecisions[sourceKey] ??
+            pendingUploadDecisions[sourceKeyNfc] ??
+            pendingUploadDecisions[fileKey] ??
+            pendingUploadDecisions[fileKeyNfc];
           const caseId = String((f as any)?._draftCaseInfoId || "").trim();
           if (!decision || !caseId) return null;
           return {

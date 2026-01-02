@@ -75,41 +75,28 @@ export async function buildRequestorOrgScopeFilter(req) {
 }
 
 export function normalizeRequestStage(requestLike) {
+  // stage 분류는 manufacturerStage가 authoritative (status 기반 로직은 레거시)
   const status = String(requestLike?.status || "");
   const stage = String(requestLike?.manufacturerStage || "");
-  const status1 = String(requestLike?.status1 || "");
   const status2 = String(requestLike?.status2 || "");
 
+  // 취소/완료는 레거시 status에도 남아있을 수 있어 최소한으로만 유지
   if (status === "취소") return "cancel";
-  if (status === "완료" || status2 === "완료") return "completed";
+  if (status2 === "완료") return "completed";
 
-  if (
-    ["발송", "배송대기", "배송중"].includes(status) ||
-    ["shipping", "tracking", "발송", "추적관리"].includes(stage)
-  ) {
+  if (["shipping", "tracking", "발송", "추적관리"].includes(stage)) {
     return "shipping";
   }
 
-  if (
-    ["생산", "가공후"].includes(status) ||
-    ["machining", "packaging", "production", "생산"].includes(stage)
-  ) {
+  if (["machining", "packaging", "production", "생산"].includes(stage)) {
     return "production";
   }
 
-  if (
-    ["CAM", "가공전"].includes(status) ||
-    ["cam", "CAM", "가공전"].includes(stage)
-  ) {
+  if (["cam", "CAM", "가공전"].includes(stage)) {
     return "cam";
   }
 
-  if (
-    ["의뢰", "의뢰접수"].includes(status) ||
-    ["request", "receive", "의뢰", "의뢰접수"].includes(stage) ||
-    ["의뢰", "의뢰접수"].includes(status1) ||
-    ["의뢰", "의뢰접수"].includes(status2)
-  ) {
+  if (["request", "receive", "의뢰", "의뢰접수"].includes(stage)) {
     return "request";
   }
 

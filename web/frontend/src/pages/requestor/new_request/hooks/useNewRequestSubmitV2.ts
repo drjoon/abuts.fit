@@ -271,7 +271,7 @@ export const useNewRequestSubmitV2 = ({
                 dup?.existingRequest?.manufacturerStage || ""
               ).trim();
               const replaceable =
-                ["의뢰", "의뢰접수"].includes(st) || ["의뢰"].includes(stage);
+                ["의뢰"].includes(st) || ["의뢰"].includes(stage);
               return !replaceable; // CAM 이상은 모두 교체 불가 취급
             });
 
