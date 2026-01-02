@@ -1,0 +1,200 @@
+2025/12/26 01:27:15.712517 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/26 01:27:26.741397 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] removing non-symlink /var/app/staging/backend/shared
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 342 packages in 10s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/26 01:27:26.741451 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.7.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.7.0
+npm notice To update run: npm install -g npm@11.7.0
+npm notice
+
+2025/12/26 01:27:28.369194 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/26 01:27:37.994747 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 342 packages in 9s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/26 01:27:37.994780 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/26 01:43:59.110504 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/26 01:44:07.188389 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 341 packages in 8s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/26 01:44:07.188444 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/26 01:44:10.473088 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/26 01:44:20.343495 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 341 packages in 10s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/26 01:44:20.343537 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/26 02:43:06.122808 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/26 02:43:13.819194 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 341 packages in 8s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/26 02:43:13.819253 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/26 02:43:17.025000 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/26 02:43:26.908847 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 341 packages in 10s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/26 02:43:26.908869 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 12:08:01.368690 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/28 12:08:09.211233 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 341 packages in 8s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/28 12:08:09.211271 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 12:08:12.603790 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/28 12:08:22.520778 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 341 packages in 10s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/28 12:08:22.520828 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 12:54:08.351953 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/28 12:54:17.894283 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 298 packages in 9s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/28 12:54:17.894312 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 12:54:20.495810 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/28 12:54:29.638528 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 298 packages in 9s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/28 12:54:29.638552 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 13:10:41.507767 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/28 13:10:49.348002 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 302 packages in 8s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/28 13:10:49.348051 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 13:10:52.653008 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/28 13:11:02.467649 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 302 packages in 10s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/28 13:11:02.467678 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 13:24:25.192855 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/28 13:24:32.827956 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 302 packages in 7s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/28 13:24:32.828022 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 13:24:36.144455 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/28 13:24:45.878528 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 302 packages in 9s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/28 13:24:45.878581 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 21:37:08.375056 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/28 21:37:15.909686 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 302 packages in 7s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/28 21:37:15.909713 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2025/12/28 21:37:19.184705 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/28 21:37:28.447509 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 302 packages in 9s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/28 21:37:28.447553 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+
+2026/01/02 03:08:12.332777 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2026/01/02 03:08:20.104310 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 310 packages in 8s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2026/01/02 03:08:20.105033 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.7.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.7.0
+npm notice To update run: npm install -g npm@11.7.0
+npm notice
+
+2026/01/02 03:08:23.431240 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2026/01/02 03:08:32.757411 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 310 packages in 9s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2026/01/02 03:08:32.757454 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+

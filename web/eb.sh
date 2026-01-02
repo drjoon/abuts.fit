@@ -13,6 +13,8 @@ ZIP_PATH="$PARENT_DIR/$ZIP_NAME"
 BACKEND_NODE_MODULES_DIR="$BACKEND_DIR/node_modules"
 BACKEND_NODE_MODULES_BACKUP_DIR="$PARENT_DIR/.backend_node_modules__eb_deploy_backup"
 
+ENV_HASH_FILE="$PARENT_DIR/.eb_setenv_${ENV_MODE}.sha"
+
 # 로그 출력 함수
 info() {
   echo -e "\033[1;34m[INFO]\033[0m $1"
@@ -134,7 +136,28 @@ else
   ENV_ARGS+=("NODE_ENV=test")
 fi
 
-# 1. 먼저 앱 배포 (predeploy 훅에서 npm install 실행됨)
+# 환경변수 변경이 있을 때만 setenv 실행 (config-deploy 최소화)
+ENV_HASH=""
+if command -v shasum >/dev/null 2>&1; then
+  ENV_HASH="$(printf '%s\n' "${ENV_ARGS[@]}" | LC_ALL=C sort | shasum -a 256 | awk '{print $1}')"
+else
+  ENV_HASH="$(printf '%s\n' "${ENV_ARGS[@]}" | LC_ALL=C sort | openssl dgst -sha256 | awk '{print $2}')"
+fi
+
+PREV_ENV_HASH=""
+if [[ -f "$ENV_HASH_FILE" ]]; then
+  PREV_ENV_HASH="$(cat "$ENV_HASH_FILE" | tr -d '\n' || true)"
+fi
+
+if [[ -n "$ENV_HASH" && "$ENV_HASH" != "$PREV_ENV_HASH" ]]; then
+  info "EBS 환경변수 변경 감지 → setenv 실행"
+  (cd "$WEB_DIR" && eb setenv "${ENV_ARGS[@]}") || error "환경변수 설정 실패"
+  printf '%s' "$ENV_HASH" > "$ENV_HASH_FILE"
+else
+  info "EBS 환경변수 변경 없음 → setenv 스킵"
+fi
+
+# 1. 앱 배포 (predeploy 훅에서 npm install 실행됨)
 info "EB 배포"
 if [[ -d "$BACKEND_NODE_MODULES_DIR" ]]; then
   info "EB CLI 패키징 RecursionError 방지를 위해 backend/node_modules 임시 이동"
@@ -145,9 +168,5 @@ fi
 (cd "$WEB_DIR" && eb deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)") || error "eb deploy 실패"
 
 restore_backend_node_modules
-
-# 2. 배포 후 환경변수 설정
-info "EBS 환경변수 적용 중..."
-(cd "$WEB_DIR" && eb setenv "${ENV_ARGS[@]}") || error "환경변수 설정 실패"
 
 info "배포 완료: $ZIP_PATH ($ENV_MODE 환경)"

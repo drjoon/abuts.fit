@@ -9,6 +9,7 @@ import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
   normalizeKoreanBusinessDay,
+  ymdToMmDd,
 } from "./utils.js";
 
 const toKstYmd = (d) => {
@@ -52,6 +53,7 @@ export async function getDiameterStats(req, res) {
         ? {
             $and: [
               baseFilter,
+              { status2: { $ne: "완료" } },
               {
                 $or: [
                   { manufacturer: req.user._id },
@@ -129,7 +131,7 @@ export async function getDiameterStats(req, res) {
       totalCount: 0,
     };
 
-    const diameterStats = [
+    const diameterStatsLegacy = [
       { range: "≤6mm", count: result.d6Count, leadDays: leadDays.d6 },
       { range: "6-8mm", count: result.d8Count, leadDays: leadDays.d8 },
       { range: "8-10mm", count: result.d10Count, leadDays: leadDays.d10 },
@@ -140,9 +142,49 @@ export async function getDiameterStats(req, res) {
       },
     ];
 
+    const todayYmd = getTodayYmdInKst();
+
+    const toBucket = async ({ diameter, count, leadDays }) => {
+      const etaYmd = await addKoreanBusinessDays({
+        startYmd: todayYmd,
+        days:
+          typeof leadDays === "number" && !Number.isNaN(leadDays)
+            ? leadDays
+            : 0,
+      });
+      const shipLabel = ymdToMmDd(etaYmd);
+      const total = result.totalCount || 0;
+      const ratio = total ? Math.min(1, Math.max(0, count / total)) : 0;
+      return { diameter, shipLabel, ratio, count };
+    };
+
+    const buckets = await Promise.all([
+      toBucket({ diameter: 6, count: result.d6Count, leadDays: leadDays.d6 }),
+      toBucket({ diameter: 8, count: result.d8Count, leadDays: leadDays.d8 }),
+      toBucket({
+        diameter: 10,
+        count: result.d10Count,
+        leadDays: leadDays.d10,
+      }),
+      toBucket({
+        diameter: "10+",
+        count: result.d10plusCount,
+        leadDays: leadDays.d10plus,
+      }),
+    ]);
+
+    const diameterStats = {
+      buckets,
+      total: result.totalCount,
+    };
+
     return res.status(200).json({
       success: true,
-      data: { diameterStats, total: result.totalCount },
+      data: {
+        diameterStats,
+        diameterStatsLegacy,
+        total: result.totalCount,
+      },
       cached: false,
     });
   } catch (error) {
@@ -668,6 +710,13 @@ export async function getDashboardRiskSummary(req, res) {
       "caseInfos.implantSystem": { $exists: true, $ne: "" },
     };
 
+    const completionWindowFilter = {
+      $or: [
+        { status2: { $ne: "완료" } },
+        { $and: [{ status2: "완료" }, dateFilter] },
+      ],
+    };
+
     const filter =
       req.user?.role === "manufacturer"
         ? {
@@ -680,24 +729,14 @@ export async function getDashboardRiskSummary(req, res) {
                   { manufacturer: { $exists: false } },
                 ],
               },
-              {
-                $or: [
-                  { status: { $ne: "완료" } }, // 미완료 건 전체 (기간 필터 무시)
-                  { $and: [{ status: "완료" }, dateFilter] }, // 완료된 건은 기간 내만
-                ],
-              },
+              completionWindowFilter,
             ],
           }
         : {
             $and: [
               baseFilter,
               await buildRequestorOrgScopeFilter(req),
-              {
-                $or: [
-                  { status: { $ne: "완료" } }, // 미완료 건 전체 (기간 필터 무시)
-                  { $and: [{ status: "완료" }, dateFilter] }, // 완료된 건은 기간 내만
-                ],
-              },
+              completionWindowFilter,
             ],
           };
 
@@ -725,7 +764,7 @@ export async function getDashboardRiskSummary(req, res) {
       const deliveredAt = r.deliveryInfoRef?.deliveredAt
         ? new Date(r.deliveryInfoRef.deliveredAt)
         : null;
-      const isDone = r.status === "완료" || Boolean(deliveredAt || shippedAt);
+      const isDone = r.status2 === "완료" || Boolean(deliveredAt || shippedAt);
 
       const estYmd = toKstYmd(est);
       const estMidnight = ymdToKstMidnight(estYmd);
