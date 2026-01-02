@@ -13,8 +13,6 @@ ZIP_PATH="$PARENT_DIR/$ZIP_NAME"
 BACKEND_NODE_MODULES_DIR="$BACKEND_DIR/node_modules"
 BACKEND_NODE_MODULES_BACKUP_DIR="$PARENT_DIR/.backend_node_modules__eb_deploy_backup"
 
-ENV_HASH_FILE="$PARENT_DIR/.eb_setenv_${ENV_MODE}.sha"
-
 # 로그 출력 함수
 info() {
   echo -e "\033[1;34m[INFO]\033[0m $1"
@@ -31,6 +29,8 @@ error() {
 
 # 환경 모드: test (기본값) 또는 prod
 ENV_MODE="${1:-test}"
+
+ENV_HASH_FILE="$PARENT_DIR/.eb_setenv_${ENV_MODE}.sha"
 
 # 환경 모드 검증
 if [[ "$ENV_MODE" != "test" && "$ENV_MODE" != "prod" ]]; then

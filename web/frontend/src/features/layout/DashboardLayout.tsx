@@ -59,7 +59,6 @@ const sidebarItems = {
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
     { icon: Factory, label: "장비", href: "/dashboard/cnc" },
-    { icon: BarChart3, label: "추적관리", href: "/dashboard/tracking" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
