@@ -15,6 +15,7 @@ import {
   startProductionScheduler,
   getProductionSchedulerStatus,
 } from "./jobs/productionScheduler.js";
+import { waitForJobLockLeadership } from "./utils/jobLock.js";
 
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const startedAt = new Date();
@@ -60,20 +61,34 @@ async function main() {
   await dbReady;
   console.log("[worker] db ready");
 
-  startCreditBPlanJobs();
-  console.log("[worker] credit b-plan jobs started");
+  const lockName = process.env.WORKER_LOCK_NAME || "background-worker";
+  await waitForJobLockLeadership({
+    name: lockName,
+    ttlMs: Number(process.env.WORKER_LOCK_TTL_MS || 60_000),
+    heartbeatMs: Number(process.env.WORKER_LOCK_HEARTBEAT_MS || 20_000),
+    retryMs: Number(process.env.WORKER_LOCK_RETRY_MS || 5_000),
+    onLeadershipGained: async () => {
+      startCreditBPlanJobs();
+      console.log("[worker] credit b-plan jobs started");
 
-  startPopbillWorker();
-  console.log("[worker] popbill worker started (queue-based)");
+      startPopbillWorker();
+      console.log("[worker] popbill worker started (queue-based)");
 
-  startProductionScheduler();
-  console.log("[worker] production scheduler started");
+      startProductionScheduler();
+      console.log("[worker] production scheduler started");
 
-  startHealthMonitor({
-    getCreditBPlanStatus,
-    getPopbillWorkerStatus,
-    staleMinutes: Number(process.env.WORKER_HEALTH_STALE_MINUTES || 10),
-    intervalMinutes: Number(process.env.WORKER_HEALTH_INTERVAL_MINUTES || 1),
+      startHealthMonitor({
+        getCreditBPlanStatus,
+        getPopbillWorkerStatus,
+        staleMinutes: Number(process.env.WORKER_HEALTH_STALE_MINUTES || 10),
+        intervalMinutes: Number(
+          process.env.WORKER_HEALTH_INTERVAL_MINUTES || 1
+        ),
+      });
+    },
+    onLeadershipLost: async () => {
+      console.error("[worker] leadership lost. exiting for failover");
+    },
   });
 
   while (true) {

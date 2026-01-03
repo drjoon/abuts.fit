@@ -17,6 +17,62 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 
+const BRIDGE_BASE = process.env.BRIDGE_BASE;
+const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
+
+function withBridgeHeaders(extra = {}) {
+  const base = {};
+  if (BRIDGE_SHARED_SECRET) {
+    base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
+  }
+  return { ...base, ...extra };
+}
+
+function extractProgramNoFromNcText(text) {
+  const s = String(text || "");
+  const m = s.toUpperCase().match(/\bO(\d{1,5})\b/m);
+  if (!m || !m[1]) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+async function uploadNcToBridgeStore({ requestId, s3Key, fileName }) {
+  if (!BRIDGE_BASE) {
+    return { ok: false, reason: "BRIDGE_BASE is not configured" };
+  }
+
+  const buf = await s3Utils.getObjectBufferFromS3(s3Key);
+  const content = buf.toString("utf8");
+
+  const programNo = extractProgramNoFromNcText(content);
+  const normalizedName =
+    programNo != null
+      ? `O${String(programNo).padStart(4, "0")}.nc`
+      : String(fileName || "").trim();
+
+  if (!normalizedName) {
+    return { ok: false, reason: "missing fileName" };
+  }
+
+  const relPath = `nc/${String(requestId || "").trim()}/${normalizedName}`;
+  const resp = await fetch(`${BRIDGE_BASE}/api/bridge-store/upload`, {
+    method: "POST",
+    headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ path: relPath, content, normalizeName: false }),
+  });
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok || body?.success === false) {
+    return {
+      ok: false,
+      reason: String(
+        body?.message || body?.error || "bridge-store upload failed"
+      ),
+    };
+  }
+  const savedPath = String(body?.path || relPath);
+  return { ok: true, path: savedPath, programNo: programNo ?? null };
+}
+
 const ensureReviewByStageDefaults = (request) => {
   request.caseInfos = request.caseInfos || {};
   request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
@@ -1253,6 +1309,36 @@ export async function saveNcFileAndMoveToMachining(req, res) {
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
+    let resolvedBridgePath = String(filePath || "").trim();
+    if (!resolvedBridgePath && s3Key) {
+      try {
+        const pushed = await uploadNcToBridgeStore({
+          requestId: request.requestId,
+          s3Key,
+          fileName,
+        });
+        if (pushed.ok && pushed.path) {
+          resolvedBridgePath = String(pushed.path);
+        } else if (pushed.reason) {
+          console.warn(
+            "[saveNcFileAndMoveToMachining] bridge-store push skipped",
+            {
+              requestId: request.requestId,
+              reason: pushed.reason,
+            }
+          );
+        }
+      } catch (e) {
+        console.warn(
+          "[saveNcFileAndMoveToMachining] bridge-store push failed",
+          {
+            requestId: request.requestId,
+            error: String(e?.message || e),
+          }
+        );
+      }
+    }
+
     const normalize = (name) => {
       try {
         return String(name || "")
@@ -1329,7 +1415,7 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       originalName: originalName || fileName,
       fileType,
       fileSize,
-      filePath: filePath || "",
+      filePath: resolvedBridgePath || "",
       s3Key: s3Key || "",
       s3Url: s3Url || "",
       uploadedAt: new Date(),
@@ -1387,6 +1473,22 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         await deleteFileFromS3(s3Key);
       } catch (e) {
         console.warn("delete nc file s3 failed", e);
+      }
+    }
+
+    const bridgePath = String(
+      request?.caseInfos?.ncFile?.filePath || ""
+    ).trim();
+    if (bridgePath && BRIDGE_BASE) {
+      try {
+        await fetch(
+          `${BRIDGE_BASE}/api/bridge-store/file?path=${encodeURIComponent(
+            bridgePath
+          )}`,
+          { method: "DELETE", headers: withBridgeHeaders() }
+        );
+      } catch (e) {
+        console.warn("delete nc file bridge-store failed", e);
       }
     }
 

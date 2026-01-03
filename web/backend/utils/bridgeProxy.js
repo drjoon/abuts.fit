@@ -1,6 +1,6 @@
 import "../bootstrap/env.js";
 
-const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://1.217.31.227:4005";
+const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
 function buildBridgeUrl(basePath, req) {
@@ -18,6 +18,12 @@ function buildBridgeUrl(basePath, req) {
 export function proxyToBridge(basePath) {
   return async (req, res) => {
     try {
+      if (!BRIDGE_BASE) {
+        return res.status(500).json({
+          success: false,
+          message: "BRIDGE_BASE is not configured",
+        });
+      }
       const url = buildBridgeUrl(basePath, req);
       const headers = {};
       if (BRIDGE_SHARED_SECRET) {

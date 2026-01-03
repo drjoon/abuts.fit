@@ -267,13 +267,6 @@ const requestSchema = new mongoose.Schema(
       enum: ["의뢰", "CAM", "생산", "발송", "추적관리", "취소"],
       default: "의뢰",
     },
-    // 아래 status1, 2는 제조사 및 관리자용 상태
-    // 상위 공정 상태 (의뢰접수, 가공, 세척/검사/포장, 배송, 완료, 취소)
-    status1: {
-      type: String,
-      enum: ["의뢰접수", "가공", "세척/검사/포장", "배송", "완료", "취소"],
-      default: "의뢰접수",
-    },
     // 공정 내 세부 단계 (없음, 전, 중, 후)
     status2: {
       type: String,
@@ -305,20 +298,46 @@ const requestSchema = new mongoose.Schema(
     },
     // 생산 스케줄 (생산자 관점, 시각 단위 관리)
     productionSchedule: {
-      // 생산 스케줄 (생산자 관점, 시각 단위 관리)
+      // 예정 시각
       scheduledCamStart: Date, // CAM 시작 예정 시각
-      scheduledProductionComplete: Date, // 생산 완료 예정 시각 (CAM 시작 + 20분)
+      scheduledCamComplete: Date, // CAM 완료 예정 시각 (CAM 시작 + 5분)
+      scheduledMachiningStart: Date, // 가공 시작 예정 시각
+      scheduledMachiningComplete: Date, // 가공 완료 예정 시각 (가공 시작 + 15분)
+      scheduledBatchProcessing: Date, // 세척/검사/포장 예정 시각 (50~100개 모아서 처리)
       scheduledShipPickup: Date, // 택배 수거 시각 (매일 14:00)
       estimatedDelivery: Date, // 도착 예정 시각 (택배 수거일 + 1영업일)
 
       // 실제 시각
-      actualCamStart: Date, // 실제 CAM 시작 시각
-      actualProductionComplete: Date, // 실제 생산 완료 시각
-      actualShipPickup: Date, // 실제 택배 수거 시각
+      actualCamStart: Date,
+      actualCamComplete: Date,
+      actualMachiningStart: Date,
+      actualMachiningComplete: Date,
+      actualBatchProcessing: Date,
+      actualShipPickup: Date,
 
-      // 우선순위 계산용
-      priority: Number, // 생산 우선순위 점수
-      diameterGroup: String, // 직경 그룹 (6-8 | 10+)
+      // 장비 할당
+      assignedMachine: {
+        type: String, // machineId (M3, M4 등)
+        ref: "CncMachine",
+      },
+      queuePosition: Number, // 해당 장비 큐에서의 위치
+
+      // 직경 정보
+      diameter: Number, // 실제 직경 (mm)
+      diameterGroup: String, // "6" | "8" | "10" | "10+"
+
+      ncPreload: {
+        status: {
+          type: String,
+          enum: ["NONE", "UPLOADING", "READY", "FAILED"],
+          default: "NONE",
+        },
+        programNo: Number,
+        machineId: String,
+        bridgePath: String,
+        updatedAt: Date,
+        error: String,
+      },
     },
 
     price: {

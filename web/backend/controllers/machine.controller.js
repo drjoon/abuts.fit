@@ -1,14 +1,14 @@
 import "../bootstrap/env.js";
 
 // 브리지 서비스 기본 URL 및 Hi-Link CNC 엔드포인트
-const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://1.217.31.227:4005";
-const CNC_BRIDGE_BASE = process.env.CNC_BRIDGE_BASE || `${BRIDGE_BASE}/api/cnc`;
+const BRIDGE_BASE = process.env.BRIDGE_BASE;
+const CNC_BRIDGE_BASE =
+  process.env.CNC_BRIDGE_BASE ||
+  (BRIDGE_BASE ? `${BRIDGE_BASE}/api/cnc` : null);
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 const CONTROL_COOLDOWN_MS = 5000;
 const lastControlCall = new Map();
 const lastRawReadCall = new Map();
-
-console.log("BRIDGE_BASE", BRIDGE_BASE);
 
 import Machine from "../models/machine.model.js";
 
@@ -18,6 +18,17 @@ function withBridgeHeaders(extra = {}) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+function ensureBridgeConfigured(res) {
+  if (!BRIDGE_BASE) {
+    res.status(500).json({
+      success: false,
+      message: "BRIDGE_BASE is not configured",
+    });
+    return false;
+  }
+  return true;
 }
 
 // GET /api/machines - 현재 사용자(제조사/관리자)의 장비 목록
@@ -43,6 +54,7 @@ export async function getMachines(req, res) {
 // POST /api/machines/sync-bridge - DB 기준으로 Hi-Link 브리지에 장비 재등록
 export async function syncBridgeMachines(_req, res) {
   try {
+    if (!ensureBridgeConfigured(res)) return;
     const machines = await Machine.find({
       ip: { $ne: null },
       port: { $ne: null },
@@ -95,6 +107,7 @@ export async function syncBridgeMachines(_req, res) {
 export async function getMachineStatusProxy(req, res) {
   const { uid } = req.params;
   try {
+    if (!ensureBridgeConfigured(res)) return;
     const response = await fetch(
       `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/status`,
       { headers: withBridgeHeaders() }
@@ -111,6 +124,7 @@ export async function getMachineStatusProxy(req, res) {
 }
 
 async function sendControl(uid, action, res) {
+  if (!ensureBridgeConfigured(res)) return;
   try {
     // 장비 설정에서 가공 시작이 차단된 경우, reset 이외의 제어 명령은 실행하지 않는다.
     const machine = await Machine.findOne({ uid }).lean();
@@ -164,6 +178,7 @@ export async function startMachineProxy(req, res) {
 export async function callRawProxy(req, res) {
   const { uid } = req.params;
   try {
+    if (!ensureBridgeConfigured(res)) return;
     const dataType = req.body?.dataType;
     const READ_TYPES = [
       "GetOPStatus",
@@ -268,7 +283,7 @@ export async function upsertMachine(req, res) {
 
     // hi-link 브리지에도 장비 정보를 등록 시도 (실패하더라도 DB 저장 결과는 그대로 반환)
     let hiLinkResult = null;
-    if (ip && port) {
+    if (ip && port && BRIDGE_BASE) {
       try {
         const bridgeResponse = await fetch(`${BRIDGE_BASE}/api/cnc/machines`, {
           method: "POST",
@@ -307,6 +322,11 @@ export async function upsertMachine(req, res) {
       } catch (cfgError) {
         console.warn("bridge-node config upsert error", cfgError);
       }
+    } else if (ip && port && !BRIDGE_BASE) {
+      hiLinkResult = {
+        success: false,
+        message: "BRIDGE_BASE is not configured",
+      };
     }
 
     res
@@ -340,13 +360,17 @@ export async function deleteMachine(req, res) {
     }
 
     // bridge-node 로컬 machines.json 에서도 제거 시도 (실패해도 무시)
-    try {
-      await fetch(
-        `${BRIDGE_BASE}/api/bridge-config/machines/${encodeURIComponent(uid)}`,
-        { method: "DELETE", headers: withBridgeHeaders() }
-      );
-    } catch (cfgError) {
-      console.warn("bridge-node config delete error", cfgError);
+    if (BRIDGE_BASE) {
+      try {
+        await fetch(
+          `${BRIDGE_BASE}/api/bridge-config/machines/${encodeURIComponent(
+            uid
+          )}`,
+          { method: "DELETE", headers: withBridgeHeaders() }
+        );
+      } catch (cfgError) {
+        console.warn("bridge-node config delete error", cfgError);
+      }
     }
 
     res.json({ success: true, message: "장비가 삭제되었습니다." });

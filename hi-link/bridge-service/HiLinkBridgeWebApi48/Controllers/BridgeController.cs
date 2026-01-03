@@ -8,6 +8,7 @@ using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -217,6 +218,57 @@ namespace HiLinkBridgeWebApi48.Controllers
                             {
                                 success = false,
                                 message = "failed to parse payload for UpdateToolLife",
+                                error = ex.Message,
+                            });
+                        }
+                    }
+                    else if (type == CollectDataType.UpdateActivateProg || type == CollectDataType.DeleteProgram)
+                    {
+                        try
+                        {
+                            // Mode2 DLL 예제(Form1.cs) 기준:
+                            // - UpdateActivateProg: UpdateMachineActivateProgNo { headType, programNo }
+                            // - DeleteProgram: DeleteMachineProgramInfo { headType, programNo }
+                            // 이 프로젝트에 해당 타입이 직접 포함되어 있지 않을 수 있으므로, 최소 필드(headType/programNo)만 추출해 전달한다.
+
+                            short headType = 0;
+                            int programNo = 0;
+
+                            var ht = raw.payload["headType"];
+                            if (ht != null && ht.Type == JTokenType.Integer)
+                            {
+                                headType = (short)ht.Value<int>();
+                            }
+
+                            var pn = raw.payload["programNo"];
+                            if (pn != null && pn.Type == JTokenType.Integer)
+                            {
+                                programNo = pn.Value<int>();
+                            }
+
+                            if (programNo <= 0)
+                            {
+                                return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                                {
+                                    success = false,
+                                    message = "invalid programNo (must be > 0)",
+                                    programNo,
+                                });
+                            }
+
+                            payloadObj = new
+                            {
+                                headType = headType,
+                                programNo = programNo,
+                            };
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine("[Hi-Link /raw] payload cast error for UpdateActivateProg/DeleteProgram: " + ex);
+                            return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                            {
+                                success = false,
+                                message = "failed to parse payload for UpdateActivateProg/DeleteProgram",
                                 error = ex.Message,
                             });
                         }
@@ -482,6 +534,27 @@ namespace HiLinkBridgeWebApi48.Controllers
                             break;
                         }
 
+                    case CollectDataType.UpdateActivateProg:
+                    case CollectDataType.DeleteProgram:
+                        {
+                            // 예제 기준: 응답은 short result 코드로 돌아오는 케이스가 많다.
+                            if (result is short s)
+                            {
+                                dataDto = new { result = s };
+                                resultCode = s;
+                            }
+                            else if (result is int i)
+                            {
+                                dataDto = new { result = i };
+                                resultCode = i;
+                            }
+                            else
+                            {
+                                dataDto = result;
+                            }
+                            break;
+                        }
+
                     default:
                         dataDto = result;
                         break;
@@ -692,14 +765,198 @@ namespace HiLinkBridgeWebApi48.Controllers
         // POST /machines/{uid}/start
         [HttpPost]
         [Route("machines/{uid}/start")]
-        public HttpResponseMessage StartMachine(string uid)
+        public async Task<HttpResponseMessage> StartMachine(string uid, JObject payload)
         {
-            Console.WriteLine("[Hi-Link /machines/{uid}/start] BLOCKED: uid={0}", uid);
-            return Request.CreateResponse((HttpStatusCode)403, new
+            try
             {
-                success = false,
-                message = "가공 개시 명령은 아직 활성화되지 않았습니다. (BridgeController StartMachine TODO)",
-            });
+                var cooldownKey = $"start:{uid}";
+                if (IsControlOnCooldown(cooldownKey))
+                {
+                    return Request.CreateResponse((HttpStatusCode)429, new
+                    {
+                        success = false,
+                        message = "Start command is temporarily rate-limited."
+                    });
+                }
+
+                var ioUid = payload != null
+                    ? (payload.Value<string>("ioUid") ?? payload.Value<string>("IOUID"))
+                    : null;
+                if (string.IsNullOrWhiteSpace(ioUid)) ioUid = "C_CONT";
+
+                var statusToken = payload != null ? payload["status"] : null;
+                short status = 1;
+                if (statusToken != null && statusToken.Type == JTokenType.Integer)
+                {
+                    try
+                    {
+                        status = (short)statusToken.Value<int>();
+                    }
+                    catch { }
+                }
+
+                var io = new IOInfo
+                {
+                    IOUID = ioUid,
+                    Status = status,
+                };
+
+                var result = await Client.RequestRawAsync(uid, CollectDataType.UpdateOPStatus, io, 5000);
+
+                int rc = -1;
+                if (result is short s) rc = s;
+                else if (result is int i) rc = i;
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = rc == 0,
+                    result = rc,
+                    ioUid,
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("[StartMachine] uid={0} error={1}", uid, ex.Message);
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    message = "StartMachine failed",
+                    error = ex.Message
+                });
+            }
+        }
+
+        [HttpPost]
+        [Route("machines/{uid}/programs/upload-from-store")]
+        public async Task<HttpResponseMessage> UploadProgramFromStore(string uid, JObject payload)
+        {
+            try
+            {
+                if (payload == null)
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                    {
+                        success = false,
+                        message = "payload is required"
+                    });
+                }
+
+                var relPath = payload.Value<string>("path") ?? payload.Value<string>("filePath");
+                if (string.IsNullOrWhiteSpace(relPath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                    {
+                        success = false,
+                        message = "path is required"
+                    });
+                }
+
+                var root = Environment.GetEnvironmentVariable("BRIDGE_STORE_ROOT") ?? @"C:\\CNCStore";
+                var cleaned = (relPath ?? string.Empty)
+                    .Replace('/', Path.DirectorySeparatorChar)
+                    .Replace("..", string.Empty);
+
+                var combined = Path.Combine(root, cleaned);
+                var full = Path.GetFullPath(combined);
+                var rootFull = Path.GetFullPath(root);
+
+                if (!full.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                    {
+                        success = false,
+                        message = "Path is outside of root"
+                    });
+                }
+
+                if (!System.IO.File.Exists(full))
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new
+                    {
+                        success = false,
+                        message = "file not found",
+                        path = relPath
+                    });
+                }
+
+                var content = System.IO.File.ReadAllText(full);
+                var fileName = Path.GetFileName(full);
+
+                int programNo = payload.Value<int?>("programNo") ?? 0;
+                if (programNo <= 0)
+                {
+                    programNo = BridgeStoreController.ExtractProgramNo(fileName);
+                }
+
+                if (programNo <= 0)
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                    {
+                        success = false,
+                        message = "invalid programNo (must be > 0)",
+                        fileName
+                    });
+                }
+
+                short headType = 0;
+                var headTypeToken = payload["headType"];
+                if (headTypeToken != null && headTypeToken.Type == JTokenType.Integer)
+                {
+                    try
+                    {
+                        headType = (short)headTypeToken.Value<int>();
+                    }
+                    catch { }
+                }
+
+                bool isNew = true;
+                var isNewToken = payload["isNew"];
+                if (isNewToken != null && (isNewToken.Type == JTokenType.Boolean || isNewToken.Type == JTokenType.Integer))
+                {
+                    try
+                    {
+                        isNew = isNewToken.Value<bool>();
+                    }
+                    catch { }
+                }
+
+                int timeoutMs = payload.Value<int?>("timeoutMilliseconds") ?? 60000;
+                if (timeoutMs < 3000) timeoutMs = 3000;
+
+                var info = new UpdateMachineProgramInfo
+                {
+                    headType = headType,
+                    programNo = programNo,
+                    programData = content,
+                    isNew = isNew,
+                };
+
+                var result = await Client.RequestRawAsync(uid, CollectDataType.UpdateProgram, info, timeoutMs);
+
+                int rc = -1;
+                if (result is short s) rc = s;
+                else if (result is int i) rc = i;
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = rc == 0,
+                    result = rc,
+                    programNo,
+                    headType,
+                    isNew,
+                    path = relPath,
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("[UploadProgramFromStore] uid={0} error={1}", uid, ex);
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    message = "UploadProgramFromStore failed",
+                    error = ex.Message
+                });
+            }
         }
 
         private static string GetHiLinkResultMessage(int result)

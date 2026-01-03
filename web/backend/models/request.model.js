@@ -325,6 +325,19 @@ const requestSchema = new mongoose.Schema(
       // 직경 정보
       diameter: Number, // 실제 직경 (mm)
       diameterGroup: String, // "6" | "8" | "10" | "10+"
+
+      ncPreload: {
+        status: {
+          type: String,
+          enum: ["NONE", "UPLOADING", "READY", "FAILED"],
+          default: "NONE",
+        },
+        programNo: Number,
+        machineId: String,
+        bridgePath: String,
+        updatedAt: Date,
+        error: String,
+      },
     },
 
     price: {
