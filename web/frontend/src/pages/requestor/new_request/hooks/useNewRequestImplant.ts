@@ -88,15 +88,13 @@ export const useNewRequestImplant = ({
 
   // clinicName / connections 에 따라 기본 임플란트 선택
   useEffect(() => {
+    // 이미 임플란트 정보가 구체적으로 설정되어 있다면 덮어쓰지 않는다.
+    if (implantManufacturer && implantSystem && implantType) {
+      return;
+    }
+
     const applyDefaults = async () => {
       try {
-        // NOTE: 자동 임플란트 설정은 useNewRequestFiles에서 처리하므로,
-        // 여기서는 즐겨찾기 또는 기본값으로 초기화만 수행한다.
-        // 단, 이미 값이 있는 경우 (예: draft에서 로드)에는 덮어쓰지 않는다.
-        if (implantManufacturer || implantSystem || implantType) {
-          return;
-        }
-
         if (!clinicName) {
           return;
         }

@@ -126,6 +126,9 @@ export async function apiFetch<T = any>(
   const requestKey = `${method}:${url}:${String(effectiveToken || "")}:
 ${bodyKey}`;
 
+  const isDedupeEligible =
+    method === "GET" || bodyKey !== "__non_string_body__";
+
   const now = Date.now();
   if (method === "GET") {
     const cached = SHORT_CACHE.get(requestKey);
@@ -134,9 +137,11 @@ ${bodyKey}`;
     }
   }
 
-  const existing = IN_FLIGHT.get(requestKey);
-  if (existing) {
-    return (await existing) as ApiResponse<T>;
+  if (isDedupeEligible) {
+    const existing = IN_FLIGHT.get(requestKey);
+    if (existing) {
+      return (await existing) as ApiResponse<T>;
+    }
   }
 
   const exec = (async () => {
@@ -152,7 +157,11 @@ ${bodyKey}`;
     const contentType = response.headers.get("content-type") || "";
 
     if (contentType.includes("application/json")) {
-      data = await response.json().catch(() => null);
+      // response.clone()을 사용하여 원본 스트림을 보존함으로써 호출자가 raw body를 필요로 할 때 대응할 수 있게 함
+      data = await response
+        .clone()
+        .json()
+        .catch(() => null);
     }
 
     const out: ApiResponse<T> = {
@@ -178,11 +187,15 @@ ${bodyKey}`;
     return out;
   })();
 
-  IN_FLIGHT.set(requestKey, exec as Promise<ApiResponse<any>>);
+  if (isDedupeEligible) {
+    IN_FLIGHT.set(requestKey, exec as Promise<ApiResponse<any>>);
+  }
   try {
     return (await exec) as ApiResponse<T>;
   } finally {
-    IN_FLIGHT.delete(requestKey);
+    if (isDedupeEligible) {
+      IN_FLIGHT.delete(requestKey);
+    }
   }
 }
 

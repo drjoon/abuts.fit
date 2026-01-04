@@ -344,7 +344,13 @@ export function useDraftMeta() {
         }
 
         const newMap = { ...prevMap, [fileKey]: updated };
-        // 비동기 PATCH 요청 (디바운스 적용)
+
+        // 1) 로컬 스토리지 즉시 업데이트 (PATCH 지연과 무관하게 로컬 데이터 보존)
+        if (draftId) {
+          saveDraftMeta(draftId, newMap);
+        }
+
+        // 2) 비동기 PATCH 요청 (디바운스 적용)
         if (draftId && token) {
           if (patchTimeoutRef.current !== null) {
             window.clearTimeout(patchTimeoutRef.current);

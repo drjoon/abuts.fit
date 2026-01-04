@@ -29,6 +29,23 @@ export const NewRequestPage = () => {
 
   const { toast } = useToast();
 
+  const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
+  const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
+    {}
+  );
+
+  const normalizeKeyPart = (s: string) => {
+    try {
+      return String(s || "").normalize("NFC");
+    } catch {
+      return String(s || "");
+    }
+  };
+
+  const toNormalizedFileKey = (f: File) => {
+    return `${normalizeKeyPart(f.name)}:${f.size}`;
+  };
+
   // hasActiveSession을 상태 대신 files.length로 직접 계산
   // 상태 동기화 문제를 완전히 제거
 
@@ -456,6 +473,148 @@ export const NewRequestPage = () => {
     return { valid: true };
   };
 
+  const runFillHole = async (files: File[]) => {
+    if (!files.length) return;
+
+    setIsFillHoleProcessing(true);
+    try {
+      const results = await Promise.allSettled(
+        files.map(async (file) => {
+          const fileKey = toNormalizedFileKey(file);
+          const fd = new FormData();
+          fd.append("file", file);
+
+          const controller = new AbortController();
+          const timeoutId = window.setTimeout(() => {
+            controller.abort();
+          }, 5 * 60 * 1000);
+
+          try {
+            const res = await apiFetch({
+              path: "/api/rhino/fillhole",
+              method: "POST",
+              body: fd,
+              signal: controller.signal,
+            });
+
+            if (!res.ok) {
+              throw new Error(
+                (res.data as any)?.message ||
+                  `스크류홀 메우기 실패 (HTTP ${res.status})`
+              );
+            }
+
+            const buf = await res.raw.arrayBuffer();
+            const outName = (() => {
+              const raw = file.name || "input.stl";
+              if (!raw.toLowerCase().endsWith(".stl")) return `${raw}.fw.stl`;
+              return raw.replace(/\.stl$/i, ".fw.stl");
+            })();
+
+            const filled = new File([buf], outName, {
+              type: "application/sla",
+            });
+            setFilledStlFiles((prev) => ({ ...prev, [fileKey]: filled }));
+          } finally {
+            window.clearTimeout(timeoutId);
+          }
+        })
+      );
+
+      const failed = results
+        .map((r, idx) => ({ r, idx }))
+        .filter(({ r }) => r.status === "rejected")
+        .map(({ r, idx }) => {
+          const reason = (r as PromiseRejectedResult).reason;
+          const msg =
+            reason?.name === "AbortError"
+              ? "처리 시간이 오래 걸려 중단되었습니다."
+              : String(reason?.message || reason || "알 수 없는 오류");
+          return `${files[idx]?.name || "파일"}: ${msg}`;
+        });
+
+      if (failed.length > 0) {
+        toast({
+          title: "오류",
+          description: failed.join("\n"),
+          variant: "destructive",
+          duration: 6000,
+        });
+      }
+    } finally {
+      setIsFillHoleProcessing(false);
+    }
+  };
+
+  const reportFillHoleIssue = async (originalFile?: File) => {
+    try {
+      const roomRes = await apiFetch<any>({
+        path: "/api/chats/support-room",
+        method: "GET",
+      });
+      if (!roomRes.ok) {
+        throw new Error(
+          (roomRes.data as any)?.message || "지원 채팅방을 불러오지 못했습니다."
+        );
+      }
+
+      const roomData = (roomRes.data as any)?.data || roomRes.data;
+      const roomId = String(roomData?._id || "").trim();
+      if (!roomId) throw new Error("지원 채팅방을 찾을 수 없습니다.");
+
+      const fileName = String(originalFile?.name || "").trim();
+      const fileKey = originalFile ? toNormalizedFileKey(originalFile) : "";
+      const ci = fileKey ? (caseInfosMap as any)?.[fileKey] : null;
+      const clinicName = String(
+        ci?.clinicName || caseInfos?.clinicName || ""
+      ).trim();
+      const patientName = String(
+        ci?.patientName || caseInfos?.patientName || ""
+      ).trim();
+      const tooth = String(ci?.tooth || caseInfos?.tooth || "").trim();
+
+      const content = [
+        "[자동 리포트] 홀 메우기 결과에 문제가 있어 의뢰를 보류합니다.",
+        fileName ? `파일: ${fileName}` : "",
+        clinicName ? `치과: ${clinicName}` : "",
+        patientName ? `환자: ${patientName}` : "",
+        tooth ? `치아: ${tooth}` : "",
+        "증상: (여기에 문제를 간단히 적어주세요)",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const msgRes = await apiFetch<any>({
+        path: `/api/chats/rooms/${roomId}/messages`,
+        method: "POST",
+        jsonBody: { content, attachments: [] },
+      });
+      if (!msgRes.ok) {
+        throw new Error(
+          (msgRes.data as any)?.message || "리포트 메시지 전송에 실패했습니다."
+        );
+      }
+
+      const detail = {
+        roomId,
+        prefill: content,
+      };
+
+      window.setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("abuts:open-support-chat", { detail })
+        );
+      }, 0);
+    } catch (e: any) {
+      toast({
+        title: "오류",
+        description: e?.message || "리포트 전송 중 오류가 발생했습니다.",
+        variant: "destructive",
+        duration: 4000,
+      });
+    }
+  };
+
   const handleIncomingFiles = (selectedFiles: File[]) => {
     const filesToUpload: File[] = [];
     const rejectedFiles: string[] = [];
@@ -480,7 +639,23 @@ export const NewRequestPage = () => {
     }
 
     if (filesToUpload.length > 0) {
-      void handleUpload(filesToUpload);
+      void (async () => {
+        try {
+          await Promise.all([
+            handleUpload(filesToUpload),
+            runFillHole(filesToUpload),
+          ]);
+        } catch (e: any) {
+          toast({
+            title: "오류",
+            description:
+              e?.message ||
+              "업로드 또는 스크류홀 메우기 처리 중 오류가 발생했습니다.",
+            variant: "destructive",
+            duration: 4000,
+          });
+        }
+      })();
     }
   };
 
@@ -490,6 +665,16 @@ export const NewRequestPage = () => {
       activeClassName="ring-2 ring-primary/30"
       className="min-h-screen bg-gradient-subtle p-4 md:p-6"
     >
+      {isFillHoleProcessing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="flex items-center gap-3 rounded-xl bg-white px-5 py-4 shadow-lg">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+            <div className="text-sm text-gray-800">
+              업로드하고 스크류홀을 메웁니다. 잠시만 기다려주세요.
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto space-y-4">
         <MultiActionDialog
           open={!!duplicatePrompt}
@@ -664,6 +849,8 @@ export const NewRequestPage = () => {
         <GuideFocus stepId="requestor.new_request.details">
           <NewRequestDetailsSection
             files={files}
+            filledStlFiles={filledStlFiles}
+            onReportFillHoleIssue={reportFillHoleIssue}
             selectedPreviewIndex={selectedPreviewIndex}
             setSelectedPreviewIndex={setSelectedPreviewIndex}
             caseInfos={caseInfos}

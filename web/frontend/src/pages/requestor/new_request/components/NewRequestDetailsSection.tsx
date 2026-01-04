@@ -15,6 +15,8 @@ type Option = { id: string; label: string };
 
 type Props = {
   files: File[];
+  filledStlFiles?: Record<string, File>;
+  onReportFillHoleIssue?: (originalFile?: File) => void | Promise<void>;
   selectedPreviewIndex: number | null;
   setSelectedPreviewIndex: (index: number | null) => void;
   caseInfos?: CaseInfos;
@@ -60,6 +62,8 @@ type Props = {
 
 export function NewRequestDetailsSection({
   files,
+  filledStlFiles,
+  onReportFillHoleIssue,
   selectedPreviewIndex,
   setSelectedPreviewIndex,
   caseInfos,
@@ -94,6 +98,18 @@ export function NewRequestDetailsSection({
   highlight,
   sectionHighlightClass,
 }: Props) {
+  const normalizeKeyPart = (s: string) => {
+    try {
+      return String(s || "").normalize("NFC");
+    } catch {
+      return String(s || "");
+    }
+  };
+
+  const toNormalizedFileKey = (f: File) => {
+    return `${normalizeKeyPart(f.name)}:${f.size}`;
+  };
+
   const hasActiveSession = files.length > 0;
 
   const getFileWorkType = (_file: File): "abutment" | "crown" => {
@@ -123,6 +139,16 @@ export function NewRequestDetailsSection({
   const selectedFile =
     selectedPreviewIndex !== null ? files[selectedPreviewIndex] : null;
 
+  const selectedFileKey =
+    selectedPreviewIndex !== null && files[selectedPreviewIndex]
+      ? toNormalizedFileKey(files[selectedPreviewIndex])
+      : null;
+
+  const previewFile =
+    selectedFileKey && filledStlFiles?.[selectedFileKey]
+      ? filledStlFiles[selectedFileKey]
+      : selectedFile;
+
   const hasSelectedFile = Boolean(
     selectedPreviewIndex !== null && files[selectedPreviewIndex]
   );
@@ -143,23 +169,46 @@ export function NewRequestDetailsSection({
       <div className="w-full grid gap-4 lg:grid-cols-2 items-start border-gray-200">
         <div className="min-w-0">
           {selectedPreviewIndex !== null && files[selectedPreviewIndex] && (
-            <StlPreviewViewer
-              file={files[selectedPreviewIndex]}
-              showOverlay={true}
-              onDiameterComputed={(
-                _filename,
-                maxDiameter,
-                connectionDiameter
-              ) => {
-                const roundedMax = Math.round((maxDiameter ?? 0) * 10) / 10;
-                const roundedConn =
-                  Math.round((connectionDiameter ?? 0) * 10) / 10;
-                setCaseInfos({
-                  maxDiameter: roundedMax,
-                  connectionDiameter: roundedConn,
-                });
-              }}
-            />
+            <div className="space-y-3">
+              {previewFile && (
+                <StlPreviewViewer
+                  file={previewFile}
+                  showOverlay={true}
+                  onDiameterComputed={(
+                    _filename,
+                    maxDiameter,
+                    connectionDiameter
+                  ) => {
+                    const roundedMax = Math.round((maxDiameter ?? 0) * 10) / 10;
+                    const roundedConn =
+                      Math.round((connectionDiameter ?? 0) * 10) / 10;
+                    setCaseInfos({
+                      maxDiameter: roundedMax,
+                      connectionDiameter: roundedConn,
+                    });
+                  }}
+                />
+              )}
+
+              <div className="rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-700">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium">
+                    스크류홀이 메워진 모델에 문제 있으면 관리자에게
+                    보고해주세요.
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 inline-flex items-center justify-center rounded-md border border-gray-300 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-900 hover:bg-gray-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void onReportFillHoleIssue?.(selectedFile || undefined);
+                    }}
+                  >
+                    리포트
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {(!files.length || selectedPreviewIndex === null) && (
@@ -212,51 +261,20 @@ export function NewRequestDetailsSection({
                     .map((file, index) => ({ file, index }))
                     .filter(
                       ({ file }) =>
-                        !fileVerificationStatus[`${file.name}:${file.size}`]
+                        !fileVerificationStatus[
+                          `${normalizeKeyPart(file.name)}:${file.size}`
+                        ]
                     )
                     .map(({ file, index }) => {
                       const filename = file.name;
-                      const fileKey = `${file.name}:${file.size}`;
+                      const fileKey = toNormalizedFileKey(file);
                       const isSelected = selectedPreviewIndex === index;
 
                       return (
                         <div
-                          key={fileKey}
+                          key={`${fileKey}-${index}`}
                           onClick={() => {
-                            const currentWorkType = getFileWorkType(file);
                             setSelectedPreviewIndex(index);
-
-                            const fileInfoFromMap = caseInfosMap?.[fileKey];
-                            if (fileInfoFromMap) {
-                              updateCaseInfos(fileKey, fileInfoFromMap);
-                            } else {
-                              updateCaseInfos(fileKey, {
-                                workType: currentWorkType,
-                              });
-                            }
-
-                            if (
-                              currentWorkType === "abutment" &&
-                              !implantManufacturer &&
-                              !implantSystem &&
-                              !implantType
-                            ) {
-                              setImplantManufacturer("OSSTEM");
-                              setImplantSystem("Regular");
-                              setImplantType("Hex");
-                              syncSelectedConnection(
-                                "OSSTEM",
-                                "Regular",
-                                "Hex"
-                              );
-
-                              updateCaseInfos(fileKey, {
-                                ...(fileInfoFromMap || {}),
-                                implantManufacturer: "OSSTEM",
-                                implantSystem: "Regular",
-                                implantType: "Hex",
-                              });
-                            }
                           }}
                           className={`shrink-0 w-48 md:w-56 p-2 md:p-3 rounded-lg cursor-pointer text-xs space-y-2 transition-colors ${
                             isSelected
@@ -312,7 +330,9 @@ export function NewRequestDetailsSection({
                                     i < files.length;
                                     i++
                                   ) {
-                                    const key = `${files[i].name}:${files[i].size}`;
+                                    const key = `${normalizeKeyPart(
+                                      files[i].name
+                                    )}:${files[i].size}`;
                                     if (!nextStatus[key]) {
                                       nextIndex = i;
                                       break;
@@ -321,7 +341,9 @@ export function NewRequestDetailsSection({
 
                                   if (nextIndex === -1) {
                                     for (let i = 0; i < index; i++) {
-                                      const key = `${files[i].name}:${files[i].size}`;
+                                      const key = `${normalizeKeyPart(
+                                        files[i].name
+                                      )}:${files[i].size}`;
                                       if (!nextStatus[key]) {
                                         nextIndex = i;
                                         break;
@@ -414,47 +436,20 @@ export function NewRequestDetailsSection({
                   .map((file, index) => ({ file, index }))
                   .filter(
                     ({ file }) =>
-                      fileVerificationStatus[`${file.name}:${file.size}`]
+                      fileVerificationStatus[
+                        `${normalizeKeyPart(file.name)}:${file.size}`
+                      ]
                   )
                   .map(({ file, index }) => {
                     const filename = file.name;
-                    const fileKey = `${file.name}:${file.size}`;
+                    const fileKey = toNormalizedFileKey(file);
                     const isSelected = selectedPreviewIndex === index;
 
                     return (
                       <div
-                        key={fileKey}
+                        key={`${fileKey}-${index}`}
                         onClick={() => {
-                          const currentWorkType = getFileWorkType(file);
                           setSelectedPreviewIndex(index);
-
-                          const fileInfoFromMap = caseInfosMap?.[fileKey];
-                          if (fileInfoFromMap) {
-                            updateCaseInfos(fileKey, fileInfoFromMap);
-                          } else {
-                            updateCaseInfos(fileKey, {
-                              workType: currentWorkType,
-                            });
-                          }
-
-                          if (
-                            currentWorkType === "abutment" &&
-                            !implantManufacturer &&
-                            !implantSystem &&
-                            !implantType
-                          ) {
-                            setImplantManufacturer("OSSTEM");
-                            setImplantSystem("Regular");
-                            setImplantType("Hex");
-                            syncSelectedConnection("OSSTEM", "Regular", "Hex");
-
-                            updateCaseInfos(fileKey, {
-                              ...(fileInfoFromMap || {}),
-                              implantManufacturer: "OSSTEM",
-                              implantSystem: "Regular",
-                              implantType: "Hex",
-                            });
-                          }
                         }}
                         className={`shrink-0 w-48 md:w-56 p-2 md:p-3 rounded-lg cursor-pointer text-xs space-y-2 transition-colors ${
                           isSelected

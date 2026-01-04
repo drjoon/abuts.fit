@@ -1,0 +1,30 @@
+[abuts-rhino] start
+[abuts-rhino] input=/Users/joonholee/Joon/1-Project/dev/abuts.fit/rhino/Stl-Stores/in/20251205____________________________47_0.stl
+[abuts-rhino] output=/Users/joonholee/Joon/1-Project/dev/abuts.fit/rhino/Stl-Stores/out/job_6831cfa064904652bc0845598be39048/20251205____________________________47_0.fw.stl
+[abuts-rhino] import ok
+[abuts-rhino] mesh objects after import=1
+[abuts-rhino] mesh[0] v=7429 f=12108 closed=True manifold=(False, False, False) nakedEdges=0
+[abuts-rhino] RunScript=!_-Explode
+[abuts-rhino] Explode ok=True
+[abuts-rhino] mesh objects after Explode=24
+[abuts-rhino] piece count=24
+[abuts-rhino] candidate[0] id=9ab0f4e9-2559-47c2-906f-ba82922530d7 r=5.363544511443497 maxZ=3.3731777667999268 nakedEdges=2
+[abuts-rhino] candidate[1] id=18821e49-ee65-4862-9360-ab4f93909fc7 r=5.363544511443497 maxZ=3.3239388465881348 nakedEdges=2
+[abuts-rhino] candidate[2] id=aadeccf7-f9a4-499d-a3ef-561ce4b20564 r=5.351281132118209 maxZ=7.721749305725098 nakedEdges=2
+[abuts-rhino] candidate[3] id=55dff987-ab62-41c8-b62e-7dfed29fef68 r=2.431823000078724 maxZ=0.3000015318393707 nakedEdges=2
+[abuts-rhino] candidate[4] id=9f064a61-cc99-4b67-b5b0-5db3ac1185d9 r=2.3496333673310024 maxZ=0.30000144243240356 nakedEdges=2
+[abuts-rhino] candidate[5] id=31040ec3-5d22-48f3-873d-e05d7647ca64 r=2.011437955037415 maxZ=-1.2257473468780518 nakedEdges=2
+[abuts-rhino] candidate[6] id=016e7ae7-84b7-4a8d-8022-20f18b24acdb r=1.8733697580631832 maxZ=-2.1264426708221436 nakedEdges=2
+[abuts-rhino] candidate[7] id=1d229c72-afdd-4862-b96f-73664ff980e2 r=1.8277666600936175 maxZ=-1.2257483005523682 nakedEdges=1
+[abuts-rhino] candidate[8] id=ebdefb9f-0747-4c20-81ad-5b9497b819ab r=1.827766583327496 maxZ=-1.2257477045059204 nakedEdges=1
+[abuts-rhino] candidate[9] id=3b95efef-0f01-433e-9a46-fef92f251773 r=1.82776653543333 maxZ=-1.2257487773895264 nakedEdges=1
+[abuts-rhino] candidate[10] id=ab385376-acaa-47c0-bac0-72c1321db771 r=1.827766520997347 maxZ=-1.225748062133789 nakedEdges=1
+[abuts-rhino] candidate[11] id=60a0e566-6d06-46bc-b9d0-20b1eb04b9dd r=1.7364986345191684 maxZ=-2.225747585296631 nakedEdges=2
+[abuts-rhino] selected piece id=aadeccf7-f9a4-499d-a3ef-561ce4b20564
+[abuts-rhino] selected key(r,maxZ)=(5.351281132118209, 7.721749305725098)
+[abuts-rhino] before FillMeshHoles nakedEdges=2
+[abuts-rhino] Mesh.FillHoles filled=True, replaced=True
+[abuts-rhino] after FillMeshHoles nakedEdges=0
+[abuts-rhino] RunScript=!_-Join _Enter
+[abuts-rhino] mesh objects after Join=1
+[abuts-rhino] export ok

@@ -38,6 +38,21 @@ export const NewChatWidget = () => {
   const { uploadFiles } = useS3TempUpload({ token });
 
   useEffect(() => {
+    const onOpen = (evt?: Event) => {
+      const custom = evt as CustomEvent | undefined;
+      const detail: any = custom?.detail || {};
+      const prefill = typeof detail?.prefill === "string" ? detail.prefill : "";
+      if (prefill) {
+        setDraft(prefill);
+      }
+      setIsMinimized(false);
+      setIsOpen(true);
+    };
+    window.addEventListener("abuts:open-support-chat", onOpen);
+    return () => window.removeEventListener("abuts:open-support-chat", onOpen);
+  }, []);
+
+  useEffect(() => {
     const load = async () => {
       if (!user || !isAuthenticated) return;
       if (supportRoomDisabled) return;
@@ -187,6 +202,18 @@ export const NewChatWidget = () => {
   const title = useMemo(() => {
     return "어벗츠.핏 고객지원";
   }, []);
+
+  const formatChatTs = (iso?: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const yyyy = String(d.getFullYear());
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+  };
 
   if (!isAuthenticated || !user || user.role === "admin") {
     return null;
@@ -371,6 +398,7 @@ export const NewChatWidget = () => {
                         {messages.map((m) => {
                           const senderId = String(m.sender?._id || "").trim();
                           const isMine = myIdCandidates.has(senderId);
+                          const ts = formatChatTs((m as any)?.createdAt);
                           return (
                             <div
                               key={m._id}
@@ -385,6 +413,11 @@ export const NewChatWidget = () => {
                                     : "bg-muted"
                                 }`}
                               >
+                                {ts && (
+                                  <div className="mb-1 text-[10px] opacity-70">
+                                    {ts}
+                                  </div>
+                                )}
                                 <div className="whitespace-pre-wrap leading-snug">
                                   {m.content}
                                 </div>

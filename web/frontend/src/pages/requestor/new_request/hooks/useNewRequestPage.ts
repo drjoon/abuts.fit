@@ -110,31 +110,48 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     return `${file.name}:${file.size}`;
   }, [selectedPreviewIndex, files]);
 
-  // 현재 선택된 파일의 caseInfos (파일별 독립적 관리)
+  // 현재 파일의 caseInfos (파일별 독립적 관리)
   const currentCaseInfos = useMemo(() => {
-    if (currentFileKey === "__default__") {
-      return caseInfosMap.__default__ || { workType: "abutment" };
-    }
-    return (
-      caseInfosMap[currentFileKey] ||
-      caseInfosMap.__default__ || { workType: "abutment" }
-    );
-  }, [currentFileKey, caseInfosMap]);
+    const key =
+      currentFileKey === "__default__" ? "__default__" : currentFileKey;
+    const info = caseInfosMap[key] ||
+      caseInfosMap.__default__ || { workType: "abutment" };
+
+    console.log("[useNewRequestPage] currentCaseInfos compute:", {
+      selectedPreviewIndex,
+      currentFileKey,
+      key,
+      patientName: info.patientName,
+      filesCount: files.length,
+    });
+
+    return info;
+  }, [currentFileKey, caseInfosMap, selectedPreviewIndex, files]);
 
   // 현재 파일의 caseInfos 업데이트 함수
   const setCaseInfos = useCallback(
     (updates: Partial<typeof currentCaseInfos>) => {
-      if (selectedPreviewIndex === null || !files[selectedPreviewIndex]) {
-        // 파일이 선택되지 않았으면 __default__ 업데이트
-        updateCaseInfos("__default__", updates);
-      } else {
-        const file = files[selectedPreviewIndex];
-        const fileKey = `${file.name}:${file.size}`;
-        updateCaseInfos(fileKey, updates);
-      }
+      const file =
+        selectedPreviewIndex !== null ? files[selectedPreviewIndex] : null;
+      const fileKey = file ? `${file.name}:${file.size}` : "__default__";
+
+      console.log("[useNewRequestPage] setCaseInfos called:", {
+        fileKey,
+        updates,
+        currentCaseInfos,
+        selectedPreviewIndex,
+      });
+
+      // 1) 로컬 캐시(caseInfosMap) 업데이트
+      updateCaseInfos(fileKey, updates);
     },
-    [selectedPreviewIndex, files, updateCaseInfos]
+    [selectedPreviewIndex, files, updateCaseInfos, currentCaseInfos]
   );
+
+  // useNewRequestImplant 내부에서 clinicName이 바뀔 때마다
+  // 임플란트 정보를 초기화(sync)하려고 시도하는 로직이
+  // 파일 전환 시 원치 않는 덮어쓰기를 유발할 수 있음.
+  // syncSelectedConnection을 수동으로만 호출하도록 NewRequestPatientImplantFields 수정 검토 필요.
 
   // 임플란트 정보 관리
   const {
@@ -154,12 +171,38 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     clinicName: currentCaseInfos.clinicName,
     onDefaultImplantChange: (fields) => {
       // 기본 임플란트가 자동 설정될 때 현재 파일의 Draft.caseInfos에도 같이 기록
-      setCaseInfos({
-        ...currentCaseInfos,
-        ...fields,
-      });
+      // 단, 파일이 선택되어 있을 때만 (초기 로딩 시 __default__ 덮어쓰기 방지)
+      if (selectedPreviewIndex !== null) {
+        setCaseInfos({
+          ...currentCaseInfos,
+          ...fields,
+        });
+      }
     },
   });
+
+  // 파일 전환 시 로컬 임플란트 상태 동기화
+  useEffect(() => {
+    if (currentCaseInfos) {
+      console.log("[useNewRequestPage] Syncing implant state for file:", {
+        currentFileKey,
+        implantManufacturer: currentCaseInfos.implantManufacturer,
+        implantSystem: currentCaseInfos.implantSystem,
+        implantType: currentCaseInfos.implantType,
+      });
+      setImplantManufacturer(currentCaseInfos.implantManufacturer || "");
+      setImplantSystem(currentCaseInfos.implantSystem || "");
+      setImplantType(currentCaseInfos.implantType || "");
+    }
+  }, [
+    currentFileKey,
+    currentCaseInfos.implantManufacturer,
+    currentCaseInfos.implantSystem,
+    currentCaseInfos.implantType,
+    setImplantManufacturer,
+    setImplantSystem,
+    setImplantType,
+  ]);
 
   // 클리닉 프리셋 관리
   const {

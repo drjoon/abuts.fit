@@ -197,6 +197,36 @@ export const useNewRequestSubmitV2 = ({
     }
 
     try {
+      // 중복 데이터 체크 (제출 전 클라이언트 사이드 검증)
+      if (files.length > 1 && caseInfosMap) {
+        const uniqueCombinations = new Set();
+        const duplicates = [];
+
+        for (const file of files) {
+          const fileKey = `${file.name}:${file.size}`;
+          const info = caseInfosMap[fileKey];
+          if (info) {
+            const combo = `${info.clinicName}|${info.patientName}|${info.tooth}`;
+            if (uniqueCombinations.has(combo)) {
+              duplicates.push(`${info.patientName}(${info.tooth})`);
+            }
+            uniqueCombinations.add(combo);
+          }
+        }
+
+        if (duplicates.length > 0) {
+          toast({
+            title: "의뢰 제출 중 오류",
+            description: `제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다: ${duplicates.join(
+              ", "
+            )}. 중복 항목을 제거하거나 수정한 후 다시 제출해주세요.`,
+            variant: "destructive",
+            duration: 5000,
+          });
+          return;
+        }
+      }
+
       // 현재 파일 기준으로 유효한 fileKey 집합
       const validFileKeys = new Set(files.map((f) => `${f.name}:${f.size}`));
 
