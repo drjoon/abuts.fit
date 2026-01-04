@@ -350,7 +350,7 @@ export function sortByProductionPriority(requests) {
  */
 export function calculateRiskSummary(requests) {
   const now = new Date();
-  const warningThresholdDays = 2; // 도착예정일 -2일부터 경고
+  const warningThresholdDays = 1; // 도착예정일 -1일부터 경고 (기존 2일에서 단축)
   const delayGraceDays = 0; // 도착예정일 당일 미발송이면 지연
 
   let delayedCount = 0;
@@ -397,13 +397,10 @@ export function calculateRiskSummary(requests) {
       continue;
     }
 
-    // 지연 위험: 도착예정일 - 2일까지 CAM 완료가 안 된 경우 (status가 의뢰/CAM/생산)
-    const isPreCamOrCamOrProd = ["의뢰", "CAM", "생산"].includes(status);
-    if (
-      isPreCamOrCamOrProd &&
-      now >= warningStart &&
-      now < startOfDayDelivery
-    ) {
+    // 지연 위험: 도착예정일 - 1일까지 CAM 완료가 안 된 경우 (status가 의뢰/CAM)
+    // 생산(Machining) 단계로 들어갔다면 지연 가능 목록에서 제외
+    const isPreProduction = ["의뢰", "CAM"].includes(status);
+    if (isPreProduction && now >= warningStart && now < startOfDayDelivery) {
       warningCount++;
       riskItems.push({
         id: req._id,
