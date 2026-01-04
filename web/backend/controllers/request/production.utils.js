@@ -381,8 +381,16 @@ export function calculateRiskSummary(requests) {
     if (!isShippedOrLater && now >= startOfDayDelivery) {
       delayedCount++;
       riskItems.push({
+        id: req._id,
         requestId: req.requestId,
+        title: req.title || req.requestId,
         type: "delayed",
+        riskLevel: "danger",
+        status: status,
+        manufacturerStage: req.manufacturerStage,
+        dueDate: schedule.estimatedDelivery
+          ? new Date(schedule.estimatedDelivery).toLocaleDateString()
+          : null,
         scheduledCamStart: schedule.scheduledCamStart,
         estimatedDelivery: schedule.estimatedDelivery,
       });
@@ -398,8 +406,16 @@ export function calculateRiskSummary(requests) {
     ) {
       warningCount++;
       riskItems.push({
+        id: req._id,
         requestId: req.requestId,
+        title: req.title || req.requestId,
         type: "warning",
+        riskLevel: "warning",
+        status: status,
+        manufacturerStage: req.manufacturerStage,
+        dueDate: schedule.estimatedDelivery
+          ? new Date(schedule.estimatedDelivery).toLocaleDateString()
+          : null,
         scheduledCamStart: schedule.scheduledCamStart,
         estimatedDelivery: schedule.estimatedDelivery,
       });

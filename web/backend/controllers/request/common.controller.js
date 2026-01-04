@@ -585,7 +585,7 @@ export async function getMyRequests(req, res) {
 
     // 의뢰 조회
     const rawRequests = await Request.find(filter)
-      .select("-messages")
+      .select("-messages -statusHistory") // 상세 내역 조회 시 불필요한 큰 필드 제외
       .populate("requestor", "name email organization organizationId")
       .sort(sort)
       .skip(skip)

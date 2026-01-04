@@ -1,5 +1,10 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useInView } from "react-intersection-observer";
 import { useOutletContext } from "react-router-dom";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -118,30 +123,54 @@ export const RequestorDashboardPage = () => {
     return "의뢰";
   };
 
-  const { data: myRequestsForModal, isFetching: loadingMyRequestsForModal } =
-    useQuery({
-      queryKey: ["requestor-dashboard-stats-modal", statsModalLabel],
-      queryFn: async () => {
-        const res = await apiFetch<any>({
-          path: "/api/requests/my?page=1&limit=50&sortBy=createdAt&sortOrder=desc",
-          method: "GET",
-          token,
-          headers: token
-            ? {
-                "x-mock-role": "requestor",
-              }
+  const {
+    data: infiniteData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: loadingMyRequestsForModal,
+  } = useInfiniteQuery({
+    queryKey: ["requestor-dashboard-stats-modal-infinite", statsModalLabel],
+    queryFn: async ({ pageParam = 1 }) => {
+      const res = await apiFetch<any>({
+        path: `/api/requests/my?page=${pageParam}&limit=20&sortBy=createdAt&sortOrder=desc`,
+        method: "GET",
+        token,
+        headers: token
+          ? {
+              "x-mock-role": "requestor",
+            }
+          : undefined,
+      });
+      if (!res.ok) throw new Error("의뢰 목록 조회에 실패했습니다.");
+      const body = res.data;
+      const data = body?.data || body;
+      return {
+        requests: Array.isArray(data?.requests) ? data.requests : [],
+        nextPage:
+          data?.pagination?.page < data?.pagination?.pages
+            ? data.pagination.page + 1
             : undefined,
-        });
-        if (!res.ok) throw new Error("의뢰 목록 조회에 실패했습니다.");
-        const body = res.data;
-        const data = body?.data || body;
-        return Array.isArray(data?.requests) ? data.requests : [];
-      },
-      enabled: statsModalOpen && !!token,
-      retry: false,
-    });
+      };
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.nextPage,
+    enabled: statsModalOpen && !!token,
+    retry: false,
+  });
 
-  const modalItems = getModalItems(myRequestsForModal || [], statsModalLabel);
+  const { ref: loadMoreRef, inView } = useInView();
+
+  useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const modalItems = useMemo(() => {
+    const all = infiniteData?.pages.flatMap((page) => page.requests) || [];
+    return getModalItems(all, statsModalLabel);
+  }, [infiniteData, statsModalLabel]);
 
   const {
     data: summaryResponse,
@@ -237,14 +266,18 @@ export const RequestorDashboardPage = () => {
 
     const ci = request.caseInfos || {};
 
+    // riskSummary 등에서 넘어온 raw data가 recentRequests 형식과 다를 수 있어 보강
     setEditingRequest({
       id: mongoId,
       requestId: request.requestId || displayId,
-      createdAt: request.createdAt,
+      createdAt: request.createdAt || request.date || "",
       estimatedCompletion:
-        request.timeline?.estimatedCompletion || request.estimatedCompletion,
+        request.timeline?.estimatedCompletion ||
+        request.estimatedCompletion ||
+        request.dueDate ||
+        "",
       title: request.title || displayId,
-      description: request.description,
+      description: request.description || "",
       clinicName:
         ci.clinicName ||
         request.clinicName ||
@@ -465,20 +498,38 @@ export const RequestorDashboardPage = () => {
         topSection={
           <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-              <div className="flex flex-col gap-6 h-full">
+              <div className="flex flex-col gap-6">
                 <RequestorPricingReferralPolicyCard />
-                <RequestorRiskSummaryCard riskSummary={riskSummary} />
+                <RequestorRiskSummaryCard
+                  riskSummary={riskSummary}
+                  onItemClick={(requestId) => {
+                    const found = recentRequests.find(
+                      (r) => r.requestId === requestId
+                    );
+                    if (found) {
+                      openEditDialogFromRequest(found);
+                    } else {
+                      const foundInRisk = riskSummary?.items?.find(
+                        (it) => it.id === requestId
+                      );
+                      if (foundInRisk) {
+                        openEditDialogFromRequest({
+                          ...foundInRisk,
+                          _id: foundInRisk.id,
+                        });
+                      }
+                    }
+                  }}
+                />
               </div>
 
-              <div className="flex flex-col gap-6 h-full">
+              <div className="flex flex-col gap-6">
                 <RequestorBulkShippingBannerCard
                   bulkData={bulkData}
                   onRefresh={() => {
                     refetchBulk();
                   }}
-                  onOpenBulkModal={() => {
-                    // RequestorBulkShippingBannerCard 내부에서 모달을 직접 관리합니다.
-                  }}
+                  onOpenBulkModal={() => {}}
                 />
 
                 <RequestorRecentRequestsCard
@@ -626,6 +677,13 @@ export const RequestorDashboardPage = () => {
                   </button>
                 );
               })}
+              <div ref={loadMoreRef} className="h-4">
+                {isFetchingNextPage && (
+                  <div className="text-center text-xs text-muted-foreground py-2">
+                    불러오는 중...
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>

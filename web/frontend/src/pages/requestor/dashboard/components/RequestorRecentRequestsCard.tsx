@@ -373,20 +373,29 @@ export const RequestorRecentRequestsCard = ({
   }, [open]);
 
   const isCancelableRequest = (r: any) => {
-    // 백엔드 정책: request.status === "의뢰" 일 때만 취소 가능
-    return String(r?.status || "") === "의뢰";
+    // 백엔드 정책: "의뢰", "CAM", "의뢰접수", "가공전" 단계일 때 취소 가능
+    const status = String(r?.status || "");
+    const stage = String(r?.manufacturerStage || "");
+    return (
+      status === "의뢰" ||
+      status === "의뢰접수" ||
+      status === "가공전" ||
+      stage === "의뢰" ||
+      stage === "의뢰접수" ||
+      stage === "CAM"
+    );
   };
 
   return (
     <Card
-      className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg flex-1 min-h-[220px] cursor-pointer"
+      className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg cursor-pointer"
       onClick={onRefresh}
     >
       <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
         <CardTitle className="text-base font-semibold m-0">최근 의뢰</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-between pt-0">
-        <div className="space-y-3 max-h-[240px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+        <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {items.map((item: any) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";

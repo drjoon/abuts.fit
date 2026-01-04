@@ -406,7 +406,7 @@ export async function getMyDashboardSummary(req, res) {
     const activeRequests = await Request.find({
       ...requestFilter,
       status: { $in: ["의뢰", "CAM", "생산"] },
-    }).select("requestId productionSchedule");
+    }).select("requestId title status manufacturerStage productionSchedule");
 
     const riskSummary = calculateRiskSummary(activeRequests);
 
@@ -541,8 +541,13 @@ export async function getMyDashboardSummary(req, res) {
 
         const createdYmd = toKstYmd(r.createdAt) || getTodayYmdInKst();
         const baseYmd = await normalizeKoreanBusinessDay({ ymd: createdYmd });
+        // 생성일 다음 영업일부터 카운트 시작 (신규 의뢰와 동일하게 +2영업일 적용)
+        const startYmd = await addKoreanBusinessDays({
+          startYmd: baseYmd,
+          days: 1,
+        });
         const days = resolveNormalLeadDays(ci?.maxDiameter);
-        const etaYmd = await addKoreanBusinessDays({ startYmd: baseYmd, days });
+        const etaYmd = await addKoreanBusinessDays({ startYmd, days });
 
         return {
           ...r,
@@ -851,6 +856,7 @@ export async function getDashboardRiskSummary(req, res) {
         daysOverdue,
         daysUntilDue,
         message,
+        caseInfos: r?.caseInfos || {},
       };
     };
 
@@ -858,12 +864,12 @@ export async function getDashboardRiskSummary(req, res) {
       ...delayedItems
         .slice()
         .sort((a, b) => (b?.daysOverdue || 0) - (a?.daysOverdue || 0))
-        .slice(0, 3)
+        .slice(0, 5) // 지연 최대 5건
         .map((entry) => toRiskItem(entry, "danger")),
       ...warningItems
         .slice()
         .sort((a, b) => (a?.daysUntilDue || 0) - (b?.daysUntilDue || 0))
-        .slice(0, 3)
+        .slice(0, 5) // 주의 최대 5건
         .map((entry) => toRiskItem(entry, "warning")),
     ];
 
