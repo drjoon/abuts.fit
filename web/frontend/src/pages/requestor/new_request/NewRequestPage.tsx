@@ -478,7 +478,9 @@ export const NewRequestPage = () => {
 
     setIsFillHoleProcessing(true);
     try {
-      const results = await Promise.allSettled(
+      // 1) 개별 파일에 대해 순차적으로 또는 병렬로 API 호출
+      // 결과가 오는대로 즉시 상태에 업데이트하여 UI에 반영
+      await Promise.allSettled(
         files.map(async (file) => {
           const fileKey = toNormalizedFileKey(file);
           const fd = new FormData();
@@ -514,42 +516,55 @@ export const NewRequestPage = () => {
             const filled = new File([buf], outName, {
               type: "application/sla",
             });
+
+            // 결과 업데이트 (개별 파일 완료 시점)
             setFilledStlFiles((prev) => ({ ...prev, [fileKey]: filled }));
+
+            // 해당 파일의 카드로 자동 포커스 및 선택
+            const fileIndex = files.findIndex(
+              (f) => toNormalizedFileKey(f) === fileKey
+            );
+            if (fileIndex !== -1) {
+              setSelectedPreviewIndex(fileIndex);
+            }
+          } catch (error: any) {
+            console.error(`Fill hole failed for ${file.name}:`, error);
+            throw error;
           } finally {
             window.clearTimeout(timeoutId);
           }
         })
-      );
+      ).then((results) => {
+        const failed = results
+          .map((r, idx) => ({ r, idx }))
+          .filter(({ r }) => r.status === "rejected")
+          .map(({ r, idx }) => {
+            const reason = (r as PromiseRejectedResult).reason;
+            const msg = (() => {
+              const originalMsg = String(reason?.message || reason || "");
+              if (
+                originalMsg.includes("ECONNREFUSED") ||
+                originalMsg.includes("Failed to fetch")
+              ) {
+                return "스크류홀 메우는 앱이 일시적으로 중단되었습니다. 홀메우기 없이 진행합니다.";
+              }
+              if (reason?.name === "AbortError") {
+                return "처리 시간이 오래 걸려 중단되었습니다.";
+              }
+              return originalMsg || "알 수 없는 오류";
+            })();
+            return `${files[idx]?.name || "파일"}: ${msg}`;
+          });
 
-      const failed = results
-        .map((r, idx) => ({ r, idx }))
-        .filter(({ r }) => r.status === "rejected")
-        .map(({ r, idx }) => {
-          const reason = (r as PromiseRejectedResult).reason;
-          const msg = (() => {
-            const originalMsg = String(reason?.message || reason || "");
-            if (
-              originalMsg.includes("ECONNREFUSED") ||
-              originalMsg.includes("Failed to fetch")
-            ) {
-              return "스크류홀 메우는 앱이 일시적으로 중단되었습니다. 홀메우기 없이 진행합니다.";
-            }
-            if (reason?.name === "AbortError") {
-              return "처리 시간이 오래 걸려 중단되었습니다.";
-            }
-            return originalMsg || "알 수 없는 오류";
-          })();
-          return `${files[idx]?.name || "파일"}: ${msg}`;
-        });
-
-      if (failed.length > 0) {
-        toast({
-          title: "오류",
-          description: failed.join("\n"),
-          variant: "destructive",
-          duration: 6000,
-        });
-      }
+        if (failed.length > 0) {
+          toast({
+            title: "일부 파일 처리 오류",
+            description: failed.join("\n"),
+            variant: "destructive",
+            duration: 6000,
+          });
+        }
+      });
     } finally {
       setIsFillHoleProcessing(false);
     }
