@@ -526,10 +526,19 @@ export const NewRequestPage = () => {
         .filter(({ r }) => r.status === "rejected")
         .map(({ r, idx }) => {
           const reason = (r as PromiseRejectedResult).reason;
-          const msg =
-            reason?.name === "AbortError"
-              ? "처리 시간이 오래 걸려 중단되었습니다."
-              : String(reason?.message || reason || "알 수 없는 오류");
+          const msg = (() => {
+            const originalMsg = String(reason?.message || reason || "");
+            if (
+              originalMsg.includes("ECONNREFUSED") ||
+              originalMsg.includes("Failed to fetch")
+            ) {
+              return "스크류홀 메우는 앱이 일시적으로 중단되었습니다. 홀메우기 없이 진행합니다.";
+            }
+            if (reason?.name === "AbortError") {
+              return "처리 시간이 오래 걸려 중단되었습니다.";
+            }
+            return originalMsg || "알 수 없는 오류";
+          })();
           return `${files[idx]?.name || "파일"}: ${msg}`;
         });
 
