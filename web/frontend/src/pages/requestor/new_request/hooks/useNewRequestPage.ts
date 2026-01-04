@@ -579,18 +579,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
           const toastKey = `abutsfit:credit-topup-toast:v1:${userId}:${ymd}`;
 
-          if (currentBalance <= threshold && !localStorage.getItem(toastKey)) {
-            localStorage.setItem(toastKey, "1");
-            toast({
-              title: "크레딧 충전이 필요합니다",
-              description:
-                currentBalance <= 0
-                  ? "현재 크레딧이 0원입니다. 설정 > 결제 탭에서 크레딧을 충전해주세요."
-                  : "크레딧이 부족합니다. 설정 > 결제 탭에서 크레딧을 충전해주세요.",
-              variant: "destructive",
-              duration: 5000,
-            });
-          }
+          // [변경] 생산 시작 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 크레딧 부족 토스트는 제거하거나 안내 문구로 변경 가능.
+          // 여기서는 사용자 요청에 따라 "생산 시작 시 크레딧을 확인"하도록 했으므로 생성 시점의 강제 토스트는 제거함.
         } catch {
           // ignore
         }

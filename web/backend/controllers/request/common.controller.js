@@ -1,6 +1,7 @@
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -12,6 +13,7 @@ import {
   buildRequestorOrgScopeFilter,
   normalizeCaseInfosImplantFields,
 } from "./utils.js";
+import { getOrganizationCreditBalanceBreakdown } from "./creation.controller.js";
 import s3Utils, {
   deleteFileFromS3,
   getSignedUrl as getSignedUrlForS3Key,
@@ -215,13 +217,52 @@ export async function deleteStageFile(req, res) {
   }
 }
 
-const advanceManufacturerStageByReviewStage = async ({ request, stage }) => {
+const advanceManufacturerStageByReviewStage = async ({
+  request,
+  stage,
+  userId,
+  session,
+}) => {
   if (stage === "request") {
     applyStatusMapping(request, "CAM");
     return;
   }
 
   if (stage === "cam") {
+    // [변경] CAM 승인(생산 시작) 시점에 크레딧 차감
+    const organizationId =
+      request.requestorOrganizationId || request.requestor?.organizationId;
+    if (organizationId) {
+      const { balance } = await getOrganizationCreditBalanceBreakdown({
+        organizationId,
+        session,
+      });
+      const amountToDeduct = Number(request.price?.amount || 0);
+
+      if (balance < amountToDeduct) {
+        const err = new Error("크레딧이 부족하여 생산을 시작할 수 없습니다.");
+        err.statusCode = 402;
+        throw err;
+      }
+
+      const uniqueKey = `request:${String(request._id)}:cam_approve_spend`;
+      await CreditLedger.updateOne(
+        { uniqueKey },
+        {
+          $setOnInsert: {
+            organizationId,
+            userId: userId || null,
+            type: "SPEND",
+            amount: -amountToDeduct,
+            refType: "REQUEST",
+            refId: request._id,
+            uniqueKey,
+          },
+        },
+        { upsert: true, session }
+      );
+    }
+
     applyStatusMapping(request, "생산");
     return;
   }
@@ -242,6 +283,7 @@ const advanceManufacturerStageByReviewStage = async ({ request, stage }) => {
 };
 
 export async function updateReviewStatusByStage(req, res) {
+  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
     const { stage, status, reason } = req.body || {};
@@ -281,40 +323,53 @@ export async function updateReviewStatusByStage(req, res) {
       });
     }
 
-    const request = await Request.findById(id);
-    if (!request) {
-      return res
-        .status(404)
-        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
-    }
+    let resultRequest = null;
 
-    ensureReviewByStageDefaults(request);
-    request.caseInfos.reviewByStage[stage] = {
-      status,
-      updatedAt: new Date(),
-      updatedBy: req.user?._id,
-      reason: String(reason || ""),
-    };
+    await session.withTransaction(async () => {
+      const request = await Request.findById(id).session(session);
+      if (!request) {
+        const err = new Error("의뢰를 찾을 수 없습니다.");
+        err.statusCode = 404;
+        throw err;
+      }
 
-    // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
-    if (status === "APPROVED") {
-      await advanceManufacturerStageByReviewStage({ request, stage });
-    } else if (status === "PENDING") {
-      revertManufacturerStageByReviewStage(request, stage);
-    }
+      ensureReviewByStageDefaults(request);
+      request.caseInfos.reviewByStage[stage] = {
+        status,
+        updatedAt: new Date(),
+        updatedBy: req.user?._id,
+        reason: String(reason || ""),
+      };
 
-    await request.save();
+      // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
+      if (status === "APPROVED") {
+        await advanceManufacturerStageByReviewStage({
+          request,
+          stage,
+          userId: req.user?._id,
+          session,
+        });
+      } else if (status === "PENDING") {
+        revertManufacturerStageByReviewStage(request, stage);
+      }
+
+      await request.save({ session });
+      resultRequest = request;
+    });
 
     return res.status(200).json({
       success: true,
-      data: await normalizeRequestForResponse(request),
+      data: await normalizeRequestForResponse(resultRequest),
     });
   } catch (error) {
-    return res.status(500).json({
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
       success: false,
-      message: "검토 상태 변경 중 오류가 발생했습니다.",
+      message: error.message || "검토 상태 변경 중 오류가 발생했습니다.",
       error: error.message,
     });
+  } finally {
+    session.endSession();
   }
 }
 

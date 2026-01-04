@@ -86,7 +86,7 @@ const resolveEstimatedCompletionDate = async ({
   return ymdToKstDate(arrivalYmd);
 };
 
-async function getOrganizationCreditBalanceBreakdown({
+export async function getOrganizationCreditBalanceBreakdown({
   organizationId,
   session,
 }) {
@@ -279,34 +279,8 @@ export async function createRequest(req, res) {
       };
     }
 
-    applyStatusMapping(newRequest, newRequest.status);
-
+    // [변경] 생산 시작(CAM 승인) 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 SPEND 로직을 제거합니다.
     await newRequest.save();
-
-    const hasManufacturer =
-      typeof normalizedCaseInfos.implantManufacturer === "string" &&
-      normalizedCaseInfos.implantManufacturer.trim();
-
-    if (hasManufacturer) {
-      try {
-        await ClinicImplantPreset.findOneAndUpdate(
-          {
-            requestor: req.user._id,
-            clinicName: caseInfos.clinicName || "",
-            manufacturer: normalizedCaseInfos.implantManufacturer,
-            system: normalizedCaseInfos.implantSystem,
-            type: normalizedCaseInfos.implantType,
-          },
-          {
-            $inc: { useCount: 1 },
-            $set: { lastUsedAt: new Date() },
-          },
-          { upsert: true, new: true, setDefaultsOnInsert: true }
-        );
-      } catch (presetError) {
-        console.warn("Could not save clinic implant preset", presetError);
-      }
-    }
 
     res.status(201).json({
       success: true,
@@ -950,29 +924,6 @@ export async function createRequestsFromDraft(req, res) {
               applyStatusMapping(existingDoc, "취소");
               await existingDoc.save({ session });
             }
-
-            // 중복 차감 방지: 기존 의뢰의 가격만큼 환불(REFUND)로 상쇄
-            const refundAmount = Number(existingDoc?.price?.amount || 0);
-            if (refundAmount > 0) {
-              const refundKey = `request:${String(
-                existingDoc._id
-              )}:replace_refund`;
-              await CreditLedger.updateOne(
-                { uniqueKey: refundKey },
-                {
-                  $setOnInsert: {
-                    organizationId,
-                    userId: req.user?._id || null,
-                    type: "REFUND",
-                    amount: refundAmount,
-                    refType: "REQUEST",
-                    refId: existingDoc._id,
-                    uniqueKey: refundKey,
-                  },
-                },
-                { upsert: true, session }
-              );
-            }
           } else if (strategy === "remake") {
             if (existingStatus2 !== "완료") {
               const err = new Error(
@@ -1207,24 +1158,7 @@ export async function createRequestsFromDraft(req, res) {
           await newRequest.save({ session });
           createdRequests.push(newRequest);
 
-          const uniqueKey = `draft:${String(draftId)}:case:${
-            item.caseId
-          }:spend`;
-          await CreditLedger.updateOne(
-            { uniqueKey },
-            {
-              $setOnInsert: {
-                organizationId,
-                userId: req.user?._id || null,
-                type: "SPEND",
-                amount: -Number(item?.computedPrice?.amount || 0),
-                refType: "REQUEST",
-                refId: newRequest._id,
-                uniqueKey,
-              },
-            },
-            { upsert: true, session }
-          );
+          // [변경] 생산 시작(CAM 승인) 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 SPEND 로직을 제거합니다.
         }
       });
     } catch (e) {

@@ -28,6 +28,12 @@ import {
   WorksheetDiameterCard,
   type DiameterStats,
 } from "@/shared/ui/dashboard/WorksheetDiameterCard";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { CreditLedgerModal } from "./components/CreditLedgerModal";
 import {
   Dialog,
@@ -172,6 +178,8 @@ export const RequestorDashboardPage = () => {
     return getModalItems(all, statsModalLabel);
   }, [infiniteData, statsModalLabel]);
 
+  const [insufficientCredit, setInsufficientCredit] = useState(false);
+
   const {
     data: summaryResponse,
     refetch: refetchSummary,
@@ -206,6 +214,24 @@ export const RequestorDashboardPage = () => {
     refetchOnWindowFocus: true,
     enabled: !!token,
   });
+
+  // [추가] CAM 승인 대기 중인 건이 있는데 크레딧이 부족한지 확인
+  useEffect(() => {
+    if (summaryResponse?.success && creditBalance !== null) {
+      const stats = summaryResponse.data.stats ?? {};
+      const inCam = stats.inCam || 0;
+
+      // CAM 단계에 있는 건이 하나라도 있고, 잔액이 0 이하거나 매우 낮은 경우 하이라이트
+      // (정확한 금액 비교는 각 의뢰의 가격을 합산해야 하지만, 여기선 "CAM 단계 존재 & 부족 알림" 수준으로 처리)
+      // 사용자 요청: "크레딧이 부족해서 CAM 승인건인데 생산을 시작하지 못하는 경우"
+      // 백엔드에서 402 에러를 받은 이력이 있거나, 현재 잔액이 부족한 상태를 UI에서 표현
+      if (inCam > 0 && creditBalance < 10000) {
+        setInsufficientCredit(true);
+      } else {
+        setInsufficientCredit(false);
+      }
+    }
+  }, [summaryResponse, creditBalance]);
 
   const {
     data: bulkResponse,
@@ -470,19 +496,35 @@ export const RequestorDashboardPage = () => {
           <div className="flex flex-wrap items-center gap-2">
             <PeriodFilter value={period} onChange={setPeriod} />
             {canOpenCreditLedger && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8"
-                onClick={() => setCreditLedgerOpen(true)}
-              >
-                {loadingCreditBalance
-                  ? "보유 크레딧: ..."
-                  : `보유 크레딧: ${Number(
-                      creditBalance || 0
-                    ).toLocaleString()}원`}
-              </Button>
+              <TooltipProvider>
+                <Tooltip open={insufficientCredit}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant={insufficientCredit ? "destructive" : "outline"}
+                      size="sm"
+                      className={`h-8 transition-all ${
+                        insufficientCredit
+                          ? "ring-2 ring-destructive ring-offset-2 animate-pulse"
+                          : ""
+                      }`}
+                      onClick={() => setCreditLedgerOpen(true)}
+                    >
+                      {loadingCreditBalance
+                        ? "보유 크레딧: ..."
+                        : `보유 크레딧: ${Number(
+                            creditBalance || 0
+                          ).toLocaleString()}원`}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    className="bg-destructive text-destructive-foreground"
+                  >
+                    <p>크레딧을 추가 충전하시면 생산이 진행됩니다</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
         }
