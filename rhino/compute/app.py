@@ -8,6 +8,8 @@ import sys
 import json
 import asyncio
 import threading
+import traceback
+import socketio
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
@@ -55,6 +57,48 @@ def _log(msg: str) -> None:
 
 
 app = FastAPI(title="abuts.fit rhino worker")
+
+# Socket.io 서버 초기화
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+socket_app = socketio.ASGIApp(sio, app)
+
+# 작업 결과를 기다리기 위한 Future 저장소
+# {job_token: asyncio.Future}
+_job_futures: Dict[str, asyncio.Future] = {}
+
+@sio.event
+async def connect(sid, environ):
+    _log(f"socket connected: {sid}")
+
+@sio.event
+async def disconnect(sid):
+    _log(f"socket disconnected: {sid}")
+
+@sio.event
+async def job_result(sid, data):
+    """Rhino 스크립트에서 결과를 보내는 이벤트"""
+    token = data.get("token")
+    if token and token in _job_futures:
+        _log(f"socket received job_result: token={token}")
+        future = _job_futures[token]
+        if not future.done():
+            future.set_result(data)
+    else:
+        _log(f"socket received unknown job_result: token={token}")
+
+@app.post("/api/rhino/internal/job-callback")
+async def job_callback(data: Dict[str, Any]):
+    """Rhino 스크립트(C# HttpClient)로부터 결과를 받는 내부 엔드포인트"""
+    token = data.get("token")
+    if token and token in _job_futures:
+        _log(f"callback received job-callback: token={token}")
+        future = _job_futures[token]
+        if not future.done():
+            future.set_result(data)
+        return {"ok": True}
+    else:
+        _log(f"callback received unknown token: token={token}")
+        return {"ok": False, "error": "unknown token"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -369,8 +413,12 @@ async def _run_rhino_python(
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     wrapper_path = tmp_dir / f"job_{token}.py"
-    status_path = tmp_dir / f"status_{token}.json"
     log_path = tmp_dir / f"log_{token}.txt"
+
+    # Future 생성 및 저장
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    _job_futures[token] = future
 
     try:
         wrapper_path.write_text(
@@ -378,6 +426,7 @@ async def _run_rhino_python(
             "import os\n"
             "import Rhino\n"
             "import traceback\n"
+            "import time\n"
             "def _cleanup_doc():\n"
             "  try:\n"
             "    doc = Rhino.RhinoDoc.ActiveDoc\n"
@@ -399,10 +448,26 @@ async def _run_rhino_python(
             "      return f.read()\n"
             "  except Exception:\n"
             "    return ''\n"
+            "def _send_result_via_socket(data):\n"
+            "  try:\n"
+            "    import socket\n"
+            "    import json\n"
+            "    # Socket.io 서버(FastAPI)로 결과 전송\n"
+            "    # 여기서는 단순화를 위해 HTTP POST로 전달하거나,\n"
+            "    # 가능하면 websocket-client 등을 사용할 수 있으나,\n"
+            "    # Rhino 환경 제약을 고려하여 loopback 소켓 또는 HTTP 호출로 우회\n"
+            "    import System.Net.Http\n"
+            "    client = System.Net.Http.HttpClient()\n"
+            "    content = System.Net.Http.StringContent(json.dumps(data), System.Text.Encoding.UTF8, 'application/json')\n"
+            "    # /api/rhino/internal/job-callback 엔드포인트로 결과 전송\n"
+            "    # (소켓 연결이 Rhino 내부에서 불안정할 수 있으므로 로컬 API 호출이 더 확실함)\n"
+            "    # 포트 번호 8000으로 수정 (FastAPI 기본 포트)\n"
+            "    response = client.PostAsync('http://127.0.0.1:8000/api/rhino/internal/job-callback', content).Result\n"
+            "  except Exception as e:\n"
+            "    print('callback failed: ' + str(e))\n"
             f"os.environ['ABUTS_INPUT_STL'] = r\"{str(input_stl)}\"\n"
             f"os.environ['ABUTS_OUTPUT_STL'] = r\"{str(output_stl)}\"\n"
             f"os.environ['ABUTS_LOG_PATH'] = r\"{str(log_path)}\"\n"
-            f"_status_path = r\"{str(status_path)}\"\n"
             f"import System.Diagnostics\n"
             f"import sys\n"
             f"sys.path.append(r\"{str(SCRIPT_DIR)}\")\n"
@@ -411,11 +476,9 @@ async def _run_rhino_python(
             "  print('JOB_PID=' + str(System.Diagnostics.Process.GetCurrentProcess().Id))\n"
             "  _cleanup_doc()\n"
             f"  process_abutment_stl.main(input_path_arg=r\"{str(input_stl)}\", output_path_arg=r\"{str(output_stl)}\", log_path_arg=r\"{str(log_path)}\")\n"
-            "  with open(_status_path, 'w', encoding='utf-8') as f:\n"
-            f"    json.dump({{'ok': True, 'log': _read_log(r\"{str(log_path)}\")}}, f, ensure_ascii=False)\n"
+            f"  _send_result_via_socket({{'token': '{token}', 'ok': True, 'log': _read_log(r\"{str(log_path)}\")}})\n"
             "except Exception as e:\n"
-            "  with open(_status_path, 'w', encoding='utf-8') as f:\n"
-            f"    json.dump({{'ok': False, 'error': str(e), 'traceback': traceback.format_exc(), 'log': _read_log(r\"{str(log_path)}\")}}, f, ensure_ascii=False)\n"
+            f"  _send_result_via_socket({{'token': '{token}', 'ok': False, 'error': str(e), 'traceback': traceback.format_exc(), 'log': _read_log(r\"{str(log_path)}\")}})\n"
             "  raise\n",
             encoding="utf-8",
         )
@@ -434,43 +497,48 @@ async def _run_rhino_python(
                     env=_dotnet_rollforward_env()
                 )
                 
-                # communicate()를 사용하여 버퍼가 가득 차서 멈추는 현상 방지
-                # 래퍼 스크립트 실행 후 즉시 결과를 얻기 위해 wait_for 타임아웃 적용
+                # stdout/stderr를 읽으면서 결과 대기
                 try:
-                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_sec)
-                except asyncio.TimeoutError:
-                    try:
-                        process.kill()
-                    except:
-                        pass
-                    await process.wait()
-                    raise RuntimeError(f"Rhino 스크립트 실행 타임아웃 ({timeout_sec}s)")
+                    # 프로세스 실행
+                    process_task = asyncio.create_task(process.communicate())
+                    
+                    # Future(결과) 또는 프로세스 종료 중 먼저 오는 것 대기
+                    done, pending = await asyncio.wait(
+                        [future, process_task],
+                        timeout=timeout_sec,
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
 
-                # returncode 체크 전에 stdout/stderr 로그 출력 (디버깅용)
-                if process.returncode != 0:
-                    err_text = stderr.decode().strip()
-                    out_text = stdout.decode().strip()
-                    _log(f"run failed: pipeId={rhino_id} code={process.returncode} err={err_text}")
-                    raise RuntimeError(f"Rhino 실행 실패\ncode={process.returncode}\nstderr={err_text}\nstdout={out_text}")
-
-                # status_path가 생성될 때까지 대기 (최대 5초, 0.1s 간격)
-                payload = None
-                status_wait_start = time.time()
-                while time.time() - status_wait_start < 5.0:
-                    if status_path.exists():
+                    if future.done():
+                        payload = future.result()
+                    elif process_task.done():
+                        # 프로세스가 먼저 끝났는데 결과가 아직 안 왔다면 잠시 대기
                         try:
-                            # 파일이 쓰여지는 중일 수 있으므로 잠시 대기 후 읽기
-                            await asyncio.sleep(0.01)
-                            content = status_path.read_text(encoding="utf-8").strip()
-                            if content:
-                                payload = json.loads(content)
-                                break
-                        except (json.JSONDecodeError, IOError):
+                            payload = await asyncio.wait_for(future, timeout=2.0)
+                        except asyncio.TimeoutError:
+                            stdout, stderr = process_task.result()
+                            err_text = stderr.decode().strip()
+                            raise RuntimeError(f"Rhino 프로세스가 종료되었으나 결과를 받지 못했습니다.\nstderr={err_text}")
+                    else:
+                        # 타임아웃
+                        try:
+                            process.kill()
+                        except:
                             pass
-                    await asyncio.sleep(0.1)
+                        await process.wait()
+                        raise RuntimeError(f"Rhino 스크립트 실행 타임아웃 ({timeout_sec}s)")
+
+                except Exception as e:
+                    if isinstance(e, RuntimeError):
+                        raise
+                    raise RuntimeError(f"실행 중 오류 발생: {e}")
+                finally:
+                    # 펜딩된 태스크 정리
+                    for p in pending:
+                        p.cancel()
 
                 if not payload:
-                    raise RuntimeError(f"Rhino 스크립트 status 파일이 생성되지 않았거나 비어 있습니다.\nstatus={status_path}")
+                    raise RuntimeError("Rhino 스크립트로부터 결과를 받지 못했습니다.")
 
                 if not payload.get("ok"):
                     _log(f"script failed: pipeId={rhino_id} error={payload.get('error')}")
@@ -495,11 +563,13 @@ async def _run_rhino_python(
         _log(f"run exception: {e}\n{traceback.format_exc()}")
         raise
     finally:
+        # Future 정리
+        _job_futures.pop(token, None)
         try:
             if wrapper_path.exists():
                 wrapper_path.unlink()
-            if status_path.exists():
-                status_path.unlink()
+            if log_path.exists():
+                log_path.unlink()
         except Exception:
             pass
 

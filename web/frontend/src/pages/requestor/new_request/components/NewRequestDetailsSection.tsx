@@ -193,8 +193,8 @@ export function NewRequestDetailsSection({
               <div className="rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-700">
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-medium">
-                    스크류홀이 메워진 모델에 문제 있으면 관리자에게
-                    보고해주세요.
+                    스크류홀이 메워진 모델에 문제 있으면, 의뢰는 계속 진행하되
+                    관리자에게 보고해주세요.
                   </div>
                   <button
                     type="button"

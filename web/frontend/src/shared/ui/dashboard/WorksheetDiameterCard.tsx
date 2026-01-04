@@ -37,9 +37,9 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
     <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
       <CardHeader className="pb-0">
         <CardTitle className="text-md font-medium mb-2">
-          커스텀 어벗먼트 최대 직경별 진행 갯수
+          커스텀 어벗먼트 최대 직경별 진행 상태
           <p className="mt-1 text-[11px] text-muted-foreground text-center">
-            아래 날짜는 오늘 의뢰 시 예상 도착일
+            아래 날짜는 오늘 의뢰 시 예상 소요 영업일
           </p>
         </CardTitle>
       </CardHeader>
@@ -56,7 +56,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
                 title="지금 의뢰 시 예상 도착일을 표시합니다."
               >
                 <div className="mb-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-sm">
-                  {bucket.shipLabel}
+                  +{bucket.shipLabel}
                 </div>
                 <div
                   className="w-full h-36 bg-muted rounded-md flex items-end overflow-hidden border border-border"
