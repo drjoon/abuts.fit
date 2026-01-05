@@ -98,11 +98,11 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 foreach (var file in files)
                 {
                     string fileName = Path.GetFileName(file);
-                    // 백엔드에 처리 여부 확인 (2-filled 단계의 파일이 3-nc로 처리되어야 하는지)
+                    // 백엔드 API(/api/bg/file-status)를 호출하여 미처리건 확인
                     bool shouldProcess = await CheckBackendShouldProcess(fileName, "2-filled");
                     if (shouldProcess)
                     {
-                        LogInfo($"[Recover] Processing {fileName}");
+                        LogInfo($"[Recover] Processing {fileName} (backend confirmed)");
                         var req = new NcGenerationRequest
                         {
                             RequestId = $"recover_{DateTime.Now:yyyyMMddHHmmss}",
@@ -111,6 +111,10 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                         };
                         bool success = ProcessStlFile(req);
                         if (success) await NotifyBackendAndNext(req);
+                    }
+                    else
+                    {
+                        LogInfo($"[Recover] Skipping {fileName} (already processed or not needed)");
                     }
                 }
             }

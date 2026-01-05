@@ -590,6 +590,10 @@ async def _run_rhino_python_in_executor(
     return await _run_rhino_python(input_stl=input_stl, output_stl=output_stl, timeout_sec=timeout_sec)
 
 
+class CreateJobResponse(BaseModel):
+    ok: bool
+    jobId: str
+
 class ProcessFileRequest(BaseModel):
     fileName: str
     requestId: Optional[str] = None
@@ -655,7 +659,10 @@ class StlHandler(FileSystemEventHandler):
                 _main_loop.call_soon_threadsafe(lambda: asyncio.create_task(_process_single_stl(p)))
 
 async def _process_single_stl(p: Path):
+    if isinstance(p, str):
+        p = Path(p)
     if not p.exists():
+        _log(f"Process failed: file not found {p}")
         return
         
     out_name = _sanitize_filename(f"{p.stem}.filled.stl")
@@ -663,94 +670,100 @@ async def _process_single_stl(p: Path):
     
     with _IN_FLIGHT_LOCK:
         if p.name in _IN_FLIGHT:
+            _log(f"Already in flight: {p.name}")
             return
         _IN_FLIGHT.add(p.name)
 
-    if not out_path.exists():
-        _log(f"Auto-processing new file (Watcher/Recover): {p.name}")
-        job_id = f"auto_{uuid.uuid4().hex[:8]}"
-        JOBS[job_id] = {
-            "jobId": job_id,
-            "status": "queued",
-            "createdAt": time.time(),
-            "inputName": p.name,
-            "outputName": out_name,
-        }
+    _log(f"Checking output path: {out_path}")
+    if out_path.exists():
+        _log(f"Output already exists for: {p.name}, skipping processing but ensuring backend is notified if needed.")
+        with _IN_FLIGHT_LOCK:
+            _IN_FLIGHT.discard(p.name)
+        return
+
+    _log(f"Auto-processing starting: {p.name}")
+    job_id = f"auto_{uuid.uuid4().hex[:8]}"
+    JOBS[job_id] = {
+        "jobId": job_id,
+        "status": "queued",
+        "createdAt": time.time(),
+        "inputName": p.name,
+        "outputName": out_name,
+    }
+    
+    try:
+        _log(f"Calling _run_rhino_python for: {p.name}")
+        await _run_rhino_python(input_stl=p, output_stl=out_path)
+        _log(f"Auto-processing done: {out_name}")
         
+        # 히스토리 추가
+        _recent_history.append({
+            "file": p.name,
+            "output": out_name,
+            "timestamp": time.time(),
+            "status": "success"
+        })
+        
+        # 백엔드 호출 (결과 등록)
         try:
-            await _run_rhino_python(input_stl=p, output_stl=out_path)
-            _log(f"Auto-processing done: {out_name}")
-            
-            # 히스토리 추가
-            _recent_history.append({
-                "file": p.name,
-                "output": out_name,
-                "timestamp": time.time(),
-                "status": "success"
-            })
-            
-            # 백엔드 호출 (결과 등록)
-            try:
-                backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
-                callback_url = f"{backend_url}/bg/register-file"
-                payload = {
-                    "sourceStep": "2-filled",
-                    "fileName": out_name,
-                    "originalFileName": p.name,
-                    "status": "success",
-                    "metadata": {
-                        "jobId": job_id
-                    }
+            backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+            callback_url = f"{backend_url}/bg/register-file"
+            payload = {
+                "sourceStep": "2-filled",
+                "fileName": out_name,
+                "originalFileName": p.name,
+                "status": "success",
+                "metadata": {
+                    "jobId": job_id
                 }
-                response = requests.post(callback_url, json=payload, timeout=5)
-                if response.status_code == 200:
-                    _log(f"Backend notified successfully: {out_name}")
-                    
-                    # [추가] Esprit-Addin에 처리 명령 전송
-                    try:
-                        esprit_url = os.getenv("ESPRIT_URL", "http://localhost:8001")
-                        # Esprit-Addin의 NcGenerationRequest 형식에 맞춰 전송
-                        esprit_payload = {
-                            "RequestId": request_id if 'request_id' in locals() else f"auto_{uuid.uuid4().hex[:8]}",
-                            "StlPath": str(out_path),
-                            # 3-nc 폴더는 Esprit-Addin에서 처리하므로 여기서는 경로만 전달
-                            "NcOutputPath": str(BG_STORAGE_ROOT / "3-nc" / f"{p.stem}.nc")
-                        }
-                        esprit_res = requests.post(esprit_url, json=esprit_payload, timeout=3)
-                        if esprit_res.status_code == 200:
-                            _log(f"Esprit-Addin notified successfully for {out_name}")
-                        else:
-                            _log(f"Esprit-Addin notification status: {esprit_res.status_code}")
-                    except Exception as ee:
-                        _log(f"Failed to notify Esprit-Addin: {ee}")
-                else:
-                    _log(f"Backend notification returned status {response.status_code}")
-            except Exception as be:
-                _log(f"Backend notification failed: {be}")
+            }
+            response = requests.post(callback_url, json=payload, timeout=5)
+            if response.status_code == 200:
+                _log(f"Backend notified successfully: {out_name}")
                 
-        except Exception as e:
-            _log(f"Auto-processing failed for {p.name}: {e}")
-            _recent_history.append({
-                "file": p.name,
-                "timestamp": time.time(),
+                # [추가] Esprit-Addin에 처리 명령 전송
+                try:
+                    esprit_url = os.getenv("ESPRIT_URL", "http://localhost:8001")
+                    # Esprit-Addin의 NcGenerationRequest 형식에 맞춰 전송
+                    esprit_payload = {
+                        "RequestId": request_id if 'request_id' in locals() else f"auto_{uuid.uuid4().hex[:8]}",
+                        "StlPath": str(out_path),
+                        # 3-nc 폴더는 Esprit-Addin에서 처리하므로 여기서는 경로만 전달
+                        "NcOutputPath": str(BG_STORAGE_ROOT / "3-nc" / f"{p.stem}.nc")
+                    }
+                    esprit_res = requests.post(esprit_url, json=esprit_payload, timeout=3)
+                    if esprit_res.status_code == 200:
+                        _log(f"Esprit-Addin notified successfully for {out_name}")
+                    else:
+                        _log(f"Esprit-Addin notification status: {esprit_res.status_code}")
+                except Exception as ee:
+                    _log(f"Failed to notify Esprit-Addin: {ee}")
+            else:
+                _log(f"Backend notification returned status {response.status_code}")
+        except Exception as be:
+            _log(f"Backend notification failed: {be}")
+    except Exception as e:
+        _log(f"Auto-processing failed for {p.name}: {e}")
+        _recent_history.append({
+            "file": p.name,
+            "timestamp": time.time(),
+            "status": "failed",
+            "error": str(e)
+        })
+        # 실패 시에도 백엔드 알림 시도 가능
+        try:
+            backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+            requests.post(f"{backend_url}/bg/register-file", json={
+                "sourceStep": "2-filled",
+                "fileName": p.name,
                 "status": "failed",
-                "error": str(e)
-            })
-            # 실패 시에도 백엔드 알림 시도 가능
-            try:
-                backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
-                requests.post(f"{backend_url}/bg/register-file", json={
-                    "sourceStep": "2-filled",
-                    "fileName": p.name,
-                    "status": "failed",
-                    "metadata": {"error": str(e)}
-                }, timeout=5)
-            except:
-                pass
+                "metadata": {"error": str(e)}
+            }, timeout=5)
+        except:
+            pass
 
     with _IN_FLIGHT_LOCK:
         _IN_FLIGHT.discard(p.name)
-
 
 def _backend_should_process(file_name: str, source_step: str) -> bool:
     """백엔드에 처리 상태를 확인하여 미처리일 때만 True 반환"""
@@ -793,9 +806,13 @@ def _recover_unprocessed_files() -> None:
             try:
                 # 백엔드에 이 파일이 처리되어야 하는지 확인
                 if _backend_should_process(p.name, "1-stl"):
-                    _log(f"Recover: processing {p.name}")
+                    _log(f"Recover: enqueueing {p.name}")
+                    # 파일명 대신 전체 경로(Path 객체)를 전달해야 함
+                    full_p = STORE_IN_DIR / p.name
                     if _main_loop:
-                        asyncio.run_coroutine_threadsafe(_process_single_stl(p), _main_loop)
+                        # call_soon_threadsafe 대신 run_coroutine_threadsafe 사용
+                        asyncio.run_coroutine_threadsafe(_process_single_stl(full_p), _main_loop)
+                        _log(f"Recover: {p.name} submitted to event loop")
                 else:
                     _log(f"Recover: skipping {p.name} (already processed or not needed)")
             except Exception as inner:
@@ -957,8 +974,8 @@ async def _run_batch_job(job_id: str) -> None:
 
 
 @app.post("/api/rhino/upload-stl")
-async def upload_stl(file: UploadFile = File(...)):
-    """S3 전송량 최적화를 위해 클라이언트/백엔드에서 직접 파일을 받아 1-stl에 저장하는 엔드포인트"""
+async def upload_stl(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """S3 전송량 최적화를 위해 클라이언트/백엔드에서 직접 파일을 받아 1-stl에 저장하고 즉시 처리를 시작하는 엔드포인트"""
     _ensure_dirs()
     safe_name = _sanitize_filename(file.filename or "uploaded.stl")
     target_path = STORE_IN_DIR / safe_name
@@ -967,6 +984,12 @@ async def upload_stl(file: UploadFile = File(...)):
         data = await file.read()
         target_path.write_bytes(data)
         _log(f"Direct upload saved to 1-stl: {safe_name} ({len(data)} bytes)")
+        
+        # 업로드 완료 응답을 먼저 보낸 뒤, 처리는 백그라운드에서 즉시 시작
+        if _is_running:
+            background_tasks.add_task(_process_single_stl, target_path)
+            _log(f"Auto-processing started in background for: {safe_name}")
+            
         return {"ok": True, "fileName": safe_name, "path": str(target_path)}
     except Exception as e:
         _log(f"Failed to save uploaded file: {e}")

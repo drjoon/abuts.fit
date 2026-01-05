@@ -26,7 +26,7 @@ const RHINO_SERVER_URL =
   process.env.RHINO_SERVER_URL || "http://localhost:8000";
 
 /**
- * 파일을 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
+ * 파일을 Rhino 서버의 1-stl 에 직접 업로드하고 즉시 처리를 시작하도록 요청하는 헬퍼
  */
 async function uploadToRhinoServer(fileBuffer, fileName) {
   try {
@@ -40,12 +40,14 @@ async function uploadToRhinoServer(fileBuffer, fileName) {
         headers: {
           ...formData.getHeaders(),
         },
-        timeout: 5000,
+        timeout: 30000, // 파일 업로드 자체의 타임아웃만 고려 (처리는 백그라운드)
       }
     );
 
     if (response.data?.ok) {
-      console.log(`[Rhino-Server] File uploaded to 1-stl: ${fileName}`);
+      console.log(
+        `[Rhino-Server] File upload successful, processing started: ${fileName}`
+      );
       return true;
     }
     return false;
@@ -332,30 +334,16 @@ export async function createRequest(req, res) {
     // [변경] 생산 시작(CAM 승인) 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 SPEND 로직을 제거합니다.
     await newRequest.save();
 
-    // [추가] Rhino 서버에 파일 처리 명령 전송
-    if (newRequest.caseInfos?.file?.fileName) {
-      const fileName = newRequest.caseInfos.file.fileName;
-      // 비동기로 실행 (의뢰 생성 응답을 늦추지 않기 위해)
-      (async () => {
-        try {
-          const rhinoUrl =
-            process.env.RHINO_SERVER_URL || "http://localhost:8000";
-          await axios
-            .post(
-              `${rhinoUrl}/api/rhino/process-file`,
-              {
-                fileName: fileName,
-                requestId: newRequest.requestId,
-              },
-              { timeout: 3000 }
-            )
-            .catch((e) =>
-              console.error(`[Rhino-Command] Failed: ${e.message}`)
-            );
-        } catch (err) {
-          console.error(`[Rhino-Command] Error: ${err.message}`);
-        }
-      })();
+    // [추가] Rhino 서버 업로드 시도 (병렬 처리)
+    // S3 업로드 여부와 상관없이 Rhino 서버로 파일을 보내 즉시 처리를 시작하게 함
+    if (newRequest.caseInfos?.file?.fileName && req.file?.buffer) {
+      // 즉시 실행 (응답을 기다리지 않음)
+      uploadToRhinoServer(
+        req.file.buffer,
+        newRequest.caseInfos.file.fileName
+      ).catch((e) =>
+        console.error(`[Rhino-Direct-Upload] Failed: ${e.message}`)
+      );
     }
 
     res.status(201).json({
@@ -1231,25 +1219,28 @@ export async function createRequestsFromDraft(req, res) {
 
           // 1-stl 에 requestId를 포함한 파일명으로 업로드 (Rhino 서버 직접 전송)
           if (item.caseInfosWithFile.file?.s3Key) {
-            try {
-              const s3Key = item.caseInfosWithFile.file.s3Key;
-              const ext = s3Key.includes(".")
-                ? `.${s3Key.split(".").pop().toLowerCase()}`
-                : ".stl";
-              const bgFileName = `${newRequest.requestId}_${item.clinicName}_${item.patientName}_${item.tooth}${ext}`;
+            // 비동기로 병렬 처리 (의뢰 생성 응답을 기다리지 않음)
+            (async () => {
+              try {
+                const s3Key = item.caseInfosWithFile.file.s3Key;
+                const ext = s3Key.includes(".")
+                  ? `.${s3Key.split(".").pop().toLowerCase()}`
+                  : ".stl";
+                const bgFileName = `${newRequest.requestId}_${item.clinicName}_${item.patientName}_${item.tooth}${ext}`;
 
-              // S3에서 가져와서 Rhino 서버로 전송
-              await uploadS3ToRhinoServer(s3Key, bgFileName);
+                // S3에서 가져와서 Rhino 서버로 전송 및 처리 트리거
+                await uploadS3ToRhinoServer(s3Key, bgFileName);
 
-              // DB에 로컬 경로 정보 업데이트
-              await Request.findByIdAndUpdate(newRequest._id, {
-                "caseInfos.file.filePath": bgFileName,
-              });
-            } catch (err) {
-              console.error(
-                `[Rhino-Server] Failed to upload for request ${newRequest.requestId}: ${err.message}`
-              );
-            }
+                // DB에 로컬 경로 정보 업데이트 (성공 시에만)
+                await Request.findByIdAndUpdate(newRequest._id, {
+                  "caseInfos.file.filePath": bgFileName,
+                });
+              } catch (err) {
+                console.error(
+                  `[Rhino-Parallel-Upload] Failed for request ${newRequest.requestId}: ${err.message}`
+                );
+              }
+            })();
           }
 
           createdRequests.push(newRequest);

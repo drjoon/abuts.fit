@@ -56,11 +56,16 @@ namespace HiLinkBridgeWebApi48
                 foreach (var file in files)
                 {
                     string fileName = Path.GetFileName(file);
+                    // 백엔드 API(/api/bg/file-status)를 호출하여 미처리건 확인
                     bool shouldProcess = await CheckBackendShouldProcess(fileName, "3-nc");
                     if (shouldProcess)
                     {
-                        Console.WriteLine($"[Recover] Processing {fileName}");
+                        Console.WriteLine($"[Recover] Processing {fileName} (backend confirmed)");
                         await ProcessNcFile(file);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[Recover] Skipping {fileName} (already processed or not needed)");
                     }
                 }
             }
