@@ -157,6 +157,26 @@
 - **배포**: Elastic Beanstalk 단일 환경 (Frontend 빌드 + Backend API).
 - **Frontend Build**: `web/frontend/dist`에 위치.
 - **Backend Server**: 정적 파일 서빙 + API 제공.
+- **백그라운드 서비스 통합 (`bg/` 폴더)**:
+  - `bg/bridge-server`: CNC 장비(Hi-Link) 연동 브리지 서버.
+  - `bg/rhino-server`: Rhino Compute 기반 3D 연산 서버.
+  - `bg/esprite-addin`: ESPRIT 2025용 CAM 자동화 애드인.
+  - `bg/storage`: BG 프로그램 간 파일 공유를 위한 로컬 스토리지.
+  - **운영 정책**: 당분간 하나의 로컬 컴퓨터 내에서 통합 운영하며, 부하 증가 시 분리 검토.
+  - **공통 인터페이스 (Web Server)**: 모든 BG 프로그램은 아래 엔드포인트를 제공해야 합니다. (Port: Rhino=8000, ESPRIT=8001, Bridge=8002)
+    - `GET /health` 또는 `/ping`: 서비스 상태 확인 (Alive).
+    - `POST /control/start`: 운영 시작.
+    - `POST /control/stop`: 운영 정지.
+    - `GET /history/recent`: 최근 처리된 파일 목록 조회.
+  - **백엔드 연동 (Web Client)**:
+    - 파일 처리 완료 시 `abuts.fit/api`의 관련 엔드포인트를 호출하여 처리 결과를 등록합니다.
+    - 백엔드는 이를 DB에 기록하고 다음 공정(File Pipe)이 이어지도록 제어합니다.
+  - **워크플로우 (File Pipe)**:
+    1. **1-stl**: 의뢰자가 업로드한 원본 STL 파일 저장.
+    2. **2-filled (Rhino)**: Rhino-server가 `1-stl`의 파일을 감지하여 홀 메꿈 처리 후 저장.
+    3. **3-nc (ESPRIT)**: ESPRIT-addin이 `2-filled`를 감지하여 NC 파일 생성 후 저장.
+    4. **CNC (Bridge)**: Bridge-server가 `3-nc`를 감지, DB 스케줄 확인 후 CNC 업로드 및 가공 명령 전송.
+  - **스토리지 경로**: 모든 BG 프로그램은 `/bg/storage` 하위 폴더를 기준으로 파일을 공유하며, 각 단계 완료 시 다음 폴더로 결과물을 이동/복사합니다.
 
 ### 11.2 팝빌 처리 아키텍처
 

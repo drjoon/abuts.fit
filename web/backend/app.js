@@ -229,6 +229,7 @@ app.use("/api/filename-rules", filenameRuleRoutes);
 app.use("/api/requestor-organizations", requestorOrganizationRoutes);
 app.use("/api/guide-progress", guideProgressRoutes);
 app.use("/api/rhino", rhinoRoutes);
+app.use("/api/bg", bgRoutes);
 
 app.use("/api/credits", creditRoutes);
 app.use("/api/webhooks", webhookRoutes);

@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
   const cncTarget =
     env.VITE_DEV_CNC_TARGET ||
     env.VITE_DEV_BRIDGE_TARGET ||
-    "http://localhost:4005";
+    "http://localhost:8002";
 
   return {
     server: {
