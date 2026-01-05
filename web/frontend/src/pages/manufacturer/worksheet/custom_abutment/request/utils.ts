@@ -102,7 +102,7 @@ export const getAcceptByStage = (stage: string) => {
     case "의뢰":
       return ".stl";
     case "CAM":
-      return ".cam.stl";
+      return ".filled.stl";
     case "생산":
       return ".png,.jpg,.jpeg,.webp,.bmp";
     case "발송":

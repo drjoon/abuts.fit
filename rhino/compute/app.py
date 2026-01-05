@@ -853,9 +853,62 @@ async def custom_abutment_explode(background_tasks: BackgroundTasks, file: Uploa
     )
 
 
-@app.post("/api/rhino/custom-abutment/hole-fill")
-async def custom_abutment_hole_fill(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    return await custom_abutment_explode(background_tasks=background_tasks, file=file)
+@app.post("/api/rhino/fillhole/direct")
+async def fillhole_direct(file: UploadFile = File(...)):
+    """버퍼를 직접 받아 홀을 메우고 분석 결과를 반환 (Background Worker 전용)"""
+    _ensure_dirs()
+    _prune_tmp(max_items=100)
+
+    safe_name = _sanitize_filename(file.filename or "input.stl")
+    token = uuid.uuid4().hex
+    tmp_dir = APP_ROOT / ".tmp" / f"direct_{token}"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    input_path = tmp_dir / f"in_{safe_name}"
+    output_path = tmp_dir / f"out_{_build_output_name(safe_name)}"
+
+    data = await file.read()
+    input_path.write_bytes(data)
+
+    try:
+        log_text = await _run_rhino_python(
+            input_stl=input_path,
+            output_stl=output_path,
+            timeout_sec=DEFAULT_TIMEOUT_SEC,
+        )
+
+        # 로그에서 직경 정보 추출 시도 (process_abutment_stl.py가 로그를 남긴다고 가정)
+        # 만약 스크립트가 아직 직경 정보를 계산하지 않는다면, 스크립트 수정이 필요할 수 있음.
+        # 일단은 로그 파싱 로직을 간단히 넣어둠.
+        max_diameter = 0.0
+        conn_diameter = 0.0
+        
+        # 로그 예시: "DIAMETER_RESULT:max=8.5 conn=4.2"
+        match = re.search(r"DIAMETER_RESULT:max=([\d.]+) conn=([\d.]+)", log_text)
+        if match:
+            max_diameter = float(match.group(1))
+            conn_diameter = float(match.group(2))
+
+        import base64
+        filled_base64 = ""
+        if output_path.exists():
+            filled_base64 = base64.b64encode(output_path.read_bytes()).decode("utf-8")
+
+        return {
+            "ok": True,
+            "maxDiameter": max_diameter,
+            "connectionDiameter": conn_diameter,
+            "filledStlBase64": filled_base64,
+            "log": log_text
+        }
+    except Exception as e:
+        _log(f"direct fillhole failed: {e}")
+        return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
 
 
 class StoreFillHoleRequest(BaseModel):

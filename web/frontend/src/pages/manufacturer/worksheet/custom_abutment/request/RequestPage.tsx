@@ -356,14 +356,15 @@ export const RequestPage = ({
       }
 
       if (isCamStage) {
-        const ncFiles = files.filter((f) =>
-          f.name.toLowerCase().endsWith(".nc")
+        const filledStlFiles = files.filter((f) =>
+          f.name.toLowerCase().endsWith(".filled.stl")
         );
-        if (ncFiles.length === 0) return;
+        if (filledStlFiles.length === 0) return;
 
         const getBase = (n: string) => {
           const s = String(n || "").trim();
           return s
+            .replace(/\.filled\.stl$/i, "")
             .replace(/\.cam\.stl$/i, "")
             .replace(/\.stl$/i, "")
             .replace(/\.nc$/i, "");
@@ -372,7 +373,7 @@ export const RequestPage = ({
         const normalize = (n: string) =>
           n.trim().toLowerCase().normalize("NFC");
 
-        ncFiles.forEach((file) => {
+        filledStlFiles.forEach((file) => {
           const fileBase = normalize(getBase(file.name));
           const matchingReq = requests.find((r) => {
             const rBase = normalize(
@@ -388,7 +389,7 @@ export const RequestPage = ({
           });
 
           if (matchingReq) {
-            void handleUploadNc(matchingReq, [file]);
+            void handleUploadCam(matchingReq, [file]);
           }
         });
       }
@@ -407,7 +408,7 @@ export const RequestPage = ({
     isMachiningStage,
     isCamStage,
     handleImageDropForOCR,
-    handleUploadNc,
+    handleUploadCam,
     requests,
   ]);
 
@@ -423,15 +424,16 @@ export const RequestPage = ({
       if (isMachiningStage) {
         void handleImageDropForOCR(files);
       } else if (isCamStage) {
-        // .nc 파일 매칭 업로드
-        const ncFiles = files.filter((f) =>
-          f.name.toLowerCase().endsWith(".nc")
+        // .filled.stl 파일 매칭 업로드
+        const filledStlFiles = files.filter((f) =>
+          f.name.toLowerCase().endsWith(".filled.stl")
         );
-        if (ncFiles.length === 0) return;
+        if (filledStlFiles.length === 0) return;
 
         const getBase = (n: string) => {
           const s = String(n || "").trim();
           return s
+            .replace(/\.filled\.stl$/i, "")
             .replace(/\.cam\.stl$/i, "")
             .replace(/\.stl$/i, "")
             .replace(/\.nc$/i, "");
@@ -440,7 +442,7 @@ export const RequestPage = ({
         const normalize = (n: string) =>
           n.trim().toLowerCase().normalize("NFC");
 
-        ncFiles.forEach((file) => {
+        filledStlFiles.forEach((file) => {
           const fileBase = normalize(getBase(file.name));
           const matchingReq = requests.find((r) => {
             const rBase = normalize(
@@ -456,7 +458,7 @@ export const RequestPage = ({
           });
 
           if (matchingReq) {
-            void handleUploadNc(matchingReq, [file]);
+            void handleUploadCam(matchingReq, [file]);
           }
         });
       }

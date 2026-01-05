@@ -161,7 +161,9 @@ export const PreviewModal = ({
   const camName =
     req.caseInfos?.camFile?.fileName ||
     req.caseInfos?.camFile?.originalName ||
-    "cam.stl";
+    (originalName.toLowerCase().endsWith(".stl")
+      ? originalName.replace(/\.stl$/i, ".filled.stl")
+      : originalName + ".filled.stl");
   const ncName =
     req.caseInfos?.ncFile?.fileName ||
     req.caseInfos?.ncFile?.originalName ||
@@ -213,7 +215,7 @@ export const PreviewModal = ({
     ? ".png,.jpg,.jpeg,.webp,.bmp"
     : isCamStage
     ? ".nc"
-    : ".stl";
+    : ".filled.stl";
 
   const fileLabel = hasRightFile
     ? String(rightMeta?.fileName || rightTitle).trim() || rightTitle

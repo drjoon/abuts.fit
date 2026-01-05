@@ -15,6 +15,7 @@ import {
   startProductionScheduler,
   getProductionSchedulerStatus,
 } from "./jobs/productionScheduler.js";
+import { startStlWorker, getStlWorkerStatus } from "./jobs/stlWorker.js";
 import { waitForJobLockLeadership } from "./utils/jobLock.js";
 
 const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,6 +45,7 @@ function startStatusServer() {
       creditBPlan: getCreditBPlanStatus(),
       popbillWorker: getPopbillWorkerStatus(),
       productionScheduler: getProductionSchedulerStatus(),
+      stlWorker: getStlWorkerStatus(),
       queueStats,
     });
   });
@@ -77,9 +79,13 @@ async function main() {
       startProductionScheduler();
       console.log("[worker] production scheduler started");
 
+      startStlWorker();
+      console.log("[worker] stl worker started");
+
       startHealthMonitor({
         getCreditBPlanStatus,
         getPopbillWorkerStatus,
+        getStlWorkerStatus,
         staleMinutes: Number(process.env.WORKER_HEALTH_STALE_MINUTES || 10),
         intervalMinutes: Number(
           process.env.WORKER_HEALTH_INTERVAL_MINUTES || 1

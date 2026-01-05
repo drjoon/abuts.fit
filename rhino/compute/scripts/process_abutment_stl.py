@@ -437,6 +437,44 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         if not ok:
             fail("STL Export 실패")
 
+        # 5) 분석 (직경 추출)
+        max_r = 0.0
+        conn_r = 0.0
+        try:
+            # 1. 최대 직경 (전체 Mesh 기준)
+            for o in doc.Objects:
+                if o.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                    g = o.Geometry
+                    if g and g.Vertices:
+                        for v in g.Vertices:
+                            r = (v.X**2 + v.Y**2)**0.5
+                            if r > max_r: max_r = r
+            
+            # 2. 커넥션 직경 (Z=0 평면 교차점 기준)
+            # STL이 원점에 정렬되어 있다고 가정 (Z=0이 커넥션 위치)
+            for o in doc.Objects:
+                if o.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                    g = o.Geometry
+                    if not g: continue
+                    for face in g.Faces:
+                        v1 = g.Vertices[face.A]
+                        v2 = g.Vertices[face.B]
+                        v3 = g.Vertices[face.C]
+                        
+                        # 각 변에 대해 Z=0 교차점 체크
+                        for pa, pb in [(v1, v2), (v2, v3), (v3, v1)]:
+                            if (pa.Z > 0 and pb.Z < 0) or (pa.Z < 0 and pb.Z > 0):
+                                t = abs(pa.Z) / abs(pa.Z - pb.Z)
+                                ix = pa.X + t * (pb.X - pa.X)
+                                iy = pa.Y + t * (pb.Y - pa.Y)
+                                ir = (ix**2 + iy**2)**0.5
+                                if ir > conn_r: conn_r = ir
+            
+            if conn_r == 0: conn_r = max_r
+            log("DIAMETER_RESULT:max={} conn={}".format(round(max_r*2, 2), round(conn_r*2, 2)))
+        except Exception as e:
+            log("Analysis failed: " + str(e))
+
         log("export ok")
     finally:
         if owns_doc:

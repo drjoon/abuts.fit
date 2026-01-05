@@ -227,9 +227,6 @@ export const NewRequestPage = () => {
       workType: "abutment",
     });
 
-    // NOTE: setCaseInfos는 resetDraft() 내부에서 이미 초기화됨
-    // 여기서 다시 호출하면 updateCaseInfos가 이전 draftId로 PATCH를 시도함
-
     setImplantManufacturer("");
     setImplantSystem("");
     setImplantType("");
@@ -473,155 +470,14 @@ export const NewRequestPage = () => {
     return { valid: true };
   };
 
-  const runFillHole = async (files: File[]) => {
-    if (!files.length) return;
-
-    setIsFillHoleProcessing(true);
+  const onUpload = async (filesToUpload: File[]) => {
     try {
-      // 1) 개별 파일에 대해 순차적으로 API 호출 (Rhino 서버 부하 방지 및 안정성 확보)
-      for (const file of files) {
-        const fileKey = toNormalizedFileKey(file);
-        const fd = new FormData();
-        fd.append("file", file);
-
-        const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => {
-          controller.abort();
-        }, 5 * 60 * 1000);
-
-        try {
-          const res = await apiFetch({
-            path: "/api/rhino/fillhole",
-            method: "POST",
-            body: fd,
-            signal: controller.signal,
-          });
-
-          if (!res.ok) {
-            throw new Error(
-              (res.data as any)?.message ||
-                `스크류홀 메우기 실패 (HTTP ${res.status})`
-            );
-          }
-
-          const buf = await res.raw.arrayBuffer();
-          const outName = (() => {
-            const raw = file.name || "input.stl";
-            if (!raw.toLowerCase().endsWith(".stl")) return `${raw}.fw.stl`;
-            return raw.replace(/\.stl$/i, ".fw.stl");
-          })();
-
-          const filled = new File([buf], outName, {
-            type: "application/sla",
-          });
-
-          // 결과 업데이트 (개별 파일 완료 시점)
-          setFilledStlFiles((prev) => ({ ...prev, [fileKey]: filled }));
-
-          // 해당 파일의 카드로 자동 포커스 및 선택
-          const fileIndex = files.findIndex(
-            (f) => toNormalizedFileKey(f) === fileKey
-          );
-          if (fileIndex !== -1) {
-            setSelectedPreviewIndex(fileIndex);
-          }
-        } catch (error: any) {
-          console.error(`Fill hole failed for ${file.name}:`, error);
-
-          const msg = (() => {
-            const originalMsg = String(error?.message || error || "");
-            if (
-              originalMsg.includes("ECONNREFUSED") ||
-              originalMsg.includes("Failed to fetch")
-            ) {
-              return "스크류홀 메우는 앱이 일시적으로 중단되었습니다. 홀메우기 없이 진행합니다.";
-            }
-            if (error?.name === "AbortError") {
-              return "처리 시간이 오래 걸려 중단되었습니다.";
-            }
-            return originalMsg || "알 수 없는 오류";
-          })();
-
-          toast({
-            title: `파일 처리 오류 (${file.name})`,
-            description: msg,
-            variant: "destructive",
-            duration: 5000,
-          });
-        } finally {
-          window.clearTimeout(timeoutId);
-        }
-      }
-    } finally {
-      setIsFillHoleProcessing(false);
-    }
-  };
-
-  const reportFillHoleIssue = async (originalFile?: File) => {
-    try {
-      const roomRes = await apiFetch<any>({
-        path: "/api/chats/support-room",
-        method: "GET",
-      });
-      if (!roomRes.ok) {
-        throw new Error(
-          (roomRes.data as any)?.message || "지원 채팅방을 불러오지 못했습니다."
-        );
-      }
-
-      const roomData = (roomRes.data as any)?.data || roomRes.data;
-      const roomId = String(roomData?._id || "").trim();
-      if (!roomId) throw new Error("지원 채팅방을 찾을 수 없습니다.");
-
-      const fileName = String(originalFile?.name || "").trim();
-      const fileKey = originalFile ? toNormalizedFileKey(originalFile) : "";
-      const ci = fileKey ? (caseInfosMap as any)?.[fileKey] : null;
-      const clinicName = String(
-        ci?.clinicName || caseInfos?.clinicName || ""
-      ).trim();
-      const patientName = String(
-        ci?.patientName || caseInfos?.patientName || ""
-      ).trim();
-      const tooth = String(ci?.tooth || caseInfos?.tooth || "").trim();
-
-      const content = [
-        "[자동 리포트] 홀 메우기 결과에 문제가 있어 의뢰를 보류합니다.",
-        fileName ? `파일: ${fileName}` : "",
-        clinicName ? `치과: ${clinicName}` : "",
-        patientName ? `환자: ${patientName}` : "",
-        tooth ? `치아: ${tooth}` : "",
-        "증상: (여기에 문제를 간단히 적어주세요)",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      const msgRes = await apiFetch<any>({
-        path: `/api/chats/rooms/${roomId}/messages`,
-        method: "POST",
-        jsonBody: { content, attachments: [] },
-      });
-      if (!msgRes.ok) {
-        throw new Error(
-          (msgRes.data as any)?.message || "리포트 메시지 전송에 실패했습니다."
-        );
-      }
-
-      const detail = {
-        roomId,
-        prefill: content,
-      };
-
-      window.setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("abuts:open-support-chat", { detail })
-        );
-      }, 0);
+      await handleUpload(filesToUpload);
     } catch (e: any) {
       toast({
         title: "오류",
-        description: e?.message || "리포트 전송 중 오류가 발생했습니다.",
+        description: e.message || "파일 업로드 중 오류가 발생했습니다.",
         variant: "destructive",
-        duration: 4000,
       });
     }
   };
@@ -650,29 +506,7 @@ export const NewRequestPage = () => {
     }
 
     if (filesToUpload.length > 0) {
-      void (async () => {
-        try {
-          // handleUpload 내부에 중복 체크와 모달 처리 로직이 있음
-          // [수정] Promise.all을 제거하여 중복 체크가 먼저 수행되도록 보장
-          await handleUpload(filesToUpload);
-
-          // 중복 체크 로직(useNewRequestPage.ts)에서 modalDuplicates가 발견되면
-          // setDuplicatePrompt를 호출하고 return하므로, 실제 업로드는 지연됨.
-          // 따라서 runFillHole도 모달 처리가 끝난 후에 실행되어야 함.
-          // 현재는 단순화를 위해 handleUpload 호출 후 runFillHole을 호출하지만,
-          // 중복이 없는 파일들만 즉시 runFillHole이 실행되도록 handleUpload 내부 구조를 따름.
-          await runFillHole(filesToUpload);
-        } catch (e: any) {
-          toast({
-            title: "오류",
-            description:
-              e?.message ||
-              "업로드 또는 스크류홀 메우기 처리 중 오류가 발생했습니다.",
-            variant: "destructive",
-            duration: 4000,
-          });
-        }
-      })();
+      void onUpload(filesToUpload);
     }
   };
 
@@ -682,16 +516,6 @@ export const NewRequestPage = () => {
       activeClassName="ring-2 ring-primary/30"
       className="min-h-screen bg-gradient-subtle p-4 md:p-6"
     >
-      {isFillHoleProcessing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="flex items-center gap-3 rounded-xl bg-white px-5 py-4 shadow-lg">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
-            <div className="text-sm text-gray-800">
-              업로드하고 스크류홀을 메웁니다. 잠시만 기다려주세요.
-            </div>
-          </div>
-        </div>
-      )}
       <div className="max-w-6xl mx-auto space-y-4">
         <MultiActionDialog
           open={!!duplicatePrompt}
@@ -866,8 +690,6 @@ export const NewRequestPage = () => {
         <GuideFocus stepId="requestor.new_request.details">
           <NewRequestDetailsSection
             files={files}
-            filledStlFiles={filledStlFiles}
-            onReportFillHoleIssue={reportFillHoleIssue}
             selectedPreviewIndex={selectedPreviewIndex}
             setSelectedPreviewIndex={setSelectedPreviewIndex}
             caseInfos={caseInfos}
@@ -888,9 +710,9 @@ export const NewRequestPage = () => {
             highlightUnverifiedArrows={highlightUnverifiedArrows}
             setHighlightUnverifiedArrows={setHighlightUnverifiedArrows}
             handleRemoveFile={handleRemoveFile}
-            clinicNameOptions={clinicNameOptions}
-            patientNameOptions={patientNameOptions}
-            teethOptions={teethOptions}
+            clinicNameOptions={clinicPresets}
+            patientNameOptions={patientPresets}
+            teethOptions={teethPresets}
             addClinicPreset={addClinicPreset}
             clearAllClinicPresets={clearAllClinicPresets}
             addPatientPreset={addPatientPreset}
@@ -899,7 +721,7 @@ export const NewRequestPage = () => {
             clearAllTeethPresets={clearAllTeethPresets}
             handleAddOrSelectClinic={handleAddOrSelectClinic}
             toast={toast}
-            highlight={highlightStep === "details"}
+            highlight={isStepActive("requestor.new_request.details")}
             sectionHighlightClass={sectionHighlightClass}
           />
         </GuideFocus>

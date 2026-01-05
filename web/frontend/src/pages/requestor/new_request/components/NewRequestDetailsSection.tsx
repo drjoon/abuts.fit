@@ -15,8 +15,6 @@ type Option = { id: string; label: string };
 
 type Props = {
   files: File[];
-  filledStlFiles?: Record<string, File>;
-  onReportFillHoleIssue?: (originalFile?: File) => void | Promise<void>;
   selectedPreviewIndex: number | null;
   setSelectedPreviewIndex: (index: number | null) => void;
   caseInfos?: CaseInfos;
@@ -62,8 +60,6 @@ type Props = {
 
 export function NewRequestDetailsSection({
   files,
-  filledStlFiles,
-  onReportFillHoleIssue,
   selectedPreviewIndex,
   setSelectedPreviewIndex,
   caseInfos,
@@ -144,10 +140,7 @@ export function NewRequestDetailsSection({
       ? toNormalizedFileKey(files[selectedPreviewIndex])
       : null;
 
-  const previewFile =
-    selectedFileKey && filledStlFiles?.[selectedFileKey]
-      ? filledStlFiles[selectedFileKey]
-      : selectedFile;
+  const previewFile = selectedFile;
 
   const hasSelectedFile = Boolean(
     selectedPreviewIndex !== null && files[selectedPreviewIndex]
@@ -189,25 +182,6 @@ export function NewRequestDetailsSection({
                   }}
                 />
               )}
-
-              <div className="rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-700">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-medium">
-                    스크류홀이 메워진 모델에 문제 있으면, 의뢰는 계속 진행하되
-                    관리자에게 보고해주세요.
-                  </div>
-                  <button
-                    type="button"
-                    className="shrink-0 inline-flex items-center justify-center rounded-md border border-gray-300 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-900 hover:bg-gray-100"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void onReportFillHoleIssue?.(selectedFile || undefined);
-                    }}
-                  >
-                    리포트
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 
