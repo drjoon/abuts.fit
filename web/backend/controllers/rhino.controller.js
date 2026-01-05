@@ -13,6 +13,36 @@ const RHINO_COMPUTE_BASE_URL = String(
   process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000"
 ).replace(/\/+$/, "");
 
+// [추가] 과도한 병렬 요청 방지를 위한 세마포어/큐 관리
+const MAX_CONCURRENT_FILLHOLE = 1; // Rhino가 1대이므로 1개씩 순차 처리
+let activeRequests = 0;
+const requestQueue = [];
+
+const processQueue = async () => {
+  if (activeRequests >= MAX_CONCURRENT_FILLHOLE || requestQueue.length === 0)
+    return;
+
+  const { resolve: qResolve, reject: qReject, task } = requestQueue.shift();
+  activeRequests++;
+
+  try {
+    const result = await task();
+    qResolve(result);
+  } catch (err) {
+    qReject(err);
+  } finally {
+    activeRequests--;
+    processQueue();
+  }
+};
+
+const enqueueTask = (task) => {
+  return new Promise((resolve, reject) => {
+    requestQueue.push({ resolve, reject, task });
+    processQueue();
+  });
+};
+
 const sanitizeStlName = (name) => {
   const base =
     String(name || "input.stl")
@@ -47,10 +77,13 @@ export const fillholeFromUpload = asyncHandler(async (req, res) => {
 
   fs.writeFileSync(inPath, buf);
 
-  const resp = await axios.post(
-    `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
-    { name: safeName },
-    { responseType: "arraybuffer", timeout: 1000 * 60 * 5 }
+  // [변경] Rhino Compute 서버로의 요청을 큐에 넣어 순차 처리하도록 보장
+  const resp = await enqueueTask(() =>
+    axios.post(
+      `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
+      { name: safeName },
+      { responseType: "arraybuffer", timeout: 1000 * 60 * 5 }
+    )
   );
 
   const contentType = resp.headers?.["content-type"] || "application/sla";
@@ -72,10 +105,13 @@ export const fillholeFromStoreName = asyncHandler(async (req, res) => {
 
   const safeName = sanitizeStlName(String(rawName));
 
-  const resp = await axios.post(
-    `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
-    { name: safeName },
-    { responseType: "arraybuffer", timeout: 1000 * 60 * 5 }
+  // [변경] Rhino Compute 서버로의 요청을 큐에 넣어 순차 처리하도록 보장
+  const resp = await enqueueTask(() =>
+    axios.post(
+      `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
+      { name: safeName },
+      { responseType: "arraybuffer", timeout: 1000 * 60 * 5 }
+    )
   );
 
   const contentType = resp.headers?.["content-type"] || "application/sla";

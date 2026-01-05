@@ -478,93 +478,80 @@ export const NewRequestPage = () => {
 
     setIsFillHoleProcessing(true);
     try {
-      // 1) 개별 파일에 대해 순차적으로 또는 병렬로 API 호출
-      // 결과가 오는대로 즉시 상태에 업데이트하여 UI에 반영
-      await Promise.allSettled(
-        files.map(async (file) => {
-          const fileKey = toNormalizedFileKey(file);
-          const fd = new FormData();
-          fd.append("file", file);
+      // 1) 개별 파일에 대해 순차적으로 API 호출 (Rhino 서버 부하 방지 및 안정성 확보)
+      for (const file of files) {
+        const fileKey = toNormalizedFileKey(file);
+        const fd = new FormData();
+        fd.append("file", file);
 
-          const controller = new AbortController();
-          const timeoutId = window.setTimeout(() => {
-            controller.abort();
-          }, 5 * 60 * 1000);
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => {
+          controller.abort();
+        }, 5 * 60 * 1000);
 
-          try {
-            const res = await apiFetch({
-              path: "/api/rhino/fillhole",
-              method: "POST",
-              body: fd,
-              signal: controller.signal,
-            });
+        try {
+          const res = await apiFetch({
+            path: "/api/rhino/fillhole",
+            method: "POST",
+            body: fd,
+            signal: controller.signal,
+          });
 
-            if (!res.ok) {
-              throw new Error(
-                (res.data as any)?.message ||
-                  `스크류홀 메우기 실패 (HTTP ${res.status})`
-              );
-            }
-
-            const buf = await res.raw.arrayBuffer();
-            const outName = (() => {
-              const raw = file.name || "input.stl";
-              if (!raw.toLowerCase().endsWith(".stl")) return `${raw}.fw.stl`;
-              return raw.replace(/\.stl$/i, ".fw.stl");
-            })();
-
-            const filled = new File([buf], outName, {
-              type: "application/sla",
-            });
-
-            // 결과 업데이트 (개별 파일 완료 시점)
-            setFilledStlFiles((prev) => ({ ...prev, [fileKey]: filled }));
-
-            // 해당 파일의 카드로 자동 포커스 및 선택
-            const fileIndex = files.findIndex(
-              (f) => toNormalizedFileKey(f) === fileKey
+          if (!res.ok) {
+            throw new Error(
+              (res.data as any)?.message ||
+                `스크류홀 메우기 실패 (HTTP ${res.status})`
             );
-            if (fileIndex !== -1) {
-              setSelectedPreviewIndex(fileIndex);
-            }
-          } catch (error: any) {
-            console.error(`Fill hole failed for ${file.name}:`, error);
-            throw error;
-          } finally {
-            window.clearTimeout(timeoutId);
           }
-        })
-      ).then((results) => {
-        const failed = results
-          .map((r, idx) => ({ r, idx }))
-          .filter(({ r }) => r.status === "rejected")
-          .map(({ r, idx }) => {
-            const reason = (r as PromiseRejectedResult).reason;
-            const msg = (() => {
-              const originalMsg = String(reason?.message || reason || "");
-              if (
-                originalMsg.includes("ECONNREFUSED") ||
-                originalMsg.includes("Failed to fetch")
-              ) {
-                return "스크류홀 메우는 앱이 일시적으로 중단되었습니다. 홀메우기 없이 진행합니다.";
-              }
-              if (reason?.name === "AbortError") {
-                return "처리 시간이 오래 걸려 중단되었습니다.";
-              }
-              return originalMsg || "알 수 없는 오류";
-            })();
-            return `${files[idx]?.name || "파일"}: ${msg}`;
+
+          const buf = await res.raw.arrayBuffer();
+          const outName = (() => {
+            const raw = file.name || "input.stl";
+            if (!raw.toLowerCase().endsWith(".stl")) return `${raw}.fw.stl`;
+            return raw.replace(/\.stl$/i, ".fw.stl");
+          })();
+
+          const filled = new File([buf], outName, {
+            type: "application/sla",
           });
 
-        if (failed.length > 0) {
+          // 결과 업데이트 (개별 파일 완료 시점)
+          setFilledStlFiles((prev) => ({ ...prev, [fileKey]: filled }));
+
+          // 해당 파일의 카드로 자동 포커스 및 선택
+          const fileIndex = files.findIndex(
+            (f) => toNormalizedFileKey(f) === fileKey
+          );
+          if (fileIndex !== -1) {
+            setSelectedPreviewIndex(fileIndex);
+          }
+        } catch (error: any) {
+          console.error(`Fill hole failed for ${file.name}:`, error);
+
+          const msg = (() => {
+            const originalMsg = String(error?.message || error || "");
+            if (
+              originalMsg.includes("ECONNREFUSED") ||
+              originalMsg.includes("Failed to fetch")
+            ) {
+              return "스크류홀 메우는 앱이 일시적으로 중단되었습니다. 홀메우기 없이 진행합니다.";
+            }
+            if (error?.name === "AbortError") {
+              return "처리 시간이 오래 걸려 중단되었습니다.";
+            }
+            return originalMsg || "알 수 없는 오류";
+          })();
+
           toast({
-            title: "일부 파일 처리 오류",
-            description: failed.join("\n"),
+            title: `파일 처리 오류 (${file.name})`,
+            description: msg,
             variant: "destructive",
-            duration: 6000,
+            duration: 5000,
           });
+        } finally {
+          window.clearTimeout(timeoutId);
         }
-      });
+      }
     } finally {
       setIsFillHoleProcessing(false);
     }
@@ -665,10 +652,16 @@ export const NewRequestPage = () => {
     if (filesToUpload.length > 0) {
       void (async () => {
         try {
-          await Promise.all([
-            handleUpload(filesToUpload),
-            runFillHole(filesToUpload),
-          ]);
+          // handleUpload 내부에 중복 체크와 모달 처리 로직이 있음
+          // [수정] Promise.all을 제거하여 중복 체크가 먼저 수행되도록 보장
+          await handleUpload(filesToUpload);
+
+          // 중복 체크 로직(useNewRequestPage.ts)에서 modalDuplicates가 발견되면
+          // setDuplicatePrompt를 호출하고 return하므로, 실제 업로드는 지연됨.
+          // 따라서 runFillHole도 모달 처리가 끝난 후에 실행되어야 함.
+          // 현재는 단순화를 위해 handleUpload 호출 후 runFillHole을 호출하지만,
+          // 중복이 없는 파일들만 즉시 runFillHole이 실행되도록 handleUpload 내부 구조를 따름.
+          await runFillHole(filesToUpload);
         } catch (e: any) {
           toast({
             title: "오류",

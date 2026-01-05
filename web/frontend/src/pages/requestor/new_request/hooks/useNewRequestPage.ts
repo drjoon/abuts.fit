@@ -403,11 +403,11 @@ export const useNewRequestPage = (existingRequestId?: string) => {
               fileName: f.name,
               existingRequest,
             });
-            eligibleFiles.push(f);
+            // eligibleFiles에는 넣지 않음 (모달에서 결정 후 처리)
             continue;
           }
 
-          // 완료(4) 등은 여기서 차단하지 않는다. (완료 후 재의뢰 정책은 제출 시점에서 처리)
+          // 완료(4) 등은 여기서 차단하지 않는다.
           eligibleFiles.push(f);
         } catch (err) {
           console.error("[중복체크] 에러", err);
@@ -433,16 +433,20 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         });
       }
 
-      if (eligibleFiles.length === 0) {
-        return;
-      }
-
       if (modalDuplicates.length > 0) {
+        console.log("[중복체크] 모달 대상 발견", modalDuplicates);
         setDuplicatePrompt({
           mode: "active",
           duplicates: modalDuplicates,
         });
-        setPendingUploadFiles(eligibleFiles);
+        // [수정] eligibleFiles(중복 없는 파일)와 modalDuplicates(중복 파일)를 모두 pendingUploadFiles에 넣어
+        // 모달 처리가 끝난 후 한꺼번에 업로드되도록 함
+        setPendingUploadFiles([
+          ...eligibleFiles,
+          ...(modalDuplicates
+            .map((d) => incomingFiles.find((f) => f.name === d.fileName))
+            .filter(Boolean) as File[]),
+        ]);
         return;
       }
 

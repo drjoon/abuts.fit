@@ -449,22 +449,18 @@ async def _run_rhino_python(
             "  except Exception:\n"
             "    return ''\n"
             "def _send_result_via_socket(data):\n"
-            "  try:\n"
-            "    import socket\n"
-            "    import json\n"
-            "    # Socket.io 서버(FastAPI)로 결과 전송\n"
-            "    # 여기서는 단순화를 위해 HTTP POST로 전달하거나,\n"
-            "    # 가능하면 websocket-client 등을 사용할 수 있으나,\n"
-            "    # Rhino 환경 제약을 고려하여 loopback 소켓 또는 HTTP 호출로 우회\n"
-            "    import System.Net.Http\n"
-            "    client = System.Net.Http.HttpClient()\n"
-            "    content = System.Net.Http.StringContent(json.dumps(data), System.Text.Encoding.UTF8, 'application/json')\n"
-            "    # /api/rhino/internal/job-callback 엔드포인트로 결과 전송\n"
-            "    # (소켓 연결이 Rhino 내부에서 불안정할 수 있으므로 로컬 API 호출이 더 확실함)\n"
-            "    # 포트 번호 8000으로 수정 (FastAPI 기본 포트)\n"
-            "    response = client.PostAsync('http://127.0.0.1:8000/api/rhino/internal/job-callback', content).Result\n"
-            "  except Exception as e:\n"
-            "    print('callback failed: ' + str(e))\n"
+            "  for i in range(3):\n"
+            "    try:\n"
+            "      import json\n"
+            "      import System.Net.Http\n"
+            "      client = System.Net.Http.HttpClient()\n"
+            "      content = System.Net.Http.StringContent(json.dumps(data), System.Text.Encoding.UTF8, 'application/json')\n"
+            "      response = client.PostAsync('http://127.0.0.1:8000/api/rhino/internal/job-callback', content).Result\n"
+            "      if response.IsSuccessStatusCode: return\n"
+            "      time.sleep(0.5)\n"
+            "    except Exception as e:\n"
+            "      if i == 2: print('callback failed after 3 retries: ' + str(e))\n"
+            "      time.sleep(0.5)\n"
             f"os.environ['ABUTS_INPUT_STL'] = r\"{str(input_stl)}\"\n"
             f"os.environ['ABUTS_OUTPUT_STL'] = r\"{str(output_stl)}\"\n"
             f"os.environ['ABUTS_LOG_PATH'] = r\"{str(log_path)}\"\n"
@@ -512,13 +508,13 @@ async def _run_rhino_python(
                     if future.done():
                         payload = future.result()
                     elif process_task.done():
-                        # 프로세스가 먼저 끝났는데 결과가 아직 안 왔다면 잠시 대기
+                        # 프로세스가 먼저 끝났는데 결과가 아직 안 왔다면 좀 더 넉넉히 대기
                         try:
-                            payload = await asyncio.wait_for(future, timeout=2.0)
+                            payload = await asyncio.wait_for(future, timeout=10.0)
                         except asyncio.TimeoutError:
                             stdout, stderr = process_task.result()
                             err_text = stderr.decode().strip()
-                            raise RuntimeError(f"Rhino 프로세스가 종료되었으나 결과를 받지 못했습니다.\nstderr={err_text}")
+                            raise RuntimeError(f"Rhino 프로세스가 종료되었으나 결과를 받지 못했습니다(10s timeout).\nstderr={err_text}")
                     else:
                         # 타임아웃
                         try:
