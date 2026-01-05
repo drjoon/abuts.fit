@@ -330,94 +330,64 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       const blockedFiles: File[] = [];
       const eligibleFiles: File[] = [];
 
-      for (const f of incomingFiles) {
-        try {
-          const query = new URLSearchParams({
-            fileName: f.name,
-          }).toString();
-
-          console.log("[중복체크] API 호출", { fileName: f.name, query });
-
-          const res = await request<any>({
-            path: `/api/requests/my/has-duplicate?${query}`,
-            method: "GET",
-            token,
-          });
-
-          console.log("[중복체크] API 응답", { ok: res.ok, data: res.data });
-
-          if (!res.ok) {
-            console.log("[중복체크] API 실패");
-            continue;
-          }
-
-          const body: any = res.data || {};
-          const data = body?.data || body;
-
-          console.log("[중복체크] 데이터 파싱", {
-            exists: data?.exists,
-            stageOrder: data?.stageOrder,
-          });
-
-          if (!data?.exists) {
-            console.log("[중복체크] 중복 없음");
-            eligibleFiles.push(f);
-            continue;
-          }
-
-          const stageOrderRaw = data?.stageOrder;
-          const stageOrder = Number(stageOrderRaw);
-          const existingRequest = data?.existingRequest;
-
-          console.log("[중복체크] 중복 발견!", {
-            stageOrder,
-            stageOrderRaw,
-            status: existingRequest?.status,
-          });
-
-          // stageOrder가 누락/비정상(NaN)인데 exists=true인 경우
-          // - 다중 업로드에서 UI가 조용히 넘어가는 것을 방지하기 위해
-          // - 안전하게 "모달" 플로우로 처리한다.
-          if (!Number.isFinite(stageOrder)) {
-            console.log("[중복체크] stageOrder 비정상 -> 모달로 처리");
-            modalDuplicates.push({
-              caseId: `${f.name}:${f.size}`,
+      // 병렬로 모든 파일의 중복 여부를 체크
+      const checkResults = await Promise.all(
+        incomingFiles.map(async (f) => {
+          try {
+            const query = new URLSearchParams({
               fileName: f.name,
-              existingRequest,
-            });
-            eligibleFiles.push(f);
-            continue;
-          }
+            }).toString();
 
-          // 0: 의뢰, 1: CAM, 2: 생산, 3: 발송, 4: 완료
-          if (stageOrder === 2 || stageOrder === 3) {
-            console.log("[중복체크] 생산/발송 단계 -> 모달(교체 불가) 추가");
-            blockedFiles.push(f);
-            modalDuplicates.push({
-              caseId: `${f.name}:${f.size}`,
-              fileName: f.name,
-              existingRequest,
-              lockedReason: "production",
+            const res = await request<any>({
+              path: `/api/requests/my/has-duplicate?${query}`,
+              method: "GET",
+              token,
             });
-            continue;
-          }
 
-          if (stageOrder === 0 || stageOrder === 1) {
-            console.log("[중복체크] 의뢰/CAM 단계 -> 모달 추가");
-            modalDuplicates.push({
-              caseId: `${f.name}:${f.size}`,
-              fileName: f.name,
-              existingRequest,
-            });
-            // eligibleFiles에는 넣지 않음 (모달에서 결정 후 처리)
-            continue;
-          }
+            if (!res.ok) return { file: f, error: true };
 
-          // 완료(4) 등은 여기서 차단하지 않는다.
+            const body: any = res.data || {};
+            const data = body?.data || body;
+
+            return { file: f, data };
+          } catch (err) {
+            return { file: f, error: true };
+          }
+        })
+      );
+
+      for (const result of checkResults) {
+        const f = result.file;
+        if (result.error) {
           eligibleFiles.push(f);
-        } catch (err) {
-          console.error("[중복체크] 에러", err);
-          // 중복체크가 실패하더라도 UX를 막지 않고 업로드는 허용한다.
+          continue;
+        }
+
+        const data = result.data;
+        if (!data?.exists) {
+          eligibleFiles.push(f);
+          continue;
+        }
+
+        const stageOrder = Number(data?.stageOrder);
+        const existingRequest = data?.existingRequest;
+
+        // 0: 의뢰, 1: CAM, 2: 생산, 3: 발송, 4: 완료
+        if (stageOrder === 2 || stageOrder === 3) {
+          blockedFiles.push(f);
+          modalDuplicates.push({
+            caseId: `${f.name}:${f.size}`,
+            fileName: f.name,
+            existingRequest,
+            lockedReason: "production",
+          });
+        } else if (stageOrder === 0 || stageOrder === 1) {
+          modalDuplicates.push({
+            caseId: `${f.name}:${f.size}`,
+            fileName: f.name,
+            existingRequest,
+          });
+        } else {
           eligibleFiles.push(f);
         }
       }
@@ -440,23 +410,22 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       }
 
       if (modalDuplicates.length > 0) {
-        console.log("[중복체크] 모달 대상 발견", modalDuplicates);
         setDuplicatePrompt({
           mode: "active",
           duplicates: modalDuplicates,
         });
-        // [수정] eligibleFiles(중복 없는 파일)와 modalDuplicates(중복 파일)를 모두 pendingUploadFiles에 넣어
-        // 모달 처리가 끝난 후 한꺼번에 업로드되도록 함
-        setPendingUploadFiles([
-          ...eligibleFiles,
-          ...(modalDuplicates
-            .map((d) => incomingFiles.find((f) => f.name === d.fileName))
-            .filter(Boolean) as File[]),
-        ]);
-        return;
+
+        // 중복 파일들만 pending에 담아 모달 결정 후 처리
+        const dupFiles = modalDuplicates
+          .map((d) => incomingFiles.find((f) => f.name === d.fileName))
+          .filter(Boolean) as File[];
+        setPendingUploadFiles(dupFiles);
       }
 
-      await rawHandleUpload(eligibleFiles);
+      // 중복 없는 파일들은 즉시 업로드 진행
+      if (eligibleFiles.length > 0) {
+        await rawHandleUpload(eligibleFiles);
+      }
     },
     [rawHandleUpload, setDuplicatePrompt, setPendingUploadFiles, toast, token]
   );
