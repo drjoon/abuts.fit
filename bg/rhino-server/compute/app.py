@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 # Rhino 전역 락 (순차 처리 강제)
 _global_rhino_lock = asyncio.Lock()
+_processing_semaphore = asyncio.Semaphore(1)  # 라이노 인스턴스 1개만 사용하므로 세마포어로 제어
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
@@ -665,105 +666,105 @@ async def _process_single_stl(p: Path):
         _log(f"Process failed: file not found {p}")
         return
         
-    out_name = _sanitize_filename(f"{p.stem}.filled.stl")
-    out_path = STORE_OUT_DIR / out_name
-    
-    with _IN_FLIGHT_LOCK:
-        if p.name in _IN_FLIGHT:
-            _log(f"Already in flight: {p.name}")
-            return
-        _IN_FLIGHT.add(p.name)
-
-    _log(f"Checking output path: {out_path}")
-    if out_path.exists():
-        _log(f"Output already exists for: {p.name}, skipping processing but ensuring backend is notified if needed.")
+    async with _processing_semaphore:
+        out_name = _sanitize_filename(f"{p.stem}.filled.stl")
+        out_path = STORE_OUT_DIR / out_name
+        
         with _IN_FLIGHT_LOCK:
-            _IN_FLIGHT.discard(p.name)
-        return
+            if p.name in _IN_FLIGHT:
+                _log(f"Already in flight: {p.name}")
+                return
+            _IN_FLIGHT.add(p.name)
 
-    _log(f"Auto-processing starting: {p.name}")
-    job_id = f"auto_{uuid.uuid4().hex[:8]}"
-    JOBS[job_id] = {
-        "jobId": job_id,
-        "status": "queued",
-        "createdAt": time.time(),
-        "inputName": p.name,
-        "outputName": out_name,
-    }
-    
-    try:
-        _log(f"Calling _run_rhino_python for: {p.name}")
-        await _run_rhino_python(input_stl=p, output_stl=out_path)
-        _log(f"Auto-processing done: {out_name}")
-        
-        # 히스토리 추가
-        _recent_history.append({
-            "file": p.name,
-            "output": out_name,
-            "timestamp": time.time(),
-            "status": "success"
-        })
-        
-        # 백엔드 호출 (결과 등록)
         try:
-            backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
-            callback_url = f"{backend_url}/bg/register-file"
-            payload = {
-                "sourceStep": "2-filled",
-                "fileName": out_name,
-                "originalFileName": p.name,
-                "status": "success",
-                "metadata": {
-                    "jobId": job_id
-                }
+            _log(f"Checking output path: {out_path}")
+            if out_path.exists():
+                _log(f"Output already exists for: {p.name}, skipping processing but ensuring backend is notified if needed.")
+                # 백엔드 알림 로직은 성공 시와 동일하게 수행할 수 있으나, 일단 중복 방지를 위해 바로 리턴
+                return
+
+            _log(f"Auto-processing starting: {p.name}")
+            job_id = f"auto_{uuid.uuid4().hex[:8]}"
+            JOBS[job_id] = {
+                "jobId": job_id,
+                "status": "queued",
+                "createdAt": time.time(),
+                "inputName": p.name,
+                "outputName": out_name,
             }
-            response = requests.post(callback_url, json=payload, timeout=5)
-            if response.status_code == 200:
-                _log(f"Backend notified successfully: {out_name}")
+            
+            try:
+                _log(f"Calling _run_rhino_python for: {p.name}")
+                await _run_rhino_python(input_stl=p, output_stl=out_path)
+                _log(f"Auto-processing done: {out_name}")
                 
-                # [추가] Esprit-Addin에 처리 명령 전송
+                # 히스토리 추가
+                _recent_history.append({
+                    "file": p.name,
+                    "output": out_name,
+                    "timestamp": time.time(),
+                    "status": "success"
+                })
+                
+                # 백엔드 호출 (결과 등록)
                 try:
-                    esprit_url = os.getenv("ESPRIT_URL", "http://localhost:8001")
-                    # Esprit-Addin의 NcGenerationRequest 형식에 맞춰 전송
-                    esprit_payload = {
-                        "RequestId": request_id if 'request_id' in locals() else f"auto_{uuid.uuid4().hex[:8]}",
-                        "StlPath": str(out_path),
-                        # 3-nc 폴더는 Esprit-Addin에서 처리하므로 여기서는 경로만 전달
-                        "NcOutputPath": str(BG_STORAGE_ROOT / "3-nc" / f"{p.stem}.nc")
+                    backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+                    callback_url = f"{backend_url}/bg/register-file"
+                    payload = {
+                        "sourceStep": "2-filled",
+                        "fileName": out_name,
+                        "originalFileName": p.name,
+                        "status": "success",
+                        "metadata": {
+                            "jobId": job_id
+                        }
                     }
-                    esprit_res = requests.post(esprit_url, json=esprit_payload, timeout=3)
-                    if esprit_res.status_code == 200:
-                        _log(f"Esprit-Addin notified successfully for {out_name}")
+                    response = requests.post(callback_url, json=payload, timeout=5)
+                    if response.status_code == 200:
+                        _log(f"Backend notified successfully: {out_name}")
+                        
+                        # [추가] Esprit-Addin에 처리 명령 전송
+                        try:
+                            esprit_url = os.getenv("ESPRIT_URL", "http://localhost:8001")
+                            esprit_payload = {
+                                "RequestId": f"auto_{uuid.uuid4().hex[:8]}",
+                                "StlPath": str(out_path),
+                                "NcOutputPath": str(BG_STORAGE_ROOT / "3-nc" / f"{p.stem}.nc")
+                            }
+                            esprit_res = requests.post(esprit_url, json=esprit_payload, timeout=3)
+                            if esprit_res.status_code == 200:
+                                _log(f"Esprit-Addin notified successfully for {out_name}")
+                            else:
+                                _log(f"Esprit-Addin notification status: {esprit_res.status_code}")
+                        except Exception as ee:
+                            _log(f"Failed to notify Esprit-Addin: {ee}")
                     else:
-                        _log(f"Esprit-Addin notification status: {esprit_res.status_code}")
-                except Exception as ee:
-                    _log(f"Failed to notify Esprit-Addin: {ee}")
-            else:
-                _log(f"Backend notification returned status {response.status_code}")
-        except Exception as be:
-            _log(f"Backend notification failed: {be}")
-    except Exception as e:
-        _log(f"Auto-processing failed for {p.name}: {e}")
-        _recent_history.append({
-            "file": p.name,
-            "timestamp": time.time(),
-            "status": "failed",
-            "error": str(e)
-        })
-        # 실패 시에도 백엔드 알림 시도 가능
-        try:
-            backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
-            requests.post(f"{backend_url}/bg/register-file", json={
-                "sourceStep": "2-filled",
-                "fileName": p.name,
-                "status": "failed",
-                "metadata": {"error": str(e)}
-            }, timeout=5)
-        except:
-            pass
+                        _log(f"Backend notification returned status {response.status_code}")
+                except Exception as be:
+                    _log(f"Backend notification failed: {be}")
+            except Exception as e:
+                _log(f"Auto-processing failed for {p.name}: {e}")
+                _recent_history.append({
+                    "file": p.name,
+                    "timestamp": time.time(),
+                    "status": "failed",
+                    "error": str(e)
+                })
+                # 실패 시에도 백엔드 알림 시도 가능
+                try:
+                    backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+                    requests.post(f"{backend_url}/bg/register-file", json={
+                        "sourceStep": "2-filled",
+                        "fileName": p.name,
+                        "status": "failed",
+                        "metadata": {"error": str(e)}
+                    }, timeout=5)
+                except:
+                    pass
+        finally:
+            with _IN_FLIGHT_LOCK:
+                _IN_FLIGHT.discard(p.name)
 
-    with _IN_FLIGHT_LOCK:
-        _IN_FLIGHT.discard(p.name)
 
 def _backend_should_process(file_name: str, source_step: str) -> bool:
     """백엔드에 처리 상태를 확인하여 미처리일 때만 True 반환"""
@@ -795,30 +796,40 @@ def _backend_should_process(file_name: str, source_step: str) -> bool:
         return False
 
 
-def _recover_unprocessed_files() -> None:
-    """재기동 시 input 폴더를 스캔하여 미처리된 파일들을 처리함"""
+async def _recover_unprocessed_files() -> None:
+    """재기동 시 input 폴더를 스캔하여 미처리된 파일들을 순차적으로 처리함"""
     try:
         _ensure_dirs()
         _log("Scanning for unprocessed files on startup...")
         
-        in_files = [p for p in STORE_IN_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".stl"]
+        in_files = sorted([p for p in STORE_IN_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".stl"])
+        _log(f"Found {len(in_files)} STL files in input directory")
+        
         for p in in_files:
             try:
+                # 이미 처리 중인지 확인 (방어 코드)
+                with _IN_FLIGHT_LOCK:
+                    if p.name in _IN_FLIGHT:
+                        continue
+
                 # 백엔드에 이 파일이 처리되어야 하는지 확인
                 if _backend_should_process(p.name, "1-stl"):
-                    _log(f"Recover: enqueueing {p.name}")
-                    # 파일명 대신 전체 경로(Path 객체)를 전달해야 함
-                    full_p = STORE_IN_DIR / p.name
-                    if _main_loop:
-                        # call_soon_threadsafe 대신 run_coroutine_threadsafe 사용
-                        asyncio.run_coroutine_threadsafe(_process_single_stl(full_p), _main_loop)
-                        _log(f"Recover: {p.name} submitted to event loop")
+                    _log(f"Recover: processing {p.name}")
+                    await _process_single_stl(p)
+                    _log(f"Recover: {p.name} processing completed")
                 else:
                     _log(f"Recover: skipping {p.name} (already processed or not needed)")
             except Exception as inner:
                 _log(f"Recover error for {p.name}: {inner}")
     except Exception as e:
         _log(f"Recover failed: {e}")
+
+def _run_recovery_in_thread():
+    """별도 스레드에서 이벤트 루프를 생성하여 복구 로직 실행"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(_recover_unprocessed_files())
+    loop.close()
 
 def _start_watcher():
     _log(f"Starting native watcher (watchdog) for {STORE_IN_DIR}")
@@ -845,7 +856,7 @@ def on_startup() -> None:
     # threading.Thread(target=_start_watcher, daemon=True).start()
 
     # 재기동 시점 미처리 파일 복구 스캔
-    threading.Thread(target=_recover_unprocessed_files, daemon=True).start()
+    threading.Thread(target=_run_recovery_in_thread, daemon=True).start()
 
 # 운영 상태 및 히스토리 관리
 _is_running = True
