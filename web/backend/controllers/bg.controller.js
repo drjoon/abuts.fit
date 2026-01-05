@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import path from "path";
 import fs from "fs/promises";
+import Request from "../models/request.model.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -36,10 +37,37 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     request = await Request.findOne({ requestId });
   }
 
-  if (!request && originalFileName) {
-    const match = originalFileName.match(/(\d{8}-[A-Z]{8})/);
-    if (match) {
-      request = await Request.findOne({ requestId: match[1] });
+  // requestId로 못 찾은 경우, 파일명(originalFileName 또는 fileName)으로 검색
+  if (!request) {
+    const targetSearchName = originalFileName || fileName;
+    const normalizedTarget = normalizeFileName(targetSearchName);
+
+    if (normalizedTarget) {
+      // 모든 진행 중인 의뢰를 가져와서 파일명 매칭 (최근 90일 내역 위주로 성능 고려 가능하나 일단 전체 검색)
+      const allRequests = await Request.find({ status: { $ne: "취소" } })
+        .select({ requestId: 1, caseInfos: 1 })
+        .lean();
+
+      for (const r of allRequests) {
+        const ci = r?.caseInfos || {};
+        const storedNames = [
+          ci?.file?.fileName,
+          ci?.file?.originalName,
+          ci?.file?.filePath,
+          ci?.camFile?.fileName,
+          ci?.camFile?.filePath,
+          ci?.ncFile?.fileName,
+          ci?.ncFile?.filePath,
+        ].filter(Boolean);
+
+        const hit = storedNames.some(
+          (n) => normalizeFileName(n) === normalizedTarget
+        );
+        if (hit) {
+          request = await Request.findById(r._id); // 갱신을 위해 도큐먼트 객체로 다시 가져옴
+          break;
+        }
+      }
     }
   }
 
@@ -165,4 +193,147 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 export const getBgStatus = asyncHandler(async (req, res) => {
   // 나중에 BG 프로그램들의 상태를 취합해서 보여주는 로직 추가 가능
   return res.status(200).json(new ApiResponse(200, {}, "BG Status retrieved"));
+});
+
+const normalizeFileName = (v) => {
+  if (!v) return "";
+  const s = String(v);
+  let candidate = s;
+  try {
+    const hasHangul = /[가-힣]/.test(s);
+    const bytes = new Uint8Array(
+      Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff)
+    );
+    const decoded = new TextDecoder("utf-8").decode(bytes);
+    const decodedHasHangul = /[가-힣]/.test(decoded);
+    candidate = !hasHangul && decodedHasHangul ? decoded : s;
+  } catch {
+    candidate = s;
+  }
+
+  const base = String(candidate)
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean)
+    .slice(-1)[0];
+
+  return base
+    .normalize("NFC")
+    .replace(/\.[^/.]+$/, "")
+    .trim()
+    .toLowerCase();
+};
+
+// BG 프로그램이 재기동될 때 input/output 폴더를 스캔하며,
+// 백엔드에 "이 파일이 아직 미처리인가?"를 확인하기 위한 API
+// GET /api/bg/file-status?sourceStep=1-stl&fileName=xxx.stl
+export const getFileProcessingStatus = asyncHandler(async (req, res) => {
+  const { sourceStep, fileName, force } = req.query;
+  if (!sourceStep || !fileName) {
+    throw new ApiError(400, "sourceStep and fileName are required");
+  }
+
+  const step = String(sourceStep);
+  const normalized = normalizeFileName(fileName);
+  if (!normalized) {
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { ok: true, processed: false, shouldProcess: false },
+          "invalid fileName"
+        )
+      );
+  }
+
+  // step별로 "처리 완료" 판단 기준을 단순화
+  // - 1-stl -> 2-filled: caseInfos.camFile 존재 여부
+  // - 2-filled -> 3-nc: caseInfos.ncFile 존재 여부
+  const requests = await Request.find({ status: { $ne: "취소" } })
+    .select({ requestId: 1, caseInfos: 1 })
+    .lean();
+
+  let matched = null;
+  for (const r of requests) {
+    const ci = r?.caseInfos || {};
+    const storedNames = [
+      ci?.file?.fileName,
+      ci?.file?.originalName,
+      ci?.file?.filePath,
+      ci?.camFile?.fileName,
+      ci?.camFile?.filePath,
+      ci?.ncFile?.fileName,
+      ci?.ncFile?.filePath,
+    ].filter(Boolean);
+
+    const hit = storedNames.some((n) => normalizeFileName(n) === normalized);
+    if (hit) {
+      matched = r;
+      break;
+    }
+  }
+
+  if (!matched) {
+    // 매칭되는 의뢰를 못 찾으면 기본적으로 처리하지 않지만,
+    // force=true(재기동 복구 등)일 때는 shouldProcess를 true로 내려 복구를 허용한다.
+    const shouldProcess = String(force || "").toLowerCase() === "true";
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          ok: true,
+          processed: false,
+          shouldProcess,
+          reason: "no_request",
+        },
+        "No matching request"
+      )
+    );
+  }
+
+  const ci = matched.caseInfos || {};
+  const camStatus = ci?.reviewByStage?.cam?.status;
+
+  if (step === "1-stl") {
+    const processed = Boolean(ci?.camFile?.fileName || ci?.camFile?.s3Key);
+    const shouldProcess = !processed && camStatus !== "REJECTED";
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          ok: true,
+          processed,
+          shouldProcess,
+          requestId: matched.requestId,
+          rejected: camStatus === "REJECTED",
+        },
+        "File status"
+      )
+    );
+  }
+
+  if (step === "2-filled") {
+    const processed = Boolean(ci?.ncFile?.fileName || ci?.ncFile?.s3Key);
+    const shouldProcess = !processed;
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { ok: true, processed, shouldProcess, requestId: matched.requestId },
+          "File status"
+        )
+      );
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { ok: true, processed: false, shouldProcess: false },
+        "Unsupported sourceStep"
+      )
+    );
 });

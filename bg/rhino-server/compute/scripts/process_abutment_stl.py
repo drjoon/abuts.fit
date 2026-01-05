@@ -340,7 +340,11 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 
                 # 중복된 정점들을 합쳐서 메모리 및 성능 최적화
                 joined_mesh.Vertices.CombineIdentical(True, True)
-                joined_mesh.Faces.RedundantFaces()
+                try:
+                    if hasattr(joined_mesh.Faces, "RedundantFaces"):
+                        joined_mesh.Faces.RedundantFaces()
+                except Exception:
+                    pass
                 
                 doc.Objects.AddMesh(joined_mesh)
                 log("Join (RhinoCommon) ok")
@@ -375,23 +379,20 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
             # STL Export 최적화: RhinoCommon Write 직접 시도
             write_opts = Rhino.FileIO.FileStlWriteOptions()
-            write_opts.FileType = Rhino.FileIO.FileStlType.Binary
             try:
+                if hasattr(write_opts, "Ascii"):
+                    write_opts.Ascii = False
+                if hasattr(write_opts, "ExportFileAsBinary"):
+                    write_opts.ExportFileAsBinary = True
                 if hasattr(write_opts, "ExportSelectedObjectsOnly"):
                     write_opts.ExportSelectedObjectsOnly = False
             except Exception:
                 pass
 
-            # 전체 객체를 리스트로 전달하여 Write (가장 빠름)
-            all_meshes = []
-            for o in doc.Objects:
-                if o.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
-                    all_meshes.append(o.Geometry)
-            
-            if all_meshes:
-                ok = Rhino.FileIO.FileStl.Write(str(output_path), all_meshes, write_opts)
-            else:
-                ok = Rhino.FileIO.FileStl.Write(str(output_path), doc, write_opts)
+            # Rhino 8/Net 7 환경에서 FileStl.Write(String, list, opts) 호출 시
+            # TypeError: 'list' value cannot be converted to Rhino.RhinoDoc 에러가 발생하는 경우가 있음.
+            # 가장 확실한 호환 오버로드인 FileStl.Write(String, RhinoDoc, opts) 사용을 위해 doc을 직접 전달.
+            ok = Rhino.FileIO.FileStl.Write(str(output_path), doc, write_opts)
             
             if not ok:
                 # Fallback: RunScript (오버헤드가 크지만 최후의 수단)

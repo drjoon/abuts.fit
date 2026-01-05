@@ -53,6 +53,10 @@ _RHINO_AVAILABLE: deque[str] = deque()
 _RHINO_LAST_EXPAND_TS = 0.0
 _BASE_FW_LOCK = threading.Lock()
 
+# 재기동 스캔 및 watcher 동시 실행에서 중복 처리 방지
+_IN_FLIGHT: set[str] = set()
+_IN_FLIGHT_LOCK = threading.Lock()
+
 
 def _log(msg: str) -> None:
     try:
@@ -432,6 +436,7 @@ async def _run_rhino_python(
             "import Rhino\n"
             "import traceback\n"
             "import time\n"
+            "import importlib\n"
             "def _cleanup_doc():\n"
             "  try:\n"
             "    doc = Rhino.RhinoDoc.ActiveDoc\n"
@@ -473,6 +478,7 @@ async def _run_rhino_python(
             f"import sys\n"
             f"sys.path.append(r\"{str(SCRIPT_DIR)}\")\n"
             f"import process_abutment_stl\n"
+            f"process_abutment_stl = importlib.reload(process_abutment_stl)\n"
             "try:\n"
             "  print('JOB_PID=' + str(System.Diagnostics.Process.GetCurrentProcess().Id))\n"
             "  _cleanup_doc()\n"
@@ -605,18 +611,26 @@ class JobStatusResponse(BaseModel):
 
 class StlHandler(FileSystemEventHandler):
     def on_created(self, event):
+        self._handle(event)
+
+    def on_moved(self, event):
+        self._handle(event, is_move=True)
+
+    def _handle(self, event, is_move=False):
         if event.is_directory:
             return
         if not _is_running:
             return
-        if event.src_path.lower().endswith(".stl"):
-            p = Path(event.src_path)
+        
+        target_path = event.dest_path if is_move else event.src_path
+        if target_path.lower().endswith(".stl"):
+            p = Path(target_path)
             # 이미 처리 중이거나 완료된 파일인지 확인 (파일명 규칙 기반)
-            if ".fw" in p.name or ".cam" in p.name or ".rhino" in p.name:
+            if ".filled" in p.name or ".cam" in p.name or ".rhino" in p.name:
                 return
             
             # 파일이 완전히 써질 때까지 잠시 대기
-            time.sleep(1)
+            time.sleep(0.5)
             if _main_loop:
                 _main_loop.call_soon_threadsafe(lambda: asyncio.create_task(_process_single_stl(p)))
 
@@ -624,11 +638,16 @@ async def _process_single_stl(p: Path):
     if not p.exists():
         return
         
-    out_name = _sanitize_filename(f"{p.stem}.fw.stl")
+    out_name = _sanitize_filename(f"{p.stem}.filled.stl")
     out_path = STORE_OUT_DIR / out_name
     
+    with _IN_FLIGHT_LOCK:
+        if p.name in _IN_FLIGHT:
+            return
+        _IN_FLIGHT.add(p.name)
+
     if not out_path.exists():
-        _log(f"Auto-processing new file (Watcher): {p.name}")
+        _log(f"Auto-processing new file (Watcher/Recover): {p.name}")
         job_id = f"auto_{uuid.uuid4().hex[:8]}"
         JOBS[job_id] = {
             "jobId": job_id,
@@ -691,6 +710,68 @@ async def _process_single_stl(p: Path):
             except:
                 pass
 
+    with _IN_FLIGHT_LOCK:
+        _IN_FLIGHT.discard(p.name)
+
+
+def _backend_should_process(file_name: str, source_step: str) -> bool:
+    """백엔드에 처리 상태를 확인하여 미처리일 때만 True 반환"""
+    try:
+        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+        # BACKEND_URL은 기본이 https://abuts.fit/api 형태이므로 /api가 포함된 경우가 있다.
+        base = backend_url.rstrip("/")
+        # bg.routes는 /api/bg 이므로, base가 .../api면 그대로 /bg/.., 아니면 /api/bg/.. 로 맞춰준다.
+        if base.endswith("/api"):
+            url = f"{base}/bg/file-status"
+        else:
+            url = f"{base}/api/bg/file-status"
+
+        res = requests.get(
+            url,
+            params={"sourceStep": source_step, "fileName": file_name, "force": "true"},
+            timeout=5,
+        )
+        if res.status_code != 200:
+            return False
+        body = res.json() if res.content else {}
+        data = body.get("data") if isinstance(body, dict) else None
+        if isinstance(data, dict):
+            return bool(data.get("shouldProcess"))
+        # ApiResponse 래핑이 아닌 경우도 방어
+        return bool(body.get("shouldProcess"))
+    except Exception as e:
+        _log(f"Recover status check failed: {e}")
+        return False
+
+
+def _recover_unprocessed_files() -> None:
+    """재기동 시 input/output 폴더를 비교하고, 백엔드가 미처리로 판단한 파일만 재처리 큐에 등록"""
+    try:
+        _ensure_dirs()
+
+        in_files = [p for p in STORE_IN_DIR.iterdir() if p.is_file()]
+        for p in in_files:
+            try:
+                out_name = _sanitize_filename(f"{p.stem}.filled.stl")
+                out_path = STORE_OUT_DIR / out_name
+                if out_path.exists():
+                    continue
+
+                # 백엔드가 미처리라고 확인해준 경우에만 처리
+                if not _backend_should_process(p.name, "1-stl"):
+                    continue
+
+                _log(f"Recover: enqueue {p.name}")
+
+                # startup은 sync 컨텍스트이므로 main loop에 코루틴 등록
+                if _main_loop:
+                    asyncio.run_coroutine_threadsafe(_process_single_stl(p), _main_loop)
+            except Exception as inner:
+                _log(f"Recover error for {p.name}: {inner}")
+                continue
+    except Exception as e:
+        _log(f"Recover failed: {e}")
+
 def _start_watcher():
     _log(f"Starting native watcher (watchdog) for {STORE_IN_DIR}")
     event_handler = StlHandler()
@@ -711,6 +792,9 @@ def on_startup() -> None:
     _ensure_dirs()
     # 파일 감시 스레드 시작 (watchdog)
     threading.Thread(target=_start_watcher, daemon=True).start()
+
+    # 재기동 시점 미처리 파일 복구 스캔
+    threading.Thread(target=_recover_unprocessed_files, daemon=True).start()
 
 # 운영 상태 및 히스토리 관리
 _is_running = True
@@ -837,6 +921,22 @@ async def _run_batch_job(job_id: str) -> None:
         except Exception:
             pass
 
+
+@app.post("/api/rhino/upload-stl")
+async def upload_stl(file: UploadFile = File(...)):
+    """S3 전송량 최적화를 위해 클라이언트/백엔드에서 직접 파일을 받아 1-stl에 저장하는 엔드포인트"""
+    _ensure_dirs()
+    safe_name = _sanitize_filename(file.filename or "uploaded.stl")
+    target_path = STORE_IN_DIR / safe_name
+    
+    try:
+        data = await file.read()
+        target_path.write_bytes(data)
+        _log(f"Direct upload saved to 1-stl: {safe_name} ({len(data)} bytes)")
+        return {"ok": True, "fileName": safe_name, "path": str(target_path)}
+    except Exception as e:
+        _log(f"Failed to save uploaded file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/rhino/process-stl", response_model=CreateJobResponse)
 async def process_stl(file: UploadFile = File(...)):
@@ -1064,7 +1164,7 @@ async def store_fillhole(req: StoreFillHoleRequest):
 
     token = uuid.uuid4().hex
     in_base = Path(safe_name).stem or "base"
-    out_name = _sanitize_filename(f"{in_base}.fw.stl")
+    out_name = _sanitize_filename(f"{in_base}.filled.stl")
     output_path = STORE_OUT_DIR / out_name
 
     _log(f"job start: in={safe_name} out={out_name}")

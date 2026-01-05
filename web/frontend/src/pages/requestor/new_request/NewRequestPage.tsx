@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  useCallback,
+} from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/hooks/use-toast";
@@ -239,7 +245,6 @@ export const NewRequestPage = () => {
     }
   };
 
-  const [duplicateCursor, setDuplicateCursor] = useState(0);
   const [duplicateResolutions, setDuplicateResolutions] = useState<
     {
       caseId: string;
@@ -250,20 +255,21 @@ export const NewRequestPage = () => {
 
   useEffect(() => {
     if (!duplicatePrompt) {
-      setDuplicateCursor(0);
       setDuplicateResolutions([]);
       return;
     }
-    setDuplicateCursor(0);
     setDuplicateResolutions([]);
   }, [duplicatePrompt]);
 
-  const currentDuplicate =
-    duplicatePrompt &&
-    Array.isArray(duplicatePrompt.duplicates) &&
-    duplicatePrompt.duplicates.length > 0
-      ? duplicatePrompt.duplicates[duplicateCursor] || null
-      : null;
+  const duplicateList = useMemo(
+    () =>
+      duplicatePrompt &&
+      Array.isArray(duplicatePrompt.duplicates) &&
+      duplicatePrompt.duplicates.length > 0
+        ? duplicatePrompt.duplicates
+        : [],
+    [duplicatePrompt]
+  );
 
   const getFileKeyByDraftCaseId = (draftCaseId: string) => {
     const found = (files || []).find(
@@ -273,20 +279,22 @@ export const NewRequestPage = () => {
     return `${found.name}:${found.size}`;
   };
 
-  const currentDuplicateNewCaseInfo = useMemo(() => {
-    if (!currentDuplicate?.caseId) return null;
-    const fileKey = getFileKeyByDraftCaseId(String(currentDuplicate.caseId));
-    const file = fileKey
-      ? (files || []).find((f) => `${f.name}:${f.size}` === fileKey)
-      : null;
-    const info = fileKey ? caseInfosMap?.[fileKey] : undefined;
-    return {
-      fileName: file?.name || "",
-      patientName: String(info?.patientName || ""),
-      tooth: String(info?.tooth || ""),
-      clinicName: String(info?.clinicName || ""),
-    };
-  }, [currentDuplicate?.caseId, files, caseInfosMap]);
+  const getNewCaseInfoByCaseId = useCallback(
+    (caseId: string) => {
+      const fileKey = getFileKeyByDraftCaseId(String(caseId));
+      const file = fileKey
+        ? (files || []).find((f) => `${f.name}:${f.size}` === fileKey)
+        : null;
+      const info = fileKey ? caseInfosMap?.[fileKey] : undefined;
+      return {
+        fileName: file?.name || "",
+        patientName: String(info?.patientName || ""),
+        tooth: String(info?.tooth || ""),
+        clinicName: String(info?.clinicName || ""),
+      };
+    },
+    [caseInfosMap, files]
+  );
 
   const applyDuplicateChoice = async (choice: {
     strategy: "skip" | "replace" | "remake";
@@ -346,15 +354,24 @@ export const NewRequestPage = () => {
         });
       }
 
-      const totalDup = duplicatePrompt?.duplicates?.length || 0;
-      const nextCursor = duplicateCursor + 1;
+      const remaining =
+        (duplicatePrompt?.duplicates || []).filter(
+          (d) => d.caseId !== choice.caseId
+        ) || [];
 
-      if (nextCursor < totalDup) {
-        setPendingUploadFiles(nextPendingUploadFiles);
-        setDuplicateCursor(nextCursor);
+      setPendingUploadFiles(
+        nextPendingUploadFiles.length > 0 ? nextPendingUploadFiles : null
+      );
+
+      if (remaining.length > 0) {
+        setDuplicatePrompt({
+          ...duplicatePrompt,
+          duplicates: remaining,
+        });
         return;
       }
 
+      // 모두 처리 완료
       setPendingUploadFiles(null);
       setDuplicatePrompt(null);
 
@@ -374,11 +391,16 @@ export const NewRequestPage = () => {
 
     setDuplicateResolutions(nextResolutions);
 
-    const totalDup = duplicatePrompt?.duplicates?.length || 0;
-    const nextCursor = duplicateCursor + 1;
+    const remaining =
+      (duplicatePrompt?.duplicates || []).filter(
+        (d) => d.caseId !== choice.caseId
+      ) || [];
 
-    if (nextCursor < totalDup) {
-      setDuplicateCursor(nextCursor);
+    if (remaining.length > 0) {
+      setDuplicatePrompt({
+        ...duplicatePrompt,
+        duplicates: remaining,
+      });
       return;
     }
 
@@ -395,6 +417,50 @@ export const NewRequestPage = () => {
     }
 
     await handleSubmitWithDuplicateResolutions(nextResolutions);
+  };
+
+  const renderDuplicateActions = (dup: any) => {
+    const existingRequestMongoId = String(
+      dup?.existingRequest?._id || ""
+    ).trim();
+    const caseId = String(dup?.caseId || "").trim();
+    const mode = duplicatePrompt?.mode;
+    const isLocked = dup?.lockedReason === "production";
+
+    if (!existingRequestMongoId || !caseId) {
+      return null;
+    }
+
+    return (
+      <div className="flex gap-2 flex-wrap mt-2">
+        {!isLocked && (
+          <button
+            className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs"
+            onClick={async () => {
+              await applyDuplicateChoice({
+                strategy: mode === "completed" ? "remake" : "replace",
+                caseId,
+                existingRequestId: existingRequestMongoId,
+              });
+            }}
+          >
+            새의뢰로 교체
+          </button>
+        )}
+        <button
+          className="px-3 py-1.5 rounded border border-gray-300 text-xs"
+          onClick={async () => {
+            await applyDuplicateChoice({
+              strategy: "skip",
+              caseId,
+              existingRequestId: existingRequestMongoId,
+            });
+          }}
+        >
+          기존의뢰 유지
+        </button>
+      </div>
+    );
   };
 
   const { summary: bulkShippingSummary } = useBulkShippingPolicy(user?.email);
@@ -525,165 +591,101 @@ export const NewRequestPage = () => {
               : "진행 중인 의뢰가 이미 있습니다"
           }
           description={
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="text-sm text-gray-700">
-                동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다.
+                동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다. 항목별로
+                선택해주세요.
               </div>
-              {currentDuplicateNewCaseInfo && (
-                <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-gray-800">
-                  <div className="font-semibold mb-1">현재 케이스(새 의뢰)</div>
-                  {currentDuplicateNewCaseInfo.fileName && (
-                    <div className="truncate">
-                      파일: {currentDuplicateNewCaseInfo.fileName}
-                    </div>
-                  )}
-                  {(currentDuplicateNewCaseInfo.patientName ||
-                    currentDuplicateNewCaseInfo.tooth ||
-                    currentDuplicateNewCaseInfo.clinicName) && (
-                    <div className="truncate">
-                      {currentDuplicateNewCaseInfo.clinicName
-                        ? `치과: ${currentDuplicateNewCaseInfo.clinicName}`
-                        : ""}
-                      {currentDuplicateNewCaseInfo.patientName
-                        ? ` / 환자: ${currentDuplicateNewCaseInfo.patientName}`
-                        : ""}
-                      {currentDuplicateNewCaseInfo.tooth
-                        ? ` / 치아: ${currentDuplicateNewCaseInfo.tooth}`
-                        : ""}
-                    </div>
-                  )}
-                </div>
-              )}
-              {currentDuplicate && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-                  <div className="font-semibold mb-1">
-                    중복된 의뢰 ({duplicateCursor + 1} /{" "}
-                    {duplicatePrompt?.duplicates?.length || 1})
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="truncate">
-                      의뢰번호:{" "}
-                      {String(
-                        currentDuplicate?.existingRequest?.requestId || ""
+              {duplicateList.map((dup, idx) => {
+                const info = getNewCaseInfoByCaseId(String(dup.caseId || ""));
+                const existing = dup?.existingRequest || {};
+                const isLocked = dup?.lockedReason === "production";
+                return (
+                  <div
+                    key={`${dup.caseId || ""}-${idx}`}
+                    className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold">
+                        중복된 의뢰 {idx + 1} / {duplicateList.length}
+                      </div>
+                      {dup?.fileName && (
+                        <span className="text-[11px] text-gray-500 truncate">
+                          파일: {String(dup.fileName || "")}
+                        </span>
                       )}
-                    </span>
-                    {(currentDuplicate?.existingRequest?.caseInfos
-                      ?.clinicName ||
-                      currentDuplicate?.existingRequest?.caseInfos
-                        ?.patientName ||
-                      currentDuplicate?.existingRequest?.caseInfos?.tooth) && (
-                      <span className="truncate">
-                        {String(
-                          currentDuplicate?.existingRequest?.caseInfos
-                            ?.clinicName || ""
-                        )
-                          ? `치과: ${String(
-                              currentDuplicate?.existingRequest?.caseInfos
-                                ?.clinicName || ""
-                            )}`
-                          : ""}
-                        {String(
-                          currentDuplicate?.existingRequest?.caseInfos
-                            ?.patientName || ""
-                        )
-                          ? ` / 환자: ${String(
-                              currentDuplicate?.existingRequest?.caseInfos
-                                ?.patientName || ""
-                            )}`
-                          : ""}
-                        {String(
-                          currentDuplicate?.existingRequest?.caseInfos?.tooth ||
-                            ""
-                        )
-                          ? ` / 치아: ${String(
-                              currentDuplicate?.existingRequest?.caseInfos
-                                ?.tooth || ""
-                            )}`
-                          : ""}
-                      </span>
-                    )}
-                    {currentDuplicate?.fileName && (
-                      <span className="truncate">
-                        파일: {String(currentDuplicate.fileName || "")}
-                      </span>
-                    )}
-                    <span className="truncate">
-                      상태:{" "}
-                      {String(
-                        currentDuplicate?.existingRequest?.status2 === "완료"
-                          ? "완료"
-                          : currentDuplicate?.existingRequest
-                              ?.manufacturerStage ||
-                              currentDuplicate?.existingRequest?.status ||
-                              ""
-                      )}
-                    </span>
-                    {currentDuplicate?.existingRequest?.price?.amount !=
-                      null && (
-                      <span className="truncate">
-                        금액(공급가):{" "}
-                        {Number(
-                          currentDuplicate?.existingRequest?.price?.amount || 0
-                        ).toLocaleString()}
-                        원
-                      </span>
-                    )}
-                    {currentDuplicate?.existingRequest?.createdAt && (
-                      <span className="truncate">
-                        접수일:{" "}
-                        {String(
-                          currentDuplicate.existingRequest.createdAt
-                        ).slice(0, 10)}
-                      </span>
-                    )}
+                    </div>
+                    <div className="rounded border border-blue-100 bg-blue-50 p-2 text-gray-800">
+                      <div className="font-semibold mb-1 text-[11px]">
+                        현재 케이스(새 의뢰)
+                      </div>
+                      <div className="text-[11px] truncate">
+                        {info.clinicName ? `치과: ${info.clinicName}` : ""}
+                        {info.patientName ? ` / 환자: ${info.patientName}` : ""}
+                        {info.tooth ? ` / 치아: ${info.tooth}` : ""}
+                      </div>
+                    </div>
+                    <div className="rounded border border-gray-200 bg-white p-2">
+                      <div className="font-semibold mb-1 text-[11px]">
+                        기존 의뢰
+                      </div>
+                      <div className="flex flex-col gap-0.5 text-[11px]">
+                        <span className="truncate">
+                          의뢰번호: {String(existing?.requestId || "")}
+                        </span>
+                        {(existing?.caseInfos?.clinicName ||
+                          existing?.caseInfos?.patientName ||
+                          existing?.caseInfos?.tooth) && (
+                          <span className="truncate">
+                            {existing?.caseInfos?.clinicName
+                              ? `치과: ${existing?.caseInfos?.clinicName}`
+                              : ""}
+                            {existing?.caseInfos?.patientName
+                              ? ` / 환자: ${existing?.caseInfos?.patientName}`
+                              : ""}
+                            {existing?.caseInfos?.tooth
+                              ? ` / 치아: ${existing?.caseInfos?.tooth}`
+                              : ""}
+                          </span>
+                        )}
+                        <span className="truncate">
+                          상태:{" "}
+                          {String(
+                            existing?.status2 === "완료"
+                              ? "완료"
+                              : existing?.manufacturerStage ||
+                                  existing?.status ||
+                                  ""
+                          )}
+                        </span>
+                        {existing?.price?.amount != null && (
+                          <span className="truncate">
+                            금액(공급가):{" "}
+                            {Number(
+                              existing?.price?.amount || 0
+                            ).toLocaleString()}
+                            원
+                          </span>
+                        )}
+                        {existing?.createdAt && (
+                          <span className="truncate">
+                            접수일: {String(existing.createdAt).slice(0, 10)}
+                          </span>
+                        )}
+                        {isLocked && (
+                          <span className="text-red-500">
+                            생산/발송 단계 의뢰는 교체할 수 없습니다.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {renderDuplicateActions(dup)}
                   </div>
-                </div>
-              )}
+                );
+              })}
             </div>
           }
-          actions={(() => {
-            const actions: any[] = [];
-            const existingRequestMongoId = String(
-              currentDuplicate?.existingRequest?._id || ""
-            );
-            const caseId = String(currentDuplicate?.caseId || "").trim();
-            const mode = duplicatePrompt?.mode;
-
-            if (existingRequestMongoId && caseId) {
-              actions.push({
-                label: "기존의뢰 유지",
-                variant: "secondary",
-                onClick: async () => {
-                  await applyDuplicateChoice({
-                    strategy: "skip",
-                    caseId,
-                    existingRequestId: existingRequestMongoId,
-                  });
-                },
-              });
-              actions.unshift({
-                label: "새의뢰로 교체",
-                variant: "primary",
-                onClick: async () => {
-                  await applyDuplicateChoice({
-                    strategy: mode === "completed" ? "remake" : "replace",
-                    caseId,
-                    existingRequestId: existingRequestMongoId,
-                  });
-                },
-              });
-            } else {
-              actions.push({
-                label: "닫기",
-                variant: "secondary",
-                onClick: async () => {
-                  setDuplicatePrompt(null);
-                },
-              });
-            }
-
-            return actions;
-          })()}
+          actions={[]}
           onClose={() => setDuplicatePrompt(null)}
         />
 

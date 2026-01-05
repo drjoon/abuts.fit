@@ -90,10 +90,6 @@ export const DEFAULT_FILENAME_RULES: FilenameRule[] = [
     description: "날짜_환자_치아_번호 패턴 (예: 20251119김혜영_32_1)",
     pattern: "^\\d{8}[가-힣]+_\\d+_\\d+",
     extraction: {
-      clinic: {
-        type: "regex",
-        value: "^\\d{8}([가-힣]+)",
-      },
       patient: {
         type: "regex",
         value: "^\\d{8}([가-힣]+)",

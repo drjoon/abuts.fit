@@ -276,6 +276,21 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
 
   await draft.save();
 
+  // 드래프트에 파일 추가 성공 시 bg/storage/1-stl 에도 복사
+  if (s3Key) {
+    try {
+      const s3Utils = (await import("../utils/s3.utils.js")).default;
+      const buffer = await s3Utils.getObjectBufferFromS3(s3Key);
+      if (buffer) {
+        await copyToBgStorage(buffer, originalName);
+      }
+    } catch (err) {
+      console.error(
+        `[BG-Storage] Failed to copy to 1-stl in addFileToDraft: ${err.message}`
+      );
+    }
+  }
+
   const addedCaseInfo = draft.caseInfos[draft.caseInfos.length - 1];
 
   return res

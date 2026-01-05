@@ -1,4 +1,6 @@
 import mongoose, { Types } from "mongoose";
+import axios from "axios";
+import FormData from "form-data";
 import Request from "../../models/request.model.js";
 import DraftRequest from "../../models/draftRequest.model.js";
 import ClinicImplantPreset from "../../models/clinicImplantPreset.model.js";
@@ -19,6 +21,54 @@ import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
+
+const RHINO_SERVER_URL =
+  process.env.RHINO_SERVER_URL || "http://localhost:8000";
+
+/**
+ * 파일을 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
+ */
+async function uploadToRhinoServer(fileBuffer, fileName) {
+  try {
+    const formData = new FormData();
+    formData.append("file", fileBuffer, { filename: fileName });
+
+    const response = await axios.post(
+      `${RHINO_SERVER_URL}/api/rhino/upload-stl`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+        },
+        timeout: 5000,
+      }
+    );
+
+    if (response.data?.ok) {
+      console.log(`[Rhino-Server] File uploaded to 1-stl: ${fileName}`);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error(`[Rhino-Server] Failed to upload file: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * S3에서 파일을 다운로드하여 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
+ */
+async function uploadS3ToRhinoServer(s3Key, fileName) {
+  try {
+    const s3Utils = (await import("../../utils/s3.utils.js")).default;
+    const buffer = await s3Utils.getObjectBufferFromS3(s3Key);
+    if (buffer) {
+      await uploadToRhinoServer(buffer, fileName);
+    }
+  } catch (err) {
+    console.error(`[Rhino-Server] Failed to upload S3 file: ${err.message}`);
+  }
+}
 
 const toKstYmd = (d) => {
   if (!d) return null;
@@ -1153,7 +1203,7 @@ export async function createRequestsFromDraft(req, res) {
           applyStatusMapping(newRequest, newRequest.status);
           await newRequest.save({ session });
 
-          // 1-stl 에 requestId를 포함한 파일명으로 복사
+          // 1-stl 에 requestId를 포함한 파일명으로 업로드 (Rhino 서버 직접 전송)
           if (item.caseInfosWithFile.file?.s3Key) {
             try {
               const s3Key = item.caseInfosWithFile.file.s3Key;
@@ -1162,27 +1212,16 @@ export async function createRequestsFromDraft(req, res) {
                 : ".stl";
               const bgFileName = `${newRequest.requestId}_${item.clinicName}_${item.patientName}_${item.tooth}${ext}`;
 
-              const s3Utils = (await import("../../utils/s3.utils.js")).default;
-              const buffer = await s3Utils.getObjectBufferFromS3(s3Key);
+              // S3에서 가져와서 Rhino 서버로 전송
+              await uploadS3ToRhinoServer(s3Key, bgFileName);
 
-              const targetPath = path.join(
-                BG_STORAGE_BASE,
-                "1-stl",
-                bgFileName
-              );
-              await fs.mkdir(path.dirname(targetPath), { recursive: true });
-              await fs.writeFile(targetPath, buffer);
-
-              console.log(
-                `[BG-Storage] File renamed and copied for request: ${bgFileName}`
-              );
-
+              // DB에 로컬 경로 정보 업데이트
               await Request.findByIdAndUpdate(newRequest._id, {
                 "caseInfos.file.filePath": bgFileName,
               });
             } catch (err) {
               console.error(
-                `[BG-Storage] Failed to copy for request ${newRequest.requestId}: ${err.message}`
+                `[Rhino-Server] Failed to upload for request ${newRequest.requestId}: ${err.message}`
               );
             }
           }

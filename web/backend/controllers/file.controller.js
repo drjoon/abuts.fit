@@ -1,23 +1,86 @@
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs/promises";
+import axios from "axios";
+import FormData from "form-data";
+import File from "../models/file.model.js";
+import Request from "../models/request.model.js";
+import ChatRoom from "../models/chatRoom.model.js";
+import Chat from "../models/chat.model.js";
 import s3Utils from "../utils/s3.utils.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { ApiResponse } from "../utils/ApiResponse.js";
+import { ApiError } from "../utils/ApiError.js";
 
-const BG_STORAGE_BASE =
-  process.env.BG_STORAGE_PATH ||
-  path.resolve(process.cwd(), "../../bg/storage");
+const getFileType = (filename) => {
+  const extension = filename.split(".").pop().toLowerCase();
+  if (["jpg", "jpeg", "png", "gif"].includes(extension)) return "image";
+  if (["pdf"].includes(extension)) return "pdf";
+  if (["zip", "rar", "7z"].includes(extension)) return "archive";
+  return "other";
+};
+
+// 클라이언트에서 전달한 원본 파일명을 NFC로만 정규화해서 사용한다.
+const normalizeOriginalName = (name) => {
+  if (typeof name !== "string") return String(name || "");
+  try {
+    return name.normalize("NFC");
+  } catch {
+    return name;
+  }
+};
+
+const getExtFromName = (name) => {
+  const n = String(name || "");
+  if (!n.includes(".")) return "";
+  const ext = `.${n.split(".").pop().toLowerCase()}`;
+  return ext.length > 10 ? "" : ext;
+};
+
+const RHINO_SERVER_URL =
+  process.env.RHINO_SERVER_URL || "http://localhost:8000";
 
 /**
- * 임시 파일을 bg/storage/1-stl 에 복사하는 헬퍼
+ * 파일을 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
  */
-async function copyToBgStorage(fileBuffer, fileName) {
+async function uploadToRhinoServer(fileBuffer, fileName) {
   try {
-    const targetDir = path.join(BG_STORAGE_BASE, "1-stl");
-    await fs.mkdir(targetDir, { recursive: true });
-    await fs.writeFile(path.join(targetDir, fileName), fileBuffer);
-    console.log(`[BG-Storage] File copied to 1-stl: ${fileName}`);
+    const formData = new FormData();
+    formData.append("file", fileBuffer, { filename: fileName });
+
+    const response = await axios.post(
+      `${RHINO_SERVER_URL}/api/rhino/upload-stl`,
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+        },
+        timeout: 5000,
+      }
+    );
+
+    if (response.data?.ok) {
+      console.log(`[Rhino-Server] File uploaded to 1-stl: ${fileName}`);
+      return true;
+    }
+    return false;
   } catch (err) {
-    console.error(`[BG-Storage] Failed to copy file to 1-stl: ${err.message}`);
+    console.error(`[Rhino-Server] Failed to upload file: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * S3에서 파일을 다운로드하여 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
+ */
+async function uploadS3ToRhinoServer(s3Key, fileName) {
+  try {
+    const buffer = await s3Utils.getObjectBufferFromS3(s3Key);
+    if (buffer) {
+      await uploadToRhinoServer(buffer, fileName);
+    }
+  } catch (err) {
+    console.error(`[Rhino-Server] Failed to upload S3 file: ${err.message}`);
   }
 }
 
@@ -46,9 +109,8 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
 
     const originalname = normalizeOriginalName(rawName);
 
-    // 1-stl 복사 (임시 파일이지만 일단 복사, 의뢰 생성 시 파일명이 확정되면 다시 처리할 수도 있음)
-    // 하지만 사용자의 원본 파일을 BG 앱들이 즉시 인지하게 하려면 여기서 복사하는 것이 맞음.
-    await copyToBgStorage(buffer, originalname);
+    // Rhino 서버 1-stl 에 직접 업로드 시도
+    await uploadToRhinoServer(buffer, originalname);
 
     // 사용자별 파일명+용량 기준 중복 검사
     const existing = await File.findOne({
@@ -204,6 +266,12 @@ export const createTempUploadPresign = asyncHandler(async (req, res) => {
     });
 
     const uploadUrl = await s3Utils.getUploadSignedUrl(key, mimetype);
+
+    // S3 Presigned URL 방식이지만, 클라이언트는 메타데이터 등록 후 즉시 파일을 S3에 올립니다.
+    // 백엔드에서는 비동기적으로 S3에서 파일을 가져와 Rhino 서버에 업로드하도록 시도합니다.
+    setTimeout(() => {
+      uploadS3ToRhinoServer(key, originalName).catch(() => {});
+    }, 2000);
 
     results.push({
       uploadUrl,

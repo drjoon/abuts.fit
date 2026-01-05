@@ -391,8 +391,14 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
           // 0: 의뢰, 1: CAM, 2: 생산, 3: 발송, 4: 완료
           if (stageOrder === 2 || stageOrder === 3) {
-            console.log("[중복체크] 생산/발송 단계 -> 차단");
+            console.log("[중복체크] 생산/발송 단계 -> 모달(교체 불가) 추가");
             blockedFiles.push(f);
+            modalDuplicates.push({
+              caseId: `${f.name}:${f.size}`,
+              fileName: f.name,
+              existingRequest,
+              lockedReason: "production",
+            });
             continue;
           }
 
