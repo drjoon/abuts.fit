@@ -1,37 +1,25 @@
-import mongoose from "mongoose";
-import File from "../models/file.model.js";
-import Request from "../models/request.model.js";
-import ChatRoom from "../models/chatRoom.model.js";
-import Chat from "../models/chat.model.js";
+import mongoose, { Types } from "mongoose";
+import path from "path";
+import fs from "fs/promises";
 import s3Utils from "../utils/s3.utils.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { ApiError } from "../utils/ApiError.js";
 
-const getFileType = (filename) => {
-  const extension = filename.split(".").pop().toLowerCase();
-  if (["jpg", "jpeg", "png", "gif"].includes(extension)) return "image";
-  if (["pdf"].includes(extension)) return "pdf";
-  if (["zip", "rar", "7z"].includes(extension)) return "archive";
-  return "other";
-};
+const BG_STORAGE_BASE =
+  process.env.BG_STORAGE_PATH ||
+  path.resolve(process.cwd(), "../../bg/storage");
 
-// 클라이언트에서 전달한 원본 파일명을 NFC로만 정규화해서 사용한다.
-const normalizeOriginalName = (name) => {
-  if (typeof name !== "string") return String(name || "");
+/**
+ * 임시 파일을 bg/storage/1-stl 에 복사하는 헬퍼
+ */
+async function copyToBgStorage(fileBuffer, fileName) {
   try {
-    return name.normalize("NFC");
-  } catch {
-    return name;
+    const targetDir = path.join(BG_STORAGE_BASE, "1-stl");
+    await fs.mkdir(targetDir, { recursive: true });
+    await fs.writeFile(path.join(targetDir, fileName), fileBuffer);
+    console.log(`[BG-Storage] File copied to 1-stl: ${fileName}`);
+  } catch (err) {
+    console.error(`[BG-Storage] Failed to copy file to 1-stl: ${err.message}`);
   }
-};
-
-const getExtFromName = (name) => {
-  const n = String(name || "");
-  if (!n.includes(".")) return "";
-  const ext = `.${n.split(".").pop().toLowerCase()}`;
-  return ext.length > 10 ? "" : ext;
-};
+}
 
 // 임시 파일 업로드 (의뢰와 아직 연결되지 않은 상태, 사용자별 중복 방지)
 export const uploadTempFiles = asyncHandler(async (req, res) => {
@@ -42,13 +30,10 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
   }
 
   const uploadedBy = req.user._id;
-
   const results = [];
 
   for (const [index, file] of files.entries()) {
     const { mimetype, size, buffer } = file;
-
-    // 클라이언트가 FormData로 보낸 원본 파일명을 우선 사용한다.
     const bodyNames = req.body?.originalNames;
     let rawName;
     if (Array.isArray(bodyNames)) {
@@ -60,6 +45,10 @@ export const uploadTempFiles = asyncHandler(async (req, res) => {
     }
 
     const originalname = normalizeOriginalName(rawName);
+
+    // 1-stl 복사 (임시 파일이지만 일단 복사, 의뢰 생성 시 파일명이 확정되면 다시 처리할 수도 있음)
+    // 하지만 사용자의 원본 파일을 BG 앱들이 즉시 인지하게 하려면 여기서 복사하는 것이 맞음.
+    await copyToBgStorage(buffer, originalname);
 
     // 사용자별 파일명+용량 기준 중복 검사
     const existing = await File.findOne({

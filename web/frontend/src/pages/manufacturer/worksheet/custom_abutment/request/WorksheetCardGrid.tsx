@@ -313,6 +313,21 @@ export const WorksheetCardGrid = ({
                   )}
                 </div>
               </div>
+              {/* 백그라운드 작업 실패 시 안내 메시지 */}
+              {((isCamStage &&
+                request.caseInfos?.reviewByStage?.cam?.status === "REJECTED") ||
+                (isMachiningStage &&
+                  request.caseInfos?.reviewByStage?.machining?.status ===
+                    "REJECTED")) && (
+                <div className="mt-2 p-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600 flex flex-col gap-1">
+                  <div className="font-bold">⚠️ 백그라운드 작업 실패</div>
+                  <div>
+                    {isCamStage
+                      ? "Rhino/ESPRIT 작업 중 오류가 발생했습니다. 파일을 확인 후 수동으로 업로드해주세요."
+                      : "가공 명령 전송 중 오류가 발생했습니다. 장비 상태 확인 후 수동으로 조치해주세요."}
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -531,10 +531,6 @@ export async function createRequestsFromDraft(req, res) {
       const missing = [];
       if (!clinicName) missing.push("치과이름");
       if (!patientName) missing.push("환자이름");
-      if (!tooth) missing.push("치아번호");
-      if (!implantManufacturer) missing.push("임플란트 제조사");
-      if (!implantSystem) missing.push("임플란트 시스템");
-      if (!implantType) missing.push("임플란트 유형");
 
       if (missing.length > 0) {
         const fileName = ci.file?.originalName || `파일 ${idx + 1}`;
@@ -1156,9 +1152,42 @@ export async function createRequestsFromDraft(req, res) {
 
           applyStatusMapping(newRequest, newRequest.status);
           await newRequest.save({ session });
-          createdRequests.push(newRequest);
 
-          // [변경] 생산 시작(CAM 승인) 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 SPEND 로직을 제거합니다.
+          // 1-stl 에 requestId를 포함한 파일명으로 복사
+          if (item.caseInfosWithFile.file?.s3Key) {
+            try {
+              const s3Key = item.caseInfosWithFile.file.s3Key;
+              const ext = s3Key.includes(".")
+                ? `.${s3Key.split(".").pop().toLowerCase()}`
+                : ".stl";
+              const bgFileName = `${newRequest.requestId}_${item.clinicName}_${item.patientName}_${item.tooth}${ext}`;
+
+              const s3Utils = (await import("../../utils/s3.utils.js")).default;
+              const buffer = await s3Utils.getObjectBufferFromS3(s3Key);
+
+              const targetPath = path.join(
+                BG_STORAGE_BASE,
+                "1-stl",
+                bgFileName
+              );
+              await fs.mkdir(path.dirname(targetPath), { recursive: true });
+              await fs.writeFile(targetPath, buffer);
+
+              console.log(
+                `[BG-Storage] File renamed and copied for request: ${bgFileName}`
+              );
+
+              await Request.findByIdAndUpdate(newRequest._id, {
+                "caseInfos.file.filePath": bgFileName,
+              });
+            } catch (err) {
+              console.error(
+                `[BG-Storage] Failed to copy for request ${newRequest.requestId}: ${err.message}`
+              );
+            }
+          }
+
+          createdRequests.push(newRequest);
         }
       });
     } catch (e) {
