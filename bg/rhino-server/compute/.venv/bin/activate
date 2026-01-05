@@ -37,7 +37,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="/Users/joonholee/Joon/1-Project/dev/abuts.fit/rhino/compute/.venv"
+VIRTUAL_ENV="/Users/joonholee/Joon/1-Project/dev/abuts.fit/bg/rhino-server/compute/.venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"

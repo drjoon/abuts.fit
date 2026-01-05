@@ -29,7 +29,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV "/Users/joonholee/Joon/1-Project/dev/abuts.fit/rhino/compute/.venv"
+set -gx VIRTUAL_ENV "/Users/joonholee/Joon/1-Project/dev/abuts.fit/bg/rhino-server/compute/.venv"
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/bin" $PATH

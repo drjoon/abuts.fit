@@ -204,6 +204,7 @@ import filenameRuleRoutes from "./routes/filenameRule.routes.js";
 import requestorOrganizationRoutes from "./routes/requestorOrganization.routes.js";
 import guideProgressRoutes from "./routes/guideProgress.routes.js";
 import rhinoRoutes from "./routes/rhino.routes.js";
+import bgRoutes from "./routes/bg.routes.js";
 
 import creditRoutes from "./routes/credit.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
