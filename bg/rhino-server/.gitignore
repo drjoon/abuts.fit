@@ -18,3 +18,4 @@ docs
 Stl-Stores
 .tmp
 .venu
+__pycache__

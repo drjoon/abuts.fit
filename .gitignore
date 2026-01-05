@@ -18,3 +18,4 @@ docs
 storage
 .tmp
 .venu
+__pycache__
