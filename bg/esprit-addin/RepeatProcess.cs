@@ -79,55 +79,90 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             _logFilePath = Path.Combine(logDir, $"cam_server_{DateTime.Now:yyyyMMdd}.log");
 
             CleanupOldLogs(logDir);
-            SetupWatcher();
+            // SetupWatcher(); // 제거: 이제 백엔드/Rhino 명령 기반으로 동작
+            
+            // 재기동 시 미처리 파일 복구 실행 (별도 스레드)
+            Task.Run(() => RecoverUnprocessedFiles());
         }
 
-        private void SetupWatcher()
+        private async Task RecoverUnprocessedFiles()
         {
             try
             {
-                // bg/storage/2-filled 감시
+                LogInfo("[Recover] Scanning for unprocessed files on startup...");
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                // 실제 배포 위치에 따라 경로 조정 필요. 현재는 상대 경로로 추정.
                 string storagePath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
-                if (!Directory.Exists(storagePath)) Directory.CreateDirectory(storagePath);
+                if (!Directory.Exists(storagePath)) return;
 
-                _watcher = new FileSystemWatcher(storagePath, "*.fw.stl");
-                _watcher.Created += (s, e) => { if (_isRunning) _ = HandleNewFile(e.FullPath); };
-                _watcher.EnableRaisingEvents = true;
-                LogInfo($"[Watcher] Started for {storagePath}");
-            }
-            catch (Exception ex)
-            {
-                LogError($"[Watcher] Failed to setup: {ex.Message}");
-            }
-        }
-
-        private async Task HandleNewFile(string fullPath)
-        {
-            try
-            {
-                LogInfo($"[Watcher] New file detected: {Path.GetFileName(fullPath)}");
-                
-                // 파일이 완전히 기록될 때까지 잠시 대기
-                await Task.Delay(1000);
-
-                var req = new NcGenerationRequest
+                var files = Directory.GetFiles(storagePath, "*.filled.stl");
+                foreach (var file in files)
                 {
-                    RequestId = $"auto_{DateTime.Now:HHmmss}", // 실제 연동시 백엔드에서 받아와야 함
-                    StlPath = fullPath,
-                    NcOutputPath = Path.Combine(Path.GetDirectoryName(fullPath), "..", "3-nc", Path.ChangeExtension(Path.GetFileName(fullPath), ".nc"))
-                };
-
-                bool success = ProcessStlFile(req);
-                if (success)
-                {
-                    await NotifyBackendSuccess(req);
+                    string fileName = Path.GetFileName(file);
+                    // 백엔드에 처리 여부 확인 (2-filled 단계의 파일이 3-nc로 처리되어야 하는지)
+                    bool shouldProcess = await CheckBackendShouldProcess(fileName, "2-filled");
+                    if (shouldProcess)
+                    {
+                        LogInfo($"[Recover] Processing {fileName}");
+                        var req = new NcGenerationRequest
+                        {
+                            RequestId = $"recover_{DateTime.Now:yyyyMMddHHmmss}",
+                            StlPath = file,
+                            NcOutputPath = Path.Combine(Path.GetDirectoryName(file), "..", "3-nc", Path.ChangeExtension(fileName, ".nc"))
+                        };
+                        bool success = ProcessStlFile(req);
+                        if (success) await NotifyBackendAndNext(req);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LogError($"[Watcher] Error handling {fullPath}: {ex.Message}");
+                LogError($"[Recover] Failed: {ex.Message}");
+            }
+        }
+
+        private async Task<bool> CheckBackendShouldProcess(string fileName, string sourceStep)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    string url = $"{_backendUrl}/bg/file-status?sourceStep={sourceStep}&fileName={fileName}&force=true";
+                    var response = await client.GetAsync(url);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string content = await response.Content.ReadAsStringAsync();
+                        // 단순 문자열 포함 여부로 판단 (JSON 파싱 오버헤드 방지)
+                        return content.ToLower().Contains("\"shouldprocess\":true");
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private async Task NotifyBackendAndNext(NcGenerationRequest req)
+        {
+            await NotifyBackendSuccess(req);
+            
+            // [추가] Bridge-Server(포트 8002)에 명령 전달
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    string bridgeUrl = "http://localhost:8002/api/bridge/process-file";
+                    var fi = new FileInfo(req.NcOutputPath);
+                    string json = $"{{\"fileName\":\"{fi.Name}\",\"requestId\":\"{req.RequestId}\"}}";
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    var response = await client.PostAsync(bridgeUrl, content);
+                    if (response.IsSuccessStatusCode)
+                        LogInfo($"[Bridge] Successfully notified Bridge-Server: {fi.Name}");
+                    else
+                        LogWarning($"[Bridge] Notification status: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"[Bridge] Failed to notify Bridge-Server: {ex.Message}");
             }
         }
 

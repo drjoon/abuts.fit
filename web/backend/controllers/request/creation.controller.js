@@ -332,6 +332,32 @@ export async function createRequest(req, res) {
     // [변경] 생산 시작(CAM 승인) 시점에 크레딧을 차감하므로, 의뢰 생성 시점의 SPEND 로직을 제거합니다.
     await newRequest.save();
 
+    // [추가] Rhino 서버에 파일 처리 명령 전송
+    if (newRequest.caseInfos?.file?.fileName) {
+      const fileName = newRequest.caseInfos.file.fileName;
+      // 비동기로 실행 (의뢰 생성 응답을 늦추지 않기 위해)
+      (async () => {
+        try {
+          const rhinoUrl =
+            process.env.RHINO_SERVER_URL || "http://localhost:8000";
+          await axios
+            .post(
+              `${rhinoUrl}/api/rhino/process-file`,
+              {
+                fileName: fileName,
+                requestId: newRequest.requestId,
+              },
+              { timeout: 3000 }
+            )
+            .catch((e) =>
+              console.error(`[Rhino-Command] Failed: ${e.message}`)
+            );
+        } catch (err) {
+          console.error(`[Rhino-Command] Error: ${err.message}`);
+        }
+      })();
+    }
+
     res.status(201).json({
       success: true,
       message: " 의뢰가 성공적으로 등록되었습니다.",

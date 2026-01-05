@@ -31,18 +31,65 @@ namespace HiLinkBridgeWebApi48
 
         public void Start()
         {
-            _watcher = new FileSystemWatcher(_storagePath, "*.nc");
-            _watcher.Created += async (s, e) => {
-                if (ControlController.IsRunning)
-                {
-                    await ProcessNcFile(e.FullPath);
-                }
-            };
-            _watcher.EnableRaisingEvents = true;
-            Console.WriteLine($"[NcFileWatcher] Monitoring started for {_storagePath}");
+            // _watcher = new FileSystemWatcher(_storagePath, "*.nc");
+            // _watcher.Created += async (s, e) => {
+            //     if (ControlController.IsRunning)
+            //     {
+            //         await ProcessNcFile(e.FullPath);
+            //     }
+            // };
+            // _watcher.EnableRaisingEvents = true;
+            Console.WriteLine($"[NcFileWatcher] Monitoring disabled. Using API/Recover commands.");
+            
+            // 재기동 시 미처리 파일 복구 실행
+            Task.Run(() => RecoverUnprocessedFiles());
         }
 
-        private async Task ProcessNcFile(string fullPath)
+        private async Task RecoverUnprocessedFiles()
+        {
+            try
+            {
+                Console.WriteLine("[Recover] Scanning for unprocessed NC files on startup...");
+                if (!Directory.Exists(_storagePath)) return;
+
+                var files = Directory.GetFiles(_storagePath, "*.nc");
+                foreach (var file in files)
+                {
+                    string fileName = Path.GetFileName(file);
+                    bool shouldProcess = await CheckBackendShouldProcess(fileName, "3-nc");
+                    if (shouldProcess)
+                    {
+                        Console.WriteLine($"[Recover] Processing {fileName}");
+                        await ProcessNcFile(file);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Recover] Failed: {ex.Message}");
+            }
+        }
+
+        private async Task<bool> CheckBackendShouldProcess(string fileName, string sourceStep)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    string url = $"{_backendUrl}/bg/file-status?sourceStep={sourceStep}&fileName={fileName}&force=true";
+                    var response = await client.GetAsync(url);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string content = await response.Content.ReadAsStringAsync();
+                        return content.ToLower().Contains("\"shouldprocess\":true");
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        public async Task ProcessNcFile(string fullPath)
         {
             string fileName = Path.GetFileName(fullPath);
             try

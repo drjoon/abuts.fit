@@ -590,9 +590,29 @@ async def _run_rhino_python_in_executor(
     return await _run_rhino_python(input_stl=input_stl, output_stl=output_stl, timeout_sec=timeout_sec)
 
 
-class CreateJobResponse(BaseModel):
-    ok: bool
-    jobId: str
+class ProcessFileRequest(BaseModel):
+    fileName: str
+    requestId: Optional[str] = None
+    force: Optional[bool] = False
+
+@app.post("/api/rhino/process-file")
+async def process_file_api(req: ProcessFileRequest, background_tasks: BackgroundTasks):
+    """백엔드로부터 파일 처리 명령을 수신하는 엔드포인트"""
+    if not _is_running:
+        raise HTTPException(status_code=503, detail="Service is stopped")
+    
+    p = STORE_IN_DIR / req.fileName
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {req.fileName}")
+    
+    # 이미 처리 중인지 확인
+    with _IN_FLIGHT_LOCK:
+        if req.fileName in _IN_FLIGHT and not req.force:
+            return {"ok": True, "message": "Already processing", "jobId": "existing"}
+
+    # 백그라운드 작업으로 실행
+    background_tasks.add_task(_process_single_stl, p)
+    return {"ok": True, "message": "Processing started", "fileName": req.fileName}
 
 
 class JobStatusResponse(BaseModel):
@@ -685,6 +705,24 @@ async def _process_single_stl(p: Path):
                 response = requests.post(callback_url, json=payload, timeout=5)
                 if response.status_code == 200:
                     _log(f"Backend notified successfully: {out_name}")
+                    
+                    # [추가] Esprit-Addin에 처리 명령 전송
+                    try:
+                        esprit_url = os.getenv("ESPRIT_URL", "http://localhost:8001")
+                        # Esprit-Addin의 NcGenerationRequest 형식에 맞춰 전송
+                        esprit_payload = {
+                            "RequestId": request_id if 'request_id' in locals() else f"auto_{uuid.uuid4().hex[:8]}",
+                            "StlPath": str(out_path),
+                            # 3-nc 폴더는 Esprit-Addin에서 처리하므로 여기서는 경로만 전달
+                            "NcOutputPath": str(BG_STORAGE_ROOT / "3-nc" / f"{p.stem}.nc")
+                        }
+                        esprit_res = requests.post(esprit_url, json=esprit_payload, timeout=3)
+                        if esprit_res.status_code == 200:
+                            _log(f"Esprit-Addin notified successfully for {out_name}")
+                        else:
+                            _log(f"Esprit-Addin notification status: {esprit_res.status_code}")
+                    except Exception as ee:
+                        _log(f"Failed to notify Esprit-Addin: {ee}")
                 else:
                     _log(f"Backend notification returned status {response.status_code}")
             except Exception as be:
@@ -745,30 +783,23 @@ def _backend_should_process(file_name: str, source_step: str) -> bool:
 
 
 def _recover_unprocessed_files() -> None:
-    """재기동 시 input/output 폴더를 비교하고, 백엔드가 미처리로 판단한 파일만 재처리 큐에 등록"""
+    """재기동 시 input 폴더를 스캔하여 미처리된 파일들을 처리함"""
     try:
         _ensure_dirs()
-
-        in_files = [p for p in STORE_IN_DIR.iterdir() if p.is_file()]
+        _log("Scanning for unprocessed files on startup...")
+        
+        in_files = [p for p in STORE_IN_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".stl"]
         for p in in_files:
             try:
-                out_name = _sanitize_filename(f"{p.stem}.filled.stl")
-                out_path = STORE_OUT_DIR / out_name
-                if out_path.exists():
-                    continue
-
-                # 백엔드가 미처리라고 확인해준 경우에만 처리
-                if not _backend_should_process(p.name, "1-stl"):
-                    continue
-
-                _log(f"Recover: enqueue {p.name}")
-
-                # startup은 sync 컨텍스트이므로 main loop에 코루틴 등록
-                if _main_loop:
-                    asyncio.run_coroutine_threadsafe(_process_single_stl(p), _main_loop)
+                # 백엔드에 이 파일이 처리되어야 하는지 확인
+                if _backend_should_process(p.name, "1-stl"):
+                    _log(f"Recover: processing {p.name}")
+                    if _main_loop:
+                        asyncio.run_coroutine_threadsafe(_process_single_stl(p), _main_loop)
+                else:
+                    _log(f"Recover: skipping {p.name} (already processed or not needed)")
             except Exception as inner:
                 _log(f"Recover error for {p.name}: {inner}")
-                continue
     except Exception as e:
         _log(f"Recover failed: {e}")
 
@@ -790,8 +821,11 @@ def on_startup() -> None:
     global _main_loop
     _main_loop = asyncio.get_event_loop()
     _ensure_dirs()
-    # 파일 감시 스레드 시작 (watchdog)
-    threading.Thread(target=_start_watcher, daemon=True).start()
+    # 파일 감시 스레드 시작 (watchdog) - 수동 명령 체계로 전환하되, 안전을 위해 남겨둘지 고민했으나 
+    # 사용자 요청에 따라 백엔드 명령 기반으로 동작하도록 함. 
+    # 단, 감시는 하되 자동 처리는 비활성화하거나 로그만 남기는 식으로 변경 가능.
+    # 여기서는 watchdog을 통한 자동 실행을 제거하고 수동 API 명령만 대기함.
+    # threading.Thread(target=_start_watcher, daemon=True).start()
 
     # 재기동 시점 미처리 파일 복구 스캔
     threading.Thread(target=_recover_unprocessed_files, daemon=True).start()
