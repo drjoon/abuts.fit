@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { StlPreviewViewer } from "@/components/StlPreviewViewer";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
+import { apiFetch } from "@/lib/apiClient";
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -340,32 +341,27 @@ export function NewRequestDetailsSection({
                                         tooth: fileCaseInfos?.tooth || "",
                                       }).toString();
 
-                                      const res = await fetch(
-                                        `/api/requests/check-duplicate?${query}`,
-                                        {
-                                          headers: {
-                                            Authorization: `Bearer ${localStorage.getItem(
-                                              "token"
-                                            )}`,
-                                          },
-                                        }
-                                      );
+                                      const res = await apiFetch<any>({
+                                        path: `/api/requests/my/check-duplicate?${query}`,
+                                        method: "GET",
+                                      });
 
-                                      if (res.ok) {
-                                        const data = await res.json();
-                                        // CAM(status: CAM or 가공전) 이상 단계가 있으면 차단
-                                        if (
-                                          data.exists &&
-                                          data.stageOrder > 0
-                                        ) {
-                                          toast({
-                                            title: "중복 의뢰가 감지되었습니다",
-                                            description:
-                                              "이미 진행 중(CAM 이상)인 의뢰가 있습니다. 기존 의뢰를 확인해주세요.",
-                                            variant: "destructive",
-                                          });
-                                          return;
-                                        }
+                                      const body: any = res.data || {};
+                                      const data = body?.data || body;
+
+                                      // CAM 이상(= stageOrder >= 1)인 기존 의뢰가 있으면 차단
+                                      if (
+                                        res.ok &&
+                                        data?.exists &&
+                                        Number(data?.stageOrder) >= 1
+                                      ) {
+                                        toast({
+                                          title: "중복 의뢰가 감지되었습니다",
+                                          description:
+                                            "이미 진행 중(CAM 이상)인 의뢰가 있습니다. 기존 의뢰를 확인해주세요.",
+                                          variant: "destructive",
+                                        });
+                                        return;
                                       }
                                     } catch (err) {
                                       console.error(

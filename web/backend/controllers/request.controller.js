@@ -9,6 +9,7 @@ export const {
   cloneRequestToDraft,
   createRequestsFromDraft,
   hasDuplicateCase,
+  checkDuplicateCaseInfo,
 } = creationController;
 
 export const {

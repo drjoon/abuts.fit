@@ -73,6 +73,13 @@ router.get(
   requestController.hasDuplicateCase
 );
 
+// 동일 치과/환자/치아 조합 중복 여부 확인 (의뢰 작성 중 검증용)
+router.get(
+  "/my/check-duplicate",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  requestController.checkDuplicateCaseInfo
+);
+
 // 묶음 배송 후보 조회 (의뢰자용)
 router.get(
   "/my/bulk-shipping",
