@@ -28,8 +28,10 @@ const RHINO_SERVER_URL =
 /**
  * 파일을 Rhino 서버의 1-stl 에 직접 업로드하고 즉시 처리를 시작하도록 요청하는 헬퍼
  */
-async function uploadToRhinoServer(fileBuffer, fileName) {
+export async function uploadToRhinoServer(fileBuffer, fileName) {
   try {
+    const RHINO_SERVER_URL =
+      process.env.RHINO_SERVER_URL || "http://localhost:8000";
     const formData = new FormData();
     formData.append("file", fileBuffer, { filename: fileName });
 
@@ -40,7 +42,7 @@ async function uploadToRhinoServer(fileBuffer, fileName) {
         headers: {
           ...formData.getHeaders(),
         },
-        timeout: 30000, // 파일 업로드 자체의 타임아웃만 고려 (처리는 백그라운드)
+        timeout: 30000,
       }
     );
 
@@ -55,6 +57,23 @@ async function uploadToRhinoServer(fileBuffer, fileName) {
     console.error(`[Rhino-Server] Failed to upload file: ${err.message}`);
     return false;
   }
+}
+
+/**
+ * STL 파일명을 표준 형식으로 생성하는 헬퍼
+ * 형식: {requestId}_{clinicName}_{patientName}_{tooth}{ext}
+ */
+export function buildStandardStlFileName({
+  requestId,
+  clinicName,
+  patientName,
+  tooth,
+  originalFileName,
+}) {
+  const ext = originalFileName?.includes(".")
+    ? `.${originalFileName.split(".").pop().toLowerCase()}`
+    : ".stl";
+  return `${requestId}_${clinicName}_${patientName}_${tooth}${ext}`;
 }
 
 /**
@@ -337,13 +356,23 @@ export async function createRequest(req, res) {
     // [추가] Rhino 서버 업로드 시도 (병렬 처리)
     // S3 업로드 여부와 상관없이 Rhino 서버로 파일을 보내 즉시 처리를 시작하게 함
     if (newRequest.caseInfos?.file?.fileName && req.file?.buffer) {
+      // 표준 파일명 생성: requestId_clinicName_patientName_tooth.ext
+      const bgFileName = buildStandardStlFileName({
+        requestId: newRequest.requestId,
+        clinicName,
+        patientName,
+        tooth,
+        originalFileName: newRequest.caseInfos.file.fileName,
+      });
+
       // 즉시 실행 (응답을 기다리지 않음)
-      uploadToRhinoServer(
-        req.file.buffer,
-        newRequest.caseInfos.file.fileName
-      ).catch((e) =>
+      uploadToRhinoServer(req.file.buffer, bgFileName).catch((e) =>
         console.error(`[Rhino-Direct-Upload] Failed: ${e.message}`)
       );
+
+      // DB에 로컬 경로 정보 업데이트
+      newRequest.caseInfos.file.filePath = bgFileName;
+      await newRequest.save();
     }
 
     res.status(201).json({
@@ -1099,10 +1128,13 @@ export async function createRequestsFromDraft(req, res) {
             (async () => {
               try {
                 const s3Key = item.caseInfosWithFile.file.s3Key;
-                const ext = s3Key.includes(".")
-                  ? `.${s3Key.split(".").pop().toLowerCase()}`
-                  : ".stl";
-                const bgFileName = `${newRequest.requestId}_${item.clinicName}_${item.patientName}_${item.tooth}${ext}`;
+                const bgFileName = buildStandardStlFileName({
+                  requestId: newRequest.requestId,
+                  clinicName: item.clinicName,
+                  patientName: item.patientName,
+                  tooth: item.tooth,
+                  originalFileName: item.caseInfosWithFile.file.fileName,
+                });
 
                 // S3에서 가져와서 Rhino 서버로 전송 및 처리 트리거
                 await uploadS3ToRhinoServer(s3Key, bgFileName);

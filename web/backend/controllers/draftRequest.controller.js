@@ -5,54 +5,11 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 
-async function normalizeCaseInfosImplantFields(caseInfos) {
-  const ci = caseInfos && typeof caseInfos === "object" ? { ...caseInfos } : {};
-
-  const manufacturer = (ci.implantManufacturer || "").trim();
-  const system = (ci.implantSystem || "").trim();
-  const type = (ci.implantType || "").trim();
-  const legacyConnectionType = (ci.connectionType || "").trim();
-  delete ci.connectionType;
-
-  if (manufacturer && system && type) {
-    return {
-      ...ci,
-      implantManufacturer: manufacturer,
-      implantSystem: system,
-      implantType: type,
-    };
-  }
-
-  const rawA = system;
-  const rawB = type || legacyConnectionType;
-
-  if (!manufacturer && rawA && rawB) {
-    const found = await Connection.findOne({
-      isActive: true,
-      system: rawA,
-      type: rawB,
-    })
-      .select({ manufacturer: 1, system: 1, type: 1 })
-      .lean();
-
-    if (found) {
-      return {
-        ...ci,
-        implantManufacturer: found.manufacturer,
-        implantSystem: found.system,
-        implantType: found.type,
-      };
-    }
-  }
-
-  // fallback
-  return {
-    ...ci,
-    implantManufacturer: manufacturer,
-    implantSystem: rawA,
-    implantType: rawB,
-  };
-}
+import {
+  uploadToRhinoServer,
+  buildStandardStlFileName,
+} from "./request/creation.controller.js";
+import { normalizeCaseInfosImplantFields } from "./request/utils.js";
 
 // 새 드래프트 생성
 export const createDraft = asyncHandler(async (req, res) => {
@@ -291,16 +248,21 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
   await draft.save();
 
   // 드래프트에 파일 추가 성공 시 bg/storage/1-stl 에도 복사
+  // [수정] 파일명이 확정되지 않은 Draft 단계에서는 Rhino 서버 전송을 보류하거나,
+  // 원본 파일명으로 전송하되 나중에 Request 생성 시 표준 파일명으로 다시 전송하도록 함.
+  // 여기서는 기존 로직을 유지하되, 나중에 Request 생성 시 다시 처리되므로
+  // Rhino 서버의 자동 처리를 방해하지 않도록 함.
   if (s3Key) {
     try {
+      // 1-stl 에 직접 업로드하여 Rhino 서버 처리를 시작하게 함 (파일명은 원본 유지)
       const s3Utils = (await import("../utils/s3.utils.js")).default;
       const buffer = await s3Utils.getObjectBufferFromS3(s3Key);
       if (buffer) {
-        await copyToBgStorage(buffer, originalName);
+        await uploadToRhinoServer(buffer, originalName);
       }
     } catch (err) {
       console.error(
-        `[BG-Storage] Failed to copy to 1-stl in addFileToDraft: ${err.message}`
+        `[Rhino-Direct-Upload] Failed in addFileToDraft: ${err.message}`
       );
     }
   }
