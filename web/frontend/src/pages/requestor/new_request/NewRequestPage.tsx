@@ -303,7 +303,7 @@ export const NewRequestPage = () => {
   }) => {
     // 업로드 전 중복 체크에서 뜬 모달인 경우:
     // - skip(기존의뢰 유지): 업로드 자체를 진행하지 않음
-    // - replace(새의뢰로 교체): 업로드 진행 + 제출 시 duplicateResolutions 반영을 위해 decision 저장
+    // - replace(새의뢰로 변경): 업로드 진행 + 제출 시 duplicateResolutions 반영을 위해 decision 저장
     const isPreUploadCase = String(choice.caseId || "").includes(":");
     if (
       isPreUploadCase &&
@@ -427,35 +427,32 @@ export const NewRequestPage = () => {
     const mode = duplicatePrompt?.mode;
     const isLocked = dup?.lockedReason === "production";
 
-    if (!existingRequestMongoId || !caseId) {
-      return null;
-    }
-
     return (
-      <div className="flex gap-2 flex-wrap mt-2">
-        {!isLocked && (
-          <button
-            className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs"
-            onClick={async () => {
-              await applyDuplicateChoice({
-                strategy: mode === "completed" ? "remake" : "replace",
-                caseId,
-                existingRequestId: existingRequestMongoId,
-              });
-            }}
-          >
-            새의뢰로 교체
-          </button>
-        )}
+      <div className="flex gap-2">
         <button
-          className="px-3 py-1.5 rounded border border-gray-300 text-xs"
-          onClick={async () => {
-            await applyDuplicateChoice({
+          type="button"
+          onClick={() =>
+            applyDuplicateChoice({
+              strategy: "replace",
+              caseId: dup.caseId,
+              existingRequestId: dup.existingRequest?._id,
+            })
+          }
+          disabled={isLocked}
+          className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700 disabled:bg-gray-300"
+        >
+          새의뢰로 변경
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            applyDuplicateChoice({
               strategy: "skip",
-              caseId,
-              existingRequestId: existingRequestMongoId,
-            });
-          }}
+              caseId: dup.caseId,
+              existingRequestId: dup.existingRequest?._id,
+            })
+          }
+          className="flex-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
         >
           기존의뢰 유지
         </button>
@@ -615,39 +612,8 @@ export const NewRequestPage = () => {
                         </span>
                       )}
                     </div>
-                    <div className="rounded border border-blue-100 bg-blue-50 p-2 text-gray-800">
-                      <div className="font-semibold mb-1 text-[11px]">
-                        현재 케이스(새 의뢰)
-                      </div>
-                      <div className="text-[11px] truncate">
-                        {info.clinicName ? `치과: ${info.clinicName}` : ""}
-                        {info.patientName ? ` / 환자: ${info.patientName}` : ""}
-                        {info.tooth ? ` / 치아: ${info.tooth}` : ""}
-                      </div>
-                    </div>
                     <div className="rounded border border-gray-200 bg-white p-2">
-                      <div className="font-semibold mb-1 text-[11px]">
-                        기존 의뢰
-                      </div>
                       <div className="flex flex-col gap-0.5 text-[11px]">
-                        <span className="truncate">
-                          의뢰번호: {String(existing?.requestId || "")}
-                        </span>
-                        {(existing?.caseInfos?.clinicName ||
-                          existing?.caseInfos?.patientName ||
-                          existing?.caseInfos?.tooth) && (
-                          <span className="truncate">
-                            {existing?.caseInfos?.clinicName
-                              ? `치과: ${existing?.caseInfos?.clinicName}`
-                              : ""}
-                            {existing?.caseInfos?.patientName
-                              ? ` / 환자: ${existing?.caseInfos?.patientName}`
-                              : ""}
-                            {existing?.caseInfos?.tooth
-                              ? ` / 치아: ${existing?.caseInfos?.tooth}`
-                              : ""}
-                          </span>
-                        )}
                         <span className="truncate">
                           상태:{" "}
                           {String(
@@ -656,6 +622,11 @@ export const NewRequestPage = () => {
                               : existing?.manufacturerStage ||
                                   existing?.status ||
                                   ""
+                          )}
+                          {isLocked && (
+                            <span className="text-red-500 ml-1">
+                              (생산/발송 단계 의뢰는 변경/취소할 수 없습니다.)
+                            </span>
                           )}
                         </span>
                         {existing?.price?.amount != null && (
@@ -670,11 +641,6 @@ export const NewRequestPage = () => {
                         {existing?.createdAt && (
                           <span className="truncate">
                             접수일: {String(existing.createdAt).slice(0, 10)}
-                          </span>
-                        )}
-                        {isLocked && (
-                          <span className="text-red-500">
-                            생산/발송 단계 의뢰는 교체할 수 없습니다.
                           </span>
                         )}
                       </div>

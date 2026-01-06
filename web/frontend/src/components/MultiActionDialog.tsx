@@ -45,7 +45,7 @@ export const MultiActionDialog = ({
       onClick={onClose}
     >
       <div
-        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all"
+        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all relative max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {onClose && (
@@ -58,13 +58,15 @@ export const MultiActionDialog = ({
             <X className="h-5 w-5" />
           </button>
         )}
-        <h2 className="text-xl font-bold mb-4 text-gray-900">{title}</h2>
+        <h2 className="text-xl font-bold mb-4 text-gray-900 flex-none">
+          {title}
+        </h2>
         {description && (
-          <div className="text-gray-700 mb-6 text-sm sm:text-base">
+          <div className="text-gray-700 mb-6 text-sm sm:text-base overflow-y-auto flex-1 pr-1 custom-scrollbar">
             {description}
           </div>
         )}
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end gap-3 flex-none pt-2">
           {actions.map((action, idx) => (
             <button
               key={idx}
