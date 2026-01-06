@@ -31,22 +31,25 @@ type PreviewModalProps = {
   previewStageName: string;
   uploading: Record<string, boolean>;
   reviewSaving: boolean;
+  stage: string;
   isCamStage: boolean;
   isMachiningStage: boolean;
   onUpdateReviewStatus: (params: {
     req: ManufacturerRequest;
     status: "PENDING" | "APPROVED" | "REJECTED";
     stageOverride?: ReviewStageKey;
+    keepPreviewOpen?: boolean;
   }) => Promise<void>;
   onDeleteCam: (req: ManufacturerRequest) => Promise<void>;
   onDeleteNc: (
     req: ManufacturerRequest,
-    opts?: { nextStage?: string }
+    opts?: { nextStage?: string; navigate?: boolean }
   ) => Promise<void>;
   onDeleteStageFile: (params: {
     req: ManufacturerRequest;
     stage: "machining" | "packaging" | "shipping" | "tracking";
     rollbackOnly?: boolean;
+    navigate?: boolean;
   }) => Promise<void>;
   onUploadCam: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   onUploadNc: (req: ManufacturerRequest, files: File[]) => Promise<void>;
@@ -63,6 +66,7 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     stage: string
   ) => Promise<void>;
+  onOpenNextRequest?: (currentReqId: string) => void;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
     navigateOpts?: { replace?: boolean }
@@ -90,6 +94,7 @@ export const PreviewModal = ({
   previewStageName,
   uploading,
   reviewSaving,
+  stage,
   isCamStage,
   isMachiningStage,
   onUpdateReviewStatus,
@@ -103,6 +108,7 @@ export const PreviewModal = ({
   onDownloadCamStl,
   onDownloadNcFile,
   onDownloadStageFile,
+  onOpenNextRequest,
   setSearchParams,
   setConfirmTitle,
   setConfirmDescription,
@@ -113,15 +119,27 @@ export const PreviewModal = ({
   if (!req) return null;
 
   const currentReviewStageKey = getReviewStageKeyByTab({
+    stage,
     isCamStage,
     isMachiningStage,
   });
 
+  const isStageFileStage =
+    currentReviewStageKey === "machining" ||
+    currentReviewStageKey === "packaging" ||
+    currentReviewStageKey === "shipping" ||
+    currentReviewStageKey === "tracking";
+
   const isRequestStage = currentReviewStageKey === "request";
 
   const canApprove = (() => {
-    if (isMachiningStage) {
-      return !!req.caseInfos?.stageFiles?.machining?.s3Key || !!previewStageUrl;
+    if (isStageFileStage) {
+      const key = currentReviewStageKey as
+        | "machining"
+        | "packaging"
+        | "shipping"
+        | "tracking";
+      return !!req.caseInfos?.stageFiles?.[key]?.s3Key || !!previewStageUrl;
     }
     if (isCamStage) {
       return !!req.caseInfos?.ncFile?.s3Key || !!previewNcText;
@@ -170,28 +188,35 @@ export const PreviewModal = ({
     previewNcName ||
     "program.nc";
 
-  const leftTitle = isMachiningStage
+  const leftTitle = isStageFileStage
     ? ncName
     : isCamStage
     ? camName
     : originalName;
-  const rightTitle = isMachiningStage
-    ? "로트번호 이미지"
+  const rightTitle = isStageFileStage
+    ? currentReviewStageKey === "machining"
+      ? "로트번호 이미지"
+      : "증빙 이미지"
     : isCamStage
     ? ncName
     : camName;
 
   const leftViewer = isCamStage
     ? previewFiles.cam
-    : isMachiningStage
+    : isStageFileStage
     ? null
     : previewFiles.original;
 
   const onUploadRight = (file: File) => {
-    if (isMachiningStage) {
+    if (isStageFileStage) {
+      const key = currentReviewStageKey as
+        | "machining"
+        | "packaging"
+        | "shipping"
+        | "tracking";
       void onUploadStageFile({
         req,
-        stage: "machining",
+        stage: key,
         file,
         source: "manual",
       });
@@ -204,14 +229,20 @@ export const PreviewModal = ({
     void onUploadCam(req, [file]);
   };
 
-  const rightMeta = isMachiningStage
-    ? req.caseInfos?.stageFiles?.machining
+  const rightMeta = isStageFileStage
+    ? req.caseInfos?.stageFiles?.[
+        currentReviewStageKey as
+          | "machining"
+          | "packaging"
+          | "shipping"
+          | "tracking"
+      ]
     : isCamStage
     ? req.caseInfos?.ncFile
     : req.caseInfos?.camFile;
   const hasRightFile = !!rightMeta?.s3Key;
 
-  const accept = isMachiningStage
+  const accept = isStageFileStage
     ? ".png,.jpg,.jpeg,.webp,.bmp"
     : isCamStage
     ? ".nc"
@@ -223,8 +254,8 @@ export const PreviewModal = ({
 
   const onDownload = () => {
     if (!hasRightFile) return;
-    if (isMachiningStage) {
-      void onDownloadStageFile(req, "machining");
+    if (isStageFileStage) {
+      void onDownloadStageFile(req, currentReviewStageKey);
       return;
     }
     if (isCamStage) {
@@ -236,10 +267,14 @@ export const PreviewModal = ({
 
   const onDelete = () => {
     if (!hasRightFile) return;
-    if (isMachiningStage) {
+    if (isStageFileStage) {
       void onDeleteStageFile({
         req,
-        stage: "machining",
+        stage: currentReviewStageKey as
+          | "machining"
+          | "packaging"
+          | "shipping"
+          | "tracking",
       });
       return;
     }
@@ -274,28 +309,30 @@ export const PreviewModal = ({
                 e.preventDefault();
                 e.stopPropagation();
 
-                openBackConfirm(async () => {
-                  if (isMachiningStage) {
+                const performBack = async () => {
+                  const stageKey = currentReviewStageKey;
+                  if (
+                    stageKey === "machining" ||
+                    stageKey === "packaging" ||
+                    stageKey === "shipping" ||
+                    stageKey === "tracking"
+                  ) {
                     await onDeleteStageFile({
                       req,
-                      stage: "machining",
+                      stage: stageKey,
                       rollbackOnly: true,
                     });
-                    setSearchParams(
-                      (prev) => {
-                        const next = new URLSearchParams(prev);
-                        next.set("stage", "cam");
-                        return next;
-                      },
-                      { replace: true }
-                    );
-                    return;
-                  }
-                  if (isCamStage) {
+                  } else if (isCamStage) {
                     await onDeleteNc(req, { nextStage: "request" });
-                    return;
+                  } else {
+                    await onDeleteCam(req);
                   }
-                  await onDeleteCam(req);
+                };
+
+                void performBack().then(() => {
+                  if (onOpenNextRequest && req._id) {
+                    onOpenNextRequest(req._id);
+                  }
                 });
               }}
               aria-label="이전 공정"
@@ -320,6 +357,11 @@ export const PreviewModal = ({
                 req,
                 status: "APPROVED",
                 stageOverride: currentReviewStageKey,
+                keepPreviewOpen: true,
+              }).then(() => {
+                if (onOpenNextRequest && req._id) {
+                  onOpenNextRequest(req._id);
+                }
               });
             }}
             aria-label="다음 공정"
@@ -368,7 +410,7 @@ export const PreviewModal = ({
                 >
                   {leftTitle}
                 </button>
-                {isMachiningStage ? (
+                {isStageFileStage ? (
                   <textarea
                     className="w-full h-[300px] rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700"
                     value={previewNcText}
@@ -456,7 +498,7 @@ export const PreviewModal = ({
                   </div>
                 </div>
 
-                {isMachiningStage ? (
+                {isStageFileStage ? (
                   previewStageUrl ? (
                     <img
                       src={previewStageUrl}

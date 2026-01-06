@@ -124,6 +124,7 @@ export const RequestPage = ({
       return utf8Text;
     }
   }, []);
+
   const { toast } = useToast();
   const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
 
@@ -204,6 +205,7 @@ export const RequestPage = ({
     handleDeleteStageFile,
   } = useRequestFileHandlers({
     token,
+    stage: tabStage,
     isCamStage,
     isMachiningStage,
     fetchRequests,
@@ -594,7 +596,7 @@ export const RequestPage = ({
         setDownloading((prev) => ({ ...prev, [req._id]: false }));
       }
     },
-    [token, toast, isCamStage, isMachiningStage]
+    [token, toast, isCamStage, isMachiningStage, tabStage]
   );
 
   const handleOpenPreview = useCallback(
@@ -731,12 +733,24 @@ export const RequestPage = ({
           }
         }
 
-        // 생산 탭: stageFiles(machining) 이미지 URL도 불러온다.
-        if (isMachiningStage) {
-          const stageMeta = req.caseInfos?.stageFiles?.machining;
+        // 생산/발송/추적관리 탭: stageFiles 이미지 URL도 불러온다.
+        const stageKey = getReviewStageKeyByTab({
+          stage: tabStage,
+          isCamStage,
+          isMachiningStage,
+        });
+        if (
+          stageKey === "machining" ||
+          stageKey === "packaging" ||
+          stageKey === "shipping" ||
+          stageKey === "tracking"
+        ) {
+          const stageMeta = req.caseInfos?.stageFiles?.[stageKey];
           if (stageMeta?.s3Key) {
             const stageUrlRes = await fetch(
-              `/api/requests/${req._id}/stage-file-url?stage=machining`,
+              `/api/requests/${
+                req._id
+              }/stage-file-url?stage=${encodeURIComponent(stageKey)}`,
               { headers: { Authorization: `Bearer ${token}` } }
             );
             if (stageUrlRes.ok) {
@@ -744,7 +758,7 @@ export const RequestPage = ({
               const signedUrl = stageUrlBody?.data?.url;
               if (signedUrl) {
                 setPreviewStageUrl(signedUrl);
-                setPreviewStageName(stageMeta?.fileName || "machining-file");
+                setPreviewStageName(stageMeta?.fileName || `${stageKey}-file`);
               }
             }
           }
@@ -837,6 +851,27 @@ export const RequestPage = ({
       return text.includes(searchLower);
     })
     .sort((a, b) => (new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1));
+
+  const handleOpenNextRequest = useCallback(
+    (currentReqId: string) => {
+      const currentIndex = filteredAndSorted.findIndex(
+        (r) => r._id === currentReqId
+      );
+      if (currentIndex === -1) return;
+
+      const nextReq = filteredAndSorted[currentIndex + 1];
+      if (!nextReq) {
+        // 마지막 카드인 경우 모달 닫기
+        setPreviewOpen(false);
+        return;
+      }
+
+      setTimeout(() => {
+        void handleOpenPreview(nextReq);
+      }, 200);
+    },
+    [filteredAndSorted, handleOpenPreview, setPreviewOpen]
+  );
 
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
   const groupedByOrg = useMemo(() => {
@@ -1098,6 +1133,7 @@ export const RequestPage = ({
         previewStageName={previewStageName}
         uploading={uploading}
         reviewSaving={reviewSaving}
+        stage={tabStage}
         isCamStage={isCamStage}
         isMachiningStage={isMachiningStage}
         onUpdateReviewStatus={handleUpdateReviewStatus}
@@ -1116,6 +1152,7 @@ export const RequestPage = ({
         setConfirmDescription={setConfirmDescription}
         setConfirmAction={setConfirmAction}
         setConfirmOpen={setConfirmOpen}
+        onOpenNextRequest={handleOpenNextRequest}
       />
 
       <ConfirmDialog

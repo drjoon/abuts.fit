@@ -9,6 +9,7 @@ import {
 
 type UseRequestFileHandlersProps = {
   token: string | null;
+  stage: string;
   isCamStage: boolean;
   isMachiningStage: boolean;
   fetchRequests: () => Promise<void>;
@@ -36,6 +37,7 @@ type UseRequestFileHandlersProps = {
 
 export const useRequestFileHandlers = ({
   token,
+  stage,
   isCamStage,
   isMachiningStage,
   fetchRequests,
@@ -137,6 +139,7 @@ export const useRequestFileHandlers = ({
       status: "PENDING" | "APPROVED" | "REJECTED";
       reason?: string;
       stageOverride?: ReviewStageKey;
+      keepPreviewOpen?: boolean;
     }) => {
       if (!token) return;
       setReviewSaving(true);
@@ -144,6 +147,7 @@ export const useRequestFileHandlers = ({
         const stageKey =
           params.stageOverride ||
           getReviewStageKeyByTab({
+            stage,
             isCamStage,
             isMachiningStage,
           });
@@ -185,7 +189,9 @@ export const useRequestFileHandlers = ({
           // 필요 시 수동으로 탭 전환하도록 유지
         }
 
-        setPreviewOpen(false);
+        if (!params.keepPreviewOpen) {
+          setPreviewOpen(false);
+        }
       } catch {
         toast({
           title: "검토 상태 변경 실패",
@@ -198,6 +204,7 @@ export const useRequestFileHandlers = ({
     },
     [
       token,
+      stage,
       toast,
       fetchRequests,
       isCamStage,
@@ -244,15 +251,6 @@ export const useRequestFileHandlers = ({
           setPreviewFiles({});
           setPreviewNcText("");
           setPreviewNcName("");
-
-          setSearchParams(
-            (prev) => {
-              const next = new URLSearchParams(prev);
-              next.set("stage", "receive");
-              return next;
-            },
-            { replace: true }
-          );
         }
       } catch (error) {
         toast({
@@ -314,15 +312,6 @@ export const useRequestFileHandlers = ({
           setPreviewNcText("");
           setPreviewNcName("");
           setPreviewFiles({});
-
-          setSearchParams(
-            (prev) => {
-              const next = new URLSearchParams(prev);
-              next.set("stage", targetStage === "request" ? "receive" : "cam");
-              return next;
-            },
-            { replace: true }
-          );
         }
       } catch (error) {
         toast({
@@ -693,11 +682,13 @@ export const useRequestFileHandlers = ({
       req: ManufacturerRequest;
       stage: "machining" | "packaging" | "shipping" | "tracking";
       rollbackOnly?: boolean;
+      navigate?: boolean;
     }) => {
       if (!token) return;
       if (!params.req?._id) return;
 
       const rollbackOnly = !!params.rollbackOnly;
+      const navigate = params.navigate !== false;
 
       setUploading((prev) => ({ ...prev, [params.req._id as string]: true }));
       try {
@@ -731,9 +722,14 @@ export const useRequestFileHandlers = ({
               }
         );
         await fetchRequests();
-        if (params.stage === "machining" && !rollbackOnly) {
-          setPreviewStageUrl("");
-          setPreviewStageName("");
+
+        if (navigate) {
+          if (params.stage === "machining" && !rollbackOnly) {
+            setPreviewStageUrl("");
+            setPreviewStageName("");
+          }
+          setPreviewOpen(false);
+          setPreviewFiles({});
         }
       } catch (error) {
         console.error(error);
