@@ -109,10 +109,6 @@ export const useNewRequestSubmitV2 = ({
   };
 
   const submitFromDraft = async (
-    duplicateResolution?: {
-      strategy: "replace" | "remake";
-      existingRequestId: string;
-    },
     duplicateResolutions?: DuplicateResolutionCase[]
   ) => {
     if (!token) {
@@ -266,8 +262,6 @@ export const useNewRequestSubmitV2 = ({
 
       if (Array.isArray(duplicateResolutions) && duplicateResolutions.length) {
         payload.duplicateResolutions = duplicateResolutions;
-      } else if (duplicateResolution) {
-        payload.duplicateResolution = duplicateResolution;
       }
 
       if (caseInfosForSubmit) {
@@ -379,22 +373,14 @@ export const useNewRequestSubmitV2 = ({
     await submitFromDraft();
   };
 
-  const handleSubmitWithDuplicateResolution = async (opts: {
-    strategy: "replace" | "remake";
-    existingRequestId: string;
-  }) => {
-    await submitFromDraft(opts);
-  };
-
   const handleSubmitWithDuplicateResolutions = async (
     opts: DuplicateResolutionCase[]
   ) => {
-    await submitFromDraft(undefined, opts);
+    await submitFromDraft(opts);
   };
 
   return {
     handleSubmit,
-    handleSubmitWithDuplicateResolution,
     handleSubmitWithDuplicateResolutions,
     handleCancel,
   };

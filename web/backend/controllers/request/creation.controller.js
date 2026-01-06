@@ -821,6 +821,8 @@ export async function createRequestsFromDraft(req, res) {
     }
 
     const resolutionsByCaseId = new Map();
+    const skipCaseIds = new Set();
+
     if (duplicates.length > 0 && duplicateResolutions) {
       for (const r of duplicateResolutions) {
         const strategy = String(r.strategy || "").trim();
@@ -831,14 +833,21 @@ export async function createRequestsFromDraft(req, res) {
             message: "유효하지 않은 duplicateResolutions.strategy 입니다.",
           });
         }
+        if (strategy === "skip") {
+          skipCaseIds.add(String(r.caseId));
+          continue;
+        }
         resolutionsByCaseId.set(String(r.caseId), {
           strategy,
           existingRequestId: String(r.existingRequestId || "").trim(),
         });
       }
 
+      // skip되지 않았고 아직 해결되지 않은 중복 건이 있는지 확인
       const unresolved = duplicates.filter(
-        (d) => !resolutionsByCaseId.has(String(d.caseId || ""))
+        (d) =>
+          !resolutionsByCaseId.has(String(d.caseId || "")) &&
+          !skipCaseIds.has(String(d.caseId || ""))
       );
       if (unresolved.length > 0) {
         const st = String(first?.existingRequest?.status || "");
@@ -889,23 +898,17 @@ export async function createRequestsFromDraft(req, res) {
       }
     }
 
-    const skipCaseIds = new Set();
-    if (resolutionsByCaseId.size > 0) {
-      for (const [caseId, r] of resolutionsByCaseId.entries()) {
-        if (String(r?.strategy || "") === "skip") {
-          skipCaseIds.add(String(caseId));
-        }
-      }
-    }
-
     const preparedCasesForCreate = preparedCases.filter(
       (c) => !skipCaseIds.has(String(c.caseId))
     );
 
     if (preparedCasesForCreate.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "제출할 의뢰가 없습니다.",
+      // 모든 중복 건이 skip된 경우, 새로 생성할 의뢰가 없으므로 성공 응답
+      return res.status(200).json({
+        success: true,
+        message:
+          "모든 중복 건이 기존 유지로 선택되어 신규 의뢰를 생성하지 않았습니다.",
+        data: [],
       });
     }
 

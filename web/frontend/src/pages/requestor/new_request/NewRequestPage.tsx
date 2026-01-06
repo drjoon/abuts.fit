@@ -31,7 +31,7 @@ import { NewRequestPageSkeleton } from "@/components/common/NewRequestPageSkelet
 export const NewRequestPage = () => {
   const { id: existingRequestId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const FILE_SIZE_THRESHOLD_BYTES = 3 * 1024 * 1024; // 1MB
+  const FILE_SIZE_THRESHOLD_BYTES = 3 * 1024 * 1024; // 3MB
 
   const { toast } = useToast();
 
@@ -51,9 +51,6 @@ export const NewRequestPage = () => {
   const toNormalizedFileKey = (f: File) => {
     return `${normalizeKeyPart(f.name)}:${f.size}`;
   };
-
-  // hasActiveSession을 상태 대신 files.length로 직접 계산
-  // 상태 동기화 문제를 완전히 제거
 
   const {
     user,
@@ -90,7 +87,6 @@ export const NewRequestPage = () => {
     setPendingUploadFiles,
     pendingUploadDecisions,
     setPendingUploadDecisions,
-    handleSubmitWithDuplicateResolution,
     handleSubmitWithDuplicateResolutions,
     draftStatus,
   } = useNewRequestPage(existingRequestId);
@@ -119,8 +115,6 @@ export const NewRequestPage = () => {
     if (!guideActive) return;
     if (activeTourId !== "requestor-new-request") return;
 
-    // 파일이 하나라도 있으면 업로드 스텝은 완료로 처리해서
-    // 업로드존/상세입력존 사이에서 가이드 포커스가 흔들리는 것을 방지한다.
     const hasFiles = files.length > 0;
     setStepCompleted("requestor.new_request.upload", hasFiles);
   }, [activeTourId, files.length, guideActive, setStepCompleted]);
@@ -129,8 +123,6 @@ export const NewRequestPage = () => {
     if (!guideActive) return;
     if (activeTourId !== "requestor-new-request") return;
 
-    // 모든 파일이 확인되면 details 스텝을 완료로 처리해서
-    // details/shipping 간 포커스 경쟁을 줄인다.
     const doneDetails = files.length > 0 && unverifiedCount === 0;
     setStepCompleted("requestor.new_request.details", doneDetails);
   }, [
@@ -188,7 +180,7 @@ export const NewRequestPage = () => {
   const sectionHighlightClass =
     "ring-2 ring-primary/40 bg-primary/5 shadow-[0_0_0_4px_rgba(59,130,246,0.12)]";
 
-  // 프리셋 관리 (환자명, 치아번호, 치과명)
+  // 프리셋 관리
   const {
     presets: patientPresets,
     addPreset: addPatientPreset,
@@ -206,19 +198,9 @@ export const NewRequestPage = () => {
   } = usePresetStorage("clinic-names");
 
   const handleCancelAll = async () => {
-    // 1) 서버 Draft + 로컬 Draft 캐시 완전 초기화
-    // resetDraft() 내부에서 setCaseInfos({ workType: "abutment" })를 호출하므로
-    // 여기서 별도로 setCaseInfos를 호출하면 안 됨 (updateCaseInfos가 PATCH를 트리거함)
     await resetDraft();
-
-    // 2) 클라이언트 상태 초기화 (기존 로직 유지)
     handleCancel();
-
-    // hasActiveSession은 files.length로 자동 계산되므로 별도 설정 불필요
-
     setFileVerificationStatus({});
-
-    // 환자/치과/치아 및 임플란트/배송
     setCaseInfos({
       clinicName: "",
       patientName: "",
@@ -232,7 +214,6 @@ export const NewRequestPage = () => {
       requestedShipDate: undefined,
       workType: "abutment",
     });
-
     setImplantManufacturer("");
     setImplantSystem("");
     setImplantType("");
@@ -258,7 +239,6 @@ export const NewRequestPage = () => {
       setDuplicateResolutions([]);
       return;
     }
-    setDuplicateResolutions([]);
   }, [duplicatePrompt]);
 
   const duplicateList = useMemo(
@@ -301,9 +281,6 @@ export const NewRequestPage = () => {
     caseId: string;
     existingRequestId: string;
   }) => {
-    // 업로드 전 중복 체크에서 뜬 모달인 경우:
-    // - skip(기존의뢰 유지): 업로드 자체를 진행하지 않음
-    // - replace(새의뢰로 변경): 업로드 진행 + 제출 시 duplicateResolutions 반영을 위해 decision 저장
     const isPreUploadCase = String(choice.caseId || "").includes(":");
     if (
       isPreUploadCase &&
@@ -323,6 +300,7 @@ export const NewRequestPage = () => {
           return k;
         }
       })();
+
       if (
         choice.strategy === "replace" ||
         choice.strategy === "remake" ||
@@ -347,14 +325,6 @@ export const NewRequestPage = () => {
           (d) => d.caseId !== choice.caseId
         ) || [];
 
-      // skip 인 경우에도 pendingFiles에서 제거하지 않고 decisions에만 남겨서
-      // 나중에 handleSubmit에서 필터링하도록 함
-      const nextPendingUploadFiles = [...(pendingUploadFiles || [])];
-
-      setPendingUploadFiles(
-        nextPendingUploadFiles.length > 0 ? nextPendingUploadFiles : null
-      );
-
       if (remaining.length > 0) {
         setDuplicatePrompt({
           ...duplicatePrompt,
@@ -364,16 +334,33 @@ export const NewRequestPage = () => {
       }
 
       // 모두 처리 완료
-      const filesToProcess = [...(pendingUploadFiles || [])];
+      const filesToActuallyProcess = (pendingUploadFiles || []).filter((f) => {
+        const key = `${f.name}:${f.size}`;
+        const keyNfc = (() => {
+          try {
+            return `${String(f.name || "").normalize("NFC")}:${f.size}`;
+          } catch {
+            return key;
+          }
+        })();
+        const decision =
+          pendingUploadDecisions[key] ??
+          pendingUploadDecisions[keyNfc] ??
+          (key === fileKey || keyNfc === fileKeyNfc ? choice : null);
+
+        return decision?.strategy !== "skip";
+      });
+
       setPendingUploadFiles(null);
       setDuplicatePrompt(null);
 
-      if (filesToProcess.length > 0) {
-        await handleUploadUnchecked(filesToProcess);
+      if (filesToActuallyProcess.length > 0) {
+        await handleUploadUnchecked(filesToActuallyProcess);
       }
       return;
     }
 
+    // --- 의뢰 제출 시 감지된 중복 케이스 처리 ---
     const nextResolutions = (() => {
       const next = (duplicateResolutions || []).filter(
         (r) => r.caseId !== choice.caseId
@@ -397,33 +384,26 @@ export const NewRequestPage = () => {
       return;
     }
 
+    // 모든 중복 건에 대한 결정이 완료됨
+    const finalResolutions = nextResolutions.map((r) => ({
+      caseId: r.caseId,
+      strategy: r.strategy,
+      existingRequestId: r.existingRequestId,
+    }));
+
+    // 중요: 상태를 즉시 초기화하고 프롬프트를 닫음
     setDuplicatePrompt(null);
+    setDuplicateResolutions([]);
+    setPendingUploadDecisions({});
 
-    // 제출 시점에 skip된 케이스들을 제외하고 resolutions만 서버에 보냄
-    const finalResolutions = nextResolutions.filter(
-      (r) => r.strategy !== "skip"
-    );
-
-    if (finalResolutions.length === 0) {
-      // 모든 중복 건이 skip(유지)인 경우, 그냥 일반 제출 시도
-      // (서버는 resolutions가 없으면 새로 생성을 시도하다가 다시 409를 낼 수 있음.
-      //  하지만 프론트의 handleSubmit 로직에서 resolutions를 생성할 때 skip을 처리하므로
-      //  이 경로는 주로 단일 파일 수동 제출용임)
-      await handleSubmit();
-      return;
-    }
-
-    await handleSubmitWithDuplicateResolutions(finalResolutions);
+    // setTimeout을 사용하여 React 상태 업데이트와 렌더링 사이클이 완료된 후 제출 진행
+    setTimeout(() => {
+      handleSubmitWithDuplicateResolutions(finalResolutions as any);
+    }, 150);
   };
 
   const renderDuplicateActions = (dup: any) => {
-    const existingRequestMongoId = String(
-      dup?.existingRequest?._id || ""
-    ).trim();
-    const caseId = String(dup?.caseId || "").trim();
-    const mode = duplicatePrompt?.mode;
     const isLocked = dup?.lockedReason === "production";
-
     return (
       <div className="flex gap-2">
         <button
@@ -498,25 +478,6 @@ export const NewRequestPage = () => {
     };
   }, [caseInfos?.maxDiameter]);
 
-  // 치과명 옵션 (프리셋 기반)
-  const clinicNameOptions = useMemo(
-    () => clinicPresets.map((p) => ({ id: p.id, label: p.label })),
-    [clinicPresets]
-  );
-
-  // 환자명 옵션 (프리셋 기반)
-  const patientNameOptions = useMemo(
-    () => patientPresets.map((p) => ({ id: p.id, label: p.label })),
-    [patientPresets]
-  );
-
-  // 치아번호 옵션 (프리셋 기반)
-  const teethOptions = useMemo(
-    () => teethPresets.map((p) => ({ id: p.id, label: p.label })),
-    [teethPresets]
-  );
-
-  // 파일 업로드 시 크라운 파일 필터링 (1MB 이상 파일 거부)
   const validateFileForUpload = (
     file: File
   ): { valid: boolean; message?: string } => {
@@ -569,6 +530,10 @@ export const NewRequestPage = () => {
       void onUpload(filesToUpload);
     }
   };
+
+  if (draftStatus === "loading") {
+    return <NewRequestPageSkeleton />;
+  }
 
   return (
     <PageFileDropZone
