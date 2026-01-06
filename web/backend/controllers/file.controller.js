@@ -45,6 +45,7 @@ const RHINO_SERVER_URL =
  */
 async function uploadToRhinoServer(fileBuffer, fileName) {
   try {
+    // 기존 Rhino Compute 서버 업로드 로직 유지
     const formData = new FormData();
     formData.append("file", fileBuffer, { filename: fileName });
 

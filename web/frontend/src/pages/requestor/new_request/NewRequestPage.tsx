@@ -323,15 +323,12 @@ export const NewRequestPage = () => {
           return k;
         }
       })();
-      const nextPendingUploadFiles =
+      if (
+        choice.strategy === "replace" ||
+        choice.strategy === "remake" ||
         choice.strategy === "skip"
-          ? (pendingUploadFiles || []).filter(
-              (f) => `${f.name}:${f.size}` !== fileKey
-            )
-          : [...pendingUploadFiles];
-
-      if (choice.strategy === "replace" || choice.strategy === "remake") {
-        const strategy: "replace" | "remake" = choice.strategy;
+      ) {
+        const strategy: "replace" | "remake" | "skip" = choice.strategy;
         setPendingUploadDecisions((prev) => ({
           ...(prev || {}),
           [fileKey]: {
@@ -345,19 +342,14 @@ export const NewRequestPage = () => {
         }));
       }
 
-      if (choice.strategy === "skip") {
-        setPendingUploadDecisions((prev) => {
-          const next = { ...(prev || {}) };
-          delete next[fileKey];
-          delete next[fileKeyNfc];
-          return next;
-        });
-      }
-
       const remaining =
         (duplicatePrompt?.duplicates || []).filter(
           (d) => d.caseId !== choice.caseId
         ) || [];
+
+      // skip 인 경우에도 pendingFiles에서 제거하지 않고 decisions에만 남겨서
+      // 나중에 handleSubmit에서 필터링하도록 함
+      const nextPendingUploadFiles = [...(pendingUploadFiles || [])];
 
       setPendingUploadFiles(
         nextPendingUploadFiles.length > 0 ? nextPendingUploadFiles : null
@@ -582,6 +574,7 @@ export const NewRequestPage = () => {
       <div className="max-w-6xl mx-auto space-y-4">
         <MultiActionDialog
           open={!!duplicatePrompt}
+          preventCloseOnOverlayClick={true}
           title={
             duplicatePrompt?.mode === "completed"
               ? "완료된 의뢰가 이미 있습니다"
@@ -652,7 +645,6 @@ export const NewRequestPage = () => {
             </div>
           }
           actions={[]}
-          onClose={() => setDuplicatePrompt(null)}
         />
 
         <GuideFocus stepId="requestor.new_request.details">

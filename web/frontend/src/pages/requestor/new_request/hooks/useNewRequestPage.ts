@@ -44,7 +44,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const [pendingUploadDecisions, setPendingUploadDecisions] = useState<
     Record<
       string,
-      { strategy: "replace" | "remake"; existingRequestId: string }
+      { strategy: "replace" | "remake" | "skip"; existingRequestId: string }
     >
   >({});
 
@@ -714,6 +714,30 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
     const decisionKeys = Object.keys(pendingUploadDecisions || {});
     if (decisionKeys.length > 0) {
+      // 1. skip 결정된 파일들을 제외한 실제 업로드할 파일들 선별
+      const filesToActuallyUpload = (pendingUploadFiles || []).filter((f) => {
+        const fileKey = `${f.name}:${f.size}`;
+        const fileKeyNfc = (() => {
+          try {
+            return `${String(f.name || "").normalize("NFC")}:${f.size}`;
+          } catch {
+            return fileKey;
+          }
+        })();
+        const decision =
+          pendingUploadDecisions[fileKey] ?? pendingUploadDecisions[fileKeyNfc];
+
+        return decision?.strategy !== "skip";
+      });
+
+      // 2. skip이 아닌 파일들은 업로드 진행
+      if (filesToActuallyUpload.length > 0) {
+        await handleUploadUnchecked(filesToActuallyUpload);
+      }
+
+      // 3. 중복 해결 정보(resolutions) 생성
+      // resolutions에는 skip이 아닌(replace, remake) 것들만 포함시켜서
+      // 서버에서 기존 의뢰에 대한 후속 조치를 하도록 함
       const resolutions = (files || [])
         .map((f) => {
           const fileKey = `${f.name}:${f.size}`;
@@ -733,8 +757,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             pendingUploadDecisions[sourceKeyNfc] ??
             pendingUploadDecisions[fileKey] ??
             pendingUploadDecisions[fileKeyNfc];
+
           const caseId = String((f as any)?._draftCaseInfoId || "").trim();
-          if (!decision || !caseId) return null;
+
+          // skip은 서버에 보낼 필요 없음 (업로드 자체를 안 했으므로)
+          if (!decision || !caseId || decision.strategy === "skip") return null;
+
           return {
             caseId,
             strategy: decision.strategy,
@@ -752,8 +780,10 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     await rawHandleSubmit();
   }, [
     ensureSetupForUpload,
-    files,
+    pendingUploadFiles,
     pendingUploadDecisions,
+    handleUploadUnchecked,
+    files,
     rawHandleSubmit,
     rawHandleSubmitWithDuplicateResolutions,
   ]);

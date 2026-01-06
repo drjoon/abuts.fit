@@ -14,6 +14,7 @@ interface MultiActionDialogProps {
   description?: ReactNode;
   actions: DialogAction[];
   onClose?: () => void;
+  preventCloseOnOverlayClick?: boolean;
 }
 
 const getButtonClass = (variant: DialogAction["variant"]) => {
@@ -36,13 +37,14 @@ export const MultiActionDialog = ({
   description,
   actions,
   onClose,
+  preventCloseOnOverlayClick = false,
 }: MultiActionDialogProps) => {
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 bg-black/30 flex items-center justify-center z-[70] p-4 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={() => !preventCloseOnOverlayClick && onClose?.()}
     >
       <div
         className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all relative max-h-[90vh] flex flex-col"
