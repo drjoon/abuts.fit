@@ -738,7 +738,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       // 3. 중복 해결 정보(resolutions) 생성
       // resolutions에는 skip이 아닌(replace, remake) 것들만 포함시켜서
       // 서버에서 기존 의뢰에 대한 후속 조치를 하도록 함
-      const resolutions = (files || [])
+      const resolutions = filesToActuallyUpload
         .map((f) => {
           const fileKey = `${f.name}:${f.size}`;
           const fileKeyNfc = (() => {
