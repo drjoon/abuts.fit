@@ -738,7 +738,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       // 3. 중복 해결 정보(resolutions) 생성
       // resolutions에는 skip이 아닌(replace, remake) 것들만 포함시켜서
       // 서버에서 기존 의뢰에 대한 후속 조치를 하도록 함
-      const resolutions = filesToActuallyUpload
+      const resolutions = (files || [])
         .map((f) => {
           const fileKey = `${f.name}:${f.size}`;
           const fileKeyNfc = (() => {
@@ -760,8 +760,11 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
           const caseId = String((f as any)?._draftCaseInfoId || "").trim();
 
+          // 결정(decision)이 없는 파일은 신규 파일이므로 제외 (resolutions는 중복 건에 대한 처리 방침만 담음)
+          if (!decision || !caseId) return null;
+
           // skip은 서버에 보낼 필요 없음 (업로드 자체를 안 했으므로)
-          if (!decision || !caseId || decision.strategy === "skip") return null;
+          if (decision.strategy === "skip") return null;
 
           return {
             caseId,
@@ -771,8 +774,19 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         })
         .filter(Boolean) as any[];
 
-      if (resolutions.length > 0) {
+      // resolutions가 있거나, 아니면 resolutions는 없더라도 skip 결정이 있었다면
+      // (즉, 어떤 식으로든 중복 결정이 내려졌다면) 제출 진행
+      const hasDecisions =
+        resolutions.length > 0 ||
+        Object.values(pendingUploadDecisions).some(
+          (d) => d.strategy === "skip"
+        );
+
+      if (hasDecisions) {
         await rawHandleSubmitWithDuplicateResolutions(resolutions as any);
+        // 제출 후 결정 상태 초기화
+        setPendingUploadDecisions({});
+        setPendingUploadFiles(null);
         return;
       }
     }
@@ -786,6 +800,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     files,
     rawHandleSubmit,
     rawHandleSubmitWithDuplicateResolutions,
+    setPendingUploadDecisions,
+    setPendingUploadFiles,
   ]);
 
   const handleSubmitWithDuplicateResolution = useCallback(

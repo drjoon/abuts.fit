@@ -364,11 +364,12 @@ export const NewRequestPage = () => {
       }
 
       // 모두 처리 완료
+      const filesToProcess = [...(pendingUploadFiles || [])];
       setPendingUploadFiles(null);
       setDuplicatePrompt(null);
 
-      if (nextPendingUploadFiles.length > 0) {
-        await handleUploadUnchecked(nextPendingUploadFiles);
+      if (filesToProcess.length > 0) {
+        await handleUploadUnchecked(filesToProcess);
       }
       return;
     }
@@ -398,17 +399,21 @@ export const NewRequestPage = () => {
 
     setDuplicatePrompt(null);
 
-    if (nextResolutions.length === 1) {
-      // 단일 중복 케이스는 legacy duplicateResolution 경로로 처리해 서버 409 반복을 방지
-      const single = nextResolutions[0];
-      await handleSubmitWithDuplicateResolution({
-        strategy: single.strategy === "skip" ? "replace" : single.strategy,
-        existingRequestId: single.existingRequestId,
-      });
+    // 제출 시점에 skip된 케이스들을 제외하고 resolutions만 서버에 보냄
+    const finalResolutions = nextResolutions.filter(
+      (r) => r.strategy !== "skip"
+    );
+
+    if (finalResolutions.length === 0) {
+      // 모든 중복 건이 skip(유지)인 경우, 그냥 일반 제출 시도
+      // (서버는 resolutions가 없으면 새로 생성을 시도하다가 다시 409를 낼 수 있음.
+      //  하지만 프론트의 handleSubmit 로직에서 resolutions를 생성할 때 skip을 처리하므로
+      //  이 경로는 주로 단일 파일 수동 제출용임)
+      await handleSubmit();
       return;
     }
 
-    await handleSubmitWithDuplicateResolutions(nextResolutions);
+    await handleSubmitWithDuplicateResolutions(finalResolutions);
   };
 
   const renderDuplicateActions = (dup: any) => {

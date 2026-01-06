@@ -295,26 +295,6 @@ export const useNewRequestSubmitV2 = ({
             Array.isArray(duplicates) &&
             duplicates.length > 0
           ) {
-            const hasProductionOrLater = duplicates.some((dup: any) => {
-              const st = String(dup?.existingRequest?.status || "").trim();
-              const stage = String(
-                dup?.existingRequest?.manufacturerStage || ""
-              ).trim();
-              const replaceable =
-                ["의뢰"].includes(st) || ["의뢰"].includes(stage);
-              return !replaceable; // CAM 이상은 모두 교체 불가 취급
-            });
-
-            if (hasProductionOrLater) {
-              toast({
-                title: "중복 의뢰가 감지되었습니다",
-                description:
-                  "중복 주문입니다. 생산 이후 단계의 기존 의뢰는 변경/취소할 수 없으며, 수정하려면 재주문(리메이크)로 진행해주세요.",
-                duration: 4500,
-              });
-              return;
-            }
-
             onDuplicateDetected?.({ mode, duplicates });
             toast({
               title: "중복 의뢰가 감지되었습니다",
