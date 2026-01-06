@@ -21,7 +21,7 @@ from typing import Optional, Iterable, Tuple, List, Dict, Any
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 
@@ -722,22 +722,6 @@ async def _process_single_stl(p: Path):
                     response = requests.post(callback_url, json=payload, timeout=5)
                     if response.status_code == 200:
                         _log(f"Backend notified successfully: {out_name}")
-                        
-                        # [추가] Esprit-Addin에 처리 명령 전송
-                        try:
-                            esprit_url = os.getenv("ESPRIT_URL", "http://localhost:8001")
-                            esprit_payload = {
-                                "RequestId": f"auto_{uuid.uuid4().hex[:8]}",
-                                "StlPath": str(out_path),
-                                "NcOutputPath": str(BG_STORAGE_ROOT / "3-nc" / f"{p.stem}.nc")
-                            }
-                            esprit_res = requests.post(esprit_url, json=esprit_payload, timeout=3)
-                            if esprit_res.status_code == 200:
-                                _log(f"Esprit-Addin notified successfully for {out_name}")
-                            else:
-                                _log(f"Esprit-Addin notification status: {esprit_res.status_code}")
-                        except Exception as ee:
-                            _log(f"Failed to notify Esprit-Addin: {ee}")
                     else:
                         _log(f"Backend notification returned status {response.status_code}")
                 except Exception as be:
@@ -1000,8 +984,15 @@ async def upload_stl(background_tasks: BackgroundTasks, file: UploadFile = File(
         if _is_running:
             background_tasks.add_task(_process_single_stl, target_path)
             _log(f"Auto-processing started in background for: {safe_name}")
-            
-        return {"ok": True, "fileName": safe_name, "path": str(target_path)}
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "ok": True,
+                "status": "STARTED",
+                "fileName": safe_name,
+            },
+        )
     except Exception as e:
         _log(f"Failed to save uploaded file: {e}")
         raise HTTPException(status_code=500, detail=str(e))

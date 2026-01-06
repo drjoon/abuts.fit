@@ -1,4 +1,5 @@
 import mongoose, { Types } from "mongoose";
+import path from "path";
 import Request from "../../models/request.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
@@ -19,6 +20,19 @@ import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
 
+const ESPRIT_BASE =
+  process.env.ESPRIT_ADDIN_BASE_URL ||
+  process.env.ESPRIT_BASE ||
+  process.env.ESPRIT_URL ||
+  "http://localhost:8001";
+
+const BRIDGE_PROCESS_BASE =
+  process.env.BRIDGE_NODE_URL ||
+  process.env.BRIDGE_PROCESS_BASE ||
+  process.env.CNC_BRIDGE_BASE ||
+  process.env.BRIDGE_BASE ||
+  "http://localhost:8002";
+
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
@@ -36,6 +50,107 @@ function extractProgramNoFromNcText(text) {
   if (!m || !m[1]) return null;
   const n = Number(m[1]);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function buildBgStorageBase() {
+  // bg.controller.js와 동일한 디폴트 규칙을 맞춘다.
+  // process.cwd() 기준은 실행 환경에 따라 달라질 수 있으므로, 환경변수(BG_STORAGE_PATH)를 우선한다.
+  try {
+    const p = process.env.BG_STORAGE_PATH;
+    if (p) return p;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function triggerEspritForNc({ request, session }) {
+  // idempotency: 이미 NC가 있으면 재트리거하지 않는다.
+  const existingNc =
+    request?.caseInfos?.ncFile?.fileName || request?.caseInfos?.ncFile?.s3Key;
+  if (existingNc) return;
+
+  // idempotency: CAM 단계(status2=중)인데 NC가 없다면 이미 NC 생성이 진행 중인 것으로 간주
+  if (String(request?.status || "").trim() === "CAM") {
+    const s2 = String(request?.status2 || "").trim();
+    if (s2 === "중") {
+      return;
+    }
+  }
+
+  const camFileName = request?.caseInfos?.camFile?.fileName;
+  if (!camFileName) {
+    const err = new Error("CAM 파일이 없어 NC 생성을 시작할 수 없습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Esprit Add-in에서 storage 경로를 자체적으로 resolve 할 수 있도록 파일명(상대값)만 전달한다.
+  // (.filled.stl -> .nc)
+  const ncFileName = String(camFileName).replace(/\.stl$/i, ".nc");
+
+  // Esprit add-in은 baseUrl(http://...:8001/)로 POST(JSON)만 받는다.
+  const resp = await fetch(`${ESPRIT_BASE.replace(/\/$/, "")}/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      RequestId: String(request.requestId),
+      StlPath: camFileName,
+      NcOutputPath: ncFileName,
+
+      ClinicName: request?.caseInfos?.clinicName || "",
+      PatientName: request?.caseInfos?.patientName || "",
+      Tooth: request?.caseInfos?.tooth || "",
+      ImplantManufacturer: request?.caseInfos?.implantManufacturer || "",
+      ImplantSystem: request?.caseInfos?.implantSystem || "",
+      ImplantType: request?.caseInfos?.implantType || "",
+      MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
+      ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
+      WorkType: request?.caseInfos?.workType || "",
+      LotNumber: request?.caseInfos?.lotNumber || "",
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    const err = new Error(
+      `Esprit 트리거 실패 (${resp.status}): ${text || ""}`.trim()
+    );
+    err.statusCode = 502;
+    throw err;
+  }
+}
+
+async function triggerBridgeForCnc({ request }) {
+  // idempotency: 이미 CNC가 시작된 상태면 재트리거하지 않는다.
+  if (request?.productionSchedule?.actualMachiningStart) return;
+
+  const ncFileName = request?.caseInfos?.ncFile?.fileName;
+  if (!ncFileName) {
+    const err = new Error("NC 파일이 없어 CNC 공정을 시작할 수 없습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const resp = await fetch(
+    `${BRIDGE_PROCESS_BASE.replace(/\/$/, "")}/api/bridge/process-file`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: ncFileName,
+        requestId: request.requestId,
+      }),
+    }
+  );
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    const err = new Error(
+      `Bridge 트리거 실패 (${resp.status}): ${text || ""}`.trim()
+    );
+    err.statusCode = 502;
+    throw err;
+  }
 }
 
 async function uploadNcToBridgeStore({ requestId, s3Key, fileName }) {
@@ -349,6 +464,16 @@ export async function updateReviewStatusByStage(req, res) {
           userId: req.user?._id,
           session,
         });
+
+        // BG 단계는 자동 체인이 아닌, 제조사 승인 이후 서버가 트리거한다.
+        const stageKey = String(stage || "").trim();
+        if (stageKey === "request") {
+          await triggerEspritForNc({ request, session });
+        }
+
+        if (stageKey === "cam") {
+          await triggerBridgeForCnc({ request });
+        }
       } else if (status === "PENDING") {
         revertManufacturerStageByReviewStage(request, stage);
       }

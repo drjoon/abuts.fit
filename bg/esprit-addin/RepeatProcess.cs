@@ -147,27 +147,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private async Task NotifyBackendAndNext(NcGenerationRequest req)
         {
             await NotifyBackendSuccess(req);
-            
-            // [추가] Bridge-Server(포트 8002)에 명령 전달
-            try
-            {
-                using (var client = new HttpClient())
-                {
-                    string bridgeUrl = "http://localhost:8002/api/bridge/process-file";
-                    var fi = new FileInfo(req.NcOutputPath);
-                    string json = $"{{\"fileName\":\"{fi.Name}\",\"requestId\":\"{req.RequestId}\"}}";
-                    var content = new StringContent(json, Encoding.UTF8, "application/json");
-                    var response = await client.PostAsync(bridgeUrl, content);
-                    if (response.IsSuccessStatusCode)
-                        LogInfo($"[Bridge] Successfully notified Bridge-Server: {fi.Name}");
-                    else
-                        LogWarning($"[Bridge] Notification status: {response.StatusCode}");
-                }
-            }
-            catch (Exception ex)
-            {
-                LogWarning($"[Bridge] Failed to notify Bridge-Server: {ex.Message}");
-            }
         }
 
         private void CleanupOldLogs(string logDir)
@@ -327,25 +306,45 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
-                LogInfo($"[CAM] Received request: {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName}, Lot: {req.LotNumber})");
+                // 파일 경로가 상대값(파일명)으로 들어오면, bg/storage 기준으로 보정한다.
+                // 운영에서는 web(EBS) -> BG(윈도우) 구조이므로, web이 절대 경로를 알 필요가 없도록 한다.
+                req = NormalizePathsToLocalStorage(req);
 
-                // NC 생성 프로세스 실행 (메인 스레드 이슈 방지를 위해 락 또는 동기화 고려 가능하나 여기선 직접 호출)
-                bool success = ProcessStlFile(req);
+                LogInfo($"[CAM] Accepted request (async): {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName}, Lot: {req.LotNumber})");
 
-                if (success)
+                // 긴 작업은 백그라운드에서 수행하고, 즉시 시작 응답만 반환한다.
+                // 완료/실패는 NotifyBackendSuccess/NotifyBackendFailure로 보고한다.
+                Task.Run(async () =>
                 {
-                    await NotifyBackendSuccess(req);
-                    
-                    response.StatusCode = (int)HttpStatusCode.OK;
-                    byte[] buffer = Encoding.UTF8.GetBytes("{\"success\": true}");
-                    response.OutputStream.Write(buffer, 0, buffer.Length);
-                }
-                else
-                {
-                    response.StatusCode = (int)HttpStatusCode.InternalServerError;
-                    byte[] buffer = Encoding.UTF8.GetBytes("{\"success\": false, \"message\": \"CAM processing failed\"}");
-                    response.OutputStream.Write(buffer, 0, buffer.Length);
-                }
+                    try
+                    {
+                        bool success = ProcessStlFile(req);
+                        if (success)
+                        {
+                            await NotifyBackendSuccess(req);
+                        }
+                        else
+                        {
+                            await NotifyBackendFailure(req, "CAM processing failed");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        try
+                        {
+                            await NotifyBackendFailure(req, ex.Message);
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+                        LogError($"[CAM] Async processing error for {req.RequestId}: {ex.Message}\n{ex.StackTrace}");
+                    }
+                });
+
+                response.StatusCode = (int)HttpStatusCode.Accepted;
+                byte[] okBuffer = Encoding.UTF8.GetBytes($"{{\"success\": true, \"status\": \"STARTED\", \"requestId\": \"{req.RequestId}\"}}");
+                response.OutputStream.Write(okBuffer, 0, okBuffer.Length);
             }
             catch (Exception ex)
             {
@@ -493,34 +492,19 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     string url = $"{_backendUrl}/bg/register-file";
                     
                     var fi = new FileInfo(req.NcOutputPath);
-                    var payload = new Dictionary<string, object>
-                    {
-                        { "sourceStep", "3-nc" },
-                        { "fileName", fi.Name },
-                        { "originalFileName", Path.GetFileName(req.StlPath) },
-                        { "requestId", req.RequestId },
-                        { "status", "success" },
-                        { "metadata", new Dictionary<string, object> { { "fileSize", fi.Length } } }
-                    };
 
-                    using (var ms = new MemoryStream())
+                    string originalName = Path.GetFileName(req.StlPath);
+                    string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"originalFileName\":\"{originalName}\",\"requestId\":\"{req.RequestId}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length}}}}}";
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    
+                    var response = await client.PostAsync(url, content);
+                    if (response.IsSuccessStatusCode)
                     {
-                        var ser = new DataContractJsonSerializer(typeof(Dictionary<string, object>));
-                        // Dictionary 직렬화가 번거로울 수 있으므로 실제로는 전용 클래스 사용 권장. 
-                        // 여기서는 단순화를 위해 익명 객체 스타일의 직렬화 로직 적용 (또는 기존 BackendNcPayload 수정)
-                        
-                        string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"originalFileName\":\"{Path.GetFileName(req.StlPath)}\",\"requestId\":\"{req.RequestId}\",\"status\":\"success\"}}";
-                        var content = new StringContent(json, Encoding.UTF8, "application/json");
-                        
-                        var response = await client.PostAsync(url, content);
-                        if (response.IsSuccessStatusCode)
-                        {
-                            LogInfo($"[Backend] Successfully notified processed file: {fi.Name}");
-                        }
-                        else
-                        {
-                            LogError($"[Backend] Failed to notify: {response.StatusCode} for {fi.Name}");
-                        }
+                        LogInfo($"[Backend] Successfully notified processed file: {fi.Name}");
+                    }
+                    else
+                    {
+                        LogError($"[Backend] Failed to notify: {response.StatusCode} for {fi.Name}");
                     }
                 }
             }
@@ -528,6 +512,68 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             {
                 LogError($"[Backend] Callback error: {ex.Message}");
             }
+        }
+
+        private async Task NotifyBackendFailure(NcGenerationRequest req, string errorMessage)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    string url = $"{_backendUrl}/bg/register-file";
+                    string originalName = string.IsNullOrEmpty(req?.StlPath) ? "" : Path.GetFileName(req.StlPath);
+                    string ncName = string.IsNullOrEmpty(req?.NcOutputPath) ? "" : Path.GetFileName(req.NcOutputPath);
+                    string safeError = (errorMessage ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{ncName}\",\"originalFileName\":\"{originalName}\",\"requestId\":\"{req?.RequestId}\",\"status\":\"failed\",\"metadata\":{{\"error\":\"{safeError}\"}}}}";
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    var response = await client.PostAsync(url, content);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        LogInfo($"[Backend] Failure notified: {ncName}");
+                    }
+                    else
+                    {
+                        LogError($"[Backend] Failed to notify failure: {response.StatusCode} for {ncName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"[Backend] Failure callback error: {ex.Message}");
+            }
+        }
+
+        private NcGenerationRequest NormalizePathsToLocalStorage(NcGenerationRequest req)
+        {
+            try
+            {
+                if (req == null) return null;
+
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string storage2 = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
+                string storage3 = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
+
+                if (!string.IsNullOrWhiteSpace(req.StlPath))
+                {
+                    // 절대경로가 아니면 파일명으로 간주
+                    if (!Path.IsPathRooted(req.StlPath))
+                    {
+                        req.StlPath = Path.Combine(storage2, Path.GetFileName(req.StlPath));
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(req.NcOutputPath))
+                {
+                    if (!Path.IsPathRooted(req.NcOutputPath))
+                    {
+                        req.NcOutputPath = Path.Combine(storage3, Path.GetFileName(req.NcOutputPath));
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+            return req;
         }
 
         private void LogInfo(string message) { Log("INFO", message); }

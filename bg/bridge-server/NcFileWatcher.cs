@@ -96,11 +96,29 @@ namespace HiLinkBridgeWebApi48
 
         public async Task ProcessNcFile(string fullPath)
         {
+            await ProcessNcFile(fullPath, null);
+        }
+
+        public async Task ProcessNcFile(string fullPath, string requestId)
+        {
             string fileName = Path.GetFileName(fullPath);
             try
             {
                 Console.WriteLine($"[NcFileWatcher] New NC file detected: {fileName}");
                 ControlController.AddHistory(fileName, "processing", "Starting CNC upload");
+
+                // idempotency: 백엔드에 확인하여 처리 필요 여부를 판단
+                try
+                {
+                    bool shouldProcess = await CheckBackendShouldProcess(fileName, "3-nc");
+                    if (!shouldProcess)
+                    {
+                        Console.WriteLine($"[NcFileWatcher] Skipping {fileName} (backend says no need)");
+                        ControlController.AddHistory(fileName, "skipped", "backend says no need");
+                        return;
+                    }
+                }
+                catch { }
 
                 // 1. 백엔드에서 가공 스케줄 확인 (예시)
                 // string scheduleInfo = await NotifyBackendCheckSchedule(fileName);
@@ -111,7 +129,7 @@ namespace HiLinkBridgeWebApi48
                 // 3. 가공 개시 명령 (현재 가공 완료 대기 로직 필요)
                 // await _client.RequestRawAsync(uid, CollectDataType.UpdateActivateProg, ...);
 
-                await NotifyBackend(fileName);
+                await NotifyBackend(fileName, requestId, "success", null);
 
                 ControlController.AddHistory(fileName, "success", "Uploaded and scheduled for CNC");
                 Console.WriteLine($"[NcFileWatcher] Successfully processed {fileName}");
@@ -120,20 +138,31 @@ namespace HiLinkBridgeWebApi48
             {
                 Console.WriteLine($"[NcFileWatcher] Error processing {fileName}: {ex.Message}");
                 ControlController.AddHistory(fileName, "failed", ex.Message);
+
+                try
+                {
+                    await NotifyBackend(fileName, requestId, "failed", ex.Message);
+                }
+                catch { }
             }
         }
 
-        private async Task NotifyBackend(string fileName)
+        private async Task NotifyBackend(string fileName, string requestId, string status, string errorMessage)
         {
             try
             {
                 using (var client = new HttpClient())
                 {
-                    var payload = new 
+                    var payload = new
                     {
                         sourceStep = "cnc",
                         fileName = fileName,
-                        status = "success"
+                        originalFileName = fileName,
+                        requestId = requestId,
+                        status = status,
+                        metadata = string.IsNullOrEmpty(errorMessage)
+                            ? null
+                            : new { error = errorMessage }
                     };
 
                     string json = JsonConvert.SerializeObject(payload);
@@ -142,7 +171,7 @@ namespace HiLinkBridgeWebApi48
                     var response = await client.PostAsync($"{_backendUrl}/bg/register-file", content);
                     if (response.IsSuccessStatusCode)
                     {
-                        Console.WriteLine($"[Backend] Notified CNC progress for {fileName}");
+                        Console.WriteLine($"[Backend] Notified CNC progress for {fileName} (status={status})");
                     }
                 }
             }

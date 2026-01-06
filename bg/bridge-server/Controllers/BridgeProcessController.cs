@@ -47,9 +47,15 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 // 비동기로 실제 가공 처리 시작
                 var watcher = new NcFileWatcher();
-                Task.Run(() => watcher.ProcessNcFile(fullPath));
+                Task.Run(() => watcher.ProcessNcFile(fullPath, req.requestId));
 
-                return Ok(new { ok = true, message = "CNC processing started" });
+                return Content(HttpStatusCode.Accepted, new
+                {
+                    ok = true,
+                    status = "STARTED",
+                    fileName = req.fileName,
+                    requestId = req.requestId,
+                });
             }
             catch (Exception ex)
             {
