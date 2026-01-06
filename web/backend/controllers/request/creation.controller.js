@@ -73,7 +73,10 @@ export function buildStandardStlFileName({
   const ext = originalFileName?.includes(".")
     ? `.${originalFileName.split(".").pop().toLowerCase()}`
     : ".stl";
-  return `${requestId}_${clinicName}_${patientName}_${tooth}${ext}`;
+  // [수정] 구분자를 언더스코어(_)에서 하이픈(-)으로 변경
+  // 형식: {requestId}-{clinicName}-{patientName}-{tooth}{ext}
+  // requestId가 이미 YYYYMMDD-Suffix 형식이므로 [날짜-코드-치과-환자-치아] 형식이 됨
+  return `${requestId}-${clinicName}-${patientName}-${tooth}${ext}`;
 }
 
 /**

@@ -575,12 +575,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       )}`;
       if (!sessionStorage.getItem(toastKey)) {
         sessionStorage.setItem(toastKey, "1");
-        toast({
-          title: "축하합니다",
-          description:
-            "모든 설정이 완료되었습니다. 이제 서비스 이용이 가능합니다.",
-          duration: 3000,
-        });
+        // Toast removed as per request
       }
     } catch {
       // ignore

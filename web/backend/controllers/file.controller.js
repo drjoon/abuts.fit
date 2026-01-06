@@ -268,11 +268,10 @@ export const createTempUploadPresign = asyncHandler(async (req, res) => {
 
     const uploadUrl = await s3Utils.getUploadSignedUrl(key, mimetype);
 
-    // S3 Presigned URL 방식이지만, 클라이언트는 메타데이터 등록 후 즉시 파일을 S3에 올립니다.
-    // 백엔드에서는 비동기적으로 S3에서 파일을 가져와 Rhino 서버에 업로드하도록 시도합니다.
-    setTimeout(() => {
-      uploadS3ToRhinoServer(key, originalName).catch(() => {});
-    }, 2000);
+    // [수정] 파일명이 확정되기 전(임시 업로드)에는 Rhino 서버로 전송하지 않음.
+    // setTimeout(() => {
+    //   uploadS3ToRhinoServer(key, originalName).catch(() => {});
+    // }, 2000);
 
     results.push({
       uploadUrl,
