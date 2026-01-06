@@ -150,18 +150,32 @@ export const updateDraft = asyncHandler(async (req, res) => {
         ? currentDraft.caseInfos
         : [];
 
-      // 단순화된 규칙:
-      // - 인덱스 기준으로 prev.caseInfos 의 file 서브도큐먼트를 유지
-      // - 나머지 텍스트 필드(clinicName, patientName, tooth, implant*, connectionType 등)는
-      //   incoming caseInfos 가 완전히 덮어쓴다.
-      const newCaseInfos = incomingList.map((ci, idx) => {
-        const prev = prevCaseInfos[idx] || {};
+      const newCaseInfos = incomingList.map((ci) => {
         const incoming = ci || {};
 
+        // 1. ID가 제공된 경우 해당 ID로 기존 데이터를 찾음
+        let prev = null;
+        if (incoming._id) {
+          prev = prevCaseInfos.find(
+            (p) => String(p._id) === String(incoming._id)
+          );
+        }
+
+        // 2. ID로 못 찾은 경우 파일 정보(s3Key 등)로 매칭 시도
+        if (!prev && incoming.file?.s3Key) {
+          prev = prevCaseInfos.find(
+            (p) => p.file?.s3Key === incoming.file.s3Key
+          );
+        }
+
+        // 3. 그것도 없으면 인덱스 순서대로 (새로 추가된 경우 등)
+        // 이 부분은 기존 로직 유지하되 가급적 매칭된 것 위주로 사용
+
         return {
+          _id: incoming._id || prev?._id || undefined,
           ...incoming,
-          file: incoming.file || prev.file || undefined,
-          workType: (incoming.workType || prev.workType || "abutment").trim(),
+          file: incoming.file || prev?.file || undefined,
+          workType: (incoming.workType || prev?.workType || "abutment").trim(),
         };
       });
 

@@ -262,6 +262,12 @@ export function useDraftMeta() {
     async (map: Record<string, CaseInfos>) => {
       if (!draftId || !token) return;
 
+      // 대기 중인 디바운스 타이머가 있다면 취소 (중복 패치 방지)
+      if (patchTimeoutRef.current !== null) {
+        window.clearTimeout(patchTimeoutRef.current);
+        patchTimeoutRef.current = null;
+      }
+
       try {
         // __default__를 제외한 파일별 caseInfos 추출
         const fileBasedCaseInfos = Object.entries(map)

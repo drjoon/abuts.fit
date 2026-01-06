@@ -535,14 +535,16 @@ export const useNewRequestFilesV2 = ({
             const filenamesForAi: string[] = [];
             const fileKeysForAi: string[] = [];
 
-            newFiles.forEach((file) => {
+            newFiles.forEach((file, idx) => {
               const fileKey = `${file.name}:${file.size}`;
+              const draftCase = newDraftFiles[idx];
               // 룰 기반 파싱 (fallback으로 기존 parseFilename 포함)
               const parsed = parseFilenameWithRules(file.name);
 
               if (parsed.clinicName || parsed.patientName || parsed.tooth) {
                 // 파일명에서 정보를 추출한 경우 바로 Draft.caseInfos에 반영
                 updateCaseInfos(fileKey, {
+                  _id: draftCase?._id, // 서버에서 생성된 ID 반영
                   clinicName: parsed.clinicName || "",
                   patientName: parsed.patientName || "",
                   tooth: parsed.tooth || "",
@@ -593,8 +595,14 @@ export const useNewRequestFilesV2 = ({
                     const idx = filenamesForAi.indexOf(item.filename);
                     if (idx === -1) return;
                     const fileKey = fileKeysForAi[idx];
+                    const originalIdx = newFiles.findIndex(
+                      (f) => `${f.name}:${f.size}` === fileKey
+                    );
+                    const draftCase =
+                      originalIdx !== -1 ? newDraftFiles[originalIdx] : null;
 
                     updateCaseInfos(fileKey, {
+                      _id: item._id || draftCase?._id, // 서버에서 생성된 ID 반영
                       clinicName: item.clinicName || "",
                       patientName: item.patientName || "",
                       tooth: item.tooth || "",

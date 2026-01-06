@@ -120,8 +120,6 @@ export const useNewRequestSubmitV2 = ({
       return;
     }
 
-    // 포워딩은 DashboardLayout에서 백엔드 guide-progress 기준으로만 처리한다.
-
     // 의뢰 수정 모드
     if (existingRequestId) {
       try {
@@ -143,7 +141,6 @@ export const useNewRequestSubmitV2 = ({
             requestedShipDate: base.requestedShipDate,
           };
 
-          // undefined 값은 굳이 보내지 않도록 정리
           Object.keys(payload.caseInfos).forEach((k) => {
             if (payload.caseInfos[k] === undefined) {
               delete payload.caseInfos[k];
@@ -193,7 +190,7 @@ export const useNewRequestSubmitV2 = ({
     }
 
     try {
-      // 중복 데이터 체크 (제출 전 클라이언트 사이드 검증)
+      // 1. 중복 데이터 체크 (제출 전 클라이언트 사이드 검증 - 동일 페이로드 내 중복)
       if (files.length > 1 && caseInfosMap) {
         const uniqueCombinations = new Set();
         const duplicates = [];
@@ -223,14 +220,12 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      // 현재 파일 기준으로 유효한 fileKey 집합
-      const validFileKeys = new Set(files.map((f) => `${f.name}:${f.size}`));
-
-      // 제출 전 디바운스 대기 중인 변경사항을 즉시 Draft에 저장
-      // 이때, 이미 삭제된 파일(현재 files 배열에 없는 파일)의 caseInfos는 제외한다.
-      let filteredMap: Record<string, CaseInfos> | undefined = undefined;
-      if (patchDraftImmediately && caseInfosMap) {
-        filteredMap = {};
+      // 2. 제출 전 디바운스 대기 중인 변경사항을 즉시 Draft에 저장 (서버 데이터 동기화)
+      // 단, 중복 해결 정보(duplicateResolutions)가 있는 경우는 이미 서버와 ID가 맞춰진 상태이므로
+      // 재차 패치하여 ID를 변경하지 않도록 스킵한다.
+      if (patchDraftImmediately && caseInfosMap && !duplicateResolutions) {
+        const validFileKeys = new Set(files.map((f) => `${f.name}:${f.size}`));
+        const filteredMap: Record<string, CaseInfos> = {};
         for (const [key, value] of Object.entries(caseInfosMap)) {
           if (key === "__default__" || validFileKeys.has(key)) {
             filteredMap[key] = value;
@@ -238,23 +233,18 @@ export const useNewRequestSubmitV2 = ({
         }
 
         try {
-          void patchDraftImmediately(filteredMap);
-        } catch {}
-      }
-
-      // 서버로도 현재 caseInfos 배열을 함께 보내 Draft.caseInfos 의 빈 필드를 보완한다.
-      let caseInfosForSubmit: CaseInfos[] | undefined = undefined;
-      const sourceMap = filteredMap || caseInfosMap;
-      if (sourceMap) {
-        const fileBased = Object.entries(sourceMap)
-          .filter(([key]) => key !== "__default__" && validFileKeys.has(key))
-          .map(([, ci]) => ci);
-        if (fileBased.length > 0) {
-          caseInfosForSubmit = fileBased;
+          await patchDraftImmediately(filteredMap);
+        } catch (err) {
+          console.warn("[useNewRequestSubmitV2] Pre-submit patch failed:", err);
         }
       }
 
-      // Draft를 Request로 전환
+      // 3. Draft를 Request로 전환
+      console.log("[useNewRequestSubmitV2] Submitting draft to request...", {
+        draftId,
+        duplicateResolutionsCount: duplicateResolutions?.length || 0,
+      });
+
       const payload: any = {
         draftId,
         clinicId: selectedClinicId || undefined,
@@ -262,11 +252,14 @@ export const useNewRequestSubmitV2 = ({
 
       if (Array.isArray(duplicateResolutions) && duplicateResolutions.length) {
         payload.duplicateResolutions = duplicateResolutions;
+        console.log(
+          "[useNewRequestSubmitV2] Resolution details:",
+          duplicateResolutions
+        );
       }
 
-      if (caseInfosForSubmit) {
-        payload.caseInfos = caseInfosForSubmit;
-      }
+      // NOTE: caseInfos 페이로드를 제거하여 백엔드가 Draft의 데이터를 신뢰하도록 함
+      // (중복 체크 인덱스 불일치 방지)
 
       const res = await fetch(`${API_BASE_URL}/requests/from-draft`, {
         method: "POST",
@@ -278,7 +271,9 @@ export const useNewRequestSubmitV2 = ({
         const errData = await res.json().catch(() => ({}));
         console.error("[useNewRequestSubmitV2] Server error response:", {
           status: res.status,
-          errData,
+          code: errData?.code,
+          message: errData?.message,
+          data: errData?.data,
         });
 
         if (res.status === 409 && errData?.code === "DUPLICATE_REQUEST") {
@@ -299,11 +294,12 @@ export const useNewRequestSubmitV2 = ({
           }
         }
 
-        throw new Error(errData.message || `서버 오류: ${res.status}`);
+        const detailMsg = errData?.message || `서버 오류: ${res.status}`;
+        const errorContext = errData?.code ? ` [${errData.code}]` : "";
+        throw new Error(`${detailMsg}${errorContext}`);
       }
 
       const data = await res.json();
-      void data;
 
       // 파싱 로그 저장 (비동기, 실패해도 무시)
       saveParseLogs().catch((err) => {
@@ -318,9 +314,6 @@ export const useNewRequestSubmitV2 = ({
       } catch {}
 
       // 상태 초기화
-      console.log(
-        "[useNewRequestSubmitV2] setFiles([]) from handleSubmit success"
-      );
       setFiles([]);
       setSelectedPreviewIndex(null);
 
@@ -339,14 +332,11 @@ export const useNewRequestSubmitV2 = ({
       } catch {}
 
       toast({ title: "의뢰가 제출되었습니다" });
-
       navigate(`/dashboard`);
     } catch (err: any) {
       const rawMessage = err?.message || "";
-
       const isNoAbutmentError =
         rawMessage.includes("커스텀 어벗 케이스가 없습니다") ||
-        rawMessage.includes("커스컴 어벗 케이스가 없습니다") ||
         rawMessage.includes("Draft에 커스텀 어벗 케이스가 없습니다");
 
       const isMissingFieldsError =
@@ -357,7 +347,6 @@ export const useNewRequestSubmitV2 = ({
       if (isNoAbutmentError) {
         description = "커스텀 어벗을 하나 이상 의뢰해야 합니다";
       } else if (isMissingFieldsError) {
-        // 서버에서 필수 정보 누락 에러가 온 경우: 간단한 안내만 표시
         description = "환자정보 또는 임플란트 정보가 누락되었습니다.";
       }
 

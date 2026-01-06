@@ -461,11 +461,6 @@ export async function cloneRequestToDraft(req, res) {
 export async function createRequestsFromDraft(req, res) {
   try {
     const { draftId, clinicId } = req.body || {};
-    const duplicateResolution =
-      req.body?.duplicateResolution &&
-      typeof req.body.duplicateResolution === "object"
-        ? req.body.duplicateResolution
-        : null;
     const duplicateResolutionsRaw = Array.isArray(
       req.body?.duplicateResolutions
     )
@@ -776,13 +771,8 @@ export async function createRequestsFromDraft(req, res) {
       }
     }
 
-    const first = duplicates[0];
-
-    if (
-      duplicates.length > 0 &&
-      !duplicateResolution &&
-      !duplicateResolutions
-    ) {
+    if (duplicates.length > 0 && !duplicateResolutions) {
+      const first = duplicates[0];
       const st = String(first?.existingRequest?.status || "");
       const mode = st === "완료" ? "completed" : "active";
       return res.status(409).json({
@@ -797,27 +787,6 @@ export async function createRequestsFromDraft(req, res) {
           duplicates,
         },
       });
-    }
-
-    if (duplicates.length > 0 && duplicateResolution && !duplicateResolutions) {
-      // 레거시(single) 해소 방식은 다중 중복 케이스 처리에 안전하지 않다.
-      // 프론트에서 duplicateResolutions(케이스별)를 보내도록 유도한다.
-      if (duplicates.length > 1) {
-        const st = String(first?.existingRequest?.status || "");
-        const mode = st === "완료" ? "completed" : "active";
-        return res.status(409).json({
-          success: false,
-          code: "DUPLICATE_REQUEST",
-          message:
-            st === "완료"
-              ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 중복 의뢰 처리 방법을 선택해주세요."
-              : "동일한 정보의 의뢰가 이미 진행 중입니다. 중복 의뢰 처리 방법을 선택해주세요.",
-          data: {
-            mode,
-            duplicates,
-          },
-        });
-      }
     }
 
     const resolutionsByCaseId = new Map();
@@ -850,7 +819,17 @@ export async function createRequestsFromDraft(req, res) {
           !skipCaseIds.has(String(d.caseId || ""))
       );
       if (unresolved.length > 0) {
-        const st = String(first?.existingRequest?.status || "");
+        console.log(
+          `[Creation] Unresolved duplicates found: ${unresolved.length} cases`
+        );
+        unresolved.forEach((d, idx) => {
+          console.log(
+            `  #${idx}: CaseId=${d.caseId}, Patient=${d.patientName}, ExistingStatus=${d.existingRequest?.status}`
+          );
+        });
+
+        const firstUnresolved = unresolved[0];
+        const st = String(firstUnresolved?.existingRequest?.status || "");
         const mode = st === "완료" ? "completed" : "active";
         return res.status(409).json({
           success: false,
@@ -920,93 +899,9 @@ export async function createRequestsFromDraft(req, res) {
     const session = await mongoose.startSession();
     try {
       await session.withTransaction(async () => {
-        // duplicateResolution 처리 (레거시 단일 existingRequestId에 대해서만 처리)
-        if (duplicateResolution && !duplicateResolutions) {
-          const strategy = String(duplicateResolution.strategy || "").trim();
-          const existingRequestId = String(
-            duplicateResolution.existingRequestId || ""
-          ).trim();
-
-          if (
-            !existingRequestId ||
-            !Types.ObjectId.isValid(existingRequestId)
-          ) {
-            const err = new Error("유효한 existingRequestId가 필요합니다.");
-            err.statusCode = 400;
-            throw err;
-          }
-
-          const existingDoc = await Request.findById(existingRequestId).session(
-            session
-          );
-          if (!existingDoc) {
-            const err = new Error("기존 의뢰를 찾을 수 없습니다.");
-            err.statusCode = 404;
-            throw err;
-          }
-          if (!(await canAccessRequestAsRequestor(req, existingDoc))) {
-            const err = new Error("기존 의뢰에 접근 권한이 없습니다.");
-            err.statusCode = 403;
-            throw err;
-          }
-
-          const existingStatus = String(existingDoc.status || "");
-          const existingStatus2 = String(existingDoc.status2 || "");
-          const existingStage = String(
-            existingDoc.manufacturerStage || ""
-          ).trim();
-          const stageOrder = {
-            의뢰: 0,
-            CAM: 1,
-            생산: 2,
-            발송: 3,
-            완료: 4,
-          };
-          const currentStageOrder =
-            existingStatus2 === "완료"
-              ? 4
-              : stageOrder[existingStage] ?? stageOrder[existingStatus] ?? 0;
-          if (strategy === "replace") {
-            if (existingStatus2 === "완료") {
-              const err = new Error(
-                "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요."
-              );
-              err.statusCode = 400;
-              throw err;
-            }
-            if (currentStageOrder > 1) {
-              const err = new Error(
-                "생산 이후 단계에서는 기존 의뢰를 교체할 수 없습니다."
-              );
-              err.statusCode = 400;
-              throw err;
-            }
-
-            // 기존 의뢰 취소
-            if (existingDoc.status !== "취소") {
-              applyStatusMapping(existingDoc, "취소");
-              await existingDoc.save({ session });
-            }
-          } else if (strategy === "remake") {
-            if (existingStatus2 !== "완료") {
-              const err = new Error(
-                "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요."
-              );
-              err.statusCode = 400;
-              throw err;
-            }
-          } else {
-            const err = new Error(
-              "유효한 duplicateResolution.strategy가 필요합니다."
-            );
-            err.statusCode = 400;
-            throw err;
-          }
-        }
-
         // duplicateResolutions 처리 (케이스별)
         if (duplicates.length > 0 && duplicateResolutions) {
-          const duplicatesByCaseId = new Map(
+          const dupsByCaseId = new Map(
             duplicates.map((d) => [String(d.caseId || ""), d])
           );
 
@@ -1014,7 +909,7 @@ export async function createRequestsFromDraft(req, res) {
             const strategy = String(r?.strategy || "").trim();
             if (strategy !== "replace") continue;
 
-            const dup = duplicatesByCaseId.get(String(caseId));
+            const dup = dupsByCaseId.get(String(caseId));
             const existingRequestId = String(r?.existingRequestId || "").trim();
             if (!dup || !existingRequestId) continue;
 
@@ -1131,7 +1026,7 @@ export async function createRequestsFromDraft(req, res) {
           throw err;
         }
 
-        const duplicatesByCaseId = new Map(
+        const dupsByCaseId = new Map(
           duplicates.map((d) => [String(d.caseId || ""), d])
         );
 
@@ -1179,32 +1074,10 @@ export async function createRequestsFromDraft(req, res) {
             productionSchedule.estimatedDelivery.toISOString().slice(0, 10);
 
           // 완료된 기존 의뢰에 대한 재의뢰(리메이크): referenceIds에 기존 requestId를 남긴다.
-          if (duplicateResolution && !duplicateResolutions) {
-            if (
-              String(duplicateResolution.strategy || "") === "remake" &&
-              duplicateResolution.existingRequestId
-            ) {
-              const existing = duplicates.find(
-                (d) =>
-                  String(d?.existingRequest?._id || "") ===
-                  String(duplicateResolution.existingRequestId)
-              );
-              const oldRequestId = existing?.existingRequest?.requestId;
-              if (oldRequestId) {
-                newRequest.referenceIds = Array.from(
-                  new Set([
-                    ...(newRequest.referenceIds || []),
-                    String(oldRequestId),
-                  ])
-                );
-              }
-            }
-          }
-
           if (duplicateResolutions) {
             const r = resolutionsByCaseId.get(String(item.caseId));
             if (String(r?.strategy || "") === "remake") {
-              const dup = duplicatesByCaseId.get(String(item.caseId));
+              const dup = dupsByCaseId.get(String(item.caseId));
               const oldRequestId = dup?.existingRequest?.requestId;
               if (oldRequestId) {
                 newRequest.referenceIds = Array.from(
