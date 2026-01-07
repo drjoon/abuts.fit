@@ -169,11 +169,29 @@ export const useRequestFileHandlers = ({
         );
 
         if (!res.ok) {
-          throw new Error("review status update failed");
+          let message = "검토 상태 변경에 실패했습니다.";
+          try {
+            const ct = res.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              const errorData = await res.json().catch(() => null);
+              if (errorData?.message) message = String(errorData.message);
+            } else {
+              const text = await res.text().catch(() => "");
+              if (text) message = text;
+            }
+          } catch {
+            // ignore
+          }
+
+          // 백엔드에서 503로 내려오는 경우(Esprit/Bridge 미실행 등) 메시지를 그대로 보여준다.
+          const err = new Error(message);
+          (err as any).skipFetchRequests = true; // 에러 시 목록 갱신 및 안내 토스트 방지
+          throw err;
         }
 
         await fetchRequests();
 
+        // 성공 시에만 안내 토스트 표시
         toast({
           title: "검토 상태 변경 완료",
           description:
@@ -182,6 +200,7 @@ export const useRequestFileHandlers = ({
               : params.status === "REJECTED"
               ? "반려되었습니다."
               : "미승인 상태로 변경되었습니다.",
+          duration: 3000, // 성공 토스트는 3초 후 자동 소멸
         });
 
         if (params.status === "APPROVED") {
@@ -192,11 +211,13 @@ export const useRequestFileHandlers = ({
         if (!params.keepPreviewOpen) {
           setPreviewOpen(false);
         }
-      } catch {
+      } catch (error) {
         toast({
           title: "검토 상태 변경 실패",
-          description: "잠시 후 다시 시도해주세요.",
+          description:
+            (error as Error)?.message || "잠시 후 다시 시도해주세요.",
           variant: "destructive",
+          duration: 5000,
         });
       } finally {
         setReviewSaving(false);

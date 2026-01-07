@@ -2,8 +2,9 @@ import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
-const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 11000;
+// 동시에 여러 토스트를 쌓되, 5초 내 자동 종료되도록 설정
+const TOAST_LIMIT = 5;
+const TOAST_REMOVE_DELAY = 5500; // 닫힘 후 제거까지 약간의 여유
 const DUPLICATE_SUPPRESS_INTERVAL = 5000;
 
 type ToasterToast = ToastProps & {
@@ -174,8 +175,7 @@ function toast({ ...props }: Toast) {
 
   const hasDescription = !!descriptionText.trim();
   const descBytes = hasDescription ? getByteLength(descriptionText) : 0;
-  const duration =
-    props.duration ?? (descBytes > 0 ? (descBytes <= 20 ? 4000 : 8000) : 4000);
+  const duration = props.duration ?? 3000; // 기본 5초 유지
 
   const id = genId();
 
@@ -185,6 +185,14 @@ function toast({ ...props }: Toast) {
       toast: { ...props, id },
     });
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id });
+
+  // duration 이후 자동으로 닫힘 처리 (Radix 기본 동작 외에 강제 스케줄링)
+  setTimeout(() => dismiss(), duration);
+  // 닫힘 직후 완전히 제거(잔상 방지)
+  setTimeout(
+    () => dispatch({ type: "REMOVE_TOAST", toastId: id }),
+    duration + 600
+  );
 
   dispatch({
     type: "ADD_TOAST",

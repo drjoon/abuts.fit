@@ -90,33 +90,49 @@ async function triggerEspritForNc({ request, session }) {
   const ncFileName = String(camFileName).replace(/\.stl$/i, ".nc");
 
   // Esprit add-in은 baseUrl(http://...:8001/)로 POST(JSON)만 받는다.
-  const resp = await fetch(`${ESPRIT_BASE.replace(/\/$/, "")}/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      RequestId: String(request.requestId),
-      StlPath: camFileName,
-      NcOutputPath: ncFileName,
+  // 제조사 UI가 멈추지 않도록 짧은 타임아웃을 적용한다.
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  let resp;
+  try {
+    resp = await fetch(`${ESPRIT_BASE.replace(/\/$/, "")}/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        RequestId: String(request.requestId),
+        StlPath: camFileName,
+        NcOutputPath: ncFileName,
 
-      ClinicName: request?.caseInfos?.clinicName || "",
-      PatientName: request?.caseInfos?.patientName || "",
-      Tooth: request?.caseInfos?.tooth || "",
-      ImplantManufacturer: request?.caseInfos?.implantManufacturer || "",
-      ImplantSystem: request?.caseInfos?.implantSystem || "",
-      ImplantType: request?.caseInfos?.implantType || "",
-      MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
-      ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
-      WorkType: request?.caseInfos?.workType || "",
-      LotNumber: request?.caseInfos?.lotNumber || "",
-    }),
-  });
+        ClinicName: request?.caseInfos?.clinicName || "",
+        PatientName: request?.caseInfos?.patientName || "",
+        Tooth: request?.caseInfos?.tooth || "",
+        ImplantManufacturer: request?.caseInfos?.implantManufacturer || "",
+        ImplantSystem: request?.caseInfos?.implantSystem || "",
+        ImplantType: request?.caseInfos?.implantType || "",
+        MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
+        ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
+        WorkType: request?.caseInfos?.workType || "",
+        LotNumber: request?.caseInfos?.lotNumber || "",
+      }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    const err = new Error(
+      "Esprit 서버에 연결할 수 없습니다. Esprit 서버(8001)를 실행한 후 다시 시도해주세요."
+    );
+    err.statusCode = 503;
+    throw err;
+  } finally {
+    clearTimeout(t);
+  }
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     const err = new Error(
       `Esprit 트리거 실패 (${resp.status}): ${text || ""}`.trim()
     );
-    err.statusCode = 502;
+    err.statusCode = 503;
     throw err;
   }
 }
@@ -132,23 +148,38 @@ async function triggerBridgeForCnc({ request }) {
     throw err;
   }
 
-  const resp = await fetch(
-    `${BRIDGE_PROCESS_BASE.replace(/\/$/, "")}/api/bridge/process-file`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fileName: ncFileName,
-        requestId: request.requestId,
-      }),
-    }
-  );
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  let resp;
+  try {
+    resp = await fetch(
+      `${BRIDGE_PROCESS_BASE.replace(/\/$/, "")}/api/bridge/process-file`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: ncFileName,
+          requestId: request.requestId,
+        }),
+        signal: controller.signal,
+      }
+    );
+  } catch {
+    const err = new Error(
+      "Bridge 서버에 연결할 수 없습니다. Bridge 서버(8002)를 실행한 후 다시 시도해주세요."
+    );
+    err.statusCode = 503;
+    throw err;
+  } finally {
+    clearTimeout(t);
+  }
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     const err = new Error(
       `Bridge 트리거 실패 (${resp.status}): ${text || ""}`.trim()
     );
-    err.statusCode = 502;
+    err.statusCode = 503;
     throw err;
   }
 }

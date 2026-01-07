@@ -350,19 +350,24 @@ export const PreviewModal = ({
                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
             disabled={reviewSaving || !canApprove}
-            onClick={(e) => {
+            onClick={async (e) => {
               e.preventDefault();
               e.stopPropagation();
-              void onUpdateReviewStatus({
-                req,
-                status: "APPROVED",
-                stageOverride: currentReviewStageKey,
-                keepPreviewOpen: true,
-              }).then(() => {
+              try {
+                await onUpdateReviewStatus({
+                  req,
+                  status: "APPROVED",
+                  stageOverride: currentReviewStageKey,
+                  keepPreviewOpen: true,
+                });
+                // 성공 시에만 다음 요청으로 이동
                 if (onOpenNextRequest && req._id) {
                   onOpenNextRequest(req._id);
                 }
-              });
+              } catch (err) {
+                // 실패 시(BG 앱 미시동 등) 다음 공정으로 넘기지 않음
+                console.error("Review status update failed:", err);
+              }
             }}
             aria-label="다음 공정"
             title="다음 공정"

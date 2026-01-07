@@ -611,7 +611,7 @@ export const RequestPage = ({
         toast({
           title: "다운로드 중...",
           description: "STL을 불러오고 있습니다.",
-          duration: 60000,
+          duration: 3000,
         });
 
         const blobToFile = (blob: Blob, filename: string) =>
