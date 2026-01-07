@@ -12,6 +12,8 @@ ZIP_PATH="$PARENT_DIR/$ZIP_NAME"
 
 BACKEND_NODE_MODULES_DIR="$BACKEND_DIR/node_modules"
 BACKEND_NODE_MODULES_BACKUP_DIR="$PARENT_DIR/.backend_node_modules__eb_deploy_backup"
+FRONTEND_NODE_MODULES_DIR="$FRONTEND_DIR/node_modules"
+FRONTEND_NODE_MODULES_BACKUP_DIR="$PARENT_DIR/.frontend_node_modules__eb_deploy_backup"
 
 # 로그 출력 함수
 info() {
@@ -61,6 +63,11 @@ restore_backend_node_modules() {
   if [[ -d "$BACKEND_NODE_MODULES_BACKUP_DIR" && ! -d "$BACKEND_NODE_MODULES_DIR" ]]; then
     mv "$BACKEND_NODE_MODULES_BACKUP_DIR" "$BACKEND_NODE_MODULES_DIR" || true
     info "backend/node_modules 복구 완료"
+  fi
+
+  if [[ -d "$FRONTEND_NODE_MODULES_BACKUP_DIR" && ! -d "$FRONTEND_NODE_MODULES_DIR" ]]; then
+    mv "$FRONTEND_NODE_MODULES_BACKUP_DIR" "$FRONTEND_NODE_MODULES_DIR" || true
+    info "frontend/node_modules 복구 완료"
   fi
 }
 
@@ -163,6 +170,11 @@ if [[ -d "$BACKEND_NODE_MODULES_DIR" ]]; then
   info "EB CLI 패키징 RecursionError 방지를 위해 backend/node_modules 임시 이동"
   rm -rf "$BACKEND_NODE_MODULES_BACKUP_DIR" || true
   mv "$BACKEND_NODE_MODULES_DIR" "$BACKEND_NODE_MODULES_BACKUP_DIR"
+fi
+if [[ -d "$FRONTEND_NODE_MODULES_DIR" ]]; then
+  info "EB CLI 패키징 RecursionError 방지를 위해 frontend/node_modules 임시 이동"
+  rm -rf "$FRONTEND_NODE_MODULES_BACKUP_DIR" || true
+  mv "$FRONTEND_NODE_MODULES_DIR" "$FRONTEND_NODE_MODULES_BACKUP_DIR"
 fi
 
 (cd "$WEB_DIR" && eb deploy --label "$TIMESTAMP" --message "Deploy $TIMESTAMP ($ENV_MODE)") || error "eb deploy 실패"
