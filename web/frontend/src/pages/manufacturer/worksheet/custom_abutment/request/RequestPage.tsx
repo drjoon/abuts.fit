@@ -21,11 +21,8 @@ import {
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { useToast } from "@/hooks/use-toast";
-import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 import { Badge } from "@/components/ui/badge";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
-import { StlPreviewViewer } from "@/components/StlPreviewViewer";
-import { getFileBlob, setFileBlob } from "@/utils/stlIndexedDb";
 import { Dialog } from "@/components/ui/dialog";
 import {
   DialogContent,
@@ -50,6 +47,8 @@ import {
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
 import { PreviewModal } from "./PreviewModal";
 import { useRequestFileHandlers } from "./useRequestFileHandlers";
+import { usePreviewLoader } from "./usePreviewLoader";
+import { useStageDropHandlers } from "./useStageDropHandlers";
 
 type FilePreviewInfo = {
   originalName: string;
@@ -109,11 +108,8 @@ export const RequestPage = ({
   );
   const [visibleCount, setVisibleCount] = useState(9);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [ocrProcessing, setOcrProcessing] = useState(false);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
-    // 우선 UTF-8 시도 후 깨진 경우 EUC-KR로 재시도
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
     const utf8Text = utf8Decoder.decode(buffer);
     if (!utf8Text.includes("\uFFFD")) return utf8Text;
@@ -126,7 +122,21 @@ export const RequestPage = ({
   }, []);
 
   const { toast } = useToast();
-  const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
+
+  const { handleOpenPreview } = usePreviewLoader({
+    token,
+    isCamStage,
+    isMachiningStage,
+    tabStage,
+    decodeNcText,
+    setPreviewLoading,
+    setPreviewNcText,
+    setPreviewNcName,
+    setPreviewStageUrl,
+    setPreviewStageName,
+    setPreviewFiles,
+    setPreviewOpen,
+  });
 
   const fetchRequests = useCallback(async () => {
     if (!token) return;
@@ -226,277 +236,40 @@ export const RequestPage = ({
     decodeNcText,
   });
 
-  const handleImageDropForOCR = useCallback(
-    async (files: File[]) => {
-      if (!isMachiningStage || !token) return;
-
-      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
-
-      if (imageFiles.length === 0) {
-        toast({
-          title: "이미지 파일이 아닙니다",
-          description: "이미지 파일(.png, .jpg 등)만 업로드할 수 있습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setOcrProcessing(true);
-
-      try {
-        // S3에 이미지 업로드
-        const uploaded = await uploadToS3(imageFiles);
-        if (!uploaded || uploaded.length === 0) {
-          throw new Error("이미지 업로드 실패");
-        }
-
-        const uploadedFile = uploaded[0];
-
-        // OCR API 호출
-        const ocrRes = await fetch("/api/ai/recognize-lot-number", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            s3Key: uploadedFile.key,
-            originalName: uploadedFile.originalName,
-          }),
-        });
-
-        if (!ocrRes.ok) {
-          throw new Error("OCR 처리 실패");
-        }
-
-        const ocrData = await ocrRes.json();
-        const recognizedLotNumber = ocrData?.data?.lotNumber;
-
-        if (!recognizedLotNumber) {
-          toast({
-            title: "로트넘버를 인식하지 못했습니다",
-            description:
-              "이미지에서 로트넘버를 찾을 수 없습니다. 수동으로 업로드해주세요.",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        // 로트넘버와 일치하는 request 찾기
-        const matchingRequest = requests.find(
-          (req) => req.lotNumber?.trim() === recognizedLotNumber.trim()
-        );
-
-        if (!matchingRequest) {
-          toast({
-            title: "일치하는 의뢰를 찾을 수 없습니다",
-            description: `인식된 로트넘버: ${recognizedLotNumber}`,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        // 해당 request에 이미지 업로드
-        await handleUploadStageFile({
-          req: matchingRequest,
-          stage: "machining",
-          file: imageFiles[0],
-          source: "manual",
-        });
-
-        toast({
-          title: "업로드 완료",
-          description: `로트넘버 ${recognizedLotNumber}에 이미지가 업로드되었습니다.`,
-        });
-      } catch (error: any) {
-        console.error("OCR 처리 오류:", error);
-        toast({
-          title: "OCR 처리 실패",
-          description: error.message || "오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setOcrProcessing(false);
-      }
-    },
-    [
-      isMachiningStage,
-      token,
-      uploadToS3,
-      requests,
-      handleUploadStageFile,
-      toast,
-    ]
-  );
-
-  useEffect(() => {
-    if (!(isMachiningStage || isCamStage)) return;
-
-    const onWindowDragOver = (e: globalThis.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDraggingOver(true);
-    };
-
-    const onWindowDragLeave = (e: globalThis.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDraggingOver(false);
-    };
-
-    const onWindowDrop = (e: globalThis.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDraggingOver(false);
-
-      const files = Array.from(e.dataTransfer?.files || []);
-      if (files.length === 0) return;
-
-      if (isMachiningStage) {
-        void handleImageDropForOCR(files);
-        return;
-      }
-
-      if (isCamStage) {
-        const filledStlFiles = files.filter((f) =>
-          f.name.toLowerCase().endsWith(".filled.stl")
-        );
-        if (filledStlFiles.length === 0) return;
-
-        const getBase = (n: string) => {
-          const s = String(n || "").trim();
-          return s
-            .replace(/\.filled\.stl$/i, "")
-            .replace(/\.cam\.stl$/i, "")
-            .replace(/\.stl$/i, "")
-            .replace(/\.nc$/i, "");
-        };
-
-        const normalize = (n: string) =>
-          n.trim().toLowerCase().normalize("NFC");
-
-        filledStlFiles.forEach((file) => {
-          const fileBase = normalize(getBase(file.name));
-          const matchingReq = requests.find((r) => {
-            const rBase = normalize(
-              getBase(
-                r.caseInfos?.camFile?.fileName ||
-                  r.caseInfos?.camFile?.originalName ||
-                  r.caseInfos?.file?.fileName ||
-                  r.caseInfos?.file?.originalName ||
-                  ""
-              )
-            );
-            return rBase === fileBase;
-          });
-
-          if (matchingReq) {
-            void handleUploadCam(matchingReq, [file]);
-          }
-        });
-      }
-    };
-
-    window.addEventListener("dragover", onWindowDragOver);
-    window.addEventListener("dragleave", onWindowDragLeave);
-    window.addEventListener("drop", onWindowDrop);
-
-    return () => {
-      window.removeEventListener("dragover", onWindowDragOver);
-      window.removeEventListener("dragleave", onWindowDragLeave);
-      window.removeEventListener("drop", onWindowDrop);
-    };
-  }, [
+  const {
+    handlePageDrop,
+    handlePageDragOver,
+    handlePageDragLeave,
+    isDraggingOver,
+    ocrProcessing,
+  } = useStageDropHandlers({
     isMachiningStage,
     isCamStage,
-    handleImageDropForOCR,
-    handleUploadCam,
+    token,
     requests,
-  ]);
-
-  const handlePageDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDraggingOver(false);
-
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length === 0) return;
-
-      if (isMachiningStage) {
-        void handleImageDropForOCR(files);
-      } else if (isCamStage) {
-        // .filled.stl 파일 매칭 업로드
-        const filledStlFiles = files.filter((f) =>
-          f.name.toLowerCase().endsWith(".filled.stl")
-        );
-        if (filledStlFiles.length === 0) return;
-
-        const getBase = (n: string) => {
-          const s = String(n || "").trim();
-          return s
-            .replace(/\.filled\.stl$/i, "")
-            .replace(/\.cam\.stl$/i, "")
-            .replace(/\.stl$/i, "")
-            .replace(/\.nc$/i, "");
-        };
-
-        const normalize = (n: string) =>
-          n.trim().toLowerCase().normalize("NFC");
-
-        filledStlFiles.forEach((file) => {
-          const fileBase = normalize(getBase(file.name));
-          const matchingReq = requests.find((r) => {
-            const rBase = normalize(
-              getBase(
-                r.caseInfos?.camFile?.fileName ||
-                  r.caseInfos?.camFile?.originalName ||
-                  r.caseInfos?.file?.fileName ||
-                  r.caseInfos?.file?.originalName ||
-                  ""
-              )
-            );
-            return rBase === fileBase;
-          });
-
-          if (matchingReq) {
-            void handleUploadCam(matchingReq, [file]);
-          }
-        });
-      }
-    },
-    [
-      isMachiningStage,
-      isCamStage,
-      handleImageDropForOCR,
-      handleUploadNc,
-      requests,
-    ]
-  );
-
-  const handlePageDragOver = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (isMachiningStage || isCamStage) {
-        setIsDraggingOver(true);
-      }
-    },
-    [isMachiningStage, isCamStage]
-  );
-
-  const handlePageDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOver(false);
-  }, []);
+    handleUploadStageFile,
+    handleUploadCam,
+  });
 
   const handleUploadByStage = useCallback(
     (req: ManufacturerRequest, files: File[]) => {
-      if (isCamStage) return handleUploadNc(req, files);
-      return handleUploadCam(req, files);
+      if (isCamStage) return handleUploadCam(req, files);
+      if (isMachiningStage) return handleUploadNc(req, files);
+      return handleUploadStageFile({
+        req,
+        stage: tabStage as "machining" | "packaging" | "shipping" | "tracking",
+        file: files[0],
+        source: "manual",
+      });
     },
-    [isCamStage, handleUploadNc, handleUploadCam]
+    [
+      isCamStage,
+      isMachiningStage,
+      handleUploadNc,
+      handleUploadCam,
+      handleUploadStageFile,
+      tabStage,
+    ]
   );
 
   const handleUploadFromModal = useCallback(
@@ -577,216 +350,53 @@ export const RequestPage = ({
         }
         const data = await res.json();
         const url = data?.data?.url;
-        if (url) {
-          window.open(url, "_blank");
-        } else {
-          throw new Error("no url");
-        }
+        if (!url) throw new Error("download url missing");
+
+        const fetchAndSave = async (signedUrl: string, filename: string) => {
+          const r = await fetch(signedUrl);
+          if (!r.ok) throw new Error("download failed");
+          const blob = await r.blob();
+
+          const nameWithExt = filename.includes(".")
+            ? filename
+            : `${filename}.stl`;
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = nameWithExt;
+          link.click();
+          URL.revokeObjectURL(link.href);
+        };
+
+        const fileName =
+          isMachiningStage || isCamStage
+            ? req.caseInfos?.camFile?.fileName ||
+              req.caseInfos?.camFile?.originalName ||
+              req.caseInfos?.file?.fileName ||
+              req.caseInfos?.file?.originalName ||
+              "download.stl"
+            : req.caseInfos?.file?.fileName ||
+              req.caseInfos?.file?.originalName ||
+              "download.stl";
+
+        await fetchAndSave(url, fileName);
+
+        toast({
+          title: "다운로드 시작",
+          description: "파일을 내려받고 있습니다.",
+          duration: 2000,
+        });
       } catch (error) {
         toast({
           title: "다운로드 실패",
-          description: isMachiningStage
-            ? "NC 파일을 가져올 수 없습니다."
-            : isCamStage
-            ? "CAM STL을 가져올 수 없습니다."
-            : "원본 STL을 가져올 수 없습니다.",
+          description: "파일을 내려받을 수 없습니다.",
           variant: "destructive",
+          duration: 3000,
         });
       } finally {
         setDownloading((prev) => ({ ...prev, [req._id]: false }));
       }
     },
-    [token, toast, isCamStage, isMachiningStage, tabStage]
-  );
-
-  const handleOpenPreview = useCallback(
-    async (req: ManufacturerRequest) => {
-      if (!token) return;
-      try {
-        setPreviewLoading(true);
-        setPreviewNcText("");
-        setPreviewNcName("");
-        setPreviewStageUrl("");
-        setPreviewStageName("");
-        toast({
-          title: "다운로드 중...",
-          description: "STL을 불러오고 있습니다.",
-          duration: 3000,
-        });
-
-        const blobToFile = (blob: Blob, filename: string) =>
-          new File([blob], filename, {
-            type: blob.type || "model/stl",
-          });
-
-        const fetchAsFileWithCache = async (
-          cacheKey: string | null,
-          signedUrl: string,
-          filename: string
-        ) => {
-          if (cacheKey) {
-            const cached = await getFileBlob(cacheKey);
-            if (cached) {
-              return blobToFile(cached, filename);
-            }
-          }
-
-          const r = await fetch(signedUrl);
-          if (!r.ok) throw new Error("file fetch failed");
-          const blob = await r.blob();
-
-          if (cacheKey) {
-            try {
-              await setFileBlob(cacheKey, blob);
-            } catch {
-              // ignore cache write errors
-            }
-          }
-
-          return blobToFile(blob, filename);
-        };
-
-        const title =
-          req.caseInfos?.patientName ||
-          req.requestor?.organization ||
-          req.requestor?.name ||
-          "파일 미리보기";
-
-        const originalName =
-          req.caseInfos?.file?.fileName ||
-          req.caseInfos?.file?.originalName ||
-          "original.stl";
-
-        const originalCacheKey = req.caseInfos?.file?.s3Key || null;
-
-        const originalUrlRes = await fetch(
-          `/api/requests/${req._id}/original-file-url`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!originalUrlRes.ok) throw new Error("original url failed");
-        const originalUrlBody = await originalUrlRes.json();
-        const originalSignedUrl = originalUrlBody?.data?.url;
-        if (!originalSignedUrl) throw new Error("no original url");
-
-        const originalFile = await fetchAsFileWithCache(
-          originalCacheKey,
-          originalSignedUrl,
-          originalName
-        );
-
-        let camFile: File | null = null;
-        const hasCamFile = !!(
-          req.caseInfos?.camFile?.s3Key ||
-          req.caseInfos?.camFile?.fileName ||
-          req.caseInfos?.camFile?.originalName
-        );
-
-        if (hasCamFile) {
-          const camName =
-            req.caseInfos?.camFile?.fileName ||
-            req.caseInfos?.camFile?.originalName ||
-            originalName;
-
-          const camCacheKey = req.caseInfos?.camFile?.s3Key || null;
-          const camUrlRes = await fetch(
-            `/api/requests/${req._id}/cam-file-url`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
-          );
-          if (camUrlRes.ok) {
-            const camUrlBody = await camUrlRes.json();
-            const camSignedUrl = camUrlBody?.data?.url;
-            if (camSignedUrl) {
-              camFile = await fetchAsFileWithCache(
-                camCacheKey,
-                camSignedUrl,
-                camName
-              );
-            }
-          }
-        }
-
-        // CAM / 생산 탭에서 NC 프리뷰를 보여주기 위해 NC를 읽어온다.
-        if (isCamStage || isMachiningStage) {
-          const ncMeta = req.caseInfos?.ncFile;
-          if (ncMeta?.s3Key) {
-            const ncUrlRes = await fetch(
-              `/api/requests/${req._id}/nc-file-url`,
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
-            if (ncUrlRes.ok) {
-              const ncUrlBody = await ncUrlRes.json();
-              const ncSignedUrl = ncUrlBody?.data?.url;
-              if (ncSignedUrl) {
-                const ncName =
-                  ncMeta?.fileName || ncMeta?.originalName || "program.nc";
-                const r = await fetch(ncSignedUrl);
-                if (r.ok) {
-                  const buf = await r.arrayBuffer();
-                  const text = decodeNcText(buf);
-                  setPreviewNcText(text);
-                  setPreviewNcName(ncName);
-                }
-              }
-            }
-          }
-        }
-
-        // 생산/발송/추적관리 탭: stageFiles 이미지 URL도 불러온다.
-        const stageKey = getReviewStageKeyByTab({
-          stage: tabStage,
-          isCamStage,
-          isMachiningStage,
-        });
-        if (
-          stageKey === "machining" ||
-          stageKey === "packaging" ||
-          stageKey === "shipping" ||
-          stageKey === "tracking"
-        ) {
-          const stageMeta = req.caseInfos?.stageFiles?.[stageKey];
-          if (stageMeta?.s3Key) {
-            const stageUrlRes = await fetch(
-              `/api/requests/${
-                req._id
-              }/stage-file-url?stage=${encodeURIComponent(stageKey)}`,
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
-            if (stageUrlRes.ok) {
-              const stageUrlBody = await stageUrlRes.json();
-              const signedUrl = stageUrlBody?.data?.url;
-              if (signedUrl) {
-                setPreviewStageUrl(signedUrl);
-                setPreviewStageName(stageMeta?.fileName || `${stageKey}-file`);
-              }
-            }
-          }
-        }
-
-        setPreviewFiles({
-          original: originalFile,
-          cam: camFile,
-          title,
-          request: req,
-        });
-        setPreviewOpen(true);
-        toast({
-          title: "다운로드 완료",
-          description: "캐시에서 재사용됩니다.",
-          duration: 2000,
-        });
-      } catch (error) {
-        toast({
-          title: "미리보기 실패",
-          description: "파일을 불러올 수 없습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setPreviewLoading(false);
-      }
-    },
-    [token, toast, isCamStage, isMachiningStage]
+    [token, isMachiningStage, isCamStage, toast]
   );
 
   useEffect(() => {
