@@ -373,7 +373,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         const existingRequest = data?.existingRequest;
 
         // 0: 의뢰, 1: CAM, 2: 생산, 3: 발송, 4: 완료
-        if (stageOrder === 2 || stageOrder === 3) {
+        if (stageOrder >= 2) {
           blockedFiles.push(f);
           modalDuplicates.push({
             caseId: `${f.name}:${f.size}`,
@@ -403,7 +403,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         toast({
           title: "중복 의뢰 불가",
           description:
-            "생산/발송 단계의 기존 의뢰는 변경/취소할 수 없습니다. 기존 의뢰를 확인해주세요.",
+            "CAM 이후(생산/발송) 단계의 기존 의뢰는 변경/취소할 수 없습니다. CAM 단계까지는 기존 의뢰를 취소하거나 교체할 수 있습니다. 기존 의뢰를 확인해주세요.",
           variant: "destructive",
           duration: 4500,
         });
@@ -698,7 +698,46 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     caseInfosMap,
     patchDraftImmediately,
     onDuplicateDetected: (payload) => {
-      setDuplicatePrompt(payload);
+      const toStageOrder = (req: any) => {
+        const stage = String(req?.manufacturerStage || "").trim();
+        const status = String(req?.status || "").trim();
+        const status2 = String(req?.status2 || "").trim();
+        if (status2 === "완료") return 4;
+        const stageOrderMap: Record<string, number> = {
+          의뢰: 0,
+          의뢰접수: 0,
+          request: 0,
+          cam: 1,
+          CAM: 1,
+          가공전: 1,
+          production: 2,
+          생산: 2,
+          가공후: 2,
+          shipping: 3,
+          발송: 3,
+          추적관리: 3,
+          배송대기: 3,
+          배송중: 3,
+          completed: 4,
+          완료: 4,
+        };
+        return stageOrderMap[stage] ?? stageOrderMap[status] ?? 0;
+      };
+
+      const mappedDuplicates = Array.isArray(payload?.duplicates)
+        ? payload.duplicates.map((dup: any) => {
+            const so = toStageOrder(dup?.existingRequest);
+            return {
+              ...dup,
+              lockedReason: so >= 2 ? "production" : undefined,
+            };
+          })
+        : [];
+
+      setDuplicatePrompt({
+        ...payload,
+        duplicates: mappedDuplicates,
+      });
     },
   });
 

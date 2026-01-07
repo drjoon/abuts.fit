@@ -349,16 +349,16 @@ export function NewRequestDetailsSection({
                                       const body: any = res.data || {};
                                       const data = body?.data || body;
 
-                                      // CAM 이상(= stageOrder >= 1)인 기존 의뢰가 있으면 차단
+                                      // 생산/발송/완료(= stageOrder >= 2)인 기존 의뢰가 있으면 차단
                                       if (
                                         res.ok &&
                                         data?.exists &&
-                                        Number(data?.stageOrder) >= 1
+                                        Number(data?.stageOrder) >= 2
                                       ) {
                                         toast({
                                           title: "중복 의뢰가 감지되었습니다",
                                           description:
-                                            "이미 진행 중(CAM 이상)인 의뢰가 있습니다. 기존 의뢰를 확인해주세요.",
+                                            "생산/발송/완료 단계의 기존 의뢰가 있습니다. 기존 의뢰를 확인해주세요.",
                                           variant: "destructive",
                                         });
                                         return;

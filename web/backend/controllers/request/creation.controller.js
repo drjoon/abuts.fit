@@ -32,7 +32,9 @@ const RHINO_SERVER_URL =
 export async function uploadToRhinoServer(fileBuffer, fileName) {
   try {
     const RHINO_SERVER_URL =
-      process.env.RHINO_SERVER_URL || "http://localhost:8000";
+      process.env.RHINO_SERVER_URL ||
+      process.env.RHINO_COMPUTE_BASE_URL ||
+      "http://localhost:8000";
     const formData = new FormData();
     formData.append("file", fileBuffer, { filename: fileName });
 
@@ -1406,28 +1408,28 @@ export async function hasDuplicateCase(req, res) {
       .lean();
 
     const stageOrderMap = {
+      request: 0,
       의뢰: 0,
       의뢰접수: 0,
+      cam: 1,
       CAM: 1,
       가공전: 1,
+      production: 2,
       생산: 2,
       가공후: 2,
+      shipping: 3,
       발송: 3,
       추적관리: 3,
       배송대기: 3,
       배송중: 3,
+      completed: 4,
       완료: 4,
     };
 
     const computeStageOrder = (doc) => {
-      const st = String(doc?.manufacturerStage || "").trim();
-      const status = String(doc?.status || "").trim();
-      const status2 = String(doc?.status2 || "").trim();
-
-      if (status2 === "완료") return 4;
-
-      // manufacturerStage가 authoritative. 레거시 status는 fallback으로만 사용.
-      return stageOrderMap[st] ?? stageOrderMap[status] ?? 0;
+      const normalized = normalizeRequestStage(doc);
+      if (normalized === "cancel") return -1;
+      return stageOrderMap[normalized] ?? 0;
     };
 
     let existing = null;
