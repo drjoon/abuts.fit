@@ -7,9 +7,8 @@ import RequestorOrganization from "../models/requestorOrganization.model.js";
 
 export function extractDepositCodeFromText(text) {
   const raw = String(text || "");
-  const matches = [...raw.matchAll(/(^|\D)([1-9]\d{4})(\D|$)/g)].map(
-    (m) => m?.[2]
-  );
+  // 2자리 숫자만 추출 (01~99), 숫자 경계 보존
+  const matches = [...raw.matchAll(/(^|\D)(\d{2})(\D|$)/g)].map((m) => m?.[2]);
   const uniq = Array.from(new Set(matches.filter(Boolean)));
   if (uniq.length !== 1) return "";
   return String(uniq[0]);
@@ -108,7 +107,9 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
     let matchedOrder = null;
     for (const candidate of candidates) {
       const depositorName = String(candidate?.depositorName || "").trim();
-      if (depositorName && printedContent.includes(depositorName)) {
+      if (!depositorName) continue;
+      const pattern = new RegExp(`(^|\\D)${depositorName}(\\D|$)`);
+      if (pattern.test(printedContent)) {
         matchedOrder = candidate;
         break;
       }

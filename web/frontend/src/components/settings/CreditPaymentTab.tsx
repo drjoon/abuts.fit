@@ -228,11 +228,11 @@ export const CreditPaymentTab = ({ userData }: Props) => {
           <span className="text-lg">⚠️</span>
           <div className="flex-1">
             <div className="font-bold text-red-900 text-base mb-1">
-              입금자명을 반드시 "{pendingOrder.depositorName}"으로 입력하세요!
+              입금자명에 반드시 입금자코드 "{pendingOrder.depositCode}"를
+              입력해주세요!
             </div>
             <div className="text-red-800 space-y-0.5">
-              <div>• 다른 이름으로 입금하시면 자동 처리가 되지 않습니다.</div>
-              <div>• 은행에 따라 앞뒤에 다른 문자가 붙어도 괜찮습니다.</div>
+              <div>• 입금자명에 코드만 적어도 무방합니다.</div>
               <div>• 입금 확인 후 자동으로 크레딧이 충전됩니다.</div>
             </div>
           </div>
@@ -269,7 +269,10 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
   const filteredOrders = useMemo(() => {
     const now = Date.now();
-    const daysMap: Record<Exclude<PeriodFilterValue, "all">, number> = {
+    const daysMap: Record<
+      Extract<PeriodFilterValue, "7d" | "30d" | "90d">,
+      number
+    > = {
       "7d": 7,
       "30d": 30,
       "90d": 90,
@@ -288,7 +291,42 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       });
     }
 
-    const days = daysMap[ordersPeriod];
+    if (ordersPeriod === "lastMonth" || ordersPeriod === "thisMonth") {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth();
+
+      const start =
+        ordersPeriod === "thisMonth"
+          ? new Date(year, month, 1)
+          : new Date(year, month - 1, 1);
+      const end =
+        ordersPeriod === "thisMonth"
+          ? new Date(year, month + 1, 1)
+          : new Date(year, month, 1);
+
+      return items
+        .filter((o) => {
+          const t = new Date(
+            String(o.createdAt || o.matchedAt || o.expiresAt || "")
+          ).getTime();
+          if (!Number.isFinite(t)) return true;
+          return t >= start.getTime() && t < end.getTime();
+        })
+        .sort((a, b) => {
+          const ta = new Date(
+            String(a.createdAt || a.matchedAt || a.expiresAt || 0)
+          ).getTime();
+          const tb = new Date(
+            String(b.createdAt || b.matchedAt || b.expiresAt || 0)
+          ).getTime();
+          return (
+            (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0)
+          );
+        });
+    }
+
+    const days = daysMap[ordersPeriod as keyof typeof daysMap];
     const cutoff = now - days * 24 * 60 * 60 * 1000;
     return items
       .filter((o) => {

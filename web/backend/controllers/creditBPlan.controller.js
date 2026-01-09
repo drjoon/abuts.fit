@@ -1,7 +1,10 @@
 import ChargeOrder from "../models/chargeOrder.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
-import { ensureOrganizationDepositCode } from "../utils/depositCode.utils.js";
+import {
+  ensureOrganizationDepositCode,
+  generateChargeOrderDepositCode,
+} from "../utils/depositCode.utils.js";
 
 function roundVat(amount) {
   return Math.round(amount * 0.1);
@@ -78,7 +81,72 @@ export async function createChargeOrder(req, res) {
   const vatAmount = roundVat(supplyAmount);
   const amountTotal = supplyAmount + vatAmount;
 
-  const { depositCode } = await ensureOrganizationDepositCode(organizationId);
+  // 기존 대기 건이 있으면 재사용 (유효기간 연장/코드 재발급 방지)
+  const now = new Date();
+  const existing = await ChargeOrder.findOne({
+    organizationId,
+    status: "PENDING",
+    bankTransactionId: null,
+    expiresAt: { $gt: now },
+  })
+    .sort({ createdAt: -1, _id: -1 })
+    .lean();
+
+  if (existing) {
+    const needsMigration = !String(existing.depositCode || "")
+      .trim()
+      .match(/^\d{2}$/);
+
+    if (needsMigration) {
+      const { depositCode: migratedCode } =
+        await generateChargeOrderDepositCode();
+      const migrated = await ChargeOrder.findOneAndUpdate(
+        {
+          _id: existing._id,
+          status: "PENDING",
+          bankTransactionId: null,
+          expiresAt: { $gt: now },
+        },
+        { $set: { depositCode: migratedCode, depositorName: migratedCode } },
+        { new: true }
+      ).lean();
+
+      const doc = migrated || existing;
+      return res.status(200).json({
+        success: true,
+        data: {
+          id: doc._id,
+          status: doc.status,
+          depositCode: doc.depositCode,
+          depositorName: doc.depositorName,
+          supplyAmount: doc.supplyAmount,
+          vatAmount: doc.vatAmount,
+          amountTotal: doc.amountTotal,
+          expiresAt: doc.expiresAt,
+          depositAccount: getDepositAccountInfo(),
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: existing._id,
+        status: existing.status,
+        depositCode: existing.depositCode,
+        depositorName: existing.depositorName,
+        supplyAmount: existing.supplyAmount,
+        vatAmount: existing.vatAmount,
+        amountTotal: existing.amountTotal,
+        expiresAt: existing.expiresAt,
+        depositAccount: getDepositAccountInfo(),
+      },
+    });
+  }
+
+  // 기공소 코드(기존)와 별개로, 충전 요청마다 일회성 2자리 코드 발급
+  await ensureOrganizationDepositCode(organizationId); // 기존 보존 (타 기능 호환)
+  const { depositCode } = await generateChargeOrderDepositCode();
 
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -86,7 +154,7 @@ export async function createChargeOrder(req, res) {
     organizationId,
     userId,
     depositCode,
-    depositorName: userName,
+    depositorName: depositCode,
     supplyAmount,
     vatAmount,
     amountTotal,

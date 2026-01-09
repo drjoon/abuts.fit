@@ -1,10 +1,14 @@
 import Counter from "../models/counter.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
+import ChargeOrder from "../models/chargeOrder.model.js";
+
+const ORG_DEPOSIT_CODE_COUNTER_KEY = "requestorOrganization.depositCode.v2";
+const CHARGE_ORDER_DEPOSIT_CODE_COUNTER_KEY = "chargeOrder.depositCode.v2";
 
 function formatDepositCode(n) {
   const num = Number(n);
-  if (!Number.isFinite(num) || num < 10000) return "";
-  return String(num).padStart(5, "0");
+  if (!Number.isFinite(num) || num < 1 || num > 99) return "";
+  return String(num).padStart(2, "0");
 }
 
 async function getNextSequence({ key, startAt }) {
@@ -45,10 +49,10 @@ export async function ensureOrganizationDepositCode(organizationId) {
 
   for (let i = 0; i < 5; i += 1) {
     const next = await getNextSequence({
-      key: "requestorOrganization.depositCode",
-      startAt: 10001,
+      key: ORG_DEPOSIT_CODE_COUNTER_KEY,
+      startAt: 1,
     });
-    if (next > 99999) {
+    if (next > 99) {
       throw new Error("depositCode가 범위를 초과했습니다.");
     }
 
@@ -84,4 +88,28 @@ export async function ensureOrganizationDepositCode(organizationId) {
   }
 
   throw new Error("depositCode 발급에 실패했습니다.");
+}
+
+export async function generateChargeOrderDepositCode() {
+  // 동시간대 99건 초과가 없다는 전제 하에 시퀀스 기반으로 01~99 순환 발급
+  for (let i = 0; i < 10; i += 1) {
+    const next = await getNextSequence({
+      key: CHARGE_ORDER_DEPOSIT_CODE_COUNTER_KEY,
+      startAt: 1,
+    });
+    const mod = ((next - 1) % 99) + 1; // 1~99 순환
+    const depositCode = formatDepositCode(mod);
+
+    // 현재 활성(PENDING) 건과 충돌하지 않도록 확인
+    const conflict = await ChargeOrder.exists({
+      depositCode,
+      status: "PENDING",
+      expiresAt: { $gt: new Date() },
+    });
+    if (conflict) continue;
+
+    return { depositCode };
+  }
+
+  throw new Error("사용 가능한 입금자코드가 부족합니다.");
 }
