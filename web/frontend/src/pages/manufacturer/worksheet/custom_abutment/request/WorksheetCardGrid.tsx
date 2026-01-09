@@ -112,6 +112,19 @@ export const WorksheetCardGrid = ({
       const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
 
+      const sp = request.shippingPriority;
+      const urgency = String(sp?.level || "").trim();
+      const urgencyClass = (() => {
+        if (isCompletedForCurrentStage) return "";
+        if (urgency === "danger") {
+          return "border-rose-300 bg-rose-50/80 shadow-[0_0_0_1px_rgba(244,63,94,0.25)]";
+        }
+        if (urgency === "warning") {
+          return "border-amber-300 bg-amber-50/80 shadow-[0_0_0_1px_rgba(245,158,11,0.25)]";
+        }
+        return "";
+      })();
+
       const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -156,7 +169,7 @@ export const WorksheetCardGrid = ({
           className={`relative shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed group/card ${
             isCompletedForCurrentStage
               ? "border-emerald-300 bg-emerald-50/80 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
-              : "border-slate-200"
+              : urgencyClass || "border-slate-200"
           }`}
           onClick={() => onOpenPreview(request)}
           onDrop={handleDrop}
@@ -235,12 +248,35 @@ export const WorksheetCardGrid = ({
                         })}
                       </div>
                       <div className="col-span-1 flex justify-end">
-                        <Badge
-                          variant="outline"
-                          className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
-                        >
-                          {stageLabel}
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          {sp?.mode === "express" && (
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] px-2 py-0.5 bg-violet-50 text-violet-700 border-violet-200 font-semibold"
+                            >
+                              신속
+                            </Badge>
+                          )}
+                          {sp?.label &&
+                            (urgency === "danger" || urgency === "warning") && (
+                              <Badge
+                                variant="outline"
+                                className={`text-[11px] px-2 py-0.5 font-semibold ${
+                                  urgency === "danger"
+                                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                }`}
+                              >
+                                {sp.label}
+                              </Badge>
+                            )}
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                          >
+                            {stageLabel}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
                   </div>

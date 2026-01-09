@@ -12,7 +12,7 @@ import {
  * 2. CAM 시작 → CAM 완료 (5분)
  * 3. CAM 완료 → 가공 시작 → 가공 완료 (15분)
  * 4. 가공 완료 → 세척/검사/포장 대기 (50~100개 모아서 처리, 1일 소요)
- * 5. 배치 처리 완료 → 택배 수거 (다음날 14:00)
+ * 5. 배치 처리 완료 → 택배 수거 (다음날 16:00)
  * 6. 택배 수거 → 도착 (1영업일)
  *
  * CNC 장비별 소재 세팅:
@@ -28,7 +28,7 @@ import {
 const CAM_DURATION_MINUTES = 5; // CAM 시작 → 완료
 const MACHINING_DURATION_MINUTES = 15; // 가공 시작 → 완료
 const BATCH_PROCESSING_DAYS = 1; // 세척/검사/포장 (50~100개 모아서)
-const DAILY_PICKUP_HOUR = 14; // 택배 수거 시각 (14:00)
+const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
 
 /**
  * KST 시각 생성
@@ -59,13 +59,13 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
 }
 
 /**
- * 다음 택배 수거 시각 계산 (매일 14:00)
+ * 다음 택배 수거 시각 계산 (매일 16:00)
  */
 function getNextPickupTime(fromDateTime) {
   const pickupTime = new Date(fromDateTime);
   pickupTime.setHours(DAILY_PICKUP_HOUR, 0, 0, 0);
 
-  // 이미 14:00 지났으면 다음날 14:00
+  // 이미 16:00 지났으면 다음날 16:00
   if (fromDateTime >= pickupTime) {
     pickupTime.setDate(pickupTime.getDate() + 1);
   }
@@ -160,7 +160,7 @@ export async function calculateInitialProductionSchedule({
   });
   const scheduledBatchProcessing = createKstDateTime(batchProcessingYmd, 12, 0);
 
-  // 배치 처리 완료 → 택배 수거 (다음날 14:00)
+  // 배치 처리 완료 → 택배 수거 (다음날 16:00)
   const scheduledShipPickup = getNextPickupTime(scheduledBatchProcessing);
 
   // 택배 수거 → 도착 (1영업일)

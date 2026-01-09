@@ -420,6 +420,9 @@ export async function createRequest(req, res) {
       requestedAt,
     };
 
+    // 레거시 호환
+    newRequest.shippingMode = shippingMode;
+
     // 최종 배송 옵션 초기화 (처음에는 원본과 동일)
     newRequest.finalShipping = {
       mode: shippingMode,
@@ -1186,6 +1189,9 @@ export async function createRequestsFromDraft(req, res) {
             mode: shippingMode,
             requestedAt,
           };
+
+          // 레거시 호환
+          newRequest.shippingMode = shippingMode;
 
           // 최종 배송 옵션 초기화
           newRequest.finalShipping = {

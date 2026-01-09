@@ -460,7 +460,12 @@ export const RequestPage = ({
       ).toLowerCase();
       return text.includes(searchLower);
     })
-    .sort((a, b) => (new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1));
+    .sort((a, b) => {
+      const aScore = a.shippingPriority?.score ?? 0;
+      const bScore = b.shippingPriority?.score ?? 0;
+      if (aScore !== bScore) return bScore - aScore;
+      return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
+    });
 
   const handleOpenNextRequest = useCallback(
     (currentReqId: string) => {

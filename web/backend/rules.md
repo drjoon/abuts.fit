@@ -65,7 +65,8 @@
 - **CAM 단계**: CAM 시작 → CAM 완료까지 5분 소요
 - **가공 단계**: CNC 가공 시작 → 가공 완료까지 15분 소요
 - **배치 처리**: 가공 완료된 반제품 50~100개를 모아서 세척/검사/포장 (1일 소요)
-- **택배 수거**: 배치 처리 완료 후 다음날 14:00에 택배사 방문하여 수거
+- **운송장 입력 마감**: 매일 15:00(KST)까지 택배사 시스템에 당일 출고 내역(운송장)을 입력
+- **택배 수거**: 매일 16:00(KST) 택배 차량이 방문하여 준비된 박스를 수거
 - **배송**: 택배 수거일 다음 영업일 도착
 - **시각 단위 관리**: 모든 스케줄을 시각(DateTime) 단위로 관리
 
@@ -79,7 +80,7 @@
    - `scheduledMachiningStart` = CAM 완료 (즉시)
    - `scheduledMachiningComplete` = 가공 시작 + 15분
    - `scheduledBatchProcessing` = 가공 완료 + 1영업일 (세척/검사/포장)
-   - `scheduledShipPickup` = 배치 처리 완료 후 다음날 14:00
+   - `scheduledShipPickup` = 배치 처리 완료 후 다음날 16:00
    - `estimatedDelivery` = 택배 수거일 + 1영업일
 
 2. **묶음배송** (`originalShipping.mode: "normal"`):
@@ -87,7 +88,7 @@
    - **6mm**: M3 전용 장비, 대기 0시간
    - **8mm**: M4 전용 장비, 대기 0시간
    - **10mm, 10mm+**: 일주일에 1~2회 소재 교체하여 생산, 평균 대기 72시간
-   - 대기 후 CAM 시작 → +5분 CAM 완료 → +15분 가공 완료 → +1일 배치 처리 → 다음날 14:00 택배 수거 → +1영업일 도착
+   - 대기 후 CAM 시작 → +5분 CAM 완료 → +15분 가공 완료 → +1일 배치 처리 → 다음날 16:00 택배 수거 → +1영업일 도착
 
 **배송 옵션 데이터 구조**:
 
@@ -103,7 +104,7 @@
   - `scheduledMachiningStart`: 가공 시작 예정 시각 (Date)
   - `scheduledMachiningComplete`: 가공 완료 예정 시각 (Date, 가공 시작 + 15분)
   - `scheduledBatchProcessing`: 배치 처리 예정 시각 (Date, 가공 완료 + 1영업일)
-  - `scheduledShipPickup`: 택배 수거 시각 (Date, 배치 처리 완료 후 다음날 14:00)
+  - `scheduledShipPickup`: 택배 수거 시각 (Date, 배치 처리 완료 후 다음날 16:00)
   - `estimatedDelivery`: 도착 예정 시각 (Date, 택배 수거일 + 1영업일)
   - `actualCamStart`, `actualCamComplete`, `actualMachiningStart`, `actualMachiningComplete`, `actualBatchProcessing`, `actualShipPickup`: 실제 시각 (Date)
   - `assignedMachine`: 할당된 CNC 장비 (String, "M3" | "M4" | null)
@@ -166,6 +167,16 @@
 - **경고(warning)**: `scheduledCamStart - 현재 시각 <= 4시간`
 - 모든 role 대시보드에 지연 위험 요약 표시 (눈에 띄게 UI 처리)
 - 제조사/관리자가 긴급 상황 인지 가능
+
+**배송 운영 마감(제조사 우선순위) 정책**:
+
+- 매일 15:00(KST) 운송장 입력 마감에 맞추기 위해, 발송 이전 단계(의뢰/CAM/생산)에 있는 의뢰는 **출고 마감(15:00) 기준으로 우선순위를 계산**한다.
+- **신속배송(Express)**:
+  - KST 기준 **당일 00:00까지 주문된 신속배송**은 당일 15:00 출고 내역에 포함되어 익일 도착하도록 처리한다.
+  - 따라서 신속배송 의뢰가 발송 이전 단계에 있다면 다른 건보다 우선순위를 높게 잡아 신속히 발송 단계까지 진행한다.
+- **묶음배송(Bulk/Normal)**:
+  - 도착예정일을 맞추기 위해, **도착 예정일 전(직전 영업일) 15:00**까지 운송장 입력이 가능해야 한다.
+  - 이를 위해 해당 시각 이전에 생산 단계까지 완료되어 발송 대기 상태가 되도록 스케줄/우선순위를 관리한다.
 
 **자동화 구현**:
 

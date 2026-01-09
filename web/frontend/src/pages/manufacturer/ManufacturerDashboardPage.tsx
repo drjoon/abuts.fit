@@ -292,9 +292,10 @@ const RiskDetailModal = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>지연 위험 상세</DialogTitle>
+          <DialogTitle>출고 마감 위험 상세</DialogTitle>
           <DialogDescription>
-            지연/주의 의뢰를 확인하고 조치하세요.
+            운송장 입력 마감(15:00) 기준으로 임박/지연 의뢰를 확인하고
+            조치하세요.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -307,7 +308,11 @@ const RiskDetailModal = ({
                 <Badge variant="outline" className="text-[10px]">
                   {item.riskLevel === "danger" ? "지연" : "주의"}
                 </Badge>
-                <span>{item.dueDate ? `도착예정 ${item.dueDate}` : "-"}</span>
+                <span>
+                  {item.dueDate
+                    ? `출고마감 ${String(item.dueDate).slice(0, 16)}`
+                    : "-"}
+                </span>
               </div>
               <div className="font-medium text-sm">{item.title}</div>
               <div className="text-xs text-muted-foreground">

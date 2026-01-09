@@ -81,6 +81,9 @@ export async function updateMyShippingMode(req, res) {
             updatedAt: new Date(),
           };
 
+          // 레거시 호환
+          req.shippingMode = shippingMode;
+
           // 생산 스케줄 업데이트
           req.productionSchedule = newSchedule;
 

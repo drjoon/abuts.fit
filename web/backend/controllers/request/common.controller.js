@@ -16,6 +16,7 @@ import {
   normalizeCaseInfosImplantFields,
   getTodayYmdInKst,
 } from "./utils.js";
+import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getOrganizationCreditBalanceBreakdown } from "./creation.controller.js";
 import s3Utils, {
   deleteFileFromS3,
@@ -745,7 +746,16 @@ export async function getAllRequests(req, res) {
       .limit(limit)
       .lean();
 
-    const requests = rawRequests;
+    const now = new Date();
+    const requests = await Promise.all(
+      rawRequests.map(async (r) => {
+        const shippingPriority = await computeShippingPriority({
+          request: r,
+          now,
+        });
+        return { ...r, shippingPriority };
+      })
+    );
 
     // 전체 의뢰 수
     const total = await Request.countDocuments(filter);

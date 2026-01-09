@@ -289,8 +289,9 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
               옵션 B: 주간 묶음 요일
             </Label>
             <p className="text-base text-green-800 leading-relaxed">
-              선택한(녹색) 요일에 도착할 수 있도록 직전 영업일 오후 4시에 발송 대기
-              중인 제품을 한 박스에 담아 출고합니다.
+              선택한(녹색) 요일에 도착할 수 있도록 직전 영업일 오후 3시(운송장
+              입력) 마감까지 발송 대기 중인 제품을 한 박스에 담아 출고하며, 오후
+              4시에 택배사가 수거합니다.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {(["mon", "tue", "wed", "thu", "fri"] as const).map((day) => {

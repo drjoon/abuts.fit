@@ -12,6 +12,7 @@ import {
   normalizeKoreanBusinessDay,
   ymdToMmDd,
 } from "./utils.js";
+import { computeShippingPriority } from "./shippingPriority.utils.js";
 
 const toKstYmd = (d) => {
   if (!d) return null;
@@ -768,17 +769,12 @@ export async function getDashboardRiskSummary(req, res) {
       .populate("deliveryInfoRef")
       .lean();
 
-    const nowYmd = getTodayYmdInKst();
-    const nowMidnight = ymdToKstMidnight(nowYmd) || new Date();
+    const now = new Date();
     const delayedItems = [];
     const warningItems = [];
 
-    requests.forEach((r) => {
-      if (!r) return;
-      const est = r.timeline?.estimatedCompletion
-        ? new Date(r.timeline.estimatedCompletion)
-        : null;
-      if (!est) return;
+    for (const r of requests) {
+      if (!r) continue;
 
       const shippedAt = r.deliveryInfoRef?.shippedAt
         ? new Date(r.deliveryInfoRef.shippedAt)
@@ -787,32 +783,28 @@ export async function getDashboardRiskSummary(req, res) {
         ? new Date(r.deliveryInfoRef.deliveredAt)
         : null;
       const isDone = r.status2 === "완료" || Boolean(deliveredAt || shippedAt);
+      if (isDone) continue;
 
-      const estYmd = toKstYmd(est);
-      const estMidnight = ymdToKstMidnight(estYmd);
-      if (!estMidnight) return;
+      const stage = String(r.manufacturerStage || r.status || "").trim();
+      const isPreShip = ["의뢰", "CAM", "생산"].includes(stage);
+      if (!isPreShip) continue;
 
-      const diffDays = Math.floor(
-        (nowMidnight.getTime() - estMidnight.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const daysOverdue = diffDays > 0 ? diffDays : 0;
-      const daysUntilDue = diffDays < 0 ? Math.abs(diffDays) : 0;
+      const sp = await computeShippingPriority({ request: r, now });
+      if (!sp) continue;
 
-      if (!isDone) {
-        if (diffDays > 0) {
-          delayedItems.push({ r, est, daysOverdue, daysUntilDue });
-        } else if (diffDays === 0 || diffDays === -1) {
-          warningItems.push({ r, est, daysOverdue, daysUntilDue });
-        }
+      if (sp.level === "danger") {
+        delayedItems.push({ r, shippingPriority: sp });
+        continue;
       }
-    });
+      if (sp.level === "warning") {
+        warningItems.push({ r, shippingPriority: sp });
+      }
+    }
 
-    const totalWithEta = requests.filter(
-      (r) => r.timeline?.estimatedCompletion
-    ).length;
+    const totalWithDeadline = delayedItems.length + warningItems.length;
     const delayedCount = delayedItems.length;
     const warningCount = warningItems.length;
-    const onTimeBase = totalWithEta || 1;
+    const onTimeBase = Math.max(1, totalWithDeadline + 1);
     const onTimeRate = Math.max(
       0,
       Math.min(
@@ -825,14 +817,7 @@ export async function getDashboardRiskSummary(req, res) {
 
     const toRiskItem = (entry, level) => {
       const r = entry?.r || entry;
-      const est = entry?.est
-        ? entry.est
-        : r?.timeline?.estimatedCompletion
-        ? new Date(r.timeline.estimatedCompletion)
-        : null;
-      const daysOverdue = entry?.daysOverdue || 0;
-      const daysUntilDue = entry?.daysUntilDue || 0;
-
+      const sp = entry?.shippingPriority || null;
       const ci = r?.caseInfos || {};
 
       const requestorText =
@@ -851,16 +836,12 @@ export async function getDashboardRiskSummary(req, res) {
         r?.requestId ||
         "";
 
-      const mm = est ? String(est.getMonth() + 1).padStart(2, "0") : "";
-      const dd = est ? String(est.getDate()).padStart(2, "0") : "";
-      const dueLabel = est ? `${mm}/${dd}` : "";
-
-      let message = "";
-      if (level === "danger") {
-        message = `예상 도착일(${dueLabel}) 기준 ${daysOverdue}일 지연 중입니다.`;
-      } else {
-        message = `예상 도착일(${dueLabel})이 임박했습니다. (D-${daysUntilDue})`;
-      }
+      const message =
+        level === "danger"
+          ? `출고 마감(15:00) 기준 처리 지연 위험이 매우 큽니다. ${
+              sp?.label || ""
+            }`.trim()
+          : `출고 마감(15:00)이 임박했습니다. ${sp?.label || ""}`.trim();
 
       return {
         id: r?.requestId,
@@ -869,23 +850,30 @@ export async function getDashboardRiskSummary(req, res) {
         riskLevel: level,
         status: r?.status,
         status2: r?.status2,
-        dueDate: est ? est.toISOString().slice(0, 10) : null,
-        daysOverdue,
-        daysUntilDue,
+        dueDate: sp?.deadlineAt || null,
         message,
         caseInfos: r?.caseInfos || {},
+        shippingPriority: sp || undefined,
       };
     };
 
     const riskItems = [
       ...delayedItems
         .slice()
-        .sort((a, b) => (b?.daysOverdue || 0) - (a?.daysOverdue || 0))
+        .sort(
+          (a, b) =>
+            (b?.shippingPriority?.score || 0) -
+            (a?.shippingPriority?.score || 0)
+        )
         .slice(0, 5) // 지연 최대 5건
         .map((entry) => toRiskItem(entry, "danger")),
       ...warningItems
         .slice()
-        .sort((a, b) => (a?.daysUntilDue || 0) - (b?.daysUntilDue || 0))
+        .sort(
+          (a, b) =>
+            (b?.shippingPriority?.score || 0) -
+            (a?.shippingPriority?.score || 0)
+        )
         .slice(0, 5) // 주의 최대 5건
         .map((entry) => toRiskItem(entry, "warning")),
     ];

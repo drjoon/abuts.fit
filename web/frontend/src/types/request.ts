@@ -155,6 +155,16 @@ export interface RequestBase {
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO string 또는 YYYY-MM-DD
 
+  shippingPriority?: {
+    mode?: "normal" | "express";
+    level?: "normal" | "warning" | "danger" | string;
+    score?: number;
+    shipYmd?: string | null;
+    deadlineAt?: string | null;
+    minutesLeft?: number | null;
+    label?: string;
+  };
+
   // 결제/가격 정보 (백엔드 price, paymentStatus 매핑)
   price?: {
     amount?: number;

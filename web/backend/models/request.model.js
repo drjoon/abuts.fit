@@ -279,6 +279,14 @@ const requestSchema = new mongoose.Schema(
       enum: ["의뢰", "CAM", "생산", "발송", "추적관리"],
       default: "의뢰",
     },
+    // 레거시: 배송 모드 (프론트/백엔드 일부 로직에서 사용)
+    shippingMode: {
+      type: String,
+      enum: ["normal", "express"],
+      default: "normal",
+    },
+    // 레거시: 출고일(또는 희망 출고일) (KST 기준)
+    requestedShipDate: Date,
     // 배송 요청 정보 (원본 - 의뢰자가 신규 의뢰 시 선택)
     originalShipping: {
       mode: {
@@ -304,7 +312,7 @@ const requestSchema = new mongoose.Schema(
       scheduledMachiningStart: Date, // 가공 시작 예정 시각
       scheduledMachiningComplete: Date, // 가공 완료 예정 시각 (가공 시작 + 15분)
       scheduledBatchProcessing: Date, // 세척/검사/포장 예정 시각 (50~100개 모아서 처리)
-      scheduledShipPickup: Date, // 택배 수거 시각 (매일 14:00)
+      scheduledShipPickup: Date, // 택배 수거 시각 (매일 16:00)
       estimatedDelivery: Date, // 도착 예정 시각 (택배 수거일 + 1영업일)
 
       // 실제 시각
