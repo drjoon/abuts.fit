@@ -1,6 +1,12 @@
 import { cn } from "@/lib/utils";
 
-export type PeriodFilterValue = "7d" | "30d" | "90d" | "all";
+export type PeriodFilterValue =
+  | "7d"
+  | "30d"
+  | "lastMonth"
+  | "thisMonth"
+  | "90d"
+  | "all";
 
 type Props = {
   value: PeriodFilterValue;
@@ -18,6 +24,8 @@ export const PeriodFilter = ({
   const labelMap: Record<PeriodFilterValue, string> = {
     "7d": "최근 7일",
     "30d": "최근 30일",
+    lastMonth: "지난달",
+    thisMonth: "이번달",
     "90d": "최근 90일",
     all: "전체",
   };

@@ -38,7 +38,9 @@ import {
 export const ManufacturerDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
-  const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "all">("30d");
+  const [period, setPeriod] = useState<
+    "7d" | "30d" | "lastMonth" | "thisMonth" | "90d" | "all"
+  >("30d");
   const [riskModalOpen, setRiskModalOpen] = useState(false);
 
   if (!user || user.role !== "manufacturer") return null;

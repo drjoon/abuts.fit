@@ -16,6 +16,7 @@ import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCa
 import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import {
   Users,
   FileText,
@@ -142,8 +143,12 @@ export const AdminDashboardPage = () => {
     retry: false,
   });
 
+  const [period, setPeriod] = useState<
+    "7d" | "30d" | "lastMonth" | "thisMonth" | "90d" | "all"
+  >("30d");
+
   const { data: riskSummaryResponse } = useQuery({
-    queryKey: ["admin-dashboard-risk-summary"],
+    queryKey: ["admin-dashboard-risk-summary", period],
     enabled: Boolean(token),
     queryFn: async () => {
       const controller = new AbortController();
@@ -151,7 +156,7 @@ export const AdminDashboardPage = () => {
 
       try {
         const res = await apiFetch<any>({
-          path: "/api/requests/dashboard-risk-summary?period=30d",
+          path: `/api/requests/dashboard-risk-summary?period=${period}`,
           method: "GET",
           token,
           signal: controller.signal,
@@ -362,6 +367,11 @@ export const AdminDashboardPage = () => {
     <DashboardShell
       title={`안녕하세요, ${user.name}님!`}
       subtitle="시스템 관리 대시보드입니다."
+      headerRight={
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodFilter value={period} onChange={setPeriod} />
+        </div>
+      }
       topSection={
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
           {diameterTopSection}

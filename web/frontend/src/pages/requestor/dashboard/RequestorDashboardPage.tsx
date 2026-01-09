@@ -54,7 +54,9 @@ export const RequestorDashboardPage = () => {
   const { creditBalance, loadingCreditBalance } =
     useOutletContext<DashboardOutletContext>();
 
-  const [period, setPeriod] = useState<"7d" | "30d" | "90d" | "all">("30d");
+  const [period, setPeriod] = useState<
+    "7d" | "30d" | "lastMonth" | "thisMonth" | "90d" | "all"
+  >("30d");
   const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);

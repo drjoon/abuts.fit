@@ -33,6 +33,9 @@ namespace Hi_Link_CSharp
 
             this.PanelStatusTimer = new System.Threading.Timer(updatePanelTimer_tick);
             this.MachineStatusTimer = new System.Threading.Timer(updateMachineStatusTimer_tick);
+
+            // 가공 시작 버튼 클릭 이벤트 등록 (예제: 상태를 토글하여 Start 신호 전송)
+            this.MACHINE_IO_C_START.Click += new System.EventHandler(this.MACHINE_IO_C_START_Click);
         }
 
         private void CommOpen_Click(object sender, EventArgs e)
@@ -554,13 +557,31 @@ namespace Hi_Link_CSharp
             short result = HiLink.SetMachinePanelIO(FlibHnd, MachineInfo.panelType, PanelConstants.MACHINE_IO_F_AUX2, !(targetIO.Status == 1 ? true : false));
         }
 
+        private void MACHINE_IO_C_START_Click(object sender, EventArgs e)
+        {
+            var targetIO = PanelIOInfo.Find(x => x.IOName == "C_START");
+            if (targetIO == null)
+            {
+                return;
+            }
+
+            // 첨부 예제와 동일하게: 현재 상태를 토글 후 전송
+            targetIO.Status = (short)((targetIO.Status + 1) % 2);
+            short result = HiLink.SetMachinePanelIO(FlibHnd, MachineInfo.panelType, PanelConstants.MACHINE_IO_C_START, targetIO.Status == 1);
+            if (result == 0)
+            {
+                MACHINE_IO_C_START.BackColor = targetIO.Status == 1 ? Color.Green : Color.Red;
+            }
+        }
+
         private void MACHINE_IO_C_STOP_Click(object sender, EventArgs e)
         {
             var targetIO = PanelIOInfo.Find(x => x.IOName == "C_STOP");
-            short result = HiLink.SetMachinePanelIO(FlibHnd, MachineInfo.panelType, PanelConstants.MACHINE_IO_C_STOP, !(targetIO.Status == 1 ? true : false));
+            // 첨부 예제와 동일하게: 현재 상태를 토글 후 전송
+            targetIO.Status = (short)((targetIO.Status + 1) % 2);
+            short result = HiLink.SetMachinePanelIO(FlibHnd, MachineInfo.panelType, PanelConstants.MACHINE_IO_C_STOP, targetIO.Status == 1);
             if (result == 0)
             {
-                targetIO.Status = Convert.ToInt16((targetIO.Status + 1) % 2);
                 MACHINE_IO_C_STOP.BackColor = targetIO.Status == 1 ? Color.Green : Color.Red;
             }
         }

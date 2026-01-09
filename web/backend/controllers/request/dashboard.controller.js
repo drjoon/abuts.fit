@@ -31,6 +31,40 @@ const ymdToKstMidnight = (ymd) => {
 };
 
 /**
+ * 기간 파라미터에 따른 createdAt 필터 생성
+ * 지원 값: 7d, 30d, 90d, lastMonth, thisMonth, all(기본값 30d)
+ */
+const buildDateFilter = (period) => {
+  const now = new Date();
+
+  // all 또는 잘못된 값이면 필터 없음
+  if (!period || period === "all") return {};
+
+  // 이번달/지난달: 월 단위 구간
+  if (period === "thisMonth" || period === "lastMonth") {
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    if (period === "thisMonth") {
+      return { createdAt: { $gte: startOfThisMonth, $lt: startOfNextMonth } };
+    }
+
+    // lastMonth
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return { createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth } };
+  }
+
+  // 기본: 일 단위
+  let days = 30;
+  if (period === "7d") days = 7;
+  else if (period === "90d") days = 90;
+
+  const from = new Date();
+  from.setDate(from.getDate() - days);
+  return { createdAt: { $gte: from } };
+};
+
+/**
  * 최대 직경별 통계 (공용)
  * @route GET /api/requests/diameter-stats
  */
@@ -209,16 +243,7 @@ export async function getMyDashboardSummary(req, res) {
 
     const requestFilter = await buildRequestorOrgScopeFilter(req);
 
-    let dateFilter = {};
-    if (period && period !== "all") {
-      let days = 30;
-      if (period === "7d") days = 7;
-      else if (period === "90d") days = 90;
-
-      const from = new Date();
-      from.setDate(from.getDate() - days);
-      dateFilter = { createdAt: { $gte: from } };
-    }
+    const dateFilter = buildDateFilter(period);
 
     // 집계 쿼리로 통계와 최근 의뢰를 병렬로 조회
     const [deliveryLeadDays, statsResult, recentRequestsResult] =
@@ -699,16 +724,7 @@ export async function getDashboardRiskSummary(req, res) {
   try {
     const { period = "30d" } = req.query;
 
-    let dateFilter = {};
-    if (period && period !== "all") {
-      let days = 30;
-      if (period === "7d") days = 7;
-      else if (period === "90d") days = 90;
-
-      const from = new Date();
-      from.setDate(from.getDate() - days);
-      dateFilter = { createdAt: { $gte: from } };
-    }
+    const dateFilter = buildDateFilter(period);
 
     const baseFilter = {
       status: { $ne: "취소" },
