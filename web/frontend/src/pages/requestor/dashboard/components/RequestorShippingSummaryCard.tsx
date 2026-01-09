@@ -69,6 +69,7 @@ export const RequestorShippingSummaryCard = () => {
         last30Fee: 0,
         last30Count: 0,
         items: [] as ShippingPackageSummaryItem[],
+        todayRequests: [] as any[],
       };
     }
 
@@ -89,7 +90,7 @@ export const RequestorShippingSummaryCard = () => {
       last30Fee,
       last30Count,
       items,
-      todayRequests,
+      todayRequests: todayRequests ?? [],
     };
   }, [data]);
 
