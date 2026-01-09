@@ -12,7 +12,6 @@ namespace HiLinkBridgeWebApi48
 {
     public class NcFileWatcher : IDisposable
     {
-        private FileSystemWatcher _watcher;
         private readonly string _storagePath;
         private readonly HiLinkMode2Client _client = new HiLinkMode2Client();
         private readonly string _backendUrl = "https://abuts.fit/api";
@@ -22,7 +21,7 @@ namespace HiLinkBridgeWebApi48
             // bg/storage/3-nc 감시
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             _storagePath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
-            
+
             if (!Directory.Exists(_storagePath))
             {
                 Directory.CreateDirectory(_storagePath);
@@ -181,9 +180,6 @@ namespace HiLinkBridgeWebApi48
             }
         }
 
-        public void Dispose()
-        {
-            _watcher?.Dispose();
-        }
+        public void Dispose() { }
     }
 }

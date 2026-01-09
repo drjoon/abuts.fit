@@ -1,8 +1,9 @@
+using Hi_Link_Advanced; // CollectDataType enum (OPStatus, MotorTemperature, ToolLifeInfo 유지)
+using Hi_Link_Advanced.EdgeBridge; // GetProgramData 등 기존 타입 호환
 using Hi_Link.Libraries.Model;
-using Hi_Link_Advanced;
-using Hi_Link_Advanced.EdgeBridge;
-using Hi_Link_Advanced.LinkBridge;
 using HiLinkBridgeWebApi48.Models;
+using PayloadUpdateActivateProg = Hi_Link.Libraries.Model.UpdateMachineActivateProgNo;
+using Mode1Api = HiLinkBridgeWebApi48.Mode1Api;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -222,53 +223,159 @@ namespace HiLinkBridgeWebApi48.Controllers
                             });
                         }
                     }
-                    else if (type == CollectDataType.UpdateActivateProg || type == CollectDataType.DeleteProgram)
+                    else if (type == CollectDataType.UpdateActivateProg)
                     {
                         try
                         {
-                            // Mode2 DLL 예제(Form1.cs) 기준:
-                            // - UpdateActivateProg: UpdateMachineActivateProgNo { headType, programNo }
-                            // - DeleteProgram: DeleteMachineProgramInfo { headType, programNo }
-                            // 이 프로젝트에 해당 타입이 직접 포함되어 있지 않을 수 있으므로, 최소 필드(headType/programNo)만 추출해 전달한다.
-
-                            short headType = 0;
-                            int programNo = 0;
-
-                            var ht = raw.payload["headType"];
-                            if (ht != null && ht.Type == JTokenType.Integer)
-                            {
-                                headType = (short)ht.Value<int>();
-                            }
-
-                            var pn = raw.payload["programNo"];
-                            if (pn != null && pn.Type == JTokenType.Integer)
-                            {
-                                programNo = pn.Value<int>();
-                            }
-
-                            if (programNo <= 0)
+                            // Mode1: HiLink.SetActivateProgram(handle, dto) 호출로 처리
+                            var info = raw.payload.ToObject<PayloadUpdateActivateProg>();
+                            if (info.programNo <= 0)
                             {
                                 return Request.CreateResponse(HttpStatusCode.BadRequest, new
                                 {
                                     success = false,
-                                    message = "invalid programNo (must be > 0)",
-                                    programNo,
+                                    message = "invalid payload for UpdateActivateProg (programNo must be > 0)",
+                                    programNo = info.programNo,
                                 });
                             }
 
-                            payloadObj = new
+                            var res = Mode1HandleStore.SetActivateProgram(raw.uid, info, out var err);
+                            if (res != 0)
                             {
-                                headType = headType,
-                                programNo = programNo,
-                            };
+                                return Request.CreateResponse((HttpStatusCode)500, new
+                                {
+                                    success = false,
+                                    message = err ?? $"SetActivateProgram failed (result={res})",
+                                    res,
+                                });
+                            }
+
+                            return Request.CreateResponse(HttpStatusCode.OK, new
+                            {
+                                success = true,
+                                res = 0,
+                            });
                         }
                         catch (Exception ex)
                         {
-                            Console.Error.WriteLine("[Hi-Link /raw] payload cast error for UpdateActivateProg/DeleteProgram: " + ex);
+                            Console.Error.WriteLine("[Hi-Link /raw] payload cast error for UpdateActivateProg: " + ex);
                             return Request.CreateResponse(HttpStatusCode.BadRequest, new
                             {
                                 success = false,
-                                message = "failed to parse payload for UpdateActivateProg/DeleteProgram",
+                                message = "failed to parse payload for UpdateActivateProg",
+                                error = ex.Message,
+                            });
+                        }
+                    }
+                    else if (type == CollectDataType.GetProgListInfo)
+                    {
+                        short headType = 0;
+                        try
+                        {
+                            // payload가 short/int로 오는 경우만 처리, 실패 시 기본값 0(Main)
+                            if (raw.payload != null)
+                            {
+                                var htVal = raw.payload.ToObject<short>();
+                                headType = htVal;
+                            }
+                        }
+                        catch { headType = 0; }
+
+                        if (!Mode1Api.TryGetProgListInfo(raw.uid, headType, out var data, out var err))
+                        {
+                            return Request.CreateResponse((HttpStatusCode)500, new
+                            {
+                                success = false,
+                                message = err,
+                            });
+                        }
+                        return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data });
+                    }
+                    else if (type == CollectDataType.GetActivateProgInfo)
+                    {
+                        if (!Mode1Api.TryGetActivateProgInfo(raw.uid, out var data, out var err))
+                        {
+                            return Request.CreateResponse((HttpStatusCode)500, new
+                            {
+                                success = false,
+                                message = err,
+                            });
+                        }
+                        return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data });
+                    }
+                    else if (type == CollectDataType.GetProgDataInfo)
+                    {
+                        short headType = 0;
+                        short programNo = 0;
+                        try
+                        {
+                            if (raw.payload != null)
+                            {
+                                var ht = raw.payload["headType"];
+                                var pn = raw.payload["programNo"];
+                                if (ht != null && ht.Type == JTokenType.Integer)
+                                    headType = (short)ht.Value<int>();
+                                if (pn != null && pn.Type == JTokenType.Integer)
+                                    programNo = (short)pn.Value<int>();
+                            }
+                        }
+                        catch { }
+
+                        // fallback: payload가 단일 숫자일 경우 programNo로 간주
+                        if (programNo <= 0)
+                        {
+                            try
+                            {
+                                programNo = raw.payload.ToObject<short>();
+                            }
+                            catch { programNo = 0; }
+                        }
+
+                        if (programNo <= 0)
+                        {
+                            return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                            {
+                                success = false,
+                                message = "invalid payload for GetProgDataInfo (programNo must be > 0)",
+                            });
+                        }
+
+                        if (!Mode1Api.TryGetProgDataInfo(raw.uid, headType, programNo, out var data, out var err))
+                        {
+                            return Request.CreateResponse((HttpStatusCode)500, new
+                            {
+                                success = false,
+                                message = err,
+                            });
+                        }
+                        return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data });
+                    }
+                    else if (type == CollectDataType.GetMachineList)
+                    {
+                        if (!Mode1Api.TryGetMachineList(out var data, out var err))
+                        {
+                            return Request.CreateResponse((HttpStatusCode)500, new
+                            {
+                                success = false,
+                                message = err,
+                            });
+                        }
+                        return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data });
+                    }
+                    else if (type == CollectDataType.DeleteProgram)
+                    {
+                        try
+                        {
+                            // DeleteProgram도 Mode1 API가 필요하면 추가 구현; 일단 Advanced 경로 유지
+                            payloadObj = raw.payload.ToObject<object>();
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine("[Hi-Link /raw] payload cast error for DeleteProgram: " + ex);
+                            return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                            {
+                                success = false,
+                                message = "failed to parse payload for DeleteProgram",
                                 error = ex.Message,
                             });
                         }
@@ -779,10 +886,16 @@ namespace HiLinkBridgeWebApi48.Controllers
                     });
                 }
 
-                var ioUid = payload != null
-                    ? (payload.Value<string>("ioUid") ?? payload.Value<string>("IOUID"))
-                    : null;
-                if (string.IsNullOrWhiteSpace(ioUid)) ioUid = "C_CONT";
+                short ioUid = 0;
+                var ioUidToken = payload?["ioUid"] ?? payload?["IOUID"];
+                if (ioUidToken != null && ioUidToken.Type == JTokenType.Integer)
+                {
+                    try
+                    {
+                        ioUid = (short)ioUidToken.Value<int>();
+                    }
+                    catch { }
+                }
 
                 var statusToken = payload != null ? payload["status"] : null;
                 short status = 1;
@@ -885,7 +998,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 int programNo = payload.Value<int?>("programNo") ?? 0;
                 if (programNo <= 0)
                 {
-                    programNo = BridgeStoreController.ExtractProgramNo(fileName);
+                    programNo = HiLinkBridgeWebApi48.Controllers.BridgeStoreController.ExtractProgramNo(fileName);
                 }
 
                 if (programNo <= 0)
@@ -926,7 +1039,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var info = new UpdateMachineProgramInfo
                 {
                     headType = headType,
-                    programNo = programNo,
+                    programNo = (short)programNo,
                     programData = content,
                     isNew = isNew,
                 };

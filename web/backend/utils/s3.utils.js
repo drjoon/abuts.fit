@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
+import { getSignedUrl as presignV3 } from "@aws-sdk/s3-request-presigner";
 import multer from "multer";
 import { extname } from "path";
 import { randomBytes } from "crypto";
@@ -74,8 +75,24 @@ const fileFilter = (req, file, cb) => {
   if (allowedFileTypes.includes(ext)) {
     cb(null, true);
   } else {
-    cb(new Error("지원하지 않는 파일 형식입니다."), false);
+    cb(new Error("Unsupported file type"), false);
   }
+};
+
+// presigned PUT URL 생성 (백그라운드 앱이 직접 업로드하도록)
+export const getPresignedPutUrl = async (
+  key,
+  contentType = "application/octet-stream",
+  expiresIn = 3600
+) => {
+  const Bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
+  const command = new PutObjectCommand({
+    Bucket,
+    Key: key,
+    ContentType: contentType,
+  });
+  const url = await presignV3(getS3Client(), command, { expiresIn });
+  return { url, key, bucket: Bucket };
 };
 
 const getFileType = (filename) => {
@@ -243,7 +260,8 @@ const deleteFileFromS3 = async (key, bucketOverride) => {
   }
 };
 
-const getSignedUrl = async (
+// 다운로드용 서명 URL (기존 명칭 충돌 방지 위해 download 전용으로 명확히)
+const getDownloadSignedUrl = async (
   key,
   expires = 3600,
   { responseDisposition, responseContentType } = {}
@@ -308,11 +326,12 @@ export default {
   getObjectBufferFromS3,
   objectExistsInS3,
   deleteFileFromS3,
-  getSignedUrl,
+  getDownloadSignedUrl,
+  getSignedUrl: getDownloadSignedUrl,
   getUploadSignedUrl,
   getFileType,
 };
 
 export { getUploadSignedUrl };
 
-export { getSignedUrl };
+export { getDownloadSignedUrl as getSignedUrl };

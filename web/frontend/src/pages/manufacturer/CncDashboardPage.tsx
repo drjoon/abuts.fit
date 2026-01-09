@@ -562,31 +562,85 @@ export const CncDashboardPage = () => {
                   if (!jobId) return;
                   const uid = machine.uid;
 
-                  let shouldStart = false;
+                  const currentJobs = reservationJobsMap?.[uid] || [];
+                  const targetJob = currentJobs.find((j) => j.id === jobId);
+                  if (!targetJob) return;
+
+                  const wasPaused = !!targetJob.paused;
+                  const nextPaused = !wasPaused;
+
                   setReservationJobsMap((prev) => {
                     const current = prev[uid] || [];
-                    const nextJobs = current.map((j) => {
-                      if (j.id !== jobId) return j;
-                      const wasPaused = !!j.paused;
-                      const nextPaused = !wasPaused;
-                      if (wasPaused && !nextPaused) {
-                        // 일시정지 → 재생으로 전환될 때만 실제 생산 시작 명령을 보낸다.
-                        shouldStart = true;
-                      }
-                      return { ...j, paused: nextPaused };
-                    });
+                    const nextJobs = current.map((j) =>
+                      j.id === jobId ? { ...j, paused: nextPaused } : j
+                    );
                     return {
                       ...prev,
                       [uid]: nextJobs,
                     };
                   });
 
-                  if (!shouldStart) return;
+                  // 일시정지 → 재생으로 전환될 때만 실제 생산 시작 명령을 보낸다.
+                  if (!(wasPaused && !nextPaused)) return;
 
                   const ok = await ensureCncWriteAllowed();
-                  if (!ok) return;
+                  if (!ok) {
+                    setReservationJobsMap((prev) => {
+                      const current = prev[uid] || [];
+                      const nextJobs = current.map((j) =>
+                        j.id === jobId ? { ...j, paused: wasPaused } : j
+                      );
+                      return {
+                        ...prev,
+                        [uid]: nextJobs,
+                      };
+                    });
+                    return;
+                  }
+
+                  const programNoRaw = (targetJob as any)?.programNo ?? null;
+                  const programNo = Number(programNoRaw);
+                  if (!Number.isFinite(programNo) || programNo <= 0) {
+                    const msg =
+                      "프로그램 번호가 없어 생산을 시작할 수 없습니다. (예약 등록 시 프로그램 번호를 확인해 주세요.)";
+                    setError(msg);
+                    toast({
+                      title: "생산 시작 실패",
+                      description: msg,
+                      variant: "destructive",
+                    });
+                    setReservationJobsMap((prev) => {
+                      const current = prev[uid] || [];
+                      const nextJobs = current.map((j) =>
+                        j.id === jobId ? { ...j, paused: wasPaused } : j
+                      );
+                      return {
+                        ...prev,
+                        [uid]: nextJobs,
+                      };
+                    });
+                    return;
+                  }
 
                   try {
+                    // 1) NC 프로그램 로드(활성화)
+                    const actRes = await callRaw(uid, "UpdateActivateProg", {
+                      headType: 0,
+                      programNo,
+                    });
+                    const actOk =
+                      actRes &&
+                      actRes.success !== false &&
+                      (actRes.result == null || actRes.result === 0);
+                    if (!actOk) {
+                      const msg =
+                        actRes?.message ||
+                        actRes?.error ||
+                        "프로그램 로드 실패 (UpdateActivateProg)";
+                      throw new Error(msg);
+                    }
+
+                    // 2) 가공 시작
                     const res = await fetch(
                       `/api/core/machines/${encodeURIComponent(uid)}/start`,
                       {
@@ -599,25 +653,30 @@ export const CncDashboardPage = () => {
                       const msg =
                         body?.message ||
                         body?.error ||
-                        "생산 시작(Start) 명령 실패";
-                      setError(msg);
-                      toast({
-                        title: "생산 시작 실패",
-                        description: msg,
-                        variant: "destructive",
-                      });
-                      return;
+                        "가공 시작(Start) 명령 실패";
+                      throw new Error(msg);
                     }
 
-                    // 생산 시작 후 상태를 한 번 갱신해준다.
                     void refreshStatusFor(uid);
                   } catch (e: any) {
-                    const msg = e?.message ?? "생산 시작 요청 중 오류";
+                    const msg = e?.message ?? "가공 시작 요청 중 오류";
                     setError(msg);
                     toast({
-                      title: "생산 시작 오류",
+                      title: "가공 시작 오류",
                       description: msg,
                       variant: "destructive",
+                    });
+
+                    // 실패 시 UI 상태 원복
+                    setReservationJobsMap((prev) => {
+                      const current = prev[uid] || [];
+                      const nextJobs = current.map((j) =>
+                        j.id === jobId ? { ...j, paused: wasPaused } : j
+                      );
+                      return {
+                        ...prev,
+                        [uid]: nextJobs,
+                      };
                     });
                   }
                 }}

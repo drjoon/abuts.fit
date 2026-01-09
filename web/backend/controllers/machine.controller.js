@@ -285,6 +285,7 @@ export async function upsertMachine(req, res) {
     let hiLinkResult = null;
     if (ip && port && BRIDGE_BASE) {
       try {
+        // .env의 BRIDGE_BASE (http://1.217.31.227:8002)를 사용하여 직접 호출
         const bridgeResponse = await fetch(`${BRIDGE_BASE}/api/cnc/machines`, {
           method: "POST",
           headers: withBridgeHeaders({ "Content-Type": "application/json" }),
@@ -310,9 +311,7 @@ export async function upsertMachine(req, res) {
       // bridge-node 로컬 machines.json (MachinesConfigStore) 도 함께 업데이트
       try {
         await fetch(
-          `${BRIDGE_BASE}/api/bridge-config/machines/${encodeURIComponent(
-            finalUid
-          )}`,
+          `${BRIDGE_BASE}/api/machines-config/${encodeURIComponent(finalUid)}`,
           {
             method: "PUT",
             headers: withBridgeHeaders({ "Content-Type": "application/json" }),

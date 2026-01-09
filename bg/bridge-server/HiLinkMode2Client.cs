@@ -25,6 +25,8 @@ namespace HiLinkBridgeWebApi48
 
         private static readonly BlockingCollection<RequestItem> RequestQueue = new BlockingCollection<RequestItem>();
         private static readonly CancellationTokenSource Cts = new CancellationTokenSource();
+        private static readonly ConcurrentDictionary<string, ConcurrentQueue<ResponseDataMessage>> PendingResponses
+            = new ConcurrentDictionary<string, ConcurrentQueue<ResponseDataMessage>>();
 
         // Hi-Link DLL의 MessageHandler는 static 멤버를 사용하므로, 전체 프로세스에서 단 한 번만 초기화해야 한다.
         static HiLinkMode2Client()
@@ -51,7 +53,16 @@ namespace HiLinkBridgeWebApi48
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     object responseData = null;
 
-                    while (sw.ElapsedMilliseconds < item.TimeoutMs)
+                    var expectedKey = string.Format("{0}:{1}", item.Message.UID ?? string.Empty, item.Message.DataType);
+                    if (PendingResponses.TryGetValue(expectedKey, out var pendingQueue))
+                    {
+                        if (pendingQueue != null && pendingQueue.TryDequeue(out var pendingResp))
+                        {
+                            responseData = pendingResp.Data;
+                        }
+                    }
+
+                    while (responseData == null && sw.ElapsedMilliseconds < item.TimeoutMs)
                     {
                         if (MessageHandler.ResponseFIFO.Count > 0)
                         {
@@ -68,6 +79,10 @@ namespace HiLinkBridgeWebApi48
                                 {
                                     // 내가 기다리던 응답이 아니면 로그만 남긴다. (이전 요청의 타임아웃된 응답일 수 있음)
                                     Console.WriteLine($"[HiLinkMode2Client] Mismatched response. Expected: {item.Message.UID}/{item.Message.DataType}, Got: {resp.UID}/{resp.DataType}");
+
+                                    var key = string.Format("{0}:{1}", resp.UID ?? string.Empty, resp.DataType);
+                                    var q = PendingResponses.GetOrAdd(key, _ => new ConcurrentQueue<ResponseDataMessage>());
+                                    q.Enqueue(resp);
                                 }
                             }
                         }
@@ -124,6 +139,16 @@ namespace HiLinkBridgeWebApi48
                     status.result, status.MachineStatusInfo.Status);
                 return (status.result == 0, status.result);
             }
+            else if (obj is short s)
+            {
+                Console.WriteLine("[AddMachine] DLL result code={0}", s);
+                return (s == 0, (int)s);
+            }
+            else if (obj is int i)
+            {
+                Console.WriteLine("[AddMachine] DLL result code={0}", i);
+                return (i == 0, i);
+            }
 
             Console.WriteLine("[AddMachine] unexpected response type: " +
                 (obj == null ? "null" : obj.GetType().FullName));
@@ -148,6 +173,16 @@ namespace HiLinkBridgeWebApi48
                 Console.WriteLine("[UpdateMachine] DLL result={0}, status={1}",
                     status.result, status.MachineStatusInfo.Status);
                 return (status.result == 0, status.result);
+            }
+            else if (obj is short s)
+            {
+                Console.WriteLine("[UpdateMachine] DLL result code={0}", s);
+                return (s == 0, (int)s);
+            }
+            else if (obj is int i)
+            {
+                Console.WriteLine("[UpdateMachine] DLL result code={0}", i);
+                return (i == 0, i);
             }
 
             Console.WriteLine("[UpdateMachine] unexpected response type: " +

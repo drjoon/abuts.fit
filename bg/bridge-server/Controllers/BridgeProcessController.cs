@@ -12,7 +12,7 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/bridge")]
     public class BridgeProcessController : ApiController
     {
-        private static readonly string BackendUrl = "https://abuts.fit/api";
+        private const string BackendUrl = "https://abuts.fit/api";
 
         public class BridgeProcessRequest
         {
@@ -47,7 +47,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 // 비동기로 실제 가공 처리 시작
                 var watcher = new NcFileWatcher();
-                Task.Run(() => watcher.ProcessNcFile(fullPath, req.requestId));
+                _ = Task.Run(() => watcher.ProcessNcFile(fullPath, req.requestId));
 
                 return Content(HttpStatusCode.Accepted, new
                 {

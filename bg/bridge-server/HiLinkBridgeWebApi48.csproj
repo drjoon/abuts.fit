@@ -57,6 +57,8 @@
     <Reference Include="System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
     </Reference>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Core" />
     <Reference Include="System.Memory, Version=4.0.1.2, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>packages\System.Memory.4.5.5\lib\net461\System.Memory.dll</HintPath>
@@ -89,12 +91,18 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Controllers\BridgeController.cs" />
+    <Compile Include="Controllers\BridgeStoreController.cs" />
+    <Compile Include="Controllers\BridgeProcessController.cs" />
     <Compile Include="Models\RawHiLinkRequest.cs" />
+    <Compile Include="Models\AddMachineRequest.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Startup.cs" />
     <Compile Include="HiLinkMode2Client.cs" />
-    <Compile Include="Models\AddMachineRequest.cs" />
+    <Compile Include="Mode1Api.cs" />
+    <Compile Include="Mode1HandleStore.cs" />
+    <Compile Include="NcFileWatcher.cs" />
     <Compile Include="Controllers\MachinesController.cs" />
+    <Compile Include="Controllers\ControlController.cs" />
     <Compile Include="BridgeAuthHandler.cs" />
     <Compile Include="Models\MachineConfigItem.cs" />
     <Compile Include="MachinesConfigStore.cs" />

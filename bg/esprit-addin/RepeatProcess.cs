@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -166,6 +167,75 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             catch { /* ignore log cleanup errors */ }
         }
 
+        private string BuildS3Url(string bucket, string key)
+        {
+            bucket = (bucket ?? "").Trim();
+            key = (key ?? "").Trim().TrimStart('/');
+            if (string.IsNullOrEmpty(bucket) || string.IsNullOrEmpty(key)) return "";
+            return $"https://{bucket}.s3.amazonaws.com/{key}";
+        }
+
+        private async Task<(bool ok, string s3Key, string s3Url, long fileSize, string error)> UploadNcViaPresign(FileInfo fi, string requestId)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    string presignUrl = $"{_backendUrl}/bg/presign-upload";
+                    string presignBody = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"requestId\":\"{requestId}\"}}";
+                    var presignResp = await client.PostAsync(presignUrl, new StringContent(presignBody, Encoding.UTF8, "application/json"));
+                    if (!presignResp.IsSuccessStatusCode)
+                    {
+                        return (false, null, null, 0, $"presign status={presignResp.StatusCode}");
+                    }
+                    var presignJson = await presignResp.Content.ReadAsStringAsync();
+                    // 단순 파서 (JSON 라이브러리 사용 없이 최소 파싱)
+                    string Extract(string key)
+                    {
+                        try
+                        {
+                            var marker = $"\"{key}\":\"";
+                            int idx = presignJson.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                            if (idx < 0) return null;
+                            idx += marker.Length;
+                            int end = presignJson.IndexOf("\"", idx, StringComparison.OrdinalIgnoreCase);
+                            if (end < 0) return null;
+                            return presignJson.Substring(idx, end - idx);
+                        }
+                        catch { return null; }
+                    }
+                    string url = Extract("url");
+                    string key = Extract("key");
+                    string bucket = Extract("bucket");
+                    string contentType = Extract("contentType") ?? "application/octet-stream";
+                    if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(key))
+                    {
+                        return (false, null, null, 0, "presign response missing url/key");
+                    }
+
+                    long fileSize = fi.Length;
+                    using (var fs = fi.OpenRead())
+                    {
+                        var putReq = new HttpRequestMessage(HttpMethod.Put, url);
+                        putReq.Content = new StreamContent(fs);
+                        putReq.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+                        var putResp = await client.SendAsync(putReq);
+                        if (!putResp.IsSuccessStatusCode)
+                        {
+                            return (false, null, null, 0, $"put status={putResp.StatusCode}");
+                        }
+                    }
+
+                    string s3Url = BuildS3Url(bucket, key);
+                    return (true, key, s3Url, fileSize, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                return (false, null, null, 0, ex.Message);
+            }
+        }
+
         public void Run()
         {
             if (_listener != null && _listener.IsListening) return;
@@ -232,6 +302,49 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 // 공통 인터페이스 처리
                 if (request.HttpMethod == "GET")
                 {
+                    if (path.StartsWith("/files/") || path == "/files")
+                    {
+                        // GET /files/{name} → storage/3-nc/{name} 반환
+                        string rawName = request.Url.AbsolutePath.Length > "/files/".Length
+                            ? request.Url.AbsolutePath.Substring("/files/".Length)
+                            : (request.QueryString["name"] ?? string.Empty);
+                        string fileName = Path.GetFileName(Uri.UnescapeDataString(rawName ?? string.Empty));
+                        if (string.IsNullOrWhiteSpace(fileName))
+                        {
+                            response.StatusCode = (int)HttpStatusCode.BadRequest;
+                            byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"file name required\"}");
+                            response.OutputStream.Write(buffer, 0, buffer.Length);
+                            return;
+                        }
+
+                        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                        string storagePath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
+                        string target = Path.GetFullPath(Path.Combine(storagePath, fileName));
+
+                        if (!target.StartsWith(storagePath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            response.StatusCode = (int)HttpStatusCode.BadRequest;
+                            byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"invalid path\"}");
+                            response.OutputStream.Write(buffer, 0, buffer.Length);
+                            return;
+                        }
+
+                        if (!File.Exists(target))
+                        {
+                            response.StatusCode = (int)HttpStatusCode.NotFound;
+                            byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"file not found\"}");
+                            response.OutputStream.Write(buffer, 0, buffer.Length);
+                            return;
+                        }
+
+                        response.ContentType = "application/octet-stream";
+                        response.StatusCode = (int)HttpStatusCode.OK;
+                        using (var fs = File.OpenRead(target))
+                        {
+                            fs.CopyTo(response.OutputStream);
+                        }
+                        return;
+                    }
                     if (path == "/health" || path == "/ping")
                     {
                         response.StatusCode = (int)HttpStatusCode.OK;
@@ -489,14 +602,31 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             {
                 using (var client = new HttpClient())
                 {
-                    string url = $"{_backendUrl}/bg/register-file";
-                    
                     var fi = new FileInfo(req.NcOutputPath);
 
+                    var uploadResult = await UploadNcViaPresign(fi, req.RequestId);
+                    if (!uploadResult.ok)
+                    {
+                        LogWarning($"[Backend] Presigned upload failed: {uploadResult.error}, falling back to legacy notify (no S3)");
+                    }
+
+                    string url = $"{_backendUrl}/bg/register-file";
                     string originalName = Path.GetFileName(req.StlPath);
-                    string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"originalFileName\":\"{originalName}\",\"requestId\":\"{req.RequestId}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length}}}}}";
+
+                    // presign이 성공하면 s3Key/s3Url/fileSize 포함, 실패 시 metadata로 fileSize만 포함
+                    string json;
+                    if (uploadResult.ok)
+                    {
+                        json =
+                            $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"originalFileName\":\"{originalName}\",\"requestId\":\"{req.RequestId}\",\"status\":\"success\",\"s3Key\":\"{uploadResult.s3Key}\",\"s3Url\":\"{uploadResult.s3Url}\",\"fileSize\":{uploadResult.fileSize}}}";
+                    }
+                    else
+                    {
+                        json =
+                            $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"originalFileName\":\"{originalName}\",\"requestId\":\"{req.RequestId}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
+                    }
+
                     var content = new StringContent(json, Encoding.UTF8, "application/json");
-                    
                     var response = await client.PostAsync(url, content);
                     if (response.IsSuccessStatusCode)
                     {

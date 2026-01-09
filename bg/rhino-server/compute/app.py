@@ -11,6 +11,7 @@ import threading
 import traceback
 import socketio
 import requests
+import mimetypes
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from collections import deque
@@ -57,6 +58,71 @@ _BASE_FW_LOCK = threading.Lock()
 # 재기동 스캔 및 watcher 동시 실행에서 중복 처리 방지
 _IN_FLIGHT: set[str] = set()
 _IN_FLIGHT_LOCK = threading.Lock()
+
+
+def _guess_content_type(path: Path) -> str:
+    ct, _ = mimetypes.guess_type(str(path))
+    return ct or "application/octet-stream"
+
+
+def _build_s3_url(bucket: str, key: str) -> str:
+    bucket = bucket.strip()
+    if not bucket:
+        return ""
+    return f"https://{bucket}.s3.amazonaws.com/{key}"
+
+
+def _upload_via_presign(out_path: Path, original_name: str) -> bool:
+    try:
+        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        presign_url = f"{backend_url}/bg/presign-upload"
+        file_name = out_path.name
+        payload = {
+            "sourceStep": "2-filled",
+            "fileName": file_name,
+            # requestId는 파일명 매칭으로 처리되므로 생략
+        }
+        resp = requests.post(presign_url, json=payload, timeout=10)
+        if resp.status_code != 200:
+            _log(f"Presign failed status={resp.status_code} body={resp.text}")
+            return False
+        data = resp.json().get("data") or {}
+        presigned_url = data.get("url")
+        key = data.get("key")
+        bucket = data.get("bucket") or ""
+        content_type = data.get("contentType") or _guess_content_type(out_path)
+        if not presigned_url or not key:
+            _log("Presign response missing url/key")
+            return False
+
+        file_size = out_path.stat().st_size
+        with open(out_path, "rb") as f:
+            put_headers = {"Content-Type": content_type}
+            put_resp = requests.put(presigned_url, data=f, headers=put_headers, timeout=30)
+            if put_resp.status_code not in (200, 201):
+                _log(f"Presigned PUT failed status={put_resp.status_code} body={put_resp.text}")
+                return False
+
+        register_url = f"{backend_url}/bg/register-file"
+        s3_url = _build_s3_url(bucket, key) if bucket else None
+        register_payload = {
+            "sourceStep": "2-filled",
+            "fileName": file_name,
+            "originalFileName": original_name,
+            "status": "success",
+            "s3Key": key,
+            "s3Url": s3_url,
+            "fileSize": file_size,
+        }
+        reg_resp = requests.post(register_url, json=register_payload, timeout=10)
+        if reg_resp.status_code == 200:
+            _log(f"Presigned upload + register success: {file_name}")
+            return True
+        _log(f"Register after presign failed status={reg_resp.status_code} body={reg_resp.text}")
+        return False
+    except Exception as e:
+        _log(f"Presign upload exception: {e}")
+        return False
 
 
 def _log(msg: str) -> None:
@@ -109,6 +175,19 @@ async def job_callback(data: Dict[str, Any]):
     else:
         _log(f"callback received unknown token: token={token}")
         return {"ok": False, "error": "unknown token"}
+
+@app.get("/files/{name}")
+async def get_filled_file(name: str):
+    """처리된 STL 파일을 내려주는 엔드포인트 (원격 백엔드에서 S3 업로드용)"""
+    safe_name = Path(name).name
+    target = STORE_OUT_DIR / safe_name
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="file not found")
+    return FileResponse(
+        target,
+        filename=safe_name,
+        media_type="application/octet-stream",
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -679,8 +758,29 @@ async def _process_single_stl(p: Path):
         try:
             _log(f"Checking output path: {out_path}")
             if out_path.exists():
-                _log(f"Output already exists for: {p.name}, skipping processing but ensuring backend is notified if needed.")
-                # 백엔드 알림 로직은 성공 시와 동일하게 수행할 수 있으나, 일단 중복 방지를 위해 바로 리턴
+                _log(f"Output already exists for: {p.name}, attempting presigned upload re-sync.")
+                if _upload_via_presign(out_path, p.name):
+                    return
+                # presign 실패 시 기존 register-file 재통지 시도 (백업)
+                try:
+                    backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+                    callback_url = f"{backend_url}/bg/register-file"
+                    payload = {
+                        "sourceStep": "2-filled",
+                        "fileName": out_name,
+                        "originalFileName": p.name,
+                        "status": "success",
+                        "metadata": {
+                            "jobId": "reuse_existing"
+                        }
+                    }
+                    response = requests.post(callback_url, json=payload, timeout=5)
+                    if response.status_code == 200:
+                        _log(f"Backend re-notified successfully (fallback): {out_name}")
+                    else:
+                        _log(f"Backend re-notification returned status {response.status_code}")
+                except Exception as be:
+                    _log(f"Backend re-notification failed: {be}")
                 return
 
             _log(f"Auto-processing starting: {p.name}")
@@ -706,26 +806,29 @@ async def _process_single_stl(p: Path):
                     "status": "success"
                 })
                 
-                # 백엔드 호출 (결과 등록)
-                try:
-                    backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
-                    callback_url = f"{backend_url}/bg/register-file"
-                    payload = {
-                        "sourceStep": "2-filled",
-                        "fileName": out_name,
-                        "originalFileName": p.name,
-                        "status": "success",
-                        "metadata": {
-                            "jobId": job_id
+                # presigned 업로드 후 등록 (우선 경로)
+                uploaded = _upload_via_presign(out_path, p.name)
+                if not uploaded:
+                    _log("Presigned upload failed, attempting legacy register-file fallback")
+                    try:
+                        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+                        callback_url = f"{backend_url}/bg/register-file"
+                        payload = {
+                            "sourceStep": "2-filled",
+                            "fileName": out_name,
+                            "originalFileName": p.name,
+                            "status": "success",
+                            "metadata": {
+                                "jobId": job_id
+                            }
                         }
-                    }
-                    response = requests.post(callback_url, json=payload, timeout=5)
-                    if response.status_code == 200:
-                        _log(f"Backend notified successfully: {out_name}")
-                    else:
-                        _log(f"Backend notification returned status {response.status_code}")
-                except Exception as be:
-                    _log(f"Backend notification failed: {be}")
+                        response = requests.post(callback_url, json=payload, timeout=5)
+                        if response.status_code == 200:
+                            _log(f"Backend notified successfully (fallback): {out_name}")
+                        else:
+                            _log(f"Backend notification returned status {response.status_code}")
+                    except Exception as be:
+                        _log(f"Backend notification failed: {be}")
             except Exception as e:
                 _log(f"Auto-processing failed for {p.name}: {e}")
                 _recent_history.append({

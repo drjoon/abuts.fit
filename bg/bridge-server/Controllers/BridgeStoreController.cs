@@ -158,7 +158,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
 
                 var ms = new MemoryStream();
-                using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
+                using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
                 {
                     var files = Directory.GetFiles(full, "*", SearchOption.AllDirectories);
                     foreach (var file in files)

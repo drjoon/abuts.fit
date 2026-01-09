@@ -12,12 +12,16 @@ import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
 
-// NODE_ENV === 'test' 에서는 인증을 건너뛰고,
+// NODE_ENV === 'test' 또는 'development'에서는 인증을 건너뛰고,
 // 그 외 환경에서는 authenticate + authorize(roles)를 적용하는 헬퍼
 const maybeAuth =
   (roles = []) =>
   async (req, res, next) => {
-    if (process.env.NODE_ENV === "test") return next();
+    if (
+      process.env.NODE_ENV === "test" ||
+      process.env.NODE_ENV === "development"
+    )
+      return next();
 
     // 인증 시도
     await authenticate(req, res, async () => {

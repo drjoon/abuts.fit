@@ -16,13 +16,9 @@ namespace HiLinkBridgeWebApi48
                 Console.WriteLine("Hi-Link Bridge WebAPI (net48) is running. Initializing machines from machines.json...");
                 MachinesInitializer.InitializeFromConfig();
 
-                // NC 파일 감시 시작
-                using (var watcher = new NcFileWatcher())
-                {
-                    watcher.Start();
-                    Console.WriteLine("Initialization done. Press Enter to exit.");
-                    Console.ReadLine();
-                }
+                // NcFileWatcher 미사용: 이벤트 기반(백엔드 트리거)으로 처리
+                Console.WriteLine("Initialization done. Press Enter to exit.");
+                Console.ReadLine();
             }
         }
     }

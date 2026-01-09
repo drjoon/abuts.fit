@@ -129,7 +129,15 @@ export function usePreviewLoader({
             req.caseInfos?.camFile?.originalName ||
             originalName;
 
-          const camCacheKey = req.caseInfos?.camFile?.s3Key || null;
+          // filled.stl이 동일 s3Key로 교체되는 경우가 있어, 버전 값을 포함해 캐시 무효화
+          const camCacheKeyBase = req.caseInfos?.camFile?.s3Key || null;
+          const camCacheVersion =
+            req.caseInfos?.camFile?.fileSize ||
+            req.caseInfos?.camFile?.uploadedAt;
+          const camCacheKey =
+            camCacheKeyBase && camCacheVersion
+              ? `${camCacheKeyBase}:${camCacheVersion}`
+              : camCacheKeyBase;
           const camUrlRes = await fetch(
             `/api/requests/${req._id}/cam-file-url`,
             {
