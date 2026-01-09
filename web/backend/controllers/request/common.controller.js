@@ -67,6 +67,99 @@ function buildBgStorageBase() {
   return null;
 }
 
+function toKstYmd(d) {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
+  if (!request) return;
+
+  const organizationIdRaw =
+    request.requestorOrganizationId || request.requestor?.organizationId;
+  const organizationId =
+    organizationIdRaw && Types.ObjectId.isValid(String(organizationIdRaw))
+      ? new Types.ObjectId(String(organizationIdRaw))
+      : null;
+  if (!organizationId) {
+    const err = new Error("조직 정보가 없어 발송 박스를 생성할 수 없습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const pickup = request?.productionSchedule?.scheduledShipPickup;
+  const shipDateYmd = toKstYmd(pickup) || getTodayYmdInKst();
+
+  let pkg;
+  try {
+    pkg = await ShippingPackage.findOneAndUpdate(
+      { organizationId, shipDateYmd },
+      {
+        $setOnInsert: {
+          organizationId,
+          shipDateYmd,
+          createdBy: userId || null,
+        },
+        $addToSet: { requestIds: request._id },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+        session: session || null,
+      }
+    );
+  } catch (e) {
+    const msg = String(e?.message || "");
+    const code = e?.code;
+    if (code === 11000 || msg.includes("E11000")) {
+      pkg = await ShippingPackage.findOne({ organizationId, shipDateYmd })
+        .session(session || null)
+        .lean();
+      if (pkg?._id) {
+        await ShippingPackage.updateOne(
+          { _id: pkg._id },
+          { $addToSet: { requestIds: request._id } },
+          { session: session || null }
+        );
+      }
+    } else {
+      throw e;
+    }
+  }
+
+  if (pkg?._id) {
+    request.shippingPackageId = pkg._id;
+  }
+
+  const fee = Number(pkg?.shippingFeeSupply || 0);
+  if (fee > 0) {
+    const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
+    await CreditLedger.updateOne(
+      { uniqueKey },
+      {
+        $setOnInsert: {
+          organizationId,
+          userId: userId || null,
+          type: "SPEND",
+          amount: -fee,
+          refType: "SHIPPING_PACKAGE",
+          refId: pkg._id,
+          uniqueKey,
+        },
+      },
+      { upsert: true, session: session || null }
+    );
+  }
+}
+
 async function triggerEspritForNc({ request, session }) {
   // idempotency: 이미 NC가 있으면 재트리거하지 않는다.
   const existingNc =
@@ -417,6 +510,7 @@ const advanceManufacturerStageByReviewStage = async ({
   }
 
   if (stage === "machining" || stage === "packaging") {
+    await ensureShippingPackageAndChargeFee({ request, userId, session });
     applyStatusMapping(request, "발송");
     return;
   }

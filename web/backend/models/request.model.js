@@ -287,6 +287,13 @@ const requestSchema = new mongoose.Schema(
     },
     // 레거시: 출고일(또는 희망 출고일) (KST 기준)
     requestedShipDate: Date,
+
+    shippingPackageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ShippingPackage",
+      default: null,
+      index: true,
+    },
     // 배송 요청 정보 (원본 - 의뢰자가 신규 의뢰 시 선택)
     originalShipping: {
       mode: {

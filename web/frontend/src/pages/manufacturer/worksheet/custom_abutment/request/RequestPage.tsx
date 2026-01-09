@@ -39,7 +39,6 @@ import {
   getReviewLabel,
   getReviewBadgeClassName,
   getDiameterBucketIndex,
-  computeStageLabel,
   deriveStageForFilter,
   stageOrder,
   getAcceptByStage,
@@ -489,33 +488,16 @@ export const RequestPage = ({
   );
 
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
-  const groupedByOrg = useMemo(() => {
-    if (!isMachiningStage) return null;
-    const map = new Map<
-      string,
-      { org: string; requests: ManufacturerRequest[]; complete: boolean }
-    >();
-    for (const req of paginatedRequests) {
-      const org =
-        req.requestor?.organization ||
-        req.requestor?.name ||
-        req.requestor?._id ||
-        "기공소 미지정";
-      const stageLabel = computeStageLabel(req, {
-        isCamStage,
-        isMachiningStage,
-      });
-      const order = stageOrder[stageLabel] ?? 0;
-      const isComplete = order > currentStageOrder;
-      if (!map.has(org)) {
-        map.set(org, { org, requests: [], complete: true });
-      }
-      const entry = map.get(org)!;
-      entry.requests.push(req);
-      if (!isComplete) entry.complete = false;
+  const groupedByShippingPackage = useMemo(() => {
+    if (tabStage !== "shipping") return null;
+    const map = new Map<string, ManufacturerRequest[]>();
+    for (const r of paginatedRequests) {
+      const key = String(r.shippingPackageId || "").trim() || "unassigned";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(r);
     }
     return map;
-  }, [paginatedRequests, isCamStage, isMachiningStage, currentStageOrder]);
+  }, [paginatedRequests, tabStage]);
 
   const loadMore = useCallback(() => {
     setVisibleCount((prev) =>
@@ -653,56 +635,75 @@ export const RequestPage = ({
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
             표시할 의뢰가 없습니다.
           </div>
-        ) : isMachiningStage && groupedByOrg ? (
+        ) : tabStage === "shipping" && groupedByShippingPackage ? (
           <div className="space-y-4">
-            {Array.from(groupedByOrg.values()).map((group) => (
-              <div
-                key={group.org}
-                className={`rounded-2xl border p-4 space-y-3 ${
-                  group.complete
-                    ? "border-emerald-300 bg-emerald-50/60"
-                    : "border-slate-200 bg-white"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <div className="text-sm font-semibold text-slate-800">
-                    {group.org}
-                  </div>
-                  <Badge
-                    variant={group.complete ? "default" : "outline"}
-                    className={`text-[11px] ${
-                      group.complete
-                        ? "bg-emerald-500 text-white"
-                        : "bg-white text-slate-600"
-                    }`}
+            {Array.from(groupedByShippingPackage.entries()).map(
+              ([key, reqs]) => {
+                const sample = reqs[0];
+                const org =
+                  sample?.requestor?.organization ||
+                  sample?.requestor?.name ||
+                  sample?.requestor?._id ||
+                  "기공소 미지정";
+                const pickup = sample?.productionSchedule?.scheduledShipPickup;
+                const shipYmd = pickup
+                  ? new Date(pickup).toISOString().slice(0, 10)
+                  : "-";
+                const title =
+                  key === "unassigned"
+                    ? "발송 박스 미배정"
+                    : `발송 박스 ${String(key).slice(-6)}`;
+                return (
+                  <div
+                    key={key}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3"
                   >
-                    {group.complete ? "그룹 완료" : "진행 중"}
-                  </Badge>
-                  <span className="text-xs text-slate-500">
-                    모든 카드 완료 시 다음 단계 가능
-                  </span>
-                </div>
-                <WorksheetCardGrid
-                  requests={group.requests}
-                  onDownload={handleDownloadOriginal}
-                  onOpenPreview={handleOpenPreview}
-                  onDeleteCam={handleDeleteCam}
-                  onDeleteNc={handleDeleteNc}
-                  onRollback={
-                    enableCardRollback ? handleCardRollback : undefined
-                  }
-                  onUploadNc={handleUploadNc}
-                  uploadProgress={uploadProgress}
-                  uploading={uploading}
-                  deletingCam={deletingCam}
-                  deletingNc={deletingNc}
-                  isCamStage={isCamStage}
-                  isMachiningStage={isMachiningStage}
-                  downloading={downloading}
-                  currentStageOrder={currentStageOrder}
-                />
-              </div>
-            ))}
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold text-slate-800">
+                        {title}
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
+                      >
+                        {org}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
+                      >
+                        출고 {shipYmd}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className="text-[11px] bg-blue-50 text-blue-700 border-blue-200 font-semibold"
+                      >
+                        {reqs.length}건
+                      </Badge>
+                    </div>
+                    <WorksheetCardGrid
+                      requests={reqs}
+                      onDownload={handleDownloadOriginal}
+                      onOpenPreview={handleOpenPreview}
+                      onDeleteCam={handleDeleteCam}
+                      onDeleteNc={handleDeleteNc}
+                      onRollback={
+                        enableCardRollback ? handleCardRollback : undefined
+                      }
+                      onUploadNc={handleUploadNc}
+                      uploadProgress={uploadProgress}
+                      uploading={uploading}
+                      deletingCam={deletingCam}
+                      deletingNc={deletingNc}
+                      isCamStage={isCamStage}
+                      isMachiningStage={isMachiningStage}
+                      downloading={downloading}
+                      currentStageOrder={currentStageOrder}
+                    />
+                  </div>
+                );
+              }
+            )}
           </div>
         ) : (
           <WorksheetCardGrid

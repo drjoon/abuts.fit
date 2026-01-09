@@ -155,6 +155,11 @@ export interface RequestBase {
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO string 또는 YYYY-MM-DD
 
+  productionSchedule?: {
+    scheduledShipPickup?: string | Date;
+    estimatedDelivery?: string | Date;
+  };
+
   shippingPriority?: {
     mode?: "normal" | "express";
     level?: "normal" | "warning" | "danger" | string;
@@ -175,6 +180,8 @@ export interface RequestBase {
 
   // 배송 정보 레퍼런스 (별도 DeliveryInfo 컬렉션)
   deliveryInfoRef?: string;
+
+  shippingPackageId?: string;
 }
 
 // RequestBase에서 공통적으로 사용할 ID 추출 헬퍼

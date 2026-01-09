@@ -52,6 +52,10 @@ export const ManufacturerWorksheetPage = () => {
               showQueueBar={true}
               filterRequests={(req) => {
                 const stage = String(req.manufacturerStage || "").trim();
+                const status = String(req.status || "").trim();
+                const status2 = String(req.status2 || "").trim();
+                const isCompleted = status === "완료" || status2 === "완료";
+                if (isCompleted) return false;
                 return stage === "발송";
               }}
             />
