@@ -45,7 +45,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
     "countBased" | "weeklyBased"
   >("countBased");
   const [option, setOption] = useState<"count3" | "monThu">("count3");
-  const [autoBatchThreshold, setAutoBatchThreshold] = useState(20);
+  const [autoBatchThreshold, setAutoBatchThreshold] = useState(10);
   const [maxWaitDays, setMaxWaitDays] = useState(DEFAULT_MAX_WAIT_DAYS);
   const [weeklyBatchDays, setWeeklyBatchDays] = useState<string[]>([
     getRandomWeekday(),
@@ -140,11 +140,13 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
 
   useEffect(() => {
     if (!computedWeeklyDay) return;
-    setWeeklyBatchDays([computedWeeklyDay]);
+    setWeeklyBatchDays((prev) => {
+      if (prev.includes(computedWeeklyDay)) return prev;
+      return [...prev, computedWeeklyDay];
+    });
   }, [computedWeeklyDay, storageKey]);
 
   const toggleDay = (day: string) => {
-    if (computedWeeklyDay) return;
     setWeeklyBatchDays((prev) => {
       const exists = prev.includes(day);
       if (exists) {
@@ -287,8 +289,8 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
               옵션 B: 주간 묶음 요일
             </Label>
             <p className="text-base text-green-800 leading-relaxed">
-              선택한(녹색) 요일 오후에 발송 대기 중인 제품을 한 박스에 담아
-              출고합니다.
+              선택한(녹색) 요일에 도착할 수 있도록 직전 영업일 오후 4시에 발송 대기
+              중인 제품을 한 박스에 담아 출고합니다.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {(["mon", "tue", "wed", "thu", "fri"] as const).map((day) => {
@@ -298,7 +300,6 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
                     key={day}
                     type="button"
                     onClick={() => toggleDay(day)}
-                    disabled={Boolean(computedWeeklyDay)}
                     className={`px-4 py-2 rounded-lg text-base font-medium border-2 transition-all ${
                       active
                         ? "bg-green-600 text-white border-green-600 shadow-lg"
