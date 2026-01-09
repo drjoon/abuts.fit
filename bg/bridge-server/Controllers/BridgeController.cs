@@ -57,11 +57,56 @@ namespace HiLinkBridgeWebApi48.Controllers
             Console.WriteLine("[Hi-Link /raw] incoming: uid={0}, dataType={1}, timeout={2}",
                 raw?.uid, raw?.dataType, raw?.timeoutMilliseconds);
 
+            const string AlarmDataType = "GetMachineAlarmInfo";
+
             if (raw == null || string.IsNullOrWhiteSpace(raw.dataType))
             {
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new
                 {
                     error = "dataType is required"
+                });
+            }
+
+            // CollectDataType enum에 없는 커스텀 타입: GetMachineAlarmInfo → Mode1 호출로 직접 처리
+            if (string.Equals(raw.dataType, AlarmDataType, StringComparison.OrdinalIgnoreCase))
+            {
+                short headType = 0;
+                var headTypeToken = raw.payload?["headType"];
+                if (headTypeToken != null && headTypeToken.Type == JTokenType.Integer)
+                {
+                    try { headType = (short)headTypeToken.Value<int>(); } catch { }
+                }
+
+                if (!Mode1Api.TryGetMachineAlarmInfo(raw.uid, headType, out var data, out var err))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = err ?? "GetMachineAlarmInfo failed",
+                    });
+                }
+
+                var alarms = new List<object>();
+                if (data.alarmArray != null)
+                {
+                    foreach (var a in data.alarmArray)
+                    {
+                        alarms.Add(new
+                        {
+                            type = a.type,
+                            no = a.no,
+                        });
+                    }
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    data = new
+                    {
+                        headType = data.headType,
+                        alarms,
+                    }
                 });
             }
 
@@ -88,7 +133,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             if (Array.IndexOf(readTypes, type) >= 0)
             {
                 var key = string.Format("{0}:{1}", raw.uid ?? string.Empty, type);
-                if (IsRawReadOnCooldown(key))
+                if (!raw.bypassCooldown && IsRawReadOnCooldown(key))
                 {
                     return Request.CreateResponse((HttpStatusCode)429, new
                     {
@@ -219,6 +264,34 @@ namespace HiLinkBridgeWebApi48.Controllers
                             {
                                 success = false,
                                 message = "failed to parse payload for UpdateToolLife",
+                                error = ex.Message,
+                            });
+                        }
+                    }
+                    else if (type == CollectDataType.UpdateOPStatus)
+                    {
+                        try
+                        {
+                            // Mode1 예제(Form1.cs) 기준: SetMachineOPStatus(IOInfo) 호출.
+                            // payload가 JObject로 들어오므로 명시적으로 IOInfo로 변환한다.
+                            var io = new IOInfo
+                            {
+                                IOUID = (short)(raw.payload.Value<int?>("IOUID")
+                                    ?? raw.payload.Value<int?>("ioUid")
+                                    ?? 0),
+                                Status = (short)(raw.payload.Value<int?>("Status")
+                                    ?? raw.payload.Value<int?>("status")
+                                    ?? 0),
+                            };
+                            payloadObj = io;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine("[Hi-Link /raw] payload cast error for UpdateOPStatus: " + ex);
+                            return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                            {
+                                success = false,
+                                message = "failed to parse payload for UpdateOPStatus",
                                 error = ex.Message,
                             });
                         }
@@ -367,7 +440,18 @@ namespace HiLinkBridgeWebApi48.Controllers
                         try
                         {
                             // DeleteProgram도 Mode1 API가 필요하면 추가 구현; 일단 Advanced 경로 유지
-                            payloadObj = raw.payload.ToObject<object>();
+                            var info = raw.payload.ToObject<DeleteMachineProgramInfo>();
+                            if (info == null || info.programNo <= 0)
+                            {
+                                return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                                {
+                                    success = false,
+                                    message = "invalid payload for DeleteProgram (programNo must be > 0)",
+                                    programNo = info.programNo,
+                                });
+                            }
+
+                            payloadObj = info;
                         }
                         catch (Exception ex)
                         {
@@ -603,8 +687,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                         {
                             var mp = gd.machineProgramData;
                             Console.WriteLine(
-                                "[Hi-Link /raw:GetProgDataInfo] response uid={0}, result={1}, headType={2}, programNo={3}",
-                                raw?.uid ?? "", gd.result, mp.headType, mp.programNo);
+                                "[Hi-Link /raw:GetProgDataInfo] response uid={0}, headType={1}, programNo={2}, length={3}",
+                                raw.uid, mp.headType, mp.programNo, mp.programData?.Length ?? 0);
                             var progDto = new
                             {
                                 headType = mp.headType,
@@ -642,6 +726,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                         }
 
                     case CollectDataType.UpdateActivateProg:
+                    case CollectDataType.UpdateOPStatus:
                     case CollectDataType.DeleteProgram:
                         {
                             // 예제 기준: 응답은 short result 코드로 돌아오는 케이스가 많다.
@@ -663,8 +748,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                         }
 
                     default:
-                        dataDto = result;
-                        break;
+                        {
+                            // 다른 타입에 대해서는 raw object를 그대로 반환한다.
+                            dataDto = result;
+                            break;
+                        }
                 }
 
                 var resultType = result?.GetType().FullName ?? "null";
@@ -867,6 +955,63 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
+        // POST /machines/{uid}/alarm - GetMachineAlarmInfo (Mode1)
+        [HttpPost]
+        [Route("machines/{uid}/alarm")]
+        public async Task<HttpResponseMessage> GetMachineAlarm(string uid, JObject payload)
+        {
+            try
+            {
+                short headType = 0;
+                var headTypeToken = payload?["headType"];
+                if (headTypeToken != null && headTypeToken.Type == JTokenType.Integer)
+                {
+                    try { headType = (short)headTypeToken.Value<int>(); } catch { }
+                }
+
+                if (!Mode1Api.TryGetMachineAlarmInfo(uid, headType, out var data, out var err))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = err ?? "GetMachineAlarmInfo failed",
+                    });
+                }
+
+                var alarms = new List<object>();
+                if (data.alarmArray != null)
+                {
+                    foreach (var a in data.alarmArray)
+                    {
+                        alarms.Add(new
+                        {
+                            type = a.type,
+                            no = a.no,
+                        });
+                    }
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    data = new
+                    {
+                        headType = data.headType,
+                        alarms,
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    message = "GetMachineAlarm failed",
+                    error = ex.Message
+                });
+            }
+        }
+
         // TODO: 가공 시작(Start) 명령은 준비가 완료될 때까지 브리지 레벨에서 완전히 차단한다.
         //       나중에 실제 가공 개시를 허용할 때는 아래 메서드를 수정하거나 삭제하면 된다.
         // POST /machines/{uid}/start
@@ -898,20 +1043,22 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
 
                 var statusToken = payload != null ? payload["status"] : null;
-                short status = 1;
+                // 예제(MACHINE_IO_C_START_Click)와 동일하게, 들어온 status를 "현재 상태"로 보고 0/1 토글 후 전송한다.
+                short currentStatus = 0;
                 if (statusToken != null && statusToken.Type == JTokenType.Integer)
                 {
                     try
                     {
-                        status = (short)statusToken.Value<int>();
+                        currentStatus = (short)statusToken.Value<int>();
                     }
-                    catch { }
+                    catch { currentStatus = 0; }
                 }
+                short nextStatus = (short)((currentStatus + 1) % 2);
 
                 var io = new IOInfo
                 {
                     IOUID = ioUid,
-                    Status = status,
+                    Status = nextStatus,
                 };
 
                 var result = await Client.RequestRawAsync(uid, CollectDataType.UpdateOPStatus, io, 5000);
@@ -925,6 +1072,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     success = rc == 0,
                     result = rc,
                     ioUid,
+                    status = nextStatus,
                 });
             }
             catch (Exception ex)

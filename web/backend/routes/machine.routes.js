@@ -4,6 +4,7 @@ import {
   upsertMachine,
   deleteMachine,
   getMachineStatusProxy,
+  getMachineAlarmProxy,
   resetMachineProxy,
   callRawProxy,
   startMachineProxy,
@@ -37,6 +38,8 @@ router.post("/", maybeAuth(["manufacturer"]), upsertMachine);
 router.delete("/:uid", maybeAuth(["manufacturer"]), deleteMachine);
 
 router.get("/:uid/status", maybeAuth(["manufacturer"]), getMachineStatusProxy);
+
+router.post("/:uid/alarm", maybeAuth(["manufacturer"]), getMachineAlarmProxy);
 
 router.post("/:uid/reset", maybeAuth(["manufacturer"]), resetMachineProxy);
 

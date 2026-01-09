@@ -123,6 +123,30 @@ export async function getMachineStatusProxy(req, res) {
   }
 }
 
+// POST /api/machines/:uid/alarm - 알람 조회 프록시
+export async function getMachineAlarmProxy(req, res) {
+  const { uid } = req.params;
+  try {
+    if (!ensureBridgeConfigured(res)) return;
+    const response = await fetch(
+      `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/alarm`,
+      {
+        method: "POST",
+        headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(req.body ?? {}),
+      }
+    );
+    const data = await response.json().catch(() => ({}));
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error("getMachineAlarmProxy error", error);
+    res.status(500).json({
+      success: false,
+      message: "alarm proxy failed",
+    });
+  }
+}
+
 async function sendControl(uid, action, res) {
   if (!ensureBridgeConfigured(res)) return;
   try {
@@ -174,7 +198,6 @@ export async function startMachineProxy(req, res) {
   await sendControl(req.params.uid, "start", res);
 }
 
-// hi-link 브리지 범용 RAW 프록시: DLL의 모든 CollectDataType 호출을 지원
 export async function callRawProxy(req, res) {
   const { uid } = req.params;
   try {
@@ -188,9 +211,16 @@ export async function callRawProxy(req, res) {
       "GetToolLifeInfo",
       "GetProgDataInfo",
       "GetMachineList",
+      "GetMachineAlarmInfo",
     ];
 
-    if (typeof dataType === "string" && READ_TYPES.includes(dataType)) {
+    const bypassCooldown = req.body?.bypassCooldown === true;
+
+    if (
+      !bypassCooldown &&
+      typeof dataType === "string" &&
+      READ_TYPES.includes(dataType)
+    ) {
       const key = `${uid || ""}:${dataType}`;
       const now = Date.now();
       const last = lastRawReadCall.get(key) || 0;

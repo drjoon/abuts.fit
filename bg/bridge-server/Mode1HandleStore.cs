@@ -14,6 +14,13 @@ namespace HiLinkBridgeWebApi48
         private static readonly ConcurrentDictionary<string, ushort> Handles = new ConcurrentDictionary<string, ushort>();
         private static readonly ConcurrentDictionary<string, bool> Enabled = new ConcurrentDictionary<string, bool>();
 
+        public static void Invalidate(string uid)
+        {
+            if (string.IsNullOrWhiteSpace(uid)) return;
+            Handles.TryRemove(uid, out _);
+            Enabled.TryRemove(uid, out _);
+        }
+
         private static (string ip, int port)? FindMachine(string uid)
         {
             var list = MachinesConfigStore.Load();
@@ -84,7 +91,17 @@ namespace HiLinkBridgeWebApi48
                 return -1;
             }
 
-            return HiLink.SetActivateProgram(handle, dto);
+            var res = HiLink.SetActivateProgram(handle, dto);
+            if (res == -8)
+            {
+                Invalidate(uid);
+                if (!TryGetHandle(uid, out handle, out error))
+                {
+                    return -1;
+                }
+                res = HiLink.SetActivateProgram(handle, dto);
+            }
+            return res;
         }
     }
 }

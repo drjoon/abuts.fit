@@ -3,6 +3,7 @@ import {
   Thermometer,
   Wrench,
   Settings,
+  Info,
   X,
   ShieldOff,
   Pause,
@@ -11,7 +12,6 @@ import {
 import { Machine } from "@/pages/manufacturer/cnc/types";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
-
 interface MachineCardProps {
   machine: Machine;
   isActive: boolean;
@@ -27,6 +27,7 @@ interface MachineCardProps {
   onSelect: () => void;
   onTempClick: (e: React.MouseEvent) => void;
   onToolClick: (e: React.MouseEvent) => void;
+  onInfoClick?: (e: React.MouseEvent) => void;
   onEditClick: (e: React.MouseEvent) => void;
   onOpenCurrentProg: (e: React.MouseEvent) => void;
   onOpenNextProg: (prog: any, e: React.MouseEvent) => void;
@@ -98,6 +99,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   onSelect,
   onTempClick,
   onToolClick,
+  onInfoClick,
   onEditClick,
   onOpenCurrentProg,
   onOpenNextProg,
@@ -164,6 +166,14 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           {getMachineStatusChip(machine.status)}
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <button
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
+            onClick={onInfoClick}
+            title="현재 프로그램/알람 정보"
+            disabled={loading || !onInfoClick}
+          >
+            <Info className="h-4 w-4" />
+          </button>
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={onTempClick}

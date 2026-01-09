@@ -19,6 +19,7 @@ interface CncMachineGridProps {
   onSelectMachine: (uid: string) => void;
   onTempClick: (machine: Machine) => void;
   onToolClick: (machine: Machine) => void;
+  onOpenMachineInfo?: (uid: string) => void;
   onEditMachine: (machine: Machine) => void;
   onOpenProgramDetail: (prog: any) => void;
   onSendControl: (uid: string, action: "reset") => void;
@@ -44,6 +45,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onSelectMachine,
   onTempClick,
   onToolClick,
+  onOpenMachineInfo,
   onEditMachine,
   onOpenProgramDetail,
   onSendControl,
@@ -101,6 +103,11 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             nextProgs={nextProgs}
             reservedTotalQty={originalTotalQty}
             reservationSummary={reservationSummaryMap?.[m.uid]}
+            onInfoClick={(e) => {
+              e.stopPropagation();
+              if (!onOpenMachineInfo) return;
+              onOpenMachineInfo(m.uid);
+            }}
             onSelect={() => {
               onSelectMachine(m.uid);
             }}

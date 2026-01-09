@@ -9,5 +9,6 @@ namespace HiLinkBridgeWebApi48.Models
         public string dataType { get; set; }
         public JToken payload { get; set; }
         public int timeoutMilliseconds { get; set; }
+        public bool bypassCooldown { get; set; }
     }
 }

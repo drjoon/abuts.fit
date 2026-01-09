@@ -20,6 +20,7 @@ import { useCncDashboardCore } from "@/pages/manufacturer/cnc/hooks/useCncDashbo
 import { useCncTempPanel } from "@/pages/manufacturer/cnc/hooks/useCncTempPanel";
 import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempDetailModal";
 import { CncWorkBoardPanel } from "@/pages/manufacturer/cnc/components/CncWorkBoardPanel";
+import { CncMachineInfoModal } from "@/pages/manufacturer/cnc/components/CncMachineInfoModal";
 import {
   CncReservationModal,
   type CncJobItem,
@@ -201,6 +202,16 @@ export const CncDashboardPage = () => {
   const [reservationListTarget, setReservationListTarget] =
     useState<Machine | null>(null);
 
+  const [machineInfoOpen, setMachineInfoOpen] = useState(false);
+  const [machineInfoLoading, setMachineInfoLoading] = useState(false);
+  const [machineInfoError, setMachineInfoError] = useState<string | null>(null);
+  const [machineInfoProgram, setMachineInfoProgram] = useState<any | null>(
+    null
+  );
+  const [machineInfoAlarms, setMachineInfoAlarms] = useState<
+    { type: number; no: number }[]
+  >([]);
+
   const reservationListJobs: CncJobItem[] =
     reservationListTarget &&
     reservationJobsMap[reservationListTarget.uid] &&
@@ -212,6 +223,93 @@ export const CncDashboardPage = () => {
     reservationTarget && reservationJobsMap[reservationTarget.uid]
       ? reservationJobsMap[reservationTarget.uid]
       : [];
+
+  const openMachineInfo = async (uid: string) => {
+    if (!uid) return;
+    setMachineInfoOpen(true);
+    setMachineInfoLoading(true);
+    setMachineInfoError(null);
+    setMachineInfoProgram(null);
+    setMachineInfoAlarms([]);
+
+    try {
+      const fetchRawDirect = async (dataType: string, payload: any = null) => {
+        const r = await fetch(
+          `/api/core/machines/${encodeURIComponent(uid)}/raw`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              uid,
+              dataType,
+              payload,
+              bypassCooldown: true,
+            }),
+          }
+        );
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok || body?.success === false) {
+          const msg =
+            body?.message ||
+            body?.error ||
+            `${dataType} 호출 실패 (HTTP ${r.status})`;
+          throw new Error(msg);
+        }
+        return body;
+      };
+
+      const [progRes, alarmRes] = await Promise.all([
+        fetchRawDirect("GetActivateProgInfo"),
+        fetch(`/api/core/machines/${encodeURIComponent(uid)}/alarm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ headType: 0 }),
+        }).then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok || body?.success === false) {
+            const msg =
+              body?.message ||
+              body?.error ||
+              `alarm 호출 실패 (HTTP ${r.status})`;
+            throw new Error(msg);
+          }
+          return body;
+        }),
+      ]);
+
+      const p = (progRes && (progRes.data ?? progRes)) as any;
+      const curInfo =
+        p?.machineCurrentProgInfo ??
+        (p &&
+        (p.mainProgramName ||
+          p.subProgramName ||
+          p.MainProgramName ||
+          p.SubProgramName)
+          ? {
+              mainProgramName: p.mainProgramName ?? p.MainProgramName ?? null,
+              mainProgramComment:
+                p.mainProgramComment ?? p.MainProgramComment ?? null,
+              subProgramName: p.subProgramName ?? p.SubProgramName ?? null,
+              subProgramComment:
+                p.subProgramComment ?? p.SubProgramComment ?? null,
+            }
+          : null);
+      if (!curInfo) {
+        throw new Error(
+          "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)"
+        );
+      }
+      setMachineInfoProgram(curInfo);
+
+      const a = (alarmRes && (alarmRes.data ?? alarmRes)) as any;
+      const list = a?.alarms;
+      setMachineInfoAlarms(Array.isArray(list) ? list : []);
+    } catch (e: any) {
+      setMachineInfoError(e?.message ?? "알 수 없는 오류");
+    } finally {
+      setMachineInfoLoading(false);
+    }
+  };
 
   // 제조사 대시보드 요약 (할당된 의뢰 기준)
   const { data: cncDashboardSummary } = useQuery({
@@ -467,8 +565,15 @@ export const CncDashboardPage = () => {
                     updateToolTooltip(machine.uid, msg);
                   }
                 }}
-                onEditMachine={handleEditMachine}
-                onOpenProgramDetail={openProgramDetail}
+                onEditMachine={(machine) => {
+                  handleEditMachine(machine);
+                }}
+                onOpenMachineInfo={(uid) => {
+                  void openMachineInfo(uid);
+                }}
+                onOpenProgramDetail={(prog) => {
+                  void openProgramDetail(prog);
+                }}
                 onSendControl={(uid, action) => {
                   if (action === "reset") {
                     const target = machines.find((m) => m.uid === uid) || null;
@@ -961,6 +1066,15 @@ export const CncDashboardPage = () => {
           open={tempModalOpen}
           body={tempModalBody}
           onRequestClose={() => setTempModalOpen(false)}
+        />
+
+        <CncMachineInfoModal
+          open={machineInfoOpen}
+          loading={machineInfoLoading}
+          error={machineInfoError}
+          programInfo={machineInfoProgram}
+          alarms={machineInfoAlarms}
+          onRequestClose={() => setMachineInfoOpen(false)}
         />
 
         <CncToolStatusModal
