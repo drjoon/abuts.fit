@@ -1,5 +1,6 @@
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
 import {
   buildRequestorOrgScopeFilter,
   buildRequestorOrgFilter,

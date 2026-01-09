@@ -40,6 +40,7 @@ export const {
   getShippingEstimate,
   getMyBulkShipping,
   createMyBulkShipping,
+  getMyShippingPackagesSummary,
 } = shippingController;
 
 // Export default object for default imports

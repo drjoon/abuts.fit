@@ -2,6 +2,7 @@ import mongoose, { Types } from "mongoose";
 import path from "path";
 import Request from "../../models/request.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -13,6 +14,7 @@ import {
   ensureLotNumberForMachining,
   buildRequestorOrgScopeFilter,
   normalizeCaseInfosImplantFields,
+  getTodayYmdInKst,
 } from "./utils.js";
 import { getOrganizationCreditBalanceBreakdown } from "./creation.controller.js";
 import s3Utils, {
@@ -419,6 +421,7 @@ const advanceManufacturerStageByReviewStage = async ({
   }
 
   if (stage === "shipping") {
+    await ensureShippingPackageAndChargeFee({ request, userId, session });
     applyStatusMapping(request, "발송"); // '발송' 상태 내에서 상세 단계(status2)만 변경됨
     return;
   }

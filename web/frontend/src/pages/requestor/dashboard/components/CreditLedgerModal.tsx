@@ -86,6 +86,14 @@ const formatShortCode = (value: string) => {
   return s || "-";
 };
 
+const refTypeLabel = (refType?: string) => {
+  const t = String(refType || "").trim();
+  if (!t) return "-";
+  if (t === "SHIPPING_FEE") return "배송비 (발송 1회)";
+  if (t === "REQUEST") return "의뢰";
+  return t;
+};
+
 const hashToBase36 = (input: string) => {
   const str = String(input || "");
   let h = 2166136261;
@@ -332,7 +340,7 @@ export const CreditLedgerModal = ({
                                 formatShortCode(String(r.uniqueKey || ""))}
                             </span>
                             <span className="text-[11px] text-muted-foreground">
-                              {String(r.refType || "-")}
+                              {refTypeLabel(r.refType)}
                             </span>
                           </div>
                         </TableCell>

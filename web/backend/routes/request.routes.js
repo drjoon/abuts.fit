@@ -52,6 +52,13 @@ router.get(
   requestController.getMyDashboardSummary
 );
 
+// 내 발송 패키지 요약 (의뢰자용)
+router.get(
+  "/my/shipping-packages",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  requestController.getMyShippingPackagesSummary
+);
+
 // 지연 위험 요약 (제조사/관리자용)
 router.get(
   "/dashboard-risk-summary",

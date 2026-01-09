@@ -1,4 +1,5 @@
 import Request from "../../models/request.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
 import {
   buildRequestorOrgScopeFilter,
   calculateExpressShipYmd,
@@ -10,6 +11,7 @@ import {
   applyStatusMapping,
   normalizeRequestStage,
   normalizeRequestStageLabel,
+  getRequestorOrgId,
 } from "./utils.js";
 
 const __cache = new Map();
@@ -111,6 +113,115 @@ export async function updateMyShippingMode(req, res) {
     return res.status(500).json({
       success: false,
       message: "배송 방식 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 내 발송 패키지 요약 (의뢰자용)
+ * @route GET /api/requests/my/shipping-packages
+ */
+export async function getMyShippingPackagesSummary(req, res) {
+  try {
+    const daysRaw = req.query.days;
+    const days =
+      typeof daysRaw === "string" && daysRaw.trim()
+        ? Number(daysRaw)
+        : typeof daysRaw === "number"
+        ? daysRaw
+        : 30;
+
+    if (!Number.isFinite(days) || days <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 기간(days) 값을 입력해주세요.",
+      });
+    }
+
+    const orgId = getRequestorOrgId(req);
+    if (!orgId) {
+      return res.status(400).json({
+        success: false,
+        message: "조직 정보가 필요합니다.",
+      });
+    }
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    const todayYmd = getTodayYmdInKst();
+
+    const packages = await ShippingPackage.find({
+      organizationId: orgId,
+      createdAt: { $gte: cutoff },
+    })
+      .select({
+        shipDateYmd: 1,
+        requestIds: 1,
+        shippingFeeSupply: 1,
+        createdAt: 1,
+      })
+      .populate({
+        path: "requestIds",
+        select:
+          "requestId title caseInfos status status2 manufacturerStage createdAt",
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const todayPackages = packages.filter((p) => p.shipDateYmd === todayYmd);
+    const today = {
+      shipDateYmd: todayYmd,
+      packageCount: todayPackages.length,
+      shippingFeeSupplyTotal: todayPackages.reduce(
+        (acc, cur) => acc + Number(cur.shippingFeeSupply || 0),
+        0
+      ),
+    };
+
+    const lastNDays = {
+      days,
+      packageCount: packages.length,
+      shippingFeeSupplyTotal: packages.reduce(
+        (acc, cur) => acc + Number(cur.shippingFeeSupply || 0),
+        0
+      ),
+    };
+
+    const items = packages.map((p) => {
+      const requests = Array.isArray(p.requestIds)
+        ? p.requestIds.map((req) => ({
+            id: String(req?._id || req),
+            requestId: req?.requestId || "",
+            title: req?.title || "",
+            caseInfos: req?.caseInfos || {},
+            status: req?.status || "",
+            status2: req?.status2 || "",
+            manufacturerStage: req?.manufacturerStage || "",
+            createdAt: req?.createdAt,
+          }))
+        : [];
+
+      return {
+        id: String(p._id),
+        shipDateYmd: p.shipDateYmd,
+        requestCount: requests.length,
+        shippingFeeSupply: Number(p.shippingFeeSupply || 0),
+        createdAt: p.createdAt,
+        requests,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { today, lastNDays, items },
+    });
+  } catch (error) {
+    console.error("Error in getMyShippingPackagesSummary:", error);
+    return res.status(500).json({
+      success: false,
+      message: "발송 패키지 요약 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

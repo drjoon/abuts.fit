@@ -22,6 +22,7 @@ import { RequestorPricingReferralPolicyCard } from "./components/RequestorPricin
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
+import { RequestorShippingSummaryCard } from "./components/RequestorShippingSummaryCard";
 import type { RequestorDashboardStat } from "./components/RequestorDashboardStatsCards";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import {
@@ -587,7 +588,8 @@ export const RequestorDashboardPage = () => {
                 />
               </div>
 
-              <div>
+              <div className="flex flex-col gap-6">
+                <RequestorShippingSummaryCard />
                 <WorksheetDiameterCard stats={diameterStatsFromApi} />
               </div>
             </div>
