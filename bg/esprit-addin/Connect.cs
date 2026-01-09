@@ -56,6 +56,85 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        private sealed class AddInRunningForm : Form
+        {
+            private readonly Label _label;
+
+            public AddInRunningForm(string message)
+            {
+                FormBorderStyle = FormBorderStyle.FixedToolWindow;
+                StartPosition = FormStartPosition.Manual;
+                TopMost = true;
+                ShowInTaskbar = false;
+                Text = "Acrodent Dental Add-in";
+                Size = new Size(320, 96);
+
+                _label = new Label
+                {
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                    Padding = new Padding(16),
+                    Text = message
+                };
+
+                Controls.Add(_label);
+
+                var screen = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 800, 600);
+                Location = new DrawingPoint(screen.Right - Width - 20, screen.Bottom - Height - 160);
+            }
+
+            public void UpdateMessage(string message)
+            {
+                _label.Text = message;
+            }
+        }
+
+        private void ShowRunningIndicator()
+        {
+            try
+            {
+                var message = "[Acrodent Dental Add-in] 실행 중";
+
+                if (_runningForm == null || _runningForm.IsDisposed)
+                {
+                    _runningForm = new AddInRunningForm(message);
+                }
+                else
+                {
+                    _runningForm.UpdateMessage(message);
+                }
+
+                if (!_runningForm.Visible)
+                {
+                    _runningForm.Show();
+                }
+
+                _runningForm.BringToFront();
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private void HideRunningIndicator()
+        {
+            try
+            {
+                if (_runningForm != null && !_runningForm.IsDisposed)
+                {
+                    _runningForm.Close();
+                    _runningForm.Dispose();
+                    _runningForm = null;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
         private sealed class AddInStatusForm : Form
         {
             private readonly Label _statusLabel;
@@ -349,7 +428,14 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         internal static DentalAddinHost DentalHost { get; } = new DentalAddinHost();
 
-        public override void AddInConnect(Esprit.Application espritApplication, int connectMode, ref bool custom)
+        private RepeatProcess _repeatProcess;
+        private AddInStatusForm _statusForm;
+        private AddInRunningForm _runningForm;
+        private bool _toolbarPositionLoaded;
+        private System.Windows.Forms.Timer _heartbeatTimer;
+        private const int HeartbeatIntervalMs = 60 * 1000;
+
+        public void _ConnectionManager_AddInConnect(Esprit.Application espritApplication)
         {
             _espApp = espritApplication;
             _pm = _espApp.ProjectManager;
@@ -524,6 +610,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
 
             HideStatusPanel();
+            HideRunningIndicator();
             StopHeartbeat();
         }
 
@@ -578,6 +665,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 _repeatProcess = null;
             }
 
+            HideRunningIndicator();
             StopHeartbeat();
         }
 
@@ -734,7 +822,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             string banner = $"[Acrodent Dental Add-in] {DateTime.Now:yyyy-MM-dd HH:mm:ss}에 로드되었습니다.";
             LogToEspritOutputs(banner);
             ShowToast(banner);
-            ShowStatusPanel(banner);
         }
 
         private void StartHeartbeat()

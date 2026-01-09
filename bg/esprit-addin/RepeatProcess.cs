@@ -9,6 +9,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
@@ -83,7 +84,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             // SetupWatcher(); // 제거: 이제 백엔드/Rhino 명령 기반으로 동작
             
             // 재기동 시 미처리 파일 복구 실행 (별도 스레드)
-            Task.Run(() => RecoverUnprocessedFiles());
+            _ = Task.Run(() => RecoverUnprocessedFiles());
         }
 
         private async Task RecoverUnprocessedFiles()
@@ -249,7 +250,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 _listener.Start();
 
                 _cts = new CancellationTokenSource();
-                Task.Run(() => ListenLoop(_cts.Token), _cts.Token);
+                _ = Task.Run(() => ListenLoop(_cts.Token), _cts.Token);
 
                 LogInfo($"[API Server] Started at {_baseUrl}");
             }
@@ -427,7 +428,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 // 긴 작업은 백그라운드에서 수행하고, 즉시 시작 응답만 반환한다.
                 // 완료/실패는 NotifyBackendSuccess/NotifyBackendFailure로 보고한다.
-                Task.Run(async () =>
+                _ = Task.Run(async () =>
                 {
                     try
                     {
