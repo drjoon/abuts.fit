@@ -171,19 +171,29 @@ export const MachineCard: React.FC<MachineCardProps> = ({
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
-            onClick={onMaterialClick}
-            title="원소재"
-            disabled={loading || !onMaterialClick}
-          >
-            <Cylinder className="h-4 w-4" />
-          </button>
-          <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={onInfoClick}
             title="현재 프로그램/알람 정보"
             disabled={loading || !onInfoClick}
           >
             <Info className="h-4 w-4" />
+          </button>
+          <button
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40 text-xs font-medium"
+            onClick={onMaterialClick}
+            title="원소재"
+            disabled={loading || !onMaterialClick}
+          >
+            {machine.currentMaterial?.diameter
+              ? `Ø${machine.currentMaterial.diameter}`
+              : "Ø"}
+          </button>
+          <button
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
+            onClick={onToolClick}
+            title={toolTooltip || "공구 수명과 교체 시점을 확인합니다."}
+            disabled={loading}
+          >
+            <Wrench className={`h-4 w-4 ${getHealthColorClass(toolHealth)}`} />
           </button>
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
@@ -196,14 +206,6 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             <Thermometer
               className={`h-4 w-4 ${getHealthColorClass(tempHealth)}`}
             />
-          </button>
-          <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
-            onClick={onToolClick}
-            title={toolTooltip || "공구 수명과 교체 시점을 확인합니다."}
-            disabled={loading}
-          >
-            <Wrench className={`h-4 w-4 ${getHealthColorClass(toolHealth)}`} />
           </button>
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors"
@@ -226,12 +228,19 @@ export const MachineCard: React.FC<MachineCardProps> = ({
 
       <div className="mb-4 flex flex-col gap-3 text-sm">
         <div className="flex flex-col gap-2">
-          <button
-            className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50"
-            onClick={onOpenCurrentProg}
-            disabled={
+          <div
+            role="button"
+            tabIndex={0}
+            className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
               !currentProg || !currentProg.name || !isActive || isRunning
-            }
+                ? "bg-blue-50 text-blue-300 cursor-not-allowed"
+                : "bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer"
+            }`}
+            onClick={(e) => {
+              if (!currentProg || !currentProg.name || !isActive || isRunning)
+                return;
+              onOpenCurrentProg(e);
+            }}
           >
             <span>
               {currentProg
@@ -260,15 +269,20 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
-          </button>
+          </div>
 
-          <button
-            className="flex flex-col gap-1 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50 text-left"
+          <div
+            role="button"
+            tabIndex={0}
+            className={`flex flex-col gap-1 rounded-lg px-3 py-2.5 text-sm font-semibold text-left ${
+              !isActive || !nextProg
+                ? "bg-emerald-50 text-emerald-300 cursor-not-allowed"
+                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
+            }`}
             onClick={(e) => {
               if (!nextProg || !isActive) return;
               onOpenNextProg(nextProg, e);
             }}
-            disabled={!isActive || !nextProg}
           >
             <div className="flex items-center justify-between gap-2 min-w-0">
               <span className="truncate">
@@ -323,7 +337,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                 </button>
               </span>
             </div>
-          </button>
+          </div>
         </div>
 
         <div className="mt-1 flex items-center justify-between gap-2">

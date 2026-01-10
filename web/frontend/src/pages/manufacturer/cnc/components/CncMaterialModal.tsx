@@ -88,9 +88,11 @@ export const CncMaterialModal = ({
   const [diameterGroup, setDiameterGroup] = useState<DiameterGroup>(
     base.diameterGroup
   );
-  const [diameter, setDiameter] = useState<number>(base.diameter);
-  const [remainingLength, setRemainingLength] = useState<number>(
-    base.remainingLength
+  const [diameterInput, setDiameterInput] = useState<string>(
+    String(base.diameter || "")
+  );
+  const [remainingInput, setRemainingInput] = useState<string>(
+    String(base.remainingLength || "")
   );
   const [loading, setLoading] = useState(false);
 
@@ -100,18 +102,9 @@ export const CncMaterialModal = ({
     setMaterialType(base.materialType);
     setHeatNo(base.heatNo);
     setDiameterGroup(base.diameterGroup);
-    setDiameter(base.diameter);
-    setRemainingLength(base.remainingLength);
+    setDiameterInput(String(base.diameter || ""));
+    setRemainingInput(String(base.remainingLength || ""));
   }, [open, base]);
-
-  useEffect(() => {
-    if (diameterGroup === "6") setDiameter(6);
-    else if (diameterGroup === "8") setDiameter(8);
-    else if (diameterGroup === "10") setDiameter(10);
-    else {
-      setDiameter((prev) => (prev && prev > 10 ? prev : 12));
-    }
-  }, [diameterGroup]);
 
   const title: ReactNode =
     mode === "replace"
@@ -120,15 +113,37 @@ export const CncMaterialModal = ({
       ? `소재추가 - ${machineName}`
       : `원소재 - ${machineName}`;
 
+  const parseLengths = () => {
+    const rem = remainingInput.trim();
+    const remNum = rem === "" ? 0 : Number(rem);
+    if (!Number.isFinite(remNum) || remNum < 0) {
+      throw new Error("잔여량을 올바른 숫자로 입력해주세요.");
+    }
+
+    let diaNum: number;
+    if (diameterGroup === "10+") {
+      const raw = diameterInput.trim();
+      diaNum = raw === "" ? 12 : Number(raw);
+      if (!Number.isFinite(diaNum) || diaNum <= 10) {
+        throw new Error("직경은 10mm 초과 숫자로 입력해주세요.");
+      }
+    } else {
+      diaNum = Number(diameterGroup);
+    }
+
+    return { diaNum, remNum };
+  };
+
   const handleReplace = async () => {
     try {
+      const { diaNum, remNum } = parseLengths();
       setLoading(true);
       await onReplace({
         materialType: String(materialType || "").trim(),
         heatNo: String(heatNo || "").trim(),
-        diameter,
+        diameter: diaNum,
         diameterGroup,
-        remainingLength,
+        remainingLength: remNum,
       });
       toast({ title: "소재교체", description: "소재 정보를 변경했습니다." });
       onClose();
@@ -145,8 +160,9 @@ export const CncMaterialModal = ({
 
   const handleAdd = async () => {
     try {
+      const { remNum } = parseLengths();
       setLoading(true);
-      await onAdd({ remainingLength });
+      await onAdd({ remainingLength: remNum });
       toast({ title: "소재추가", description: "잔여량을 업데이트했습니다." });
       onClose();
     } catch (e: any) {
@@ -170,7 +186,7 @@ export const CncMaterialModal = ({
         <div className="space-y-4">
           <div className="rounded-md bg-muted p-3">
             <p className="text-sm font-medium">현재 소재</p>
-            <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-muted-foreground">
               <p>소재: {base.materialType || "-"}</p>
               <p>Heat No.: {base.heatNo || "-"}</p>
               <p>
@@ -181,7 +197,7 @@ export const CncMaterialModal = ({
           </div>
 
           {mode === "replace" && (
-            <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>소재 종류</Label>
                 <Input
@@ -200,64 +216,61 @@ export const CncMaterialModal = ({
                   }
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>직경 그룹</Label>
-                  <Select
-                    value={diameterGroup}
-                    onValueChange={(v: string) =>
-                      setDiameterGroup(v as DiameterGroup)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="6">6mm</SelectItem>
-                      <SelectItem value="8">8mm</SelectItem>
-                      <SelectItem value="10">10mm</SelectItem>
-                      <SelectItem value="10+">10mm+</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>직경(mm)</Label>
+              <div className="space-y-1.5">
+                <Label>소재 직경</Label>
+                <Select
+                  value={diameterGroup}
+                  onValueChange={(v: string) =>
+                    setDiameterGroup(v as DiameterGroup)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6">6mm</SelectItem>
+                    <SelectItem value="8">8mm</SelectItem>
+                    <SelectItem value="10">10mm</SelectItem>
+                    <SelectItem value="10+">10mm+</SelectItem>
+                  </SelectContent>
+                </Select>
+                {diameterGroup === "10+" && (
                   <Input
+                    className="mt-1"
                     type="number"
-                    value={isFinite(diameter) ? diameter : 0}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                      const n = Number(e.target.value);
-                      setDiameter(isFinite(n) ? n : 0);
-                    }}
-                    disabled={diameterGroup !== "10+"}
+                    placeholder="직경(mm)"
+                    value={diameterInput}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      setDiameterInput(e.target.value)
+                    }
                   />
-                </div>
+                )}
               </div>
               <div className="space-y-1.5">
-                <Label>잔여량</Label>
+                <Label>수량</Label>
                 <Input
                   type="number"
-                  value={isFinite(remainingLength) ? remainingLength : 0}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                    const n = Number(e.target.value);
-                    setRemainingLength(isFinite(n) ? n : 0);
-                  }}
+                  value={remainingInput}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setRemainingInput(e.target.value)
+                  }
                 />
               </div>
             </div>
           )}
 
           {mode === "add" && (
-            <div className="space-y-1.5">
-              <Label>추가 후 잔여량</Label>
-              <Input
-                type="number"
-                value={isFinite(remainingLength) ? remainingLength : 0}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                  const n = Number(e.target.value);
-                  setRemainingLength(isFinite(n) ? n : 0);
-                }}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 space-y-1.5">
+                <Label>추가 후 잔여량</Label>
+                <Input
+                  type="number"
+                  value={remainingInput}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    setRemainingInput(e.target.value)
+                  }
+                />
+              </div>
             </div>
           )}
         </div>
@@ -291,8 +304,8 @@ export const CncMaterialModal = ({
                   setMaterialType(base.materialType);
                   setHeatNo(base.heatNo);
                   setDiameterGroup(base.diameterGroup);
-                  setDiameter(base.diameter);
-                  setRemainingLength(base.remainingLength);
+                  setDiameterInput(String(base.diameter || ""));
+                  setRemainingInput(String(base.remainingLength || ""));
                 }}
                 disabled={loading}
               >
