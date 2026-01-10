@@ -2,8 +2,21 @@ import express from "express";
 import * as cncMachineController from "../controllers/cncMachine.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/role.middleware.js";
+import { requireBridgeSecret } from "../middlewares/bridgeSecret.middleware.js";
 
 const router = express.Router();
+
+// 브리지 서버 전용(시크릿 기반)
+router.get(
+  "/bridge/dummy-settings",
+  requireBridgeSecret,
+  cncMachineController.getDummySettingsForBridge
+);
+router.patch(
+  "/bridge/dummy-settings/:machineId/last-run-key",
+  requireBridgeSecret,
+  cncMachineController.updateDummyLastRunKeyForBridge
+);
 
 // 모든 라우트에 인증 필요
 router.use(authenticate);

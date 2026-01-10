@@ -80,6 +80,15 @@ const cncMachineSchema = new mongoose.Schema(
           },
         },
       ],
+      excludeHolidays: {
+        type: Boolean,
+        default: false,
+      },
+      // 마지막 더미 실행 시각(YYYY-MM-DD HH:mm, KST 기준)
+      lastRunKey: {
+        type: String,
+        default: null,
+      },
     },
     specifications: {
       maxDiameter: Number,

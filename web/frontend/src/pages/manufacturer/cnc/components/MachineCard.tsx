@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
+import { parseProgramNoFromName } from "../lib/programNaming";
 import { Machine } from "@/pages/manufacturer/cnc/types";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
@@ -126,16 +127,21 @@ export const MachineCard: React.FC<MachineCardProps> = ({
     { id: 1, time: "08:00", enabled: true },
     { id: 2, time: "16:00", enabled: true },
   ]);
+  const [dummyExcludeHolidays, setDummyExcludeHolidays] = useState(false);
   const [dummySaving, setDummySaving] = useState(false);
 
   useEffect(() => {
-    const program = machine?.dummySettings?.programName || "O0100";
-    const schedules = Array.isArray(machine?.dummySettings?.schedules)
+    if (!machine?.dummySettings) return;
+    const { programName, schedules, excludeHolidays } = machine.dummySettings;
+    if (programName) {
+      setDummyProgram(programName);
+    }
+    const next = Array.isArray(machine?.dummySettings?.schedules)
       ? machine.dummySettings!.schedules!
       : [];
     const mapped =
-      schedules.length > 0
-        ? schedules.map((s, idx) => ({
+      next.length > 0
+        ? next.map((s, idx) => ({
             id: idx + 1,
             time: s.time || "08:00",
             enabled: s.enabled !== false,
@@ -144,8 +150,10 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             { id: 1, time: "08:00", enabled: true },
             { id: 2, time: "16:00", enabled: true },
           ];
-    setDummyProgram(program);
     setDummySchedules(mapped);
+    if (typeof excludeHolidays === "boolean") {
+      setDummyExcludeHolidays(excludeHolidays);
+    }
   }, [machine?.dummySettings, machine?.uid]);
   const hasReservation = !!reservationSummary;
   const hasNextProgs =
@@ -235,7 +243,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={onToolClick}
-            title={toolTooltip || "공구 수명, 교체 시점 확인"}
+            title={toolTooltip || "공구 수명, 교체 확인"}
             disabled={loading}
           >
             <Wrench className={`h-4 w-4 ${getHealthColorClass(toolHealth)}`} />
@@ -243,9 +251,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={onTempClick}
-            title={
-              tempTooltip || "모터 온도 확인"
-            }
+            title={tempTooltip || "모터 온도"}
             disabled={loading}
           >
             <Thermometer
@@ -255,6 +261,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors"
             onClick={onEditClick}
+            title="장비 설정"
           >
             {machine.allowJobStart === false ? (
               <ShieldOff className="h-4 w-4 text-red-500" />
@@ -467,6 +474,17 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                     <Plus className="h-3.5 w-3.5" />
                   </button>
                 </div>
+                <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-gray-700 border border-slate-100">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
+                    checked={dummyExcludeHolidays}
+                    onChange={(e) => setDummyExcludeHolidays(e.target.checked)}
+                  />
+                  <div className="flex flex-col leading-tight">
+                    <span className="font-medium text-xs">쉬는 날 제외</span>
+                  </div>
+                </label>
                 <div className="space-y-2">
                   {dummySchedules.map((item) => (
                     <div
@@ -538,12 +556,14 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                 }
                 setDummySaving(true);
                 try {
+                  // 1) 더미 설정 저장 (프로그램명/스케줄)
                   const payload = {
                     programName: dummyProgram,
                     schedules: dummySchedules.map((s) => ({
                       time: s.time,
                       enabled: s.enabled !== false,
                     })),
+                    excludeHolidays: dummyExcludeHolidays,
                   };
                   const res = await fetch(
                     `/api/cnc-machines/${encodeURIComponent(
@@ -560,18 +580,80 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                   );
                   const body: any = await res.json().catch(() => ({}));
                   if (!res.ok || body?.success === false) {
-                    throw new Error(body?.message || "저장에 실패했습니다.");
+                    throw new Error(
+                      body?.message || "더미 설정 저장에 실패했습니다."
+                    );
                   }
+
+                  // 2) 더미 프로그램 번호 파싱 (예: "O0100" → 100)
+                  const progNo = parseProgramNoFromName(dummyProgram || "");
+                  if (progNo == null) {
+                    throw new Error(
+                      "더미 프로그램명에서 프로그램 번호를 찾을 수 없습니다. 예: O0100"
+                    );
+                  }
+
+                  // 3) 브리지 raw 호출로 프로그램 활성화(UpdateActivateProg)
+                  const rawRes = await fetch(
+                    `/api/machines/${encodeURIComponent(machine.uid)}/raw`,
+                    {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                      },
+                      body: JSON.stringify({
+                        dataType: "UpdateActivateProg",
+                        payload: { headType: 0, programNo: progNo },
+                        timeoutMilliseconds: 5000,
+                      }),
+                    }
+                  );
+                  const rawBody: any = await rawRes.json().catch(() => ({}));
+                  if (!rawRes.ok || rawBody?.success === false) {
+                    throw new Error(
+                      rawBody?.message ||
+                        rawBody?.error ||
+                        "더미 프로그램 활성화에 실패했습니다."
+                    );
+                  }
+
+                  // 4) 가공 시작 제어 명령(/start)
+                  const startRes = await fetch(
+                    `/api/machines/${encodeURIComponent(machine.uid)}/start`,
+                    {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                      },
+                      body: JSON.stringify({ status: 0, ioUid: 0 }),
+                    }
+                  );
+                  const startBody: any = await startRes
+                    .json()
+                    .catch(() => ({}));
+                  if (!startRes.ok || startBody?.success === false) {
+                    throw new Error(
+                      startBody?.message ||
+                        startBody?.error ||
+                        "더미 가공 시작에 실패했습니다."
+                    );
+                  }
+
                   toast({
-                    title: "저장 완료",
-                    description: "더미 설정을 저장했습니다.",
+                    title: "즉시 가공 시작",
+                    description: `프로그램 ${
+                      dummyProgram || `O${String(progNo).padStart(4, "0")}`
+                    } 즉시 가공을 시작했습니다.`,
                   });
                   setDummyOpen(false);
                 } catch (e: any) {
                   toast({
-                    title: "저장 실패",
+                    title: "즉시 가공 실패",
                     description:
-                      e?.message ?? "더미 설정 저장 중 오류가 발생했습니다.",
+                      e?.message ??
+                      "더미 즉시 가공 처리 중 오류가 발생했습니다.",
                     variant: "destructive",
                   });
                 } finally {
@@ -579,7 +661,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                 }
               }}
             >
-              {dummySaving ? "저장 중..." : "저장"}
+              {dummySaving ? "즉시 가공 중..." : "즉시 가공"}
             </button>
           </div>
         </div>

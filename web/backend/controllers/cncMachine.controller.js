@@ -1,6 +1,10 @@
 import CncMachine from "../models/cncMachine.model.js";
 import Request from "../models/request.model.js";
 import {
+  getTodayYmdInKst,
+  isKoreanBusinessDay,
+} from "../utils/krBusinessDays.js";
+import {
   getAllProductionQueues,
   recalculateQueueOnMaterialChange,
 } from "./request/production.utils.js";
@@ -23,6 +27,88 @@ export async function getMachines(req, res) {
     res.status(500).json({
       success: false,
       message: "장비 목록 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 브리지 서버용: 더미 스케줄/프로그램 설정 조회
+ * - 브리지는 인증 토큰 없이 X-Bridge-Secret으로만 접근
+ * - excludeHolidays 적용을 위해 ymd(YYYY-MM-DD) 기준 영업일 여부도 함께 반환
+ */
+export async function getDummySettingsForBridge(req, res) {
+  try {
+    const ymdRaw = typeof req.query?.ymd === "string" ? req.query.ymd : "";
+    const ymd = (ymdRaw || "").trim() || getTodayYmdInKst();
+    const isBusinessDay = await isKoreanBusinessDay(ymd);
+
+    const machines = await CncMachine.find({ status: "active" })
+      .sort({ machineId: 1 })
+      .lean();
+
+    const list = Array.isArray(machines)
+      ? machines.map((m) => ({
+          machineId: m.machineId,
+          dummySettings: m.dummySettings || null,
+        }))
+      : [];
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ymd,
+        isBusinessDay,
+        machines: list,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getDummySettingsForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 더미 설정 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 브리지 서버용: 더미 스케줄 idempotency 키(lastRunKey) 업데이트
+ */
+export async function updateDummyLastRunKeyForBridge(req, res) {
+  try {
+    const { machineId } = req.params;
+    const { lastRunKey } = req.body || {};
+
+    const key = typeof lastRunKey === "string" ? lastRunKey.trim() : "";
+    if (!key) {
+      return res.status(400).json({
+        success: false,
+        message: "lastRunKey is required",
+      });
+    }
+
+    const machine = await CncMachine.findOne({ machineId });
+    if (!machine) {
+      return res.status(404).json({
+        success: false,
+        message: "장비를 찾을 수 없습니다.",
+      });
+    }
+
+    machine.dummySettings = machine.dummySettings || {};
+    machine.dummySettings.lastRunKey = key;
+    await machine.save();
+
+    return res.status(200).json({
+      success: true,
+      data: { machineId, lastRunKey: key },
+    });
+  } catch (error) {
+    console.error("Error in updateDummyLastRunKeyForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 lastRunKey 업데이트 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -272,7 +358,7 @@ export async function cancelScheduledMaterialChange(req, res) {
 export async function updateDummySettings(req, res) {
   try {
     const { machineId } = req.params;
-    const { programName, schedules } = req.body || {};
+    const { programName, schedules, excludeHolidays } = req.body || {};
 
     const machine = await CncMachine.findOne({ machineId });
     if (!machine) {
@@ -297,9 +383,13 @@ export async function updateDummySettings(req, res) {
       ];
     }
 
+    const existingDummy = machine.dummySettings || {};
     machine.dummySettings = {
       programName: nextProgram,
       schedules: nextSchedules,
+      excludeHolidays: Boolean(excludeHolidays),
+      // 워커에서 사용하는 마지막 실행 키는 유지
+      lastRunKey: existingDummy.lastRunKey || null,
     };
     await machine.save();
 

@@ -29,6 +29,7 @@ export interface Machine {
   dummySettings?: {
     programName?: string;
     schedules?: { time: string; enabled?: boolean }[];
+    excludeHolidays?: boolean;
   };
 }
 

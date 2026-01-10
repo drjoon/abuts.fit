@@ -173,7 +173,11 @@ export const CncDashboardPage = () => {
       {
         currentMaterial?: CncMaterialInfo;
         scheduledMaterialChange?: any;
-        dummySettings?: { programName?: string; schedules?: any[] };
+        dummySettings?: {
+          programName?: string;
+          schedules?: any[];
+          excludeHolidays?: boolean;
+        };
       }
     > = {};
     for (const item of list) {
