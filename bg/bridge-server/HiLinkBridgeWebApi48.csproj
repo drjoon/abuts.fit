@@ -27,13 +27,13 @@
     <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Hi-Link, Version=1.0.3.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="Hi-Link">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\ConsoleTest\Hi-Link.dll</HintPath>
+      <HintPath>bin\x86\Debug\Hi-Link.dll</HintPath>
     </Reference>
-    <Reference Include="Hi-Link_Advanced, Version=1.0.3.0, Culture=neutral, processorArchitecture=x86">
+    <Reference Include="Hi-Link_Advanced">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\ConsoleTest\Hi-Link_Advanced.dll</HintPath>
+      <HintPath>bin\x86\Debug\Hi-Link_Advanced.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.Owin, Version=4.2.3.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>packages\Microsoft.Owin.4.2.3\lib\net45\Microsoft.Owin.dll</HintPath>

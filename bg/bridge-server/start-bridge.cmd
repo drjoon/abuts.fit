@@ -5,8 +5,8 @@ set DUMMY_CNC_SCHEDULER_ENABLED=true
 set BRIDGE_SELF_BASE=http://localhost:8002
 set BACKEND_BASE=https://abuts.fit/api
 
-set CNC_START_IOUID=0
-set CNC_BUSY_IOUID=0
+set CNC_START_IOUID=61
+set CNC_BUSY_IOUID=61
 set CNC_JOB_ASSUME_MINUTES=20
 
 :: 현재 배치 파일이 위치한 경로를 기준으로 상대 경로 설정

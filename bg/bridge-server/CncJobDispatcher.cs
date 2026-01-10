@@ -1,19 +1,19 @@
-using Hi_Link_Advanced;
-using Hi_Link.Libraries.Model;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Hi_Link;
+using Hi_Link.Libraries.Model;
 
 namespace HiLinkBridgeWebApi48
 {
     public static class CncJobDispatcher
     {
-        private static readonly HiLinkMode2Client Client = new HiLinkMode2Client();
 
         private static Timer _timer;
         private static int _tickRunning = 0;
@@ -36,6 +36,17 @@ namespace HiLinkBridgeWebApi48
             // bridge-server/bin/x86/Debug 기준
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
+        }
+
+        /// <summary>
+        /// Mode1 핸들을 얻는다.
+        /// </summary>
+        private static bool TryGetHandle(string uid, out ushort handle)
+        {
+            handle = 0;
+            if (Mode1HandleStore.TryGetHandle(uid, out handle, out var err)) return true;
+            Console.WriteLine("[CncJobDispatcher] handle error uid={0} err={1}", uid, err);
+            return false;
         }
 
         private class RunningState
@@ -159,7 +170,7 @@ namespace HiLinkBridgeWebApi48
                 {
                     if (job.programNo == null || job.programNo.Value <= 0) return false;
 
-                    var dto = new UpdateMachineActivateProgNo { headType = 0, programNo = job.programNo.Value };
+                    var dto = new UpdateMachineActivateProgNo { headType = 0, programNo = (short)job.programNo.Value };
                     var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
                     if (res != 0)
                     {
@@ -193,7 +204,7 @@ namespace HiLinkBridgeWebApi48
                     return false;
                 }
 
-                // 1) 업로드(UpdateProgram)
+                // 1) 업로드(UpdateProgram) - Mode1 API 사용
                 var info = new UpdateMachineProgramInfo
                 {
                     headType = 0,
@@ -202,8 +213,13 @@ namespace HiLinkBridgeWebApi48
                     isNew = true,
                 };
 
-                var upRes = await Client.RequestRawAsync(machineId, CollectDataType.UpdateProgram, info, 60000);
-                var upRc = ToResultCode(upRes);
+                if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
+                {
+                    Console.WriteLine("[CncJobDispatcher] handle error machine={0} err={1}", machineId, errUp);
+                    return false;
+                }
+
+                var upRc = HiLink.SetMachineProgramInfo(handle, info);
                 if (upRc != 0)
                 {
                     Console.WriteLine("[CncJobDispatcher] upload failed machine={0} rc={1}", machineId, upRc);
@@ -211,7 +227,7 @@ namespace HiLinkBridgeWebApi48
                 }
 
                 // 2) 활성화(UpdateActivateProg)
-                var dto2 = new UpdateMachineActivateProgNo { headType = 0, programNo = progNo };
+                var dto2 = new UpdateMachineActivateProgNo { headType = 0, programNo = (short)progNo };
                 var act = Mode1HandleStore.SetActivateProgram(machineId, dto2, out var err2);
                 if (act != 0)
                 {
@@ -293,29 +309,42 @@ namespace HiLinkBridgeWebApi48
                 if (st == null) return true;
 
                 var busyIo = BusyIoUid;
-                if (busyIo >= 0)
+if (busyIo >= 0)
+{
+    if (Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errOp))
+    {
+        var panelList = new List<IOInfo>();
+        // panelType은 0(Main) 기준으로 사용 (필요 시 설정 변경 가능)
+        var rc = HiLink.GetMachineAllOPInfo(handle, 0, ref panelList);
+        if (rc == 0 && panelList != null)
+        {
+            short? status = null;
+            foreach (var io in panelList)
+            {
+                if (io != null && io.IOUID == (short)busyIo)
                 {
-                    var opObj = await Client.RequestRawAsync(machineId, CollectDataType.GetOPStatus, null, 3000);
-                    if (opObj is GetOPStatus op && op.ioInfo != null)
-                    {
-                        short? status = null;
-                        foreach (var io in op.ioInfo)
-                        {
-                            if (io != null && io.IOUID == (short)busyIo)
-                            {
-                                status = io.Status;
-                                break;
-                            }
-                        }
-
-                        if (status.HasValue)
-                        {
-                            var busy = status.Value != 0;
-                            if (busy) st.SawBusy = true;
-                            if (st.SawBusy && !busy) return true;
-                        }
-                    }
+                    status = io.Status;
+                    break;
                 }
+            }
+
+            if (status.HasValue)
+            {
+                var busy = status.Value != 0;
+                if (busy) st.SawBusy = true;
+                if (st.SawBusy && !busy) return true;
+            }
+        }
+        else
+        {
+            Console.WriteLine("[CncJobDispatcher] GetMachineAllOPInfo failed machine={0} rc={1}", machineId, rc);
+        }
+    }
+    else
+    {
+        Console.WriteLine("[CncJobDispatcher] handle error machine={0} err={1}", machineId, errOp);
+    }
+}
 
                 // fallback: 일정 시간 지나면 완료로 간주
                 var elapsed = DateTime.UtcNow - st.StartedAtUtc;
