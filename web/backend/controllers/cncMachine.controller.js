@@ -1,5 +1,6 @@
 import CncMachine from "../models/cncMachine.model.js";
 import Request from "../models/request.model.js";
+import CreditLedger from "../models/creditLedger.model.js";
 import {
   getTodayYmdInKst,
   isKoreanBusinessDay,
@@ -18,6 +19,288 @@ function withBridgeHeaders(extra = {}) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+/**
+ * 브리지 예약 큐 조회 (머신별)
+ */
+export async function getBridgeQueueForMachine(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const url = `${BRIDGE_BASE.replace(
+      /\/$/,
+      ""
+    )}/api/bridge/queue/${encodeURIComponent(mid)}`;
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: withBridgeHeaders(),
+    });
+    const body = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || body?.success === false) {
+      return res.status(resp.status).json({
+        success: false,
+        message:
+          body?.message ||
+          body?.error ||
+          "브리지 예약 큐 조회 중 오류가 발생했습니다.",
+      });
+    }
+
+    const list = Array.isArray(body?.data) ? body.data : body?.data || [];
+    return res.status(200).json({ success: true, data: list });
+  } catch (error) {
+    console.error("Error in getBridgeQueueForMachine:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 예약 큐 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+// 생산 → CAM 롤백 시 크레딧 환불(CREDIT) 처리 포함
+async function rollbackRequestToCamByRequestId(requestId) {
+  const rid = String(requestId || "").trim();
+  if (!rid) return null;
+
+  const request = await Request.findOne({ requestId: rid });
+  if (!request) return null;
+
+  const status = String(request.status || "").trim();
+  const stage = String(request.manufacturerStage || "").trim();
+
+  // 생산 단계가 아니면 롤백하지 않는다.
+  if (status !== "생산" && stage !== "생산") {
+    return request;
+  }
+
+  // 크레딧 환불: CAM 승인 시 차감된 SPEND를 되돌리는 CREDIT 생성 (idempotent)
+  try {
+    const orgId =
+      request.requestorOrganizationId || request.requestor?.organizationId;
+    if (orgId) {
+      const amount = Number(request.price?.amount || 0);
+      if (amount > 0) {
+        const spendKey = `request:${String(request._id)}:cam_approve_spend`;
+        const refundKey = `request:${String(request._id)}:cam_approve_refund`;
+
+        const spend = await CreditLedger.findOne({
+          uniqueKey: spendKey,
+          type: "SPEND",
+        }).lean();
+
+        if (spend) {
+          const existingRefund = await CreditLedger.findOne({
+            uniqueKey: refundKey,
+          }).lean();
+
+          if (!existingRefund) {
+            await CreditLedger.create({
+              organizationId: orgId,
+              userId: null,
+              type: "CHARGE",
+              amount,
+              refType: "REQUEST",
+              refId: request._id,
+              uniqueKey: refundKey,
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // 크레딧 환불 실패는 롤백 자체를 막지는 않는다. (로그만 남김)
+    console.error("rollbackRequestToCamByRequestId credit refund error:", e);
+  }
+
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+
+  const now = new Date();
+
+  // CAM/가공 단계 검토 상태를 PENDING으로 되돌린다.
+  const camReview = request.caseInfos.reviewByStage.cam || {};
+  request.caseInfos.reviewByStage.cam = {
+    status: "PENDING",
+    updatedAt: now,
+    updatedBy: null,
+    reason: "",
+    ...camReview,
+  };
+
+  const machiningReview = request.caseInfos.reviewByStage.machining || {};
+  request.caseInfos.reviewByStage.machining = {
+    status: "PENDING",
+    updatedAt: now,
+    updatedBy: null,
+    reason: "",
+    ...machiningReview,
+  };
+
+  // 상태를 CAM 단계로 롤백
+  request.status = "CAM";
+  request.manufacturerStage = "CAM";
+  request.status2 = "없음";
+
+  // 생산 스케줄 중 실제 가공 시각을 초기화 (필요 시 재계산)
+  request.productionSchedule = request.productionSchedule || {};
+  request.productionSchedule.actualMachiningStart = null;
+  request.productionSchedule.actualMachiningComplete = null;
+
+  await request.save();
+  return request;
+}
+
+/**
+ * 브리지 예약 큐에서 단일 작업 삭제 + 해당 의뢰를 CAM 단계로 롤백
+ */
+export async function deleteBridgeQueueJob(req, res) {
+  try {
+    const { machineId, jobId } = req.params;
+    const mid = String(machineId || "").trim();
+    const jid = String(jobId || "").trim();
+
+    if (!mid || !jid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId and jobId are required",
+      });
+    }
+
+    const url = `${BRIDGE_BASE.replace(
+      /\/$/,
+      ""
+    )}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(jid)}`;
+    const resp = await fetch(url, {
+      method: "DELETE",
+      headers: withBridgeHeaders(),
+    });
+    const body = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || body?.success === false) {
+      return res.status(resp.status).json({
+        success: false,
+        message:
+          body?.message ||
+          body?.error ||
+          "브리지 예약 작업 삭제 중 오류가 발생했습니다.",
+      });
+    }
+
+    const removedJob = body?.data || null;
+    let rolledBackRequest = null;
+    const reqIdRaw = removedJob?.requestId;
+    if (reqIdRaw) {
+      rolledBackRequest = await rollbackRequestToCamByRequestId(reqIdRaw);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        removedJob,
+        rolledBackRequestId: rolledBackRequest?._id || null,
+      },
+    });
+  } catch (error) {
+    console.error("Error in deleteBridgeQueueJob:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 예약 작업 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 브리지 예약 큐 전체 삭제 + 관련 의뢰를 CAM 단계로 롤백
+ */
+export async function clearBridgeQueueForMachine(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    // 1) 현재 큐 스냅샷 조회 (삭제 전 롤백 대상 수집)
+    const snapshotUrl = `${BRIDGE_BASE.replace(
+      /\/$/,
+      ""
+    )}/api/bridge/queue/${encodeURIComponent(mid)}`;
+    const snapResp = await fetch(snapshotUrl, {
+      method: "GET",
+      headers: withBridgeHeaders(),
+    });
+    const snapBody = await snapResp.json().catch(() => ({}));
+    const jobs =
+      snapResp.ok &&
+      snapBody?.success !== false &&
+      Array.isArray(snapBody?.data)
+        ? snapBody.data
+        : [];
+
+    // 2) 큐 전체 삭제
+    const clearUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/clear`;
+    const clearResp = await fetch(clearUrl, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ machineId: mid }),
+    });
+    const clearBody = await clearResp.json().catch(() => ({}));
+
+    if (!clearResp.ok || clearBody?.success === false) {
+      return res.status(clearResp.status).json({
+        success: false,
+        message:
+          clearBody?.message ||
+          clearBody?.error ||
+          "브리지 예약 큐 전체 삭제 중 오류가 발생했습니다.",
+      });
+    }
+
+    // 3) 큐에 있던 각 의뢰를 CAM 단계로 롤백 (중복 requestId는 1회만 처리)
+    const uniqueRequestIds = new Set();
+    for (const job of jobs) {
+      const rid = String(job?.requestId || "").trim();
+      if (!rid) continue;
+      uniqueRequestIds.add(rid);
+    }
+
+    const rolledBack = [];
+    for (const rid of uniqueRequestIds) {
+      const r = await rollbackRequestToCamByRequestId(rid);
+      if (r?._id) {
+        rolledBack.push(String(r._id));
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        clearedMachineId: mid,
+        rolledBackRequestIds: rolledBack,
+      },
+    });
+  } catch (error) {
+    console.error("Error in clearBridgeQueueForMachine:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 예약 큐 전체 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 async function syncMachineMaterialToBridge(machineId, material) {

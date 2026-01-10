@@ -31,6 +31,27 @@ router.get(
   cncMachineController.getMachines
 );
 
+// 브리지 예약 큐 조회 (머신별)
+router.get(
+  "/:machineId/bridge-queue",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getBridgeQueueForMachine
+);
+
+// 브리지 예약 큐에서 단일 작업 삭제
+router.delete(
+  "/:machineId/bridge-queue/:jobId",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.deleteBridgeQueueJob
+);
+
+// 브리지 예약 큐 전체 삭제
+router.post(
+  "/:machineId/bridge-queue/clear",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.clearBridgeQueueForMachine
+);
+
 // 생산 큐 조회 (제조사, 관리자)
 router.get(
   "/queues",

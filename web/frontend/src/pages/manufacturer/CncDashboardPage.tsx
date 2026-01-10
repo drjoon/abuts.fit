@@ -313,6 +313,93 @@ export const CncDashboardPage = () => {
       ? reservationJobsMap[reservationTarget.uid]
       : [];
 
+  const loadBridgeQueueForMachine = useCallback(
+    async (machine: Machine) => {
+      if (!token) return;
+      const uid = machine.uid;
+      if (!uid) return;
+
+      try {
+        const res = await fetch(
+          `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(
+            body?.message ||
+              body?.error ||
+              "브리지 예약 큐를 불러오지 못했습니다."
+          );
+        }
+
+        const list: any[] = Array.isArray(body?.data) ? body.data : [];
+        const jobs: CncJobItem[] = list.map((job) => {
+          const programNo =
+            typeof job?.programNo === "number" ||
+            typeof job?.programNo === "string"
+              ? job.programNo
+              : null;
+          const nameRaw =
+            job?.fileName ||
+            job?.programName ||
+            (programNo != null ? `#${programNo}` : "-");
+          return {
+            id: String(job?.id || `${uid}:${nameRaw}`),
+            source: "bridge",
+            programNo,
+            name: String(nameRaw || "-"),
+            qty: 1,
+          };
+        });
+
+        setReservationJobsMap((prev) => ({
+          ...prev,
+          [uid]: jobs,
+        }));
+
+        if (jobs.length > 0) {
+          const first = jobs[0];
+          const baseName = first?.name || "-";
+          setReservationSummaryMap((prev) => ({
+            ...prev,
+            [uid]: `[생산예약 : ${baseName}]`,
+          }));
+
+          const total = jobs.reduce((sum, j) => sum + (j.qty || 1), 0);
+          setReservationTotalQtyMap((prev) => ({
+            ...prev,
+            [uid]: total,
+          }));
+        } else {
+          setReservationSummaryMap((prev) => {
+            const next = { ...prev };
+            delete next[uid];
+            return next;
+          });
+          setReservationTotalQtyMap((prev) => {
+            const next = { ...prev };
+            delete next[uid];
+            return next;
+          });
+        }
+      } catch (e: any) {
+        const msg = e?.message || "브리지 예약 큐 조회 중 오류";
+        setError(msg);
+        toast({
+          title: "예약 목록 조회 실패",
+          description: msg,
+          variant: "destructive",
+        });
+      }
+    },
+    [token, toast, setError]
+  );
+
   const openMachineInfo = async (uid: string) => {
     if (!uid) return;
     setMachineInfoOpen(true);
@@ -916,7 +1003,9 @@ export const CncDashboardPage = () => {
                 }}
                 onOpenReservationList={(machine) => {
                   setReservationListTarget(machine);
-                  setReservationListOpen(true);
+                  void loadBridgeQueueForMachine(machine).finally(() => {
+                    setReservationListOpen(true);
+                  });
                 }}
               />
             )}
@@ -1128,40 +1217,143 @@ export const CncDashboardPage = () => {
           }}
           onCancelJob={(job) => {
             const target = reservationListTarget;
-            if (!target) return;
+            if (!target || !token) return;
             const uid = target.uid;
-            setReservationJobsMap((prev) => {
-              const current = prev[uid] || [];
-              const nextJobs = current.filter((j) => j.id !== job.id);
-              return {
-                ...prev,
-                [uid]: nextJobs,
-              };
-            });
-            setReservationSummaryMap((prev) => {
-              const remaining = reservationJobsMap[uid] || [];
-              const nextRemaining = remaining.filter((j) => j.id !== job.id);
-              if (nextRemaining.length > 0) return prev;
-              const next = { ...prev };
-              delete next[uid];
-              return next;
-            });
+
+            void (async () => {
+              try {
+                const res = await fetch(
+                  `/api/cnc-machines/${encodeURIComponent(
+                    uid
+                  )}/bridge-queue/${encodeURIComponent(job.id)}`,
+                  {
+                    method: "DELETE",
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                    },
+                  }
+                );
+                const body: any = await res.json().catch(() => ({}));
+                if (!res.ok || body?.success === false) {
+                  throw new Error(
+                    body?.message ||
+                      body?.error ||
+                      "예약 작업 삭제 중 오류가 발생했습니다."
+                  );
+                }
+
+                setReservationJobsMap((prev) => {
+                  const current = prev[uid] || [];
+                  const nextJobs = current.filter((j) => j.id !== job.id);
+                  return {
+                    ...prev,
+                    [uid]: nextJobs,
+                  };
+                });
+                setReservationSummaryMap((prev) => {
+                  const remaining = reservationJobsMap[uid] || [];
+                  const nextRemaining = remaining.filter(
+                    (j) => j.id !== job.id
+                  );
+                  if (nextRemaining.length > 0) return prev;
+                  const next = { ...prev };
+                  delete next[uid];
+                  return next;
+                });
+                setReservationTotalQtyMap((prev) => {
+                  const remaining = reservationJobsMap[uid] || [];
+                  const nextRemaining = remaining.filter(
+                    (j) => j.id !== job.id
+                  );
+                  const total = nextRemaining.reduce(
+                    (sum, j) => sum + (j.qty || 1),
+                    0
+                  );
+                  const next = { ...prev };
+                  if (total <= 0) delete next[uid];
+                  else next[uid] = total;
+                  return next;
+                });
+
+                toast({
+                  title: "예약 취소",
+                  description:
+                    "선택한 생산 예약이 취소되고 CAM 단계로 되돌렸습니다.",
+                });
+              } catch (e: any) {
+                const msg =
+                  e?.message ||
+                  "예약 작업 삭제 중 알 수 없는 오류가 발생했습니다.";
+                setError(msg);
+                toast({
+                  title: "예약 취소 실패",
+                  description: msg,
+                  variant: "destructive",
+                });
+              }
+            })();
           }}
           onCancelAll={(machine) => {
-            if (!machine) return;
+            if (!machine || !token) return;
             const uid = machine.uid;
             setReservationListOpen(false);
             setReservationListTarget(null);
-            setReservationSummaryMap((prev) => {
-              const next = { ...prev };
-              delete next[uid];
-              return next;
-            });
-            setReservationJobsMap((prev) => {
-              const next = { ...prev };
-              delete next[uid];
-              return next;
-            });
+
+            void (async () => {
+              try {
+                const res = await fetch(
+                  `/api/cnc-machines/${encodeURIComponent(
+                    uid
+                  )}/bridge-queue/clear`,
+                  {
+                    method: "POST",
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                    },
+                  }
+                );
+                const body: any = await res.json().catch(() => ({}));
+                if (!res.ok || body?.success === false) {
+                  throw new Error(
+                    body?.message ||
+                      body?.error ||
+                      "예약 큐 전체 삭제 중 오류가 발생했습니다."
+                  );
+                }
+
+                setReservationSummaryMap((prev) => {
+                  const next = { ...prev };
+                  delete next[uid];
+                  return next;
+                });
+                setReservationJobsMap((prev) => {
+                  const next = { ...prev };
+                  delete next[uid];
+                  return next;
+                });
+                setReservationTotalQtyMap((prev) => {
+                  const next = { ...prev };
+                  delete next[uid];
+                  return next;
+                });
+
+                toast({
+                  title: "예약 전체 취소",
+                  description:
+                    "이 장비의 모든 생산 예약을 취소하고 CAM 단계로 되돌렸습니다.",
+                });
+              } catch (e: any) {
+                const msg =
+                  e?.message ||
+                  "예약 큐 전체 삭제 중 알 수 없는 오류가 발생했습니다.";
+                setError(msg);
+                toast({
+                  title: "예약 전체 취소 실패",
+                  description: msg,
+                  variant: "destructive",
+                });
+              }
+            })();
           }}
           onDownloadProgram={(job) => {
             const programNo = job.programNo ?? null;

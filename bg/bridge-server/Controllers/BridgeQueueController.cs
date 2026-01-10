@@ -23,6 +23,68 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
+        [HttpDelete]
+        [Route("{machineId}/{jobId}")]
+        public HttpResponseMessage DeleteJob(string machineId, string jobId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(machineId) || string.IsNullOrWhiteSpace(jobId))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId and jobId are required" });
+                }
+
+                var list = CncJobQueue.Snapshot(machineId) ?? new System.Collections.Generic.List<CncJobItem>();
+                CncJobItem removed = null;
+                if (list.Count > 0)
+                {
+                    foreach (var job in list)
+                    {
+                        if (string.Equals(job.id, jobId, System.StringComparison.OrdinalIgnoreCase))
+                        {
+                            removed = job;
+                            break;
+                        }
+                    }
+
+                    if (removed != null)
+                    {
+                        // 큐를 재구성하여 해당 job만 제거
+                        var rebuilt = new System.Collections.Generic.List<CncJobItem>();
+                        foreach (var job in list)
+                        {
+                            if (job.id == removed.id) continue;
+                            rebuilt.Add(job);
+                        }
+                        // Clear & re-enqueue
+                        CncJobQueue.Clear(machineId);
+                        foreach (var job in rebuilt)
+                        {
+                            if (job.kind == CncJobKind.File)
+                            {
+                                CncJobQueue.EnqueueFileBack(job.machineId, job.fileName, job.requestId);
+                            }
+                            else if (job.kind == CncJobKind.Dummy && job.programNo.HasValue)
+                            {
+                                CncJobQueue.EnqueueDummyFront(job.machineId, job.programNo.Value, job.programName);
+                            }
+                        }
+                    }
+                }
+
+                if (removed == null)
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = "job not found" });
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = removed });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = "queue delete failed", error = ex.Message });
+            }
+        }
+
         [HttpGet]
         [Route("{machineId}")]
         public HttpResponseMessage GetByMachine(string machineId)
