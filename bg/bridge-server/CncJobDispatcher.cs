@@ -1,0 +1,390 @@
+using Hi_Link_Advanced;
+using Hi_Link.Libraries.Model;
+using Newtonsoft.Json;
+using System;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace HiLinkBridgeWebApi48
+{
+    public static class CncJobDispatcher
+    {
+        private static readonly HiLinkMode2Client Client = new HiLinkMode2Client();
+
+        private static Timer _timer;
+        private static int _tickRunning = 0;
+
+        private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static int GetStartIoUid()
+        {
+            var raw = (Environment.GetEnvironmentVariable("CNC_START_IOUID") ?? string.Empty).Trim();
+            if (int.TryParse(raw, out var v) && v >= 0) return v;
+            return 0;
+        }
+
+        private static int GetBusyIoUid()
+        {
+            // 비어 있으면 busy 판정 없이 "시작 후 일정 시간" 기준으로만 완료 처리
+            var raw = (Environment.GetEnvironmentVariable("CNC_BUSY_IOUID") ?? string.Empty).Trim();
+            if (int.TryParse(raw, out var v) && v >= 0) return v;
+            return -1;
+        }
+
+        private static int GetAssumeMinutes()
+        {
+            var raw = (Environment.GetEnvironmentVariable("CNC_JOB_ASSUME_MINUTES") ?? string.Empty).Trim();
+            if (int.TryParse(raw, out var v) && v > 0) return v;
+            return 20;
+        }
+
+        private static string GetBackendBase()
+        {
+            var env = (Environment.GetEnvironmentVariable("BACKEND_BASE") ?? string.Empty).Trim();
+            if (!string.IsNullOrEmpty(env)) return env.TrimEnd('/');
+            return "https://abuts.fit/api";
+        }
+
+        private static string GetStoragePath()
+        {
+            // bridge-server/bin/x86/Debug 기준
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
+        }
+
+        private class RunningState
+        {
+            public CncJobItem Job;
+            public DateTime StartedAtUtc;
+            public bool SawBusy;
+        }
+
+        private static readonly object StateLock = new object();
+        private static readonly System.Collections.Generic.Dictionary<string, RunningState> Running
+            = new System.Collections.Generic.Dictionary<string, RunningState>(StringComparer.OrdinalIgnoreCase);
+
+        public static void Start()
+        {
+            if (_timer != null) return;
+            var enabled = (Environment.GetEnvironmentVariable("CNC_JOB_DISPATCHER_ENABLED") ?? string.Empty).Trim();
+            if (string.Equals(enabled, "false", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("[CncJobDispatcher] disabled by CNC_JOB_DISPATCHER_ENABLED=false");
+                return;
+            }
+
+            _timer = new Timer(async _ => await Tick(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+            Console.WriteLine("[CncJobDispatcher] started (5s interval)");
+        }
+
+        public static void Stop()
+        {
+            try { _timer?.Dispose(); } catch { }
+            _timer = null;
+        }
+
+        private static async Task Tick()
+        {
+            if (Interlocked.Exchange(ref _tickRunning, 1) == 1) return;
+
+            try
+            {
+                if (!Controllers.ControlController.IsRunning)
+                {
+                    return;
+                }
+
+                // 현재 실행 중인 작업 완료 여부 체크
+                string[] keys;
+                lock (StateLock)
+                {
+                    keys = new string[Running.Keys.Count];
+                    Running.Keys.CopyTo(keys, 0);
+                }
+
+                foreach (var machineId in keys)
+                {
+                    RunningState st;
+                    lock (StateLock)
+                    {
+                        if (!Running.TryGetValue(machineId, out st)) continue;
+                    }
+
+                    var done = await IsJobDone(machineId, st);
+                    if (done)
+                    {
+                        Console.WriteLine("[CncJobDispatcher] job done machine={0} jobId={1}", machineId, st.Job?.id);
+                        lock (StateLock)
+                        {
+                            Running.Remove(machineId);
+                        }
+                    }
+                }
+
+                // 각 머신별로 idle이면 다음 작업 실행
+                var allQueues = CncJobQueue.SnapshotAll();
+                foreach (var kv in allQueues)
+                {
+                    var machineId = kv.Key;
+                    if (string.IsNullOrEmpty(machineId)) continue;
+
+                    lock (StateLock)
+                    {
+                        if (Running.ContainsKey(machineId)) continue;
+                    }
+
+                    var next = CncJobQueue.Peek(machineId);
+                    if (next == null) continue;
+
+                    // 시작
+                    var started = await StartJob(machineId, next);
+                    if (started)
+                    {
+                        CncJobQueue.Pop(machineId);
+                        lock (StateLock)
+                        {
+                            Running[machineId] = new RunningState
+                            {
+                                Job = next,
+                                StartedAtUtc = DateTime.UtcNow,
+                                SawBusy = false
+                            };
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncJobDispatcher] tick error: {0}", ex);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _tickRunning, 0);
+            }
+        }
+
+        private static async Task<bool> StartJob(string machineId, CncJobItem job)
+        {
+            try
+            {
+                if (job == null) return false;
+
+                if (job.kind == CncJobKind.Dummy)
+                {
+                    if (job.programNo == null || job.programNo.Value <= 0) return false;
+
+                    var dto = new UpdateMachineActivateProgNo { headType = 0, programNo = job.programNo.Value };
+                    var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
+                    if (res != 0)
+                    {
+                        Console.WriteLine("[CncJobDispatcher] dummy activate failed machine={0} res={1} err={2}", machineId, res, err);
+                        return false;
+                    }
+
+                    var ok = await ToggleStart(machineId);
+                    if (!ok) return false;
+
+                    Console.WriteLine("[CncJobDispatcher] dummy started machine={0} programNo={1}", machineId, job.programNo.Value);
+                    return true;
+                }
+
+                // file job
+                if (string.IsNullOrEmpty(job.fileName)) return false;
+
+                var storage = GetStoragePath();
+                var fullPath = Path.GetFullPath(Path.Combine(storage, job.fileName));
+                if (!fullPath.StartsWith(storage, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
+                {
+                    Console.WriteLine("[CncJobDispatcher] file not found: {0}", fullPath);
+                    return false;
+                }
+
+                var content = File.ReadAllText(fullPath);
+                var progNo = ExtractProgramNo(content, job.fileName);
+                if (progNo <= 0)
+                {
+                    Console.WriteLine("[CncJobDispatcher] cannot extract programNo from {0}", job.fileName);
+                    return false;
+                }
+
+                // 1) 업로드(UpdateProgram)
+                var info = new UpdateMachineProgramInfo
+                {
+                    headType = 0,
+                    programNo = (short)progNo,
+                    programData = content,
+                    isNew = true,
+                };
+
+                var upRes = await Client.RequestRawAsync(machineId, CollectDataType.UpdateProgram, info, 60000);
+                var upRc = ToResultCode(upRes);
+                if (upRc != 0)
+                {
+                    Console.WriteLine("[CncJobDispatcher] upload failed machine={0} rc={1}", machineId, upRc);
+                    return false;
+                }
+
+                // 2) 활성화(UpdateActivateProg)
+                var dto2 = new UpdateMachineActivateProgNo { headType = 0, programNo = progNo };
+                var act = Mode1HandleStore.SetActivateProgram(machineId, dto2, out var err2);
+                if (act != 0)
+                {
+                    Console.WriteLine("[CncJobDispatcher] activate failed machine={0} res={1} err={2}", machineId, act, err2);
+                    return false;
+                }
+
+                // 3) 시작(Start)
+                var okStart = await ToggleStart(machineId);
+                if (!okStart) return false;
+
+                // 4) 백엔드에 machining start 알림(기존 bg/register-file 패턴 유지)
+                _ = Task.Run(() => NotifyMachiningStarted(job, machineId));
+
+                Console.WriteLine("[CncJobDispatcher] file started machine={0} file={1} programNo={2}", machineId, job.fileName, progNo);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncJobDispatcher] StartJob error machine={0} err={1}", machineId, ex.Message);
+                return false;
+            }
+        }
+
+        private static int ExtractProgramNo(string content, string fileName)
+        {
+            var first = (content ?? string.Empty);
+            var m = FanucRegex.Match(first);
+            if (m.Success && int.TryParse(m.Groups[1].Value, out var n1) && n1 > 0) return n1;
+
+            var name = (fileName ?? string.Empty);
+            var m2 = FanucRegex.Match(name);
+            if (m2.Success && int.TryParse(m2.Groups[1].Value, out var n2) && n2 > 0) return n2;
+
+            return 0;
+        }
+
+        private static int ToResultCode(object obj)
+        {
+            if (obj is short s) return s;
+            if (obj is int i) return i;
+            return -1;
+        }
+
+        private static async Task<bool> ToggleStart(string machineId)
+        {
+            try
+            {
+                var ioUid = GetStartIoUid();
+                short current = 0;
+
+                var opObj = await Client.RequestRawAsync(machineId, CollectDataType.GetOPStatus, null, 3000);
+                if (opObj is GetOPStatus op && op.ioInfo != null)
+                {
+                    foreach (var io in op.ioInfo)
+                    {
+                        if (io != null && io.IOUID == (short)ioUid)
+                        {
+                            current = io.Status;
+                            break;
+                        }
+                    }
+                }
+
+                short next = (short)((current + 1) % 2);
+
+                var ioPayload = new IOInfo { IOUID = (short)ioUid, Status = next };
+                var res = await Client.RequestRawAsync(machineId, CollectDataType.UpdateOPStatus, ioPayload, 5000);
+                var rc = ToResultCode(res);
+                return rc == 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncJobDispatcher] ToggleStart error machine={0} err={1}", machineId, ex.Message);
+                return false;
+            }
+        }
+
+        private static async Task<bool> IsJobDone(string machineId, RunningState st)
+        {
+            try
+            {
+                if (st == null) return true;
+
+                var busyIo = GetBusyIoUid();
+                if (busyIo >= 0)
+                {
+                    var opObj = await Client.RequestRawAsync(machineId, CollectDataType.GetOPStatus, null, 3000);
+                    if (opObj is GetOPStatus op && op.ioInfo != null)
+                    {
+                        short? status = null;
+                        foreach (var io in op.ioInfo)
+                        {
+                            if (io != null && io.IOUID == (short)busyIo)
+                            {
+                                status = io.Status;
+                                break;
+                            }
+                        }
+
+                        if (status.HasValue)
+                        {
+                            var busy = status.Value != 0;
+                            if (busy) st.SawBusy = true;
+                            if (st.SawBusy && !busy) return true;
+                        }
+                    }
+                }
+
+                // fallback: 일정 시간 지나면 완료로 간주
+                var elapsed = DateTime.UtcNow - st.StartedAtUtc;
+                var assume = TimeSpan.FromMinutes(GetAssumeMinutes());
+                if (elapsed > assume)
+                {
+                    return true;
+                }
+
+                return false;
+            }
+            catch
+            {
+                // 상태를 못 읽으면 시간을 기준으로만 판단
+                var elapsed = DateTime.UtcNow - st.StartedAtUtc;
+                return elapsed > TimeSpan.FromMinutes(GetAssumeMinutes());
+            }
+        }
+
+        private static async Task NotifyMachiningStarted(CncJobItem job, string machineId)
+        {
+            try
+            {
+                var backend = GetBackendBase();
+                var url = backend + "/bg/register-file";
+
+                var payload = new
+                {
+                    sourceStep = "cnc",
+                    fileName = job.fileName,
+                    originalFileName = job.fileName,
+                    requestId = job.requestId,
+                    status = "success",
+                    metadata = new { machineId = machineId }
+                };
+
+                var json = JsonConvert.SerializeObject(payload);
+                using (var client = new HttpClient())
+                {
+                    var resp = await client.PostAsync(url, new StringContent(json, Encoding.UTF8, "application/json"));
+                    _ = await resp.Content.ReadAsStringAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncJobDispatcher] NotifyMachiningStarted error: {0}", ex.Message);
+            }
+        }
+    }
+}

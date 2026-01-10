@@ -238,6 +238,17 @@ async function triggerBridgeForCnc({ request }) {
   // idempotency: 이미 CNC가 시작된 상태면 재트리거하지 않는다.
   if (request?.productionSchedule?.actualMachiningStart) return;
 
+  const machineId = String(
+    request?.productionSchedule?.assignedMachine || ""
+  ).trim();
+  if (!machineId) {
+    const err = new Error(
+      "CNC 장비가 할당되지 않아 CNC 공정을 시작할 수 없습니다."
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
   const ncFileName = request?.caseInfos?.ncFile?.fileName;
   if (!ncFileName) {
     const err = new Error("NC 파일이 없어 CNC 공정을 시작할 수 없습니다.");
@@ -254,10 +265,11 @@ async function triggerBridgeForCnc({ request }) {
       `${BRIDGE_PROCESS_BASE.replace(/\/$/, "")}/api/bridge/process-file`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withBridgeHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           fileName: ncFileName,
           requestId: request.requestId,
+          machineId,
         }),
         signal: controller.signal,
       }

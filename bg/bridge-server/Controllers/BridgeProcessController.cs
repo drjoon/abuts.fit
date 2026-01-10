@@ -12,12 +12,11 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/bridge")]
     public class BridgeProcessController : ApiController
     {
-        private const string BackendUrl = "https://abuts.fit/api";
-
         public class BridgeProcessRequest
         {
             public string fileName { get; set; }
             public string requestId { get; set; }
+            public string machineId { get; set; }
         }
 
         [HttpPost]
@@ -29,30 +28,27 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return BadRequest("fileName is required");
             }
 
+            if (string.IsNullOrWhiteSpace(req.machineId))
+            {
+                return BadRequest("machineId is required");
+            }
+
             Console.WriteLine($"[Bridge-API] Received process request for: {req.fileName}");
 
             try
             {
-                // 로직 실행 (NcFileWatcher의 static 또는 인스턴스 메서드 호출)
-                // 현재는 단일 인스턴스 구조이므로 Program.cs에서 시작된 watcher를 통해 처리하거나
-                // 직접 ProcessNcFile 로직을 수행함.
-                
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string fullPath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc", req.fileName));
-
-                if (!File.Exists(fullPath))
-                {
-                    return NotFound();
-                }
-
-                // 비동기로 실제 가공 처리 시작
-                var watcher = new NcFileWatcher();
-                _ = Task.Run(() => watcher.ProcessNcFile(fullPath, req.requestId));
+                var job = CncJobQueue.EnqueueFileBack(
+                    req.machineId,
+                    req.fileName,
+                    string.IsNullOrWhiteSpace(req.requestId) ? null : req.requestId
+                );
 
                 return Content(HttpStatusCode.Accepted, new
                 {
                     ok = true,
-                    status = "STARTED",
+                    status = "QUEUED",
+                    jobId = job.id,
+                    machineId = req.machineId,
                     fileName = req.fileName,
                     requestId = req.requestId,
                 });

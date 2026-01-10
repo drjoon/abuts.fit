@@ -93,7 +93,10 @@
     <Compile Include="Controllers\BridgeController.cs" />
     <Compile Include="Controllers\BridgeStoreController.cs" />
     <Compile Include="Controllers\BridgeProcessController.cs" />
+    <Compile Include="Controllers\BridgeQueueController.cs" />
     <Compile Include="DummyCncScheduler.cs" />
+    <Compile Include="CncJobQueue.cs" />
+    <Compile Include="CncJobDispatcher.cs" />
     <Compile Include="Models\RawHiLinkRequest.cs" />
     <Compile Include="Models\AddMachineRequest.cs" />
     <Compile Include="Program.cs" />

@@ -17,12 +17,14 @@ namespace HiLinkBridgeWebApi48
                 MachinesInitializer.InitializeFromConfig();
 
                 DummyCncScheduler.Start();
+                CncJobDispatcher.Start();
 
                 // NcFileWatcher 미사용: 이벤트 기반(백엔드 트리거)으로 처리
                 Console.WriteLine("Initialization done. Press Enter to exit.");
                 Console.ReadLine();
 
                 DummyCncScheduler.Stop();
+                CncJobDispatcher.Stop();
             }
         }
     }

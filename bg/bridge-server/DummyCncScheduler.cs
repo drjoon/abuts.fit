@@ -204,8 +204,8 @@ namespace HiLinkBridgeWebApi48
                         continue;
                     }
 
-                    var ok = await ActivateAndStart(machineId, progNo.Value);
-                    if (!ok) continue;
+                    // 스케줄 시각이 되면, 현재 가공이 끝나면 바로 다음으로 실행되도록 큐 앞에 끼워넣기
+                    CncJobQueue.EnqueueDummyFront(machineId, progNo.Value, programName);
 
                     await UpdateLastRunKey(machineId, minuteKey);
                 }
@@ -217,73 +217,6 @@ namespace HiLinkBridgeWebApi48
             finally
             {
                 Interlocked.Exchange(ref _running, 0);
-            }
-        }
-
-        private static async Task<bool> ActivateAndStart(string uid, int programNo)
-        {
-            try
-            {
-                var bridgeBase = GetBridgeBase();
-
-                // 1) UpdateActivateProg
-                var rawPayload = new
-                {
-                    uid = uid,
-                    dataType = "UpdateActivateProg",
-                    payload = new { headType = 0, programNo = programNo },
-                    timeoutMilliseconds = 5000
-                };
-
-                var rawReq = new HttpRequestMessage(HttpMethod.Post, bridgeBase + "/api/cnc/raw");
-                AddSecretHeader(rawReq);
-                rawReq.Content = new StringContent(JsonConvert.SerializeObject(rawPayload), Encoding.UTF8, "application/json");
-
-                var rawResp = await LocalClient.SendAsync(rawReq);
-                var rawText = await rawResp.Content.ReadAsStringAsync();
-
-                if (!rawResp.IsSuccessStatusCode)
-                {
-                    Console.WriteLine("[DummyCncScheduler] raw failed: uid={0} status={1} body={2}", uid, (int)rawResp.StatusCode, rawText);
-                    return false;
-                }
-
-                var rawObj = JObject.Parse(rawText);
-                if (rawObj.Value<bool?>("success") == false)
-                {
-                    Console.WriteLine("[DummyCncScheduler] raw success=false: uid={0} body={1}", uid, rawText);
-                    return false;
-                }
-
-                // 2) StartMachine
-                var startPayload = new { status = 0, ioUid = 0 };
-                var startReq = new HttpRequestMessage(HttpMethod.Post, bridgeBase + "/api/cnc/machines/" + Uri.EscapeDataString(uid) + "/start");
-                AddSecretHeader(startReq);
-                startReq.Content = new StringContent(JsonConvert.SerializeObject(startPayload), Encoding.UTF8, "application/json");
-
-                var startResp = await LocalClient.SendAsync(startReq);
-                var startText = await startResp.Content.ReadAsStringAsync();
-
-                if (!startResp.IsSuccessStatusCode)
-                {
-                    Console.WriteLine("[DummyCncScheduler] start failed: uid={0} status={1} body={2}", uid, (int)startResp.StatusCode, startText);
-                    return false;
-                }
-
-                var startObj = JObject.Parse(startText);
-                if (startObj.Value<bool?>("success") == false)
-                {
-                    Console.WriteLine("[DummyCncScheduler] start success=false: uid={0} body={1}", uid, startText);
-                    return false;
-                }
-
-                Console.WriteLine("[DummyCncScheduler] OK uid={0} programNo={1}", uid, programNo);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[DummyCncScheduler] ActivateAndStart error uid={0} err={1}", uid, ex.Message);
-                return false;
             }
         }
 
