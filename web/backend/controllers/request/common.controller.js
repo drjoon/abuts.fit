@@ -2,6 +2,7 @@ import mongoose, { Types } from "mongoose";
 import path from "path";
 import Request from "../../models/request.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
+import Machine from "../../models/machine.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
@@ -102,6 +103,16 @@ async function chooseMachineForRequest({ request }) {
   }
 
   const machines = await CncMachine.find({ status: "active" }).lean();
+
+  // 자동 가공 허용(allowAutoMachining=true)인 장비만 자동 선택 후보에 포함한다.
+  const autoMachines = await Machine.find({ allowAutoMachining: true })
+    .lean()
+    .catch(() => []);
+  const autoMachineIdSet = new Set(
+    (Array.isArray(autoMachines) ? autoMachines : [])
+      .map((m) => String(m?.uid || m?.name || "").trim())
+      .filter((v) => !!v)
+  );
   const existingAssigned = String(
     request?.productionSchedule?.assignedMachine ||
       request?.assignedMachine ||
@@ -117,16 +128,18 @@ async function chooseMachineForRequest({ request }) {
         diff,
       };
     })
-    .filter(
-      (m) =>
-        Boolean(m.machineId) &&
+    .filter((m) => {
+      if (!m.machineId) return false;
+      if (!autoMachineIdSet.has(m.machineId)) return false;
+      return (
         Number.isFinite(m.materialDiameter) &&
         m.materialDiameter > 0 &&
         m.diff >= 0 &&
         m.diff < 2
-    );
+      );
+    });
 
-  if (existingAssigned) {
+  if (existingAssigned && autoMachineIdSet.has(existingAssigned)) {
     const keep = candidates.find((c) => c.machineId === existingAssigned);
     if (keep) {
       const bridgeQueues = await fetchBridgeQueueSnapshot();
@@ -150,7 +163,7 @@ async function chooseMachineForRequest({ request }) {
 
   if (!candidates.length) {
     const err = new Error(
-      "조건에 맞는 CNC 장비가 없습니다. (소재 직경은 최대 직경 이상이며, 차이가 2mm 미만이어야 합니다.)"
+      "조건에 맞는 CNC 장비가 없습니다. (자동 가공 허용 ON 이면서 소재 직경이 최대 직경 이상이고, 차이가 2mm 미만인 장비가 필요합니다.)"
     );
     err.statusCode = 400;
     throw err;

@@ -10,6 +10,7 @@ export interface Machine {
   lastError?: string | null;
   allowJobStart?: boolean;
   allowProgramDelete?: boolean;
+  allowAutoMachining?: boolean;
 
   // cnc-machines 연동(소재/스케줄)
   currentMaterial?: {
@@ -39,4 +40,5 @@ export interface MachineForm {
   ip: string;
   allowJobStart: boolean;
   allowProgramDelete: boolean;
+  allowAutoMachining: boolean;
 }

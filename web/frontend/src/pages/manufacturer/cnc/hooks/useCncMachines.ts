@@ -12,6 +12,7 @@ export const useCncMachines = () => {
     ip: "192.168.0.10",
     allowJobStart: true,
     allowProgramDelete: false,
+    allowAutoMachining: false,
   });
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addModalMode, setAddModalMode] = useState<"create" | "edit">("create");
@@ -39,6 +40,7 @@ export const useCncMachines = () => {
               : undefined,
             allowJobStart: m.allowJobStart !== false,
             allowProgramDelete: m.allowProgramDelete === true,
+            allowAutoMachining: m.allowAutoMachining === true,
           } as Machine;
         })
       );
@@ -73,6 +75,7 @@ export const useCncMachines = () => {
       ip: m.ip ?? "",
       allowJobStart: m.allowJobStart !== false,
       allowProgramDelete: m.allowProgramDelete === true,
+      allowAutoMachining: m.allowAutoMachining === true,
     });
     setAddModalMode("edit");
     setAddModalOpen(true);
@@ -137,6 +140,7 @@ export const useCncMachines = () => {
           port: 8193,
           allowJobStart: form.allowJobStart,
           allowProgramDelete: form.allowProgramDelete,
+          allowAutoMachining: form.allowAutoMachining,
         }),
       });
 

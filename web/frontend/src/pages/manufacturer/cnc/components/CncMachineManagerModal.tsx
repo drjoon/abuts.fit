@@ -34,12 +34,20 @@ export const CncMachineManagerModal = ({
       ip: form.ip,
       allowJobStart: !!form.allowJobStart,
       allowProgramDelete: !!form.allowProgramDelete,
+      allowAutoMachining: !!form.allowAutoMachining,
     });
   };
 
   useEffect(() => {
     lastSubmittedKeyRef.current = computeKey();
-  }, [mode, form.allowJobStart, form.allowProgramDelete, form.ip, form.name]);
+  }, [
+    mode,
+    form.allowJobStart,
+    form.allowProgramDelete,
+    form.allowAutoMachining,
+    form.ip,
+    form.name,
+  ]);
 
   const scheduleSubmit = () => {
     if (mode !== "edit") return;
@@ -100,7 +108,7 @@ export const CncMachineManagerModal = ({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-700">
-                생산 시작 허용
+                원격 가공 허용
               </span>
               <button
                 type="button"
@@ -118,7 +126,28 @@ export const CncMachineManagerModal = ({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-gray-700">
-                장비 파일 삭제 허용
+                자동 가공 허용
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onChange("allowAutoMachining", !form.allowAutoMachining)
+                }
+                onBlur={scheduleSubmit}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  form.allowAutoMachining ? "bg-emerald-500" : "bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    form.allowAutoMachining ? "translate-x-5" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">
+                원격 파일 삭제 허용
               </span>
               <button
                 type="button"
