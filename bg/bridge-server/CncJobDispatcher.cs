@@ -20,27 +20,9 @@ namespace HiLinkBridgeWebApi48
 
         private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        private static int GetStartIoUid()
-        {
-            var raw = (Environment.GetEnvironmentVariable("CNC_START_IOUID") ?? string.Empty).Trim();
-            if (int.TryParse(raw, out var v) && v >= 0) return v;
-            return 0;
-        }
-
-        private static int GetBusyIoUid()
-        {
-            // 비어 있으면 busy 판정 없이 "시작 후 일정 시간" 기준으로만 완료 처리
-            var raw = (Environment.GetEnvironmentVariable("CNC_BUSY_IOUID") ?? string.Empty).Trim();
-            if (int.TryParse(raw, out var v) && v >= 0) return v;
-            return -1;
-        }
-
-        private static int GetAssumeMinutes()
-        {
-            var raw = (Environment.GetEnvironmentVariable("CNC_JOB_ASSUME_MINUTES") ?? string.Empty).Trim();
-            if (int.TryParse(raw, out var v) && v > 0) return v;
-            return 20;
-        }
+        private static readonly int StartIoUid = int.TryParse((Environment.GetEnvironmentVariable("CNC_START_IOUID") ?? "").Trim(), out var s) && s >= 0 ? s : 0;
+        private static readonly int BusyIoUid = int.TryParse((Environment.GetEnvironmentVariable("CNC_BUSY_IOUID") ?? "").Trim(), out var b) && b >= 0 ? b : -1;
+        private static readonly int AssumeMinutes = int.TryParse((Environment.GetEnvironmentVariable("CNC_JOB_ASSUME_MINUTES") ?? "").Trim(), out var m) && m > 0 ? m : 20;
 
         private static string GetBackendBase()
         {
@@ -185,7 +167,7 @@ namespace HiLinkBridgeWebApi48
                         return false;
                     }
 
-                    var ok = await ToggleStart(machineId);
+                    var ok = await CallStartApi(machineId, true);
                     if (!ok) return false;
 
                     Console.WriteLine("[CncJobDispatcher] dummy started machine={0} programNo={1}", machineId, job.programNo.Value);
@@ -238,7 +220,7 @@ namespace HiLinkBridgeWebApi48
                 }
 
                 // 3) 시작(Start)
-                var okStart = await ToggleStart(machineId);
+                var okStart = await CallStartApi(machineId, true);
                 if (!okStart) return false;
 
                 // 4) 백엔드에 machining start 알림(기존 bg/register-file 패턴 유지)
@@ -274,39 +256,35 @@ namespace HiLinkBridgeWebApi48
             return -1;
         }
 
-        private static async Task<bool> ToggleStart(string machineId)
+        private static readonly HttpClient Http = new HttpClient();
+        private static readonly string BridgeBase = (Environment.GetEnvironmentVariable("BRIDGE_SELF_BASE") ?? "http://localhost:8002").TrimEnd('/');
+
+        private static void AddSecretHeader(HttpRequestMessage req)
         {
-            try
+            var secret = Environment.GetEnvironmentVariable("BRIDGE_SHARED_SECRET") ?? "";
+            if (!string.IsNullOrEmpty(secret))
+                req.Headers.Add("X-Bridge-Secret", secret);
+        }
+
+        private static async Task<bool> CallStartApi(string machineId, bool startOn)
+        {
+            var payload = new { status = startOn ? 1 : 0, ioUid = StartIoUid };
+            var req = new HttpRequestMessage(
+                HttpMethod.Post,
+                BridgeBase + "/api/cnc/machines/" + Uri.EscapeDataString(machineId) + "/start"
+            );
+            AddSecretHeader(req);
+            req.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+            var resp = await Http.SendAsync(req);
+            var body = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
             {
-                var ioUid = GetStartIoUid();
-                short current = 0;
-
-                var opObj = await Client.RequestRawAsync(machineId, CollectDataType.GetOPStatus, null, 3000);
-                if (opObj is GetOPStatus op && op.ioInfo != null)
-                {
-                    foreach (var io in op.ioInfo)
-                    {
-                        if (io != null && io.IOUID == (short)ioUid)
-                        {
-                            current = io.Status;
-                            break;
-                        }
-                    }
-                }
-
-                short next = (short)((current + 1) % 2);
-
-                var ioPayload = new IOInfo { IOUID = (short)ioUid, Status = next };
-                var res = await Client.RequestRawAsync(machineId, CollectDataType.UpdateOPStatus, ioPayload, 5000);
-                var rc = ToResultCode(res);
-                return rc == 0;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[CncJobDispatcher] ToggleStart error machine={0} err={1}", machineId, ex.Message);
+                Console.WriteLine("[CncJobDispatcher] start api failed uid={0} status={1} body={2}", machineId, (int)resp.StatusCode, body);
                 return false;
             }
+            return true;
         }
+
 
         private static async Task<bool> IsJobDone(string machineId, RunningState st)
         {
@@ -314,7 +292,7 @@ namespace HiLinkBridgeWebApi48
             {
                 if (st == null) return true;
 
-                var busyIo = GetBusyIoUid();
+                var busyIo = BusyIoUid;
                 if (busyIo >= 0)
                 {
                     var opObj = await Client.RequestRawAsync(machineId, CollectDataType.GetOPStatus, null, 3000);
@@ -341,7 +319,7 @@ namespace HiLinkBridgeWebApi48
 
                 // fallback: 일정 시간 지나면 완료로 간주
                 var elapsed = DateTime.UtcNow - st.StartedAtUtc;
-                var assume = TimeSpan.FromMinutes(GetAssumeMinutes());
+                var assume = TimeSpan.FromMinutes(AssumeMinutes);
                 if (elapsed > assume)
                 {
                     return true;
@@ -353,7 +331,7 @@ namespace HiLinkBridgeWebApi48
             {
                 // 상태를 못 읽으면 시간을 기준으로만 판단
                 var elapsed = DateTime.UtcNow - st.StartedAtUtc;
-                return elapsed > TimeSpan.FromMinutes(GetAssumeMinutes());
+                return elapsed > TimeSpan.FromMinutes(AssumeMinutes);
             }
         }
 
