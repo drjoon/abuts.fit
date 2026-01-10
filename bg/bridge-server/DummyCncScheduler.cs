@@ -246,6 +246,7 @@ namespace HiLinkBridgeWebApi48
                 var payload = new { lastRunKey = minuteKey };
                 var req = new HttpRequestMessage(new HttpMethod("PATCH"), url);
                 AddSecretHeader(req);
+                AddAuthHeader(req);
                 req.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
                 var resp = await BackendClient.SendAsync(req);

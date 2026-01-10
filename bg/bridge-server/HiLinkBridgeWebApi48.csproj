@@ -104,14 +104,12 @@
     <Compile Include="HiLinkMode2Client.cs" />
     <Compile Include="Mode1Api.cs" />
     <Compile Include="Mode1HandleStore.cs" />
-    <Compile Include="NcFileWatcher.cs" />
     <Compile Include="Controllers\MachinesController.cs" />
     <Compile Include="Controllers\ControlController.cs" />
     <Compile Include="BridgeAuthHandler.cs" />
     <Compile Include="Models\MachineConfigItem.cs" />
     <Compile Include="MachinesConfigStore.cs" />
     <Compile Include="MachinesInitializer.cs" />
-    <Compile Include="Controllers\MachinesConfigController.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

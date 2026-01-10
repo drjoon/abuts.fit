@@ -1,14 +1,35 @@
 import { Router } from "express";
 import * as bgController from "../controllers/bg.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import { requireBridgeSecret } from "../middlewares/bridgeSecret.middleware.js";
+import { requireBridgeIpAllowlist } from "../middlewares/bridgeIpAllowlist.middleware.js";
 
 const router = Router();
 
-// BG 프로그램들은 전용 토큰이나 특정 IP에서만 접근 가능하도록 설정할 수도 있으나,
-// 일단은 admin 권한으로 접근 가능하도록 설정하거나 별도 보안 정책 적용 가능.
-router.post("/register-file", bgController.registerProcessedFile);
-router.post("/presign-upload", bgController.getPresignedUploadUrl);
-router.get("/file-status", bgController.getFileProcessingStatus);
-router.get("/status", bgController.getBgStatus);
+// 브리지 전용 엔드포인트: 시크릿 + IP 허용목록
+router.post(
+  "/register-file",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.registerProcessedFile
+);
+router.post(
+  "/presign-upload",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.getPresignedUploadUrl
+);
+router.get(
+  "/file-status",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.getFileProcessingStatus
+);
+router.get(
+  "/status",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.getBgStatus
+);
 
 export default router;

@@ -31,10 +31,16 @@ namespace HiLinkBridgeWebApi48
             return "https://abuts.fit/api";
         }
 
+        private static string GetBackendJwt()
+        {
+            return (Environment.GetEnvironmentVariable("BACKEND_JWT") ?? string.Empty).Trim();
+        }
+
         private static string GetStoragePath()
         {
-            // bridge-server/bin/x86/Debug 기준
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var root = (Environment.GetEnvironmentVariable("BRIDGE_STORE_ROOT") ?? "").Trim();
+            if (!string.IsNullOrEmpty(root)) return root;
             return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
         }
 
@@ -282,6 +288,16 @@ namespace HiLinkBridgeWebApi48
                 req.Headers.Add("X-Bridge-Secret", secret);
         }
 
+        private static void AddAuthHeader(HttpRequestMessage req)
+        {
+            var jwt = GetBackendJwt();
+            if (!string.IsNullOrEmpty(jwt))
+            {
+                req.Headers.Remove("Authorization");
+                req.Headers.Add("Authorization", "Bearer " + jwt);
+            }
+        }
+
         private static async Task<bool> CallStartApi(string machineId, bool startOn)
         {
             var payload = new { status = startOn ? 1 : 0, ioUid = StartIoUid };
@@ -382,11 +398,12 @@ if (busyIo >= 0)
                 };
 
                 var json = JsonConvert.SerializeObject(payload);
-                using (var client = new HttpClient())
-                {
-                    var resp = await client.PostAsync(url, new StringContent(json, Encoding.UTF8, "application/json"));
-                    _ = await resp.Content.ReadAsStringAsync();
-                }
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                AddAuthHeader(req);
+                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var resp = await Http.SendAsync(req);
+                _ = await resp.Content.ReadAsStringAsync();
             }
             catch (Exception ex)
             {
