@@ -21,6 +21,33 @@ function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
+async function getOrCreateCncMachine(machineId, extraSet = {}) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return null;
+
+  const $setOnInsert = {
+    machineId: mid,
+    name: mid,
+    status: "active",
+    currentMaterial: {
+      diameter: 8,
+      diameterGroup: "8",
+      remainingLength: 0,
+    },
+  };
+
+  return CncMachine.findOneAndUpdate(
+    { machineId: mid },
+    {
+      $setOnInsert,
+      ...(extraSet && Object.keys(extraSet).length > 0
+        ? { $set: extraSet }
+        : {}),
+    },
+    { new: true, upsert: true }
+  );
+}
+
 /**
  * 브리지 예약 큐 조회 (머신별)
  */
@@ -410,11 +437,11 @@ export async function updateDummyLastRunKeyForBridge(req, res) {
       });
     }
 
-    const machine = await CncMachine.findOne({ machineId });
+    const machine = await getOrCreateCncMachine(machineId);
     if (!machine) {
-      return res.status(404).json({
+      return res.status(400).json({
         success: false,
-        message: "장비를 찾을 수 없습니다.",
+        message: "machineId is required",
       });
     }
 
@@ -451,11 +478,11 @@ export async function updateMaterialRemaining(req, res) {
       });
     }
 
-    const machine = await CncMachine.findOne({ machineId });
+    const machine = await getOrCreateCncMachine(machineId);
     if (!machine) {
-      return res.status(404).json({
+      return res.status(400).json({
         success: false,
-        message: "장비를 찾을 수 없습니다.",
+        message: "machineId is required",
       });
     }
 
@@ -544,12 +571,12 @@ export async function updateMachineMaterial(req, res) {
       });
     }
 
-    // 장비 조회
-    const machine = await CncMachine.findOne({ machineId });
+    // 장비 메타(CncMachine)는 없으면 생성한다.
+    const machine = await getOrCreateCncMachine(machineId);
     if (!machine) {
-      return res.status(404).json({
+      return res.status(400).json({
         success: false,
-        message: "장비를 찾을 수 없습니다.",
+        message: "machineId is required",
       });
     }
 

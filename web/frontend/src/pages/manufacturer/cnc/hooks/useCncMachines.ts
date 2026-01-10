@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuthStore } from "@/store/useAuthStore";
 import { Machine, MachineForm } from "@/pages/manufacturer/cnc/types";
 
 export const useCncMachines = () => {
+  const { token } = useAuthStore();
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,30 +22,48 @@ export const useCncMachines = () => {
 
   const loadMachinesFromBackend = async () => {
     try {
-      const res = await fetch("/api/core/machines");
+      const res = await fetch("/api/core/machines", {
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
       if (!res.ok) throw new Error("failed to load machines");
       const body = await res.json();
       const list: any[] = body.data ?? body.machines ?? [];
-      setMachines(
-        list.map((m) => {
-          const uid = m.uid as string;
-          const name = (m.name as string) ?? uid;
-          return {
-            uid,
-            name,
-            serial: m.serial,
-            ip: m.ip,
-            port: m.port,
-            status: m.lastStatus?.status ?? "Unknown",
-            lastUpdated: m.lastStatus?.updatedAt
-              ? new Date(m.lastStatus.updatedAt).toLocaleTimeString()
-              : undefined,
-            allowJobStart: m.allowJobStart !== false,
-            allowProgramDelete: m.allowProgramDelete === true,
-            allowAutoMachining: m.allowAutoMachining === true,
-          } as Machine;
-        })
-      );
+      const mapped = list.map((m) => {
+        const uid = m.uid as string;
+        const name = (m.name as string) ?? uid;
+        return {
+          uid,
+          name,
+          serial: m.serial,
+          ip: m.ip,
+          port: m.port,
+          status: m.lastStatus?.status ?? "Unknown",
+          lastUpdated: m.lastStatus?.updatedAt
+            ? new Date(m.lastStatus.updatedAt).toLocaleTimeString()
+            : undefined,
+          allowJobStart: m.allowJobStart !== false,
+          allowProgramDelete: m.allowProgramDelete === true,
+          allowAutoMachining: m.allowAutoMachining === true,
+        } as Machine;
+      });
+      setMachines(mapped);
+
+      // 편집 모드에서 현재 폼이 가리키는 UID가 있으면, 방금 받은 백엔드 값으로 폼을 동기화
+      if (addModalOpen && addModalMode === "edit" && form.uid) {
+        const fresh = mapped.find((m) => m.uid === form.uid);
+        if (fresh) {
+          setForm({
+            uid: fresh.uid,
+            name: fresh.name,
+            ip: fresh.ip ?? "",
+            allowJobStart: fresh.allowJobStart !== false,
+            allowProgramDelete: fresh.allowProgramDelete === true,
+            allowAutoMachining: fresh.allowAutoMachining === true,
+          });
+        }
+      }
     } catch (e: any) {
       console.warn("loadMachinesFromBackend error", e?.message ?? e);
     }
@@ -89,6 +109,9 @@ export const useCncMachines = () => {
       const key = target?.uid ?? name;
       const res = await fetch(`/api/core/machines/${encodeURIComponent(key)}`, {
         method: "DELETE",
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
       });
       if (!res.ok) throw new Error("장비 삭제 실패");
       setMachines((prev) => prev.filter((m) => m.uid !== key));
@@ -103,22 +126,23 @@ export const useCncMachines = () => {
     }
   };
 
-  const handleAddMachine = async () => {
+  const handleAddMachine = async (payload?: MachineForm) => {
+    const submit = payload ?? form;
     // 장비 이름이 곧 UID로 사용되므로, 이름이 비어 있으면 저장할 수 없다.
-    if (!form.name) {
+    if (!submit.name) {
       setError("장비 이름을 입력해 주세요.");
       return;
     }
     const duplicate = machines.find(
       (m) =>
-        (m.uid === form.uid || m.name === form.name) &&
-        (addModalMode === "create" || m.uid !== form.uid)
+        (m.uid === submit.uid || m.name === submit.name) &&
+        (addModalMode === "create" || m.uid !== submit.uid)
     );
     if (duplicate) {
       const msg =
-        duplicate.uid === form.uid
-          ? `이미 등록된 UID 입니다: ${form.uid}`
-          : `이미 등록된 장비 이름입니다: ${form.name}`;
+        duplicate.uid === submit.uid
+          ? `이미 등록된 UID 입니다: ${submit.uid}`
+          : `이미 등록된 장비 이름입니다: ${submit.name}`;
       setError(msg);
       toast({
         title: "장비 중복",
@@ -132,15 +156,18 @@ export const useCncMachines = () => {
     try {
       const res = await fetch("/api/core/machines", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
         body: JSON.stringify({
-          uid: form.uid, // 장비 식별자(Hi-Link UID와 통합)
-          name: form.name, // 표시용 이름
-          ip: form.ip,
+          uid: submit.uid, // 장비 식별자(Hi-Link UID와 통합)
+          name: submit.name, // 표시용 이름
+          ip: submit.ip,
           port: 8193,
-          allowJobStart: form.allowJobStart,
-          allowProgramDelete: form.allowProgramDelete,
-          allowAutoMachining: form.allowAutoMachining,
+          allowJobStart: submit.allowJobStart,
+          allowProgramDelete: submit.allowProgramDelete,
+          allowAutoMachining: submit.allowAutoMachining,
         }),
       });
 
@@ -149,7 +176,43 @@ export const useCncMachines = () => {
         throw new Error(body?.message || "장비 저장 실패");
       }
 
-      // 항상 백엔드(MongoDB) 기준으로 동기화
+      const saved = body?.data;
+
+      if (saved?.uid) {
+        // 로컬 리스트를 즉시 업데이트(새로고침 대기 없이 UI 반영)
+        setMachines((prev) => {
+          const exists = prev.some((m) => m.uid === saved.uid);
+          const mapped = {
+            uid: saved.uid,
+            name: saved.name ?? saved.uid,
+            ip: saved.ip ?? "",
+            port: saved.port,
+            status: saved.lastStatus?.status ?? "Unknown",
+            lastUpdated: saved.lastStatus?.updatedAt
+              ? new Date(saved.lastStatus.updatedAt).toLocaleTimeString()
+              : undefined,
+            allowJobStart: saved.allowJobStart !== false,
+            allowProgramDelete: saved.allowProgramDelete === true,
+            allowAutoMachining: saved.allowAutoMachining === true,
+          } as Machine;
+          if (exists) {
+            return prev.map((m) => (m.uid === saved.uid ? mapped : m));
+          }
+          return [...prev, mapped];
+        });
+
+        // 폼에도 저장된 값을 즉시 반영(편집 모드에서 초기화 방지)
+        setForm({
+          uid: saved.uid,
+          name: saved.name ?? saved.uid,
+          ip: saved.ip ?? "",
+          allowJobStart: saved.allowJobStart !== false,
+          allowProgramDelete: saved.allowProgramDelete === true,
+          allowAutoMachining: saved.allowAutoMachining === true,
+        });
+      }
+
+      // 백엔드 기준으로도 동기화 (신뢰원)
       await loadMachinesFromBackend();
       const hiLink = body?.hiLink;
       if (hiLink && hiLink.success === false) {
@@ -173,10 +236,13 @@ export const useCncMachines = () => {
       } else {
         toast({
           title: "장비 저장",
-          description: `장비 ${form.name} (UID: ${form.uid}) 정보를 저장했습니다.`,
+          description: `장비 ${submit.name} (UID: ${submit.uid}) 정보를 저장했습니다.`,
         });
       }
-      setAddModalOpen(false);
+      // 편집 모드(auto-save)에서는 닫지 않고, 생성 모드에서만 닫음
+      if (addModalMode === "create") {
+        setAddModalOpen(false);
+      }
     } catch (e: any) {
       setError(e?.message ?? "알 수 없는 오류");
     } finally {

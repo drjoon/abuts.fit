@@ -1,5 +1,5 @@
 import type { MachineForm } from "@/pages/manufacturer/cnc/types";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 
 interface CncMachineManagerModalProps {
   open: boolean;
@@ -8,7 +8,7 @@ interface CncMachineManagerModalProps {
   loading: boolean;
   onChange: (field: keyof MachineForm, value: string | boolean) => void;
   onRequestClose: () => void;
-  onSubmit: () => void | Promise<void>;
+  onSubmit: (formSnapshot?: MachineForm) => void | Promise<void>;
   onRequestDelete?: () => void;
 }
 
@@ -25,40 +25,13 @@ export const CncMachineManagerModal = ({
   if (!open) return null;
 
   const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSubmittedKeyRef = useRef<string>("");
-
-  const computeKey = () => {
-    return JSON.stringify({
-      mode,
-      name: form.name,
-      ip: form.ip,
-      allowJobStart: !!form.allowJobStart,
-      allowProgramDelete: !!form.allowProgramDelete,
-      allowAutoMachining: !!form.allowAutoMachining,
-    });
-  };
-
-  useEffect(() => {
-    lastSubmittedKeyRef.current = computeKey();
-  }, [
-    mode,
-    form.allowJobStart,
-    form.allowProgramDelete,
-    form.allowAutoMachining,
-    form.ip,
-    form.name,
-  ]);
-
-  const scheduleSubmit = () => {
+  const scheduleSubmit = (snapshot?: MachineForm) => {
     if (mode !== "edit") return;
-    const nextKey = computeKey();
-    if (nextKey === lastSubmittedKeyRef.current) return;
     if (submitTimeoutRef.current) {
       clearTimeout(submitTimeoutRef.current);
     }
     submitTimeoutRef.current = setTimeout(() => {
-      void onSubmit();
-      lastSubmittedKeyRef.current = nextKey;
+      void onSubmit(snapshot ?? form);
     }, 400);
   };
 
@@ -87,7 +60,7 @@ export const CncMachineManagerModal = ({
               type="text"
               value={form.name}
               onChange={(e) => onChange("name", e.target.value)}
-              onBlur={scheduleSubmit}
+              onBlur={() => scheduleSubmit()}
               className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
               placeholder="예: M1"
             />
@@ -100,7 +73,7 @@ export const CncMachineManagerModal = ({
               type="text"
               value={form.ip}
               onChange={(e) => onChange("ip", e.target.value)}
-              onBlur={scheduleSubmit}
+              onBlur={() => scheduleSubmit()}
               className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-blue-500 focus:border-blue-500 transition"
               placeholder="예: 172.22.60.30"
             />
@@ -113,8 +86,9 @@ export const CncMachineManagerModal = ({
               <button
                 type="button"
                 onClick={() => {
-                  onChange("allowJobStart", !form.allowJobStart);
-                  scheduleSubmit();
+                  const next = { ...form, allowJobStart: !form.allowJobStart };
+                  onChange("allowJobStart", next.allowJobStart);
+                  scheduleSubmit(next);
                 }}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   form.allowJobStart ? "bg-blue-500" : "bg-gray-300"
@@ -134,8 +108,12 @@ export const CncMachineManagerModal = ({
               <button
                 type="button"
                 onClick={() => {
-                  onChange("allowAutoMachining", !form.allowAutoMachining);
-                  scheduleSubmit();
+                  const next = {
+                    ...form,
+                    allowAutoMachining: !form.allowAutoMachining,
+                  };
+                  onChange("allowAutoMachining", next.allowAutoMachining);
+                  scheduleSubmit(next);
                 }}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   form.allowAutoMachining ? "bg-emerald-500" : "bg-gray-300"
@@ -155,8 +133,12 @@ export const CncMachineManagerModal = ({
               <button
                 type="button"
                 onClick={() => {
-                  onChange("allowProgramDelete", !form.allowProgramDelete);
-                  scheduleSubmit();
+                  const next = {
+                    ...form,
+                    allowProgramDelete: !form.allowProgramDelete,
+                  };
+                  onChange("allowProgramDelete", next.allowProgramDelete);
+                  scheduleSubmit(next);
                 }}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   form.allowProgramDelete ? "bg-red-500" : "bg-gray-300"

@@ -298,6 +298,14 @@ export async function upsertMachine(req, res) {
       });
     }
 
+    const normalizeBool = (v, fallback) => {
+      if (v === true || v === "true") return true;
+      if (v === false || v === "false") return false;
+      return fallback;
+    };
+
+    // 기존 값이 있다면, 전달되지 않은 필드는 기존 값을 유지한다.
+    const existing = await Machine.findOne({ uid: finalUid }).lean();
     const update = {
       // uid: 앱에서 사용하는 논리 UID, hiLinkUid: Hi-Link DLL에 전달되는 실제 UID
       uid: finalUid,
@@ -306,9 +314,18 @@ export async function upsertMachine(req, res) {
       ip,
       port,
       name: displayName,
-      ...(typeof allowJobStart === "boolean" && { allowJobStart }),
-      ...(typeof allowProgramDelete === "boolean" && { allowProgramDelete }),
-      ...(typeof allowAutoMachining === "boolean" && { allowAutoMachining }),
+      allowJobStart: normalizeBool(
+        allowJobStart,
+        existing?.allowJobStart ?? true
+      ),
+      allowProgramDelete: normalizeBool(
+        allowProgramDelete,
+        existing?.allowProgramDelete ?? false
+      ),
+      allowAutoMachining: normalizeBool(
+        allowAutoMachining,
+        existing?.allowAutoMachining ?? false
+      ),
       // 개발 단계에서는 인증이 없을 수 있으므로 manufacturer는 선택적으로 저장
       ...(req.user && { manufacturer: req.user._id }),
     };

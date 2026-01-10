@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  Fragment,
+} from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Machine } from "@/pages/manufacturer/cnc/types";
+import { Machine, type MachineForm } from "./cnc/types";
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
 import { useCncWorkBoard } from "@/pages/manufacturer/cnc/hooks/useCncWorkBoard";
 import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
@@ -515,8 +522,8 @@ export const CncDashboardPage = () => {
   });
 
   // 장비 추가/수정 모달
-  const handleAddMachineFromModal = async () => {
-    await handleAddMachine();
+  const handleAddMachineFromModal = async (snapshot?: MachineForm) => {
+    await handleAddMachine(snapshot);
   };
 
   const handleDownloadProgram = async (prog: any) => {
@@ -1019,7 +1026,9 @@ export const CncDashboardPage = () => {
           loading={loading}
           onChange={handleChange}
           onRequestClose={() => setAddModalOpen(false)}
-          onSubmit={handleAddMachineFromModal}
+          onSubmit={(snapshot) => {
+            void handleAddMachineFromModal(snapshot);
+          }}
           onRequestDelete={
             addModalMode === "edit"
               ? () => {
