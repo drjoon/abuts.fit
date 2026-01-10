@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -28,6 +28,10 @@ import {
 import { CncReservationListModal } from "@/pages/manufacturer/cnc/components/CncReservationListModal";
 import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
 import { CncMaterialChangeModal } from "@/pages/manufacturer/cnc/components/CncMaterialChangeModal";
+import {
+  CncMaterialModal,
+  type CncMaterialInfo,
+} from "@/pages/manufacturer/cnc/components/CncMaterialModal";
 
 export const CncDashboardPage = () => {
   const { user, token } = useAuthStore();
@@ -84,6 +88,17 @@ export const CncDashboardPage = () => {
   const [materialChangeTarget, setMaterialChangeTarget] =
     useState<Machine | null>(null);
 
+  const [materialModalOpen, setMaterialModalOpen] = useState(false);
+  const [materialModalTarget, setMaterialModalTarget] =
+    useState<Machine | null>(null);
+
+  const [cncMachineMetaMap, setCncMachineMetaMap] = useState<
+    Record<
+      string,
+      { currentMaterial?: CncMaterialInfo; scheduledMaterialChange?: any }
+    >
+  >({});
+
   const [tempHealthMap, setTempHealthMap] = useState<
     Record<string, HealthLevel>
   >({});
@@ -138,6 +153,66 @@ export const CncDashboardPage = () => {
 
   const { toast } = useToast();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
+
+  const refreshCncMachineMeta = useCallback(async () => {
+    if (!token) return;
+    const res = await fetch("/api/cnc-machines", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body: any = await res.json().catch(() => ({}));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || "CNC 소재 정보를 불러오지 못했습니다.");
+    }
+    const list: any[] = Array.isArray(body?.data) ? body.data : [];
+    const nextMap: Record<
+      string,
+      { currentMaterial?: CncMaterialInfo; scheduledMaterialChange?: any }
+    > = {};
+    for (const item of list) {
+      const machineId = String(item?.machineId || "");
+      if (!machineId) continue;
+      nextMap[machineId] = {
+        currentMaterial: item?.currentMaterial || undefined,
+        scheduledMaterialChange: item?.scheduledMaterialChange || undefined,
+      };
+    }
+    setCncMachineMetaMap(nextMap);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    void refreshCncMachineMeta().catch(() => {});
+  }, [refreshCncMachineMeta, token]);
+
+  const mergedMachines: Machine[] = useMemo(() => {
+    return machines.map((m) => {
+      const meta = cncMachineMetaMap[m.uid];
+      if (!meta) return m;
+      return {
+        ...m,
+        currentMaterial: meta.currentMaterial || m.currentMaterial,
+        scheduledMaterialChange:
+          meta.scheduledMaterialChange || m.scheduledMaterialChange,
+      };
+    });
+  }, [cncMachineMetaMap, machines]);
+
+  const materialChangeScheduled = useMemo(() => {
+    const s: any = materialChangeTarget?.scheduledMaterialChange;
+    if (!s || !s.targetTime) return undefined;
+    if (!s.newDiameterGroup) return undefined;
+    const newDiameter =
+      typeof s.newDiameter === "number"
+        ? s.newDiameter
+        : Number.parseInt(String(s.newDiameterGroup), 10);
+
+    return {
+      targetTime: String(s.targetTime),
+      newDiameter: Number.isFinite(newDiameter) ? newDiameter : 0,
+      newDiameterGroup: String(s.newDiameterGroup),
+      notes: s.notes ? String(s.notes) : undefined,
+    };
+  }, [materialChangeTarget?.scheduledMaterialChange]);
 
   const {
     modalOpen,
@@ -424,14 +499,7 @@ export const CncDashboardPage = () => {
       throw new Error("소재 교체 예약에 실패했습니다.");
     }
 
-    // 장비 목록 새로고침
-    const updatedMachines = await fetch("/api/cnc-machines", {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then((r) => r.json());
-
-    if (updatedMachines.success) {
-      setMachines(updatedMachines.data);
-    }
+    await refreshCncMachineMeta();
   };
 
   const handleCancelMaterialChange = async () => {
@@ -451,14 +519,57 @@ export const CncDashboardPage = () => {
       throw new Error("소재 교체 예약 취소에 실패했습니다.");
     }
 
-    // 장비 목록 새로고침
-    const updatedMachines = await fetch("/api/cnc-machines", {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then((r) => r.json());
+    await refreshCncMachineMeta();
+  };
 
-    if (updatedMachines.success) {
-      setMachines(updatedMachines.data);
+  const handleReplaceMaterial = async (next: {
+    materialType: string;
+    heatNo: string;
+    diameter: number;
+    diameterGroup: "6" | "8" | "10" | "10+";
+    remainingLength: number;
+  }) => {
+    if (!materialModalTarget || !token) return;
+    const res = await fetch(
+      `/api/cnc-machines/${encodeURIComponent(
+        materialModalTarget.uid
+      )}/material`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(next),
+      }
+    );
+    const body: any = await res.json().catch(() => ({}));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || "소재교체에 실패했습니다.");
     }
+    await refreshCncMachineMeta();
+  };
+
+  const handleAddMaterial = async (next: { remainingLength: number }) => {
+    if (!materialModalTarget || !token) return;
+    const res = await fetch(
+      `/api/cnc-machines/${encodeURIComponent(
+        materialModalTarget.uid
+      )}/material-remaining`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(next),
+      }
+    );
+    const body: any = await res.json().catch(() => ({}));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || "소재추가에 실패했습니다.");
+    }
+    await refreshCncMachineMeta();
   };
 
   return (
@@ -494,7 +605,7 @@ export const CncDashboardPage = () => {
               </div>
             ) : (
               <CncMachineGrid
-                machines={machines}
+                machines={mergedMachines}
                 workUid={workUid}
                 loading={loading}
                 tempHealthMap={tempHealthMap}
@@ -505,6 +616,10 @@ export const CncDashboardPage = () => {
                 reservationJobsMap={reservationJobsMap}
                 reservationSummaryMap={reservationSummaryMap}
                 reservationTotalQtyMap={reservationTotalQtyMap}
+                onOpenMaterial={(machine) => {
+                  setMaterialModalTarget(machine);
+                  setMaterialModalOpen(true);
+                }}
                 onSelectMachine={(uid) => {
                   if (workUid !== uid) {
                     setWorkUid(uid);
@@ -1102,10 +1217,26 @@ export const CncDashboardPage = () => {
           }}
           machineId={materialChangeTarget?.uid || ""}
           machineName={materialChangeTarget?.name || ""}
-          currentDiameter={8}
-          currentDiameterGroup="8"
+          currentDiameter={materialChangeTarget?.currentMaterial?.diameter ?? 8}
+          currentDiameterGroup={
+            materialChangeTarget?.currentMaterial?.diameterGroup ?? "8"
+          }
+          scheduledChange={materialChangeScheduled}
           onSchedule={handleScheduleMaterialChange}
           onCancel={handleCancelMaterialChange}
+        />
+
+        <CncMaterialModal
+          open={materialModalOpen}
+          onClose={() => {
+            setMaterialModalOpen(false);
+            setMaterialModalTarget(null);
+          }}
+          machineId={materialModalTarget?.uid || ""}
+          machineName={materialModalTarget?.name || ""}
+          currentMaterial={materialModalTarget?.currentMaterial || null}
+          onReplace={handleReplaceMaterial}
+          onAdd={handleAddMaterial}
         />
       </main>
     </div>

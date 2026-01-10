@@ -28,6 +28,50 @@ export async function getMachines(req, res) {
   }
 }
 
+export async function updateMaterialRemaining(req, res) {
+  try {
+    const { machineId } = req.params;
+    const { remainingLength } = req.body;
+
+    if (
+      typeof remainingLength !== "number" ||
+      !Number.isFinite(remainingLength)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 remainingLength 값이 필요합니다.",
+      });
+    }
+
+    const machine = await CncMachine.findOne({ machineId });
+    if (!machine) {
+      return res.status(404).json({
+        success: false,
+        message: "장비를 찾을 수 없습니다.",
+      });
+    }
+
+    machine.currentMaterial = machine.currentMaterial || {
+      diameter: 8,
+      diameterGroup: "8",
+    };
+    machine.currentMaterial.remainingLength = remainingLength;
+    await machine.save();
+
+    return res.status(200).json({
+      success: true,
+      data: machine,
+    });
+  } catch (error) {
+    console.error("Error in updateMaterialRemaining:", error);
+    return res.status(500).json({
+      success: false,
+      message: "소재 잔여량 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 /**
  * 장비별 생산 큐 조회
  */
@@ -73,7 +117,8 @@ export async function getProductionQueues(req, res) {
 export async function updateMachineMaterial(req, res) {
   try {
     const { machineId } = req.params;
-    const { diameter, diameterGroup } = req.body;
+    const { diameter, diameterGroup, materialType, heatNo, remainingLength } =
+      req.body;
 
     if (!diameterGroup || !["6", "8", "10", "10+"].includes(diameterGroup)) {
       return res.status(400).json({
@@ -92,12 +137,21 @@ export async function updateMachineMaterial(req, res) {
     }
 
     // 소재 세팅 업데이트
-    machine.currentMaterial = {
+    const nextMaterial = {
+      materialType: String(materialType || "").trim(),
+      heatNo: String(heatNo || "").trim(),
       diameter: diameter || parseInt(diameterGroup),
       diameterGroup,
       setAt: new Date(),
       setBy: req.user?._id,
     };
+    if (
+      typeof remainingLength === "number" &&
+      Number.isFinite(remainingLength)
+    ) {
+      nextMaterial.remainingLength = remainingLength;
+    }
+    machine.currentMaterial = nextMaterial;
     await machine.save();
 
     // 해당 직경 그룹의 unassigned 의뢰를 이 장비에 할당

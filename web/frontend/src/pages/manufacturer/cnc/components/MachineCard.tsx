@@ -8,6 +8,7 @@ import {
   ShieldOff,
   Pause,
   Play,
+  Cylinder,
 } from "lucide-react";
 import { Machine } from "@/pages/manufacturer/cnc/types";
 
@@ -25,6 +26,7 @@ interface MachineCardProps {
   reservationSummary?: string | null;
   reservedTotalQty?: number;
   onSelect: () => void;
+  onMaterialClick?: (e: React.MouseEvent) => void;
   onTempClick: (e: React.MouseEvent) => void;
   onToolClick: (e: React.MouseEvent) => void;
   onInfoClick?: (e: React.MouseEvent) => void;
@@ -97,6 +99,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   reservationSummary,
   reservedTotalQty,
   onSelect,
+  onMaterialClick,
   onTempClick,
   onToolClick,
   onInfoClick,
@@ -166,6 +169,14 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           {getMachineStatusChip(machine.status)}
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <button
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
+            onClick={onMaterialClick}
+            title="원소재"
+            disabled={loading || !onMaterialClick}
+          >
+            <Cylinder className="h-4 w-4" />
+          </button>
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={onInfoClick}

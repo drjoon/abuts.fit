@@ -29,6 +29,12 @@ router.patch(
   cncMachineController.updateMachineMaterial
 );
 
+router.patch(
+  "/:machineId/material-remaining",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.updateMaterialRemaining
+);
+
 // 소재 교체 예약 (제조사, 관리자)
 router.post(
   "/:machineId/schedule-material-change",

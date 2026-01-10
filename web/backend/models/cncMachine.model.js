@@ -19,6 +19,16 @@ const cncMachineSchema = new mongoose.Schema(
       default: "active",
     },
     currentMaterial: {
+      materialType: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+      heatNo: {
+        type: String,
+        trim: true,
+        default: "",
+      },
       diameter: {
         type: Number,
         required: true,
@@ -27,6 +37,10 @@ const cncMachineSchema = new mongoose.Schema(
         type: String,
         enum: ["6", "8", "10", "10+"],
         required: true,
+      },
+      remainingLength: {
+        type: Number,
+        default: 0,
       },
       setAt: Date,
       setBy: {

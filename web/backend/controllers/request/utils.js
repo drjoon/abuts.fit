@@ -298,13 +298,7 @@ export async function normalizeRequestForResponse(requestDoc) {
   return obj;
 }
 
-export async function ensureLotNumberForMachining(requestDoc) {
-  if (!requestDoc || requestDoc.lotNumber) return;
-
-  // 로트 규칙: AB + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
-  const todayYmd = getTodayYmdInKst(); // YYYY-MM-DD
-  const yyMMdd = todayYmd.replace(/-/g, "").slice(2); // YYMMDD
-
+async function nextLotLetters() {
   const counter = await LotCounter.findOneAndUpdate(
     { key: "global" },
     { $inc: { seq: 1 }, $setOnInsert: { key: "global" } },
@@ -313,7 +307,7 @@ export async function ensureLotNumberForMachining(requestDoc) {
 
   const seqRaw = typeof counter?.seq === "number" ? counter.seq : 0;
   const total = 26 * 26 * 26;
-  const seq = ((seqRaw % total) + total) % total; // 안전한 모듈로 (음수 방지)
+  const seq = ((seqRaw % total) + total) % total;
   const toLetters = (n) => {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const a = Math.floor(n / (26 * 26)) % 26;
@@ -321,9 +315,37 @@ export async function ensureLotNumberForMachining(requestDoc) {
     const c = n % 26;
     return `${alphabet[a]}${alphabet[b]}${alphabet[c]}`;
   };
+  return toLetters(Math.max(seq, 0));
+}
 
-  const letters = toLetters(Math.max(seq, 0));
-  requestDoc.lotNumber = `AB${yyMMdd}-${letters}`;
+function getWorkTypePrefix(requestDoc, { defaultPrefix }) {
+  const raw = String(requestDoc?.caseInfos?.workType || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "crown") return "CR";
+  return defaultPrefix;
+}
+
+export async function ensureLotNumberForMachining(requestDoc) {
+  if (!requestDoc || requestDoc.lotNumber) return;
+
+  // 로트 규칙(반제품/CAP, 크라운은 CR): PREFIX + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
+  const todayYmd = getTodayYmdInKst(); // YYYY-MM-DD
+  const yyMMdd = todayYmd.replace(/-/g, "").slice(2); // YYMMDD
+
+  const letters = await nextLotLetters();
+  const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CAP" });
+  requestDoc.lotNumber = `${prefix}${yyMMdd}-${letters}`;
+}
+
+export async function ensureFinishedLotNumberForPackaging(requestDoc) {
+  if (!requestDoc || requestDoc.finishedLotNumber) return;
+
+  const todayYmd = getTodayYmdInKst();
+  const yyMMdd = todayYmd.replace(/-/g, "").slice(2);
+  const letters = await nextLotLetters();
+  const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CA" });
+  requestDoc.finishedLotNumber = `${prefix}${yyMMdd}-${letters}`;
 }
 
 export async function computePriceForRequest({

@@ -26,6 +26,15 @@ const requestSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    rawMaterialHeatNo: {
+      type: String,
+      default: "",
+    },
+    finishedLotNumber: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
     assignedMachine: {
       // 가공 직전 배정된 장비 (M3, M4 등)
       type: String,

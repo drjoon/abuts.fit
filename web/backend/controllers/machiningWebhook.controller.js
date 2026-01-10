@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import Request from "../models/request.model.js";
+import CncMachine from "../models/cncMachine.model.js";
 import { ensureLotNumberForMachining } from "./request/utils.js";
 
 export async function handleMachiningStartedWebhook(req, res) {
@@ -45,6 +46,16 @@ export async function handleMachiningStartedWebhook(req, res) {
     }
 
     await ensureLotNumberForMachining(request);
+
+    if (!request.rawMaterialHeatNo) {
+      const cncMachine = await CncMachine.findOne({
+        machineId: machine,
+      }).lean();
+      const heatNo = String(cncMachine?.currentMaterial?.heatNo || "").trim();
+      if (heatNo) {
+        request.rawMaterialHeatNo = heatNo;
+      }
+    }
 
     request.assignedMachine = machine;
     request.assignedAt = new Date();

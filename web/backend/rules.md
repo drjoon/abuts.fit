@@ -350,14 +350,17 @@ const result = await enqueueTaxInvoiceIssue({
 
 ## 10. 가공 시작(Webhook) 시 로트번호/장비명 부여 규칙
 
-- **lotNumber 부여 시점**: CAM 승인 시에는 부여하지 않음. **가공 시작 웹훅(워커 호출)** 시에만 `ensureLotNumberForMachining`을 호출해 생성한다.
+- **반제품 lotNumber 부여 시점**: CAM 승인 시에는 부여하지 않음. **가공 시작 웹훅(워커 호출)** 시에만 `ensureLotNumberForMachining`을 호출해 생성한다.
+- **원소재 Heat No 저장**: 가공 시작 웹훅에서 `assignedMachine`의 현재 소재(`currentMaterial.heatNo`)를 조회해 `rawMaterialHeatNo`에 스냅샷 저장한다.
+- **완제품 lotNumber 부여 시점**: `packaging` 단계 승인 시 `finishedLotNumber`를 자동 생성한다.
 - **엔드포인트**: `POST /api/webhooks/machining-start`
   - Body: `{ requestId (또는 id), assignedMachine }`
   - (프로덕션) 헤더 `x-webhook-secret`가 `MACHINING_WEBHOOK_SECRET`와 일치해야 함.
 - **처리 로직**:
-  1. 요청 ID 검증 후 `ensureLotNumberForMachining(request)` 실행 → lotNumber 생성
+  1. 요청 ID 검증 후 `ensureLotNumberForMachining(request)` 실행 → 반제품 lotNumber(CAP...) 생성
   2. `assignedMachine` 설정, `assignedAt` 기록
-  3. 저장 후 `{ id, lotNumber, assignedMachine, assignedAt }` 반환
+  3. 원소재 Heat No 스냅샷 저장(`rawMaterialHeatNo`)
+  4. 저장 후 `{ id, lotNumber, assignedMachine, assignedAt }` 반환
 - **프론트 표시**: 카드의 환자/치아 라인(상단)에서 `assignedMachine`과 `lotNumber` 배지를 함께 노출.
 
 ### 9.4 알림 큐 헬퍼

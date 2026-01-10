@@ -12,6 +12,7 @@ import {
   canAccessRequestAsRequestor,
   normalizeRequestForResponse,
   ensureLotNumberForMachining,
+  ensureFinishedLotNumberForPackaging,
   buildRequestorOrgScopeFilter,
   normalizeCaseInfosImplantFields,
   getTodayYmdInKst,
@@ -594,8 +595,12 @@ export async function updateReviewStatusByStage(req, res) {
           session,
         });
 
-        // BG 단계는 자동 체인이 아닌, 제조사 승인 이후 서버가 트리거한다.
         const stageKey = String(stage || "").trim();
+        if (stageKey === "packaging") {
+          await ensureFinishedLotNumberForPackaging(request);
+        }
+
+        // BG 단계는 자동 체인이 아닌, 제조사 승인 이후 서버가 트리거한다.
         if (stageKey === "request") {
           await triggerEspritForNc({ request, session });
         }

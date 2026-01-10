@@ -10,6 +10,22 @@ export interface Machine {
   lastError?: string | null;
   allowJobStart?: boolean;
   allowProgramDelete?: boolean;
+
+  // cnc-machines 연동(소재/스케줄)
+  currentMaterial?: {
+    materialType?: string;
+    heatNo?: string;
+    diameter: number;
+    diameterGroup: "6" | "8" | "10" | "10+";
+    remainingLength?: number;
+    setAt?: string;
+  };
+  scheduledMaterialChange?: {
+    targetTime?: string;
+    newDiameter?: number;
+    newDiameterGroup?: "6" | "8" | "10" | "10+";
+    notes?: string;
+  };
 }
 
 export interface MachineForm {
