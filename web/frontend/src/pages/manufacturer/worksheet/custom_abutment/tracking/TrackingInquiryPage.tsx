@@ -12,17 +12,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import type { DeliveryInfoSummary, RequestBase } from "@/types/request";
 
-type InquiryTab = "process" | "lot" | "shipping";
+type InquiryTab = "process" | "shipping" | "udi";
 type DateRange =
   | "recent7"
   | "recent30"
@@ -79,8 +71,15 @@ export const TrackingInquiryPage = () => {
   const [tab, setTab] = useState<InquiryTab>("process");
   const [loading, setLoading] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
-  const [stageFilter, setStageFilter] = useState<ProcessStage>("전체");
-  const [dateRange, setDateRange] = useState<DateRange>("recent30");
+  const defaultDateRangeByTab: Record<InquiryTab, DateRange> = {
+    process: "recent30",
+    shipping: "recent30",
+    udi: "lastMonth",
+  };
+  const [dateRangeByTab, setDateRangeByTab] = useState<
+    Record<InquiryTab, DateRange>
+  >(defaultDateRangeByTab);
+  const dateRange = dateRangeByTab[tab];
 
   useEffect(() => {
     if (!token) return;
@@ -108,6 +107,59 @@ export const TrackingInquiryPage = () => {
       } finally {
         setLoading(false);
       }
+    };
+
+    const handleDownloadUdi = () => {
+      const header = [
+        "의뢰ID",
+        "환자/치아",
+        "출고일",
+        "택배사",
+        "송장번호",
+        "원재료(Heat No.)",
+        "반제품(CAP)",
+        "완제품(CA)",
+      ];
+
+      const escapeCsv = (value: string) => {
+        if (value == null) return "";
+        const s = String(value);
+        if (/[\",\\n]/.test(s)) {
+          return '"' + s.replace(/"/g, '""') + '"';
+        }
+        return s;
+      };
+
+      const rows = udiRows.map((r) => {
+        const ci: any = r.caseInfos || {};
+        const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+        const shippedAt = di.shippedAt || di.deliveredAt || "";
+        const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
+        return [
+          r.requestId || "",
+          `${ci.patientName || ""} / ${ci.tooth || ""}`,
+          shippedDate,
+          di.carrier || "",
+          di.trackingNumber || "",
+          r.rawMaterialHeatNo || "",
+          r.lotNumber || "",
+          r.finishedLotNumber || "",
+        ];
+      });
+
+      const csvRows: string[] = [];
+      csvRows.push(header.map(escapeCsv).join(","));
+      rows.forEach((row) => csvRows.push(row.map(escapeCsv).join(",")));
+      const csvContent = "\uFEFF" + csvRows.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "UDI-지난달-출고내역.csv";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     };
 
     void run();
@@ -202,44 +254,108 @@ export const TrackingInquiryPage = () => {
       });
   }, [requests, searchLower, showCompleted, fromDate, toDate]);
 
-  const stageCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      의뢰: 0,
-      CAM: 0,
-      생산: 0,
-      발송: 0,
-      추적관리: 0,
-      기타: 0,
-    };
-    for (const r of baseFiltered) {
-      const s = getStage(r);
-      if (!s) counts.기타 += 1;
-      else counts[s] += 1;
-    }
-    return counts;
-  }, [baseFiltered]);
-
-  const handlePrintLot = () => {
+  const handlePrint = (type: InquiryTab) => {
     const win = window.open("", "_blank", "width=1024,height=768");
     if (!win) return;
-    const rowsHtml = lotRows
-      .map((r) => {
-        const ci: any = r.caseInfos || {};
-        return `<tr>
-          <td>${r.requestId || ""}</td>
-          <td>${r.rawMaterialHeatNo || ""}</td>
-          <td>${r.lotNumber || ""}</td>
-          <td>${r.finishedLotNumber || ""}</td>
-          <td>${ci.patientName || ""}</td>
-          <td>${ci.tooth || ""}</td>
-          <td>${getStage(r) || ""}</td>
-        </tr>`;
-      })
-      .join("");
+
+    let title = "생산공정일지";
+    let headers: string[] = [];
+    let rowsHtml = "";
+
+    if (type === "process") {
+      title = "생산공정일지";
+      headers = [
+        "의뢰ID",
+        "환자/치아",
+        "생산",
+        "발송",
+        "장비",
+        "원재료",
+        "반제품",
+        "완제품",
+      ];
+      rowsHtml = processRows
+        .map((r) => {
+          const ci: any = r.caseInfos || {};
+          return `<tr>
+            <td>${r.requestId || ""}</td>
+            <td>${ci.patientName || ""} / ${ci.tooth || ""}</td>
+            <td>가공·탈지·연마·검사·세척·포장</td>
+            <td>출하승인·출고</td>
+            <td>${r.assignedMachine || ""}</td>
+            <td>${r.rawMaterialHeatNo || ""}</td>
+            <td>${r.lotNumber || ""}</td>
+            <td>${r.finishedLotNumber || ""}</td>
+          </tr>`;
+        })
+        .join("");
+    } else if (type === "udi") {
+      title = "UDI 신고 내역";
+      headers = [
+        "의뢰ID",
+        "환자/치아",
+        "출고일",
+        "택배사",
+        "송장번호",
+        "원재료",
+        "반제품",
+        "완제품",
+      ];
+      rowsHtml = udiRows
+        .map((r) => {
+          const ci: any = r.caseInfos || {};
+          const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+          const shippedAt = di.shippedAt || di.deliveredAt || "";
+          const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
+          return `<tr>
+            <td>${r.requestId || ""}</td>
+            <td>${ci.patientName || ""} / ${ci.tooth || ""}</td>
+            <td>${shippedDate}</td>
+            <td>${di.carrier || ""}</td>
+            <td>${di.trackingNumber || ""}</td>
+            <td>${r.rawMaterialHeatNo || ""}</td>
+            <td>${r.lotNumber || ""}</td>
+            <td>${r.finishedLotNumber || ""}</td>
+          </tr>`;
+        })
+        .join("");
+    } else {
+      title = "택배/배송 내역";
+      headers = [
+        "의뢰ID",
+        "택배사",
+        "송장번호",
+        "접수(출고)",
+        "배송완료",
+        "상태",
+      ];
+      rowsHtml = shippingRows
+        .map((r) => {
+          const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+          const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
+          const deliveredAt = di.deliveredAt ? String(di.deliveredAt) : "";
+          const status = deliveredAt
+            ? "완료"
+            : shippedAt || di.trackingNumber
+            ? "배송중"
+            : "-";
+          return `<tr>
+            <td>${r.requestId || ""}</td>
+            <td>${di.carrier || ""}</td>
+            <td>${di.trackingNumber || ""}</td>
+            <td>${formatDateTime(shippedAt)}</td>
+            <td>${formatDateTime(deliveredAt)}</td>
+            <td>${status}</td>
+          </tr>`;
+        })
+        .join("");
+    }
+
+    const headersHtml = headers.map((h) => `<th>${h}</th>`).join("");
     win.document.write(`
       <html>
         <head>
-          <title>로트번호 추적</title>
+          <title>${title}</title>
           <style>
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
             th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
@@ -247,18 +363,10 @@ export const TrackingInquiryPage = () => {
           </style>
         </head>
         <body>
-          <h3>로트번호 추적</h3>
+          <h3>${title}</h3>
           <table>
             <thead>
-              <tr>
-                <th>의뢰ID</th>
-                <th>Heat No.</th>
-                <th>CAP</th>
-                <th>CA</th>
-                <th>환자</th>
-                <th>치아</th>
-                <th>공정</th>
-              </tr>
+              <tr>${headersHtml}</tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
           </table>
@@ -347,26 +455,105 @@ export const TrackingInquiryPage = () => {
     URL.revokeObjectURL(url);
   };
 
-  const processRows = useMemo(() => {
-    const filtered =
-      stageFilter === "전체"
-        ? baseFiltered
-        : baseFiltered.filter((r) => getStage(r) === stageFilter);
+  const handleDownloadUdi = () => {
+    const header = [
+      "의뢰ID",
+      "환자/치아",
+      "출고일",
+      "택배사",
+      "송장번호",
+      "원재료(Heat No.)",
+      "반제품(CAP)",
+      "완제품(CA)",
+    ];
 
-    return filtered.slice().sort((a, b) => {
-      const aTime = new Date(a.createdAt || 0).getTime();
-      const bTime = new Date(b.createdAt || 0).getTime();
-      return bTime - aTime;
+    const escapeCsv = (value: string) => {
+      if (value == null) return "";
+      const s = String(value);
+      if (/[\",\\n]/.test(s)) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      return s;
+    };
+
+    const rows = udiRows.map((r) => {
+      const ci: any = r.caseInfos || {};
+      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+      const shippedAt = di.shippedAt || di.deliveredAt || "";
+      const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
+      return [
+        r.requestId || "",
+        `${ci.patientName || ""} / ${ci.tooth || ""}`,
+        shippedDate,
+        di.carrier || "",
+        di.trackingNumber || "",
+        r.rawMaterialHeatNo || "",
+        r.lotNumber || "",
+        r.finishedLotNumber || "",
+      ];
     });
-  }, [baseFiltered, stageFilter]);
 
-  const lotRows = useMemo(() => {
+    const csvRows: string[] = [];
+    csvRows.push(header.map(escapeCsv).join(","));
+    rows.forEach((row) => csvRows.push(row.map(escapeCsv).join(",")));
+    const csvContent = "\uFEFF" + csvRows.join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    a.download = `애크로덴트-UDI-${todayStr}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const processRows = useMemo(() => {
     return baseFiltered.slice().sort((a, b) => {
       const aTime = new Date(a.createdAt || 0).getTime();
       const bTime = new Date(b.createdAt || 0).getTime();
       return bTime - aTime;
     });
   }, [baseFiltered]);
+
+  const lastMonthRange = useMemo(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const from = new Date(year, month - 1, 1);
+    const to = new Date(year, month, 0);
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  }, []);
+
+  const udiRows = useMemo(() => {
+    const { from, to } = lastMonthRange;
+    return baseFiltered
+      .filter((r) => {
+        const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+        const base =
+          di.shippedAt ||
+          di.deliveredAt ||
+          r.createdAt ||
+          new Date().toISOString();
+        const t = new Date(base);
+        if (Number.isNaN(t.getTime())) return false;
+        return t >= from && t <= to;
+      })
+      .slice()
+      .sort((a, b) => {
+        const da = normalizeDeliveryInfo(a.deliveryInfoRef);
+        const db = normalizeDeliveryInfo(b.deliveryInfoRef);
+        const aTime = new Date(
+          da.shippedAt || da.deliveredAt || a.createdAt || 0
+        ).getTime();
+        const bTime = new Date(
+          db.shippedAt || db.deliveredAt || b.createdAt || 0
+        ).getTime();
+        return bTime - aTime;
+      });
+  }, [baseFiltered, lastMonthRange]);
 
   const shippingRows = useMemo(() => {
     const only = baseFiltered.filter((r) => {
@@ -389,98 +576,78 @@ export const TrackingInquiryPage = () => {
   return (
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={(v) => setTab(v as InquiryTab)}>
-        <div className="flex items-center justify-between gap-3">
-          <TabsList className="justify-start">
-            <TabsTrigger value="process">생산 공정별</TabsTrigger>
-            <TabsTrigger value="lot">로트번호 추적</TabsTrigger>
+        <div className="flex items-center gap-3">
+          <TabsList className="flex-1 justify-center">
+            <TabsTrigger value="process">생산공정일지</TabsTrigger>
             <TabsTrigger value="shipping">택배/배송</TabsTrigger>
+            <TabsTrigger value="udi">UDI신고</TabsTrigger>
           </TabsList>
-          <div className="flex gap-2">
-            {tab === "lot" && (
-              <Button
-                variant="default"
-                size="sm"
-                className="px-4"
-                onClick={handlePrintLot}
-              >
-                프린트
-              </Button>
-            )}
-          </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted-foreground">기간</span>
-          {(
-            [
-              ["recent7", "최근 7일"],
-              ["recent30", "최근 30일"],
-              ["recent90", "최근 90일"],
-              ["lastMonth", "지난달"],
-              ["thisMonth", "이번달"],
-              ["all", "전체"],
-            ] as const
-          ).map(([key, label]) => (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">기간</span>
+            {(
+              [
+                ["recent7", "최근 7일"],
+                ["recent30", "최근 30일"],
+                ["recent90", "최근 90일"],
+                ["lastMonth", "지난달"],
+                ["thisMonth", "이번달"],
+                ["all", "전체"],
+              ] as const
+            ).map(([key, label]) => (
+              <Button
+                key={key}
+                variant={dateRange === key ? "default" : "outline"}
+                size="sm"
+                className="rounded-full px-3"
+                onClick={() =>
+                  setDateRangeByTab((prev) => ({
+                    ...prev,
+                    [tab]: key as DateRange,
+                  }))
+                }
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {tab === "udi" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="px-4"
+                onClick={handleDownloadUdi}
+              >
+                다운로드
+              </Button>
+            )}
             <Button
-              key={key}
-              variant={dateRange === key ? "default" : "outline"}
+              variant="default"
               size="sm"
-              className="rounded-full px-3"
-              onClick={() => setDateRange(key as DateRange)}
+              className="px-4"
+              onClick={() => handlePrint(tab)}
             >
-              {label}
+              프린트
             </Button>
-          ))}
+          </div>
         </div>
 
         <TabsContent value="process" className="space-y-3 mt-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              {(
-                [
-                  ["의뢰", stageCounts.의뢰],
-                  ["CAM", stageCounts.CAM],
-                  ["생산", stageCounts.생산],
-                  ["발송", stageCounts.발송],
-                  ["추적관리", stageCounts.추적관리],
-                ] as const
-              ).map(([k, v]) => (
-                <Badge key={k} variant="secondary">
-                  {k}: {v}
-                </Badge>
-              ))}
-            </div>
-
-            <div className="w-[160px]">
-              <Select
-                value={stageFilter}
-                onValueChange={(v) => setStageFilter(v as ProcessStage)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="전체">전체</SelectItem>
-                  <SelectItem value="의뢰">의뢰</SelectItem>
-                  <SelectItem value="CAM">CAM</SelectItem>
-                  <SelectItem value="생산">생산</SelectItem>
-                  <SelectItem value="발송">발송</SelectItem>
-                  <SelectItem value="추적관리">추적관리</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           <div className="rounded-md border bg-background">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>의뢰ID</TableHead>
-                  <TableHead>환자/치아</TableHead>
-                  <TableHead>공정</TableHead>
-                  <TableHead>장비</TableHead>
-                  <TableHead>반제품(CAP)</TableHead>
-                  <TableHead>완제품(CA)</TableHead>
+                  <TableHead className="text-center">의뢰ID</TableHead>
+                  <TableHead className="text-center">환자/치아</TableHead>
+                  <TableHead className="text-center">생산</TableHead>
+                  <TableHead className="text-center">발송</TableHead>
+                  <TableHead className="text-center">장비</TableHead>
+                  <TableHead className="text-center">원재료</TableHead>
+                  <TableHead className="text-center">반제품</TableHead>
+                  <TableHead className="text-center">완제품</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -494,8 +661,46 @@ export const TrackingInquiryPage = () => {
                       <TableCell>
                         {ci.patientName || "-"} / {ci.tooth || "-"}
                       </TableCell>
-                      <TableCell>{getStage(r) || "-"}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-3">
+                          {["가공", "탈지", "연마", "검사", "세척", "포장"].map(
+                            (step) => (
+                              <label
+                                key={step}
+                                className="flex items-center gap-1 text-sm"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked
+                                  readOnly
+                                  className="h-4 w-4 accent-primary"
+                                />
+                                <span>{step}</span>
+                              </label>
+                            )
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-3">
+                          {["출하승인", "출고"].map((step) => (
+                            <label
+                              key={step}
+                              className="flex items-center gap-1 text-sm"
+                            >
+                              <input
+                                type="checkbox"
+                                checked
+                                readOnly
+                                className="h-4 w-4 accent-primary"
+                              />
+                              <span>{step}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </TableCell>
                       <TableCell>{r.assignedMachine || "-"}</TableCell>
+                      <TableCell>{r.rawMaterialHeatNo || "-"}</TableCell>
                       <TableCell>{r.lotNumber || "-"}</TableCell>
                       <TableCell>{r.finishedLotNumber || "-"}</TableCell>
                     </TableRow>
@@ -504,7 +709,7 @@ export const TrackingInquiryPage = () => {
                 {!loading && processRows.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={8}
                       className="text-center text-muted-foreground"
                     >
                       조회 결과가 없습니다.
@@ -516,44 +721,53 @@ export const TrackingInquiryPage = () => {
           </div>
         </TabsContent>
 
-        <TabsContent value="lot" className="space-y-3 mt-4">
+        <TabsContent value="udi" className="space-y-3 mt-4">
           <div className="rounded-md border bg-background">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>의뢰ID</TableHead>
-                  <TableHead>원재료(Heat No.)</TableHead>
-                  <TableHead>반제품(CAP)</TableHead>
-                  <TableHead>완제품(CA)</TableHead>
-                  <TableHead>현재공정</TableHead>
+                  <TableHead>환자/치아</TableHead>
+                  <TableHead>출고일</TableHead>
+                  <TableHead>택배사</TableHead>
+                  <TableHead>송장번호</TableHead>
+                  <TableHead>원재료</TableHead>
+                  <TableHead>반제품</TableHead>
+                  <TableHead>완제품</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {lotRows.map((r) => {
+                {udiRows.map((r) => {
                   const ci: any = r.caseInfos || {};
-                  const stage = getStage(r) || "-";
+                  const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+                  const shippedAt = di.shippedAt || di.deliveredAt || "";
+                  const shippedDate = shippedAt
+                    ? String(shippedAt).slice(0, 10)
+                    : "-";
                   return (
                     <TableRow key={String(r._id || r.requestId)}>
                       <TableCell className="font-medium">
                         {r.requestId || "-"}
-                        <div className="text-xs text-muted-foreground">
-                          {ci.patientName || "-"} / {ci.tooth || "-"}
-                        </div>
                       </TableCell>
+                      <TableCell>
+                        {ci.patientName || "-"} / {ci.tooth || "-"}
+                      </TableCell>
+                      <TableCell>{shippedDate}</TableCell>
+                      <TableCell>{di.carrier || "-"}</TableCell>
+                      <TableCell>{di.trackingNumber || "-"}</TableCell>
                       <TableCell>{r.rawMaterialHeatNo || "-"}</TableCell>
                       <TableCell>{r.lotNumber || "-"}</TableCell>
                       <TableCell>{r.finishedLotNumber || "-"}</TableCell>
-                      <TableCell>{stage}</TableCell>
                     </TableRow>
                   );
                 })}
-                {!loading && lotRows.length === 0 && (
+                {!loading && udiRows.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={8}
                       className="text-center text-muted-foreground"
                     >
-                      조회 결과가 없습니다.
+                      지난달 출고 내역이 없습니다.
                     </TableCell>
                   </TableRow>
                 )}
