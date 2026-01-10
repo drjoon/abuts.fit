@@ -4,6 +4,14 @@ export interface RequestUserSummary {
   name?: string;
   email?: string;
   organization?: string;
+  phone?: string;
+}
+
+export interface DeliveryInfoSummary {
+  trackingNumber?: string;
+  carrier?: string;
+  shippedAt?: string;
+  deliveredAt?: string;
 }
 
 export interface RequestCaseInfos {
@@ -139,6 +147,8 @@ export interface RequestBase {
   status?: string;
   manufacturerStage?: "의뢰" | "CAM" | "생산" | "발송" | "추적관리" | string;
   lotNumber?: string;
+  rawMaterialHeatNo?: string;
+  finishedLotNumber?: string;
   assignedMachine?: string; // 가공 직전 배정된 장비 (M3, M4 등)
   status2?: string;
   createdAt?: string;
@@ -179,7 +189,7 @@ export interface RequestBase {
   paymentStatus?: "결제전" | "결제완료" | "결제취소" | string;
 
   // 배송 정보 레퍼런스 (별도 DeliveryInfo 컬렉션)
-  deliveryInfoRef?: string;
+  deliveryInfoRef?: string | DeliveryInfoSummary;
 
   shippingPackageId?: string;
 }

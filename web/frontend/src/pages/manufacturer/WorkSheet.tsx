@@ -1,6 +1,7 @@
 import { useLocation } from "react-router-dom";
 import { RequestPage } from "./worksheet/custom_abutment/request/RequestPage";
 import { MachiningPage } from "./worksheet/custom_abutment/machining/MachiningPage";
+import { TrackingInquiryPage } from "./worksheet/custom_abutment/tracking/TrackingInquiryPage";
 
 export const ManufacturerWorksheetPage = () => {
   const location = useLocation();
@@ -61,15 +62,7 @@ export const ManufacturerWorksheetPage = () => {
             />
           );
         case "tracking":
-          return (
-            <RequestPage
-              showQueueBar={true}
-              filterRequests={(req) => {
-                const stage = String(req.manufacturerStage || "").trim();
-                return stage === "추적관리";
-              }}
-            />
-          );
+          return <TrackingInquiryPage />;
         default:
           return <RequestPage showQueueBar={true} />;
       }

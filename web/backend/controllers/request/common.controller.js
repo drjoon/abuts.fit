@@ -840,6 +840,7 @@ export async function getAllRequests(req, res) {
     const rawRequests = await Request.find(filter)
       .select("-messages")
       .populate("requestor", "name email organization")
+      .populate("deliveryInfoRef")
       .sort(sort)
       .skip(skip)
       .limit(limit)
