@@ -94,12 +94,25 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             }
         }
 
+        private Action _openFilledBrowser;
+        private Func<Document> _getDocument;
+
+        public void SetFilledBrowserOpener(Action openFilledBrowser)
+        {
+            _openFilledBrowser = openFilledBrowser;
+        }
+
+        public void SetDocumentResolver(Func<Document> getDocument)
+        {
+            _getDocument = getDocument;
+        }
+
         public void ShowPanel()
         {
             EnsureInitialized();
             if (_panel == null || _panel.IsDisposed)
             {
-                _panel = new DentalPanelForm(this);
+                _panel = new DentalPanelForm(this, _openFilledBrowser, _getDocument);
             }
 
             if (!_panel.Visible)

@@ -418,7 +418,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         public EspritMenus.MenuItem _tbMenuItem = default(EspritMenus.MenuItem);
 
         public List<int> _iCNumbs = new List<int>();
-        public const string _toolbarName = "Acrodent_addin";
+        public const string _toolbarName = "abuts.fit";
 
         public static int _iCntOfCommands = 1;
         public Esprit.PMTab exTab;
@@ -434,12 +434,15 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private bool _toolbarPositionLoaded;
         private System.Windows.Forms.Timer _heartbeatTimer;
         private const int HeartbeatIntervalMs = 60 * 1000;
+        private FilledStlBrowserForm _filledBrowser;
 
         public void _ConnectionManager_AddInConnect(Esprit.Application espritApplication)
         {
             _espApp = espritApplication;
             _pm = _espApp.ProjectManager;
             DentalHost.Initialize(_espApp);
+            DentalHost.SetFilledBrowserOpener(ShowFilledBrowser);
+            DentalHost.SetDocumentResolver(() => _espApp?.Document);
 
             // 서버 자동 시작
             if (_repeatProcess == null)
@@ -474,7 +477,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             var toolbarIcons = EnsureToolbarIcons();
             for (int i = 0; i < _iCntOfCommands; i++)
             {
-                _iCNumbs.Add(EC.AddCommand(_MyCookie, i, "Acrodent Command " + i));
+                _iCNumbs.Add(EC.AddCommand(_MyCookie, i, "abuts.fit"));
             }
 
             for (int i = 0; i < _iCntOfCommands; i++)
@@ -482,7 +485,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 Esprit.ToolBarControl tbcon = _newToolbar.Add(EspritConstants.espToolBarControl.espToolBarControlButton, "acrodent_Addin_" + i.ToString(), _iCNumbs[i]);
                 tbcon.SetBitmap(toolbarIcons.smallIconPath, toolbarIcons.largeIconPath);
                 tbcon.Enabled = true;
-                tbcon.Name = "Acrodent command " + i.ToString();
+                tbcon.Name = "abuts.fit";
             }
 
             //EC.OnCommand;
@@ -535,7 +538,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                     if (popupSubMenu != null)
                     {
-                        popupSubMenu.Add(EspritConstants.espMenuItemType.espMenuItemCommand, "Command 1", _iCNumbs[0]);
+                        popupSubMenu.Add(EspritConstants.espMenuItemType.espMenuItemCommand, "abuts.fit", _iCNumbs[0]);
                     }
                 }
             }
@@ -559,7 +562,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 System.Diagnostics.Trace.WriteLine($"Connect: Failed to load toolbar position in AddInConnect: {ex}");
             }
 
-            ShowAddInLoadedIndicator();
+            ShowDefaultStatusPanel();
             StartHeartbeat();
         }
 
@@ -572,8 +575,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             switch (UserId)
             {
                 case 0:
-                    // DentalAddin 옵션 패널을 먼저 노출해 사용자가 설정 파일을 확인/수정할 수 있게 한다.
-                    DentalHost.ShowPanel();
+                    ShowDefaultStatusPanel();
 
                     if (_repeatProcess == null)
                     {
@@ -583,6 +585,47 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                     break;
             }
+        }
+
+        private void ShowDefaultStatusPanel()
+        {
+            try
+            {
+                var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                ShowStatusPanel($"[{timestamp}] My Dental Addin");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Connect: ShowDefaultStatusPanel failed - {ex.Message}");
+            }
+        }
+
+        private void ShowFilledBrowser()
+        {
+            try
+            {
+                var directory = ResolveFilledDirectory();
+                if (_filledBrowser == null || _filledBrowser.IsDisposed)
+                {
+                    _filledBrowser = new FilledStlBrowserForm(directory, () => _espApp?.Document);
+                }
+
+                _filledBrowser.RefreshFiles();
+                _filledBrowser.Show();
+                _filledBrowser.BringToFront();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Filled STL Browser를 열 수 없습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static string ResolveFilledDirectory()
+        {
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            // addin/bin/ -> ../storage/2-filled
+            var path = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
+            return path;
         }
 
         public void _ConnectionManager_AddInDisconnect()

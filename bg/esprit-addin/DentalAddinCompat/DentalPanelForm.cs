@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using Esprit;
+using WinPoint = System.Drawing.Point;
 
 namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
 {
@@ -18,11 +21,22 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
         private readonly Button _saveButton;
         private readonly Button _browseButton;
         private readonly Label _statusLabel;
+        private readonly Func<Document> _getDocument;
 
-        public DentalPanelForm(DentalAddinHost host)
+        // Filled STL 리스트
+        private readonly ListBox _filledListBox;
+        private readonly Button _filledPrevButton;
+        private readonly Button _filledNextButton;
+        private readonly Button _filledRefreshButton;
+        private readonly Label _filledStatusLabel;
+        private List<string> _filledFiles = new List<string>();
+        private int _filledPageIndex;
+
+        public DentalPanelForm(DentalAddinHost host, Action openFilledBrowser, Func<Document> getDocument)
         {
             _host = host ?? throw new ArgumentNullException(nameof(host));
-            Text = "DentalAddin Settings";
+            _getDocument = getDocument;
+            Text = "Abuts.fit";
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(520, 420);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -33,13 +47,13 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             {
                 Text = "Process Directory",
                 AutoSize = true,
-                Location = new Point(12, 18)
+                Location = new WinPoint(12, 18)
             };
             Controls.Add(directoryLabel);
 
             _directoryTextBox = new TextBox
             {
-                Location = new Point(12, 40),
+                Location = new WinPoint(12, 40),
                 Width = 360
             };
             Controls.Add(_directoryTextBox);
@@ -47,7 +61,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             _browseButton = new Button
             {
                 Text = "Browse...",
-                Location = new Point(380, 38),
+                Location = new WinPoint(380, 38),
                 Width = 110
             };
             _browseButton.Click += HandleBrowse;
@@ -56,7 +70,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             _reloadButton = new Button
             {
                 Text = "Reload",
-                Location = new Point(12, 80),
+                Location = new WinPoint(12, 80),
                 Width = 110
             };
             _reloadButton.Click += (_, _) => LoadData();
@@ -65,7 +79,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             _saveButton = new Button
             {
                 Text = "Save",
-                Location = new Point(132, 80),
+                Location = new WinPoint(132, 80),
                 Width = 110
             };
             _saveButton.Click += (_, _) => SaveData();
@@ -73,17 +87,61 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
 
             var listLabel = new Label
             {
-                Text = "Detected Process Files (Top 20)",
+                Text = "Filled STL Files (5개씩)",
                 AutoSize = true,
-                Location = new Point(12, 120)
+                Location = new WinPoint(12, 100)
             };
             Controls.Add(listLabel);
 
+            _filledListBox = new ListBox
+            {
+                Location = new WinPoint(12, 122),
+                Width = 478,
+                Height = 110
+            };
+            _filledListBox.DoubleClick += (_, _) => MergeSelectedFilled();
+            Controls.Add(_filledListBox);
+
+            _filledPrevButton = new Button
+            {
+                Text = "이전",
+                Location = new WinPoint(12, 236),
+                Width = 80
+            };
+            _filledPrevButton.Click += (_, _) => ChangeFilledPage(_filledPageIndex - 1);
+            Controls.Add(_filledPrevButton);
+
+            _filledNextButton = new Button
+            {
+                Text = "다음",
+                Location = new WinPoint(100, 236),
+                Width = 80
+            };
+            _filledNextButton.Click += (_, _) => ChangeFilledPage(_filledPageIndex + 1);
+            Controls.Add(_filledNextButton);
+
+            _filledRefreshButton = new Button
+            {
+                Text = "새로고침",
+                Location = new WinPoint(188, 236),
+                Width = 90
+            };
+            _filledRefreshButton.Click += (_, _) => RefreshFilledFiles();
+            Controls.Add(_filledRefreshButton);
+
+            _filledStatusLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = Color.DimGray,
+                Location = new WinPoint(290, 240)
+            };
+            Controls.Add(_filledStatusLabel);
+
             _processFilesListBox = new ListBox
             {
-                Location = new Point(12, 142),
+                Location = new WinPoint(12, 272),
                 Width = 478,
-                Height = 190
+                Height = 80
             };
             Controls.Add(_processFilesListBox);
 
@@ -91,11 +149,15 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             {
                 AutoSize = true,
                 ForeColor = Color.DimGray,
-                Location = new Point(12, 344)
+                Location = new WinPoint(12, 364)
             };
             Controls.Add(_statusLabel);
 
-            Load += (_, _) => LoadData();
+            Load += (_, _) =>
+            {
+                LoadData();
+                RefreshFilledFiles();
+            };
         }
 
         private void LoadData()
@@ -155,6 +217,91 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
                     RefreshProcessList(dialog.SelectedPath);
                 }
             }
+        }
+
+        private void RefreshFilledFiles()
+        {
+            var dir = ResolveFilledDirectory();
+            if (!Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            _filledFiles = Directory.GetFiles(dir, "*.filled.stl")
+                .OrderByDescending(File.GetLastWriteTime)
+                .ToList();
+
+            _filledPageIndex = 0;
+            RenderFilledPage();
+        }
+
+        private void ChangeFilledPage(int newPage)
+        {
+            if (newPage < 0) return;
+            if (newPage * 5 >= _filledFiles.Count) return;
+            _filledPageIndex = newPage;
+            RenderFilledPage();
+        }
+
+        private void RenderFilledPage()
+        {
+            _filledListBox.Items.Clear();
+
+            if (_filledFiles.Count == 0)
+            {
+                _filledListBox.Items.Add("파일이 없습니다.");
+                _filledPrevButton.Enabled = false;
+                _filledNextButton.Enabled = false;
+                _filledRefreshButton.Enabled = true;
+                _filledStatusLabel.Text = "0개 파일";
+                return;
+            }
+
+            var pageItems = _filledFiles.Skip(_filledPageIndex * 5).Take(5).ToList();
+            foreach (var file in pageItems)
+            {
+                var fi = new FileInfo(file);
+                _filledListBox.Items.Add($"{fi.Name} (수정: {fi.LastWriteTime:yyyy-MM-dd HH:mm})");
+            }
+
+            _filledPrevButton.Enabled = _filledPageIndex > 0;
+            _filledNextButton.Enabled = (_filledPageIndex + 1) * 5 < _filledFiles.Count;
+            _filledRefreshButton.Enabled = true;
+            _filledStatusLabel.Text = $"{_filledFiles.Count}개 중 {(_filledPageIndex * 5 + 1)}-{Math.Min((_filledPageIndex + 1) * 5, _filledFiles.Count)}";
+        }
+
+        private void MergeSelectedFilled()
+        {
+            if (_filledFiles.Count == 0) return;
+            var selectedIndex = _filledListBox.SelectedIndex;
+            if (selectedIndex < 0) return;
+
+            var fullIndex = _filledPageIndex * 5 + selectedIndex;
+            if (fullIndex < 0 || fullIndex >= _filledFiles.Count) return;
+
+            var targetPath = _filledFiles[fullIndex];
+            var doc = _getDocument?.Invoke();
+            if (doc == null)
+            {
+                MessageBox.Show("현재 열린 ESPRIT 문서를 찾을 수 없습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            try
+            {
+                doc.MergeFile(targetPath);
+                MessageBox.Show($"병합 완료: {Path.GetFileName(targetPath)}", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"병합 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static string ResolveFilledDirectory()
+        {
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
         }
     }
 }
