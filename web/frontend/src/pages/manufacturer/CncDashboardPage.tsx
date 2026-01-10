@@ -95,7 +95,11 @@ export const CncDashboardPage = () => {
   const [cncMachineMetaMap, setCncMachineMetaMap] = useState<
     Record<
       string,
-      { currentMaterial?: CncMaterialInfo; scheduledMaterialChange?: any }
+      {
+        currentMaterial?: CncMaterialInfo;
+        scheduledMaterialChange?: any;
+        dummySettings?: { programName?: string; schedules?: any[] };
+      }
     >
   >({});
 
@@ -166,7 +170,11 @@ export const CncDashboardPage = () => {
     const list: any[] = Array.isArray(body?.data) ? body.data : [];
     const nextMap: Record<
       string,
-      { currentMaterial?: CncMaterialInfo; scheduledMaterialChange?: any }
+      {
+        currentMaterial?: CncMaterialInfo;
+        scheduledMaterialChange?: any;
+        dummySettings?: { programName?: string; schedules?: any[] };
+      }
     > = {};
     for (const item of list) {
       const machineId = String(item?.machineId || "");
@@ -174,6 +182,7 @@ export const CncDashboardPage = () => {
       nextMap[machineId] = {
         currentMaterial: item?.currentMaterial || undefined,
         scheduledMaterialChange: item?.scheduledMaterialChange || undefined,
+        dummySettings: item?.dummySettings || undefined,
       };
     }
     setCncMachineMetaMap(nextMap);
@@ -193,6 +202,7 @@ export const CncDashboardPage = () => {
         currentMaterial: meta.currentMaterial || m.currentMaterial,
         scheduledMaterialChange:
           meta.scheduledMaterialChange || m.scheduledMaterialChange,
+        dummySettings: meta.dummySettings || m.dummySettings,
       };
     });
   }, [cncMachineMetaMap, machines]);

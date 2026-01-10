@@ -49,6 +49,13 @@ router.delete(
   cncMachineController.cancelScheduledMaterialChange
 );
 
+// 더미 프로그램/스케줄 설정 저장 (제조사, 관리자)
+router.patch(
+  "/:machineId/dummy-settings",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.updateDummySettings
+);
+
 // 장비 초기화 (개발용, 관리자만)
 router.post(
   "/initialize",

@@ -26,6 +26,10 @@ export interface Machine {
     newDiameterGroup?: "6" | "8" | "10" | "10+";
     notes?: string;
   };
+  dummySettings?: {
+    programName?: string;
+    schedules?: { time: string; enabled?: boolean }[];
+  };
 }
 
 export interface MachineForm {

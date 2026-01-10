@@ -267,6 +267,57 @@ export async function cancelScheduledMaterialChange(req, res) {
 }
 
 /**
+ * 더미 프로그램/스케줄 설정 저장 (장비별)
+ */
+export async function updateDummySettings(req, res) {
+  try {
+    const { machineId } = req.params;
+    const { programName, schedules } = req.body || {};
+
+    const machine = await CncMachine.findOne({ machineId });
+    if (!machine) {
+      return res.status(404).json({
+        success: false,
+        message: "장비를 찾을 수 없습니다.",
+      });
+    }
+
+    const nextProgram = (programName || "").trim() || "O0100";
+    let nextSchedules = Array.isArray(schedules) ? schedules : [];
+    nextSchedules = nextSchedules
+      .map((s) => ({
+        time: typeof s?.time === "string" ? s.time : "08:00",
+        enabled: s?.enabled !== false,
+      }))
+      .filter((s) => !!s.time);
+    if (nextSchedules.length === 0) {
+      nextSchedules = [
+        { time: "08:00", enabled: true },
+        { time: "16:00", enabled: true },
+      ];
+    }
+
+    machine.dummySettings = {
+      programName: nextProgram,
+      schedules: nextSchedules,
+    };
+    await machine.save();
+
+    return res.status(200).json({
+      success: true,
+      data: machine.dummySettings,
+    });
+  } catch (error) {
+    console.error("Error in updateDummySettings:", error);
+    return res.status(500).json({
+      success: false,
+      message: "더미 설정 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 장비 초기 데이터 생성 (개발용)
  */
 export async function initializeMachines(req, res) {

@@ -62,6 +62,25 @@ const cncMachineSchema = new mongoose.Schema(
       scheduledAt: Date,
       notes: String,
     },
+    dummySettings: {
+      programName: {
+        type: String,
+        trim: true,
+        default: "O0100",
+      },
+      schedules: [
+        {
+          time: {
+            type: String,
+            default: "08:00",
+          },
+          enabled: {
+            type: Boolean,
+            default: true,
+          },
+        },
+      ],
+    },
     specifications: {
       maxDiameter: Number,
       minDiameter: Number,
