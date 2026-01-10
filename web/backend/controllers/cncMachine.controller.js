@@ -9,6 +9,45 @@ import {
   recalculateQueueOnMaterialChange,
 } from "./request/production.utils.js";
 
+const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://localhost:8002";
+const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
+
+function withBridgeHeaders(extra = {}) {
+  const base = {};
+  if (BRIDGE_SHARED_SECRET) {
+    base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
+  }
+  return { ...base, ...extra };
+}
+
+async function syncMachineMaterialToBridge(machineId, material) {
+  try {
+    const mid = String(machineId || "").trim();
+    if (!mid) return;
+    const dia = Number(material?.diameter);
+    if (!Number.isFinite(dia) || dia <= 0) return;
+
+    await fetch(`${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/material`, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        machineId: mid,
+        materialType: String(material?.materialType || "").trim(),
+        heatNo: String(material?.heatNo || "").trim(),
+        diameter: dia,
+        diameterGroup: String(material?.diameterGroup || "").trim(),
+        remainingLength:
+          typeof material?.remainingLength === "number" &&
+          Number.isFinite(material.remainingLength)
+            ? material.remainingLength
+            : null,
+      }),
+    });
+  } catch {
+    // ignore: 브리지 연동 실패해도 소재 저장은 성공 처리
+  }
+}
+
 /**
  * CNC 장비 목록 조회
  */
@@ -144,6 +183,8 @@ export async function updateMaterialRemaining(req, res) {
     machine.currentMaterial.remainingLength = remainingLength;
     await machine.save();
 
+    await syncMachineMaterialToBridge(machineId, machine.currentMaterial);
+
     return res.status(200).json({
       success: true,
       data: machine,
@@ -239,6 +280,8 @@ export async function updateMachineMaterial(req, res) {
     }
     machine.currentMaterial = nextMaterial;
     await machine.save();
+
+    await syncMachineMaterialToBridge(machineId, machine.currentMaterial);
 
     // 해당 직경 그룹의 unassigned 의뢰를 이 장비에 할당
     const assignedCount = await recalculateQueueOnMaterialChange(

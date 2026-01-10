@@ -91,6 +91,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Controllers\BridgeController.cs" />
+    <Compile Include="Controllers\BridgeMaterialController.cs" />
     <Compile Include="Controllers\BridgeStoreController.cs" />
     <Compile Include="Controllers\BridgeProcessController.cs" />
     <Compile Include="Controllers\BridgeQueueController.cs" />
@@ -108,6 +109,7 @@
     <Compile Include="Controllers\ControlController.cs" />
     <Compile Include="BridgeAuthHandler.cs" />
     <Compile Include="Models\MachineConfigItem.cs" />
+    <Compile Include="MachineMaterialStore.cs" />
     <Compile Include="MachinesConfigStore.cs" />
     <Compile Include="MachinesInitializer.cs" />
   </ItemGroup>

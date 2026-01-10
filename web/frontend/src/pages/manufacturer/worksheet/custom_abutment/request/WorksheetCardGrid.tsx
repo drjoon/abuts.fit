@@ -204,6 +204,40 @@ export const WorksheetCardGrid = ({
           )}
           <CardContent className="p-3 flex-1 flex flex-col gap-2">
             <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
+              {(() => {
+                const assignedMachine =
+                  (request.productionSchedule as any)?.assignedMachine ||
+                  (request as any).assignedMachine ||
+                  "";
+                const mid = String(assignedMachine || "").trim();
+                if (!mid) return null;
+                return (
+                  <div className="flex items-center justify-between mb-1">
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 bg-sky-50 text-sky-700 border-sky-200 font-semibold"
+                    >
+                      장비: {mid}
+                    </Badge>
+                    {lotNumber && (
+                      <Badge
+                        variant="outline"
+                        className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-600 border-slate-200"
+                      >
+                        Lot: {lotNumber}
+                      </Badge>
+                    )}
+                    {!!request.assignedMachine && (
+                      <Badge
+                        variant="outline"
+                        className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
+                      >
+                        {request.assignedMachine}
+                      </Badge>
+                    )}
+                  </div>
+                );
+              })()}
               {request.referenceIds && request.referenceIds.length > 0 && (
                 <div className="mb-1">
                   {(() => {

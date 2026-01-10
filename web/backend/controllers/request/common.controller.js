@@ -1,6 +1,7 @@
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import Request from "../../models/request.model.js";
+import CncMachine from "../../models/cncMachine.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
@@ -54,6 +55,147 @@ function extractProgramNoFromNcText(text) {
   if (!m || !m[1]) return null;
   const n = Number(m[1]);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function toDiameterGroup(diameter) {
+  const d = Number(diameter);
+  if (!Number.isFinite(d) || d <= 0) return null;
+  if (d <= 6) return "6";
+  if (d <= 8) return "8";
+  if (d <= 10) return "10";
+  return "10+";
+}
+
+async function fetchBridgeQueueSnapshot() {
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(
+      `${BRIDGE_PROCESS_BASE.replace(/\/$/, "")}/api/bridge/queue`,
+      {
+        method: "GET",
+        headers: withBridgeHeaders(),
+        signal: controller.signal,
+      }
+    );
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok || body?.success === false) {
+      return null;
+    }
+    return body?.data && typeof body.data === "object" ? body.data : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function chooseMachineForRequest({ request }) {
+  const maxDiameter = Number(request?.caseInfos?.maxDiameter);
+  if (!Number.isFinite(maxDiameter) || maxDiameter <= 0) {
+    const err = new Error(
+      "최대 직경 정보가 없어 CNC 장비를 자동 선택할 수 없습니다."
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const machines = await CncMachine.find({ status: "active" }).lean();
+  const existingAssigned = String(
+    request?.productionSchedule?.assignedMachine ||
+      request?.assignedMachine ||
+      ""
+  ).trim();
+  const candidates = (Array.isArray(machines) ? machines : [])
+    .map((m) => {
+      const matDia = Number(m?.currentMaterial?.diameter);
+      const diff = matDia - maxDiameter;
+      return {
+        machineId: String(m?.machineId || "").trim(),
+        materialDiameter: matDia,
+        diff,
+      };
+    })
+    .filter(
+      (m) =>
+        Boolean(m.machineId) &&
+        Number.isFinite(m.materialDiameter) &&
+        m.materialDiameter > 0 &&
+        m.diff >= 0 &&
+        m.diff < 2
+    );
+
+  if (existingAssigned) {
+    const keep = candidates.find((c) => c.machineId === existingAssigned);
+    if (keep) {
+      const bridgeQueues = await fetchBridgeQueueSnapshot();
+      const queueLen = bridgeQueues
+        ? Array.isArray(bridgeQueues?.[keep.machineId])
+          ? bridgeQueues[keep.machineId].length
+          : 0
+        : await Request.countDocuments({
+            status: { $in: ["의뢰", "CAM", "생산"] },
+            "productionSchedule.assignedMachine": keep.machineId,
+          });
+
+      return {
+        machineId: keep.machineId,
+        queuePosition: Number(queueLen || 0) + 1,
+        diameter: keep.materialDiameter,
+        diameterGroup: toDiameterGroup(keep.materialDiameter),
+      };
+    }
+  }
+
+  if (!candidates.length) {
+    const err = new Error(
+      "조건에 맞는 CNC 장비가 없습니다. (소재 직경은 최대 직경 이상이며, 차이가 2mm 미만이어야 합니다.)"
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const bridgeQueues = await fetchBridgeQueueSnapshot();
+  const queueLenByMachineId = {};
+  if (bridgeQueues) {
+    for (const c of candidates) {
+      const list = bridgeQueues?.[c.machineId];
+      queueLenByMachineId[c.machineId] = Array.isArray(list) ? list.length : 0;
+    }
+  } else {
+    const pairs = await Promise.all(
+      candidates.map(async (c) => {
+        const n = await Request.countDocuments({
+          status: { $in: ["의뢰", "CAM", "생산"] },
+          "productionSchedule.assignedMachine": c.machineId,
+        });
+        return [c.machineId, n];
+      })
+    );
+    for (const [k, v] of pairs) {
+      queueLenByMachineId[k] = v;
+    }
+  }
+
+  const best = candidates.slice().sort((a, b) => {
+    // 1) 소재 직경 차이(diff) 작은 순
+    if (a.diff !== b.diff) return a.diff - b.diff;
+    // 2) 큐 길이 작은 순
+    const qa = Number(queueLenByMachineId[a.machineId] ?? 0);
+    const qb = Number(queueLenByMachineId[b.machineId] ?? 0);
+    if (qa !== qb) return qa - qb;
+    // 3) machineId 사전순
+    return String(a.machineId).localeCompare(String(b.machineId));
+  })[0];
+
+  const queueLen = Number(queueLenByMachineId[best.machineId] ?? 0);
+  return {
+    machineId: best.machineId,
+    queuePosition: queueLen + 1,
+    diameter: best.materialDiameter,
+    diameterGroup: toDiameterGroup(best.materialDiameter),
+  };
 }
 
 function buildBgStorageBase() {
@@ -618,6 +760,17 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         if (stageKey === "cam") {
+          const selected = await chooseMachineForRequest({ request });
+          request.productionSchedule = request.productionSchedule || {};
+          request.productionSchedule.assignedMachine = selected.machineId;
+          request.productionSchedule.queuePosition = selected.queuePosition;
+          if (selected.diameterGroup) {
+            request.productionSchedule.diameterGroup = selected.diameterGroup;
+          }
+          if (Number.isFinite(selected.diameter)) {
+            request.productionSchedule.diameter = selected.diameter;
+          }
+          request.assignedMachine = selected.machineId;
           await triggerBridgeForCnc({ request });
         }
       } else if (status === "PENDING") {
