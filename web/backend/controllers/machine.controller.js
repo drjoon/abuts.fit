@@ -278,8 +278,16 @@ export async function callRawProxy(req, res) {
 // POST /api/machines - 장비 등록/수정
 export async function upsertMachine(req, res) {
   try {
-    const { uid, serial, ip, port, name, allowJobStart, allowProgramDelete } =
-      req.body;
+    const {
+      uid,
+      serial,
+      ip,
+      port,
+      name,
+      allowJobStart,
+      allowProgramDelete,
+      allowAutoMachining,
+    } = req.body;
     const finalUid = uid;
     const displayName = name || finalUid;
 
@@ -300,6 +308,7 @@ export async function upsertMachine(req, res) {
       name: displayName,
       ...(typeof allowJobStart === "boolean" && { allowJobStart }),
       ...(typeof allowProgramDelete === "boolean" && { allowProgramDelete }),
+      ...(typeof allowAutoMachining === "boolean" && { allowAutoMachining }),
       // 개발 단계에서는 인증이 없을 수 있으므로 manufacturer는 선택적으로 저장
       ...(req.user && { manufacturer: req.user._id }),
     };

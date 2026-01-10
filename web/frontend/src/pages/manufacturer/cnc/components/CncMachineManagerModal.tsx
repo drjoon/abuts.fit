@@ -112,7 +112,10 @@ export const CncMachineManagerModal = ({
               </span>
               <button
                 type="button"
-                onClick={() => onChange("allowJobStart", !form.allowJobStart)}
+                onClick={() => {
+                  onChange("allowJobStart", !form.allowJobStart);
+                  scheduleSubmit();
+                }}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   form.allowJobStart ? "bg-blue-500" : "bg-gray-300"
                 }`}
@@ -130,10 +133,10 @@ export const CncMachineManagerModal = ({
               </span>
               <button
                 type="button"
-                onClick={() =>
-                  onChange("allowAutoMachining", !form.allowAutoMachining)
-                }
-                onBlur={scheduleSubmit}
+                onClick={() => {
+                  onChange("allowAutoMachining", !form.allowAutoMachining);
+                  scheduleSubmit();
+                }}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   form.allowAutoMachining ? "bg-emerald-500" : "bg-gray-300"
                 }`}
@@ -151,10 +154,10 @@ export const CncMachineManagerModal = ({
               </span>
               <button
                 type="button"
-                onClick={() =>
-                  onChange("allowProgramDelete", !form.allowProgramDelete)
-                }
-                onBlur={scheduleSubmit}
+                onClick={() => {
+                  onChange("allowProgramDelete", !form.allowProgramDelete);
+                  scheduleSubmit();
+                }}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                   form.allowProgramDelete ? "bg-red-500" : "bg-gray-300"
                 }`}

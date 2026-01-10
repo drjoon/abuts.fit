@@ -466,7 +466,7 @@ export async function updateMaterialRemaining(req, res) {
     machine.currentMaterial.remainingLength = remainingLength;
     await machine.save();
 
-    await syncMachineMaterialToBridge(machineId, machine.currentMaterial);
+    syncMachineMaterialToBridge(machineId, machine.currentMaterial);
 
     return res.status(200).json({
       success: true,
@@ -530,7 +530,14 @@ export async function updateMachineMaterial(req, res) {
     const { diameter, diameterGroup, materialType, heatNo, remainingLength } =
       req.body;
 
-    if (!diameterGroup || !["6", "8", "10", "10+"].includes(diameterGroup)) {
+    // 프론트에서 '8mm' 같은 포맷으로 올 수 있으므로 그룹 문자열을 정규화한다.
+    const rawGroup = String(diameterGroup || "").trim();
+    const normalizedGroup = rawGroup.replace(/mm$/i, "");
+
+    if (
+      !normalizedGroup ||
+      !["6", "8", "10", "10+"].includes(normalizedGroup)
+    ) {
       return res.status(400).json({
         success: false,
         message: "유효하지 않은 직경 그룹입니다.",
@@ -550,8 +557,8 @@ export async function updateMachineMaterial(req, res) {
     const nextMaterial = {
       materialType: String(materialType || "").trim(),
       heatNo: String(heatNo || "").trim(),
-      diameter: diameter || parseInt(diameterGroup),
-      diameterGroup,
+      diameter: diameter || parseInt(normalizedGroup, 10),
+      diameterGroup: normalizedGroup,
       setAt: new Date(),
       setBy: req.user?._id,
     };
@@ -564,12 +571,13 @@ export async function updateMachineMaterial(req, res) {
     machine.currentMaterial = nextMaterial;
     await machine.save();
 
-    await syncMachineMaterialToBridge(machineId, machine.currentMaterial);
+    // 브리지 서버 연동은 best-effort로만 수행한다. (syncMachineMaterialToBridge 내부에서 try/catch)
+    syncMachineMaterialToBridge(machineId, machine.currentMaterial);
 
     // 해당 직경 그룹의 unassigned 의뢰를 이 장비에 할당
     const assignedCount = await recalculateQueueOnMaterialChange(
       machineId,
-      diameterGroup
+      normalizedGroup
     );
 
     res.status(200).json({

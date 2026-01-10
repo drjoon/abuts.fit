@@ -42,6 +42,10 @@ const machineSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    allowAutoMachining: {
+      type: Boolean,
+      default: false,
+    },
     lastStatus: {
       status: { type: String, default: "Unknown" },
       updatedAt: { type: Date },
