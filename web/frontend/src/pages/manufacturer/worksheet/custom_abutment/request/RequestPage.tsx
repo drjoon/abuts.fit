@@ -38,10 +38,10 @@ import {
   getReviewStageKeyByTab,
   getReviewLabel,
   getReviewBadgeClassName,
-  getDiameterBucketIndex,
   deriveStageForFilter,
   stageOrder,
   getAcceptByStage,
+  getDiameterBucketIndex,
 } from "./utils";
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
 import { PreviewModal } from "./PreviewModal";
@@ -499,6 +499,48 @@ export const RequestPage = ({
     return map;
   }, [paginatedRequests, tabStage]);
 
+  const handleDownloadShippingToday = useCallback(async () => {
+    const { utils, writeFileXLSX } = await import("xlsx");
+    const today = new Date().toISOString().slice(0, 10);
+    const rows =
+      tabStage === "shipping"
+        ? filteredAndSorted.filter((r) => {
+            const base = r.createdAt ? String(r.createdAt).slice(0, 10) : "";
+            return base === today;
+          })
+        : [];
+
+    const header = [
+      "기공소명",
+      "전화1",
+      "",
+      "전화2",
+      "",
+      "주소",
+      "박스수량",
+      "종류",
+      "",
+      "결제",
+    ];
+
+    const aoa: (string | number)[][] = [header];
+
+    for (const r of rows) {
+      const ci: any = r.caseInfos || {};
+      const name =
+        ci.clinicName || r.requestor?.organization || r.requestor?.name || "";
+      const phone = ci?.phone || r.requestor?.phone || "";
+      const addr = ci?.address || "";
+
+      aoa.push([name, phone, "", phone, "", addr, "1", "의료기기", "", "신용"]);
+    }
+
+    const sheet = utils.aoa_to_sheet(aoa);
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, sheet, "배송");
+    writeFileXLSX(wb, `애크로덴트-${today}.xlsx`);
+  }, [filteredAndSorted, tabStage]);
+
   const loadMore = useCallback(() => {
     setVisibleCount((prev) =>
       Math.min(prev + 9, filteredAndSorted.length || 0)
@@ -631,6 +673,17 @@ export const RequestPage = ({
       )}
 
       <div className="space-y-4 mt-6">
+        {tabStage === "shipping" && (
+          <div className="flex justify-end">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleDownloadShippingToday}
+            >
+              오늘 택배 접수
+            </Button>
+          </div>
+        )}
         {isEmpty ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
             표시할 의뢰가 없습니다.

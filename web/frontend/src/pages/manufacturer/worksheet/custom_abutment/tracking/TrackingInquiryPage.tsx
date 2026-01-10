@@ -406,16 +406,6 @@ export const TrackingInquiryPage = () => {
                 프린트
               </Button>
             )}
-            {tab === "shipping" && (
-              <Button
-                variant="default"
-                size="sm"
-                className="px-4"
-                onClick={handleDownloadTodayShipping}
-              >
-                오늘 접수할 내역
-              </Button>
-            )}
           </div>
         </div>
 
