@@ -3,17 +3,20 @@ import * as cncMachineController from "../controllers/cncMachine.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/role.middleware.js";
 import { requireBridgeSecret } from "../middlewares/bridgeSecret.middleware.js";
+import { requireBridgeIpAllowlist } from "../middlewares/bridgeIpAllowlist.middleware.js";
 
 const router = express.Router();
 
 // 브리지 서버 전용(시크릿 기반)
 router.get(
   "/bridge/dummy-settings",
+  requireBridgeIpAllowlist,
   requireBridgeSecret,
   cncMachineController.getDummySettingsForBridge
 );
 router.patch(
   "/bridge/dummy-settings/:machineId/last-run-key",
+  requireBridgeIpAllowlist,
   requireBridgeSecret,
   cncMachineController.updateDummyLastRunKeyForBridge
 );

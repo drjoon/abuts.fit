@@ -37,6 +37,11 @@ namespace HiLinkBridgeWebApi48
             return "https://abuts.fit/api";
         }
 
+        private static string GetBackendJwt()
+        {
+            return (Environment.GetEnvironmentVariable("BACKEND_JWT") ?? string.Empty).Trim();
+        }
+
         private static string GetBridgeBase()
         {
             // 브리지 서버 내부에서 자기 자신을 호출할 때 사용하는 base
@@ -92,6 +97,16 @@ namespace HiLinkBridgeWebApi48
             }
         }
 
+        private static void AddAuthHeader(HttpRequestMessage req)
+        {
+            var jwt = GetBackendJwt();
+            if (!string.IsNullOrEmpty(jwt))
+            {
+                req.Headers.Remove("Authorization");
+                req.Headers.Add("Authorization", "Bearer " + jwt);
+            }
+        }
+
         public static void Start()
         {
             if (_timer != null) return;
@@ -139,6 +154,7 @@ namespace HiLinkBridgeWebApi48
 
                 var getReq = new HttpRequestMessage(HttpMethod.Get, url);
                 AddSecretHeader(getReq);
+                AddAuthHeader(getReq);
 
                 var getResp = await BackendClient.SendAsync(getReq);
                 var getText = await getResp.Content.ReadAsStringAsync();
