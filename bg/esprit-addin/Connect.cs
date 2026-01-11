@@ -19,14 +19,17 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Linq;
 using System.Windows.Forms;
 using DentalAddin;
 using Esprit;
 using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
 using DrawingPoint = System.Drawing.Point;
-
+using EspritConstants;
+using EspritTechnology;
+using EspritGeometry;
+using System.Diagnostics;
+using WinFormsButton = System.Windows.Forms.Button;
 
 namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 {
@@ -141,8 +144,8 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             private readonly Label _statusLabel;
             private readonly ListBox _listBox;
-            private readonly Button _prevButton;
-            private readonly Button _nextButton;
+            private readonly WinFormsButton _prevButton;
+            private readonly WinFormsButton _nextButton;
             private readonly Label _pageLabel;
             private readonly Func<Document> _getDocument;
             private readonly Func<string> _getDirectory;
@@ -150,8 +153,8 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             private List<string> _files = new List<string>();
             private int _pageIndex;
             private const int PageSize = 5;
-            private const int HeaderHeight = 72;
-            private const int ListVisibleCount = 5;
+            private const int HeaderHeight = 36;      // 높이 축소
+            private const int ListVisibleCount = 3;   // 리스트 표시 줄수 축소
 
             public AddInStatusForm(Func<Document> getDocument, Func<string> getDirectory, Action<string> logAction)
             {
@@ -165,13 +168,11 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 ShowInTaskbar = false;
                 Text = "Abuts.fit Add-in";
 
+                // 상단 라벨 제거, 리스트가 상단부터 덮도록 배치
                 _statusLabel = new Label
                 {
-                    Dock = DockStyle.Top,
-                    Height = 72,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                    Padding = new Padding(12, 8, 12, 8)
+                    Visible = false,
+                    Height = 0
                 };
 
                 _listBox = new ListBox
@@ -180,28 +181,28 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     IntegralHeight = true,
                     Font = new Font("Segoe UI", 9, FontStyle.Regular)
                 };
-                var listHeight = (_listBox.ItemHeight * ListVisibleCount) + 16;
+                var listHeight = (_listBox.ItemHeight * ListVisibleCount) + 8;
                 _listBox.Height = listHeight;
                 _listBox.Click += (_, _) => MergeSelected();
 
                 var bottomPanel = new Panel
                 {
                     Dock = DockStyle.Bottom,
-                    Height = 36,
-                    Padding = new Padding(8, 4, 8, 4)
+                    Height = 32,
+                    Padding = new Padding(8, 2, 8, 2)
                 };
 
-                _prevButton = new Button
+                _prevButton = new WinFormsButton
                 {
                     Text = "이전",
                     Width = 60,
                     Height = 26,
                     Left = 8,
-                    Top = 6
+                    Top = 4
                 };
                 _prevButton.Click += (_, _) => ChangePage(_pageIndex - 1);
 
-                _nextButton = new Button
+                _nextButton = new WinFormsButton
                 {
                     Text = "다음",
                     Width = 60,
@@ -225,11 +226,10 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 Controls.Add(_listBox);
                 Controls.Add(bottomPanel);
-                Controls.Add(_statusLabel);
 
                 // 메인 창 높이를 리스트 5개 기준으로 최소화
-                var desiredHeight = HeaderHeight + listHeight + bottomPanel.Height + 52; // chrome padding 보정
-                Size = new Size(360, desiredHeight);
+                var desiredHeight = HeaderHeight + listHeight + bottomPanel.Height + 24; // chrome padding 보정 축소
+                Size = new Size(320, desiredHeight);
 
                 var screen = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 800, 600);
                 Location = new DrawingPoint(screen.Right - Width - 20, screen.Bottom - Height - 20);
@@ -317,6 +317,9 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 {
                     _log?.Invoke($"[Addin] Merge start: {Path.GetFileName(targetPath)}");
                     doc.MergeFile(targetPath);
+                    // Trace -> _log 출력용 리스너 연결
+                    var traceListener = new LogTraceListener(msg => _log?.Invoke(msg));
+                    System.Diagnostics.Trace.Listeners.Add(traceListener);
                     if (_espApp != null)
                     {
                         try
@@ -332,14 +335,24 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                             _log?.Invoke($"[Addin] DentalPipeline 실패: {ex.Message}");
                         }
                     }
+                    System.Diagnostics.Trace.Listeners.Remove(traceListener);
                     _log?.Invoke("[Addin] Merge 완료, 뷰 정렬 진행");
-                    AutoFocusDocument(doc);
+                    doc.Windows.ActiveWindow.Fit();
                 }
                 catch (Exception ex)
                 {
                     MessageBox.Show($"병합 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
+        }
+
+        // Trace → _log 연결용 리스너
+        private sealed class LogTraceListener : TraceListener
+        {
+            private readonly Action<string> _forward;
+            public LogTraceListener(Action<string> forward) => _forward = forward;
+            public override void Write(string message) => _forward?.Invoke(message);
+            public override void WriteLine(string message) => _forward?.Invoke(message);
         }
 
         private void ShowStatusPanel(string message)
@@ -634,28 +647,13 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        public override string Description
-        {
-            // To modify the AddInDescription go to the Resources tab in the project Properties.
-            get { return Properties.Resources.AddInDescription; }
-        }
+        public override string Description => Properties.Resources.AddInDescription;
 
-        public override string FriendlyName
-        {
-            // To modify the AddInFriendlyName go to the Resources tab in the project Properties.
-            get { return Properties.Resources.AddInFriendlyName; }
-        }
+        public override string FriendlyName => Properties.Resources.AddInFriendlyName;
 
-        public override string Name
-        {
-            get { return System.Reflection.Assembly.GetExecutingAssembly().GetName().Name; }
-        }
+        public override string Name => System.Reflection.Assembly.GetExecutingAssembly().GetName().Name;
 
-        public override System.Diagnostics.TraceLevel OutputWindowTraceLevel
-        {
-            // To modify the OutputWindowTraceLevel go to the Settings tab in the project Properties.
-            get { return Properties.Settings.Default.OutputWindowTraceLevel; }
-        }
+        public override System.Diagnostics.TraceLevel OutputWindowTraceLevel => Properties.Settings.Default.OutputWindowTraceLevel;
 
         protected override Nullable<Int32> PreviousLanguage
         {
@@ -711,8 +709,8 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         internal static DentalAddinHost DentalHost { get; } = new DentalAddinHost();
 
-        private Esprit.ToolBar _toolbar;
         private System.Windows.Forms.Timer _heartbeatTimer;
+        private Esprit.ToolBar _toolbar;
         private RepeatProcess _repeatProcess;
         private AddInRunningForm _runningForm;
         private AddInStatusForm _statusForm;
@@ -848,7 +846,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
 
             ShowDefaultStatusPanel();
-            StartHeartbeat();
+            // Heartbeat disabled
         }
 
 
@@ -1007,7 +1005,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
             HideStatusPanel();
             HideRunningIndicator();
-            StopHeartbeat();
+            // Heartbeat disabled
         }
 
         public void _ConnectionManager_DocumentClosed(bool espritIsShuttingDown)
@@ -1220,33 +1218,10 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             ShowToast(banner);
         }
 
-        private void StartHeartbeat()
-        {
-            StopHeartbeat();
-            _heartbeatTimer = new System.Windows.Forms.Timer();
-            _heartbeatTimer.Interval = HeartbeatIntervalMs;
-            _heartbeatTimer.Tick += HeartbeatTimerOnTick;
-            _heartbeatTimer.Start();
-        }
-
-        private void StopHeartbeat()
-        {
-            if (_heartbeatTimer != null)
-            {
-                _heartbeatTimer.Tick -= HeartbeatTimerOnTick;
-                _heartbeatTimer.Stop();
-                _heartbeatTimer.Dispose();
-                _heartbeatTimer = null;
-            }
-        }
-
-        private void HeartbeatTimerOnTick(object sender, EventArgs e)
-        {
-            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            var heartbeatMessage = $"[{timestamp}] My Dental Addin";
-            LogToEspritOutputs(heartbeatMessage);
-            ShowStatusPanel(heartbeatMessage);
-        }
+        // Heartbeat removed per request
+        private void StartHeartbeat() { }
+        private void StopHeartbeat() { }
+        private void HeartbeatTimerOnTick(object sender, EventArgs e) { }
 
         private void LogToEspritOutputs(string message)
         {
