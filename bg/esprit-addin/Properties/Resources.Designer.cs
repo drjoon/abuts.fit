@@ -70,7 +70,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to AcrodentAddin.
+        ///   Looks up a localized string similar to Abuts.fit.
         /// </summary>
         internal static string AddInFriendlyName {
             get {

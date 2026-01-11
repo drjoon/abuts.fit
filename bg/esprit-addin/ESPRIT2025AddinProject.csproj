@@ -115,6 +115,10 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Connect.cs" />
+    <Compile Include="MainModule.cs" />
+    <Compile Include="DentalPipeline.cs" />
+    <Compile Include="ProcessConfig.cs" />
+    <Compile Include="ProgressForm.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Clean_Module.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\ConnectionCut.cs" />
     <Compile Include="DentalAddinDecomp\DentalAddin\Feature36_Module.cs" />

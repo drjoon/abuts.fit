@@ -20,7 +20,9 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Linq;
 using System.Windows.Forms;
+using DentalAddin;
 using Esprit;
 using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
 using DrawingPoint = System.Drawing.Point;
@@ -66,7 +68,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 StartPosition = FormStartPosition.Manual;
                 TopMost = true;
                 ShowInTaskbar = false;
-                Text = "Acrodent Dental Add-in";
+                Text = "Abuts.fit Add-in";
                 Size = new Size(320, 96);
 
                 _label = new Label
@@ -94,7 +96,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                var message = "[Acrodent Dental Add-in] 실행 중";
+                var message = "[Abuts.fit Add-in] 실행 중";
 
                 if (_runningForm == null || _runningForm.IsDisposed)
                 {
@@ -138,25 +140,96 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private sealed class AddInStatusForm : Form
         {
             private readonly Label _statusLabel;
+            private readonly ListBox _listBox;
+            private readonly Button _prevButton;
+            private readonly Button _nextButton;
+            private readonly Label _pageLabel;
+            private readonly Func<Document> _getDocument;
+            private readonly Func<string> _getDirectory;
+            private readonly Action<string> _log;
+            private List<string> _files = new List<string>();
+            private int _pageIndex;
+            private const int PageSize = 5;
+            private const int HeaderHeight = 72;
+            private const int ListVisibleCount = 5;
 
-            public AddInStatusForm()
+            public AddInStatusForm(Func<Document> getDocument, Func<string> getDirectory, Action<string> logAction)
             {
+                _getDocument = getDocument ?? throw new ArgumentNullException(nameof(getDocument));
+                _getDirectory = getDirectory ?? throw new ArgumentNullException(nameof(getDirectory));
+                _log = logAction;
+
                 FormBorderStyle = FormBorderStyle.FixedToolWindow;
                 StartPosition = FormStartPosition.Manual;
                 TopMost = true;
                 ShowInTaskbar = false;
-                Text = "Acrodent Dental Add-in";
-                Size = new Size(360, 120);
+                Text = "Abuts.fit Add-in";
 
                 _statusLabel = new Label
                 {
-                    Dock = DockStyle.Fill,
+                    Dock = DockStyle.Top,
+                    Height = 72,
                     TextAlign = ContentAlignment.MiddleLeft,
                     Font = new Font("Segoe UI", 10, FontStyle.Bold),
-                    Padding = new Padding(16),
+                    Padding = new Padding(12, 8, 12, 8)
                 };
 
+                _listBox = new ListBox
+                {
+                    Dock = DockStyle.Fill,
+                    IntegralHeight = true,
+                    Font = new Font("Segoe UI", 9, FontStyle.Regular)
+                };
+                var listHeight = (_listBox.ItemHeight * ListVisibleCount) + 16;
+                _listBox.Height = listHeight;
+                _listBox.Click += (_, _) => MergeSelected();
+
+                var bottomPanel = new Panel
+                {
+                    Dock = DockStyle.Bottom,
+                    Height = 36,
+                    Padding = new Padding(8, 4, 8, 4)
+                };
+
+                _prevButton = new Button
+                {
+                    Text = "이전",
+                    Width = 60,
+                    Height = 26,
+                    Left = 8,
+                    Top = 6
+                };
+                _prevButton.Click += (_, _) => ChangePage(_pageIndex - 1);
+
+                _nextButton = new Button
+                {
+                    Text = "다음",
+                    Width = 60,
+                    Height = 26,
+                    Left = 76,
+                    Top = 6
+                };
+                _nextButton.Click += (_, _) => ChangePage(_pageIndex + 1);
+
+                _pageLabel = new Label
+                {
+                    AutoSize = true,
+                    Top = 10,
+                    Left = 148,
+                    ForeColor = Color.DimGray
+                };
+
+                bottomPanel.Controls.Add(_prevButton);
+                bottomPanel.Controls.Add(_nextButton);
+                bottomPanel.Controls.Add(_pageLabel);
+
+                Controls.Add(_listBox);
+                Controls.Add(bottomPanel);
                 Controls.Add(_statusLabel);
+
+                // 메인 창 높이를 리스트 5개 기준으로 최소화
+                var desiredHeight = HeaderHeight + listHeight + bottomPanel.Height + 52; // chrome padding 보정
+                Size = new Size(360, desiredHeight);
 
                 var screen = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 800, 600);
                 Location = new DrawingPoint(screen.Right - Width - 20, screen.Bottom - Height - 20);
@@ -164,7 +237,108 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
             public void UpdateStatus(string message)
             {
-                _statusLabel.Text = message;
+                // 메시지창(상태 패널)에는 로그를 표시하지 않고 고정 제목만 유지
+                _statusLabel.Text = "Abuts.fit Add-in";
+            }
+
+            public void RefreshFiles()
+            {
+                try
+                {
+                    var dir = _getDirectory();
+                    if (!Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
+
+                    _files = Directory.GetFiles(dir, "*.filled.stl")
+                        .OrderByDescending(File.GetLastWriteTime)
+                        .ToList();
+                    _pageIndex = 0;
+                    RenderPage();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Filled STL 목록을 불러올 수 없습니다: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+
+            private void RenderPage()
+            {
+                _listBox.Items.Clear();
+
+                if (_files.Count == 0)
+                {
+                    _listBox.Items.Add("파일이 없습니다.");
+                    _prevButton.Enabled = false;
+                    _nextButton.Enabled = false;
+                    _pageLabel.Text = "0개";
+                    return;
+                }
+
+                var pageItems = _files.Skip(_pageIndex * PageSize).Take(PageSize).ToList();
+                foreach (var f in pageItems)
+                {
+                    var fi = new FileInfo(f);
+                    _listBox.Items.Add($"{fi.Name} (수정: {fi.LastWriteTime:MM-dd HH:mm})");
+                }
+
+                _prevButton.Enabled = _pageIndex > 0;
+                _nextButton.Enabled = (_pageIndex + 1) * PageSize < _files.Count;
+                _pageLabel.Text = $"{_pageIndex + 1} / {Math.Max(1, (int)Math.Ceiling(_files.Count / (double)PageSize))} ({_files.Count}개)";
+            }
+
+            private void ChangePage(int newPage)
+            {
+                if (newPage < 0) return;
+                if (newPage * PageSize >= _files.Count) return;
+                _pageIndex = newPage;
+                RenderPage();
+            }
+
+            private void MergeSelected()
+            {
+                if (_files.Count == 0) return;
+                var selectedIndex = _listBox.SelectedIndex;
+                if (selectedIndex < 0) return;
+
+                var fullIndex = _pageIndex * PageSize + selectedIndex;
+                if (fullIndex < 0 || fullIndex >= _files.Count) return;
+
+                var targetPath = _files[fullIndex];
+                var doc = _getDocument?.Invoke();
+                if (doc == null)
+                {
+                    MessageBox.Show("현재 열린 ESPRIT 문서를 찾을 수 없습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                try
+                {
+                    _log?.Invoke($"[Addin] Merge start: {Path.GetFileName(targetPath)}");
+                    doc.MergeFile(targetPath);
+                    if (_espApp != null)
+                    {
+                        try
+                        {
+                            _log?.Invoke("[Addin] DentalPipeline 실행 시작");
+                            MainModule.Bind(_espApp, doc);
+                            MainModule.ProcessStlFile(targetPath);
+                            _log?.Invoke("[Addin] DentalPipeline 완료");
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Trace.WriteLine($"Connect: DentalPipeline failed - {ex.Message}");
+                            _log?.Invoke($"[Addin] DentalPipeline 실패: {ex.Message}");
+                        }
+                    }
+                    _log?.Invoke("[Addin] Merge 완료, 뷰 정렬 진행");
+                    AutoFocusDocument(doc);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"병합 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
         }
 
@@ -174,10 +348,11 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             {
                 if (_statusForm == null || _statusForm.IsDisposed)
                 {
-                    _statusForm = new AddInStatusForm();
+                    _statusForm = new AddInStatusForm(() => _espApp?.Document, ResolveFilledDirectory, LogToEspritOutputs);
                 }
 
                 _statusForm.UpdateStatus(message);
+                _statusForm.RefreshFiles();
                 if (!_statusForm.Visible)
                 {
                     _statusForm.Show();
@@ -205,6 +380,112 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             catch (Exception ex)
             {
                 System.Diagnostics.Trace.WriteLine($"Connect: HideStatusPanel failed - {ex.Message}");
+            }
+        }
+
+        private static void AutoFocusDocument(Document doc)
+        {
+            try
+            {
+                var window = GetProp(doc, "Windows");
+                var activeWindow = GetProp(window, "ActiveWindow") ?? window;
+                if (activeWindow == null)
+                {
+                    return;
+                }
+
+                // Zoom fit/all (window + document) + explicit Zoom scale
+                TryInvokeMethod(activeWindow, "ZoomFit");
+                TryInvokeMethod(activeWindow, "ZoomAll");
+                TryInvokeMethod(activeWindow, "ZoomExtents");
+                TryInvokeMethod(doc, "ZoomAll");
+                TryInvokeMethod(doc, "ZoomFit");
+                TryInvokeMethod(activeWindow, "Zoom", 1.2);
+
+                // Set view plane to YZ/ZY if available
+                var view = GetProp(activeWindow, "View") ?? GetProp(doc, "ActiveView");
+                var planeType = ResolveViewPlaneType();
+                if (planeType != null && view != null)
+                {
+                    object yz = null;
+                    try { yz = Enum.Parse(planeType, "espViewPlaneYZ"); } catch { }
+                    if (yz != null)
+                    {
+                        TrySetProperty(view, "Plane", yz);
+                        TryInvokeMethod(view, "SetViewPlane", yz);
+                        TryInvokeMethod(view, "Refresh");
+                    }
+                }
+
+                TryInvokeMethod(doc, "UpdateView");
+                TryInvokeMethod(doc, "Refresh");
+                TryInvokeMethod(activeWindow, "Refresh");
+            }
+            catch
+            {
+                // ignore focus errors
+            }
+        }
+
+        private static Type ResolveViewPlaneType()
+        {
+            // Attempt to load enum EspritConstants.espViewPlane without referencing namespace as a type
+            var type = Type.GetType("EspritConstants.espViewPlane");
+            if (type != null) return type;
+
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    type = asm.GetType("EspritConstants.espViewPlane");
+                    if (type != null) return type;
+                }
+                catch { /* ignore */ }
+            }
+
+            return null;
+        }
+
+        private static object GetProp(object target, string name)
+        {
+            if (target == null || string.IsNullOrEmpty(name)) return null;
+            try
+            {
+                var p = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                return p?.GetValue(target);
+            }
+            catch { return null; }
+        }
+
+        private static void TrySetProperty(object target, string name, object value)
+        {
+            if (target == null || string.IsNullOrEmpty(name)) return;
+            try
+            {
+                var p = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                if (p != null && p.CanWrite)
+                {
+                    p.SetValue(target, value);
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private static void TryInvokeMethod(object target, string methodName, params object[] args)
+        {
+            if (target == null || string.IsNullOrEmpty(methodName)) return;
+            try
+            {
+                var types = args?.Select(a => a?.GetType() ?? typeof(object)).ToArray() ?? Type.EmptyTypes;
+                var method = target.GetType().GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
+                method?.Invoke(target, args);
+            }
+            catch
+            {
+                // ignore
             }
         }
 
@@ -412,27 +693,32 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private const string regPositionHeight = "Height";
 
         public static Esprit.Application _espApp;
-        public Esprit.ToolBar _newToolbar;
+        public static Esprit.Application EspritApp => _espApp;
+        public new static Esprit.Document Document => _espApp?.Document;
 
         public EspritMenus.Menu _tbMenu = default(EspritMenus.Menu);
         public EspritMenus.MenuItem _tbMenuItem = default(EspritMenus.MenuItem);
 
         public List<int> _iCNumbs = new List<int>();
-        public const string _toolbarName = "abuts.fit";
+        private const string ToolbarDisplayName = "abuts.fit";
+        private const string ToolbarInternalName = "abutsfit_Addin_";
+        private bool _toolbarPositionLoaded = false;
 
         public static int _iCntOfCommands = 1;
         public Esprit.PMTab exTab;
         public Esprit.ProjectManager _pm;
-
         public static int _MyCookie;
 
         internal static DentalAddinHost DentalHost { get; } = new DentalAddinHost();
 
-        private RepeatProcess _repeatProcess;
-        private AddInStatusForm _statusForm;
-        private AddInRunningForm _runningForm;
-        private bool _toolbarPositionLoaded;
+        private Esprit.ToolBar _toolbar;
         private System.Windows.Forms.Timer _heartbeatTimer;
+        private RepeatProcess _repeatProcess;
+        private AddInRunningForm _runningForm;
+        private AddInStatusForm _statusForm;
+        private readonly string _debugLogPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AbutsFit", "addin.log");
         private const int HeartbeatIntervalMs = 60 * 1000;
         private FilledStlBrowserForm _filledBrowser;
 
@@ -441,7 +727,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             _espApp = espritApplication;
             _pm = _espApp.ProjectManager;
             DentalHost.Initialize(_espApp);
-            DentalHost.SetFilledBrowserOpener(ShowFilledBrowser);
             DentalHost.SetDocumentResolver(() => _espApp?.Document);
 
             // 서버 자동 시작
@@ -466,14 +751,14 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
             try
             {
-                _espApp.ToolBars.Remove(_toolbarName);
+                _espApp.ToolBars.Remove(ToolbarInternalName);
             }
             catch
             {
                 // ignore
             }
 
-            _newToolbar = _espApp.ToolBars.Add(_toolbarName);
+            _toolbar = _espApp.ToolBars.Add(ToolbarInternalName);
             var toolbarIcons = EnsureToolbarIcons();
             for (int i = 0; i < _iCntOfCommands; i++)
             {
@@ -482,10 +767,10 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
             for (int i = 0; i < _iCntOfCommands; i++)
             {
-                Esprit.ToolBarControl tbcon = _newToolbar.Add(EspritConstants.espToolBarControl.espToolBarControlButton, "acrodent_Addin_" + i.ToString(), _iCNumbs[i]);
+                Esprit.ToolBarControl tbcon = _toolbar.Add(EspritConstants.espToolBarControl.espToolBarControlButton, ToolbarInternalName + i, _iCNumbs[i]);
                 tbcon.SetBitmap(toolbarIcons.smallIconPath, toolbarIcons.largeIconPath);
                 tbcon.Enabled = true;
-                tbcon.Name = "abuts.fit";
+                tbcon.Name = ToolbarDisplayName;
             }
 
             //EC.OnCommand;
@@ -501,9 +786,9 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 EspritMenus.Menu toolbarsSubMenu = FindToolbarsSubMenu(myMenu);
                 if (toolbarsSubMenu != null)
                 {
-                    SafeRemoveMenuItem(toolbarsSubMenu, _toolbarName);
+                    SafeRemoveMenuItem(toolbarsSubMenu, ToolbarDisplayName);
                     EnsureMenuSeparator(toolbarsSubMenu);
-                    _tbMenuItem = toolbarsSubMenu.Add(EspritConstants.espMenuItemType.espMenuItemCommand, _toolbarName, _iCNumbs[0]);
+                    _tbMenuItem = toolbarsSubMenu.Add(EspritConstants.espMenuItemType.espMenuItemCommand, ToolbarDisplayName, _iCNumbs[0]);
                 }
             }
             catch (Exception ex)
@@ -521,15 +806,15 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 EspritMenus.Menu toolsMenu = FindTopMenu(myMenu, new string[3] { "&Tools", "도구(&T)", "工具(&T)" });
                 if (toolsMenu != null)
                 {
-                    SafeRemoveMenuItem(toolsMenu, _toolbarName);
+                    SafeRemoveMenuItem(toolsMenu, ToolbarDisplayName);
                     RemoveTrailingSeparators(toolsMenu);
                     toolsMenu.Add(EspritConstants.espMenuItemType.espMenuItemSeparator);
-                    toolsMenu.Add(EspritConstants.espMenuItemType.espMenuItemPopUp, _toolbarName);
+                    toolsMenu.Add(EspritConstants.espMenuItemType.espMenuItemPopUp, ToolbarDisplayName);
 
                     EspritMenus.Menu popupSubMenu = null;
                     try
                     {
-                        popupSubMenu = toolsMenu[_toolbarName].SubMenu;
+                        popupSubMenu = toolsMenu[ToolbarDisplayName].SubMenu;
                     }
                     catch
                     {
@@ -551,9 +836,9 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             // This makes sure position loading occurs after the application has initialized UI elements.
             try
             {
-                if (!_toolbarPositionLoaded && _newToolbar != null)
+                if (!_toolbarPositionLoaded && _toolbar != null)
                 {
-                    Toolbar_PositionLoad(_toolbarName, _newToolbar);
+                    Toolbar_PositionLoad(ToolbarInternalName, _toolbar);
                     _toolbarPositionLoaded = true;
                 }
             }
@@ -591,8 +876,8 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                ShowStatusPanel($"[{timestamp}] My Dental Addin");
+                var message = BuildFilledStatusMessage();
+                ShowStatusPanel(message);
             }
             catch (Exception ex)
             {
@@ -622,10 +907,78 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         private static string ResolveFilledDirectory()
         {
+            // 절대 경로 우선
+            var absolute = @"C:\abuts.fit\bg\storage\2-filled";
+            if (Directory.Exists(absolute))
+            {
+                return absolute;
+            }
+
+            // 기존 탐색 로직 (개발 환경 대비)
+            var candidate = TryResolveStoragePath("2-filled");
+            if (candidate != null)
+            {
+                return candidate;
+            }
+
+            // Fallback to 이전 상대 경로 추정
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            // addin/bin/ -> ../storage/2-filled
-            var path = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
-            return path;
+            return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
+        }
+
+        private static string TryResolveStoragePath(string subFolder)
+        {
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var dir = new DirectoryInfo(baseDir);
+
+            for (int i = 0; i < 6 && dir != null; i++)
+            {
+                var candidate = Path.Combine(dir.FullName, "storage", subFolder);
+                if (Directory.Exists(candidate))
+                {
+                    return candidate;
+                }
+                dir = dir.Parent;
+            }
+
+            return null;
+        }
+
+        private string BuildFilledStatusMessage()
+        {
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            try
+            {
+                var dir = ResolveFilledDirectory();
+                if (!Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                var files = Directory.GetFiles(dir, "*.filled.stl")
+                    .OrderByDescending(File.GetLastWriteTime)
+                    .Take(5)
+                    .ToList();
+
+                if (files.Count == 0)
+                {
+                    return $"[{timestamp}] Abuts.fit Add-in\nFilled STL: 파일이 없습니다.";
+                }
+
+                var lines = files
+                    .Select(f =>
+                    {
+                        var fi = new FileInfo(f);
+                        return $"- {fi.Name} (수정: {fi.LastWriteTime:MM-dd HH:mm})";
+                    });
+
+                return $"[{timestamp}] Abuts.fit Add-in\nFilled STL 최근 5개:\n{string.Join("\n", lines)}";
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Connect: BuildFilledStatusMessage failed - {ex.Message}");
+                return $"[{timestamp}] Abuts.fit Add-in\nFilled STL 목록을 불러오지 못했습니다.";
+            }
         }
 
         public void _ConnectionManager_AddInDisconnect()
@@ -682,11 +1035,11 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             // This event procedure can be removed if it does not need to be used (but that is rarely the case).
 
             // Call toolbar position load only if it has not already been applied.
-            if (!_toolbarPositionLoaded && _newToolbar != null)
+            if (!_toolbarPositionLoaded && _toolbar != null)
             {
                 try
                 {
-                    Toolbar_PositionLoad(_toolbarName, _newToolbar);
+                    Toolbar_PositionLoad(ToolbarInternalName, _toolbar);
                     _toolbarPositionLoaded = true;
                 }
                 catch (Exception ex)
@@ -700,7 +1053,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             // Triggered when the Add-In disconnects explicitly because ESPRIT is shutting down.
             // This event can be removed if it does not need to be used.
-            Toolbar_PositionSave(_toolbarName, _newToolbar);
+            Toolbar_PositionSave(ToolbarInternalName, _toolbar);
             
             if (_repeatProcess != null)
             {
@@ -790,7 +1143,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private string ReadReg(string valueName)
         {
             const string userRoot = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\D.P.Technology\\ESPRIT\\AddIns";
-            const string subkey = "ESPRIT2025AddinProject.Connect\\" + regSettings + _toolbarName + ".ToolBar";
+            const string subkey = "ESPRIT2025AddinProject.Connect\\" + regSettings + ToolbarInternalName + ".ToolBar";
             const string keyName = userRoot + "\\" + subkey;
             var val = Registry.GetValue(keyName, valueName, "");
             if(val == null)
@@ -802,7 +1155,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         void WriteReg(string valueName, string POSvalue)
         {
             const string userRoot = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\D.P.Technology\\ESPRIT\\AddIns";
-            const string subkey = "ESPRIT2025AddinProject.Connect\\" + regSettings + _toolbarName + ".ToolBar";
+            const string subkey = "ESPRIT2025AddinProject.Connect\\" + regSettings + ToolbarInternalName + ".ToolBar";
             const string keyName = userRoot + "\\" + subkey;
             Registry.SetValue(keyName, valueName, POSvalue, RegistryValueKind.String);
         }
@@ -862,7 +1215,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         private void ShowAddInLoadedIndicator()
         {
-            string banner = $"[Acrodent Dental Add-in] {DateTime.Now:yyyy-MM-dd HH:mm:ss}에 로드되었습니다.";
+            string banner = $"[Abuts.fit Add-in] {DateTime.Now:yyyy-MM-dd HH:mm:ss}에 로드되었습니다.";
             LogToEspritOutputs(banner);
             ShowToast(banner);
         }
@@ -900,6 +1253,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             if (_espApp == null)
             {
                 System.Diagnostics.Trace.WriteLine($"Connect: cannot log message (app null) - {message}");
+                WriteDebugLog(message);
                 return;
             }
 
@@ -907,17 +1261,40 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
             try
             {
-                _espApp.OutputWindow?.Text(message);
-                logged = true;
+                if (_espApp.OutputWindow != null)
+                {
+                    _espApp.OutputWindow.Visible = true;
+                    _espApp.OutputWindow.Text(message + Environment.NewLine);
+                    logged = true;
+                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Trace.WriteLine($"Connect: OutputWindow.Text failed - {ex.Message}");
+                WriteDebugLog($"[OutputWindow fail] {message} / {ex.Message}");
             }
 
             if (!logged)
             {
                 System.Diagnostics.Trace.WriteLine($"Connect: {message}");
+                WriteDebugLog(message);
+            }
+        }
+
+        private void WriteDebugLog(string message)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(_debugLogPath);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                File.AppendAllText(_debugLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+            }
+            catch
+            {
+                // ignore file log failure
             }
         }
 

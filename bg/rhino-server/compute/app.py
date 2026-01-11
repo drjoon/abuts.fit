@@ -85,7 +85,7 @@ def _upload_via_presign(out_path: Path, original_name: str) -> bool:
             "fileName": file_name,
             # requestId는 파일명 매칭으로 처리되므로 생략
         }
-        resp = requests.post(presign_url, json=payload, timeout=10)
+        resp = requests.post(presign_url, json=payload, timeout=10, headers=_bridge_headers())
         if resp.status_code != 200:
             _log(f"Presign failed status={resp.status_code} body={resp.text}")
             return False
@@ -117,7 +117,7 @@ def _upload_via_presign(out_path: Path, original_name: str) -> bool:
             "s3Url": s3_url,
             "fileSize": file_size,
         }
-        reg_resp = requests.post(register_url, json=register_payload, timeout=10)
+        reg_resp = requests.post(register_url, json=register_payload, timeout=10, headers=_bridge_headers())
         if reg_resp.status_code == 200:
             _log(f"Presigned upload + register success: {file_name}")
             return True
@@ -963,11 +963,15 @@ async def _recover_unprocessed_files() -> None:
 
         # 백엔드(DB)에만 있고 1-stl이 비어있는 경우를 복구: pending 목록을 내려받아 저장
         pending = _fetch_pending_stl_list()
+        pending_names: set[str] = set()
         if pending:
             _log(f"Pending STL from backend: {len(pending)}")
             restored = 0
             for item in pending:
                 if _download_original_to_input(item):
+                    safe_name = _sanitize_filename(item.get("fileName") or "")
+                    if safe_name:
+                        pending_names.add(safe_name)
                     restored += 1
             _log(f"Restored {restored} STL files from backend to input directory")
         
@@ -981,8 +985,9 @@ async def _recover_unprocessed_files() -> None:
                     if p.name in _IN_FLIGHT:
                         continue
 
-                # 백엔드에 이 파일이 처리되어야 하는지 확인
-                if _backend_should_process(p.name, "1-stl"):
+                # pending 목록에서 내려받은 파일은 즉시 처리, 그 외는 백엔드 상태 확인
+                should_process = p.name in pending_names or _backend_should_process(p.name, "1-stl")
+                if should_process:
                     _log(f"Recover: processing {p.name}")
                     await _process_single_stl(p)
                     _log(f"Recover: {p.name} processing completed")

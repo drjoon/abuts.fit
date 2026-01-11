@@ -69,7 +69,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private bool _isRunning = true;
         private readonly List<Dictionary<string, object>> _recentHistory = new List<Dictionary<string, object>>();
         private readonly int _maxHistory = 50;
-        private FileSystemWatcher _watcher;
 
         public RepeatProcess(Esprit.Application app, string folderPath = null)
         {
