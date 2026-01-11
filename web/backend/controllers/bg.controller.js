@@ -331,6 +331,121 @@ export const getBgStatus = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, {}, "BG Status retrieved"));
 });
 
+// Rhino 서버가 재기동될 때 input 폴더에 없는 원본 STL 목록을 넘겨주기 위한 API
+// GET /api/bg/pending-stl
+// 조건: 요청이 취소/완료가 아니고, caseInfos.file은 있으나 camFile이 없는 건
+export const listPendingStl = asyncHandler(async (req, res) => {
+  const requests = await Request.find({
+    status: { $nin: ["취소", "완료", "cancelled", "completed"] },
+    "caseInfos.file.fileName": { $exists: true, $ne: null },
+    $or: [
+      { "caseInfos.camFile": { $exists: false } },
+      { "caseInfos.camFile.fileName": { $exists: false } },
+      { "caseInfos.camFile.s3Key": { $exists: false } },
+    ],
+  })
+    .select({
+      requestId: 1,
+      caseInfos: 1,
+    })
+    .lean();
+
+  const items =
+    requests
+      ?.map((r) => {
+        const ci = r?.caseInfos || {};
+        const f = ci.file || {};
+        return {
+          requestId: r.requestId,
+          fileName: f.fileName || f.originalName || f.filePath,
+          s3Key: f.s3Key,
+          s3Url: f.s3Url,
+        };
+      })
+      ?.filter((x) => x?.fileName) || [];
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { items }, "Pending STL list"));
+});
+
+// 원본 STL을 Rhino 서버가 다시 받아갈 수 있게 내려주는 엔드포인트
+// GET /api/bg/original-file?requestId=... or ?fileName=...
+export const downloadOriginalFile = asyncHandler(async (req, res) => {
+  const { requestId, fileName } = req.query;
+  if (!requestId && !fileName) {
+    throw new ApiError(400, "requestId or fileName is required");
+  }
+
+  let requestDoc = null;
+  if (requestId) {
+    requestDoc = await Request.findOne({ requestId });
+  }
+  if (!requestDoc && fileName) {
+    const normalized = normalizeFileName(fileName);
+    const all = await Request.find({}).select({ requestId: 1, caseInfos: 1 });
+    for (const r of all) {
+      const ci = r?.caseInfos || {};
+      const stored = [
+        ci?.file?.fileName,
+        ci?.file?.originalName,
+        ci?.file?.filePath,
+      ].filter(Boolean);
+      const hit = stored.some((n) => normalizeFileName(n) === normalized);
+      if (hit) {
+        requestDoc = r;
+        break;
+      }
+    }
+  }
+
+  if (!requestDoc?.caseInfos?.file) {
+    throw new ApiError(404, "Original file not found");
+  }
+
+  const f = requestDoc.caseInfos.file;
+  const targetName = f.fileName || f.originalName || f.filePath || "file.stl";
+
+  // 1) S3가 있으면 S3에서 읽기
+  if (f.s3Key) {
+    try {
+      const buf = await s3Utils.getObjectBufferFromS3(f.s3Key);
+      res.setHeader("Content-Type", "application/octet-stream");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`
+      );
+      return res.status(200).send(buf);
+    } catch (err) {
+      console.warn(
+        `[BG-Original] S3 download failed key=${f.s3Key} err=${err?.message}`
+      );
+    }
+  }
+
+  // 2) S3 키가 없고 URL만 있으면 프록시 다운로드
+  if (f.s3Url) {
+    try {
+      const resp = await fetch(f.s3Url);
+      if (resp.ok) {
+        const arrayBuffer = await resp.arrayBuffer();
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`
+        );
+        return res.status(200).send(Buffer.from(arrayBuffer));
+      }
+    } catch (err) {
+      console.warn(
+        `[BG-Original] URL download failed url=${f.s3Url} err=${err?.message}`
+      );
+    }
+  }
+
+  throw new ApiError(404, "Original file not accessible");
+});
+
 const normalizeFileName = (v) => {
   if (!v) return "";
   const s = String(v);

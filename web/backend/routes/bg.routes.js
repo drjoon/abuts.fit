@@ -31,5 +31,17 @@ router.get(
   requireBridgeSecret,
   bgController.getBgStatus
 );
+router.get(
+  "/pending-stl",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.listPendingStl
+);
+router.get(
+  "/original-file",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.downloadOriginalFile
+);
 
 export default router;

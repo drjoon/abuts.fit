@@ -4,26 +4,28 @@ import shutil
 import subprocess
 import uuid
 import time
-import sys
-import json
-import asyncio
-import threading
-import traceback
-import socketio
+
 import requests
-import mimetypes
+from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
+
+import sys
+import json
+import asyncio
+import threading
+import traceback
 from pathlib import Path
 from typing import Optional, Iterable, Tuple, List, Dict, Any
-
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+import socketio
+import mimetypes
 
 
 # Rhino 전역 락 (순차 처리 강제)
@@ -33,6 +35,7 @@ _main_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
 APP_ROOT = Path(__file__).resolve().parent
+load_dotenv(dotenv_path=APP_ROOT / "local.env", override=False)
 SCRIPT_DIR = APP_ROOT / "scripts"
 # bg/storage 구조로 변경
 BG_STORAGE_ROOT = APP_ROOT.parent.parent / "storage"
@@ -219,6 +222,69 @@ def _dotnet_rollforward_env() -> dict:
     env.setdefault("DOTNET_ROLL_FORWARD", "Major")
     env.setdefault("DOTNET_ROLL_FORWARD_TO_PRERELEASE", "0")
     return env
+
+
+def _bridge_headers() -> dict:
+    headers = {}
+    secret = os.getenv("BRIDGE_SHARED_SECRET", "").strip()
+    if secret:
+        headers["X-Bridge-Secret"] = secret
+    return headers
+
+
+def _fetch_pending_stl_list() -> list[dict]:
+    backend = os.getenv("BACKEND_URL", "").rstrip("/")
+    if not backend:
+        _log("pending-stl skipped: BACKEND_URL not set")
+        return []
+    url = f"{backend}/bg/pending-stl"
+    try:
+        res = requests.get(url, timeout=10, headers=_bridge_headers())
+        if res.status_code != 200:
+            _log(f"pending-stl fetch failed: status={res.status_code} body={res.text}")
+            return []
+        data = res.json().get("data") or {}
+        items = data.get("items") or []
+        items = items if isinstance(items, list) else []
+        _log(f"pending-stl fetched: {len(items)} items")
+        return items
+    except Exception as e:
+        _log(f"pending-stl fetch error: {e}")
+        return []
+
+
+def _download_original_to_input(item: dict) -> bool:
+    backend = os.getenv("BACKEND_URL", "").rstrip("/")
+    if not backend:
+        return False
+    file_name = item.get("fileName")
+    request_id = item.get("requestId")
+    if not file_name:
+        return False
+
+    target = STORE_IN_DIR / _sanitize_filename(file_name)
+    if target.exists():
+        return True
+
+    params = {}
+    if request_id:
+        params["requestId"] = request_id
+    else:
+        params["fileName"] = file_name
+
+    url = f"{backend}/bg/original-file"
+    try:
+        res = requests.get(url, params=params, timeout=30, headers=_bridge_headers())
+        if res.status_code != 200:
+            _log(f"original-file fetch failed: status={res.status_code}")
+            return False
+        content = res.content
+        target.write_bytes(content)
+        _log(f"original-file restored to input: {target.name} ({len(content)} bytes)")
+        return True
+    except Exception as e:
+        _log(f"original-file fetch error: {e}")
+        return False
 
 
 def _list_rhino_pipe_ids(rhinocode: str) -> list[str]:
@@ -856,6 +922,12 @@ async def _process_single_stl(p: Path):
 def _backend_should_process(file_name: str, source_step: str) -> bool:
     """백엔드에 처리 상태를 확인하여 미처리일 때만 True 반환"""
     try:
+        # 재기동 시 강제로 다시 처리해야 하는 경우(예: 이전 처리 실패/의심)에는
+        # 환경변수 RHINO_RECOVER_ALWAYS=true 로 설정하여 백엔드 상태와 무관하게 재처리한다.
+        recover_always = os.getenv("RHINO_RECOVER_ALWAYS", "").lower() in ("1", "true", "yes")
+        if recover_always:
+            return True
+
         backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
         # BACKEND_URL은 기본이 https://abuts.fit/api 형태이므로 /api가 포함된 경우가 있다.
         base = backend_url.rstrip("/")
@@ -888,6 +960,16 @@ async def _recover_unprocessed_files() -> None:
     try:
         _ensure_dirs()
         _log("Scanning for unprocessed files on startup...")
+
+        # 백엔드(DB)에만 있고 1-stl이 비어있는 경우를 복구: pending 목록을 내려받아 저장
+        pending = _fetch_pending_stl_list()
+        if pending:
+            _log(f"Pending STL from backend: {len(pending)}")
+            restored = 0
+            for item in pending:
+                if _download_original_to_input(item):
+                    restored += 1
+            _log(f"Restored {restored} STL files from backend to input directory")
         
         in_files = sorted([p for p in STORE_IN_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".stl"])
         _log(f"Found {len(in_files)} STL files in input directory")

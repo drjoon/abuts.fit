@@ -1,0 +1,21 @@
+node_modules
+dist
+.DS_Store
+stats.html
+*.env
+.env.*
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+
+*.zip
+# cam
+docs
+# hi-link
+
+Stl-Stores
+.tmp
+.venu
+__pycache__
