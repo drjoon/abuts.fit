@@ -75,15 +75,25 @@ def _build_s3_url(bucket: str, key: str) -> str:
     return f"https://{bucket}.s3.amazonaws.com/{key}"
 
 
-def _upload_via_presign(out_path: Path, original_name: str) -> bool:
+def _extract_request_id_from_name(name: str) -> Optional[str]:
+    try:
+        base = Path(name).name
+        head = base.split(".", 1)[0]
+        return head if head else None
+    except Exception:
+        return None
+
+
+def _upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
     try:
         backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
         presign_url = f"{backend_url}/bg/presign-upload"
+        req_id = item.get("requestId") or _extract_request_id_from_name(original_name)
         file_name = out_path.name
         payload = {
             "sourceStep": "2-filled",
-            "fileName": file_name,
-            # requestId는 파일명 매칭으로 처리되므로 생략
+            "fileName": file_name,      # 결과 파일명 (이미 prefix 포함)
+            "requestId": req_id or None,  # 있으면 함께 전달
         }
         resp = requests.post(presign_url, json=payload, timeout=10, headers=_bridge_headers())
         if resp.status_code != 200:
@@ -804,6 +814,21 @@ class StlHandler(FileSystemEventHandler):
             if _main_loop:
                 _main_loop.call_soon_threadsafe(lambda: asyncio.create_task(_process_single_stl(p)))
 
+def _prefix_with_request_id(original: str) -> str:
+    """파일명을 requestId.원본형태로 변환. requestId가 없으면 원본 유지."""
+    try:
+        rid = _extract_request_id_from_name(original)
+        if rid:
+            base = Path(original).name
+            # 이미 접두사가 붙어있으면 그대로
+            if base.startswith(f"{rid}."):
+                return base
+            return _sanitize_filename(f"{rid}.{base}")
+    except Exception:
+        pass
+    return _sanitize_filename(Path(original).name)
+
+
 async def _process_single_stl(p: Path):
     if isinstance(p, str):
         p = Path(p)
@@ -812,7 +837,10 @@ async def _process_single_stl(p: Path):
         return
         
     async with _processing_semaphore:
-        out_name = _sanitize_filename(f"{p.stem}.filled.stl")
+        prefixed_input = _prefix_with_request_id(p.name)
+        base_stem = Path(prefixed_input).stem
+        out_name = _sanitize_filename(f"{base_stem}.filled.stl")
+        req_id = _extract_request_id_from_name(prefixed_input)
         out_path = STORE_OUT_DIR / out_name
         
         with _IN_FLIGHT_LOCK:
@@ -825,7 +853,7 @@ async def _process_single_stl(p: Path):
             _log(f"Checking output path: {out_path}")
             if out_path.exists():
                 _log(f"Output already exists for: {p.name}, attempting presigned upload re-sync.")
-                if _upload_via_presign(out_path, p.name):
+                if _upload_via_presign(out_path, prefixed_input, {"requestId": req_id}):
                     return
                 # presign 실패 시 기존 register-file 재통지 시도 (백업)
                 try:
@@ -834,7 +862,8 @@ async def _process_single_stl(p: Path):
                     payload = {
                         "sourceStep": "2-filled",
                         "fileName": out_name,
-                        "originalFileName": p.name,
+                        "originalFileName": prefixed_input,
+                        "requestId": req_id,
                         "status": "success",
                         "metadata": {
                             "jobId": "reuse_existing"
@@ -873,7 +902,7 @@ async def _process_single_stl(p: Path):
                 })
                 
                 # presigned 업로드 후 등록 (우선 경로)
-                uploaded = _upload_via_presign(out_path, p.name)
+                uploaded = _upload_via_presign(out_path, prefixed_input, {"requestId": req_id})
                 if not uploaded:
                     _log("Presigned upload failed, attempting legacy register-file fallback")
                     try:
@@ -882,7 +911,8 @@ async def _process_single_stl(p: Path):
                         payload = {
                             "sourceStep": "2-filled",
                             "fileName": out_name,
-                            "originalFileName": p.name,
+                            "originalFileName": prefixed_input,
+                            "requestId": req_id,
                             "status": "success",
                             "metadata": {
                                 "jobId": job_id
