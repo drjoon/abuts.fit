@@ -328,7 +328,50 @@ export const getPresignedUploadUrl = asyncHandler(async (req, res) => {
 
 export const getBgStatus = asyncHandler(async (req, res) => {
   // 나중에 BG 프로그램들의 상태를 취합해서 보여주는 로직 추가 가능
-  return res.status(200).json(new ApiResponse(200, {}, "BG Status retrieved"));
+  return res.status(200).json(new ApiResponse(200, { ok: true }, "OK"));
+});
+
+// requestId로 의뢰 메타(caseInfos 등)를 조회
+// GET /api/bg/request-meta?requestId=...
+export const getRequestMeta = asyncHandler(async (req, res) => {
+  const { requestId } = req.query;
+  if (!requestId) {
+    throw new ApiError(400, "requestId is required");
+  }
+
+  const request = await Request.findOne({ requestId })
+    .select({ requestId: 1, caseInfos: 1 })
+    .lean();
+
+  if (!request) {
+    return res
+      .status(404)
+      .json(new ApiResponse(404, { ok: false }, "Request not found"));
+  }
+
+  const ci = request.caseInfos || {};
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        ok: true,
+        requestId: request.requestId,
+        caseInfos: {
+          clinicName: ci.clinicName || "",
+          patientName: ci.patientName || "",
+          tooth: ci.tooth || "",
+          implantManufacturer: ci.implantManufacturer || "",
+          implantSystem: ci.implantSystem || "",
+          implantType: ci.implantType || "",
+          maxDiameter: ci.maxDiameter || 0,
+          connectionDiameter: ci.connectionDiameter || 0,
+          workType: ci.workType || "",
+          lotNumber: ci.lotNumber || "",
+        },
+      },
+      "Request meta"
+    )
+  );
 });
 
 // Rhino 서버가 재기동될 때 input 폴더에 없는 원본 STL 목록을 넘겨주기 위한 API

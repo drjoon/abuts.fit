@@ -49,7 +49,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 Trace.WriteLine("[AbutsFitAddin] Pipeline started.");
 
                 bool reverseOn = ProcessConfig.DefaultReverseOn;
-                
+
                 // 1. 초기화 (Clean)
                 Clean();
 

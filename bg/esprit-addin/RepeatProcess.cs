@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
+using System.Linq;
 using System.Runtime.Serialization.Json;
 using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
 
@@ -27,7 +28,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         [DataMember] public string NcOutputPath { get; set; }
         [DataMember] public double[] NumData { get; set; }
         [DataMember] public int[] NumCombobox { get; set; }
-        [DataMember] public string PostName { get; set; } = "HyundaiWia_XF6300T_V19_FKSM.asc";
+        [DataMember] public string PostName { get; set; } = "Acro_dent_XE.asc";
         
         // CaseInfos alignment
         [DataMember] public string ClinicName { get; set; }
@@ -476,9 +477,23 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
+                // 환자/임플란트 정보 캐시 (백엔드에서 전달된 값 사용)
+                PatientContext.SetFromRequest(req);
+
                 LogInfo($"[CAM] Starting NC generation for {req.RequestId}");
 
+                // 0. 소재 템플릿 로드 (어벗 최대 직경 기준)
+                int materialDiameter = ChooseMaterialDiameter(req.MaxDiameter);
+                string templateDir = @"C:\Users\user\Documents\DP Technology\ESPRIT\Data\Templates";
+                string templatePath = Path.Combine(templateDir, $"Hanwha_D{materialDiameter}.est");
+                if (!File.Exists(templatePath))
+                {
+                    throw new FileNotFoundException($"Template not found: {templatePath}");
+                }
+
                 Document espdoc = _espApp.Document;
+                espdoc.MergeFile(templatePath);
+                LogInfo($"[CAM] Loaded material template (merged): D{materialDiameter} (MaxDiameter={req.MaxDiameter:F2}mm, ConnectionDiameter={req.ConnectionDiameter:F2}mm)");
                 
                 // 1. 임플란트 파라미터 업데이트
                 var userData = Connect.DentalHost.CurrentData;
@@ -495,6 +510,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                         for (int i = 0; i < count; i++) userData.NumCombobox[i] = req.NumCombobox[i];
                     }
                 }
+                LogInfo($"[CAM] Implant params updated. NumData={FormatArray(req.NumData)} NumCombobox={FormatArray(req.NumCombobox)}");
 
                 // 2. STL 병합 및 툴패스 워크플로우 실행
                 if (!File.Exists(req.StlPath))
@@ -709,6 +725,21 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private void LogInfo(string message) { Log("INFO", message); }
         private void LogWarning(string message) { Log("WARN", message); }
         private void LogError(string message) { Log("ERROR", message); }
+
+        private int ChooseMaterialDiameter(double maxDiameter)
+        {
+            var stockDiameters = new[] { 6, 8, 10, 12, 14 };
+            double target = maxDiameter <= 0 ? 6 : maxDiameter;
+            return stockDiameters.FirstOrDefault(d => d >= target) == 0
+                ? stockDiameters.Last()
+                : stockDiameters.First(d => d >= target);
+        }
+
+        private string FormatArray<T>(IEnumerable<T> arr)
+        {
+            if (arr == null) return "null";
+            return "[" + string.Join(",", arr) + "]";
+        }
 
         private void Log(string level, string message)
         {

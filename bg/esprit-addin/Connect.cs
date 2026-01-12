@@ -20,10 +20,16 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Linq;
+using System.Net.Http;
+using System.Net;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using DentalAddin;
 using Esprit;
 using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
+using Acrodent.EspritAddIns.ESPRIT2025AddinProject; // PatientContext
 using DrawingPoint = System.Drawing.Point;
 using EspritConstants;
 using EspritTechnology;
@@ -39,6 +45,20 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         ProgId("ESPRIT2025AddinProject.Connect")]
     public class Connect : DPTechnology.AnnexLibraries.EspritAddIn
     {
+        private static readonly HttpClient MetaHttp;
+
+        static Connect()
+        {
+            var handler = new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                UseProxy = false
+            };
+            MetaHttp = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+        }
 
         // Default Property Procedures should not need changes
         #region " Default Property Procedures "
@@ -59,6 +79,124 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 }
                 return _ConnectionManager;
             }
+        }
+
+        // requestId 추출: "requestId.xxx" 접두사 활용
+        private static string ExtractRequestId(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName)) return null;
+            // ".filled.stl" 제거 후 전체 접두사를 requestId로 사용
+            var baseName = Path.GetFileNameWithoutExtension(fileName);
+            if (string.IsNullOrWhiteSpace(baseName)) return null;
+            if (baseName.EndsWith(".filled", StringComparison.OrdinalIgnoreCase))
+            {
+                baseName = baseName.Substring(0, baseName.Length - ".filled".Length);
+            }
+            // DB 포맷: YYYYMMDD-<토큰> 형태에 맞춰 앞 2세그먼트만 사용
+            var parts = baseName.Split('-');
+            if (parts.Length >= 2)
+            {
+                return $"{parts[0]}-{parts[1]}";
+            }
+            return baseName;
+        }
+
+        // 백엔드 메타 조회 후 PatientContext 채우기
+        private static async Task FetchAndSetPatientContextAsync(string requestId, Action<string> log)
+        {
+            string baseUrl = ProcessConfig.BackendUrl;
+            baseUrl = baseUrl.TrimEnd('/');
+            string url = $"{baseUrl}/bg/request-meta?requestId={Uri.EscapeDataString(requestId)}";
+
+            // TLS 강제 (DNS/인증 오류 감소)
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+
+            var client = MetaHttp;
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+            var bridgeSecret = ProcessConfig.BridgeSharedSecret;
+            if (!string.IsNullOrWhiteSpace(bridgeSecret))
+            {
+                client.DefaultRequestHeaders.Add("X-Bridge-Secret", bridgeSecret);
+            }
+            log?.Invoke($"[Addin] request-meta GET {url} (X-Bridge-Secret set={(!string.IsNullOrWhiteSpace(bridgeSecret))})");
+            HttpResponseMessage resp;
+            try
+            {
+                resp = await client.GetAsync(url).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                var msg = $"request-meta HTTP error: {ex.GetType().Name} {ex.Message}";
+                log?.Invoke($"[Addin] {msg}");
+                return;
+            }
+            if (!resp.IsSuccessStatusCode)
+            {
+                string body = "";
+                try { body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false); } catch { }
+                var msg = $"request-meta failed status={resp.StatusCode} body={body}";
+                log?.Invoke($"[Addin] {msg}");
+                return;
+            }
+            var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            var serializer = new DataContractJsonSerializer(typeof(RequestMetaResponse));
+            var meta = serializer.ReadObject(stream) as RequestMetaResponse;
+            if (meta == null || meta.data == null || meta.data.caseInfos == null)
+            {
+                var msg = "request-meta parse failed or empty";
+                log?.Invoke($"[Addin] {msg}");
+                return;
+            }
+
+            var ci = meta.data.caseInfos;
+            var req = new NcGenerationRequest
+            {
+                MaxDiameter = ci.maxDiameter,
+                ConnectionDiameter = ci.connectionDiameter,
+                WorkType = ci.workType,
+                LotNumber = ci.lotNumber,
+                // NumData/NumCombobox는 응답에 없으므로 그대로 둔다
+            };
+            log?.Invoke($"[Addin] request-meta data -> Clinic={ci.clinicName}, Patient={ci.patientName}, Tooth={ci.tooth}, Implant={ci.implantManufacturer}/{ci.implantSystem}/{ci.implantType}, MaxDiameter={ci.maxDiameter:F2}, ConnectionDiameter={ci.connectionDiameter:F2}, WorkType={ci.workType}, Lot={ci.lotNumber}");
+            PatientContext.SetFromRequest(req);
+            log?.Invoke($"[Addin] request-meta loaded: MaxDiameter={ci.maxDiameter:F2}, ConnectionDiameter={ci.connectionDiameter:F2}, WorkType={ci.workType}");
+        }
+
+        [DataContract]
+        private class RequestMetaResponse
+        {
+            [DataMember] public bool ok { get; set; }
+            [DataMember] public RequestMetaData data { get; set; }
+        }
+
+        [DataContract]
+        private class RequestMetaData
+        {
+            [DataMember] public string requestId { get; set; }
+            [DataMember] public CaseInfos caseInfos { get; set; }
+        }
+
+        [DataContract]
+        private class CaseInfos
+        {
+            [DataMember] public string clinicName { get; set; }
+            [DataMember] public string patientName { get; set; }
+            [DataMember] public string tooth { get; set; }
+            [DataMember] public string implantManufacturer { get; set; }
+            [DataMember] public string implantSystem { get; set; }
+            [DataMember] public string implantType { get; set; }
+            [DataMember] public double maxDiameter { get; set; }
+            [DataMember] public double connectionDiameter { get; set; }
+            [DataMember] public string workType { get; set; }
+            [DataMember] public string lotNumber { get; set; }
+        }
+
+        // 배열 로깅 유틸
+        private static string FormatArray<T>(IEnumerable<T> arr)
+        {
+            if (arr == null) return "null";
+            return "[" + string.Join(",", arr) + "]";
         }
 
         private sealed class AddInRunningForm : Form
@@ -296,7 +434,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 RenderPage();
             }
 
-            private void MergeSelected()
+            private async void MergeSelected()
             {
                 if (_files.Count == 0) return;
                 var selectedIndex = _listBox.SelectedIndex;
@@ -306,6 +444,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 if (fullIndex < 0 || fullIndex >= _files.Count) return;
 
                 var targetPath = _files[fullIndex];
+                var fileNameOnly = Path.GetFileName(targetPath);
                 var doc = _getDocument?.Invoke();
                 if (doc == null)
                 {
@@ -315,8 +454,28 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 try
                 {
-                    _log?.Invoke($"[Addin] Merge start: {Path.GetFileName(targetPath)}");
-                    doc.MergeFile(targetPath);
+                    _log?.Invoke($"[Addin] Processing start (deferred merge): {Path.GetFileName(targetPath)}");
+                    // requestId 추출 및 메타 조회
+                    string requestId = ExtractRequestId(fileNameOnly);
+                    if (!string.IsNullOrEmpty(requestId))
+                    {
+                        try
+                        {
+                            _log?.Invoke($"[Addin] Fetching request meta for requestId={requestId}");
+                            await FetchAndSetPatientContextAsync(requestId, _log);
+                        }
+                        catch (Exception ex)
+                        {
+                            _log?.Invoke($"[Addin] Meta fetch failed: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        _log?.Invoke("[Addin] requestId를 파일명에서 추출하지 못했습니다. PatientContext는 기존값 유지.");
+                    }
+
+                    _log?.Invoke($"[Addin] PatientContext NumData={FormatArray(PatientContext.NumData)} NumCombobox={FormatArray(PatientContext.NumCombobox)} MaxDiameter={PatientContext.MaxDiameter:F2} ConnectionDiameter={PatientContext.ConnectionDiameter:F2} WorkType={PatientContext.WorkType}");
+
                     // Trace -> _log 출력용 리스너 연결
                     var traceListener = new LogTraceListener(msg => _log?.Invoke(msg));
                     System.Diagnostics.Trace.Listeners.Add(traceListener);
@@ -326,6 +485,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                         {
                             _log?.Invoke("[Addin] DentalPipeline 실행 시작");
                             MainModule.Bind(_espApp, doc);
+                            // STL은 MainModule에서 템플릿 오픈 후 병합
                             MainModule.ProcessStlFile(targetPath);
                             _log?.Invoke("[Addin] DentalPipeline 완료");
                         }
@@ -336,8 +496,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                         }
                     }
                     System.Diagnostics.Trace.Listeners.Remove(traceListener);
-                    _log?.Invoke("[Addin] Merge 완료, 뷰 정렬 진행");
-                    doc.Windows.ActiveWindow.Fit();
                 }
                 catch (Exception ex)
                 {
@@ -709,7 +867,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         internal static DentalAddinHost DentalHost { get; } = new DentalAddinHost();
 
-        private System.Windows.Forms.Timer _heartbeatTimer;
         private Esprit.ToolBar _toolbar;
         private RepeatProcess _repeatProcess;
         private AddInRunningForm _runningForm;
@@ -921,12 +1078,14 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
             // Fallback to 이전 상대 경로 추정
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var currentData = DentalHost.CurrentData; // NumData, NumCombobox 등
             return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
         }
 
         private static string TryResolveStoragePath(string subFolder)
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var currentData = DentalHost.CurrentData; // NumData, NumCombobox 등
             var dir = new DirectoryInfo(baseDir);
 
             for (int i = 0; i < 6 && dir != null; i++)

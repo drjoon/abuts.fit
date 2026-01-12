@@ -8,6 +8,12 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
     /// </summary>
     public static class ProcessConfig
     {
+        // ==================== 환경 변수 (백엔드/브리지) ====================
+        /// <summary>
+        /// 백엔드 URL (request-meta 등 호출용)
+        public const string BackendUrl = "https://abuts.fit/api";
+        public const string BridgeSharedSecret = "t1ZYB4ELMWBKHDuyyUgnx4HdyRg";
+
         // ==================== 경계 포인트 설정 ====================
         /// <summary>
         /// Boundry 생성 시 Point1의 Y 좌표 (mm)

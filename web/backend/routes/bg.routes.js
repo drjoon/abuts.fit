@@ -43,5 +43,11 @@ router.get(
   requireBridgeSecret,
   bgController.downloadOriginalFile
 );
+router.get(
+  "/request-meta",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.getRequestMeta
+);
 
 export default router;
