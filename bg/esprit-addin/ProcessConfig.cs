@@ -123,10 +123,10 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         public const string ReverseTurningSubfolder = "4_ReverseTurning prc";
         public const string RoughSubfolder = "5_Rough prc";
         public const string SemiRoughSubfolder = "6_Semi_Rough prc";
-        public const string FaceSubfolder = "7_Face prc";
-        public const string O180Subfolder = "8-0-180 prc";
-        public const string O90_270Subfolder = "9-90-270 prc";
-        public const string CompositeSubfolder = "12_MarginComposite prc";
+        public const string FaceSubfolder = "7_FrontFace prc";
+        public const string O180Subfolder = "8_0-180 prc";
+        public const string O90_270Subfolder = "9_90-270 prc";
+        public const string CompositeSubfolder = "11_Composite prc";
 
         // PrcFilePath[1] = Turning (TurningOp)
         public const string TurningProcessFile = "Turning.prc";

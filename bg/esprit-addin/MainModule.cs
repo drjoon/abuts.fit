@@ -59,10 +59,11 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                             Trace.WriteLine($"[MainModule] Opening template as new document: {templatePath}");
                             try
                             {
-                                var doc = Connect.EspritApp?.Open(templatePath, Type.Missing);
-                                if (doc != null)
+                                var openedDoc = Connect.EspritApp?.Open(templatePath, Type.Missing);
+                                if (openedDoc != null)
                                 {
-                                    doc.MergeFile(stlFilePath);
+                                    Connect.SetCurrentDocument(openedDoc);
+                                    openedDoc.MergeFile(stlFilePath);
                                     Trace.WriteLine($"[MainModule] Loaded template and merged STL: D{materialDiameter} (MaxDiameter~{maxDiameter:F2}mm), STL={stlFilePath}");
                                 }
                                 else

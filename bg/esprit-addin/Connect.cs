@@ -850,7 +850,13 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         public static Esprit.Application _espApp;
         public static Esprit.Application EspritApp => _espApp;
-        public new static Esprit.Document Document => _espApp?.Document;
+        private static Esprit.Document _currentDocument;
+        public new static Esprit.Document Document => _currentDocument ?? _espApp?.Document;
+
+        public static void SetCurrentDocument(Esprit.Document doc)
+        {
+            _currentDocument = doc;
+        }
 
         public EspritMenus.Menu _tbMenu = default(EspritMenus.Menu);
         public EspritMenus.MenuItem _tbMenuItem = default(EspritMenus.MenuItem);
@@ -882,7 +888,9 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             _espApp = espritApplication;
             _pm = _espApp.ProjectManager;
             DentalHost.Initialize(_espApp);
-            DentalHost.SetDocumentResolver(() => _espApp?.Document);
+            DentalHost.SetDocumentResolver(() => Document);
+            SetCurrentDocument(_espApp?.Document);
+            EnsureDefaultDentalSettings();
 
             // 서버 자동 시작
             if (_repeatProcess == null)
@@ -1004,6 +1012,83 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
             ShowDefaultStatusPanel();
             // Heartbeat disabled
+        }
+
+        private static void EnsureDefaultDentalSettings()
+        {
+            try
+            {
+                var data = DentalHost?.CurrentData;
+                if (data == null)
+                {
+                    return;
+                }
+
+                var hasAnyPath = false;
+                try
+                {
+                    if (data.PrcFilePath != null)
+                    {
+                        foreach (var p in data.PrcFilePath)
+                        {
+                            if (!string.IsNullOrWhiteSpace(p))
+                            {
+                                hasAnyPath = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                if (hasAnyPath && !string.IsNullOrWhiteSpace(data.PrcDirectory))
+                {
+                    return;
+                }
+
+                var root = ProcessConfig.TechRootDirectory;
+                if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+                {
+                    root = @"C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin";
+                }
+
+                data.PrcDirectory = root;
+
+                if (data.PrcFilePath != null)
+                {
+                    void SetSlotFolder(int index, string subfolder)
+                    {
+                        if (index < 0 || index >= data.PrcFilePath.Length) return;
+                        var path = Path.Combine(root, subfolder);
+                        data.PrcFilePath[index] = path;
+                    }
+
+                    void SetSlotFile(int index, string subfolder, string fileName)
+                    {
+                        if (index < 0 || index >= data.PrcFilePath.Length) return;
+                        var path = Path.Combine(root, subfolder, fileName);
+                        data.PrcFilePath[index] = path;
+                    }
+
+                    SetSlotFile(1, ProcessConfig.TurningSubfolder, ProcessConfig.TurningProcessFile);
+                    SetSlotFile(2, ProcessConfig.ReverseTurningSubfolder, ProcessConfig.ReverseTurningProcessFile);
+                    SetSlotFile(3, ProcessConfig.RoughSubfolder, ProcessConfig.RoughMillingProcessFile);
+                    SetSlotFile(4, ProcessConfig.FaceHoleSubfolder, ProcessConfig.FaceHoleProcessFile);
+                    SetSlotFile(5, ProcessConfig.O180Subfolder, ProcessConfig.O180BallMillingProcessFile);
+                    SetSlotFile(6, ProcessConfig.O90_270Subfolder, ProcessConfig.O90_270BallMillingProcessFile);
+                    SetSlotFile(7, ProcessConfig.FaceSubfolder, ProcessConfig.FaceMachiningProcessFile);
+                    SetSlotFile(8, ProcessConfig.ConnectionSubfolder, ProcessConfig.ConnectionProcessFile);
+                    SetSlotFile(9, ProcessConfig.SemiRoughSubfolder, ProcessConfig.SemiRoughMillingProcessFile);
+                    SetSlotFile(10, ProcessConfig.CompositeSubfolder, ProcessConfig.CompositeProcessFile);
+                }
+
+                DentalHost.Save();
+                Trace.WriteLine($"[Addin] Default process settings seeded. PrcDirectory={data.PrcDirectory}");
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[Addin] EnsureDefaultDentalSettings failed: {ex.Message}");
+            }
         }
 
 
@@ -1176,33 +1261,39 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
         public void _ConnectionManager_DocumentInitialize(Esprit.Document espritDocument, string fileName)
         {
-            // Triggered whenever the Document object has been re-initialized.
-            //
-            // If an Esprit.Document object property or variable is declared in your project you can assign it from here.
-            // Procedures that apply to both New and existing ESPRIT files can then be called here also.
-            //
-            // Note that a Null filename (Nothing) indicates a New Document (AfterNewDocumentOpen event),
-            // while a non-null filename could be an existing file (AfterDocumentOpen or AfterTemplateOpen event),
-            // or could indicate connection to a running Esprit.Application that had a Document already open.
-            // In the latter case the filename will not be null, but could be Empty to indicate an unsaved Document.
-            //
-            if (fileName == null) { return; }
-            // Procedures that apply only when opening existing files (and not staring New ones) can be called here.
-            //
-            // This event procedure can be removed if it does not need to be used (but that is rarely the case).
-
-            // Call toolbar position load only if it has not already been applied.
-            if (!_toolbarPositionLoaded && _toolbar != null)
+            try
             {
-                try
+                // Triggered whenever the Document object has been re-initialized.
+                //
+                // If an Esprit.Document object property or variable is declared in your project you can assign it from here.
+                // Procedures that apply to both New and existing ESPRIT files can then be called here also.
+                //
+                // Note that a Null filename (Nothing) indicates a New Document (AfterNewDocumentOpen event),
+                // while a non-null filename could be an existing file (AfterDocumentOpen or AfterTemplateOpen event),
+                // or could indicate connection to a running Esprit.Application that had a Document already open.
+                // In the latter case the filename will not be null, but could be Empty to indicate an unsaved Document.
+                //
+                if (espritDocument != null)
+                {
+                    SetCurrentDocument(espritDocument);
+                }
+
+                if (fileName == null) { return; }
+                // Procedures that apply only when opening existing files (and not staring New ones) can be called here.
+                //
+                // This event procedure can be removed if it does not need to be used (but that is rarely the case).
+
+                // Call toolbar position load only if it has not already been applied.
+                // This makes sure position loading occurs after the application has initialized UI elements.
+                if (!_toolbarPositionLoaded && _toolbar != null)
                 {
                     Toolbar_PositionLoad(ToolbarInternalName, _toolbar);
                     _toolbarPositionLoaded = true;
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Trace.WriteLine($"Connect: Failed to load toolbar position in DocumentInitialize: {ex}");
-                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Connect: Failed to load toolbar position in DocumentInitialize: {ex}");
             }
         }
 

@@ -2,10 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Esprit;
 using EspritConstants;
+using EspritFeatures;
 using EspritTechnology;
 using EspritGeometry;
 
@@ -42,6 +44,8 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private static Application EspritApp => Connect.EspritApp;
         private static Document Document => Connect.Document;
 
+        private static string _compositeDriveSurfaceKey;
+
         public static void Run(bool spindleSide, double roughType, string stlFilePath = null)
         {
             try
@@ -57,35 +61,34 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 RotateSTLInitial();
                 
                 // 3. STL 정렬 및 이동 (MoveSTL)
-                RotateSTL(spindleSide);
+                // RotateSTL(spindleSide); // 원본 플로우에 따라 불필요한 경우 제외 가능하나 일단 유지
                 MoveSTL(spindleSide);
                 
                 // 4. 바운더리 생성 (Boundry)
                 Boundry(spindleSide, roughType);
                 
-                // 4. 터닝 피처 생성 (Turning)
+                // 5. 터닝 피처 생성 (Turning)
                 TurningMain(spindleSide);
                 
-                // 5. 밀링 가공 (Milling)
+                // 6. 밀링 가공 (Milling)
                 if (roughType == 1.0)
                 {
-                    MillingStart(spindleSide);
+                    // MillingStart 호출 제거
                 }
 
-                // 6. 기본 공정(Operation) 생성 시도 (prc 기반)
-                TryAddDefaultOperations(reverseOn);
+                // UVW 평면 및 표시 설정
+                EnsureWorkPlanes();
+                EnsureFreeFormFeatures(spindleSide);
 
-                // 6. NC 코드 생성
+                // 7. 기본 공정(Operation) 생성 시도 (prc 기반)
+                TryAddDefaultOperations(reverseOn, roughType);
+
+                // 8. NC 코드 생성
                 if (!string.IsNullOrEmpty(stlFilePath))
                 {
                     GenerateNCCode(stlFilePath);
                 }
 
-                // 7. 정리 (Operations, Features, STL 삭제) - 요청으로 일시 비활성화
-                // CleanupAfterProcessing();
-                
-
-                
                 Trace.WriteLine("[AbutsFitAddin] Pipeline completed successfully.");
             }
             catch (Exception ex)
@@ -95,11 +98,180 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        private static FreeFormFeature FindFreeFormFeatureByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            foreach (FreeFormFeature ff in Document.FreeFormFeatures)
+            {
+                if (string.Equals(ff.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return ff;
+                }
+            }
+            return null;
+        }
+
+        private static FeatureChain FindFeatureChainByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            foreach (FeatureChain fc in Document.FeatureChains)
+            {
+                if (string.Equals(fc.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return fc;
+                }
+            }
+            return null;
+        }
+
+        private static FeatureSet GetOrCreateFeatureSet(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            try
+            {
+                var existing = Document.FeatureSets[name];
+                if (existing != null) return existing;
+            }
+            catch { }
+
+            try
+            {
+                var created = Document.FeatureSets.Add(Type.Missing);
+                created.Name = name;
+                return created;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void EnsureFreeFormFeatures(bool spindleSide)
+        {
+            try
+            {
+                GraphicObject stl = null;
+                foreach (GraphicObject obj in Document.GraphicsCollection)
+                {
+                    if (obj.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                    {
+                        stl = obj;
+                        break;
+                    }
+                }
+                if (stl == null) return;
+
+                Layer layer = null;
+                try { layer = Document.Layers["FreeFormLayer"]; } catch { }
+                if (layer == null)
+                {
+                    try { layer = Document.Layers.Add("FreeFormLayer"); } catch { }
+                }
+                if (layer != null)
+                {
+                    Document.ActiveLayer = layer;
+                }
+
+                var fs0180 = GetOrCreateFeatureSet("0-180Degree");
+                var fs90270 = GetOrCreateFeatureSet("90-270Degree");
+
+                if (FindFreeFormFeatureByName("3DMilling_180Degree") == null)
+                {
+                    Plane p180 = null;
+                    try { p180 = Document.Planes["180"]; } catch { }
+                    if (p180 != null) Document.ActivePlane = p180;
+                    var ff180 = Document.FreeFormFeatures.Add();
+                    ff180.Name = "3DMilling_180Degree";
+                    ff180.Add(stl, espFreeFormElementType.espFreeFormPartSurfaceItem);
+                    fs0180?.Add(ff180);
+                }
+
+                if (FindFreeFormFeatureByName("3DMilling_270Degree") == null)
+                {
+                    Plane p270 = null;
+                    try { p270 = Document.Planes["270"]; } catch { }
+                    if (p270 != null) Document.ActivePlane = p270;
+                    var ff270 = Document.FreeFormFeatures.Add();
+                    ff270.Name = "3DMilling_270Degree";
+                    ff270.Add(stl, espFreeFormElementType.espFreeFormPartSurfaceItem);
+                    fs90270?.Add(ff270);
+                }
+
+                if (FindFreeFormFeatureByName("3DMilling_0Degree") == null)
+                {
+                    Plane p0 = null;
+                    try { p0 = Document.Planes["XYZ"]; } catch { }
+                    if (p0 != null) Document.ActivePlane = p0;
+                    var ff0 = Document.FreeFormFeatures.Add();
+                    ff0.Name = "3DMilling_0Degree";
+                    ff0.Add(stl, espFreeFormElementType.espFreeFormPartSurfaceItem);
+                    fs0180?.Add(ff0);
+                }
+
+                if (FindFreeFormFeatureByName("3DMilling_90Degree") == null)
+                {
+                    Plane p90 = null;
+                    try { p90 = Document.Planes["90"]; } catch { }
+                    if (p90 != null) Document.ActivePlane = p90;
+                    var ff90 = Document.FreeFormFeatures.Add();
+                    ff90.Name = "3DMilling_90Degree";
+                    ff90.Add(stl, espFreeFormElementType.espFreeFormPartSurfaceItem);
+                    fs90270?.Add(ff90);
+                }
+
+                if (FindFreeFormFeatureByName("3DMilling_FrontFace") == null)
+                {
+                    Plane pFace = null;
+                    try { pFace = Document.Planes["Face"]; } catch { }
+                    Plane pYzx = null;
+                    try { pYzx = Document.Planes["YZX"]; } catch { }
+                    if (spindleSide)
+                    {
+                        if (pFace != null) Document.ActivePlane = pFace;
+                    }
+                    else
+                    {
+                        if (pYzx != null) Document.ActivePlane = pYzx;
+                        else if (pFace != null) Document.ActivePlane = pFace;
+                    }
+                    var ffFront = Document.FreeFormFeatures.Add();
+                    ffFront.Name = "3DMilling_FrontFace";
+                    ffFront.Add(stl, espFreeFormElementType.espFreeFormPartSurfaceItem);
+                }
+
+                var roughSet = GetOrCreateFeatureSet("Rough_0-180Degree");
+                if (FindFreeFormFeatureByName("3DRoughMilling_0Degree") == null)
+                {
+                    Plane p0r = null;
+                    try { p0r = Document.Planes["XYZ"]; } catch { }
+                    if (p0r != null) Document.ActivePlane = p0r;
+                    var r0 = Document.FreeFormFeatures.Add();
+                    r0.Name = "3DRoughMilling_0Degree";
+                    r0.Add(stl, espFreeFormElementType.espFreeFormPartSurfaceItem);
+                    roughSet?.Add(r0);
+                }
+                if (FindFreeFormFeatureByName("3DRoughMilling_180Degree") == null)
+                {
+                    Plane p180r = null;
+                    try { p180r = Document.Planes["180"]; } catch { }
+                    if (p180r != null) Document.ActivePlane = p180r;
+                    var r180 = Document.FreeFormFeatures.Add();
+                    r180.Name = "3DRoughMilling_180Degree";
+                    r180.Add(stl, espFreeFormElementType.espFreeFormPartSurfaceItem);
+                    roughSet?.Add(r180);
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[EnsureFreeFormFeatures] Error: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// 기본 공정(Operation) 생성: 설정된 prc 파일을 로드해 현재 FeatureChains에 매핑
         /// </summary>
-        private static void TryAddDefaultOperations(bool reverseOn)
-        {
+        private static void TryAddDefaultOperations(bool reverseOn, double roughType)
+        { 
             try
             {
                 string techDir = ProcessConfig.TechRootDirectory;
@@ -109,130 +281,997 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
-                var boundry1 = FindFeatureChain(ProcessConfig.Boundry1Name);
-                var turning = FindFeatureChain(ProcessConfig.TurningName);
-                // RoughMill1~5 패턴 찾기 (원본 DentalAddin 로직)
-                var roughMill1List = FindFeatureChainsByPrefix("RoughMill1");
-                var roughMill2List = FindFeatureChainsByPrefix("RoughMill2");
-                var roughMill3List = FindFeatureChainsByPrefix("RoughMill3");
-                var roughMill4List = FindFeatureChainsByPrefix("RoughMill4");
-                var roughMill5List = FindFeatureChainsByPrefix("RoughMill5");
-                var allRoughList = roughMill1List.Concat(roughMill2List).Concat(roughMill3List).Concat(roughMill4List).Concat(roughMill5List).ToList();
-
-                // TurningProfile 패턴 찾기 (TurningOp 대응)
-                var turningProfiles = FindFeatureChainsByPrefix("TurningProfile");
-                var allTurningTargets = new List<FeatureChain> { turning }.Concat(turningProfiles).Where(x => x != null).ToList();
-
-                // FeatureChain 패턴 찾기
-                var angleFeatures = FindFeatureChainsByPattern("FeatureChain"); // "0 FeatureChain", "1 FeatureChain" 등
-
-                var targets = new List<(string prcName, IEnumerable<FeatureChain> fcs, bool active)>
+                // 1. Turning Processes (Turning, TurningProfile1~3)
+                var turningNames = new[] { "Turning", "TurningProfile1", "TurningProfile2", "TurningProfile3" };
+                foreach (var tName in turningNames)
                 {
-                    // PrcFilePath[1] = Turning
-                    (ProcessConfig.TurningProcessFile, allTurningTargets, true),
-                    // PrcFilePath[2] = Reverse Turning (ReverseOn일 때만)
-                    (ProcessConfig.ReverseTurningProcessFile, allTurningTargets, reverseOn),
-                    // PrcFilePath[3] = RoughMill (모든 RoughMill1~5)
-                    (ProcessConfig.RoughMillingProcessFile, allRoughList, true),
-                    // PrcFilePath[4] = CustomCycle (FaceDrill) - null FeatureChain
-                    (ProcessConfig.FaceHoleProcessFile, new FeatureChain[] { null }, true),
-                    // PrcFilePath[5] = 0-180 BallMilling
-                    (ProcessConfig.O180BallMillingProcessFile, allRoughList, true),
-                    // PrcFilePath[6] = 90-270 BallMilling
-                    (ProcessConfig.O90_270BallMillingProcessFile, allRoughList, true),
-                    // PrcFilePath[8] = CustomCycle2 (EndTurning) - null FeatureChain
-                    (ProcessConfig.ConnectionProcessFile, new FeatureChain[] { null }, true),
-                    // PrcFilePath[9] = OP36 (SemiRough) - angle features
-                    (ProcessConfig.SemiRoughMillingProcessFile, angleFeatures, true),
-                    // PrcFilePath[10] = 5axis Composite
-                    (ProcessConfig.CompositeProcessFile, allRoughList, true)
-                };
-
-                Trace.WriteLine($"[TryAddDefaultOperations] Tech root: {techDir}, FeatureChains={Document.FeatureChains.Count}, reverseOn={reverseOn}");
-
-                int addedOps = 0;
-
-                foreach (var t in targets)
-                {
-                    if (!t.active)
+                    var fc = FindFeatureChainByName(tName);
+                    if (fc != null)
                     {
-                        Trace.WriteLine($"[TryAddDefaultOperations] Skip {t.prcName} - not active (reverseOn={reverseOn})");
-                        continue;
-                    }
-                    if (string.IsNullOrWhiteSpace(t.prcName)) continue;
-                    var prcPath = ResolvePrcPath(techDir, t.prcName);
-                    if (string.IsNullOrEmpty(prcPath))
-                    {
-                        Trace.WriteLine($"[TryAddDefaultOperations] prc not found: {t.prcName}");
-                        continue;
-                    }
-
-                    var fcList = t.fcs.ToList();
-                    if (fcList.Count == 0)
-                    {
-                        Trace.WriteLine($"[TryAddDefaultOperations] Skip {t.prcName} ({prcPath}) - no target FeatureChain");
-                        continue;
-                    }
-                    var targetNames = string.Join(",", fcList.Select(f => f?.Name ?? "null"));
-                    Trace.WriteLine($"[TryAddDefaultOperations] Using {t.prcName} ({prcPath}), targets: {targetNames}");
-
-                    foreach (var fc in fcList)
-                    {
-                        try
-                        {
-                            var util = new TechnologyUtilityClass();
-                            object result = null;
-                            try {
-                                result = util.OpenProcess(prcPath);
-                            } catch (Exception openEx) {
-                                Trace.WriteLine($"[TryAddDefaultOperations] OpenProcess CRASHED for {prcPath}: {openEx.Message}");
-                                continue;
-                            }
-
-                            if (result == null)
-                            {
-                                Trace.WriteLine($"[TryAddDefaultOperations] OpenProcess returned null for {prcPath}");
-                                continue;
-                            }
-
-                            IEnumerable techs;
-                            if (result is IEnumerable en) techs = en;
-                            else techs = new[] { result };
-
-                            foreach (var techObj in techs)
-                            {
-                                if (techObj is ITechnology tech)
-                                {
-                                    try
-                                    {
-                                        // FeatureChain이 없을 경우 두 번째 인자는 명시적 null (IGraphicObject)로 전달
-                                        IGraphicObject fcObj = fc as IGraphicObject;
-                                        string fcName = fc?.Name ?? "null";
-                                        Document.Operations.Add(tech, fcObj, Type.Missing);
-                                        Trace.WriteLine($"[TryAddDefaultOperations] Added operation from {prcPath} on {fcName}");
-                                        addedOps++;
-                                    }
-                                    catch (Exception opEx)
-                                    {
-                                        string fcName = fc?.Name ?? "null";
-                                        Trace.WriteLine($"[TryAddDefaultOperations] Failed to Add operation {prcPath} on {fcName}: {opEx.Message}");
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Trace.WriteLine($"[TryAddDefaultOperations] Failed to add operation {prcPath}: {ex.Message}");
-                        }
+                        AddOperation(techDir, ProcessConfig.TurningProcessFile, "TurnOperation", fc);
                     }
                 }
 
-                Trace.WriteLine($"[TryAddDefaultOperations] Summary: added {addedOps} operations, total Operations={Document.Operations.Count}");
+                if (reverseOn)
+                {
+                    var backs = FindFeatureChainsBySuffix("_Back");
+                    foreach (var fc in backs)
+                    {
+                        AddOperation(techDir, ProcessConfig.ReverseTurningProcessFile, "TurnOperation", fc);
+                    }
+                }
+
+                // 2. Rough Milling (RoughMill) - ONLY to 3DRoughMilling features (첨1 기준 2줄)
+                if (roughType == 1.0)
+                {
+                    var r0 = FindFreeFormFeatureByName("3DRoughMilling_0Degree");
+                    var r180 = FindFreeFormFeatureByName("3DRoughMilling_180Degree");
+                    if (r0 != null) AddOperation(techDir, ProcessConfig.RoughMillingProcessFile, "RoughMillingOperation", r0);
+                    if (r180 != null) AddOperation(techDir, ProcessConfig.RoughMillingProcessFile, "RoughMillingOperation", r180);
+                }
+
+                // 3. FreeForm Milling
+                var ff0 = FindFreeFormFeatureByName("3DMilling_0Degree");
+                var ff90 = FindFreeFormFeatureByName("3DMilling_90Degree");
+                var ff180 = FindFreeFormFeatureByName("3DMilling_180Degree");
+                var ff270 = FindFreeFormFeatureByName("3DMilling_270Degree");
+                var ffFront = FindFreeFormFeatureByName("3DMilling_FrontFace");
+                var ball0180Target = ff0 ?? ff180;
+                if (ball0180Target != null)
+                {
+                    AddOperation(techDir, ProcessConfig.O180BallMillingProcessFile, "FreeFormMill", ball0180Target);
+                }
+                var ball90270Target = ff90 ?? ff270;
+                if (ball90270Target != null)
+                {
+                    AddOperation(techDir, ProcessConfig.O90_270BallMillingProcessFile, "FreeFormMill", ball90270Target);
+                }
+
+                // 5Axis_Composite under ff0 (첨1 기준)
+                if (ff0 != null)
+                {
+                    AddOperation(techDir, ProcessConfig.CompositeProcessFile, "CompositeMill", ff0);
+                    if (!OperationExistsByName("5Axis_Composite"))
+                    {
+                        TryCreateCompositeSurfacesFromStl();
+                        AddOperation(techDir, ProcessConfig.CompositeProcessFile, "CompositeMill", ff0);
+                    }
+                }
+
+                // Front Face ops under 3DMilling_FrontFace
+                if (ffFront != null)
+                {
+                    AddOperation(techDir, ProcessConfig.FaceMachiningProcessFile, "FreeFormMill", ffFront);
+                    AddOperation(techDir, ProcessConfig.FaceHoleProcessFile, "FaceDrill", ffFront);
+                    AddOperation(techDir, ProcessConfig.ConnectionProcessFile, "FreeFormMill", ffFront);
+                }
+
+                Trace.WriteLine($"[TryAddDefaultOperations] Summary: total Operations={Document.Operations.Count}");
+
+                RemoveDuplicateBallOperations();
             }
             catch (Exception ex)
             {
                 Trace.WriteLine($"[TryAddDefaultOperations] Error: {ex.Message}");
             }
+        }
+
+        private static void AddOperation(string techDir, string prcName, string layerName, IGraphicObject target)
+        {
+            if (string.IsNullOrWhiteSpace(prcName)) return;
+            var prcPath = ResolvePrcPath(techDir, prcName);
+            if (string.IsNullOrEmpty(prcPath))
+            {
+                Trace.WriteLine($"[AddOperation] prc not found: {prcName}");
+                return;
+            }
+
+            try
+            {
+                var util = new TechnologyUtilityClass();
+                var result = util.OpenProcess(prcPath);
+                if (result == null)
+                {
+                    Trace.WriteLine($"[AddOperation] OpenProcess returned null for {prcName}");
+                    return;
+                }
+
+                IEnumerable techs = (result is IEnumerable en) ? en : new[] { result };
+                
+                // 레이어 설정
+                Layer layer = null;
+                try { layer = Document.Layers[layerName]; } catch { }
+                if (layer == null) layer = Document.Layers.Add(layerName);
+                Document.ActiveLayer = layer;
+
+                foreach (var techObj in techs)
+                {
+                    if (techObj is ITechnology tech)
+                    {
+                        try
+                        {
+                            // 템플릿(EST)에 설정된 공구를 사용하도록 ToolID 처리
+                            string currentToolID = GetToolIDFromTech(tech);
+                            Trace.WriteLine($"[AddOperation] Tech {prcName} ToolID from PRC: {currentToolID}");
+
+                            string fileName = Path.GetFileName(prcPath);
+
+                            // PRC별로 기대되는 ToolID가 명확한 경우(특히 90/270) 강제 매핑
+                            // - 3D_2.prc: BM_D2 1회만 남겨야 하므로 PRC에 잘못된 힌트가 있어도 BM_D2로 강제
+                            if (fileName.Equals(ProcessConfig.O90_270BallMillingProcessFile, StringComparison.OrdinalIgnoreCase))
+                            {
+                                var forced = FindBallMillByDiameter(2.0, true) ?? FindBallMillByDiameter(2.0, false);
+                                if (!string.IsNullOrWhiteSpace(forced))
+                                {
+                                    SetToolIDOnTech(tech, forced);
+                                    currentToolID = forced;
+                                    Trace.WriteLine($"[AddOperation] Forced ToolID for {fileName}: {currentToolID}");
+                                }
+                            }
+                            if (fileName.Equals(ProcessConfig.O180BallMillingProcessFile, StringComparison.OrdinalIgnoreCase))
+                            {
+                                var needD4 = !OperationExistsByName("BM_D4");
+                                var targetDiameter = needD4 ? 4.0 : 1.2;
+                                var forced = FindBallMillByDiameter(targetDiameter, true) ?? FindBallMillByDiameter(targetDiameter, false);
+                                if (!string.IsNullOrWhiteSpace(forced))
+                                {
+                                    SetToolIDOnTech(tech, forced);
+                                    currentToolID = forced;
+                                    Trace.WriteLine($"[AddOperation] Forced ToolID for {fileName} (diameter={targetDiameter}): {currentToolID}");
+                                }
+                                else
+                                {
+                                    Trace.WriteLine($"[AddOperation] WARNING: No BallMill tool found for diameter={targetDiameter}. Keep PRC ToolID={currentToolID}");
+                                }
+                            }
+
+                            if (!string.IsNullOrEmpty(currentToolID) && !ToolExistsInDocument(currentToolID))
+                            {
+                                var mappedToolID = TryFindToolIdByHint(currentToolID, prcName);
+                                if (!string.IsNullOrEmpty(mappedToolID))
+                                {
+                                    SetToolIDOnTech(tech, mappedToolID);
+                                    currentToolID = mappedToolID;
+                                    Trace.WriteLine($"[AddOperation] ToolID remapped. prc={prcName}, toolId={currentToolID}");
+                                }
+
+                                if (!ToolExistsInDocument(currentToolID))
+                                {
+                                    Trace.WriteLine($"[AddOperation] ToolID not found in current document tools. prc={prcName}, toolId={currentToolID}");
+                                    continue;
+                                }
+                            }
+
+                            if (IsCompositeProcess(prcName) && tech is ITechLatheMill5xComposite composite)
+                            {
+                                TryConfigureComposite(composite);
+                            }
+                            var intendedName = GetIntendedOperationName(fileName, currentToolID);
+                            if (!string.IsNullOrWhiteSpace(intendedName) && ShouldDedupeByName(fileName, intendedName) && OperationExistsByName(intendedName))
+                            {
+                                Trace.WriteLine($"[AddOperation] Skip duplicate operation: {fileName} -> {intendedName}");
+                                continue;
+                            }
+
+                            TrySetTechBoundaryProfiles(tech, fileName);
+                            TrySetTechZLimits(tech, fileName);
+
+                            var op = Document.Operations.Add(tech, target, Type.Missing);
+                            
+                            if (fileName.Equals(ProcessConfig.TurningProcessFile, StringComparison.OrdinalIgnoreCase) || 
+                                fileName.Equals(ProcessConfig.ReverseTurningProcessFile, StringComparison.OrdinalIgnoreCase)) 
+                                op.Name = "솔리드턴-윤곽가공";
+                            else if (fileName.Equals(ProcessConfig.RoughMillingProcessFile, StringComparison.OrdinalIgnoreCase)) 
+                                op.Name = "Rough Mill 3D";
+                            else if (fileName.Equals(ProcessConfig.CompositeProcessFile, StringComparison.OrdinalIgnoreCase)) 
+                                op.Name = "5Axis_Composite";
+                            else if (fileName.Equals(ProcessConfig.FaceMachiningProcessFile, StringComparison.OrdinalIgnoreCase)) 
+                                op.Name = "EM2.0BALL";
+                            else if (fileName.Equals(ProcessConfig.FaceHoleProcessFile, StringComparison.OrdinalIgnoreCase)) 
+                                op.Name = "NEO_FACE DRILL";
+                            else if (fileName.Equals(ProcessConfig.ConnectionProcessFile, StringComparison.OrdinalIgnoreCase)) 
+                                op.Name = "NEO_CONNECTION";
+                            else if (fileName.Equals(ProcessConfig.O180BallMillingProcessFile, StringComparison.OrdinalIgnoreCase)) 
+                                op.Name = GetBallMillOperationName(currentToolID, "3D");
+                            else if (fileName.Equals(ProcessConfig.O90_270BallMillingProcessFile, StringComparison.OrdinalIgnoreCase)) 
+                                op.Name = GetBallMillOperationName(currentToolID, "3D_2");
+                            
+                            Trace.WriteLine($"[AddOperation] Successfully added operation: {fileName} -> {op.Name}");
+                        }
+                        catch (Exception innerEx)
+                        {
+                            Trace.WriteLine($"[AddOperation] Failed to Add operation from {prcName}: {innerEx.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[AddOperation] CRITICAL ERROR for {prcName}: {ex.Message}");
+            }
+        }
+
+        private static bool OperationExistsByName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            foreach (Operation op in (IEnumerable)Document.Operations)
+            {
+                if (op == null) continue;
+                if (string.Equals(op.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static bool ShouldDedupeByName(string prcFileName, string intendedOpName)
+        {
+            if (string.IsNullOrWhiteSpace(prcFileName)) return false;
+
+            if (prcFileName.Equals(ProcessConfig.CompositeProcessFile, StringComparison.OrdinalIgnoreCase)) return true;
+            if (prcFileName.Equals(ProcessConfig.FaceMachiningProcessFile, StringComparison.OrdinalIgnoreCase)) return true;
+            if (prcFileName.Equals(ProcessConfig.FaceHoleProcessFile, StringComparison.OrdinalIgnoreCase)) return true;
+            if (prcFileName.Equals(ProcessConfig.ConnectionProcessFile, StringComparison.OrdinalIgnoreCase)) return true;
+            if (prcFileName.Equals(ProcessConfig.O180BallMillingProcessFile, StringComparison.OrdinalIgnoreCase)) return true;
+            if (prcFileName.Equals(ProcessConfig.O90_270BallMillingProcessFile, StringComparison.OrdinalIgnoreCase)) return true;
+
+            return false;
+        }
+
+        private static string GetIntendedOperationName(string prcFileName, string currentToolID)
+        {
+            if (string.IsNullOrWhiteSpace(prcFileName)) return null;
+
+            if (prcFileName.Equals(ProcessConfig.CompositeProcessFile, StringComparison.OrdinalIgnoreCase)) return "5Axis_Composite";
+            if (prcFileName.Equals(ProcessConfig.FaceMachiningProcessFile, StringComparison.OrdinalIgnoreCase)) return "EM2.0BALL";
+            if (prcFileName.Equals(ProcessConfig.FaceHoleProcessFile, StringComparison.OrdinalIgnoreCase)) return "NEO_FACE DRILL";
+            if (prcFileName.Equals(ProcessConfig.ConnectionProcessFile, StringComparison.OrdinalIgnoreCase)) return "NEO_CONNECTION";
+
+            if (prcFileName.Equals(ProcessConfig.O180BallMillingProcessFile, StringComparison.OrdinalIgnoreCase))
+            {
+                return GetBallMillOperationName(currentToolID, "3D");
+            }
+            if (prcFileName.Equals(ProcessConfig.O90_270BallMillingProcessFile, StringComparison.OrdinalIgnoreCase))
+            {
+                return GetBallMillOperationName(currentToolID, "3D_2");
+            }
+            return null;
+        }
+
+        private static bool IsCompositeProcess(string prcName)
+        {
+            return !string.IsNullOrWhiteSpace(prcName) && prcName.Equals(ProcessConfig.CompositeProcessFile, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void TryConfigureComposite(ITechLatheMill5xComposite composite)
+        {
+            try
+            {
+                composite.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+
+                var surfaceKey = _compositeDriveSurfaceKey;
+                if (string.IsNullOrWhiteSpace(surfaceKey))
+                {
+                    var surfaceInfo = TryGetAnySurfaceInfo();
+                    if (surfaceInfo == null || surfaceInfo.Item1 != 19)
+                    {
+                        TryCreateCompositeGuideSurfaces();
+                        surfaceInfo = TryGetAnySurfaceInfo();
+                    }
+                    if (surfaceInfo != null && surfaceInfo.Item1 == 19)
+                    {
+                        surfaceKey = surfaceInfo.Item2;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(surfaceKey))
+                {
+                    throw new InvalidOperationException("No suitable guide surface (espSurface) found for 5Axis_Composite DriveSurface.");
+                }
+
+                composite.DriveSurface = "19," + surfaceKey;
+                Trace.WriteLine($"[TryConfigureComposite] DriveSurface set to: {composite.DriveSurface}");
+
+                if (composite.FirstPassPercent <= 0) composite.FirstPassPercent = 10;
+                if (composite.LastPassPercent <= 0) composite.LastPassPercent = 50;
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[TryConfigureComposite] Error: {ex.Message}");
+            }
+        }
+
+        private static void TryCreateCompositeSurfacesFromStl()
+        {
+            try
+            {
+                bool hasCompositeGuideSurface = false;
+                foreach (GraphicObject go in Document.GraphicsCollection)
+                {
+                    if (go.GraphicObjectType != espGraphicObjectType.espSurface) continue;
+                    try
+                    {
+                        if (go.Layer != null && string.Equals(go.Layer.Name, "CompositeGuide", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasCompositeGuideSurface = true;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+                if (hasCompositeGuideSurface) return;
+
+                GraphicObject stl = null;
+                foreach (GraphicObject go in Document.GraphicsCollection)
+                {
+                    if (go.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                    {
+                        stl = go;
+                        break;
+                    }
+                }
+                if (stl == null) return;
+
+                Layer layer = null;
+                try { layer = Document.Layers["CompositeGuide"]; } catch { }
+                if (layer == null) layer = Document.Layers.Add("CompositeGuide");
+                Document.ActiveLayer = layer;
+                try { layer.Visible = true; } catch { }
+
+                SelectionSet sel = GetOrCreateSelectionSet("CompositeGuide");
+                sel.RemoveAll();
+                sel.Add(stl, Type.Missing);
+                sel.Smash(false, true, false, espWireFrameElementType.espWireFrameElementAll, 0.01, 10.0);
+
+                Trace.WriteLine("[TryCreateCompositeSurfacesFromStl] Surfaces created from STL via Smash.");
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[TryCreateCompositeSurfacesFromStl] Error: {ex.Message}");
+            }
+        }
+
+        private static void TryCreateCompositeGuideSurfaces()
+        {
+            try
+            {
+                if (TryCreateCompositeSurfacesFromIges())
+                {
+                    return;
+                }
+                TryCreateCompositeSurfacesFromStl();
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[TryCreateCompositeGuideSurfaces] Error: {ex.Message}");
+            }
+        }
+
+        private static bool TryCreateCompositeSurfacesFromIges()
+        {
+            try
+            {
+                var baseDirs = new List<string>();
+                try
+                {
+                    var d = Connect.DentalHost?.CurrentData?.PrcDirectory;
+                    if (!string.IsNullOrWhiteSpace(d)) baseDirs.Add(d);
+                }
+                catch { }
+                baseDirs.Add(@"C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin");
+
+                string surfaceDir = null;
+                foreach (var baseDir in baseDirs)
+                {
+                    if (string.IsNullOrWhiteSpace(baseDir)) continue;
+                    if (!Directory.Exists(baseDir)) continue;
+                    var candidate = Path.Combine(baseDir, "Viles", "Surface");
+                    if (Directory.Exists(candidate))
+                    {
+                        surfaceDir = candidate;
+                        break;
+                    }
+                }
+                if (string.IsNullOrWhiteSpace(surfaceDir)) return false;
+
+                bool spindleSide = GetSpindleSideFromDocument();
+
+                var project = spindleSide ? "Project2.igs" : "Project1.igs";
+                var extrude = spindleSide ? "ExtrudeL.igs" : "ExtrudeR.igs";
+
+                var projectPath = Path.Combine(surfaceDir, project);
+                var extrudePath = Path.Combine(surfaceDir, extrude);
+
+                if (!File.Exists(projectPath) || !File.Exists(extrudePath))
+                {
+                    return false;
+                }
+
+                if (Document == null)
+                {
+                    return false;
+                }
+
+                Document.MergeFile(projectPath, Type.Missing);
+                var firstSurfaceKey = FindFirstSurfaceKey();
+                if (string.IsNullOrWhiteSpace(firstSurfaceKey))
+                {
+                    return false;
+                }
+
+                _compositeDriveSurfaceKey = firstSurfaceKey;
+
+                Document.MergeFile(extrudePath, Type.Missing);
+                Trace.WriteLine($"[TryCreateCompositeSurfacesFromIges] Merged IGES: {project} + {extrude}, firstSurfaceKey={firstSurfaceKey}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[TryCreateCompositeSurfacesFromIges] Error: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool GetSpindleSideFromDocument()
+        {
+            try
+            {
+                var setup = Document?.LatheMachineSetup;
+                if (setup?.Spindles == null || setup.Spindles.Count < 1)
+                {
+                    return true;
+                }
+                var spindle = setup.Spindles[1];
+                if (spindle == null) return true;
+                switch (spindle.Orientation)
+                {
+                    case espSpindleOrientation.espSpindleOrientationRightPositive:
+                        return false;
+                    case espSpindleOrientation.espSpindleOrientationLeftPositive:
+                        return true;
+                    default:
+                        return true;
+                }
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static string FindFirstSurfaceKey()
+        {
+            try
+            {
+                int count = Document.GraphicsCollection.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    var go = Document.GraphicsCollection[i] as GraphicObject;
+                    if (go == null) continue;
+                    if (go.GraphicObjectType == espGraphicObjectType.espSurface)
+                    {
+                        return go.Key;
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static Tuple<int, string> TryGetAnySurfaceInfo()
+        {
+            try
+            {
+                GraphicObject bestSurface = null;
+                double bestKey = double.MinValue;
+                foreach (GraphicObject go in Document.GraphicsCollection)
+                {
+                    if (go.GraphicObjectType != espGraphicObjectType.espSurface) continue;
+                    try
+                    {
+                        if (go.Layer == null || !string.Equals(go.Layer.Name, "CompositeGuide", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    var keyStr = go.Key;
+                    if (!double.TryParse(keyStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var keyNum))
+                    {
+                        keyNum = 0;
+                    }
+
+                    if (bestSurface == null || keyNum > bestKey)
+                    {
+                        bestSurface = go;
+                        bestKey = keyNum;
+                    }
+                }
+                if (bestSurface == null)
+                {
+                    foreach (GraphicObject go in Document.GraphicsCollection)
+                    {
+                        if (go.GraphicObjectType != espGraphicObjectType.espSurface) continue;
+
+                        var keyStr = go.Key;
+                        if (!double.TryParse(keyStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var keyNum))
+                        {
+                            keyNum = 0;
+                        }
+
+                        if (bestSurface == null || keyNum > bestKey)
+                        {
+                            bestSurface = go;
+                            bestKey = keyNum;
+                        }
+                    }
+                }
+                if (bestSurface != null)
+                {
+                    Trace.WriteLine($"[TryGetAnySurfaceInfo] Selected espSurface: Key={bestSurface.Key}");
+                    return new Tuple<int, string>(19, bestSurface.Key);
+                }
+                foreach (GraphicObject go in Document.GraphicsCollection)
+                {
+                    if (go.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                    {
+                        Trace.WriteLine($"[TryGetAnySurfaceInfo] Found espSTL_Model: Key={go.Key}, Type={(int)go.GraphicObjectType}");
+                        return new Tuple<int, string>((int)go.GraphicObjectType, go.Key);
+                    }
+                }
+            }
+            catch (Exception ex) { Trace.WriteLine($"[TryGetAnySurfaceInfo] Error: {ex.Message}"); }
+            return null;
+        }
+
+        private static bool ToolExistsInDocument(string toolId)
+        {
+            if (string.IsNullOrWhiteSpace(toolId)) return false;
+            foreach (Tool t in (IEnumerable)Document.Tools)
+            {
+                if (string.Equals(t.ToolID, toolId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static string GetBallMillOperationName(string toolId, string fallback)
+        {
+            if (!string.IsNullOrWhiteSpace(toolId))
+            {
+                var upper = toolId.Trim().ToUpperInvariant();
+                if (upper.StartsWith("BM_D", StringComparison.Ordinal))
+                {
+                    return upper;
+                }
+
+                if (TryParseDiameterFromHint(upper, out var diameter) && diameter > 0)
+                {
+                    var rounded = Math.Round(diameter, 3);
+                    if (Math.Abs(rounded - Math.Round(rounded)) < 0.001)
+                    {
+                        return "BM_D" + ((int)Math.Round(rounded)).ToString(CultureInfo.InvariantCulture);
+                    }
+                    return "BM_D" + rounded.ToString("0.###", CultureInfo.InvariantCulture);
+                }
+            }
+            return fallback;
+        }
+
+        private static FeatureChain FindLatestFeatureChainInLayer(string layerName, string excludeKey = null)
+        {
+            if (string.IsNullOrWhiteSpace(layerName)) return null;
+
+            FeatureChain best = null;
+            double bestKey = double.MinValue;
+
+            foreach (FeatureChain fc in Document.FeatureChains)
+            {
+                if (fc?.Layer == null) continue;
+                if (!string.Equals(fc.Layer.Name, layerName, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!string.IsNullOrWhiteSpace(excludeKey) && string.Equals(fc.Key, excludeKey, StringComparison.OrdinalIgnoreCase)) continue;
+
+                if (double.TryParse(fc.Key, NumberStyles.Float, CultureInfo.InvariantCulture, out var keyNum))
+                {
+                    if (best == null || keyNum > bestKey)
+                    {
+                        best = fc;
+                        bestKey = keyNum;
+                    }
+                }
+                else
+                {
+                    if (best == null)
+                    {
+                        best = fc;
+                        bestKey = 0;
+                    }
+                }
+            }
+
+            return best;
+        }
+
+        private static double CalculateMinY(FeatureChain fc)
+        {
+            if (fc == null) return 0;
+
+            double minY = double.MaxValue;
+            double step = 0.01;
+            int steps;
+
+            try
+            {
+                steps = (int)Math.Round(fc.Length / step, 0);
+            }
+            catch
+            {
+                steps = 0;
+            }
+
+            if (steps <= 0)
+            {
+                try
+                {
+                    var p = fc.Extremity(espExtremityType.espExtremityEnd);
+                    minY = Math.Min(minY, p.Y);
+                }
+                catch { }
+                try
+                {
+                    var p = fc.Extremity(espExtremityType.espExtremityStart);
+                    minY = Math.Min(minY, p.Y);
+                }
+                catch { }
+
+                return minY == double.MaxValue ? 0 : minY;
+            }
+
+            for (int i = 0; i <= steps; i++)
+            {
+                try
+                {
+                    var p = fc.PointAlong(i * step);
+                    if (p != null && p.Y < minY) minY = p.Y;
+                }
+                catch { }
+            }
+
+            return minY == double.MaxValue ? 0 : minY;
+        }
+
+        private static void EnsureTurningProfiles(FeatureChain turning, bool spindleSide, string turningLayerName)
+        {
+            if (turning == null) return;
+
+            double barRadius = Document.LatheMachineSetup.BarDiameter / 2.0;
+            LowerY = CalculateMinY(turning);
+
+            try
+            {
+                TurningTimes = (int)Math.Floor((barRadius - LowerY) / TurningDepth);
+                double ratio = (barRadius - LowerY) / TurningDepth;
+                if (ratio - TurningTimes > 0.1 && ratio - TurningTimes + TurningDepth > 1.05)
+                {
+                    TurningTimes++;
+                }
+                if (TurningTimes == 2) TurningTimes = 3;
+                if (TurningTimes == 1) TurningTimes = 2;
+                if (TurningTimes >= 15) TurningTimes = 15;
+            }
+            catch
+            {
+                TurningTimes = 4;
+            }
+
+            int baseTimes = Math.Max(TurningTimes, 4);
+
+            for (int i = 1; i <= 3; i++)
+            {
+                string tempLayerName = "TurningProfileTemp" + i.ToString(CultureInfo.InvariantCulture);
+                try { Document.Layers.Remove(tempLayerName); } catch { }
+                Layer tempLayer = null;
+                try { tempLayer = Document.Layers.Add(tempLayerName); } catch { tempLayer = Document.Layers[tempLayerName]; }
+                Document.ActiveLayer = tempLayer;
+
+                SelectionSet sel = GetOrCreateSelectionSet("Temp");
+                sel.RemoveAll();
+                try { sel.AddCopiesToSelectionSet = true; } catch { }
+                sel.Add(turning, Type.Missing);
+
+                double offsetY = (baseTimes - i) * TurningDepth;
+                sel.Translate(0.0, offsetY, 0.0, 1);
+                Document.Refresh(Type.Missing, Type.Missing);
+
+                var created = FindLatestFeatureChainInLayer(tempLayerName, turning.Key);
+                if (created != null)
+                {
+                    if (!spindleSide)
+                    {
+                        try { created.Reverse(); } catch { }
+                    }
+                    created.Name = "TurningProfile" + i.ToString(CultureInfo.InvariantCulture);
+                    try { created.Layer = Document.Layers[turningLayerName]; } catch { }
+                }
+
+                try { Document.Layers.Remove(tempLayerName); } catch { }
+            }
+        }
+
+        private static string GetToolIDFromTech(ITechnology tech)
+        {
+            if (tech is ITechLatheMillContour latheMill) return latheMill.ToolID;
+            if (tech is ITechLatheContour latheContour) return latheContour.ToolID;
+            if (tech is ITechLatheMill5xComposite composite) return composite.ToolID;
+            if (tech is ITechLatheMoldRoughing roughing) return roughing.ToolID;
+            if (tech is ITechLatheMoldZLevel zlevel) return zlevel.ToolID;
+            try
+            {
+                var prop = tech?.GetType().GetProperty("ToolID");
+                if (prop != null && prop.PropertyType == typeof(string))
+                {
+                    return prop.GetValue(tech, null) as string;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static void SetToolIDOnTech(ITechnology tech, string toolId)
+        {
+            if (tech == null || string.IsNullOrWhiteSpace(toolId)) return;
+            if (tech is ITechLatheMillContour latheMill) latheMill.ToolID = toolId;
+            else if (tech is ITechLatheContour latheContour) latheContour.ToolID = toolId;
+            else if (tech is ITechLatheMill5xComposite composite) composite.ToolID = toolId;
+            else if (tech is ITechLatheMoldRoughing roughing) roughing.ToolID = toolId;
+            else if (tech is ITechLatheMoldZLevel zlevel) zlevel.ToolID = toolId;
+            else
+            {
+                try
+                {
+                    var prop = tech.GetType().GetProperty("ToolID");
+                    if (prop != null && prop.CanWrite && prop.PropertyType == typeof(string))
+                    {
+                        prop.SetValue(tech, toolId, null);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private static void TrySetTechBoundaryProfiles(ITechnology tech, string prcFileName)
+        {
+            if (tech == null || string.IsNullOrWhiteSpace(prcFileName)) return;
+
+            string boundaryName = null;
+            if (prcFileName.Equals(ProcessConfig.RoughMillingProcessFile, StringComparison.OrdinalIgnoreCase)) boundaryName = "RoughBoundry1";
+            else if (prcFileName.Equals(ProcessConfig.O180BallMillingProcessFile, StringComparison.OrdinalIgnoreCase)) boundaryName = "Boundry1";
+            else if (prcFileName.Equals(ProcessConfig.O90_270BallMillingProcessFile, StringComparison.OrdinalIgnoreCase)) boundaryName = "Boundry2";
+            else return;
+
+            FeatureChain fc = null;
+            try { fc = FindFeatureChainByName(boundaryName); } catch { }
+            if (fc == null) return;
+
+            try
+            {
+                var prop = tech.GetType().GetProperty("BoundaryProfiles");
+                if (prop == null || !prop.CanWrite || prop.PropertyType != typeof(string)) return;
+                prop.SetValue(tech, "6," + fc.Key, null);
+            }
+            catch { }
+        }
+
+        private static void TrySetTechZLimits(ITechnology tech, string prcFileName)
+        {
+            if (tech == null || string.IsNullOrWhiteSpace(prcFileName)) return;
+            if (!prcFileName.Equals(ProcessConfig.O180BallMillingProcessFile, StringComparison.OrdinalIgnoreCase) &&
+                !prcFileName.Equals(ProcessConfig.O90_270BallMillingProcessFile, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            try
+            {
+                var topProp = tech.GetType().GetProperty("TopZLimit");
+                var bottomProp = tech.GetType().GetProperty("BottomZLimit");
+                if (topProp == null || bottomProp == null) return;
+                if (!topProp.CanWrite || !bottomProp.CanWrite) return;
+
+                double top = 1.0;
+                double bottom = -1.0 * (Math.Abs(EndXValue) + Math.Abs(DownZ));
+
+                if (topProp.PropertyType == typeof(double)) topProp.SetValue(tech, top, null);
+                if (bottomProp.PropertyType == typeof(double)) bottomProp.SetValue(tech, bottom, null);
+            }
+            catch { }
+        }
+
+        private static string TryFindToolIdByHint(string toolIdHint, string prcName)
+        {
+            if (string.IsNullOrWhiteSpace(toolIdHint)) return null;
+            var hint = toolIdHint.Trim();
+            var upper = hint.ToUpperInvariant();
+
+            double diameter;
+            var wantsBall = upper.Contains("BM") || upper.Contains("BALL") || (!string.IsNullOrWhiteSpace(prcName) && prcName.ToUpperInvariant().Contains("BALL"));
+            if (!TryParseDiameterFromHint(upper, out diameter))
+            {
+                return null;
+            }
+
+            if (wantsBall)
+            {
+                var preferred = FindBallMillByDiameter(diameter, true);
+                if (!string.IsNullOrEmpty(preferred)) return preferred;
+                var any = FindBallMillByDiameter(diameter, false);
+                if (!string.IsNullOrEmpty(any)) return any;
+            }
+            return null;
+        }
+
+        private static bool TryParseDiameterFromHint(string upperHint, out double diameter)
+        {
+            diameter = 0;
+            if (string.IsNullOrWhiteSpace(upperHint)) return false;
+
+            var idx = upperHint.IndexOf("BM_D", StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                return TryParseNumberToken(upperHint, idx + 4, out diameter);
+            }
+
+            idx = upperHint.IndexOf("EM", StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                return TryParseNumberToken(upperHint, idx + 2, out diameter);
+            }
+
+            idx = upperHint.LastIndexOf('D');
+            if (idx >= 0)
+            {
+                return TryParseNumberToken(upperHint, idx + 1, out diameter);
+            }
+
+            return false;
+        }
+
+        private static bool TryParseNumberToken(string s, int startIndex, out double value)
+        {
+            value = 0;
+            if (string.IsNullOrEmpty(s) || startIndex < 0 || startIndex >= s.Length) return false;
+            var i = startIndex;
+            while (i < s.Length)
+            {
+                var c = s[i];
+                if ((c >= '0' && c <= '9') || c == '.')
+                {
+                    i++;
+                    continue;
+                }
+                break;
+            }
+            if (i <= startIndex) return false;
+            var token = s.Substring(startIndex, i - startIndex);
+            return double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static string FindBallMillByDiameter(double diameter, bool preferYPlus)
+        {
+            string fallback = null;
+            foreach (Tool item in (IEnumerable)Document.Tools)
+            {
+                if (item.ToolStyle != espToolType.espMillToolBallMill) continue;
+                var bm = item as ToolMillBallMill;
+                if (bm == null) continue;
+                if (Math.Abs(bm.ToolDiameter - diameter) > 0.1) continue;
+
+                if (preferYPlus)
+                {
+                    if (bm.Orientation == espMillToolOrientation.espMillToolOrientationYPlus)
+                    {
+                        return bm.ToolID;
+                    }
+                    if (fallback == null) fallback = bm.ToolID;
+                }
+                else
+                {
+                    return bm.ToolID;
+                }
+            }
+
+            // 일부 템플릿에서는 BallMill 캐스팅이 실패하거나 ToolStyle이 다른데 ToolDiameter만 제공되는 경우가 있어 fallback
+            foreach (Tool item in (IEnumerable)Document.Tools)
+            {
+                if (!TryGetToolDiameter(item, out var d)) continue;
+                if (Math.Abs(d - diameter) > 0.1) continue;
+
+                if (preferYPlus)
+                {
+                    if (IsOrientationYPlus(item))
+                    {
+                        return item.ToolID;
+                    }
+                    if (fallback == null) fallback = item.ToolID;
+                }
+                else
+                {
+                    return item.ToolID;
+                }
+            }
+
+            return fallback;
+        }
+
+        private static bool TryGetToolDiameter(object tool, out double diameter)
+        {
+            diameter = 0;
+            if (tool == null) return false;
+            try
+            {
+                var prop = tool.GetType().GetProperty("ToolDiameter");
+                if (prop == null) return false;
+                var v = prop.GetValue(tool, null);
+                if (v is double dd)
+                {
+                    diameter = dd;
+                    return true;
+                }
+                if (v is float ff)
+                {
+                    diameter = ff;
+                    return true;
+                }
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsOrientationYPlus(object tool)
+        {
+            if (tool == null) return false;
+            try
+            {
+                var prop = tool.GetType().GetProperty("Orientation");
+                if (prop == null) return false;
+                var v = prop.GetValue(tool, null);
+                if (v is espMillToolOrientation o)
+                {
+                    return o == espMillToolOrientation.espMillToolOrientationYPlus;
+                }
+                if (v is int i)
+                {
+                    return i == (int)espMillToolOrientation.espMillToolOrientationYPlus;
+                }
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static List<FeatureChain> FindFeatureChainsBySuffix(string suffix)
+        {
+            var list = new List<FeatureChain>();
+            foreach (FeatureChain fc in Document.FeatureChains)
+            {
+                if (fc.Name != null && fc.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    list.Add(fc);
+                }
+            }
+            return list;
         }
 
         private static void EnsureToolExists(ITechnology tech)
@@ -282,11 +1321,19 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
+                var fromSettings = TryResolvePrcFromDentalHost(targetFileName);
+                if (!string.IsNullOrWhiteSpace(fromSettings))
+                {
+                    Trace.WriteLine($"[ResolvePrcPath] PRC resolved from settings: {fromSettings}");
+                    return fromSettings;
+                }
+
                 var files = Directory.GetFiles(rootDir, "*.prc", SearchOption.AllDirectories);
                 foreach (var f in files)
                 {
                     if (string.Equals(Path.GetFileName(f), targetFileName, StringComparison.OrdinalIgnoreCase))
                     {
+                        Trace.WriteLine($"[ResolvePrcPath] Found PRC file: {f}");
                         return f;
                     }
                 }
@@ -299,10 +1346,104 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        private static string TryResolvePrcFromDentalHost(string prcFileName)
+        {
+            try
+            {
+                var data = Connect.DentalHost?.CurrentData;
+                if (data == null || data.PrcFilePath == null)
+                {
+                    return null;
+                }
+
+                for (int i = 1; i < data.PrcFilePath.Length; i++)
+                {
+                    var raw = data.PrcFilePath[i];
+                    if (string.IsNullOrWhiteSpace(raw)) continue;
+                    var path = raw.Trim();
+                    if (!Path.IsPathRooted(path) && !string.IsNullOrWhiteSpace(data.PrcDirectory))
+                    {
+                        path = Path.Combine(data.PrcDirectory, path);
+                    }
+
+                    if (File.Exists(path))
+                    {
+                        if (string.Equals(Path.GetFileName(path), prcFileName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return path;
+                        }
+                        continue;
+                    }
+
+                    if (Directory.Exists(path))
+                    {
+                        var candidate = Path.Combine(path, prcFileName);
+                        if (File.Exists(candidate))
+                        {
+                            return candidate;
+                        }
+
+                        var files = Directory.GetFiles(path, "*.prc", SearchOption.TopDirectoryOnly);
+                        foreach (var f in files)
+                        {
+                            if (string.Equals(Path.GetFileName(f), prcFileName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                return f;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                return null;
+            }
+
+            return null;
+        }
+
+        private static void RemoveDuplicateBallOperations()
+        {
+            try
+            {
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var targets = new[] { "BM_D4", "BM_D2", "BM_D1.2", "BM_D1,2", "BM_D1_2" };
+
+                for (int i = Document.Operations.Count; i >= 1; i--)
+                {
+                    Operation op = null;
+                    try { op = Document.Operations[i]; } catch { }
+                    if (op == null) continue;
+
+                    var name = op.Name?.Trim();
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+
+                    var upper = name.ToUpperInvariant();
+                    var isBall = upper.StartsWith("BM_D");
+                    var isTarget = targets.Any(t => upper.Equals(t.Replace(",", ".").ToUpperInvariant()));
+
+                    if (!isBall && !isTarget) continue;
+
+                    if (seen.Contains(upper))
+                    {
+                        try { Document.Operations.Remove(i); } catch { }
+                        continue;
+                    }
+                    seen.Add(upper);
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[RemoveDuplicateBallOperations] Error: {ex.Message}");
+            }
+        }
+
         public static void Clean()
         {
             try
             {
+                _compositeDriveSurfaceKey = null;
+
                 // FeatureChains 삭제
                 while (Document.FeatureChains.Count > 0)
                 {
@@ -314,7 +1455,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     ProcessConfig.BoundryLayerName, ProcessConfig.TurningLayerName, 
                     ProcessConfig.RoughMillingLayerName, "RotateCenter", 
                     "GeoTemp", "FreeFormLayer", "FaceDrill", "TurnOperation", 
-                    "RoughMillingOperation", "FreeFormMill", "EndTurning" 
+                    "RoughMillingOperation", "FreeFormMill", "CompositeMill", "EndTurning" 
                 };
 
                 foreach (string layerName in layersToCleanup)
@@ -332,7 +1473,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                SelectionSet sel = GetOrCreateSelectionSet("TempAlign");
+                SelectionSet sel = GetOrCreateSelectionSet("Temp");
                 sel.RemoveAll();
 
                 foreach (GraphicObject obj in Document.GraphicsCollection)
@@ -346,8 +1487,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 if (sel.Count == 0) return;
 
-                // 원본 MoveSTL_Module.RotateSTL() 로직 반영
-                // XYZ 평면에서 프로파일 분석을 통해 STL 방향 감지
+                // MoveSTL_Module.RotateSTL() 로직
                 try { Document.Layers.Remove("Temp"); } catch { }
                 Document.Layers.Add("Temp");
                 Document.ActiveLayer = Document.Layers["Temp"];
@@ -355,59 +1495,87 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 Document.FeatureRecognition.CreatePartProfileCrossSection(sel, Document.Planes["XYZ"], 
                     espGraphicObjectReturnType.espFeatureChains, false);
                 
-                FeatureChain profileFC = null;
-                int maxArea = -1000;
-                int maxAreaIndex = -1;
-                
-                for (int i = 1; i <= Document.FeatureChains.Count; i++)
-                {
-                    FeatureChain fc = Document.FeatureChains[i];
-                    if (fc.IsClosed && fc.Area > maxArea)
-                    {
-                        maxArea = (int)Math.Round(fc.Area);
-                        maxAreaIndex = i;
-                    }
-                }
-
-                if (maxAreaIndex > 0)
-                {
-                    profileFC = Document.FeatureChains[maxAreaIndex];
-                    double minX = 1000, maxX = -1000;
-                    
-                    for (double d = 0; d <= profileFC.Length; d += 0.1)
-                    {
-                        Point p = profileFC.PointAlong(d);
-                        if (p.X < minX) minX = p.X;
-                        if (p.X > maxX) maxX = p.X;
-                    }
-
-                    // 회전 필요 여부 판단
-                    bool needRotate = false;
-                    if (minX < 0 && maxX > 0) needRotate = true;
-
-                    Document.Layers.Remove("Temp");
-
-                    if (needRotate)
-                    {
-                        // Y축 기준 회전 (원본 로직에서는 Z축 또는 Y축 기준 회전)
-                        Point p0 = Document.GetPoint(0, 0, 0);
-                        Point pZ = Document.GetPoint(0, 0, 1);
-                        Segment zAxis = Document.GetSegment(p0, pZ);
-                        
-                        if (spindleSide)
-                        {
-                            sel.Rotate(zAxis, Math.PI / 2.0, Type.Missing);
-                        }
-                        else
-                        {
-                            sel.Rotate(zAxis, -Math.PI / 2.0, Type.Missing);
-                        }
-                        
-                        Trace.WriteLine($"[RotateSTL] STL rotated for alignment, spindleSide={spindleSide}");
-                    }
-                }
+                bool flag = false;
+                if (Document.FeatureChains.Count == 0) flag = true;
                 else
                 {
+                    int maxAreaIdx = -1;
+                    double maxArea = -1000;
+                    for (int i = 1; i <= Document.FeatureChains.Count; i++)
+                    {
+                        var fc = Document.FeatureChains[i];
+                        if (fc.IsClosed && fc.Area > maxArea)
+                        {
+                            maxArea = fc.Area;
+                            maxAreaIdx = i;
+                        }
+                    }
+
+                    if (maxAreaIdx > 0)
+                    {
+                        var profileFC = Document.FeatureChains[maxAreaIdx];
+                        double minX = 1000, maxX = -1000;
+                        for (int i = 0; i <= (int)Math.Round(profileFC.Length / 0.1); i++)
+                        {
+                            Point p = profileFC.PointAlong(i * 0.1);
+                            if (p.X > maxX) maxX = p.X;
+                            if (p.X < minX) minX = p.X;
+                        }
+                        if (minX < 0.0 && maxX > 0.0) flag = true;
+                    }
+                }
+
+                try { Document.Layers.Remove("Temp"); } catch { }
+
+                if (flag)
+                {
+                    Point p0 = Document.GetPoint(0, 0, 0);
+                    Point pZ = Document.GetPoint(0, 0, 1);
+                    Segment segmentZ = Document.GetSegment(p0, pZ);
+                    Point pY = Document.GetPoint(0, 1, 0);
+                    Segment segmentY = Document.GetSegment(p0, pY);
+
+                    // CreatePartProfileShadow for Y-axis check
+                    Document.Layers.Add("Temp");
+                    Document.ActiveLayer = Document.Layers["Temp"];
+                    Document.FeatureRecognition.CreatePartProfileShadow(sel, Document.Planes["XYZ"], espGraphicObjectReturnType.espFeatureChains);
+                    
+                    if (Document.FeatureChains.Count > 0)
+                    {
+                        var fc = Document.FeatureChains[Document.FeatureChains.Count];
+                        double minY = 1000, maxY = -1000;
+                        for (int i = 0; i <= (int)Math.Round(fc.Length / 0.1); i++)
+                        {
+                            Point p = fc.PointAlong(i * 0.1);
+                            if (p.Y > maxY) maxY = p.Y;
+                            if (p.Y < minY) minY = p.Y;
+                        }
+
+                        int num10 = 0, num11 = 0;
+                        if (minY <= 0.1 && maxY <= 0.1) { num10 = 3; num11 = -1; }
+                        else if (minY >= -0.1 && maxY >= 0.0) { num10 = 3; num11 = 1; }
+                        else if (minY < 0.1 && maxY > -0.1) { num10 = 2; }
+
+                        if (num10 == 2)
+                        {
+                            Document.FeatureRecognition.CreatePartProfileShadow(sel, Document.Planes["YZX"], espGraphicObjectReturnType.espFeatureChains);
+                            var fcYZ = Document.FeatureChains[Document.FeatureChains.Count];
+                            double minZ = 1000, maxZ = -1000;
+                            for (int i = 0; i <= (int)Math.Round(fcYZ.Length / 0.1); i++)
+                            {
+                                Point p = fcYZ.PointAlong(i * 0.1);
+                                if (p.Z > maxZ) maxZ = p.Z;
+                                if (p.Z < minZ) minZ = p.Z;
+                            }
+                            if (minZ <= 0.1 && maxZ <= 0.1) num11 = -1;
+                            else if (minZ >= -0.1 && maxZ >= 0.0) num11 = 1;
+                        }
+
+                        if (num10 == 3 && num11 == -1) sel.Rotate(segmentZ, spindleSide ? Math.PI / 2.0 : -Math.PI / 2.0, Type.Missing);
+                        else if (num10 == 3 && num11 == 1) sel.Rotate(segmentZ, spindleSide ? -Math.PI / 2.0 : Math.PI / 2.0, Type.Missing);
+                        else if (num10 == 2 && num11 == -1) sel.Rotate(segmentY, spindleSide ? -Math.PI / 2.0 : Math.PI / 2.0, Type.Missing);
+                        else if (num10 == 2 && num11 == 1) sel.Rotate(segmentY, spindleSide ? Math.PI / 2.0 : -Math.PI / 2.0, Type.Missing);
+                    }
                     try { Document.Layers.Remove("Temp"); } catch { }
                 }
             }
@@ -421,7 +1589,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                SelectionSet sel = GetOrCreateSelectionSet("TempMove");
+                SelectionSet sel = GetOrCreateSelectionSet("Temp");
                 sel.RemoveAll();
 
                 foreach (GraphicObject obj in Document.GraphicsCollection)
@@ -435,13 +1603,12 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 if (sel.Count == 0) return;
 
-                // 원본 MoveSTL_Module.MoveSTL() 로직 반영
+                // MoveSTL_Module.MoveSTL() 로직
+                // 섀도우 프로파일을 생성하여 X축(ESPRIT의 Z축 방향) 경계를 찾음
                 Document.FeatureRecognition.CreatePartProfileShadow(sel, Document.Planes["XYZ"], espGraphicObjectReturnType.espFeatureChains);
                 FeatureChain fc = Document.FeatureChains[Document.FeatureChains.Count];
                 
-                double bboxLen = fc.BoundingBoxLength;
                 double minX = 9999999, maxX = -9999999;
-                
                 for (double d = 0; d <= fc.Length; d += 0.01)
                 {
                     Point p = fc.PointAlong(d);
@@ -449,21 +1616,15 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     if (p.X > maxX) maxX = p.X;
                 }
 
-                // 원본 로직: spindleSide에 따라 다른 이동
-                if (spindleSide)
-                {
-                    // Back Spindle: 좌측으로 이동
-                    sel.Translate(-bboxLen - minX, 0, 0, Type.Missing);
-                    Trace.WriteLine($"[MoveSTL] Back spindle: minX={minX:F4}, shift={-bboxLen - minX:F4}");
-                }
-                else
-                {
-                    // Front Spindle: 우측으로 이동
-                    sel.Translate(bboxLen - maxX, 0, 0, Type.Missing);
-                    Trace.WriteLine($"[MoveSTL] Front spindle: maxX={maxX:F4}, shift={bboxLen - maxX:F4}");
-                }
+                // 원점 정렬: 모델의 왼쪽 끝(minX)을 X=0으로 이동 (사용자 요청: Z_max가 원점으로)
+                // ESPRIT의 터닝 환경에서 모델의 왼쪽 끝이 원점(0)에 위치해야 함
+                double shiftX = -minX;
+                sel.Translate(shiftX, 0, 0, Type.Missing);
 
-                // 임시 FeatureChain 정리
+                EndXValue = maxX + shiftX;
+                
+                Trace.WriteLine($"[MoveSTL] Alignment: minX={minX:F4}, maxX={maxX:F4}, shift={shiftX:F4}, EndXValue={EndXValue:F4}.");
+
                 try { Document.FeatureChains.Remove(fc.Key); } catch { }
             }
             catch (Exception ex)
@@ -473,41 +1634,54 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         }
 
         public static void Boundry(bool spindleSide, double roughType)
-        {
+        { 
             try
             {
-                try { Document.Layers.Remove(ProcessConfig.BoundryLayerName); } catch { }
-                Layer layer = Document.Layers.Add(ProcessConfig.BoundryLayerName);
+                try { Document.Layers.Remove("Boundry"); } catch { }
+                Layer layer = Document.Layers.Add("Boundry");
                 Document.ActiveLayer = layer;
 
-                // ProcessConfig에서 Point1Y, Point2Y 값 사용
-                Point p1 = Document.GetPoint(0, ProcessConfig.Point1Y, 0); 
-                Point p2 = Document.GetPoint(-20.0, ProcessConfig.Point2Y, 0);
+                double barDia = Document.LatheMachineSetup.BarDiameter;
+                Point p1 = Document.GetPoint(0, barDia / 2.0, 0);
+                Point p2 = Document.GetPoint(-20.0, -barDia / 2.0, 0);
 
-                // 세그먼트로 경계 생성 (Line.Add 시 U/V/W 벡터 인자 누락 오류 방지)
-                Segment segment = Document.GetSegment(p1, p2);
-                FeatureChain fc = Document.FeatureChains.Add(p1);
-                fc.Add(segment);
-                fc.Name = ProcessConfig.Boundry1Name;
+                // Boundry1 (Blue)
+                FeatureChain fc1 = Document.FeatureChains.Add(p1);
+                fc1.Add(Document.GetSegment(p1, Document.GetPoint(p1.X, p2.Y, 0)));
+                fc1.Add(Document.GetSegment(Document.GetPoint(p1.X, p2.Y, 0), p2));
+                fc1.Add(Document.GetSegment(p2, Document.GetPoint(p2.X, p1.Y, 0)));
+                fc1.Add(Document.GetSegment(Document.GetPoint(p2.X, p1.Y, 0), p1));
+                fc1.Color = 0xFF0000; // Blue (ESPRIT BGR)
+                fc1.Name = "Boundry1";
 
-                // UVW 평면 설정 (정답 앱과 동일하게)
-                EnsureWorkPlanes();
+                // RoughBoundry1 (Green)
+                FeatureChain rfc = Document.FeatureChains.Add(p1);
+                rfc.Add(Document.GetSegment(p1, Document.GetPoint(p1.X, p2.Y, 0)));
+                rfc.Add(Document.GetSegment(Document.GetPoint(p1.X, p2.Y, 0), p2));
+                rfc.Add(Document.GetSegment(p2, Document.GetPoint(p2.X, p1.Y, 0)));
+                rfc.Add(Document.GetSegment(Document.GetPoint(p2.X, p1.Y, 0), p1));
+                rfc.Color = 0x00FF00; // Green
+                rfc.Name = "RoughBoundry1";
+
+                // Boundry2 (Blue - Rotated from fc1)
                 Point axisStart = Document.GetPoint(-20, 0, 0);
                 Point axisEnd = Document.GetPoint(20, 0, 0);
                 Segment axis = Document.GetSegment(axisStart, axisEnd);
 
-                SelectionSet sel = GetOrCreateSelectionSet("TempBoundry");
+                SelectionSet sel = GetOrCreateSelectionSet("Temp");
                 sel.RemoveAll();
-                sel.Add(fc, Type.Missing);
-                sel.AddCopiesToSelectionSet = true;
+                sel.Add(fc1, Type.Missing);
                 sel.Rotate(axis, Math.PI / 2.0, 1);
                 
-                if (sel.Count > 1)
+                foreach (FeatureChain childFc in Document.FeatureChains)
                 {
-                    FeatureChain fc2 = (FeatureChain)sel[2];
-                    fc2.Name = ProcessConfig.Boundry2Name;
+                    if (childFc.Key != fc1.Key && childFc.Key != rfc.Key && (string.IsNullOrEmpty(childFc.Name) || childFc.Name == "Boundry1"))
+                    {
+                        childFc.Name = "Boundry2";
+                        childFc.Color = 0xFF0000;
+                        break;
+                    }
                 }
-                sel.RemoveAll();
             }
             catch (Exception ex)
             {
@@ -547,15 +1721,15 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             plane.Ux = ux; plane.Uy = uy; plane.Uz = uz;
             plane.Vx = vx; plane.Vy = vy; plane.Vz = vz;
             plane.Wx = wx; plane.Wy = wy; plane.Wz = wz;
-            plane.IsView = false;
+            plane.IsView = true; // UVW 축 표시를 위해 IsView를 true로 설정
+            plane.Activate(); // 평면 활성화
         }
 
         public static void TurningMain(bool spindleSide)
         {
             try
             {
-                // 원본 TurningFeature_Module.TurningMain() 로직 반영
-                SelectionSet sel = GetOrCreateSelectionSet("TempTurning");
+                SelectionSet sel = GetOrCreateSelectionSet("Temp");
                 sel.RemoveAll();
 
                 foreach (GraphicObject obj in Document.GraphicsCollection)
@@ -574,67 +1748,24 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 turningLayer = Document.Layers.Add("TurningLayer");
                 Document.ActiveLayer = turningLayer;
 
-                // CreateTurningProfile - 원본과 동일한 파라미터
-                Document.FeatureRecognition.CreateTurningProfile(sel, Document.Planes["XYZ"], 
-                    espTurningProfileType.espTurningProfileOD, 
-                    espGraphicObjectReturnType.espFeatureChains, 
-                    espTurningProfileLocationType.espTurningProfileLocationTop, 
+                Plane plane = Document.Planes["XYZ"];
+                Document.FeatureRecognition.CreateTurningProfile(sel, plane, 
+                    espTurningProfileType.espTurningProfileOD,
+                    espGraphicObjectReturnType.espFeatureChains,
+                    espTurningProfileLocationType.espTurningProfileLocationTop,
                     0.01, 0.01, 5.0);
 
-                // 가장 최근에 생성된 FeatureChain 찾기 (원본 로직)
-                int maxKey = 0;
-                foreach (FeatureChain fc in Document.FeatureChains)
+                tfc = FindLatestFeatureChainInLayer("TurningLayer");
+                if (tfc == null) return;
+                if (!spindleSide)
                 {
-                    if (Convert.ToInt32(fc.Key) > maxKey)
-                    {
-                        maxKey = Convert.ToInt32(fc.Key);
-                    }
+                    try { tfc.Reverse(); } catch { }
                 }
+                tfc.Name = "Turning";
 
-                foreach (FeatureChain fc in Document.FeatureChains)
-                {
-                    if (Convert.ToInt32(fc.Key) == maxKey)
-                    {
-                        tfc = fc;
-                        break;
-                    }
-                }
+                EnsureTurningProfiles(tfc, spindleSide, "TurningLayer");
 
-                if (tfc != null)
-                {
-                    if (!spindleSide) tfc.Reverse();
-                    tfc.Name = "Turning";
-
-                    // 원본 로직: 끝점 추출 및 LowerY 저장
-                    Point endPoint = tfc.Extremity(espExtremityType.espExtremityEnd);
-                    double y = endPoint.Y;
-                    double x = endPoint.X;
-                    
-                    LowerY = y;
-                    EndXValue = x;
-                    
-                    // TurningExtend 만큼 연장
-                    if (spindleSide)
-                    {
-                        x -= TurningExtend;
-                    }
-                    else
-                    {
-                        x += TurningExtend;
-                    }
-
-                    Point pExtend = Document.GetPoint(x, y, 0);
-                    Point pEnd = Document.GetPoint(endPoint.X, y, 0);
-                    Segment segExtend = Document.GetSegment(pEnd, pExtend);
-                    
-                    EndX = x;
-                    EndY = y;
-                    ExtendX = x;
-                    
-                    tfc.Add(segExtend);
-                    
-                    Trace.WriteLine($"[TurningMain] Turning profile created: LowerY={LowerY:F4}, EndX={EndX:F4}, ExtendX={ExtendX:F4}");
-                }
+                Trace.WriteLine("[TurningMain] Turning and TurningProfile1~3 created.");
             }
             catch (Exception ex)
             {
@@ -646,63 +1777,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                try { Document.Layers.Remove("RoughMillingLayer"); } catch { }
-                Layer millingLayer = Document.Layers.Add("RoughMillingLayer");
-                Document.ActiveLayer = millingLayer;
-
-                SelectionSet sel = GetOrCreateSelectionSet("TempMilling");
-                sel.RemoveAll();
-
-                foreach (GraphicObject obj in Document.GraphicsCollection)
-                {
-                    if (obj.GraphicObjectType == espGraphicObjectType.espSTL_Model)
-                    {
-                        sel.Add(obj, Type.Missing);
-                        break;
-                    }
-                }
-
-                if (sel.Count == 0) return;
-
-                // 원본: X축 기준 회전 (0, 0, 0) ~ (10, 0, 0)
-                Point p0 = Document.GetPoint(0, 0, 0);
-                Point pX = Document.GetPoint(10, 0, 0);
-                Segment xAxis = Document.GetSegment(p0, pX);
-
-                Wp = Document.Planes["XYZ"];
-
-                // 원본: n=0 ~ 17 (0도 ~ 170도, 10도 간격)
-                int angleCount = 0;
-                for (int n = 0; n <= 17; n++)
-                {
-                    double Ang = Math.PI * 10.0 * n / 180.0;
-                    
-                    // STL 회전
-                    sel.Rotate(xAxis, Ang, 0);
-                    
-                    // 프로파일 생성 (원본은 YZX 평면 사용)
-                    try
-                    {
-                        Document.FeatureRecognition.CreatePartProfileShadow(sel, Document.Planes["YZX"], espGraphicObjectReturnType.espFeatureChains);
-                        
-                        // 생성된 FeatureChain에 이름 지정
-                        if (Document.FeatureChains.Count > 0)
-                        {
-                            FeatureChain fc = Document.FeatureChains[Document.FeatureChains.Count];
-                            fc.Name = $"RoughMill{angleCount + 1}_{n}";
-                            Trace.WriteLine($"[MillingStart] Created profile at angle {n * 10}°: {fc.Name}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Trace.WriteLine($"[MillingStart] Profile creation failed at angle {n * 10}°: {ex.Message}");
-                    }
-                    
-                    // 회전 복귀
-                    sel.Rotate(xAxis, -Ang, 0);
-                }
-                
-                Trace.WriteLine($"[MillingStart] Completed milling profile generation for {angleCount} angles");
+                return;
             }
             catch (Exception ex)
             {
