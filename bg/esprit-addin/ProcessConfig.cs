@@ -14,6 +14,16 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         public const string BackendUrl = "https://abuts.fit/api";
         public const string BridgeSharedSecret = "t1ZYB4ELMWBKHDuyyUgnx4HdyRg";
 
+        /// <summary>
+        /// Exit Angle (도) - 피드백 반영
+        /// </summary>
+        public const double DefaultExitAngle = 30.0;
+
+        /// <summary>
+        /// Turning Extend (mm) - 피드백 반영
+        /// </summary>
+        public const double DefaultTurningExtend = 3.5;
+
         // ==================== 경계 포인트 설정 ====================
         /// <summary>
         /// Boundry 생성 시 Point1의 Y 좌표 (mm)
@@ -21,9 +31,9 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         public const double Point1Y = -0.68;
 
         /// <summary>
-        /// Boundry 생성 시 Point2의 Y 좌표 (mm)
+        /// Boundry 생성 시 Point2의 Y 좌표 (mm) - 커넥션 제외 위해 상향 조정
         /// </summary>
-        public const double Point2Y = -11.3;
+        public const double Point2Y = -8.0;
 
         // ==================== 가공 파라미터 ====================
         /// <summary>
@@ -35,11 +45,6 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         /// Z축 하강 깊이 (mm) - DentalPanel TextBox12
         /// </summary>
         public const double DefaultDownZ = 0.0;
-
-        /// <summary>
-        /// 터닝 연장 길이 (mm) - DentalPanel TextBox15
-        /// </summary>
-        public const double DefaultTurningExtend = 1.0;
 
         /// <summary>
         /// 터닝 깊이 (mm) - DentalPanel TextBox13

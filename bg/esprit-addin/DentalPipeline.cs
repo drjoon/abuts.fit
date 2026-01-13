@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Esprit;
 using EspritConstants;
 using EspritFeatures;
@@ -98,6 +99,27 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        // Turning FeatureChain의 Y 좌표 절대값 최대치를 계산해 정렬에 사용
+        private static double GetMaxAbsY(FeatureChain fc)
+        {
+            if (fc == null) return double.MinValue;
+            double maxAbs = double.MinValue;
+            try
+            {
+                for (double d = 0; d <= fc.Length; d += 0.1)
+                {
+                    Point p = fc.PointAlong(d);
+                    double ay = Math.Abs(p.Y);
+                    if (ay > maxAbs) maxAbs = ay;
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[GetMaxAbsY] Error: {ex.Message}");
+            }
+            return maxAbs;
+        }
+
         private static FreeFormFeature FindFreeFormFeatureByName(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
@@ -146,6 +168,29 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        private static Plane CreateOrUpdatePlane(string name, double ux, double uy, double uz, double vx, double vy, double vz, double wx, double wy, double wz, bool isView = false)
+        {
+            Plane plane = null;
+            try { plane = Document.Planes[name]; } catch { }
+
+            if (plane == null)
+            {
+                try { plane = Document.Planes.Add(name); } catch { }
+            }
+
+            if (plane != null)
+            {
+                plane.X = 0.0;
+                plane.Y = 0.0;
+                plane.Z = 0.0;
+                plane.Ux = ux; plane.Uy = uy; plane.Uz = uz;
+                plane.Vx = vx; plane.Vy = vy; plane.Vz = vz;
+                plane.Wx = wx; plane.Wy = wy; plane.Wz = wz;
+                plane.IsView = isView;
+            }
+            return plane;
+        }
+
         private static void EnsureFreeFormFeatures(bool spindleSide)
         {
             try
@@ -177,8 +222,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 if (FindFreeFormFeatureByName("3DMilling_180Degree") == null)
                 {
-                    Plane p180 = null;
-                    try { p180 = Document.Planes["180"]; } catch { }
+                    var p180 = CreateOrUpdatePlane("180", 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0, false);
                     if (p180 != null) Document.ActivePlane = p180;
                     var ff180 = Document.FreeFormFeatures.Add();
                     ff180.Name = "3DMilling_180Degree";
@@ -188,8 +232,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 if (FindFreeFormFeatureByName("3DMilling_270Degree") == null)
                 {
-                    Plane p270 = null;
-                    try { p270 = Document.Planes["270"]; } catch { }
+                    var p270 = CreateOrUpdatePlane("270", 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, false);
                     if (p270 != null) Document.ActivePlane = p270;
                     var ff270 = Document.FreeFormFeatures.Add();
                     ff270.Name = "3DMilling_270Degree";
@@ -210,8 +253,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 if (FindFreeFormFeatureByName("3DMilling_90Degree") == null)
                 {
-                    Plane p90 = null;
-                    try { p90 = Document.Planes["90"]; } catch { }
+                    var p90 = CreateOrUpdatePlane("90", 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, false);
                     if (p90 != null) Document.ActivePlane = p90;
                     var ff90 = Document.FreeFormFeatures.Add();
                     ff90.Name = "3DMilling_90Degree";
@@ -221,8 +263,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 
                 if (FindFreeFormFeatureByName("3DMilling_FrontFace") == null)
                 {
-                    Plane pFace = null;
-                    try { pFace = Document.Planes["Face"]; } catch { }
+                    var pFace = CreateOrUpdatePlane("Face", 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, -1.0, 0.0, 0.0, false);
                     Plane pYzx = null;
                     try { pYzx = Document.Planes["YZX"]; } catch { }
                     if (spindleSide)
@@ -281,15 +322,25 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
-                // 1. Turning Processes (Turning, TurningProfile1~3)
-                var turningNames = new[] { "Turning", "TurningProfile1", "TurningProfile2", "TurningProfile3" };
-                foreach (var tName in turningNames)
+                var ffFront = FindFreeFormFeatureByName("3DMilling_FrontFace");
+                // FACE DRILL 최상단 배치
+                if (ffFront != null)
                 {
-                    var fc = FindFeatureChainByName(tName);
-                    if (fc != null)
-                    {
-                        AddOperation(techDir, ProcessConfig.TurningProcessFile, "TurnOperation", fc);
-                    }
+                    AddOperation(techDir, ProcessConfig.FaceHoleProcessFile, "FaceDrill", ffFront);
+                }
+
+                // Turning 순서: X 좌표 절대값이 큰 것부터 작은 것 순
+                var turningNames = new[] { "Turning", "TurningProfile1", "TurningProfile2", "TurningProfile3" };
+                var orderedTurning = turningNames
+                    .Select(name => new { Name = name, Fc = FindFeatureChainByName(name) })
+                    .Where(x => x.Fc != null)
+                    .Select(x => new { x.Name, x.Fc, Score = GetMaxAbsY(x.Fc) })
+                    .OrderByDescending(x => x.Score)
+                    .ToList();
+
+                foreach (var item in orderedTurning)
+                {
+                    AddOperation(techDir, ProcessConfig.TurningProcessFile, "TurnOperation", item.Fc);
                 }
 
                 if (reverseOn)
@@ -310,27 +361,36 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     if (r180 != null) AddOperation(techDir, ProcessConfig.RoughMillingProcessFile, "RoughMillingOperation", r180);
                 }
 
-                // 3. FreeForm Milling
+                // 3. FreeForm Milling & Face Finish & Composite
                 var ff0 = FindFreeFormFeatureByName("3DMilling_0Degree");
                 var ff90 = FindFreeFormFeatureByName("3DMilling_90Degree");
                 var ff180 = FindFreeFormFeatureByName("3DMilling_180Degree");
                 var ff270 = FindFreeFormFeatureByName("3DMilling_270Degree");
-                var ffFront = FindFreeFormFeatureByName("3DMilling_FrontFace");
-                var ball0180Target = ff0 ?? ff180;
-                if (ball0180Target != null)
+
+                // 90/270 Ball (BM_D2 목표) - 1개만 추가
+                var ff90Target = ff90 ?? ff270;
+                if (ff90Target != null && !OperationExistsByName("BM_D2"))
                 {
-                    AddOperation(techDir, ProcessConfig.O180BallMillingProcessFile, "FreeFormMill", ball0180Target);
-                }
-                var ball90270Target = ff90 ?? ff270;
-                if (ball90270Target != null)
-                {
-                    AddOperation(techDir, ProcessConfig.O90_270BallMillingProcessFile, "FreeFormMill", ball90270Target);
+                    AddOperation(techDir, ProcessConfig.O90_270BallMillingProcessFile, "FreeFormMill", ff90Target);
                 }
 
-                // 5Axis_Composite under ff0 (첨1 기준)
+                // 0/180 Ball (BM_D1.2 목표) - 1개만 추가
+                var ff0Target = ff0 ?? ff180;
+                if (ff0Target != null) AddOperation(techDir, ProcessConfig.O180BallMillingProcessFile, "FreeFormMill", ff0Target);
+
+                // Face Finish (EM2.0BALL)
+                if (ffFront != null)
+                {
+                    AddOperation(techDir, ProcessConfig.FaceMachiningProcessFile, "FreeFormMill", ffFront);
+                    if (!OperationExistsByName("EM2.0BALL"))
+                    {
+                        AddOperation(techDir, ProcessConfig.FaceMachiningProcessFile, "FreeFormMill", ffFront);
+                    }
+                }
+
+                // 5Axis Composite
                 if (ff0 != null)
                 {
-                    AddOperation(techDir, ProcessConfig.CompositeProcessFile, "CompositeMill", ff0);
                     if (!OperationExistsByName("5Axis_Composite"))
                     {
                         TryCreateCompositeSurfacesFromStl();
@@ -338,21 +398,23 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                     }
                 }
 
-                // Front Face ops under 3DMilling_FrontFace
+                // Connection 은 마지막에 추가 (요구: NEO_CONNECTION 맨 끝)
                 if (ffFront != null)
                 {
-                    AddOperation(techDir, ProcessConfig.FaceMachiningProcessFile, "FreeFormMill", ffFront);
-                    AddOperation(techDir, ProcessConfig.FaceHoleProcessFile, "FaceDrill", ffFront);
                     AddOperation(techDir, ProcessConfig.ConnectionProcessFile, "FreeFormMill", ffFront);
                 }
 
                 Trace.WriteLine($"[TryAddDefaultOperations] Summary: total Operations={Document.Operations.Count}");
 
                 RemoveDuplicateBallOperations();
+                // 추가 제거 규칙: BM_D4만 제거 (BM_D2는 유지)
+                RemoveSpecificBallOperations();
+                // 원본앱 대비: BM_D2 공정은 유지하되 Tool 리스트에 BM_D2는 표시되지 않도록 제거
+                RemoveBallMillToolById("BM_D2");
             }
             catch (Exception ex)
             {
-                Trace.WriteLine($"[TryAddDefaultOperations] Error: {ex.Message}");
+                Trace.WriteLine($"[TryAddDefaultOperations] ERROR: {ex.Message}");
             }
         }
 
@@ -400,6 +462,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                             // - 3D_2.prc: BM_D2 1회만 남겨야 하므로 PRC에 잘못된 힌트가 있어도 BM_D2로 강제
                             if (fileName.Equals(ProcessConfig.O90_270BallMillingProcessFile, StringComparison.OrdinalIgnoreCase))
                             {
+                                // 원본: 90/270 세트는 항상 BM_D2 한 번씩만 남음
                                 var forced = FindBallMillByDiameter(2.0, true) ?? FindBallMillByDiameter(2.0, false);
                                 if (!string.IsNullOrWhiteSpace(forced))
                                 {
@@ -407,21 +470,26 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                                     currentToolID = forced;
                                     Trace.WriteLine($"[AddOperation] Forced ToolID for {fileName}: {currentToolID}");
                                 }
+                                else
+                                {
+                                    // 공구를 못 찾는 경우에도 이름은 BM_D2로 고정되도록 currentToolID 설정
+                                    currentToolID = "BM_D2";
+                                    Trace.WriteLine($"[AddOperation] WARNING: No BallMill tool found for diameter=2.0. Force name to BM_D2.");
+                                }
                             }
                             if (fileName.Equals(ProcessConfig.O180BallMillingProcessFile, StringComparison.OrdinalIgnoreCase))
                             {
-                                var needD4 = !OperationExistsByName("BM_D4");
-                                var targetDiameter = needD4 ? 4.0 : 1.2;
-                                var forced = FindBallMillByDiameter(targetDiameter, true) ?? FindBallMillByDiameter(targetDiameter, false);
+                                // 요구: 0/180은 BM_D1.2만 사용
+                                var forced = FindBallMillByDiameter(1.2, true) ?? FindBallMillByDiameter(1.2, false);
                                 if (!string.IsNullOrWhiteSpace(forced))
                                 {
                                     SetToolIDOnTech(tech, forced);
                                     currentToolID = forced;
-                                    Trace.WriteLine($"[AddOperation] Forced ToolID for {fileName} (diameter={targetDiameter}): {currentToolID}");
+                                    Trace.WriteLine($"[AddOperation] Forced ToolID for {fileName} (diameter=1.2): {currentToolID}");
                                 }
                                 else
                                 {
-                                    Trace.WriteLine($"[AddOperation] WARNING: No BallMill tool found for diameter={targetDiameter}. Keep PRC ToolID={currentToolID}");
+                                    Trace.WriteLine($"[AddOperation] WARNING: No BallMill tool found for diameter=1.2. Keep PRC ToolID={currentToolID}");
                                 }
                             }
 
@@ -446,8 +514,11 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                             {
                                 TryConfigureComposite(composite);
                             }
+                            bool skipDedupe = fileName.Equals(ProcessConfig.FaceMachiningProcessFile, StringComparison.OrdinalIgnoreCase)
+                                              || fileName.Equals(ProcessConfig.O90_270BallMillingProcessFile, StringComparison.OrdinalIgnoreCase);
+
                             var intendedName = GetIntendedOperationName(fileName, currentToolID);
-                            if (!string.IsNullOrWhiteSpace(intendedName) && ShouldDedupeByName(fileName, intendedName) && OperationExistsByName(intendedName))
+                            if (!skipDedupe && !string.IsNullOrWhiteSpace(intendedName) && ShouldDedupeByName(fileName, intendedName) && OperationExistsByName(intendedName))
                             {
                                 Trace.WriteLine($"[AddOperation] Skip duplicate operation: {fileName} -> {intendedName}");
                                 continue;
@@ -840,6 +911,47 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 }
             }
             return false;
+        }
+
+        private static void RemoveBallMillToolById(string toolId)
+        {
+            if (string.IsNullOrWhiteSpace(toolId)) return;
+            try
+            {
+                var tools = Document.Tools;
+                if (tools == null) return;
+
+                var toolsType = tools.GetType();
+                var countProp = toolsType.GetProperty("Count");
+                var itemProp = toolsType.GetProperty("Item");
+                var removeMethod = toolsType.GetMethod("Remove");
+                if (countProp == null || itemProp == null || removeMethod == null) return;
+
+                int count = 0;
+                try { count = (int)countProp.GetValue(tools); } catch { return; }
+
+                for (int i = count; i >= 1; i--)
+                {
+                    Tool tool = null;
+                    try { tool = itemProp.GetValue(tools, new object[] { i }) as Tool; } catch { }
+                    if (tool == null) continue;
+
+                    var id = tool.ToolID ?? string.Empty;
+                    var upper = id.ToUpperInvariant().Trim();
+                    var targetUpper = toolId.ToUpperInvariant().Trim();
+
+                    // ToolStyle와 무관하게 ToolID에 BM_D2가 포함되면 제거
+                    if (upper.Contains(targetUpper))
+                    {
+                        try { removeMethod.Invoke(tools, new object[] { i }); } catch { }
+                        Trace.WriteLine($"[RemoveBallMillToolById] Removed tool: {id}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[RemoveBallMillToolById] Error: {ex.Message}");
+            }
         }
 
         private static string GetBallMillOperationName(string toolId, string fallback)
@@ -1438,6 +1550,37 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        /// <summary>
+        /// 요구사항: 0-180의 BM_D4, 90-270의 BM_D2 제거
+        /// </summary>
+        private static void RemoveSpecificBallOperations()
+        {
+            try
+            {
+                for (int i = Document.Operations.Count; i >= 1; i--)
+                {
+                    Operation op = null;
+                    try { op = Document.Operations[i]; } catch { }
+                    if (op == null) continue;
+
+                    var name = op.Name?.Trim();
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+
+                    var upper = name.ToUpperInvariant();
+                    // BM_D4만 제거 (BM_D2는 유지)
+                    if (upper.StartsWith("BM_D4"))
+                    {
+                        try { Document.Operations.Remove(i); } catch { }
+                        continue;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[RemoveSpecificBallOperations] Error: {ex.Message}");
+            }
+        }
+
         public static void Clean()
         {
             try
@@ -1641,9 +1784,11 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 Layer layer = Document.Layers.Add("Boundry");
                 Document.ActiveLayer = layer;
 
-                double barDia = Document.LatheMachineSetup.BarDiameter;
+                double barDia = 10.0;
+                // 피드백 반영: Boundry1이 제품을 충분히 포함하도록 Point1Y(-0.68), Point2Y(-8.0) 기반으로 생성
+                // ESPRIT 좌표계: X축이 길이방향, Y축이 직경방향
                 Point p1 = Document.GetPoint(0, barDia / 2.0, 0);
-                Point p2 = Document.GetPoint(-20.0, -barDia / 2.0, 0);
+                Point p2 = Document.GetPoint(ProcessConfig.Point2Y, -barDia / 2.0, 0);
 
                 // Boundry1 (Blue)
                 FeatureChain fc1 = Document.FeatureChains.Add(p1);
@@ -1654,7 +1799,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
                 fc1.Color = 0xFF0000; // Blue (ESPRIT BGR)
                 fc1.Name = "Boundry1";
 
-                // RoughBoundry1 (Green)
+                // RoughBoundry1 (Green) - Rough Mill 3D용 바운더리 (Boundry1과 동일 영역)
                 FeatureChain rfc = Document.FeatureChains.Add(p1);
                 rfc.Add(Document.GetSegment(p1, Document.GetPoint(p1.X, p2.Y, 0)));
                 rfc.Add(Document.GetSegment(Document.GetPoint(p1.X, p2.Y, 0), p2));
