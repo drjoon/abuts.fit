@@ -14,6 +14,10 @@ using System.Runtime.Serialization;
 using System.Linq;
 using System.Runtime.Serialization.Json;
 using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
+using DentalAddin;
+using PatientContext = DentalAddin.PatientContext;
+using System.Diagnostics;
+using System.Reflection;
 
 namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 {
@@ -65,6 +69,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         private readonly string _baseUrl = "http://localhost:8001/";
         private readonly string _backendUrl = "https://abuts.fit/api";
         private readonly string _logFilePath;
+        private static bool _traceListenerReady;
 
         // 운영 상태 및 히스토리 관리
         private bool _isRunning = true;
@@ -75,16 +80,55 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
         {
             _espApp = app ?? throw new ArgumentNullException(nameof(app));
             
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            string logDir = Path.Combine(appData, "Acrodent", "Logs");
+            // 실행 중인 애드인 DLL/EXE 위치를 우선 사용 (ESPRIT 설치 폴더 대신)
+            string baseDir = folderPath;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(baseDir))
+                {
+                    baseDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                }
+            }
+            catch
+            {
+                baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            }
+            if (string.IsNullOrWhiteSpace(baseDir))
+            {
+                baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            }
+            string logDir = Path.Combine(baseDir, "logs");
             Directory.CreateDirectory(logDir);
             _logFilePath = Path.Combine(logDir, $"cam_server_{DateTime.Now:yyyyMMdd}.log");
 
             CleanupOldLogs(logDir);
+            EnsureTraceListener(logDir);
             // SetupWatcher(); // 제거: 이제 백엔드/Rhino 명령 기반으로 동작
             
             // 재기동 시 미처리 파일 복구 실행 (별도 스레드)
             _ = Task.Run(() => RecoverUnprocessedFiles());
+
+            LogInfo($"[Init] RepeatProcess created. baseDir={baseDir}, logDir={logDir}");
+        }
+
+        private void EnsureTraceListener(string logDir)
+        {
+            if (_traceListenerReady) return;
+            try
+            {
+                string tracePath = Path.Combine(logDir, $"trace_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+                Trace.AutoFlush = true;
+                Trace.Listeners.Add(new TextWriterTraceListener(tracePath));
+                _traceListenerReady = true;
+                var asm = Assembly.GetExecutingAssembly();
+                var buildTime = File.GetLastWriteTime(asm.Location);
+                Trace.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Trace listener attached -> {tracePath}");
+                Trace.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Assembly: {asm.GetName().Name}, Version={asm.GetName().Version}, Built={buildTime:yyyy-MM-dd HH:mm:ss}");
+            }
+            catch
+            {
+                // ignore trace listener errors
+            }
         }
 
         private async Task RecoverUnprocessedFiles()
@@ -478,23 +522,42 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 // 환자/임플란트 정보 캐시 (백엔드에서 전달된 값 사용)
-                PatientContext.SetFromRequest(req);
+                DentalAddin.PatientContext.SetFromRequest(req);
 
                 LogInfo($"[CAM] Starting NC generation for {req.RequestId}");
 
                 // 0. 소재 템플릿 로드 (어벗 최대 직경 기준)
                 int materialDiameter = ChooseMaterialDiameter(req.MaxDiameter);
-                string templateDir = @"C:\Users\user\Documents\DP Technology\ESPRIT\Data\Templates";
+                string baseDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                string templateDir = Path.Combine(baseDir ?? string.Empty, "Templates");
                 string templatePath = Path.Combine(templateDir, $"Hanwha_D{materialDiameter}.est");
-                if (!File.Exists(templatePath))
-                {
-                    throw new FileNotFoundException($"Template not found: {templatePath}");
-                }
+                LogInfo($"[CAM] Template open start: {templatePath}");
 
                 Document espdoc = _espApp.Document;
-                espdoc.MergeFile(templatePath);
-                LogInfo($"[CAM] Loaded material template (merged): D{materialDiameter} (MaxDiameter={req.MaxDiameter:F2}mm, ConnectionDiameter={req.ConnectionDiameter:F2}mm)");
-                
+                if (espdoc == null)
+                {
+                    throw new InvalidOperationException("ESPRIT Document is null. Template cannot be merged.");
+                }
+
+                if (File.Exists(templatePath))
+                {
+                    try
+                    {
+                        espdoc.MergeFile(templatePath);
+                        string docName = "";
+                        try { docName = espdoc?.Name ?? ""; } catch { }
+                        LogInfo($"[CAM] Template merged: {templatePath} (D{materialDiameter}, MaxDiameter={req.MaxDiameter:F2}mm, ConnectionDiameter={req.ConnectionDiameter:F2}mm, ActiveDoc={docName})");
+                    }
+                    catch (Exception exOpen)
+                    {
+                        LogWarning($"[CAM] Template merge failed: {exOpen.Message}");
+                    }
+                }
+                else
+                {
+                    LogWarning($"[CAM] Template not found: {templatePath}");
+                }
+
                 // 1. 임플란트 파라미터 업데이트
                 var userData = Connect.DentalHost.CurrentData;
                 lock (userData)

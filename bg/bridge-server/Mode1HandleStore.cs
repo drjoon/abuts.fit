@@ -60,7 +60,7 @@ namespace HiLinkBridgeWebApi48
             var serial = GetSerial();
             if (string.IsNullOrWhiteSpace(serial))
             {
-                error = "BRIDGE_SERIAL is not set";
+                error = "BRIDGE_SERIAL is not set: " + serial;
                 return false;
             }
 

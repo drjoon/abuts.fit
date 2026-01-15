@@ -147,5 +147,60 @@ namespace HiLinkBridgeWebApi48
             info = default(MachineAlarmInfo);
             return false;
         }
+
+        public static bool TryGetMachineStatus(string uid, out MachineStatusType status, out string error)
+        {
+            status = MachineStatusType.None;
+            error = null;
+            if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
+            {
+                error = err;
+                return false;
+            }
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var result = HiLink.GetMachineStatus(handle, ref status);
+                if (result == 0)
+                {
+                    return true;
+                }
+
+                if (result == -8 && attempt == 0)
+                {
+                    Mode1HandleStore.Invalidate(uid);
+                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
+                    {
+                        error = err;
+                        return false;
+                    }
+                    continue;
+                }
+
+                error = $"GetMachineStatus failed (result={result})";
+                return false;
+            }
+
+            error = "GetMachineStatus failed";
+            return false;
+        }
+
+        public static bool TrySetMachinePanelIO(string uid, short panelType, short ioUid, bool status, out string error)
+        {
+            error = null;
+            if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
+            {
+                error = err;
+                return false;
+            }
+
+            var result = HiLink.SetMachinePanelIO(handle, panelType, ioUid, status);
+            if (result != 0)
+            {
+                error = $"SetMachinePanelIO failed (result={result})";
+                return false;
+            }
+            return true;
+        }
     }
 }

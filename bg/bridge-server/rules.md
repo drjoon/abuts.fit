@@ -57,7 +57,24 @@
 - `POST /api/control/stop`: 운영 중지 (감시 루프 일시 정지).
 - `GET /api/control/recent`: 최근 처리된 50개의 가공 히스토리 조회.
 
-### 3.2 백엔드 알림 (Web Client)
+### 3.2 CNC 장비 제어 엔드포인트 (BridgeController)
+
+- `POST /api/cnc/machines/{machineId}/start`: CNC 장비 가공 시작 신호 전송.
+  - **Body**: `{ "ioUid": 61, "panelType": 0, "status": 1 }`
+  - **기본값**: `ioUid=61` (환경 변수 `CNC_START_IOUID`), `panelType=0`, `status=1`
+  - **동작**: `HiLink.SetMachinePanelIO`를 호출하여 Start 신호 전송.
+- `POST /api/cnc/machines/{machineId}/stop`: CNC 장비 가공 정지 신호 전송.
+  - **Body**: `{ "ioUid": 62, "panelType": 0, "status": 1 }`
+  - **기본값**: `ioUid=62`, `panelType=0`, `status=1`
+  - **동작**: `HiLink.SetMachinePanelIO`를 호출하여 Stop 신호 전송.
+
+**환경 변수**:
+
+- `CNC_START_IOUID`: Start 신호의 IO UID (기본값: 61)
+- `CNC_BUSY_IOUID`: 가공 중 상태 확인용 IO UID (기본값: 61)
+- `CNC_JOB_ASSUME_MINUTES`: 가공 완료 추정 시간(분) (기본값: 20)
+
+### 3.3 백엔드 알림 (Web Client)
 
 - 가공 공정 시작/완료 시 `BACKEND_URL/bg/register-file`을 호출합니다.
 - **Payload**:
@@ -67,13 +84,13 @@
 
 ## 4. 운영 가이드라인
 
-### 3.1 프로그램 전송 프로세스
+### 4.1 프로그램 전송 프로세스
 
 1. 파일 업로드 시 파일명에서 O번호 추출.
 2. `O####.nc` 형식으로 정규화하여 저장.
 3. 장비 전송 시 `UpdateProgram` 등을 통해 숫자 번호만 전달.
 4. 전송 완료 후 `UpdateActivateProg`로 해당 번호 활성화.
 
-### 3.2 헬스체크
+### 4.2 헬스체크
 
 - 브리지 서비스의 생존 여부와 각 장비의 연결 상태를 주기적으로 확인합니다.
