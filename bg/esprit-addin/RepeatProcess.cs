@@ -15,7 +15,7 @@ using System.Linq;
 using System.Runtime.Serialization.Json;
 using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
 using DentalAddin;
-using PatientContext = DentalAddin.PatientContext;
+using PatientContext = Acrodent.EspritAddIns.ESPRIT2025AddinProject.PatientContext;
 using System.Diagnostics;
 using System.Reflection;
 
@@ -522,7 +522,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 // 환자/임플란트 정보 캐시 (백엔드에서 전달된 값 사용)
-                DentalAddin.PatientContext.SetFromRequest(req);
+                PatientContext.SetFromRequest(req);
 
                 LogInfo($"[CAM] Starting NC generation for {req.RequestId}");
 

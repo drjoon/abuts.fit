@@ -1,6 +1,6 @@
 using System;
 
-namespace DentalAddin
+namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
 {
     internal static class PatientContext
     {

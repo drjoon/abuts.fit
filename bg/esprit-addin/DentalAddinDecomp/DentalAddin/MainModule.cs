@@ -742,7 +742,7 @@ namespace DentalAddin
 						goto IL_00e6;
 						IL_00c8:
 						num2 = 14;
-						Interaction.MsgBox((object)"Turning Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("Turning Tool didn't matched (MessageBox suppressed)");
 						goto IL_00d8;
 						IL_00d8:
 						num2 = 15;
@@ -818,7 +818,7 @@ namespace DentalAddin
 						goto IL_01bb;
 						IL_019d:
 						num2 = 30;
-						Interaction.MsgBox((object)"EndMill Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("EndMill Tool didn't matched (MessageBox suppressed)");
 						goto IL_01ad;
 						IL_01ad:
 						num2 = 31;
@@ -897,7 +897,7 @@ namespace DentalAddin
 						goto IL_0290;
 						IL_0272:
 						num2 = 46;
-						Interaction.MsgBox((object)"EndMill Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("EndMill Tool didn't matched (MessageBox suppressed)");
 						goto IL_0282;
 						IL_0282:
 						num2 = 47;
@@ -978,7 +978,7 @@ namespace DentalAddin
 						goto IL_036d;
 						IL_034f:
 						num2 = 62;
-						Interaction.MsgBox((object)"BallMilling Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("BallMilling Tool didn't matched (MessageBox suppressed)");
 						goto IL_035f;
 						IL_035f:
 						num2 = 63;
@@ -1053,7 +1053,7 @@ namespace DentalAddin
 						goto IL_043b;
 						IL_041d:
 						num2 = 77;
-						Interaction.MsgBox((object)"BallMilling Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("BallMilling Tool didn't matched (MessageBox suppressed)");
 						goto IL_042d;
 						IL_042d:
 						num2 = 78;
@@ -1133,7 +1133,7 @@ namespace DentalAddin
 						goto IL_0509;
 						IL_04eb:
 						num2 = 92;
-						Interaction.MsgBox((object)"FaceBallMilling Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("FaceBallMilling Tool didn't matched (MessageBox suppressed)");
 						goto IL_04fb;
 						IL_04fb:
 						num2 = 93;
@@ -1179,7 +1179,7 @@ namespace DentalAddin
 						goto IL_05ab;
 						IL_07a6:
 						num2 = 140;
-						Interaction.MsgBox((object)"Mark_BallMilling Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("Mark_BallMilling Tool didn't matched (MessageBox suppressed)");
 						break;
 						IL_0580:
 						num2 = 102;
@@ -1211,7 +1211,7 @@ namespace DentalAddin
 						goto IL_05e8;
 						IL_05ca:
 						num2 = 108;
-						Interaction.MsgBox((object)"BallMilling Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("BallMilling Tool didn't matched (MessageBox suppressed)");
 						goto IL_05da;
 						IL_05da:
 						num2 = 109;
@@ -1291,7 +1291,7 @@ namespace DentalAddin
 						goto IL_06c7;
 						IL_06a9:
 						num2 = 124;
-						Interaction.MsgBox((object)"4-Axis BallMilling Tool didn't matched", (MsgBoxStyle)0, (object)null);
+						Trace.WriteLine("4-Axis BallMilling Tool didn't matched (MessageBox suppressed)");
 						goto IL_06b9;
 						IL_06b9:
 						num2 = 125;

@@ -175,7 +175,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             var selectedIndex = _listBox.SelectedIndex;
             if (selectedIndex < 0)
             {
-                MessageBox.Show("병합할 파일을 선택하세요.", "안내", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Trace.WriteLine("FilledStlBrowserForm: 병합할 파일을 선택하세요. (MessageBox suppressed)");
                 return;
             }
 
@@ -189,18 +189,18 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             var doc = _getDocument();
             if (doc == null)
             {
-                MessageBox.Show("현재 열린 ESPRIT 문서를 찾을 수 없습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Trace.WriteLine("FilledStlBrowserForm: 현재 열린 ESPRIT 문서를 찾을 수 없습니다. (MessageBox suppressed)");
                 return;
             }
 
             try
             {
                 doc.MergeFile(targetPath);
-                MessageBox.Show($"병합 완료: {Path.GetFileName(targetPath)}", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Trace.WriteLine($"FilledStlBrowserForm: 병합 완료 - {Path.GetFileName(targetPath)} (MessageBox suppressed)");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"병합 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Trace.WriteLine($"FilledStlBrowserForm: 병합 실패 - {ex.Message} (MessageBox suppressed)");
             }
         }
     }

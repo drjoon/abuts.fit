@@ -2948,7 +2948,7 @@ public class DentalPanel : Form
 		{
 			ProjectData.SetProjectError(ex);
 			Exception ex2 = ex;
-			Interaction.MsgBox((object)"Machine Type Error!", (MsgBoxStyle)0, (object)null);
+			Trace.WriteLine("Machine Type Error! (MessageBox suppressed)");
 			result = true;
 			ProjectData.ClearProjectError();
 		}
@@ -3246,13 +3246,13 @@ public class DentalPanel : Form
 		MainModule.EspritApp.Processing = true;
 		if ((((TextBoxBase)TextBox18).BackColor == Color.Red) | (((TextBoxBase)TextBox19).BackColor == Color.Red))
 		{
-			Interaction.MsgBox((object)"Please Select the limit Points!", (MsgBoxStyle)0, (object)null);
+			Trace.WriteLine("Please Select the limit Points! (MessageBox suppressed)");
 			MainModule.EspritApp.Processing = false;
 			MainModule.Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
 		}
 		else if (((Control)ComboBox3).Enabled && MainModule.NumCombobox[3] == 1 && ((((TextBoxBase)TextBox17).BackColor == Color.Red) | (((TextBoxBase)TextBox20).BackColor == Color.Red)))
 		{
-			Interaction.MsgBox((object)"Please Select the chamfer limit Points!", (MsgBoxStyle)0, (object)null);
+			Trace.WriteLine("Please Select the chamfer limit Points! (MessageBox suppressed)");
 			MainModule.EspritApp.Processing = false;
 			MainModule.Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
 		}
@@ -3684,7 +3684,7 @@ public class DentalPanel : Form
 		((ButtonBase)Button1).Text = "MarkX=" + Conversions.ToString(Mark.MarkX);
 		if (Operators.CompareString(RichTextBox1.Text, "", false) == 0)
 		{
-			Interaction.MsgBox((object)"Please input Number for Mark", (MsgBoxStyle)0, (object)null);
+			Trace.WriteLine("Please input Number for Mark (MessageBox suppressed)");
 			return;
 		}
 		Mark.MarkString = RichTextBox1.Text;

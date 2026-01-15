@@ -11,6 +11,8 @@
     <RootNamespace>Acrodent.EspritAddIns.ESPRIT2025AddinProject</RootNamespace>
     <AssemblyName>ESPRIT2025AddinProject</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <RuntimeIdentifiers>win-x86;win</RuntimeIdentifiers>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
     <FileAlignment>512</FileAlignment>
     <ReferencePath>C:\Program Files (x86)\D.P.Technology\ESPRIT\Prog;C:\Program Files (x86)\Common Files\D.P.Technology\AnnexLibraries</ReferencePath>
     <TargetFrameworkProfile />
@@ -119,20 +121,19 @@
     <Compile Include="DentalPipeline.cs" />
     <Compile Include="ProcessConfig.cs" />
     <Compile Include="ProgressForm.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\Clean_Module.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\ConnectionCut.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\Feature36_Module.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\Intersection.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\Intersection2.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\Mark.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\Milling_Module.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\MoveSTL_Module.cs" />
-    <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_Module.cs" />
+    <Compile Include="PatientContext.cs" />
     <Compile Include="DentalAddinCompat\DentalAddinData.cs" />
     <Compile Include="DentalAddinCompat\DentalAddinHost.cs" />
     <Compile Include="DentalAddinCompat\DentalPanelForm.cs" />
     <Compile Include="DentalAddinCompat\FilledStlBrowserForm.cs" />
-    <Compile Include="PatientContext.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Clean_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Feature36_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Milling_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\MoveSTL_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\TurningFeature_Module.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Intersection.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Intersection2.cs" />
+    <Compile Include="DentalAddinDecomp\DentalAddin\Mark.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>

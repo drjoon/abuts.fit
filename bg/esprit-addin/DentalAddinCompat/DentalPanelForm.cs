@@ -283,18 +283,18 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat
             var doc = _getDocument?.Invoke();
             if (doc == null)
             {
-                MessageBox.Show("현재 열린 ESPRIT 문서를 찾을 수 없습니다.", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Trace.WriteLine("DentalPanelForm: 현재 열린 ESPRIT 문서를 찾을 수 없습니다. (MessageBox suppressed)");
                 return;
             }
 
             try
             {
                 doc.MergeFile(targetPath);
-                MessageBox.Show($"병합 완료: {Path.GetFileName(targetPath)}", "완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Trace.WriteLine($"DentalPanelForm: 병합 완료 - {Path.GetFileName(targetPath)} (MessageBox suppressed)");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"병합 실패: {ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Trace.WriteLine($"DentalPanelForm: 병합 실패 - {ex.Message} (MessageBox suppressed)");
             }
         }
 

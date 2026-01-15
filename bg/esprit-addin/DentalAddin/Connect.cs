@@ -164,16 +164,8 @@ public class Connect : IDTExtensibility2
         {
             if (!File.Exists(EspritApp.Path + "AddIns\\DentalAddin\\" + licnumber + ".Lic"))
             {
-                MessageBox.Show("Please Select License File!", "Load License");
-                OpenFileDialog openFileDialog = new OpenFileDialog();
-                openFileDialog.Title = "Select the License File";
-                openFileDialog.Filter = "(*.lic)|*.lic|(All File)|*.*";
-                if (openFileDialog.ShowDialog() != DialogResult.OK)
-                {
-                    return false;
-                }
-
-                File.Copy(openFileDialog.FileName, destFileName, overwrite: true);
+                Trace.WriteLine("License file missing. (MessageBox suppressed)");
+                return false;
             }
 
             if (File.Exists(EspritApp.Path + "AddIns\\DentalAddin\\" + licnumber + ".Lic"))
@@ -189,7 +181,7 @@ public class Connect : IDTExtensibility2
                 bool flag3 = DateTime.Compare(DateTime.Parse(text.Split('|')[2].ToLower()), DateTime.Now) > 0;
                 if (!flag3)
                 {
-                    MessageBox.Show("Authorization expired.", "Warning");
+                    Trace.WriteLine("Authorization expired. (MessageBox suppressed)");
                 }
 
                 return flag && flag2 && flag3;
@@ -229,7 +221,7 @@ public class Connect : IDTExtensibility2
         object objectValue2 = RuntimeHelpers.GetObjectValue(NewLateBinding.LateGet(EspritApp.License, (Type)null, "CustomerCode", new object[0], (string[])null, (Type[])null, (bool[])null));
         if (!CheckLicense(Conversions.ToString(objectValue2), Conversions.ToString(objectValue)))
         {
-            Interaction.MsgBox((object)"License is not Authorized", (MsgBoxStyle)0, (object)null);
+            Trace.WriteLine("License is not Authorized. (MessageBox suppressed)");
             return;
         }
 
