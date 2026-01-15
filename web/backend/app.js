@@ -238,6 +238,8 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/manufacturer", manufacturerRoutes);
 app.use("/api/cnc-machines", cncMachineRoutes);
+// 호환: 프런트에서 /api/cnc/machines/... 로 호출하는 경우도 지원
+app.use("/api/cnc/machines", cncMachineRoutes);
 
 const FRONTEND_DIST_PATH = resolve(__dirname, "../frontend/dist");
 const shouldServeFrontendDist =

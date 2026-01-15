@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 import { Machine } from "@/pages/manufacturer/cnc/types";
 import { useToast } from "@/hooks/use-toast";
 
@@ -10,6 +12,7 @@ export const useCncWorkBoard = (
   callRaw: (uid: string, dataType: string, payload?: any) => Promise<any>
 ) => {
   const { toast } = useToast();
+  const { token } = useAuthStore();
 
   const [opStatus, setOpStatus] = useState<any | null>(null);
   const [motorTemp, setMotorTemp] = useState<any | null>(null);
@@ -45,10 +48,27 @@ export const useCncWorkBoard = (
     setError(null);
 
     try {
+      const fetchActiveProgram = async (uid: string) => {
+        const res = await apiFetch({
+          path: `/api/cnc/machines/${encodeURIComponent(uid)}/programs/active`,
+          method: "GET",
+          token,
+        });
+        const body = res.data ?? {};
+        if (!res.ok || (body as any)?.success === false) {
+          const msg =
+            (body as any)?.message ||
+            (body as any)?.error ||
+            `programs/active 호출 실패 (HTTP ${res.status})`;
+          throw new Error(msg);
+        }
+        return (body as any)?.data ?? body;
+      };
+
       const [opRes, listRes, actRes] = await Promise.all([
         callRaw(targetUid, "GetOPStatus"),
         callRaw(targetUid, "GetProgListInfo", 1), // 1=메인
-        callRaw(targetUid, "GetActivateProgInfo", 1), // 1=메인
+        fetchActiveProgram(targetUid),
       ]);
 
       setOpStatus(opRes?.data ?? opRes);
@@ -56,7 +76,7 @@ export const useCncWorkBoard = (
       const pl = (listRes && (listRes.data ?? listRes)) as any;
       const progList = pl?.machineProgramListInfo?.programArray ?? [];
       const act = (actRes && (actRes.data ?? actRes)) as any;
-      const current = act?.machineCurrentProgInfo ?? null;
+      const current = act?.machineCurrentProgInfo ?? act ?? null;
       setProgramSummary({
         current,
         list: Array.isArray(progList) ? progList : [],
@@ -150,7 +170,23 @@ export const useCncWorkBoard = (
     try {
       const [listRes, actRes] = await Promise.all([
         callRaw(workUid, "GetProgListInfo", 1), // 1=메인
-        callRaw(workUid, "GetActivateProgInfo", 1), // 1=메인
+        apiFetch({
+          path: `/api/cnc/machines/${encodeURIComponent(
+            workUid
+          )}/programs/active`,
+          method: "GET",
+          token,
+        }).then((res) => {
+          const body = res.data ?? {};
+          if (!res.ok || (body as any)?.success === false) {
+            const msg =
+              (body as any)?.message ||
+              (body as any)?.error ||
+              `programs/active 호출 실패 (HTTP ${res.status})`;
+            throw new Error(msg);
+          }
+          return (body as any)?.data ?? body;
+        }),
       ]);
 
       const pl = (listRes && (listRes.data ?? listRes)) as any;

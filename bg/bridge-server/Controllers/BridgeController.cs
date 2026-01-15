@@ -205,13 +205,14 @@ namespace HiLinkBridgeWebApi48.Controllers
             // CollectDataType별로 DLL이 기대하는 단순 스칼라 입력을 맞춰준다.
             if (collectType == CollectDataType.GetProgListInfo || collectType == CollectDataType.GetActivateProgInfo)
             {
-                // DLL 내부에서 (short)requestMessage.Data 캐스팅하므로 short로 맞춘다.
+                // API headType(1=메인, 2=서브)을 Mode2 DLL 기대값(0=메인, 1=서브)으로 변환
                 short head = 0;
                 try
                 {
                     if (raw.payload != null)
                     {
-                        head = (short)raw.payload.Value<int>();
+                        var apiHead = raw.payload.Value<int>();
+                        head = (short)Math.Max(0, apiHead - 1);
                     }
                 }
                 catch { /* fallback 0 */ }
@@ -243,6 +244,22 @@ namespace HiLinkBridgeWebApi48.Controllers
                     message = ex.Message
                 });
             }
+        }
+
+        // 프런트에서 /machines/{id}/raw로 호출하는 경로 호환
+        [HttpPost]
+        [Route("machines/{machineId}/raw")]
+        public Task<HttpResponseMessage> RawForMachine(string machineId, RawHiLinkRequest raw)
+        {
+            if (raw == null)
+            {
+                raw = new RawHiLinkRequest();
+            }
+            if (string.IsNullOrWhiteSpace(raw.uid))
+            {
+                raw.uid = machineId;
+            }
+            return Raw(raw);
         }
 
         // POST /machines/{machineId}/start

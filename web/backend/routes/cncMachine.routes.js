@@ -38,6 +38,13 @@ router.get(
   cncMachineController.getBridgeQueueForMachine
 );
 
+// 활성 프로그램 조회 (브리지 경유)
+router.get(
+  "/:machineId/programs/active",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getBridgeActiveProgram
+);
+
 // 브리지 예약 큐에서 단일 작업 삭제
 router.delete(
   "/:machineId/bridge-queue/:jobId",
