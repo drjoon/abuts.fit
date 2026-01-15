@@ -21,15 +21,33 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            info = new MachineProgramListInfo { headType = headType };
-            var result = HiLink.GetMachineProgramListInfo(handle, ref info);
-            if (result != 0)
+            // -8 무효 핸들 대응: 최대 2회 시도
+            for (var attempt = 0; attempt < 2; attempt++)
             {
+                info = new MachineProgramListInfo { headType = headType };
+                var result = HiLink.GetMachineProgramListInfo(handle, ref info);
+                if (result == 0) return true;
+
+                if (result == -8 && attempt == 0)
+                {
+                    Mode1HandleStore.Invalidate(uid);
+                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
+                    {
+                        error = err;
+                        info = default(MachineProgramListInfo);
+                        return false;
+                    }
+                    continue;
+                }
+
                 error = $"GetMachineProgramListInfo failed (result={result})";
                 info = default(MachineProgramListInfo);
                 return false;
             }
-            return true;
+
+            error = "GetMachineProgramListInfo failed";
+            info = default(MachineProgramListInfo);
+            return false;
         }
 
         public static bool TryGetActivateProgInfo(string uid, out MachineProgramInfo info, out string error)

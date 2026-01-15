@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { apiFetch } from "@/lib/apiClient";
 import { Machine, MachineForm } from "@/pages/manufacturer/cnc/types";
 
 export const useCncMachines = () => {
@@ -22,13 +23,13 @@ export const useCncMachines = () => {
 
   const loadMachinesFromBackend = async () => {
     try {
-      const res = await fetch("/api/core/machines", {
-        headers: {
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
+      const res = await apiFetch({
+        path: "/api/machines",
+        method: "GET",
+        token,
       });
       if (!res.ok) throw new Error("failed to load machines");
-      const body = await res.json();
+      const body: any = res.data ?? {};
       const list: any[] = body.data ?? body.machines ?? [];
       const mapped = list.map((m) => {
         const uid = m.uid as string;
@@ -107,11 +108,10 @@ export const useCncMachines = () => {
     try {
       const target = machines.find((m) => m.name === name || m.uid === name);
       const key = target?.uid ?? name;
-      const res = await fetch(`/api/core/machines/${encodeURIComponent(key)}`, {
+      const res = await apiFetch({
+        path: `/api/machines/${encodeURIComponent(key)}`,
         method: "DELETE",
-        headers: {
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
+        token,
       });
       if (!res.ok) throw new Error("장비 삭제 실패");
       setMachines((prev) => prev.filter((m) => m.uid !== key));
@@ -154,13 +154,11 @@ export const useCncMachines = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/core/machines", {
+      const res = await apiFetch({
+        path: "/api/machines",
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-        body: JSON.stringify({
+        token,
+        jsonBody: {
           uid: submit.uid, // 장비 식별자(Hi-Link UID와 통합)
           name: submit.name, // 표시용 이름
           ip: submit.ip,
@@ -168,10 +166,10 @@ export const useCncMachines = () => {
           allowJobStart: submit.allowJobStart,
           allowProgramDelete: submit.allowProgramDelete,
           allowAutoMachining: submit.allowAutoMachining,
-        }),
+        },
       });
 
-      const body = await res.json().catch(() => ({}));
+      const body: any = res.data ?? {};
       if (!res.ok || (body && body.success === false)) {
         throw new Error(body?.message || "장비 저장 실패");
       }

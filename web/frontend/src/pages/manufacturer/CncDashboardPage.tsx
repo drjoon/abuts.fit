@@ -9,6 +9,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
+import { apiFetch } from "@/lib/apiClient";
 import { Machine, type MachineForm } from "./cnc/types";
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
 import { useCncWorkBoard } from "@/pages/manufacturer/cnc/hooks/useCncWorkBoard";
@@ -417,66 +418,98 @@ export const CncDashboardPage = () => {
 
     try {
       const fetchRawDirect = async (dataType: string, payload: any = null) => {
-        const r = await fetch(
-          `/api/core/machines/${encodeURIComponent(uid)}/raw`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              uid,
-              dataType,
-              payload,
-              bypassCooldown: true,
-            }),
-          }
-        );
-        const body = await r.json().catch(() => ({}));
-        if (!r.ok || body?.success === false) {
+        const res = await apiFetch({
+          path: `/api/machines/${encodeURIComponent(uid)}/raw`,
+          method: "POST",
+          token,
+          jsonBody: {
+            uid,
+            dataType,
+            payload,
+            bypassCooldown: true,
+          },
+        });
+        const body = res.data ?? {};
+        if (!res.ok || (body as any)?.success === false) {
           const msg =
-            body?.message ||
-            body?.error ||
-            `${dataType} 호출 실패 (HTTP ${r.status})`;
+            (body as any)?.message ||
+            (body as any)?.error ||
+            `${dataType} 호출 실패 (HTTP ${res.status})`;
           throw new Error(msg);
         }
         return body;
       };
 
-      const [progRes, alarmRes] = await Promise.all([
-        fetchRawDirect("GetActivateProgInfo"),
-        fetch(`/api/core/machines/${encodeURIComponent(uid)}/alarm`, {
+      // headType:1(메인) / 2(서브) 모두 조회 후 병합
+      const [progMainRes, progSubRes, alarmRes] = await Promise.all([
+        fetchRawDirect("GetActivateProgInfo", 1),
+        fetchRawDirect("GetActivateProgInfo", 2),
+        apiFetch({
+          path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ headType: 0 }),
-        }).then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok || body?.success === false) {
+          token,
+          jsonBody: { headType: 1 },
+        }).then((res) => {
+          const body = res.data ?? {};
+          if (!res.ok || (body as any)?.success === false) {
             const msg =
-              body?.message ||
-              body?.error ||
-              `alarm 호출 실패 (HTTP ${r.status})`;
+              (body as any)?.message ||
+              (body as any)?.error ||
+              `alarm 호출 실패 (HTTP ${res.status})`;
             throw new Error(msg);
           }
           return body;
         }),
       ]);
 
-      const p = (progRes && (progRes.data ?? progRes)) as any;
-      const curInfo =
-        p?.machineCurrentProgInfo ??
-        (p &&
-        (p.mainProgramName ||
-          p.subProgramName ||
-          p.MainProgramName ||
-          p.SubProgramName)
-          ? {
-              mainProgramName: p.mainProgramName ?? p.MainProgramName ?? null,
-              mainProgramComment:
-                p.mainProgramComment ?? p.MainProgramComment ?? null,
-              subProgramName: p.subProgramName ?? p.SubProgramName ?? null,
-              subProgramComment:
-                p.subProgramComment ?? p.SubProgramComment ?? null,
-            }
-          : null);
+      const pickProg = (res: any) => {
+        const raw = res && (res.data ?? res);
+        const data = raw?.data ?? raw;
+        return (
+          data?.machineCurrentProgInfo ??
+          (data &&
+          (data.mainProgramName ||
+            data.subProgramName ||
+            data.MainProgramName ||
+            data.SubProgramName)
+            ? {
+                mainProgramName:
+                  data.mainProgramName ?? data.MainProgramName ?? null,
+                mainProgramComment:
+                  data.mainProgramComment ?? data.MainProgramComment ?? null,
+                subProgramName:
+                  data.subProgramName ?? data.SubProgramName ?? null,
+                subProgramComment:
+                  data.subProgramComment ?? data.SubProgramComment ?? null,
+              }
+            : null)
+        );
+      };
+
+      const mainInfo = pickProg(progMainRes);
+      const subInfo = pickProg(progSubRes);
+
+      const curInfo = {
+        mainProgramName: mainInfo?.mainProgramName ?? null,
+        mainProgramComment: mainInfo?.mainProgramComment ?? null,
+        subProgramName:
+          subInfo?.subProgramName ??
+          subInfo?.mainProgramName ?? // 일부 장비가 Sub 헤드를 Main 필드로 줄 수 있음
+          null,
+        subProgramComment:
+          subInfo?.subProgramComment ?? subInfo?.mainProgramComment ?? null,
+      };
+
+      const hasAny =
+        curInfo.mainProgramName ||
+        curInfo.subProgramName ||
+        mainInfo ||
+        subInfo;
+      if (!hasAny) {
+        throw new Error(
+          "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)"
+        );
+      }
       if (!curInfo) {
         throw new Error(
           "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)"
@@ -569,6 +602,7 @@ export const CncDashboardPage = () => {
       setError,
       callRaw,
       ensureCncWriteAllowed,
+      token,
     });
 
   const handleDeleteConfirm = async () => {
@@ -969,20 +1003,14 @@ export const CncDashboardPage = () => {
                     }
 
                     // 2) 가공 시작
-                    const res = await fetch(
-                      `/api/core/machines/${encodeURIComponent(uid)}/start`,
-                      {
-                        method: "POST",
-                      }
-                    );
+                    const res = await apiFetch({
+                      path: `/api/machines/${encodeURIComponent(uid)}/start`,
+                      method: "POST",
+                      token,
+                    });
 
                     if (!res.ok) {
-                      const body: any = await res.json().catch(() => ({}));
-                      const msg =
-                        body?.message ||
-                        body?.error ||
-                        "가공 시작(Start) 명령 실패";
-                      throw new Error(msg);
+                      throw new Error("가공 시작 실패");
                     }
 
                     void refreshStatusFor(uid);

@@ -47,8 +47,8 @@ export const useCncWorkBoard = (
     try {
       const [opRes, listRes, actRes] = await Promise.all([
         callRaw(targetUid, "GetOPStatus"),
-        callRaw(targetUid, "GetProgListInfo", 0),
-        callRaw(targetUid, "GetActivateProgInfo"),
+        callRaw(targetUid, "GetProgListInfo", 1), // 1=메인
+        callRaw(targetUid, "GetActivateProgInfo", 1), // 1=메인
       ]);
 
       setOpStatus(opRes?.data ?? opRes);
@@ -149,8 +149,8 @@ export const useCncWorkBoard = (
     if (!workUid) return;
     try {
       const [listRes, actRes] = await Promise.all([
-        callRaw(workUid, "GetProgListInfo", 0),
-        callRaw(workUid, "GetActivateProgInfo"),
+        callRaw(workUid, "GetProgListInfo", 1), // 1=메인
+        callRaw(workUid, "GetActivateProgInfo", 1), // 1=메인
       ]);
 
       const pl = (listRes && (listRes.data ?? listRes)) as any;

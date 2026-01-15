@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+import { apiFetch } from "@/lib/apiClient";
 
 import type { Machine } from "@/pages/manufacturer/cnc/types";
 
@@ -10,6 +11,7 @@ interface UseCncDashboardCoreParams {
   setError: (msg: string | null) => void;
   callRaw: (uid: string, dataType: string, payload?: any) => Promise<any>;
   ensureCncWriteAllowed: () => Promise<boolean>;
+  token: string | null;
 }
 
 export const useCncDashboardCore = ({
@@ -20,6 +22,7 @@ export const useCncDashboardCore = ({
   setError,
   callRaw,
   ensureCncWriteAllowed,
+  token,
 }: UseCncDashboardCoreParams) => {
   const controlCooldownRef = useRef<Record<string, number>>({});
 
@@ -84,11 +87,10 @@ export const useCncDashboardCore = ({
       setLoading(true);
       setError(null);
       try {
-        const endpoint = `/api/core/machines/${encodeURIComponent(
-          uid
-        )}/${action}`;
-        const res = await fetch(endpoint, {
+        const res = await apiFetch({
+          path: `/api/machines/${encodeURIComponent(uid)}/${action}`,
           method: "POST",
+          token,
         });
         if (!res.ok) {
           throw new Error(`${action} 실패`);

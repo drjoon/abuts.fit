@@ -31,9 +31,14 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/raw" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
  -d '{"uid":"M5","dataType":"GetOPStatus","timeoutMilliseconds":3000}'
 
-# 프로그램 목록(headType=0)
+# 프로그램 목록 (메인)
 
 curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=0" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
+
+# 프로그램 목록 (서브)
+
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 
 # 활성 프로그램 확인
@@ -41,9 +46,16 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=0" \
 curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs/active" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 
-# 프로그램 활성화(O0100)
+# 메인 활성화 (SetActivateProgram via /programs/activate, headType=0)
 
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/activate" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"programNo":100,"headType":0}'
+ -d '{"programNo":100}'
+
+# 서브 활성화 (SetActivateProgram via /programs/activate, headType=1)
+
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/activate-sub" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{"programNo":3001}'

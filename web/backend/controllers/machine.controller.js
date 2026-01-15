@@ -128,14 +128,17 @@ export async function getMachineAlarmProxy(req, res) {
   const { uid } = req.params;
   try {
     if (!ensureBridgeConfigured(res)) return;
-    const response = await fetch(
-      `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/alarm`,
-      {
-        method: "POST",
-        headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(req.body ?? {}),
-      }
-    );
+    // 브리지에 /machines/:uid/alarm 엔드포인트가 없을 수 있으므로
+    // 공통 raw 엔드포인트를 통해 GetMachineAlarmInfo를 호출한다.
+    const response = await fetch(`${BRIDGE_BASE}/api/cnc/raw`, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        uid,
+        dataType: "GetMachineAlarmInfo",
+        payload: req.body?.payload ?? { headType: req.body?.headType ?? 0 },
+      }),
+    });
     const data = await response.json().catch(() => ({}));
     res.status(response.status).json(data);
   } catch (error) {

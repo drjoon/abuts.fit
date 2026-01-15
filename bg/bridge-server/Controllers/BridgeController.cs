@@ -1,7 +1,6 @@
 using Hi_Link.Libraries.Model;
+using Hi_Link_Advanced.LinkBridge;
 using HiLinkBridgeWebApi48.Models;
-using PayloadUpdateActivateProg = Hi_Link.Libraries.Model.UpdateMachineActivateProgNo;
-using Mode1Api = HiLinkBridgeWebApi48.Mode1Api;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -12,6 +11,8 @@ using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
+using Mode1Api = HiLinkBridgeWebApi48.Mode1Api;
+using PayloadUpdateActivateProg = Hi_Link.Libraries.Model.UpdateMachineActivateProgNo;
 
 namespace HiLinkBridgeWebApi48.Controllers
 {
@@ -58,6 +59,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             var dataType = raw.dataType.Trim();
             var isAlarm = string.Equals(dataType, "GetMachineAlarmInfo", StringComparison.OrdinalIgnoreCase);
+            var isActivateProgram = string.Equals(dataType, "SetActivateProgram", StringComparison.OrdinalIgnoreCase);
 
             // Alarm은 Mode1 API로 처리 (안정성)
             if (isAlarm)
@@ -91,6 +93,67 @@ namespace HiLinkBridgeWebApi48.Controllers
                 {
                     success = true,
                     data = new { headType = data.headType, alarms }
+                });
+            }
+
+            // Program 활성화 (Mode1 control)
+            if (isActivateProgram)
+            {
+                var cooldownKey = $"activate:{raw.uid}";
+                if (!raw.bypassCooldown && IsControlOnCooldown(cooldownKey))
+                {
+                    return Request.CreateResponse((HttpStatusCode)429, new
+                    {
+                        success = false,
+                        message = "Too many activate requests"
+                    });
+                }
+
+                short headType = 1; // 기본 메인
+                short programNo = 0;
+                try
+                {
+                    if (raw.payload?["headType"] != null)
+                    {
+                        headType = (short)raw.payload.Value<int>("headType"); // 1=메인, 2=서브
+                    }
+                    if (raw.payload?["programNo"] != null)
+                    {
+                        programNo = (short)raw.payload.Value<int>("programNo");
+                    }
+                }
+                catch { /* fallback to defaults */ }
+
+                if (programNo <= 0)
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                    {
+                        success = false,
+                        message = "programNo is required"
+                    });
+                }
+
+                var dto = new PayloadUpdateActivateProg
+                {
+                    headType = headType, // 1=메인, 2=서브 (실측)
+                    programNo = programNo
+                };
+                var res = Mode1HandleStore.SetActivateProgram(raw.uid, dto, out var err);
+                if (res != 0)
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = err ?? $"SetActivateProgram failed (result={res})"
+                    });
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    message = "Program activated",
+                    programNo = dto.programNo,
+                    headType = dto.headType
                 });
             }
 
@@ -140,19 +203,19 @@ namespace HiLinkBridgeWebApi48.Controllers
             object payloadForMode2 = null;
 
             // CollectDataType별로 DLL이 기대하는 단순 스칼라 입력을 맞춰준다.
-            if (collectType == CollectDataType.GetProgListInfo)
+            if (collectType == CollectDataType.GetProgListInfo || collectType == CollectDataType.GetActivateProgInfo)
             {
                 // DLL 내부에서 (short)requestMessage.Data 캐스팅하므로 short로 맞춘다.
-                short progListHead = 0;
+                short head = 0;
                 try
                 {
                     if (raw.payload != null)
                     {
-                        progListHead = (short)raw.payload.Value<int>();
+                        head = (short)raw.payload.Value<int>();
                     }
                 }
                 catch { /* fallback 0 */ }
-                payloadForMode2 = progListHead;
+                payloadForMode2 = head;
             }
 
             try
@@ -217,6 +280,50 @@ namespace HiLinkBridgeWebApi48.Controllers
                 message = "Start signal sent",
                 ioUid,
                 status
+            });
+        }
+
+        // POST /machines/{machineId}/programs/activate-sub (Mode1, headType 기본 1)
+        [HttpPost]
+        [Route("machines/{machineId}/programs/activate-sub")]
+        public HttpResponseMessage ActivateProgramSub(string machineId, [FromBody] ActivateProgramRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            if (req == null || !req.programNo.HasValue || req.programNo.Value <= 0)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "programNo is required" });
+            }
+
+            var dto = new PayloadUpdateActivateProg
+            {
+                // 실측: headType 1=메인, 2=서브
+                headType = 2,
+                programNo = req.programNo.Value
+            };
+
+            // 서브 활성화 시 핸들을 초기화하여 Main/기존 상태 캐시 영향을 줄인다.
+            Mode1HandleStore.Invalidate(machineId);
+
+            var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var error);
+            if (res != 0)
+            {
+                return Request.CreateResponse((HttpStatusCode)500, new
+                {
+                    success = false,
+                    message = error ?? $"SetActivateProgram failed (result={res})"
+                });
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                message = "Program activated",
+                programNo = dto.programNo,
+                headType = dto.headType
             });
         }
 
@@ -301,13 +408,19 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
             }
 
+            // 핸들이 무효(-8)일 수 있으므로 1회 Invalidate 후 재시도
             if (!Mode1Api.TryGetProgListInfo(machineId, headType, out var info, out var error))
             {
-                return Request.CreateResponse((HttpStatusCode)500, new
+                // -8 등 무효 핸들 케이스에서 재시도
+                Mode1HandleStore.Invalidate(machineId);
+                if (!Mode1Api.TryGetProgListInfo(machineId, headType, out info, out error))
                 {
-                    success = false,
-                    message = error ?? "GetMachineProgramListInfo failed"
-                });
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = error ?? "GetMachineProgramListInfo failed"
+                    });
+                }
             }
 
             return Request.CreateResponse(HttpStatusCode.OK, new
@@ -366,7 +479,8 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             var dto = new PayloadUpdateActivateProg
             {
-                headType = req.headType ?? 0,
+                // 실측: headType 1=메인, 2=서브
+                headType = req.headType ?? 1,
                 programNo = req.programNo.Value
             };
 

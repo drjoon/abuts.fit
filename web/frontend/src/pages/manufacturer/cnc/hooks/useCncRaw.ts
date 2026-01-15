@@ -1,3 +1,6 @@
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
+
 const RAW_READ_COOLDOWN_MS = 5000; // 서버 측 CONTROL_COOLDOWN_MS(5000ms)와 정렬
 const RATE_LIMIT_BACKOFF_MS = 30000; // 429를 받은 후 추가로 쉬는 시간 (ms)
 
@@ -5,6 +8,8 @@ const lastRawReadCall: Record<string, number> = {};
 const lastRateLimitUntil: Record<string, number> = {};
 
 export const useCncRaw = () => {
+  const { token } = useAuthStore();
+
   const callRaw = async (
     uid: string,
     dataType: string,
@@ -41,18 +46,16 @@ export const useCncRaw = () => {
       lastRawReadCall[key] = now;
     }
 
-    const res = await fetch(
-      `/api/core/machines/${encodeURIComponent(uid)}/raw`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uid, dataType, payload }),
-      }
-    );
+    const res = await apiFetch({
+      path: `/api/machines/${encodeURIComponent(uid)}/raw`,
+      method: "POST",
+      token,
+      jsonBody: { uid, dataType, payload },
+    });
 
-    const body = await res.json().catch(() => ({}));
+    const body = res.data ?? {};
 
-    if (!res.ok || body?.success === false) {
+    if (!res.ok || (body as any)?.success === false) {
       // 429(too many requests)인 경우에는 자동 조회 계열에만 backoff를 적용하고 조용히 무시한다.
       if (res.status === 429 && READ_TYPES.includes(dataType)) {
         const now = Date.now();
@@ -61,12 +64,12 @@ export const useCncRaw = () => {
       }
 
       const msg =
-        body?.message ||
-        body?.error ||
+        (body as any)?.message ||
+        (body as any)?.error ||
         `${dataType} 호출 실패 (HTTP ${res.status})`;
       throw new Error(msg);
     }
-    return body;
+    return body ?? {};
   };
 
   return { callRaw };
