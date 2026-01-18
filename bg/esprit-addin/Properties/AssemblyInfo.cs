@@ -8,9 +8,9 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("ESPRIT2025AddinProject")]
 [assembly: AssemblyDescription("ESPRIT2025AddinProject Add-In")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Acrodent")]
-[assembly: AssemblyProduct("Acrodent.EspritAddIns.ESPRIT2025AddinProject")]
-[assembly: AssemblyCopyright("Copyright © 2025 Acrodent")]
+[assembly: AssemblyCompany("Abuts")]
+[assembly: AssemblyProduct("Abuts.EspritAddIns.ESPRIT2025AddinProject")]
+[assembly: AssemblyCopyright("Copyright © 2025 Abuts")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 

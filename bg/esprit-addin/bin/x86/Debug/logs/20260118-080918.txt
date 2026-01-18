@@ -1,0 +1,87 @@
+==== Trace started at 2026-01-18T08:09:18.7475458+09:00 ====
+STL 병합/회전 직후 - FreeFormFeatures.Count: 0
+DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:ESPRIT2025AddinProject, Version:1.0.0.0, Location:C:\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
+DentalAddin: UserData.PrctDirectory 적용 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\
+DentalAddin: UserData.NumData 적용 (Len:8)
+DentalAddin: UserData.NumCombobox 적용 (Len:7)
+DentalAddin: UserData.PrcFilePath 적용 (Len:13)
+DentalAddin: UserData.PrcFileName 적용 (Len:13)
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\3_Turning prc\Turning.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\4_ReverseTurning prc\Reverse Turning Process.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\5_Rough prc\MillRough_3D.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\5_Rough prc\MillRough_2D.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\6_Semi_Rough prc\SemiRough_2D.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\7_FrontFace prc\FACE.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\8_0-180 prc\3D.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\9_90-270 prc\3D_2.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\11_Composite prc\5axisComposite.prc
+DentalAddin: PRC 파일을 찾을 수 없음 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\10_MarkText prc\MarkText.prc
+DentalAddin: RoughType 자동 결정 - 3 (RoughPRC:C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\5_Rough prc\MillRough_3D.prc)
+DentalAddin: MoveSTL 초기화 - MTI:0(True), Front:0.25(True), Back:10.85(True), BarDia:8
+DentalAddin: 한계점 설정 완료 - FrontPointX:0.25, BackPointX:10.85
+DentalAddin: MoveSTL 실행 시작 (FrontLimit:0.25, BackLimit:10.85)
+DentalAddin: MoveSTL 실행 완료
+DentalAddin: Bind 실행 시도 (Document: True, EspritApp: True)
+DentalAddin: Main 실행 시작
+DentalAddin: Main 시작 - Document:True, EspritApp:True, Jump:0, RL:0, SpindleSide:False
+DentalAddin: Main - Clean 완료
+DentalAddin: Main - Boundry 호출 준비 (RL:1)
+DentalAddin: Boundry 시작 - Document:True, RL:1, MTI:0, FrontPointX:0.25, BackPointX:10.85
+DentalAddin: Boundry - LatheMachineSetup.BarDiameter:8
+DentalAddin: TurningMain: TurningDepth 보정 - Original:0, Applied:0.5
+DentalAddin: ExtendTurning: Chamfer(0)가 유효하지 않아 45도로 보정
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: Roughworkplane 시작 - RoughType:3
+DentalAddin: PreOp:CustomCycle - FeatureChains.Count: 12
+DentalAddin: PreOp:CustomCycle - FeatureChain[1] Boundry1
+DentalAddin: PreOp:CustomCycle - FeatureChain[2] Boundry2
+DentalAddin: PreOp:CustomCycle - FeatureChain[3] RoughBoundry1
+DentalAddin: PreOp:CustomCycle - FeatureChain[4] RoughBoundry2
+DentalAddin: PreOp:CustomCycle - FeatureChain[5] RoughBoundry3
+DentalAddin: PreOp:CustomCycle - FeatureChain[6] Turning
+DentalAddin: PreOp:CustomCycle - FeatureChain[7] TurningProfile1_Front
+DentalAddin: PreOp:CustomCycle - FeatureChain[8] TurningProfile1
+DentalAddin: PreOp:CustomCycle - FeatureChain[9] TurningProfile2
+DentalAddin: PreOp:CustomCycle - FeatureChain[10] TurningProfile3
+DentalAddin: PreOp:CustomCycle - FeatureChain[11] TurningProfile4
+DentalAddin: PreOp:CustomCycle - FeatureChain[12] TurningProfile2_Front
+DentalAddin: PreOp:CustomCycle - FreeFormFeatures.Count: 8
+DentalAddin: PreOp:CustomCycle - Feature[1] 3DRoughMilling_0Degree
+DentalAddin: PreOp:CustomCycle - Feature[2] 3DRoughMilling_120Degree
+DentalAddin: PreOp:CustomCycle - Feature[3] 3DRoughMilling_240Degree
+DentalAddin: PreOp:CustomCycle - Feature[4] 3DMilling_180Degree
+DentalAddin: PreOp:CustomCycle - Feature[5] 3DMilling_270Degree
+DentalAddin: PreOp:CustomCycle - Feature[6] 3DMilling_0Degree
+DentalAddin: PreOp:CustomCycle - Feature[7] 3DMilling_90Degree
+DentalAddin: PreOp:CustomCycle - Feature[8] 3DMilling_FrontFace
+DentalAddin: PreOp:TurningOp - FeatureChains.Count: 12
+DentalAddin: PreOp:TurningOp - FeatureChain[1] Boundry1
+DentalAddin: PreOp:TurningOp - FeatureChain[2] Boundry2
+DentalAddin: PreOp:TurningOp - FeatureChain[3] RoughBoundry1
+DentalAddin: PreOp:TurningOp - FeatureChain[4] RoughBoundry2
+DentalAddin: PreOp:TurningOp - FeatureChain[5] RoughBoundry3
+DentalAddin: PreOp:TurningOp - FeatureChain[6] Turning
+DentalAddin: PreOp:TurningOp - FeatureChain[7] TurningProfile1_Front
+DentalAddin: PreOp:TurningOp - FeatureChain[8] TurningProfile1
+DentalAddin: PreOp:TurningOp - FeatureChain[9] TurningProfile2
+DentalAddin: PreOp:TurningOp - FeatureChain[10] TurningProfile3
+DentalAddin: PreOp:TurningOp - FeatureChain[11] TurningProfile4
+DentalAddin: PreOp:TurningOp - FeatureChain[12] TurningProfile2_Front
+DentalAddin: PreOp:TurningOp - FreeFormFeatures.Count: 8
+DentalAddin: PreOp:TurningOp - Feature[1] 3DRoughMilling_0Degree
+DentalAddin: PreOp:TurningOp - Feature[2] 3DRoughMilling_120Degree
+DentalAddin: PreOp:TurningOp - Feature[3] 3DRoughMilling_240Degree
+DentalAddin: PreOp:TurningOp - Feature[4] 3DMilling_180Degree
+DentalAddin: PreOp:TurningOp - Feature[5] 3DMilling_270Degree
+DentalAddin: PreOp:TurningOp - Feature[6] 3DMilling_0Degree
+DentalAddin: PreOp:TurningOp - Feature[7] 3DMilling_90Degree
+DentalAddin: PreOp:TurningOp - Feature[8] 3DMilling_FrontFace
+DentalAddin Exception [MainModule.Main]
+System.Runtime.InteropServices.SEHException (0x80004005): 외부 구성 요소에서 예외를 Throw했습니다.
+   위치: EspritTechnology.ITechnologyUtility.OpenProcess(String File)
+   위치: DentalAddin.MainModule.TurningOp() 파일 C:\abuts.fit\bg\esprit-addin\DentalAddinDecomp\DentalAddin\MainModule.cs:줄 1885
+   위치: DentalAddin.MainModule.OperationSeq() 파일 C:\abuts.fit\bg\esprit-addin\DentalAddinDecomp\DentalAddin\MainModule.cs:줄 1841
+   위치: DentalAddin.MainModule.Main() 파일 C:\abuts.fit\bg\esprit-addin\DentalAddinDecomp\DentalAddin\MainModule.cs:줄 505

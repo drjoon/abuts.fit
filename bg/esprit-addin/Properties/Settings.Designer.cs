@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.Properties {
+namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Properties {
     
     
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]

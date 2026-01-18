@@ -1,0 +1,9 @@
+==== Trace started at 2026-01-16T22:13:57.2689640+09:00 ====
+DentalAddin: Bind 실행 시도 (Document: True, EspritApp: True)
+DentalAddin: Bind 미제공 - 필드 주입만으로 진행합니다.
+DentalAddin: Main 실행 시작
+DentalAddin: Main 실행 실패 - 개체 참조가 개체의 인스턴스로 설정되지 않았습니다.
+   위치: DentalAddin.MoveSTL_Module.Boundry()
+   위치: DentalAddin.MainModule.Main()
+StlFileProcessor: DentalAddin 실행 실패 - 개체 참조가 개체의 인스턴스로 설정되지 않았습니다.
+StlFileProcessor: 완료 - C:\abuts.fit\bg\storage\2-filled\20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl

@@ -1,0 +1,163 @@
+==== Trace started at 2026-01-18T08:56:28.1690182+09:00 ====
+STL 병합/회전 직후 - FreeFormFeatures.Count: 0
+DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:ESPRIT2025AddinProject, Version:1.0.0.0, Location:C:\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
+DentalAddin: UserData.PrctDirectory 적용 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\
+DentalAddin: UserData.NumData 적용 (Len:8)
+DentalAddin: UserData.NumCombobox 적용 (Len:7)
+DentalAddin: UserData.PrcFilePath 적용 (Len:13)
+DentalAddin: UserData.PrcFileName 적용 (Len:13)
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\3_Turning prc\Turning.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\4_ReverseTurning prc\Reverse Turning Process.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_2D.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\6_Semi_Rough prc\SemiRough_2D.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\7_FrontFace prc\FACE.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\8_0-180 prc\3D.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\9_90-270 prc\3D_2.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\11_Composite prc\5axisComposite.prc
+DentalAddin: PRC 기본 경로에서 찾지 못해 AcroDent 경로로 대체 - C:\abuts.fit\bg\esprit-addin\AcroDent\10_MarkText prc\MarkText.prc
+DentalAddin: RoughType 자동 결정 - 3 (RoughPRC:C:\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc)
+DentalAddin: MoveSTL 초기화 - MTI:0(True), Front:0.25(True), Back:10.85(True), BarDia:8
+DentalAddin: 한계점 설정 완료 - FrontPointX:0.25, BackPointX:10.85
+DentalAddin: MoveSTL 실행 시작 (FrontLimit:0.25, BackLimit:10.85)
+DentalAddin: MoveSTL 실행 완료
+DentalAddin: Bind 실행 시도 (Document: True, EspritApp: True)
+DentalAddin: Main 실행 시작
+DentalAddin: Main 시작 - Document:True, EspritApp:True, Jump:0, RL:0, SpindleSide:False
+DentalAddin: Main - Clean 완료
+DentalAddin: Main - Boundry 호출 준비 (RL:1)
+DentalAddin: Boundry 시작 - Document:True, RL:1, MTI:0, FrontPointX:0.25, BackPointX:10.85
+DentalAddin: Boundry - LatheMachineSetup.BarDiameter:8
+DentalAddin: TurningMain: TurningDepth 보정 - Original:0, Applied:0.5
+DentalAddin: ExtendTurning: Chamfer(0)가 유효하지 않아 45도로 보정
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: Roughworkplane 시작 - RoughType:3
+DentalAddin: PreOp:CustomCycle - FeatureChains.Count: 12
+DentalAddin: PreOp:CustomCycle - FeatureChain[1] Boundry1
+DentalAddin: PreOp:CustomCycle - FeatureChain[2] Boundry2
+DentalAddin: PreOp:CustomCycle - FeatureChain[3] RoughBoundry1
+DentalAddin: PreOp:CustomCycle - FeatureChain[4] RoughBoundry2
+DentalAddin: PreOp:CustomCycle - FeatureChain[5] RoughBoundry3
+DentalAddin: PreOp:CustomCycle - FeatureChain[6] Turning
+DentalAddin: PreOp:CustomCycle - FeatureChain[7] TurningProfile1_Front
+DentalAddin: PreOp:CustomCycle - FeatureChain[8] TurningProfile1
+DentalAddin: PreOp:CustomCycle - FeatureChain[9] TurningProfile2
+DentalAddin: PreOp:CustomCycle - FeatureChain[10] TurningProfile3
+DentalAddin: PreOp:CustomCycle - FeatureChain[11] TurningProfile4
+DentalAddin: PreOp:CustomCycle - FeatureChain[12] TurningProfile2_Front
+DentalAddin: PreOp:CustomCycle - FreeFormFeatures.Count: 8
+DentalAddin: PreOp:CustomCycle - Feature[1] 3DRoughMilling_0Degree
+DentalAddin: PreOp:CustomCycle - Feature[2] 3DRoughMilling_120Degree
+DentalAddin: PreOp:CustomCycle - Feature[3] 3DRoughMilling_240Degree
+DentalAddin: PreOp:CustomCycle - Feature[4] 3DMilling_180Degree
+DentalAddin: PreOp:CustomCycle - Feature[5] 3DMilling_270Degree
+DentalAddin: PreOp:CustomCycle - Feature[6] 3DMilling_0Degree
+DentalAddin: PreOp:CustomCycle - Feature[7] 3DMilling_90Degree
+DentalAddin: PreOp:CustomCycle - Feature[8] 3DMilling_FrontFace
+DentalAddin: PreOp:TurningOp - FeatureChains.Count: 12
+DentalAddin: PreOp:TurningOp - FeatureChain[1] Boundry1
+DentalAddin: PreOp:TurningOp - FeatureChain[2] Boundry2
+DentalAddin: PreOp:TurningOp - FeatureChain[3] RoughBoundry1
+DentalAddin: PreOp:TurningOp - FeatureChain[4] RoughBoundry2
+DentalAddin: PreOp:TurningOp - FeatureChain[5] RoughBoundry3
+DentalAddin: PreOp:TurningOp - FeatureChain[6] Turning
+DentalAddin: PreOp:TurningOp - FeatureChain[7] TurningProfile1_Front
+DentalAddin: PreOp:TurningOp - FeatureChain[8] TurningProfile1
+DentalAddin: PreOp:TurningOp - FeatureChain[9] TurningProfile2
+DentalAddin: PreOp:TurningOp - FeatureChain[10] TurningProfile3
+DentalAddin: PreOp:TurningOp - FeatureChain[11] TurningProfile4
+DentalAddin: PreOp:TurningOp - FeatureChain[12] TurningProfile2_Front
+DentalAddin: PreOp:TurningOp - FreeFormFeatures.Count: 8
+DentalAddin: PreOp:TurningOp - Feature[1] 3DRoughMilling_0Degree
+DentalAddin: PreOp:TurningOp - Feature[2] 3DRoughMilling_120Degree
+DentalAddin: PreOp:TurningOp - Feature[3] 3DRoughMilling_240Degree
+DentalAddin: PreOp:TurningOp - Feature[4] 3DMilling_180Degree
+DentalAddin: PreOp:TurningOp - Feature[5] 3DMilling_270Degree
+DentalAddin: PreOp:TurningOp - Feature[6] 3DMilling_0Degree
+DentalAddin: PreOp:TurningOp - Feature[7] 3DMilling_90Degree
+DentalAddin: PreOp:TurningOp - Feature[8] 3DMilling_FrontFace
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChains.Count: 12
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[1] Boundry1
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[2] Boundry2
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[3] RoughBoundry1
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[4] RoughBoundry2
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[5] RoughBoundry3
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[6] Turning
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[7] TurningProfile1_Front
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[8] TurningProfile1
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[9] TurningProfile2
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[10] TurningProfile3
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[11] TurningProfile4
+DentalAddin: PreOp:RoughFreeFromMill - FeatureChain[12] TurningProfile2_Front
+DentalAddin: PreOp:RoughFreeFromMill - FreeFormFeatures.Count: 8
+DentalAddin: PreOp:RoughFreeFromMill - Feature[1] 3DRoughMilling_0Degree
+DentalAddin: PreOp:RoughFreeFromMill - Feature[2] 3DRoughMilling_120Degree
+DentalAddin: PreOp:RoughFreeFromMill - Feature[3] 3DRoughMilling_240Degree
+DentalAddin: PreOp:RoughFreeFromMill - Feature[4] 3DMilling_180Degree
+DentalAddin: PreOp:RoughFreeFromMill - Feature[5] 3DMilling_270Degree
+DentalAddin: PreOp:RoughFreeFromMill - Feature[6] 3DMilling_0Degree
+DentalAddin: PreOp:RoughFreeFromMill - Feature[7] 3DMilling_90Degree
+DentalAddin: PreOp:RoughFreeFromMill - Feature[8] 3DMilling_FrontFace
+DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 0-120-240 - PRC 경로: C:\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc
+DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 0-120-240 - PRC 파일 열기 성공 (Count:1)
+DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 120/240 - PRC 경로: C:\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc
+DentalAddin: OpenProcess:RoughFreeFromMill:PRC[3] 120/240 - PRC 파일 열기 성공 (Count:1)
+DentalAddin: OpenProcess:free:PRC[6] ParallelPlanes - PRC 경로: C:\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_3D.prc
+DentalAddin: OpenProcess:free:PRC[6] ParallelPlanes - PRC 파일 열기 성공 (Count:1)
+DentalAddin: PreOp:FreeFormMill - FeatureChains.Count: 12
+DentalAddin: PreOp:FreeFormMill - FeatureChain[1] Boundry1
+DentalAddin: PreOp:FreeFormMill - FeatureChain[2] Boundry2
+DentalAddin: PreOp:FreeFormMill - FeatureChain[3] RoughBoundry1
+DentalAddin: PreOp:FreeFormMill - FeatureChain[4] RoughBoundry2
+DentalAddin: PreOp:FreeFormMill - FeatureChain[5] RoughBoundry3
+DentalAddin: PreOp:FreeFormMill - FeatureChain[6] Turning
+DentalAddin: PreOp:FreeFormMill - FeatureChain[7] TurningProfile1_Front
+DentalAddin: PreOp:FreeFormMill - FeatureChain[8] TurningProfile1
+DentalAddin: PreOp:FreeFormMill - FeatureChain[9] TurningProfile2
+DentalAddin: PreOp:FreeFormMill - FeatureChain[10] TurningProfile3
+DentalAddin: PreOp:FreeFormMill - FeatureChain[11] TurningProfile4
+DentalAddin: PreOp:FreeFormMill - FeatureChain[12] TurningProfile2_Front
+DentalAddin: PreOp:FreeFormMill - FreeFormFeatures.Count: 8
+DentalAddin: PreOp:FreeFormMill - Feature[1] 3DRoughMilling_0Degree
+DentalAddin: PreOp:FreeFormMill - Feature[2] 3DRoughMilling_120Degree
+DentalAddin: PreOp:FreeFormMill - Feature[3] 3DRoughMilling_240Degree
+DentalAddin: PreOp:FreeFormMill - Feature[4] 3DMilling_180Degree
+DentalAddin: PreOp:FreeFormMill - Feature[5] 3DMilling_270Degree
+DentalAddin: PreOp:FreeFormMill - Feature[6] 3DMilling_0Degree
+DentalAddin: PreOp:FreeFormMill - Feature[7] 3DMilling_90Degree
+DentalAddin: PreOp:FreeFormMill - Feature[8] 3DMilling_FrontFace
+DentalAddin: FreeFormMill - free() 호출
+DentalAddin: free() 시작
+DentalAddin: OpenProcess:free:PRC[5] ParallelPlanes - PRC 경로: C:\abuts.fit\bg\esprit-addin\AcroDent\5_Rough prc\MillRough_2D.prc
+DentalAddin: OpenProcess:free:PRC[5] ParallelPlanes - PRC 파일 열기 성공 (Count:1)
+DentalAddin: FreeFormMill - free() 완료
+DentalAddin: FreeFormMill - NumCombobox[3]!=1, Emerge/Composite2 건너뜀
+DentalAddin: PreOp:CustomCycle2 - FeatureChains.Count: 12
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[1] Boundry1
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[2] Boundry2
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[3] RoughBoundry1
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[4] RoughBoundry2
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[5] RoughBoundry3
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[6] Turning
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[7] TurningProfile1_Front
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[8] TurningProfile1
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[9] TurningProfile2
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[10] TurningProfile3
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[11] TurningProfile4
+DentalAddin: PreOp:CustomCycle2 - FeatureChain[12] TurningProfile2_Front
+DentalAddin: PreOp:CustomCycle2 - FreeFormFeatures.Count: 8
+DentalAddin: PreOp:CustomCycle2 - Feature[1] 3DRoughMilling_0Degree
+DentalAddin: PreOp:CustomCycle2 - Feature[2] 3DRoughMilling_120Degree
+DentalAddin: PreOp:CustomCycle2 - Feature[3] 3DRoughMilling_240Degree
+DentalAddin: PreOp:CustomCycle2 - Feature[4] 3DMilling_180Degree
+DentalAddin: PreOp:CustomCycle2 - Feature[5] 3DMilling_270Degree
+DentalAddin: PreOp:CustomCycle2 - Feature[6] 3DMilling_0Degree
+DentalAddin: PreOp:CustomCycle2 - Feature[7] 3DMilling_90Degree
+DentalAddin: PreOp:CustomCycle2 - Feature[8] 3DMilling_FrontFace
+DentalAddin: Main 종료 단계 - EspritApp 처리 상태 종료
+DentalAddin: Main 실행 완료
+StlFileProcessor: DentalPanel 호출 완료
+StlFileProcessor: 완료 - C:\abuts.fit\bg\storage\2-filled\20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl

@@ -1,0 +1,2 @@
+==== Trace started at 2026-01-16T18:54:22.4160310+09:00 ====
+StlFileProcessor: 회전 대상 STL이 없습니다.

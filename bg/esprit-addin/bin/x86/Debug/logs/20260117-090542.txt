@@ -1,0 +1,19 @@
+==== Trace started at 2026-01-17T09:05:42.3889759+09:00 ====
+DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:ESPRIT2025AddinProject, Version:1.0.0.0, Location:C:\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
+DentalAddin: MoveSTL 초기화 - MTI:0(True), Front:1.95(True), Back:12.8(True), BarDia:8
+DentalAddin: Bind 실행 시도 (Document: True, EspritApp: True)
+DentalAddin: Main 실행 시작
+DentalAddin: Main 시작 - Document:True, EspritApp:True, Jump:0, RL:0, SpindleSide:False
+DentalAddin: Main - Clean 완료
+DentalAddin: Main - Boundry 호출 준비 (RL:1)
+DentalAddin: Boundry 시작 - Document:True, RL:1, MTI:0, FrontPointX:1.95, BackPointX:12.8
+DentalAddin: Boundry - LatheMachineSetup.BarDiameter:8
+DentalAddin: TurningMain: TurningDepth 보정 - Original:0, Applied:0.577061366697676
+DentalAddin: ExtendTurning: Chamfer(0)가 유효하지 않아 45도로 보정
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: ExtendTurning: Chamfer(0) 보정(프로파일)
+DentalAddin: TryAddOperation:LatheMoldRoughing array[1] - graphicObject is null
+DentalAddin: TryAddOperation:LatheMoldRoughing array[2] - graphicObject is null
+DentalAddin: TryAddOperation:LatheMoldRoughing array[3] - graphicObject is null

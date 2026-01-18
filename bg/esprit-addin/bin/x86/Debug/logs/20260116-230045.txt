@@ -1,0 +1,16 @@
+==== Trace started at 2026-01-16T23:00:45.5661826+09:00 ====
+DentalAddin: Assembly - Name:DentalAddin, Version:1.0.0.0, Location:C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\DentalAddin.dll, LastWrite:2022-04-22 16:32:18, Size:413184
+DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:DentalAddin, Version:1.0.0.0, Location:C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\DentalAddin.dll
+DentalAddin: MoveSTL 초기화 - MTI:0(True), Front:1.95(True), Back:12.8(True), BarDia:8
+DentalAddin: Bind 실행 시도 (Document: True, EspritApp: True)
+DentalAddin: Bind 미제공 - 필드 주입만으로 진행합니다.
+DentalAddin: Main 실행 시작
+DentalAddin: Main 실행 실패
+System.NullReferenceException: 개체 참조가 개체의 인스턴스로 설정되지 않았습니다.
+   위치: DentalAddin.MoveSTL_Module.Boundry()
+   위치: DentalAddin.MainModule.Main()
+StlFileProcessor: DentalAddin 실행 실패
+System.NullReferenceException: 개체 참조가 개체의 인스턴스로 설정되지 않았습니다.
+   위치: DentalAddin.MoveSTL_Module.Boundry()
+   위치: DentalAddin.MainModule.Main()
+StlFileProcessor: 완료 - C:\abuts.fit\bg\storage\2-filled\20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl

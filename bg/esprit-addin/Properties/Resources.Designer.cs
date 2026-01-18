@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.Properties {
+namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Properties {
     using System;
     
     
@@ -39,7 +39,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.Properties {
         internal static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
-                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Acrodent.EspritAddIns.ESPRIT2025AddinProject.Properties.Resources", typeof(Resources).Assembly);
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Abuts.EspritAddIns.ESPRIT2025AddinProject.Properties.Resources", typeof(Resources).Assembly);
                     resourceMan = temp;
                 }
                 return resourceMan;
@@ -70,7 +70,7 @@ namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Abuts.fit.
+        ///   Looks up a localized string similar to AcrodentAddin.
         /// </summary>
         internal static string AddInFriendlyName {
             get {

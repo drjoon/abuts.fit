@@ -22,10 +22,35 @@ internal sealed class TurningFeature_Module
 		MainModule.MinF = 0;
 		MainModule.SL = 1.0;
 		TurningProfile();
+		double halfBarDiameter = 0.0;
+		double turningSpan = 0.0;
+		double turningDepth = MainModule.TurningDepth;
+		try
+		{
+			double barDiameter = MainModule.Document?.LatheMachineSetup?.BarDiameter ?? 0.0;
+			halfBarDiameter = barDiameter / 2.0;
+			turningSpan = halfBarDiameter - MainModule.LowerY;
+		}
+		catch (Exception ex)
+		{
+			DentalLogger.Log($"TurningMain: LatheMachineSetup 데이터 조회 실패 - {ex.Message}");
+		}
+		if (double.IsNaN(turningSpan) || double.IsInfinity(turningSpan) || turningSpan <= 0)
+		{
+			turningSpan = Math.Max(1.0, Math.Abs(MainModule.LowerY));
+			DentalLogger.Log($"TurningMain: 유효하지 않은 TurningSpan, fallback 사용 (Span:{turningSpan}, LowerY:{MainModule.LowerY})");
+		}
+		if (double.IsNaN(turningDepth) || double.IsInfinity(turningDepth) || Math.Abs(turningDepth) < 1e-6)
+		{
+			turningDepth = Math.Max(0.5, turningSpan / 5.0);
+			DentalLogger.Log($"TurningMain: TurningDepth 보정 - Original:{MainModule.TurningDepth}, Applied:{turningDepth}");
+			MainModule.TurningDepth = turningDepth;
+		}
 		checked
 		{
-			MainModule.TurningTimes = (int)Conversion.Int((MainModule.Document.LatheMachineSetup.BarDiameter / 2.0 - MainModule.LowerY) / MainModule.TurningDepth);
-			if ((MainModule.Document.LatheMachineSetup.BarDiameter / 2.0 - MainModule.LowerY) / MainModule.TurningDepth - (double)MainModule.TurningTimes > 0.1 && (MainModule.Document.LatheMachineSetup.BarDiameter / 2.0 - MainModule.LowerY) / MainModule.TurningDepth - (double)MainModule.TurningTimes + MainModule.TurningDepth > 1.05)
+			MainModule.TurningTimes = (int)Conversion.Int(turningSpan / turningDepth);
+			double turningRatio = turningSpan / turningDepth - (double)MainModule.TurningTimes;
+			if (turningRatio > 0.1 && turningRatio + turningDepth > 1.05)
 			{
 				MainModule.TurningTimes++;
 			}
@@ -2332,15 +2357,26 @@ internal sealed class TurningFeature_Module
 			for (int i = 1; i <= count; i++)
 			{
 				MainModule.FC1 = MainModule.Document.FeatureChains[i];
+				if (MainModule.FC1 == null)
+				{
+					DentalLogger.Log($"ExtendTurning: FeatureChain[{i}]가 null입니다.");
+					continue;
+				}
 				Point point = MainModule.FC1.Extremity(espExtremityType.espExtremityEnd);
 				if (Operators.CompareString(MainModule.FC1.Name, "Turning", false) == 0)
 				{
 					point = MainModule.FC1.Extremity(espExtremityType.espExtremityEnd);
 					double num = MainModule.Document.LatheMachineSetup.BarDiameter / 2.0;
-					x = ((!MainModule.SpindleSide) ? (point.X + (num - point.Y) / Math.Tan(Math.PI * MainModule.Chamfer / 180.0)) : (point.X - (num - point.Y) / Math.Tan(Math.PI * MainModule.Chamfer / 180.0)));
+					double chamferTan = Math.Tan(Math.PI * MainModule.Chamfer / 180.0);
+					if (double.IsNaN(chamferTan) || Math.Abs(chamferTan) < 1e-6)
+					{
+						chamferTan = Math.Tan(Math.PI / 4.0);
+						DentalLogger.Log($"ExtendTurning: Chamfer({MainModule.Chamfer})가 유효하지 않아 45도로 보정");
+					}
+					x = ((!MainModule.SpindleSide) ? (point.X + (num - point.Y) / chamferTan) : (point.X - (num - point.Y) / chamferTan));
 					Point point2 = MainModule.Document.Points.Add(x, num, 0.0);
 					Segment segment = MainModule.Document.Segments.Add(point, point2);
-					MainModule.FC1.Add(segment);
+					TryAddSegment(MainModule.FC1, segment, "Turning");
 					MainModule.Document.Points.Remove(point2.Key);
 					MainModule.Document.Segments.Remove(segment.Key);
 				}
@@ -2355,12 +2391,18 @@ internal sealed class TurningFeature_Module
 					{
 						if (MainModule.Chamfer != 90.0)
 						{
-							x = ((!MainModule.SpindleSide) ? (point.X + (double)(MainModule.TurningTimes - num2) * MainModule.TurningDepth / Math.Tan(Math.PI * MainModule.Chamfer / 180.0)) : (point.X - (double)(MainModule.TurningTimes - num2) * MainModule.TurningDepth / Math.Tan(Math.PI * MainModule.Chamfer / 180.0)));
+							double chamferTan2 = Math.Tan(Math.PI * MainModule.Chamfer / 180.0);
+							if (double.IsNaN(chamferTan2) || Math.Abs(chamferTan2) < 1e-6)
+							{
+								chamferTan2 = Math.Tan(Math.PI / 4.0);
+								DentalLogger.Log($"ExtendTurning: Chamfer({MainModule.Chamfer}) 보정(프로파일)");
+							}
+							x = ((!MainModule.SpindleSide) ? (point.X + (double)(MainModule.TurningTimes - num2) * MainModule.TurningDepth / chamferTan2) : (point.X - (double)(MainModule.TurningTimes - num2) * MainModule.TurningDepth / chamferTan2));
 						}
 						double num = point.Y;
 						Point point2 = MainModule.Document.Points.Add(x, num, 0.0);
 						Segment segment = MainModule.Document.Segments.Add(point, point2);
-						MainModule.FC1.Add(segment);
+						TryAddSegment(MainModule.FC1, segment, "TurningProfile");
 						MainModule.Document.Points.Remove(point2.Key);
 						MainModule.Document.Segments.Remove(segment.Key);
 						point = null;
@@ -2371,7 +2413,7 @@ internal sealed class TurningFeature_Module
 						x = ((!MainModule.SpindleSide) ? (point.X + (num - point.Y) / Math.Tan(Math.PI * MainModule.Chamfer / 180.0)) : (point.X - (num - point.Y) / Math.Tan(Math.PI * MainModule.Chamfer / 180.0)));
 						point2 = MainModule.Document.Points.Add(x, num, 0.0);
 						segment = MainModule.Document.Segments.Add(point, point2);
-						MainModule.FC1.Add(segment);
+						TryAddSegment(MainModule.FC1, segment, "TurningProfileTop");
 						MainModule.Document.Points.Remove(point.Key);
 						MainModule.Document.Points.Remove(point2.Key);
 						MainModule.Document.Segments.Remove(segment.Key);
@@ -2441,6 +2483,30 @@ internal sealed class TurningFeature_Module
 			}
 		}
 	}
+
+	private static void TryAddSegment(FeatureChain featureChain, Segment segment, string context)
+{
+    if (featureChain == null)
+    {
+        DentalLogger.Log($"ExtendTurning:{context} - FeatureChain null (segment:{segment?.Key})");
+        return;
+    }
+    if (segment == null)
+    {
+        DentalLogger.Log($"ExtendTurning:{context} - segment null");
+        return;
+    }
+
+    try
+    {
+        featureChain.Add(segment);
+    }
+    catch (Exception ex)
+    {
+        DentalLogger.Log($"ExtendTurning:{context} - FeatureChain.Add 실패 (segment:{segment.Key}) - {ex.Message}");
+        throw;
+    }
+}
 
 	private static void SearchSubNumber(ref double Count, double Hvalue, byte Th)
 	{

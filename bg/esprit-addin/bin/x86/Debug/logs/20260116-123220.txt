@@ -1,0 +1,5 @@
+==== Trace started at 2026-01-16T12:32:20.4283917+09:00 ====
+StlFileProcessor: 템플릿 후보: C:\abuts.fit\bg\esprit-addin\Templates\Hanwha_D6.est
+StlFileProcessor: 템플릿 사용: C:\abuts.fit\bg\esprit-addin\Templates\Hanwha_D6.est
+StlFileProcessor: ESPRIT 문서를 새로 만들 수 없습니다.
+StlFileProcessor: 활성화된 ESPRIT 문서를 만들 수 없습니다.

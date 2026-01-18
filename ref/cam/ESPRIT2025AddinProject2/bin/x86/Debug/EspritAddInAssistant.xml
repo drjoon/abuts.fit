@@ -1,0 +1,345 @@
+﻿<?xml version="1.0"?>
+<doc>
+<assembly>
+<name>
+EspritAddInAssistant
+</name>
+</assembly>
+<members>
+<member name="T:My.Resources.Resources">
+<summary>
+  A strongly-typed resource class, for looking up localized strings, etc.
+</summary>
+</member>
+<member name="P:My.Resources.Resources.ResourceManager">
+<summary>
+  Returns the cached ResourceManager instance used by this class.
+</summary>
+</member>
+<member name="P:My.Resources.Resources.Culture">
+<summary>
+  Overrides the current thread's CurrentUICulture property for all
+  resource lookups using this strongly typed resource class.
+</summary>
+</member>
+<member name="T:DPTechnology.AnnexLibraries.AddInRegistrationUtilities">
+ <summary>
+ Provides utility procedures related to managing the required registry keys for exposing and loading ESPRIT Add-Ins.
+ </summary>
+ <remarks></remarks>
+</member>
+<member name="F:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.EspritAddInsKeyName">
+ <summary>
+ Gets the name of the LocalMachine registry key used to register ESPRIT Add-Ins.
+ </summary>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.EspritAddInIsRegistered(System.String)">
+ <summary>
+ Checks to see whether or not an add-in with the given name
+ is currently registered as an ESPRIT Add-In.
+ </summary>
+ <param name="addInProgId">The ProgId of the add-in to check for, as given by its ProgIdAttribute.</param>
+ <returns>True if the add-in is registered.</returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.EspritAddInIsRegistered(System.String,System.Boolean@)">
+ <summary>
+ Checks to see whether or not an add-in with the given name is currently registered as an ESPRIT Add-In.
+ </summary>
+ <param name="addInProgId">The ProgId of the add-in to check for, as given by its ProgIdAttribute.</param>
+ <param name="returnRegisteredAsExtension">A Boolean to indicate whether or not the add-in
+ was registered as an automatically loading extensions.</param>
+ <returns>True if the add-in is registered.</returns>
+ <remarks>This is a Friend function so as to not be accessible from compiled assembly DLL.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.GetEspritAddInLoadBehavior(System.String)">
+ <summary>
+ Gets the LoadBehavior value of the ESPRIT add-in with the given name.
+ </summary>
+ <param name="addInProgId">The ProgId of the add-in to check for, as given by its ProgIdAttribute.</param>
+ <returns>Returns a value from 0 to 4:
+ <list type="table">
+ <listheader><term>Value</term> = <description>Behavior:</description></listheader>
+ <item><term>0</term> = <description>Unloaded, do not Load on Startup;</description></item>
+ <item><term>1</term> = <description>Unloaded, Load on Startup;</description></item>
+ <item><term>2</term> = <description>Loaded, do not Load on Startup;</description></item>
+ <item><term>3</term> = <description>Loaded, Load on Startup.</description></item>
+ </list></returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.SetEspritAddInLoadOnStartup(System.String,System.Boolean)">
+ <summary>
+ Sets the LoadBehavior value of the ESPRIT add-in with the given name.
+ </summary>
+ <param name="addInProgId">The ProgId of the add-in to check for, as given by its ProgIdAttribute.</param>
+ <param name="loadOnStartup">Pass True if the add-in is to load upon ESPRIT startup, 
+ False if it is to remain unloaded. True is the default if omitted.</param>
+ <remarks>An add-in that is unloaded at startup can still be manual loaded by the user
+ via the Add-In Manager dialog accessed under Tools > Add-In... on the ESPRIT menu.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.RegisterEspritAddInById(System.String,System.String,System.String,System.Int32)">
+ <summary>
+ Creates the necessary registry entries to register an application as an ESPRIT Add-In.
+ </summary>
+ <param name="addInProgId">The ProgId of the add-in to register, as given by its ProgIdAttribute.</param>
+ <param name="friendlyName">The friendly name used to refer to this add-in.
+ This is the name that will appear in the "Available Add-Ins" column of the
+ Add-In Manager dialog accessed under Tools > Add-In... on the ESPRIT menu.
+ If FriendlyName is omitted then the AddIn ProgId will be used instead.</param>
+ <param name="description">The detailed description of this add-in that
+ will appear in the Description frame when this add-in is selected on the
+ Add-In Manager dialog accessed under Tools > Add-In... on the ESPRIT menu.</param>
+ <param name="loadBehavior">Whether or not this add-in should load on ESPRIT startup by default.
+ 0 = Do not Load on Startup; 1 = Load on Startup (which is the default if omitted).</param>
+ <returns>True if the application was successfully registered;
+ False if an error was thrown that prevented registration.</returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.RegisterEspritAddIn(System.Type,System.String,System.String,System.Int32)">
+ <summary>
+ Validates an ESPRIT Add-In Class and adds the necessary ESPRIT registry entries for it.
+ </summary>
+ <param name="classType">The System.Type of add-in Class to register
+ (the Class that Implements Extensibility.IDTExtensibility2).</param>
+ <param name="friendlyName">The friendly name used to refer to this add-in.
+ This is the name that will appear in the "Available Add-Ins" column of the
+ Add-In Manager dialog accessed under Tools > Add-In... on the ESPRIT menu.
+ If FriendlyName is omitted then the AddIn ProgId will be used instead.</param>
+ <param name="description">The detailed description of this add-in that
+ will appear in the Description frame when this add-in is selected on the
+ Add-In Manager dialog accessed under Tools > Add-In... on the ESPRIT menu.</param>
+ <param name="loadBehavior">Whether or not this add-in should load on ESPRIT startup by default.
+ 0 = Do not Load on Startup; 1 = Load on Startup (which is the default if omitted).</param>
+ <returns>True if the application was successfully registered;
+ False if an error was thrown that prevented registration.</returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.UnregisterEspritAddInById(System.String)">
+ <summary>
+ Removes the registry entries for an ESPRIT Add-In that were created with <see cref="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.RegisterEspritAddIn(System.String,System.String,System.String,System.Int32)"/> 
+ </summary>
+ <param name="addInProgId">The ProgId of the add-in to unregister, as given by its ProgIdAttribute.</param>
+ <returns>True if the add-in is no longer registered.</returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.UnregisterEspritAddIn(System.Type)">
+ <summary>
+ Removes the registry entries for an ESPRIT Add-In that were created with <see cref="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.RegisterEspritAddIn(System.String,System.String,System.String,System.Int32)"/> 
+ </summary>
+ <param name="classType">The System.Type of add-in Class to unregister
+ (the Class that Implements Extensibility.IDTExtensibility2).</param>
+ <returns>True if the add-in is no longer registered.</returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.TryGetProgId(System.Type,System.String@)">
+ <summary>
+ Finds the ProgIdAttribute value of the given Class.
+ </summary>
+ <param name="classType">The System.Type of the Class to get the ProgId for.</param>
+ <param name="returnProgId">A return value giving the ProgIdAttribute.</param>
+ <returns>True if a ProgIdAttribute value was successfully found; False otherwise</returns>
+ <remarks>This function does not perform any other Class validation;
+ for complete validation use <see cref="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.ValidateAddIn(System.Type,System.String@)"/></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.ValidateAddIn(System.Type,System.String@)">
+ <summary>
+ Validates the given add-in Class and returns the corresponding ProgId needed to register the add-in with ESPRIT.
+ </summary>
+ <param name="classType">The System.Type of add-in Class that Implements Extensibility.IDTExtensibility2.</param>
+ <param name="returnProgId">A return value giving the ProgIdAttribute if the Class is valid for an ESPRIT Add-In.</param>
+ <returns>True if the Class is valid for an ESPRIT Add-In; False otherwise</returns>
+ <exception cref="T:System.ArgumentException">if the given Class type does not have the attributes required to be a valid ESPRIT add-in.</exception>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.GetFullyQualifiedName(System.Type)">
+ <summary>
+ Returns the FullyQualifiedName needed to register the add-in corresponding to the given class.
+ </summary>
+ <param name="classType">The System.Type of add-in Class that Implements Extensibility.IDTExtensibility2.</param>
+ <returns></returns>
+ <exception cref="T:System.ArgumentException">If the ProgID from the Attributes of the given Class type
+ does not match the AssemblyName and ExportedType found from the GUID Attributes of that Class type.</exception>
+ <remarks>This Function is only meant for use from within the Class module of an add-in that
+ Implements Extensibility.IDTExtensibility2. If the name of said Class is Connect, for example,
+ then typical usage would be: <code>GetFullyQualifiedName(GetType(Connect))</code> and the string 
+ returned would be passed as the AddInName to the <see cref="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.RegisterEspritAddIn(System.String,System.String,System.String,System.Int32)"/> procedure.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.RegisterEspritAddIn(System.String,System.String,System.String,System.Int32)">
+ <summary>
+ Creates the necessary registry entries to register an application as an ESPRIT Add-In.
+ </summary>
+ <param name="addInProgId">The ProgId of the add-in to register, as given by its ProgIdAttribute.</param>
+ <param name="friendlyName">The friendly name used to refer to this add-in.
+ This is the name that will appear in the "Available Add-Ins" column of the
+ Add-In Manager dialog accessed under Tools > Add-In... on the ESPRIT menu.
+ If FriendlyName is omitted then the AddIn ProgId will be used instead.</param>
+ <param name="description">The detailed description of this add-in that
+ will appear in the Description frame when this add-in is selected on the
+ Add-In Manager dialog accessed under Tools > Add-In... on the ESPRIT menu.</param>
+ <param name="loadBehavior">Whether or not this add-in should load on ESPRIT startup by default.
+ 0 = Do not Load on Startup; 1 = Load on Startup (which is the default if omitted).</param>
+ <returns>True if the application was successfully registered;
+ False if an error was thrown that prevented registration.</returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.UnregisterEspritAddIn(System.String)">
+ <summary>
+ Removes the registry entries for an ESPRIT Add-In that were created with <see cref="M:DPTechnology.AnnexLibraries.AddInRegistrationUtilities.RegisterEspritAddIn(System.String,System.String,System.String,System.Int32)"/> 
+ </summary>
+ <param name="addInProgId">The ProgId of the add-in to unregister, as given by its ProgIdAttribute.</param>
+ <returns>True if the add-in is no longer registered.</returns>
+ <remarks></remarks>
+</member>
+<member name="T:DPTechnology.AnnexLibraries.IConnectionManager">
+ <summary>
+ An interface for defining a manager for ESPRIT Add-In connections.
+ </summary>
+ <remarks></remarks>
+</member>
+<member name="T:DPTechnology.AnnexLibraries.IEspritAddIn">
+ <summary>
+ An interface for defining the basic set of properties needed for a self-registering ESPRIT Add-In.
+ </summary>
+ <remarks></remarks>
+</member>
+<member name="T:DPTechnology.AnnexLibraries.EspritAddIn">
+ <summary>
+ The base class that defines the basic set of properties and
+ functionality needed for a self-registering ESPRIT Add-In.
+ </summary>
+ <remarks></remarks>
+</member>
+<member name="P:DPTechnology.AnnexLibraries.EspritAddIn.PreviousLanguage">
+ <summary>
+ The previous Language in ESPRIT under which the AddIn was run; used by <see cref="M:DPTechnology.AnnexLibraries.EspritAddIn.LocalizeRegistration"/> routine.
+ </summary>
+ <remarks>Returns Nothing the first time an Add-In connects (to indicate PreviousLanguage unknown).
+ Implemented As Int32 rather than EspritConstants.espLanguage to eliminate dependency on EspritConstants library.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAddIn.LocalizeRegistration">
+ <summary>
+ Localizes the registration for an Add-In so that the description and friendly name
+ are displayed in the appropriate language on the Tools > Add-In dialog in ESPRIT.
+ </summary>
+ <remarks>Because initial RegisterFunction must be declared Shared, it cannot access
+ instance members FriendlyName, Description, and LoadBehavior. LocalizeRegistration
+ must be called after the add-in connects to record those values to registry.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAddIn.RegisterFunction(System.Type)">
+ <summary>
+ Automatically registers an ESPRIT Add-In at compile time.
+ </summary>
+ <param name="t"></param>
+ <remarks>Must be declared Shared.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAddIn.UnregisterFunction(System.Type)">
+ <summary>
+ Automatically unregisters an ESPRIT Add-In.
+ </summary>
+ <param name="t"></param>
+ <remarks>Must be declared Shared.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAddIn.GetMinMaxEnumValues``1">
+ <remarks>Copied from UtilityAnnex.EnumerationUtilites so as to not have dependency on UtilityAnnex.</remarks>
+</member>
+<member name="T:DPTechnology.AnnexLibraries.EspritAssemblyResolver">
+ <summary>
+ A class that can automatically resolve references to DLL libraries that
+ do not reside in the same local folder as the current application.
+ </summary>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.#ctor(System.AppDomain)">
+ <summary>
+ Creates a new EspritAssemblyResolver that actively tries to resolve
+ missing references to ESPRIT DLL Type Libraries as they are needed.
+ </summary>
+ <param name="appDomain">The System.AppDomain in which to listen for the AssemblyResolve event.
+ Typically AppDomain.CurrentDomain should be passed for this argument.</param>
+ <remarks>Typical Usage: Private espritAssemblyResolver As New EspritAssemblyResolver(AppDomain.CurrentDomain)</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.#ctor(System.AppDomain,Microsoft.VisualBasic.Logging.Log)">
+ <summary>
+ Creates a new EspritAssemblyResolver that actively tries to resolve
+ missing references to ESPRIT DLL Type Libraries as they are needed.
+ </summary>
+ <param name="appDomain">The System.AppDomain in which to listen for the AssemblyResolve event.
+ Typically AppDomain.CurrentDomain should be passed for this argument.</param>
+ <param name="applicationLog">The application Log in which to note results, both success and failure.</param>
+ <remarks>Typical Usage: Private espritAssemblyResolver As New EspritAssemblyResolver(AppDomain.CurrentDomain, My.Application.Log)</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.GetInstallPath">
+ <summary>
+ Returns the ESPRIT installation path for the most recently installed ESPRIT version as stored in the Windows Registry.
+ </summary>
+ <returns>A string indicating the ESPRIT installation path.</returns>
+ <remarks></remarks>
+ <exception cref="T:System.Exception">If unable to find or read the appropriate Windows Registry key.</exception>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.GetEspritProgFolder">
+ <summary>
+ Returns the path of the Prog folder under the ESPRIT installation.
+ </summary>
+ <remarks>The returned path is NOT terminated with the directory separator character.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.TryGetAssemblyPath(System.String,System.String,System.String@)">
+ <summary>
+ Tries to get the path to an Assembly given the Assembly name (in short form).
+ </summary>
+ <param name="assemblyName">The name of the Assembly, typically as extracted from the first field
+ passed via the args.Name property of the args argument to the AssemblyResolve event.</param>
+ <param name="searchFolder">The folder path in which to search for the DLL.</param>
+ <param name="returnPathName">An return value giving the path of the DLL, if found.</param>
+ <returns></returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.TryResolveReference(System.String,System.String,System.Reflection.Assembly@,System.String@)">
+ <summary>
+ Tries to resolve a Reference by searching in the given folder for
+ the DLL corresponding to the given full Assembly name and loading it.
+ </summary>
+ <param name="assemblyFullName">The full name of the Assembly, typically as passed
+ via the args.Name property of the args argument to the AssemblyResolve event.</param>
+ <param name="searchFolder">The folder path in which to search for the DLL.</param>
+ <param name="returnAssembly">A return value giving the Assembly loaded, if found.</param>
+ <param name="returnPathName">An optional return value giving the path of the DLL loaded.</param>
+ <returns></returns>
+ <remarks>This is a generic function for resolving any reference, including non-ESPRIT references.</remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.TryResolveReference(System.String,System.Reflection.Assembly@,System.String@)">
+ <summary>
+ A private function specifically for dealing with ESPRIT and AnnexLibrary references; called by the
+ Public <see cref="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.TryResolveEspritReference(System.String,System.Reflection.Assembly@,System.String@)"/> and <see cref="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.TryResolveAnnexLibraryReference(System.String,System.Reflection.Assembly@,System.String@)"/> functions.
+ </summary>
+ <param name="basePath"></param>
+ <param name="returnAssembly"></param>
+ <param name="returnPathName"></param>
+ <returns></returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.TryResolveEspritReference(System.String,System.Reflection.Assembly@,System.String@)">
+ <summary>
+ Tries to resolve a Reference to an ESPRIT API Type Library by looking in the Esprit\Prog\
+ folder for the DLL corresponding to the given full Assembly name and loading it.
+ </summary>
+ <param name="assemblyName">The name of the Assembly, typically as extracted from the first field
+ passed via the args.Name property of the args argument to the AssemblyResolve event.</param>
+ <param name="returnAssembly">A return value giving the Assembly loaded, if found.</param>
+ <param name="returnPathName">An optional return value giving the path of the DLL loaded.</param>
+ <returns></returns>
+ <remarks></remarks>
+</member>
+<member name="M:DPTechnology.AnnexLibraries.EspritAssemblyResolver.TryResolveAnnexLibraryReference(System.String,System.Reflection.Assembly@,System.String@)">
+ <summary>
+ Tries to resolve a Reference to an ESPRIT AnnexLibrary by looking in the D.P.Technology\AnnexLibraries folder
+ under the CommonProgramFiles path for the DLL corresponding to the given full Assembly name and loading it.
+ </summary>
+ <param name="assemblyName">The name of the Assembly, typically as extracted from the first field
+ passed via the args.Name property of the args argument to the AssemblyResolve event.</param>
+ <param name="returnAssembly">A return value giving the Assembly loaded, if found.</param>
+ <param name="returnPathName">An optional return value giving the path of the DLL loaded.</param>
+ <returns></returns>
+ <remarks></remarks>
+</member>
+</members>
+</doc>

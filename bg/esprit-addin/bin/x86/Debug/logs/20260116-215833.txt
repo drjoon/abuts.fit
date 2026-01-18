@@ -1,0 +1,5 @@
+==== Trace started at 2026-01-16T21:58:33.3052204+09:00 ====
+StlFileProcessor: DentalPanel InputFPointVal 메서드를 찾을 수 없습니다.
+StlFileProcessor: DentalPanel InputBPointVal 메서드를 찾을 수 없습니다.
+StlFileProcessor: DentalPanel 호출 실패 - 호출 대상이 예외를 Throw했습니다.
+StlFileProcessor: 완료 - C:\abuts.fit\bg\storage\2-filled\20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl

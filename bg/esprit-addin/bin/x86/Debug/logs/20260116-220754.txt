@@ -1,0 +1,7 @@
+==== Trace started at 2026-01-16T22:07:54.6833883+09:00 ====
+DentalAddin: Bind 실행
+DentalAddin: DentalAddin.MainModule.Bind 메서드를 찾을 수 없습니다.
+DentalAddin: Main 실행 시작
+DentalAddin: Main 실행 실패 - 개체 참조가 개체의 인스턴스로 설정되지 않았습니다.
+StlFileProcessor: DentalAddin 실행 실패 - 개체 참조가 개체의 인스턴스로 설정되지 않았습니다.
+StlFileProcessor: 완료 - C:\abuts.fit\bg\storage\2-filled\20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl

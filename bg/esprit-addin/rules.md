@@ -1,81 +1,34 @@
-# ESPRIT 2025 Dental Addin Development Rules
+# DentalAddin Feature/Process Rules
 
-이 문서는 `abuts.fit` 프로젝트의 ESPRIT 2025 Dental Addin 작업 내용과 향후 유지보수를 위한 규칙을 정리합니다. 이 규칙은 프로젝트 루트의 `rules.md`를 기반으로 하며, CAM 애드인에 특화된 내용을 포함합니다.
+## 전체 공정 흐름
+1. STL 병합/회전 → MoveSTL(위치 보정)
+2. Boundry: RoughBoundry 포함 FeatureChain 생성 (RoughType>1 이면 2/3까지)
+3. Roughworkplane / WorkPlane: RoughType 조건에 따라 `3DRoughMilling_*`, `3DMilling_*` FreeFormFeature 생성
+4. OperationSeq: 13개의 PRC 공정을 순서대로 실행하며 각 단계 직전에 `PreOp:<공정명>` 로그로 FeatureChain/FreeFormFeature 상태를 검증함
+   - CustomCycle → TurningOp → (RoughType==1? RoughMill+OP36 : RoughFreeFromMill) → FreeFormMill → (MarkSign? MarkText) → CustomCycle2
 
-## 1. 비즈니스 및 공통 규칙 (Global Sync)
+## 중요한 전역/설정 의존성
+- **UserData(DefaultXmlFileName)**
+  - `PrcDirectory`, `PrcFilePath`, `PrcFileName`, `NumData`, `NumCombobox` 등을 로드해 MainModule에 주입해야 원래 DLL과 동일한 상태가 됨
+  - 자동 실행 경로(StlFileProcessor)에서 reflection으로 SerializableData.Load 호출하여 동일하게 적용
+- **RoughType**
+  - `PrcFilePath[3]` (Rough PRC 경로)에 따라 자동 결정
+    - 경로에 `\5_Rough`, `MillRough_3D`, `0-120-240` 등이 포함되면 3.0
+    - `\8_0-180` 포함 시 2.0
+    - 그 외 1.0
+  - Boundry와 Roughworkplane의 피쳐 생성 분기에 직접 영향
+- **NumCombobox[3]**
+  - FreeFormMill 이후 Emerge/Composite2 추가 여부 결정
 
-### 1.1 CNC 프로그램 번호 및 파일명
+## 피쳐/공정 검증 규칙
+- `ValidateBeforeOperation` 헬퍼가 각 공정 호출 직전에 실행되어
+  - FeatureChains/FreeFormFeatures의 개수와 이름을 로그로 남기고
+  - 요구되는 이름이 없으면 `미발견 ...`으로 즉시 확인 가능
+- Roughworkplane 실행 시 `espSTL_Model`을 찾지 못하면 바로 로그 후 종료해 원인 파악이 쉬움
 
-- **프로그램 번호 형식**: `O` + 네 자리 숫자 (예: `O0001`, `O3001`).
-- **파일명 규칙**: 브리지 서버/로컬에 저장되는 프로그램 파일명은 항상 `O####.nc` 형식을 사용합니다.
-- **전송 규칙**: CNC 장비로 전송할 때는 확장자를 제거하고 숫자 프로그램 번호만 사용합니다.
-
-### 1.2 로트넘버(생산번호)
-
-- **Prefix**: `AB`(Custom Abutment), `CR`(Crown)
-- **Format**: `[Prefix][YYYYMMDD]-[AAA~]` (예: `AB20251206-AAA`)
-- **부여**: 가공 단계 진입 시 백엔드에서 자동 부여된 값을 사용합니다.
-
-### 1.3 CaseInfos 데이터 구조
-
-- 백엔드의 `caseInfos` 구조와 항상 동기화되어야 합니다.
-- 주요 필드: `clinicName`, `patientName`, `tooth`, `implantManufacturer`, `implantSystem`, `implantType`, `maxDiameter`, `connectionDiameter`, `workType`.
-
-## 2. CAM 시스템 규칙
-
-### 2.1 파일 파이프라인 자동화
-
-- **감시 경로**: `/bg/storage/2-filled` 폴더를 실시간으로 감시합니다.
-- **워크플로우**:
-  1. 새로운 `.fw.stl` 파일이 발견되면 이를 기반으로 NC 생성을 시작합니다.
-  2. NC 파일은 `/bg/storage/3-nc` 폴더에 `O####.nc` 형식으로 저장합니다.
-  3. 작업 완료 후 백엔드 API를 통해 가공 준비 완료 상태를 알립니다.
-
-### 2.2 API 서버 기반 NC 생성 자동화 (`RepeatProcess.cs`)
-
-- **엔드포인트**: `http://localhost:8001/` (POST 요청 수신).
-- **워크플로우**: STL 병합 -> 워크플로우 실행 -> NC 생성 -> 그래픽 정리(Cleanup) 과정을 자동화.
-- **백엔드 콜백**: NC 생성 완료 시 `https://abuts.fit/api/requests/:id/nc-file` 호출하여 결과 보고.
-
-### 2.3 수명 주기 및 안정성 (`Connect.cs`)
-
-- **자동 시작**: Esprit 로드 시(`AddInConnect`) API 서버가 즉시 가동됨.
-- **리소스 관리**: `RepeatProcess`를 멤버 변수로 관리하여 GC로부터 보호하고, 종료 시 `Dispose`를 통해 해제.
-
-## 3. 웹 인터페이스 및 통신 규칙
-
-### 3.1 공통 웹 서버 엔드포인트 (Port: 8001, HttpListener 기반)
-
-- `GET /health` 또는 `/ping`: 서비스 상태 및 운영 여부(`_isRunning`) 확인.
-- `POST /control/start`: 파일 감시 및 처리 운영 시작.
-- `POST /control/stop`: 운영 중지 (감시 루프 일시 정지).
-- `GET /history/recent`: 최근 처리된 50개의 파일 목록 조회.
-
-### 3.2 백엔드 알림 (Web Client)
-
-- 파일 처리 완료 시 `BACKEND_URL/bg/register-file`을 호출하여 결과를 보고합니다.
-- **Payload**:
-  - `sourceStep`: "3-nc"
-  - `fileName`: 생성된 NC 파일명
-  - `originalFileName`: 입력 STL 파일명
-  - `requestId`: 의뢰 식별자
-  - `status`: "success" | "failed"
-  - `metadata`: 파일 크기 등 추가 정보.
-
-## 4. 개발 가이드라인
-
-### 3.1 기술 스택
-
-- **언어**: C# (x86 플랫폼)
-- **프레임워크**: .NET Framework 4.8
-- **JSON 처리**: `DataContractJsonSerializer` 사용 (의존성 최소화).
-
-### 3.2 통신 규칙
-
-- **포트**: 8001 고정.
-- **요청 모델**: `NcGenerationRequest` 클래스 사용. 필드 변경 시 백엔드 동기화 필수.
-
-### 3.3 ESPRIT 조작
-
-- **그래픽 정리**: 작업 완료 후 `CleanupEsprit` 메서드를 통해 모델 및 피처 삭제.
-- **스레드 안전성**: 공유 데이터 접근 시 `lock` 사용.
+## 작업 반영 사항(2026-01-18)
+- StlFileProcessor에서 UserData 로드/적용을 복원해 UI 없이도 동일 초기화가 이뤄지도록 함
+- RoughType을 rough PRC 경로 기반으로 자동 산정하여 임의 세팅을 제거함
+- OperationSeq에 PreOp 로그/검증 로직을 추가해 13개 공정 모두 피쳐 생성 상태를 기록
+- Roughworkplane에 디버그 로그 및 STL 누락 가드를 넣어 피쳐 미생성 원인을 추적 가능하게 함
+- UserData 경로(Program Files)에서 PRC 파일을 못 찾을 경우 동일 상대경로를 `c:\abuts.fit\bg\esprit-addin\AcroDent` 에서 재탐색하여 자동 대체, 로그로 경로 교체 내역을 기록함

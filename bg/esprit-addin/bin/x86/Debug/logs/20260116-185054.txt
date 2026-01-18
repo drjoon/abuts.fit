@@ -1,0 +1,5 @@
+==== Trace started at 2026-01-16T18:50:54.0172324+09:00 ====
+StlFileProcessor: 회전 대상 STL이 없습니다.
+StlFileProcessor: 처리 중 오류 - 외부 구성 요소에서 예외를 Throw했습니다.
+STL 처리 중 오류가 발생했습니다: 외부 구성 요소에서 예외를 Throw했습니다.
+StlFileProcessor: 완료 - C:\abuts.fit\bg\storage\2-filled\20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl
