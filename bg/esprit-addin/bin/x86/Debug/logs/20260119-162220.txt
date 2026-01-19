@@ -1,0 +1,3 @@
+==== Trace started at 2026-01-19T16:22:20.5910115+09:00 ====
+StlFileProcessor: BarDiameter 설정 - 6.000 (STL:20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl)
+StlFileProcessor: 완료 - C:\abuts.fit\bg\storage\2-filled\20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl

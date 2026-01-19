@@ -1,0 +1,6 @@
+==== Trace started at 2026-01-19T09:41:40.1642312+09:00 ====
+STL 병합/회전 직후 - FreeFormFeatures.Count: 0
+DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:ESPRIT2025AddinProject, Version:1.0.0.0, Location:C:\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
+DentalAddin: UserData.PrctDirectory 적용 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\
+DentalAddin: UserData.NumData 적용 (Len:8)
+DentalAddin: UserData.NumCombobox 적용 (Len:7)

@@ -1,4 +1,4 @@
-==== Trace started at 2026-01-19T20:34:53.1250792+09:00 ====
+==== Trace started at 2026-01-19T19:56:53.4967038+09:00 ====
 StlFileProcessor: BarDiameter 설정 - 6.000 (STL:20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl)
 DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:ESPRIT2025AddinProject, Version:1.0.0.0, Location:C:\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
 DentalAddin: UserData.PrctDirectory 적용 - C:\abuts.fit\bg\esprit-addin\AcroDent
@@ -150,8 +150,4 @@ DentalAddin: PostMain - Op[9] EM2.0BALL Key:9
 DentalAddin: PostMain - Op[10] 5Axis_Composite Key:10
 DentalAddin: PostMain - Op[11] NEO_CONNECTION Key:11
 StlFileProcessor: DentalPanel 호출 완료
-StlFileProcessor: NC 메타 캡처 - Front:1.34632838055403, Back:10.846328380554, StockDia:6
-StlFileProcessor: NC 저장 완료 - C:\abuts.fit\bg\storage\3-nc\20260112-ZQXEYVYX-향기로운치과-구자일-44.nc
-StlFileProcessor: NC 헤더 수정 완료 - #520:10.846328380554, #521:6
-StlFileProcessor: Serial 블록 갱신 - Lot:ACR, Serial:True, Deburr:True
 StlFileProcessor: 완료 - C:\abuts.fit\bg\storage\2-filled\20260112-ZQXEYVYX-향기로운치과-구자일-44.filled.stl

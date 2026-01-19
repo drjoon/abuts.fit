@@ -11,6 +11,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -1852,7 +1853,10 @@ namespace DentalAddin
                 string[] roughFreeForms = (RoughType == 2.0)
                     ? new[] { "3DRoughMilling_0Degree", "3DRoughMilling_180Degree" }
                     : new[] { "3DRoughMilling_0Degree", "3DRoughMilling_120Degree", "3DRoughMilling_240Degree" };
-                ValidateBeforeOperation("RoughFreeFromMill", new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" }, roughFreeForms);
+                string[] roughBoundaries = (RoughType == 2.0)
+                    ? new[] { "RoughBoundry1" }
+                    : new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" };
+                ValidateBeforeOperation("RoughFreeFromMill", roughBoundaries, roughFreeForms);
                 RoughFreeFromMill();
             }
 
@@ -2656,6 +2660,11 @@ namespace DentalAddin
                                 goto IL_027d;
                             IL_027d:
                                 num2 = 35;
+                                if (RoughType == 2.0 && PrcFilePath != null && PrcFilePath.Length > 0 && !string.IsNullOrWhiteSpace(PrcFilePath[0]))
+                                {
+                                    file = PrcFilePath[0];
+                                    DentalLogger.Log($"RoughFreeFromMill - 180Degree PRC override 적용: {file}");
+                                }
                                 array2 = TryOpenProcess(technologyUtility, file, "RoughFreeFromMill:PRC[3] 재호출");
                                 if (array2.Length == 0)
                                 {
@@ -3172,7 +3181,17 @@ namespace DentalAddin
 
         private static ITechnology[] TryOpenProcess(TechnologyUtility technologyUtility, string filePath, string context)
         {
-            DentalLogger.Log($"OpenProcess:{context} - PRC 경로: {filePath}");
+            string fullPath;
+            try
+            {
+                fullPath = string.IsNullOrWhiteSpace(filePath) ? filePath : Path.GetFullPath(filePath);
+            }
+            catch
+            {
+                fullPath = filePath;
+            }
+
+            DentalLogger.Log($"OpenProcess:{context} - PRC 경로: {fullPath}");
 
             if (technologyUtility == null)
             {
@@ -3214,9 +3233,10 @@ namespace DentalAddin
                 DentalLogger.LogException("MainModule.FreeFormMill.free", ex);
                 throw;
             }
-            if (NumCombobox[3] == 1)
+            int finishingMethod = (NumCombobox != null && NumCombobox.Length > 1) ? NumCombobox[1] : 0;
+            if (finishingMethod == 1)
             {
-                DentalLogger.Log("FreeFormMill - NumCombobox[3]==1, Emerge/Composite2 실행");
+                DentalLogger.Log("FreeFormMill - FinishingMethod==1, Emerge/Composite2 실행");
                 Emerge();
                 DentalLogger.Log("FreeFormMill - Emerge 완료");
                 Composite2();
@@ -3224,7 +3244,7 @@ namespace DentalAddin
             }
             else
             {
-                DentalLogger.Log("FreeFormMill - NumCombobox[3]!=1, Emerge/Composite2 건너뜀");
+                DentalLogger.Log($"FreeFormMill - FinishingMethod!=1({finishingMethod}), Emerge/Composite2 건너뜀");
             }
         }
 
@@ -3880,9 +3900,10 @@ namespace DentalAddin
                     selectionSet.Add(graphicObject, RuntimeHelpers.GetObjectValue(Missing.Value));
                     selectionSet.Translate(0.0, MoveSTL_Module.NeedMoveY, MoveSTL_Module.NeedMoveZ, 0);
                 }
-                if (NumCombobox[3] != 0)
+                int finishingMethod = (NumCombobox != null && NumCombobox.Length > 1) ? NumCombobox[1] : 0;
+                if (finishingMethod == 1)
                 {
-                    DentalLogger.Log("Emerge - NumCombobox[3]!=0, Extrude 파일 로드 생략");
+                    DentalLogger.Log("Emerge - FinishingMethod==1, Extrude 파일 로드 생략");
                     return;
                 }
                 DentalLogger.Log($"Emerge - MergeFile2: {mergeFileName2}");
@@ -4214,10 +4235,95 @@ namespace DentalAddin
             Document.ActiveLayer = activeLayer;
             TechLatheMill5xComposite techLatheMill5xComposite = (TechLatheMill5xComposite)array[0];
             techLatheMill5xComposite.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
-            techLatheMill5xComposite.FirstPassPercent = Math.Abs(COMX1) * 5.0;
-            techLatheMill5xComposite.LastPassPercent = Math.Abs(COMX2) * 5.0;
+
+            const double leftRatio = 0.05; // 5%
+            const double rightRatio = 0.55; // 55%
+            double span = MoveSTL_Module.BackPointX - MoveSTL_Module.FrontPointX;
+            double absSpan = Math.Abs(span);
+            double direction = span >= 0 ? 1.0 : -1.0;
+
+            if (absSpan < 0.001)
+            {
+                absSpan = 1.0;
+                direction = 1.0;
+            }
+
+            double firstPercent = Clamp(leftRatio * 100.0, 0.0, 100.0);
+            double lastPercent = Clamp(rightRatio * 100.0, firstPercent, 100.0);
+            double firstX = MoveSTL_Module.FrontPointX + direction * absSpan * leftRatio;
+            double lastX = MoveSTL_Module.FrontPointX + direction * absSpan * rightRatio;
+
+            techLatheMill5xComposite.FirstPassPercent = firstPercent;
+            techLatheMill5xComposite.LastPassPercent = lastPercent;
+            DentalLogger.Log($"Composite2 - PassPercent 계산: First={firstPercent:F2}%(X:{firstX:F3}), Last={lastPercent:F2}%(X:{lastX:F3}), Span:{absSpan:F3}");
             techLatheMill5xComposite.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
+            if (string.IsNullOrWhiteSpace(techLatheMill5xComposite.ToolID))
+            {
+                if (!string.IsNullOrWhiteSpace(ToolNs))
+                {
+                    techLatheMill5xComposite.ToolID = ToolNs;
+                    DentalLogger.Log($"Composite2 - PRC ToolID 비어있음, ToolNs로 매핑: {ToolNs}");
+                }
+                else
+                {
+                    DentalLogger.Log("Composite2 중단 - PRC ToolID 비어있고 ToolNs도 없습니다.");
+                    return;
+                }
+            }
+
+            int found = 0;
+            try
+            {
+                foreach (Tool item in (IEnumerable)Document.Tools)
+                {
+                    if (Operators.CompareString(item.ToolID, techLatheMill5xComposite.ToolID, false) == 0)
+                    {
+                        found = 1;
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex3)
+            {
+                DentalLogger.Log($"Composite2 - Tool 검증 실패: {ex3.Message}");
+            }
+
+            if (found != 1)
+            {
+                DentalLogger.Log($"Composite2 중단 - Document.Tools에 ToolID가 없습니다: {techLatheMill5xComposite.ToolID}");
+                try
+                {
+                    int printed = 0;
+                    foreach (Tool item2 in (IEnumerable)Document.Tools)
+                    {
+                        if (printed >= 40)
+                        {
+                            DentalLogger.Log("Composite2 - Tools 출력 생략(상한 40)");
+                            break;
+                        }
+                        DentalLogger.Log($"Composite2 - Tool[{printed + 1}] {item2.ToolID} {item2.ToolStyle}");
+                        printed++;
+                    }
+                }
+                catch
+                {
+                }
+                return;
+            }
             Document.Operations.Add(techLatheMill5xComposite, freeFormFeature, RuntimeHelpers.GetObjectValue(Missing.Value));
+        }
+
+        private static double Clamp(double value, double min, double max)
+        {
+            if (value < min)
+            {
+                return min;
+            }
+            if (value > max)
+            {
+                return max;
+            }
+            return value;
         }
 
         public static void SearchTool()

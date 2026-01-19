@@ -342,7 +342,7 @@ namespace DentalAddin
             {
                 ProjectData.SetProjectError(ex);
                 Exception ex2 = ex;
-                Interaction.MsgBox((object)"No XYZ work Plane?", (MsgBoxStyle)0, (object)null);
+                DentalLogger.Log("MoveSTL - XYZ work Plane 없음");
                 ProjectData.ClearProjectError();
                 return;
             }
@@ -364,7 +364,7 @@ namespace DentalAddin
                 {
                     ProjectData.SetProjectError(ex5);
                     Exception ex6 = ex5;
-                    Interaction.MsgBox((object)"Error Create Selectionsets,MoveSTL_Module-MoveSTL", (MsgBoxStyle)0, (object)null);
+                    DentalLogger.Log("MoveSTL - SelectionSet 생성 실패");
                     ProjectData.ClearProjectError();
                     return;
                 }
@@ -381,7 +381,7 @@ namespace DentalAddin
             }
             if (selectionSet.Count == 0)
             {
-                Interaction.MsgBox((object)"No Stl part", (MsgBoxStyle)0, (object)null);
+                DentalLogger.Log("MoveSTL - STL 모델을 찾지 못함");
                 return;
             }
             FeatureList();
@@ -389,7 +389,7 @@ namespace DentalAddin
             FeatureChain featureChain = NewFeature();
             if (featureChain == null)
             {
-                Interaction.MsgBox((object)"Cannot find any feature,no STL model maybe.", (MsgBoxStyle)0, (object)null);
+                DentalLogger.Log("MoveSTL - FeatureChain 생성 실패(Shadow) - STL 모델 확인 필요");
                 return;
             }
             double boundingBoxLength = featureChain.BoundingBoxLength;
@@ -406,7 +406,11 @@ namespace DentalAddin
                     }
                 }
                 FrontStock = 0.0 - boundingBoxLength;
-                selectionSet.Translate(0.0 - boundingBoxLength - num, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
+                double deltaX = 0.0 - boundingBoxLength - num;
+                selectionSet.Translate(deltaX, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
+                FrontPointX += deltaX;
+                BackPointX += deltaX;
+                DentalLogger.Log($"MoveSTL - 초기 X이동(SpindleSide) dX:{deltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}");
             }
             else
             {
@@ -421,7 +425,11 @@ namespace DentalAddin
                     }
                 }
                 FrontStock = boundingBoxLength;
-                selectionSet.Translate(boundingBoxLength - num, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
+                double deltaX = boundingBoxLength - num;
+                selectionSet.Translate(deltaX, 0.0, 0.0, RuntimeHelpers.GetObjectValue(Missing.Value));
+                FrontPointX += deltaX;
+                BackPointX += deltaX;
+                DentalLogger.Log($"MoveSTL - 초기 X이동 dX:{deltaX:0.###}, FrontPointX:{FrontPointX:0.###}, BackPointX:{BackPointX:0.###}");
             }
             selectionSet.RemoveAll();
             MainModule.Document.FeatureChains.Remove(featureChain.Key);
@@ -602,16 +610,21 @@ namespace DentalAddin
                     if (MainModule.RoughType > 1.0)
                     {
                         step = "rough_boundry";
-                        if (MainModule.RL == 1.0)
+                        double roughRadius = (MainModule.Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
+                        double roughY = -1.0 * roughRadius;
+                        point = MainModule.Document.GetPoint(MTI, roughRadius, 0);
+                        string point1Desc = (point != null) ? $"X:{point.X:F3}, Y:{point.Y:F3}" : "null";
+                        double limitX = Math.Max(FrontPointX, BackPointX);
+                        if (limitX < 5.0)
                         {
-                            point = MainModule.Document.GetPoint(MTI, (MainModule.Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0, 0);
-                            point2 = MainModule.Document.GetPoint(-5, -1.0 * (MainModule.Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0, 0);
+                            limitX = 5.0;
                         }
-                        else
-                        {
-                            point = MainModule.Document.GetPoint(MTI, (MainModule.Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0, 0);
-                            point2 = MainModule.Document.GetPoint(5, -1.0 * (MainModule.Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0, 0);
-                        }
+                        Point originalPoint2 = MainModule.Document.GetPoint((MainModule.RL == 1.0) ? -5 : 5, roughY, 0);
+                        Point desiredPoint2 = MainModule.Document.GetPoint(limitX, roughY, 0);
+                        string originalDesc = (originalPoint2 != null) ? $"X:{originalPoint2.X:F3}, Y:{originalPoint2.Y:F3}" : "null";
+                        string desiredDesc = (desiredPoint2 != null) ? $"X:{desiredPoint2.X:F3}, Y:{desiredPoint2.Y:F3}" : "null";
+                        DentalLogger.Log($"Boundry: RoughBoundry point1({point1Desc}), point2 원래({originalDesc}) -> 수정({desiredDesc})");
+                        point2 = ((desiredPoint2 != null) ? desiredPoint2 : originalPoint2);
                         featureChain = MainModule.Document.FeatureChains.Add(point);
                         featureChain.Add(MainModule.Document.GetSegment(point, MainModule.Document.GetPoint(point.X, point2.Y, 0)));
                         featureChain.Add(MainModule.Document.GetSegment(MainModule.Document.GetPoint(point.X, point2.Y, 0), point2));

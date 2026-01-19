@@ -32,3 +32,8 @@
 - OperationSeq에 PreOp 로그/검증 로직을 추가해 13개 공정 모두 피쳐 생성 상태를 기록
 - Roughworkplane에 디버그 로그 및 STL 누락 가드를 넣어 피쳐 미생성 원인을 추적 가능하게 함
 - UserData 경로(Program Files)에서 PRC 파일을 못 찾을 경우 동일 상대경로를 `c:\abuts.fit\bg\esprit-addin\AcroDent` 에서 재탐색하여 자동 대체, 로그로 경로 교체 내역을 기록함
+
+## 작업 반영 사항(2026-01-19)
+- StlFileProcessor가 DentalAddin MoveSTL에서 Front/Back 포인트 및 바 직경을 캡처해 NC 헤더(#520, #521)와 저장 로그를 자동 갱신.
+- Post 후 생성된 NC 파일명을 `*.filled.nc` → `*.nc`로 정규화하고 저장 경로를 로그에 남김.
+- lotNumber(기본 "ABC")를 정규화해 `(Serial)`과 `(Serial Deburr)` 블록을 자동 재작성, 각 문자를 A~Z 매크로(`M98P0001`~`M98P0026`) 호출로 치환하여 세 글자 시리얼 각인 코드 생성.
