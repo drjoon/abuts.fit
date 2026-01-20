@@ -82,6 +82,22 @@
 
 ## 7. 크레딧 및 의뢰 관리 정책
 
+### 7.0 로트번호(lotNumber) 구조
+
+- **Request.lotNumber**: 중첩 객체 구조로 관리
+  ```typescript
+  lotNumber?: {
+    material?: string;  // 원소재 Heat No.
+    part?: string;      // 반제품 로트번호 (CAP+YYMMDD-AAA)
+    final?: string;     // 완제품 로트번호 (CA+YYMMDD-AAA)
+  }
+  ```
+- **레거시 필드 제거**: `rawMaterialHeatNo`, `finishedLotNumber` 필드는 더 이상 사용하지 않음
+- **UI 표시**:
+  - 제조사 워크시트 카드: `lotNumber.part` 표시 (반제품 로트번호)
+  - 추적관리/UDI 페이지: `lotNumber.material`, `lotNumber.part`, `lotNumber.final` 모두 표시
+  - OCR 매칭: 인식된 로트번호를 `lotNumber.part`와 비교
+
 ### 7.1 크레딧 관리 정책
 
 - **표시 단위**: 조직(Organization) 단위로 크레딧 표시
@@ -160,7 +176,6 @@
 ### 8.1 채팅 타입
 
 - **Request Chat (의뢰 채팅)**: `useRequestChat` 훅 사용
-
   - 특정 의뢰(Request)에 종속된 채팅
   - API: `POST /api/requests/:id/messages`
   - 참여자: Requestor + Manufacturer (할당시) + Admin

@@ -64,7 +64,9 @@ export function useStageDropHandlers({
         }
 
         const matchingRequest = requests.find(
-          (req) => req.lotNumber?.trim() === recognizedLotNumber.trim()
+          (req) =>
+            String(req.lotNumber?.part || "").trim() ===
+            recognizedLotNumber.trim(),
         );
 
         if (!matchingRequest) {
@@ -105,7 +107,7 @@ export function useStageDropHandlers({
       token,
       toast,
       uploadToS3,
-    ]
+    ],
   );
 
   useEffect(() => {
@@ -138,7 +140,7 @@ export function useStageDropHandlers({
 
       if (isCamStage) {
         const filledStlFiles = files.filter((f) =>
-          f.name.toLowerCase().endsWith(".filled.stl")
+          f.name.toLowerCase().endsWith(".filled.stl"),
         );
         if (filledStlFiles.length === 0) return;
 
@@ -163,8 +165,8 @@ export function useStageDropHandlers({
                   r.caseInfos?.camFile?.originalName ||
                   r.caseInfos?.file?.fileName ||
                   r.caseInfos?.file?.originalName ||
-                  ""
-              )
+                  "",
+              ),
             );
             return rBase === fileBase;
           });
@@ -206,7 +208,7 @@ export function useStageDropHandlers({
         void handleImageDropForOCR(files);
       } else if (isCamStage) {
         const filledStlFiles = files.filter((f) =>
-          f.name.toLowerCase().endsWith(".filled.stl")
+          f.name.toLowerCase().endsWith(".filled.stl"),
         );
         if (filledStlFiles.length === 0) return;
 
@@ -231,8 +233,8 @@ export function useStageDropHandlers({
                   r.caseInfos?.camFile?.originalName ||
                   r.caseInfos?.file?.fileName ||
                   r.caseInfos?.file?.originalName ||
-                  ""
-              )
+                  "",
+              ),
             );
             return rBase === fileBase;
           });
@@ -249,7 +251,7 @@ export function useStageDropHandlers({
       isCamStage,
       isMachiningStage,
       requests,
-    ]
+    ],
   );
 
   const handlePageDragOver = useCallback(
@@ -260,7 +262,7 @@ export function useStageDropHandlers({
         setIsDraggingOver(true);
       }
     },
-    [isMachiningStage, isCamStage]
+    [isMachiningStage, isCamStage],
   );
 
   const handlePageDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {

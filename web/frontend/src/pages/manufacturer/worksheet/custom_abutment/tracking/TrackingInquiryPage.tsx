@@ -135,15 +135,18 @@ export const TrackingInquiryPage = () => {
         const di = normalizeDeliveryInfo(r.deliveryInfoRef);
         const shippedAt = di.shippedAt || di.deliveredAt || "";
         const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
+        const lotMaterial = String(r.lotNumber?.material || "");
+        const lotPart = String(r.lotNumber?.part || "");
+        const lotFinal = String(r.lotNumber?.final || "");
         return [
           r.requestId || "",
           `${ci.patientName || ""} / ${ci.tooth || ""}`,
           shippedDate,
           di.carrier || "",
           di.trackingNumber || "",
-          r.rawMaterialHeatNo || "",
-          r.lotNumber || "",
-          r.finishedLotNumber || "",
+          lotMaterial,
+          lotPart,
+          lotFinal,
         ];
       });
 
@@ -237,12 +240,15 @@ export const TrackingInquiryPage = () => {
 
         const ci: any = r.caseInfos || {};
         const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+        const lotMaterial = String(r.lotNumber?.material || "");
+        const lotPart = String(r.lotNumber?.part || "");
+        const lotFinal = String(r.lotNumber?.final || "");
         const hay = (
           String(r.requestId || "") +
           String(r.assignedMachine || "") +
-          String(r.lotNumber || "") +
-          String(r.rawMaterialHeatNo || "") +
-          String(r.finishedLotNumber || "") +
+          lotMaterial +
+          lotPart +
+          lotFinal +
           String(ci.clinicName || "") +
           String(ci.patientName || "") +
           String(ci.tooth || "") +
@@ -277,15 +283,18 @@ export const TrackingInquiryPage = () => {
       rowsHtml = processRows
         .map((r) => {
           const ci: any = r.caseInfos || {};
+          const lotMaterial = String(r.lotNumber?.material || "");
+          const lotPart = String(r.lotNumber?.part || "");
+          const lotFinal = String(r.lotNumber?.final || "");
           return `<tr>
             <td>${r.requestId || ""}</td>
             <td>${ci.patientName || ""} / ${ci.tooth || ""}</td>
             <td>가공·탈지·연마·검사·세척·포장</td>
             <td>출하승인·출고</td>
             <td>${r.assignedMachine || ""}</td>
-            <td>${r.rawMaterialHeatNo || ""}</td>
-            <td>${r.lotNumber || ""}</td>
-            <td>${r.finishedLotNumber || ""}</td>
+            <td>${lotMaterial}</td>
+            <td>${lotPart}</td>
+            <td>${lotFinal}</td>
           </tr>`;
         })
         .join("");
@@ -307,15 +316,18 @@ export const TrackingInquiryPage = () => {
           const di = normalizeDeliveryInfo(r.deliveryInfoRef);
           const shippedAt = di.shippedAt || di.deliveredAt || "";
           const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
+          const lotMaterial = String(r.lotNumber?.material || "");
+          const lotPart = String(r.lotNumber?.part || "");
+          const lotFinal = String(r.lotNumber?.final || "");
           return `<tr>
             <td>${r.requestId || ""}</td>
             <td>${ci.patientName || ""} / ${ci.tooth || ""}</td>
             <td>${shippedDate}</td>
             <td>${di.carrier || ""}</td>
             <td>${di.trackingNumber || ""}</td>
-            <td>${r.rawMaterialHeatNo || ""}</td>
-            <td>${r.lotNumber || ""}</td>
-            <td>${r.finishedLotNumber || ""}</td>
+            <td>${lotMaterial}</td>
+            <td>${lotPart}</td>
+            <td>${lotFinal}</td>
           </tr>`;
         })
         .join("");
@@ -337,8 +349,8 @@ export const TrackingInquiryPage = () => {
           const status = deliveredAt
             ? "완료"
             : shippedAt || di.trackingNumber
-            ? "배송중"
-            : "-";
+              ? "배송중"
+              : "-";
           return `<tr>
             <td>${r.requestId || ""}</td>
             <td>${di.carrier || ""}</td>
@@ -481,15 +493,18 @@ export const TrackingInquiryPage = () => {
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
       const shippedAt = di.shippedAt || di.deliveredAt || "";
       const shippedDate = shippedAt ? String(shippedAt).slice(0, 10) : "";
+      const lotMaterial = String(r.lotNumber?.material || "");
+      const lotPart = String(r.lotNumber?.part || "");
+      const lotFinal = String(r.lotNumber?.final || "");
       return [
         r.requestId || "",
         `${ci.patientName || ""} / ${ci.tooth || ""}`,
         shippedDate,
         di.carrier || "",
         di.trackingNumber || "",
-        r.rawMaterialHeatNo || "",
-        r.lotNumber || "",
-        r.finishedLotNumber || "",
+        lotMaterial,
+        lotPart,
+        lotFinal,
       ];
     });
 
@@ -546,10 +561,10 @@ export const TrackingInquiryPage = () => {
         const da = normalizeDeliveryInfo(a.deliveryInfoRef);
         const db = normalizeDeliveryInfo(b.deliveryInfoRef);
         const aTime = new Date(
-          da.shippedAt || da.deliveredAt || a.createdAt || 0
+          da.shippedAt || da.deliveredAt || a.createdAt || 0,
         ).getTime();
         const bTime = new Date(
-          db.shippedAt || db.deliveredAt || b.createdAt || 0
+          db.shippedAt || db.deliveredAt || b.createdAt || 0,
         ).getTime();
         return bTime - aTime;
       });
@@ -564,10 +579,10 @@ export const TrackingInquiryPage = () => {
       const da = normalizeDeliveryInfo(a.deliveryInfoRef);
       const db = normalizeDeliveryInfo(b.deliveryInfoRef);
       const aTime = new Date(
-        da.deliveredAt || da.shippedAt || a.createdAt || 0
+        da.deliveredAt || da.shippedAt || a.createdAt || 0,
       ).getTime();
       const bTime = new Date(
-        db.deliveredAt || db.shippedAt || b.createdAt || 0
+        db.deliveredAt || db.shippedAt || b.createdAt || 0,
       ).getTime();
       return bTime - aTime;
     });
@@ -677,7 +692,7 @@ export const TrackingInquiryPage = () => {
                                 />
                                 <span>{step}</span>
                               </label>
-                            )
+                            ),
                           )}
                         </div>
                       </TableCell>
@@ -700,9 +715,9 @@ export const TrackingInquiryPage = () => {
                         </div>
                       </TableCell>
                       <TableCell>{r.assignedMachine || "-"}</TableCell>
-                      <TableCell>{r.rawMaterialHeatNo || "-"}</TableCell>
-                      <TableCell>{r.lotNumber || "-"}</TableCell>
-                      <TableCell>{r.finishedLotNumber || "-"}</TableCell>
+                      <TableCell>{r.lotNumber?.material || "-"}</TableCell>
+                      <TableCell>{r.lotNumber?.part || "-"}</TableCell>
+                      <TableCell>{r.lotNumber?.final || "-"}</TableCell>
                     </TableRow>
                   );
                 })}
@@ -755,9 +770,9 @@ export const TrackingInquiryPage = () => {
                       <TableCell>{shippedDate}</TableCell>
                       <TableCell>{di.carrier || "-"}</TableCell>
                       <TableCell>{di.trackingNumber || "-"}</TableCell>
-                      <TableCell>{r.rawMaterialHeatNo || "-"}</TableCell>
-                      <TableCell>{r.lotNumber || "-"}</TableCell>
-                      <TableCell>{r.finishedLotNumber || "-"}</TableCell>
+                      <TableCell>{r.lotNumber?.material || "-"}</TableCell>
+                      <TableCell>{r.lotNumber?.part || "-"}</TableCell>
+                      <TableCell>{r.lotNumber?.final || "-"}</TableCell>
                     </TableRow>
                   );
                 })}
@@ -799,8 +814,8 @@ export const TrackingInquiryPage = () => {
                   const status = deliveredAt
                     ? "완료"
                     : shippedAt || di.trackingNumber
-                    ? "배송중"
-                    : "-";
+                      ? "배송중"
+                      : "-";
 
                   return (
                     <TableRow key={String(r._id || r.requestId)}>

@@ -146,9 +146,11 @@ export interface RequestBase {
   title?: string;
   status?: string;
   manufacturerStage?: "의뢰" | "CAM" | "생산" | "발송" | "추적관리" | string;
-  lotNumber?: string;
-  rawMaterialHeatNo?: string;
-  finishedLotNumber?: string;
+  lotNumber?: {
+    material?: string;
+    part?: string;
+    final?: string;
+  };
   assignedMachine?: string; // 가공 직전 배정된 장비 (M3, M4 등)
   status2?: string;
   createdAt?: string;

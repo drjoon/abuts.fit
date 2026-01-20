@@ -129,8 +129,8 @@ export async function canAccessRequestAsRequestor(req, requestDoc) {
   const reqUserId = populatedReqUser?._id
     ? String(populatedReqUser._id)
     : requestDoc.requestor
-    ? String(requestDoc.requestor)
-    : "";
+      ? String(requestDoc.requestor)
+      : "";
   if (reqUserId && reqUserId === myId) {
     return true;
   }
@@ -207,7 +207,7 @@ export async function getDeliveryEtaLeadDays() {
     const doc = await SystemSettings.findOneAndUpdate(
       { key: "global" },
       { $setOnInsert: { key: "global" } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
     return {
@@ -302,7 +302,7 @@ async function nextLotLetters() {
   const counter = await LotCounter.findOneAndUpdate(
     { key: "global" },
     { $inc: { seq: 1 }, $setOnInsert: { key: "global" } },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, new: true, setDefaultsOnInsert: true },
   ).lean();
 
   const seqRaw = typeof counter?.seq === "number" ? counter.seq : 0;
@@ -327,7 +327,10 @@ function getWorkTypePrefix(requestDoc, { defaultPrefix }) {
 }
 
 export async function ensureLotNumberForMachining(requestDoc) {
-  if (!requestDoc || requestDoc.lotNumber) return;
+  if (!requestDoc) return;
+
+  requestDoc.lotNumber = requestDoc.lotNumber || {};
+  if (requestDoc.lotNumber.part) return;
 
   // 로트 규칙(반제품/CAP, 크라운은 CR): PREFIX + YYMMDD + "-" + 26진 3자리 (AAA, AAB, ... ZZZ 이후 다시 AAA)
   const todayYmd = getTodayYmdInKst(); // YYYY-MM-DD
@@ -335,17 +338,32 @@ export async function ensureLotNumberForMachining(requestDoc) {
 
   const letters = await nextLotLetters();
   const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CAP" });
-  requestDoc.lotNumber = `${prefix}${yyMMdd}-${letters}`;
+  requestDoc.lotNumber.part = `${prefix}${yyMMdd}-${letters}`;
 }
 
 export async function ensureFinishedLotNumberForPackaging(requestDoc) {
-  if (!requestDoc || requestDoc.finishedLotNumber) return;
+  if (!requestDoc) return;
+
+  requestDoc.lotNumber = requestDoc.lotNumber || {};
+  if (requestDoc.lotNumber.final) return;
 
   const todayYmd = getTodayYmdInKst();
   const yyMMdd = todayYmd.replace(/-/g, "").slice(2);
-  const letters = await nextLotLetters();
+  const partLot = String(requestDoc.lotNumber?.part || "");
   const prefix = getWorkTypePrefix(requestDoc, { defaultPrefix: "CA" });
-  requestDoc.finishedLotNumber = `${prefix}${yyMMdd}-${letters}`;
+  const reuseSequence = (() => {
+    // lotNumber.part 예: CAP241120-ABC → "CAP" 이후 모든 문자열("241120-ABC")을 재사용
+    if (!partLot.startsWith("CAP")) return null;
+    return partLot.slice(3) || null;
+  })();
+
+  if (reuseSequence) {
+    requestDoc.lotNumber.final = `${prefix}${reuseSequence}`;
+    return;
+  }
+
+  const letters = await nextLotLetters();
+  requestDoc.lotNumber.final = `${prefix}${yyMMdd}-${letters}`;
 }
 
 export async function computePriceForRequest({
@@ -458,7 +476,7 @@ export async function computePriceForRequest({
   const totalOrders = last30DaysOrders + referralLast30DaysOrders;
   const discountAmount = Math.min(
     totalOrders * DISCOUNT_PER_ORDER,
-    MAX_DISCOUNT
+    MAX_DISCOUNT,
   );
   const amount = Math.max(0, BASE_UNIT_PRICE - discountAmount);
 
@@ -581,7 +599,7 @@ export async function computeDiameterStats(requests, leadDays) {
     counts.d6,
     counts.d8,
     counts.d10,
-    counts.d10plus
+    counts.d10plus,
   );
 
   const buckets = bucketDefs.map((def) => ({

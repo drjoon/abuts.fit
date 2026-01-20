@@ -5,7 +5,7 @@ import Request from "../models/request.model.js";
 
 const usage = () => {
   console.log(
-    "Usage: node scripts/assignMachiningStartByRequestId.js [--machine M3] <requestId1> <requestId2> ..."
+    "Usage: node scripts/assignMachiningStartByRequestId.js [--machine M3] <requestId1> <requestId2> ...",
   );
   process.exit(1);
 };
@@ -38,7 +38,7 @@ const mongoUri =
 
 if (!mongoUri) {
   console.error(
-    "[assign] MONGODB_URI(MONGO_URI) is not set (MONGODB_URI_TEST fallback tried). Set it in local.env or export it before running."
+    "[assign] MONGODB_URI(MONGO_URI) is not set (MONGODB_URI_TEST fallback tried). Set it in local.env or export it before running.",
   );
   process.exit(1);
 }
@@ -68,7 +68,7 @@ async function main() {
   await mongoose.connect(mongoUri);
 
   const docs = await Request.find({ requestId: { $in: requestIds } }).select(
-    "_id requestId lotNumber assignedMachine manufacturerStage status"
+    "_id requestId lotNumber assignedMachine manufacturerStage status",
   );
 
   if (!docs.length) {
@@ -81,17 +81,17 @@ async function main() {
     docs.map((d) => ({
       id: String(d._id),
       requestId: d.requestId,
-      lotNumber: d.lotNumber,
+      lotNumber: d.lotNumber || {},
       assignedMachine: d.assignedMachine,
       stage: d.manufacturerStage,
       status: d.status,
-    }))
+    })),
   );
 
   for (const doc of docs) {
     try {
       console.log(
-        `Posting machining-start for ${doc.requestId} (${doc._id}) with machine=${machine}`
+        `Posting machining-start for ${doc.requestId} (${doc._id}) with machine=${machine}`,
       );
       const resp = await postMachiningStart({
         id: String(doc._id),
@@ -102,7 +102,7 @@ async function main() {
       console.error(
         `-> failed for ${doc.requestId}:`,
         err?.response?.status || err?.code || err?.message,
-        err?.response?.data || ""
+        err?.response?.data || "",
       );
     }
   }

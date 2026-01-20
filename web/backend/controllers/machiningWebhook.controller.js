@@ -47,13 +47,14 @@ export async function handleMachiningStartedWebhook(req, res) {
 
     await ensureLotNumberForMachining(request);
 
-    if (!request.rawMaterialHeatNo) {
+    request.lotNumber = request.lotNumber || {};
+    if (!request.lotNumber.material) {
       const cncMachine = await CncMachine.findOne({
         machineId: machine,
       }).lean();
       const heatNo = String(cncMachine?.currentMaterial?.heatNo || "").trim();
       if (heatNo) {
-        request.rawMaterialHeatNo = heatNo;
+        request.lotNumber.material = heatNo;
       }
     }
 

@@ -78,7 +78,7 @@ async function fetchBridgeQueueSnapshot() {
         method: "GET",
         headers: withBridgeHeaders(),
         signal: controller.signal,
-      }
+      },
     );
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok || body?.success === false) {
@@ -96,7 +96,7 @@ async function chooseMachineForRequest({ request }) {
   const maxDiameter = Number(request?.caseInfos?.maxDiameter);
   if (!Number.isFinite(maxDiameter) || maxDiameter <= 0) {
     const err = new Error(
-      "최대 직경 정보가 없어 CNC 장비를 자동 선택할 수 없습니다."
+      "최대 직경 정보가 없어 CNC 장비를 자동 선택할 수 없습니다.",
     );
     err.statusCode = 400;
     throw err;
@@ -111,12 +111,12 @@ async function chooseMachineForRequest({ request }) {
   const autoMachineIdSet = new Set(
     (Array.isArray(autoMachines) ? autoMachines : [])
       .map((m) => String(m?.uid || m?.name || "").trim())
-      .filter((v) => !!v)
+      .filter((v) => !!v),
   );
   const existingAssigned = String(
     request?.productionSchedule?.assignedMachine ||
       request?.assignedMachine ||
-      ""
+      "",
   ).trim();
   const candidates = (Array.isArray(machines) ? machines : [])
     .map((m) => {
@@ -163,7 +163,7 @@ async function chooseMachineForRequest({ request }) {
 
   if (!candidates.length) {
     const err = new Error(
-      "조건에 맞는 CNC 장비가 없습니다. (자동 가공 허용 ON 이면서 소재 직경이 최대 직경 이상이고, 차이가 2mm 미만인 장비가 필요합니다.)"
+      "조건에 맞는 CNC 장비가 없습니다. (자동 가공 허용 ON 이면서 소재 직경이 최대 직경 이상이고, 차이가 2mm 미만인 장비가 필요합니다.)",
     );
     err.statusCode = 400;
     throw err;
@@ -184,7 +184,7 @@ async function chooseMachineForRequest({ request }) {
           "productionSchedule.assignedMachine": c.machineId,
         });
         return [c.machineId, n];
-      })
+      }),
     );
     for (const [k, v] of pairs) {
       queueLenByMachineId[k] = v;
@@ -270,7 +270,7 @@ async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
         upsert: true,
         setDefaultsOnInsert: true,
         session: session || null,
-      }
+      },
     );
   } catch (e) {
     const msg = String(e?.message || "");
@@ -283,7 +283,7 @@ async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
         await ShippingPackage.updateOne(
           { _id: pkg._id },
           { $addToSet: { requestIds: request._id } },
-          { session: session || null }
+          { session: session || null },
         );
       }
     } else {
@@ -311,7 +311,7 @@ async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
           uniqueKey,
         },
       },
-      { upsert: true, session: session || null }
+      { upsert: true, session: session || null },
     );
   }
 }
@@ -365,13 +365,13 @@ async function triggerEspritForNc({ request, session }) {
         MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
         ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
         WorkType: request?.caseInfos?.workType || "",
-        LotNumber: request?.caseInfos?.lotNumber || "",
+        LotNumber: request?.lotNumber?.part || "",
       }),
       signal: controller.signal,
     });
   } catch (e) {
     const err = new Error(
-      "Esprit 서버에 연결할 수 없습니다. Esprit 서버(8001)를 실행한 후 다시 시도해주세요."
+      "Esprit 서버에 연결할 수 없습니다. Esprit 서버(8001)를 실행한 후 다시 시도해주세요.",
     );
     err.statusCode = 503;
     throw err;
@@ -382,7 +382,7 @@ async function triggerEspritForNc({ request, session }) {
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     const err = new Error(
-      `Esprit 트리거 실패 (${resp.status}): ${text || ""}`.trim()
+      `Esprit 트리거 실패 (${resp.status}): ${text || ""}`.trim(),
     );
     err.statusCode = 503;
     throw err;
@@ -394,11 +394,11 @@ async function triggerBridgeForCnc({ request }) {
   if (request?.productionSchedule?.actualMachiningStart) return;
 
   const machineId = String(
-    request?.productionSchedule?.assignedMachine || ""
+    request?.productionSchedule?.assignedMachine || "",
   ).trim();
   if (!machineId) {
     const err = new Error(
-      "CNC 장비가 할당되지 않아 CNC 공정을 시작할 수 없습니다."
+      "CNC 장비가 할당되지 않아 CNC 공정을 시작할 수 없습니다.",
     );
     err.statusCode = 400;
     throw err;
@@ -427,11 +427,11 @@ async function triggerBridgeForCnc({ request }) {
           machineId,
         }),
         signal: controller.signal,
-      }
+      },
     );
   } catch {
     const err = new Error(
-      "Bridge 서버에 연결할 수 없습니다. Bridge 서버(8002)를 실행한 후 다시 시도해주세요."
+      "Bridge 서버에 연결할 수 없습니다. Bridge 서버(8002)를 실행한 후 다시 시도해주세요.",
     );
     err.statusCode = 503;
     throw err;
@@ -441,7 +441,7 @@ async function triggerBridgeForCnc({ request }) {
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     const err = new Error(
-      `Bridge 트리거 실패 (${resp.status}): ${text || ""}`.trim()
+      `Bridge 트리거 실패 (${resp.status}): ${text || ""}`.trim(),
     );
     err.statusCode = 503;
     throw err;
@@ -477,7 +477,7 @@ async function uploadNcToBridgeStore({ requestId, s3Key, fileName }) {
     return {
       ok: false,
       reason: String(
-        body?.message || body?.error || "bridge-store upload failed"
+        body?.message || body?.error || "bridge-store upload failed",
       ),
     };
   }
@@ -669,7 +669,7 @@ const advanceManufacturerStageByReviewStage = async ({
             uniqueKey,
           },
         },
-        { upsert: true, session }
+        { upsert: true, session },
       );
     }
 
@@ -767,8 +767,9 @@ export async function updateReviewStatusByStage(req, res) {
           await ensureFinishedLotNumberForPackaging(request);
         }
 
-        // BG 단계는 자동 체인이 아닌, 제조사 승인 이후 서버가 트리거한다.
+        // CAM 단계 진입 직후(의뢰 승인 시) 반제품 로트번호 부여
         if (stageKey === "request") {
+          await ensureLotNumberForMachining(request);
           await triggerEspritForNc({ request, session });
         }
 
@@ -850,7 +851,7 @@ export async function getStageFileUrl(req, res) {
     }
 
     const disposition = `attachment; filename="${encodeURIComponent(
-      fileName
+      fileName,
     )}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 
     const url = await s3Utils.getSignedUrl(s3Key, 900, {
@@ -1032,7 +1033,7 @@ export async function getAllRequests(req, res) {
           now,
         });
         return { ...r, shippingPriority };
-      })
+      }),
     );
 
     // 전체 의뢰 수
@@ -1141,7 +1142,7 @@ export async function getRequestById(req, res) {
       .select("-messages")
       .populate(
         "requestor",
-        "name email phoneNumber organization organizationId role"
+        "name email phoneNumber organization organizationId role",
       );
 
     if (!request) {
@@ -1289,7 +1290,7 @@ export async function updateRequest(req, res) {
       delete updateData.caseInfos.connectionType;
 
       updateData.caseInfos = await normalizeCaseInfosImplantFields(
-        updateData.caseInfos
+        updateData.caseInfos,
       );
     } else if (!caseInfosAllowed && updateData?.caseInfos) {
       // 허용되지 않는 경우 caseInfos 삭제
@@ -1348,7 +1349,7 @@ export async function updateRequestStatus(req, res) {
     // 의뢰 조회
     const request = await Request.findById(requestId).populate(
       "requestor",
-      "organizationId"
+      "organizationId",
     );
 
     if (!request) {
@@ -1398,8 +1399,8 @@ export async function updateRequestStatus(req, res) {
       const groupFilter = request.requestorOrganizationId
         ? { requestorOrganizationId: request.requestorOrganizationId }
         : request.requestor?.organizationId
-        ? { requestorOrganizationId: request.requestor.organizationId }
-        : { requestor: request.requestor };
+          ? { requestorOrganizationId: request.requestor.organizationId }
+          : { requestor: request.requestor };
       await Request.updateMany(
         {
           ...groupFilter,
@@ -1413,13 +1414,8 @@ export async function updateRequestStatus(req, res) {
             status2: "중",
             manufacturerStage: "발송",
           },
-        }
+        },
       );
-    }
-
-    // 가공 시작 시점(CAM 진입)에서만 로트넘버 부여
-    if (status === "CAM" || status === "가공전") {
-      await ensureLotNumberForMachining(request);
     }
 
     await request.save();
@@ -1460,7 +1456,7 @@ export async function updateRequestStatus(req, res) {
                 uniqueKey,
               },
             },
-            { upsert: true }
+            { upsert: true },
           );
         }
       }
@@ -1521,7 +1517,7 @@ export async function getOriginalFileUrl(req, res) {
     }
 
     const disposition = `attachment; filename="${encodeURIComponent(
-      fileName
+      fileName,
     )}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 
     const url = await s3Utils.getSignedUrl(s3Key, 900, {
@@ -1582,7 +1578,7 @@ export async function getCamFileUrl(req, res) {
     }
 
     const disposition = `attachment; filename="${encodeURIComponent(
-      fileName
+      fileName,
     )}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 
     const url = await s3Utils.getSignedUrl(s3Key, 900, {
@@ -1710,7 +1706,10 @@ export async function deleteCamFileAndRollback(req, res) {
     request.caseInfos.camFile = undefined;
     request.status = "의뢰";
     request.status2 = "없음";
-    request.lotNumber = undefined; // 의뢰 단계로 복귀 시 로트번호 반납
+    request.lotNumber = request.lotNumber || {};
+    request.lotNumber.part = undefined;
+    request.lotNumber.final = undefined;
+    request.lotNumber.material = "";
     request.manufacturerStage = "의뢰";
 
     await request.save();
@@ -1763,7 +1762,7 @@ export async function getNcFileUrl(req, res) {
     }
 
     const disposition = `attachment; filename="${encodeURIComponent(
-      fileName
+      fileName,
     )}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 
     const url = await s3Utils.getSignedUrl(s3Key, 900, {
@@ -1827,7 +1826,7 @@ export async function saveNcFileAndMoveToMachining(req, res) {
             {
               requestId: request.requestId,
               reason: pushed.reason,
-            }
+            },
           );
         }
       } catch (e) {
@@ -1836,7 +1835,7 @@ export async function saveNcFileAndMoveToMachining(req, res) {
           {
             requestId: request.requestId,
             error: String(e?.message || e),
-          }
+          },
         );
       }
     }
@@ -1866,11 +1865,12 @@ export async function saveNcFileAndMoveToMachining(req, res) {
     };
 
     const originalBase = getBaseName(
-      request.caseInfos?.file?.fileName || request.caseInfos?.file?.originalName
+      request.caseInfos?.file?.fileName ||
+        request.caseInfos?.file?.originalName,
     );
     const camBase = getBaseName(
       request.caseInfos?.camFile?.fileName ||
-        request.caseInfos?.camFile?.originalName
+        request.caseInfos?.camFile?.originalName,
     );
 
     const originalName =
@@ -1979,15 +1979,15 @@ export async function deleteNcFileAndRollbackCam(req, res) {
     }
 
     const bridgePath = String(
-      request?.caseInfos?.ncFile?.filePath || ""
+      request?.caseInfos?.ncFile?.filePath || "",
     ).trim();
     if (bridgePath && BRIDGE_BASE) {
       try {
         await fetch(
           `${BRIDGE_BASE}/api/bridge-store/file?path=${encodeURIComponent(
-            bridgePath
+            bridgePath,
           )}`,
-          { method: "DELETE", headers: withBridgeHeaders() }
+          { method: "DELETE", headers: withBridgeHeaders() },
         );
       } catch (e) {
         console.warn("delete nc file bridge-store failed", e);
@@ -2050,7 +2050,7 @@ export async function deleteRequest(req, res) {
     // 의뢰 조회
     const request = await Request.findById(requestId).populate(
       "requestor",
-      "organizationId"
+      "organizationId",
     );
 
     if (!request) {

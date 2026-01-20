@@ -73,7 +73,6 @@
 **배송 모드별 스케줄 계산 (시각 기반)**:
 
 1. **신속배송** (`originalShipping.mode: "express"`):
-
    - 대기 없이 즉시 CAM 시작
    - `scheduledCamStart` = 의뢰 시각
    - `scheduledCamComplete` = CAM 시작 + 5분
@@ -350,18 +349,45 @@ const result = await enqueueTaxInvoiceIssue({
 
 ## 10. 가공 시작(Webhook) 시 로트번호/장비명 부여 규칙
 
-- **반제품 lotNumber 부여 시점**: CAM 승인 시에는 부여하지 않음. **가공 시작 웹훅(워커 호출)** 시에만 `ensureLotNumberForMachining`을 호출해 생성한다.
-- **원소재 Heat No 저장**: 가공 시작 웹훅에서 `assignedMachine`의 현재 소재(`currentMaterial.heatNo`)를 조회해 `rawMaterialHeatNo`에 스냅샷 저장한다.
-- **완제품 lotNumber 부여 시점**: `packaging` 단계 승인 시 `finishedLotNumber`를 자동 생성한다.
+### 10.1 lotNumber 구조
+
+- **Request.lotNumber**: 중첩 객체 구조로 관리
+  ```javascript
+  lotNumber: {
+    material: String,  // 원소재 Heat No.
+    part: String,      // 반제품 로트번호 (CAP+YYMMDD-AAA)
+    final: String      // 완제품 로트번호 (CA+YYMMDD-AAA)
+  }
+  ```
+- **레거시 필드 제거**: `rawMaterialHeatNo`, `finishedLotNumber` 필드는 더 이상 사용하지 않음
+
+### 10.2 로트번호 부여 시점
+
+- **원소재(material)**: 가공 시작 웹훅에서 `assignedMachine`의 현재 소재(`currentMaterial.heatNo`)를 조회해 `lotNumber.material`에 저장
+- **반제품(part)**: 의뢰 단계 승인 직후(CAM 진입) `ensureLotNumberForMachining(request)` 호출 → `lotNumber.part`에 `CAP+YYMMDD-AAA` 생성
+- **완제품(final)**: `packaging` 단계 승인 시 `ensureFinishedLotNumberForPackaging(request)` 호출 → `lotNumber.final`에 `CA+YYMMDD-AAA` 생성
+
+### 10.3 가공 시작 웹훅
+
 - **엔드포인트**: `POST /api/webhooks/machining-start`
   - Body: `{ requestId (또는 id), assignedMachine }`
-  - (프로덕션) 헤더 `x-webhook-secret`가 `MACHINING_WEBHOOK_SECRET`와 일치해야 함.
+  - (프로덕션) 헤더 `x-webhook-secret`가 `MACHINING_WEBHOOK_SECRET`와 일치해야 함
 - **처리 로직**:
-  1. 요청 ID 검증 후 `ensureLotNumberForMachining(request)` 실행 → 반제품 lotNumber(CAP...) 생성
+  1. 요청 ID 검증 (반제품 로트번호는 의뢰 승인 시 이미 존재하므로 추가 생성 없음)
   2. `assignedMachine` 설정, `assignedAt` 기록
-  3. 원소재 Heat No 스냅샷 저장(`rawMaterialHeatNo`)
-  4. 저장 후 `{ id, lotNumber, assignedMachine, assignedAt }` 반환
-- **프론트 표시**: 카드의 환자/치아 라인(상단)에서 `assignedMachine`과 `lotNumber` 배지를 함께 노출.
+  3. 원소재 Heat No를 `lotNumber.material`에 스냅샷 저장
+  4. 저장 후 `{ id, lotNumber: { material, part, final }, assignedMachine, assignedAt }` 반환
+- **프론트 표시**: 카드의 환자/치아 라인(상단)에서 `assignedMachine`과 `lotNumber.part` 배지를 함께 노출
+
+### 10.4 CAM 롤백 시 로트번호 초기화
+
+- CAM 파일 삭제 및 의뢰 단계 복귀 시:
+  ```javascript
+  request.lotNumber = request.lotNumber || {};
+  request.lotNumber.part = undefined;
+  request.lotNumber.final = undefined;
+  request.lotNumber.material = "";
+  ```
 
 ### 9.4 알림 큐 헬퍼
 

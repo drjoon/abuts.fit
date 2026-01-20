@@ -66,8 +66,8 @@ export const WorksheetCardGrid = ({
       const currentStageForTab = isMachiningStage
         ? "생산"
         : isCamStage
-        ? "CAM"
-        : "의뢰";
+          ? "CAM"
+          : "의뢰";
       const stageLabel = computeStageLabel(request, {
         isCamStage,
         isMachiningStage,
@@ -89,7 +89,7 @@ export const WorksheetCardGrid = ({
               caseInfos.file?.originalName ||
               caseInfos.camFile?.fileName ||
               caseInfos.camFile?.originalName ||
-              ""
+              "",
           );
 
       const hasCamFile = !!(
@@ -105,7 +105,7 @@ export const WorksheetCardGrid = ({
         caseInfos.ncFile?.originalName
       );
       const isDeletingNc = !!deletingNc[request._id];
-      const lotNumber = (request.lotNumber || "").trim();
+      const lotPart = String(request.lotNumber?.part || "").trim();
       const progress = uploadProgress[request._id];
       const isUploading = uploading[request._id];
       const requestStageLabel = stageLabel;
@@ -133,7 +133,7 @@ export const WorksheetCardGrid = ({
 
         const files = Array.from(e.dataTransfer.files);
         const ncFiles = files.filter((f) =>
-          f.name.toLowerCase().endsWith(".nc")
+          f.name.toLowerCase().endsWith(".nc"),
         );
 
         if (ncFiles.length === 0) return;
@@ -219,12 +219,12 @@ export const WorksheetCardGrid = ({
                     >
                       장비: {mid}
                     </Badge>
-                    {lotNumber && (
+                    {lotPart && (
                       <Badge
                         variant="outline"
                         className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-600 border-slate-200"
                       >
-                        Lot: {lotNumber}
+                        Lot: {lotPart}
                       </Badge>
                     )}
                     {!!request.assignedMachine && (
@@ -255,7 +255,7 @@ export const WorksheetCardGrid = ({
               )}
               {(() => {
                 const bucketIndex = getDiameterBucketIndex(
-                  caseInfos.maxDiameter
+                  caseInfos.maxDiameter,
                 );
                 const labels = ["6", "8", "10", "10+"];
 
@@ -373,12 +373,12 @@ export const WorksheetCardGrid = ({
                       {request.assignedMachine}
                     </Badge>
                   )}
-                  {lotNumber && (
+                  {lotPart && (
                     <Badge
                       variant="outline"
                       className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
                     >
-                      {lotNumber}
+                      {lotPart}
                     </Badge>
                   )}
                 </div>

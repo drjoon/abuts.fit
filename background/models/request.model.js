@@ -21,10 +21,23 @@ const requestSchema = new mongoose.Schema(
       index: true, // 32에서는 42,45의 requestId를 referenceIds에 추가
     },
     lotNumber: {
-      // 제조사가 관리하는 로트 번호 (ABYYMMDD-AAA 형식)
-      type: String,
-      unique: true,
-      sparse: true,
+      material: {
+        // 원소재 Heat No.
+        type: String,
+        default: "",
+      },
+      part: {
+        // 반제품 : CAP + YYMMDD + -AAA
+        type: String,
+        unique: true,
+        sparse: true,
+      },
+      final: {
+        // 완제품 : CA + YYMMDD + -AAA
+        type: String,
+        unique: true,
+        sparse: true,
+      },
     },
     assignedMachine: {
       // 가공 직전 배정된 장비 (M3, M4 등)
@@ -409,7 +422,7 @@ const requestSchema = new mongoose.Schema(
   },
   {
     timestamps: true, // createdAt, updatedAt 자동 생성
-  }
+  },
 );
 
 requestSchema.index({

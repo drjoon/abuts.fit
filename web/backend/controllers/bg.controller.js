@@ -30,7 +30,7 @@ async function fetchRemoteFileBuffer(sourceStep, fileName) {
   const base = REMOTE_BASE_BY_STEP[sourceStep];
   if (!base) {
     console.log(
-      `[BG-Callback] No remote base URL for sourceStep=${sourceStep}`
+      `[BG-Callback] No remote base URL for sourceStep=${sourceStep}`,
     );
     return null;
   }
@@ -41,18 +41,18 @@ async function fetchRemoteFileBuffer(sourceStep, fileName) {
     const res = await fetch(remoteUrl);
     if (!res.ok) {
       console.warn(
-        `[BG-Callback] Remote fetch failed: ${remoteUrl} status=${res.status}`
+        `[BG-Callback] Remote fetch failed: ${remoteUrl} status=${res.status}`,
       );
       return null;
     }
     const arrayBuffer = await res.arrayBuffer();
     console.log(
-      `[BG-Callback] Remote fetch success: ${remoteUrl} size=${arrayBuffer.byteLength} bytes`
+      `[BG-Callback] Remote fetch success: ${remoteUrl} size=${arrayBuffer.byteLength} bytes`,
     );
     return Buffer.from(arrayBuffer);
   } catch (err) {
     console.warn(
-      `[BG-Callback] Remote fetch exception for ${remoteUrl}: ${err.message}`
+      `[BG-Callback] Remote fetch exception for ${remoteUrl}: ${err.message}`,
     );
     return null;
   }
@@ -79,7 +79,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   }
 
   console.log(
-    `[BG-Callback] Received from ${sourceStep}: ${fileName} (originalFileName=${originalFileName}, Status: ${status})`
+    `[BG-Callback] Received from ${sourceStep}: ${fileName} (originalFileName=${originalFileName}, Status: ${status})`,
   );
 
   // 1. 의뢰 찾기
@@ -87,7 +87,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   if (requestId) {
     request = await Request.findOne({ requestId });
     console.log(
-      `[BG-Callback] Searched by requestId=${requestId}, found=${!!request}`
+      `[BG-Callback] Searched by requestId=${requestId}, found=${!!request}`,
     );
   }
 
@@ -96,7 +96,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     const targetSearchName = originalFileName || fileName;
     const normalizedTarget = normalizeFileName(targetSearchName);
     console.log(
-      `[BG-Callback] Searching by fileName: targetSearchName=${targetSearchName}, normalized=${normalizedTarget}`
+      `[BG-Callback] Searching by fileName: targetSearchName=${targetSearchName}, normalized=${normalizedTarget}`,
     );
 
     if (normalizedTarget) {
@@ -105,7 +105,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         .select({ requestId: 1, caseInfos: 1 })
         .lean();
       console.log(
-        `[BG-Callback] Found ${allRequests.length} active requests to search`
+        `[BG-Callback] Found ${allRequests.length} active requests to search`,
       );
 
       for (const r of allRequests) {
@@ -121,7 +121,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         ].filter(Boolean);
 
         const hit = storedNames.some(
-          (n) => normalizeFileName(n) === normalizedTarget
+          (n) => normalizeFileName(n) === normalizedTarget,
         );
         if (hit) {
           console.log(`[BG-Callback] Matched request: ${r.requestId}`);
@@ -140,8 +140,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         new ApiResponse(
           200,
           { found: false },
-          "File received but no matching request found"
-        )
+          "File received but no matching request found",
+        ),
       );
   }
 
@@ -157,13 +157,13 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         uploadedAt: new Date(),
       };
       console.log(
-        `[BG-Callback] Using presigned upload meta: s3Key=${incomingS3Key}, s3Url=${incomingS3Url}, fileSize=${incomingFileSize}`
+        `[BG-Callback] Using presigned upload meta: s3Key=${incomingS3Key}, s3Url=${incomingS3Url}, fileSize=${incomingFileSize}`,
       );
     } else {
       try {
         // 1) 원격 BG 서버(Rhino/Esprit/Bridge)에 파일 서버가 있는 경우, HTTP로 받아온다.
         console.log(
-          `[BG-Callback] Attempting to fetch file from remote: sourceStep=${sourceStep}, fileName=${fileName}`
+          `[BG-Callback] Attempting to fetch file from remote: sourceStep=${sourceStep}, fileName=${fileName}`,
         );
         let fileBuffer =
           (await fetchRemoteFileBuffer(sourceStep, fileName)) || null;
@@ -173,14 +173,14 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           const localFilePath = path.join(
             BG_STORAGE_BASE,
             sourceStep,
-            fileName
+            fileName,
           );
           console.log(
-            `[BG-Callback] Remote fetch failed or no base URL, trying local path: ${localFilePath}`
+            `[BG-Callback] Remote fetch failed or no base URL, trying local path: ${localFilePath}`,
           );
           fileBuffer = await fs.readFile(localFilePath);
           console.log(
-            `[BG-Callback] Local file read success: ${localFilePath} size=${fileBuffer.length} bytes`
+            `[BG-Callback] Local file read success: ${localFilePath} size=${fileBuffer.length} bytes`,
           );
         }
 
@@ -191,12 +191,12 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             : "application/octet-stream";
 
         console.log(
-          `[BG-Callback] Uploading to S3 (fallback): s3Key=${s3Key}, fileSize=${fileBuffer.length}`
+          `[BG-Callback] Uploading to S3 (fallback): s3Key=${s3Key}, fileSize=${fileBuffer.length}`,
         );
         const uploaded = await s3Utils.uploadFileToS3(
           fileBuffer,
           s3Key,
-          contentType
+          contentType,
         );
         s3Info = {
           fileName,
@@ -206,11 +206,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           uploadedAt: new Date(),
         };
         console.log(
-          `[BG-Callback] S3 upload success: s3Key=${s3Info.s3Key}, s3Url=${s3Info.s3Url}`
+          `[BG-Callback] S3 upload success: s3Key=${s3Info.s3Key}, s3Url=${s3Info.s3Url}`,
         );
       } catch (err) {
         console.error(
-          `[BG-Callback] Failed to upload processed file to S3: ${err.message}\n${err.stack}`
+          `[BG-Callback] Failed to upload processed file to S3: ${err.message}\n${err.stack}`,
         );
         // S3 업로드 실패해도 DB 업데이트는 진행 (로컬에는 파일이 있으므로)
       }
@@ -255,7 +255,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   } else {
     // 실패 시 상태 업데이트
     console.error(
-      `[BG-Callback] Processing failed for ${request.requestId} at ${sourceStep}`
+      `[BG-Callback] Processing failed for ${request.requestId} at ${sourceStep}`,
     );
     // 실패 시 제조사 수동 대응을 위해 상태 변경 또는 로그 기록
     updateData[
@@ -263,8 +263,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         sourceStep === "2-filled"
           ? "cam"
           : sourceStep === "3-nc"
-          ? "cam"
-          : "machining"
+            ? "cam"
+            : "machining"
       }.status`
     ] = "REJECTED";
     updateData[
@@ -272,25 +272,25 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         sourceStep === "2-filled"
           ? "cam"
           : sourceStep === "3-nc"
-          ? "cam"
-          : "machining"
+            ? "cam"
+            : "machining"
       }.reason`
     ] = `백그라운드 작업 실패 (${sourceStep})`;
   }
 
   console.log(
     `[BG-Callback] Updating request ${request.requestId} with updateData:`,
-    JSON.stringify(updateData, null, 2)
+    JSON.stringify(updateData, null, 2),
   );
   const updatedRequest = await Request.findByIdAndUpdate(
     request._id,
     { $set: updateData },
-    { new: true }
+    { new: true },
   );
   console.log(
     `[BG-Callback] Request updated successfully. caseInfos.camFile=${JSON.stringify(
-      updatedRequest?.caseInfos?.camFile
-    )}`
+      updatedRequest?.caseInfos?.camFile,
+    )}`,
   );
 
   return res
@@ -299,8 +299,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       new ApiResponse(
         200,
         { updated: true, requestId: request.requestId, s3Uploaded: !!s3Info },
-        "Successfully registered processed file"
-      )
+        "Successfully registered processed file",
+      ),
     );
 });
 
@@ -322,7 +322,7 @@ export const getPresignedUploadUrl = asyncHandler(async (req, res) => {
   return res
     .status(200)
     .json(
-      new ApiResponse(200, { ...presign, contentType }, "Presigned URL issued")
+      new ApiResponse(200, { ...presign, contentType }, "Presigned URL issued"),
     );
 });
 
@@ -340,7 +340,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const request = await Request.findOne({ requestId })
-    .select({ requestId: 1, caseInfos: 1 })
+    .select({ requestId: 1, caseInfos: 1, lotNumber: 1 })
     .lean();
 
   if (!request) {
@@ -350,6 +350,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
+  const lotPart = request?.lotNumber?.part || "";
   return res.status(200).json(
     new ApiResponse(
       200,
@@ -366,11 +367,11 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           maxDiameter: ci.maxDiameter || 0,
           connectionDiameter: ci.connectionDiameter || 0,
           workType: ci.workType || "",
-          lotNumber: ci.lotNumber || "",
+          lotNumber: lotPart,
         },
       },
-      "Request meta"
-    )
+      "Request meta",
+    ),
   );
 });
 
@@ -456,12 +457,12 @@ export const downloadOriginalFile = asyncHandler(async (req, res) => {
       res.setHeader("Content-Type", "application/octet-stream");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`
+        `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
       );
       return res.status(200).send(buf);
     } catch (err) {
       console.warn(
-        `[BG-Original] S3 download failed key=${f.s3Key} err=${err?.message}`
+        `[BG-Original] S3 download failed key=${f.s3Key} err=${err?.message}`,
       );
     }
   }
@@ -475,13 +476,13 @@ export const downloadOriginalFile = asyncHandler(async (req, res) => {
         res.setHeader("Content-Type", "application/octet-stream");
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`
+          `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
         );
         return res.status(200).send(Buffer.from(arrayBuffer));
       }
     } catch (err) {
       console.warn(
-        `[BG-Original] URL download failed url=${f.s3Url} err=${err?.message}`
+        `[BG-Original] URL download failed url=${f.s3Url} err=${err?.message}`,
       );
     }
   }
@@ -496,7 +497,7 @@ const normalizeFileName = (v) => {
   try {
     const hasHangul = /[가-힣]/.test(s);
     const bytes = new Uint8Array(
-      Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff)
+      Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff),
     );
     const decoded = new TextDecoder("utf-8").decode(bytes);
     const decodedHasHangul = /[가-힣]/.test(decoded);
@@ -536,8 +537,8 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
         new ApiResponse(
           200,
           { ok: true, processed: false, shouldProcess: false },
-          "invalid fileName"
-        )
+          "invalid fileName",
+        ),
       );
   }
 
@@ -582,8 +583,8 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
           shouldProcess,
           reason: "no_request",
         },
-        "No matching request"
-      )
+        "No matching request",
+      ),
     );
   }
 
@@ -610,8 +611,8 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
           rejected: camStatus === "REJECTED",
           closed: isClosed,
         },
-        "File status"
-      )
+        "File status",
+      ),
     );
   }
 
@@ -628,8 +629,8 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
           requestId: matched.requestId,
           closed: isClosed,
         },
-        "File status"
-      )
+        "File status",
+      ),
     );
   }
 
@@ -639,7 +640,7 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
       new ApiResponse(
         200,
         { ok: true, processed: false, shouldProcess: false },
-        "Unsupported sourceStep"
-      )
+        "Unsupported sourceStep",
+      ),
     );
 });
