@@ -616,7 +616,10 @@ namespace HiLinkBridgeWebApi48
             var prodInfo = new MachineProductInfo();
             var rc = HiLink.GetMachineProductInfo(handle, ref prodInfo);
             if (rc != 0) return false;
-            count = prodInfo.currentProdCount;
+            var prodCount = prodInfo.currentProdCount;
+            if (prodCount < int.MinValue) prodCount = int.MinValue;
+            if (prodCount > int.MaxValue) prodCount = int.MaxValue;
+            count = (int)prodCount;
             return true;
         }
 
@@ -686,6 +689,8 @@ namespace HiLinkBridgeWebApi48
                 req.Headers.Add("Authorization", "Bearer " + jwt);
             }
         }
+
+        private static readonly System.Net.Http.HttpClient Http = new System.Net.Http.HttpClient();
 
         private static async Task NotifyMachiningStarted(CncJobItem job, string machineId)
         {

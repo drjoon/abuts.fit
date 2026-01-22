@@ -24,7 +24,6 @@ const requestSchema = new mongoose.Schema(
       material: {
         // 원소재 Heat No.
         type: String,
-        default: "",
       },
       part: {
         // 반제품 : CAP + YYMMDD + -AAA

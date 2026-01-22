@@ -204,40 +204,16 @@ export const WorksheetCardGrid = ({
           )}
           <CardContent className="p-3 flex-1 flex flex-col gap-2">
             <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
-              {(() => {
-                const assignedMachine =
-                  (request.productionSchedule as any)?.assignedMachine ||
-                  (request as any).assignedMachine ||
-                  "";
-                const mid = String(assignedMachine || "").trim();
-                if (!mid) return null;
-                return (
-                  <div className="flex items-center justify-between mb-1">
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 bg-sky-50 text-sky-700 border-sky-200 font-semibold"
-                    >
-                      장비: {mid}
-                    </Badge>
-                    {lotPart && (
-                      <Badge
-                        variant="outline"
-                        className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-600 border-slate-200"
-                      >
-                        Lot: {lotPart}
-                      </Badge>
-                    )}
-                    {!!request.assignedMachine && (
-                      <Badge
-                        variant="outline"
-                        className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
-                      >
-                        {request.assignedMachine}
-                      </Badge>
-                    )}
-                  </div>
-                );
-              })()}
+              {lotPart && (
+                <div className="flex items-center justify-end mb-1">
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-600 border-slate-200"
+                  >
+                    Lot: {lotPart}
+                  </Badge>
+                </div>
+              )}
               {request.referenceIds && request.referenceIds.length > 0 && (
                 <div className="mb-1">
                   {(() => {
@@ -291,19 +267,6 @@ export const WorksheetCardGrid = ({
                               신속
                             </Badge>
                           )}
-                          {sp?.label &&
-                            (urgency === "danger" || urgency === "warning") && (
-                              <Badge
-                                variant="outline"
-                                className={`text-[11px] px-2 py-0.5 font-semibold ${
-                                  urgency === "danger"
-                                    ? "bg-rose-50 text-rose-700 border-rose-200"
-                                    : "bg-amber-50 text-amber-700 border-amber-200"
-                                }`}
-                              >
-                                {sp.label}
-                              </Badge>
-                            )}
                           <Badge
                             variant="outline"
                             className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
@@ -365,14 +328,6 @@ export const WorksheetCardGrid = ({
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  {!!request.assignedMachine && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
-                    >
-                      {request.assignedMachine}
-                    </Badge>
-                  )}
                   {lotPart && (
                     <Badge
                       variant="outline"
@@ -400,6 +355,20 @@ export const WorksheetCardGrid = ({
               )}
             </div>
           </CardContent>
+          {sp?.label && (urgency === "danger" || urgency === "warning") && (
+            <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1">
+              <Badge
+                variant="outline"
+                className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] flex flex-col items-center justify-center ${
+                  urgency === "danger"
+                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                    : "bg-amber-50 text-amber-700 border-amber-200"
+                }`}
+              >
+                <span>{sp.label}</span>
+              </Badge>
+            </div>
+          )}
         </Card>
       );
     })}

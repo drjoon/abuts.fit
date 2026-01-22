@@ -98,6 +98,7 @@
     <Compile Include="DummyCncScheduler.cs" />
     <Compile Include="CncJobQueue.cs" />
     <Compile Include="CncJobDispatcher.cs" />
+    <Compile Include="CncContinuousMachining.cs" />
     <Compile Include="Models\RawHiLinkRequest.cs" />
     <Compile Include="Models\AddMachineRequest.cs" />
     <Compile Include="Program.cs" />
