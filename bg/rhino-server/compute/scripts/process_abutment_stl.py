@@ -5,6 +5,8 @@ import sys
 import Rhino
 import Rhino.FileIO
 
+from diameter_analysis import analyze_diameters
+
 
 def log(msg):
     line = "[abuts-rhino] " + str(msg)
@@ -111,24 +113,6 @@ def _collect_mesh_infos(doc):
         info["nakedEdges"] = _count_naked_edges(geo)
         infos.append(info)
     return infos
-
-
-def _log_mesh_summary(mesh_infos):
-    try:
-        for idx, info in enumerate(mesh_infos):
-            log(
-                "mesh[{idx}] v={v} f={f} closed={closed} manifold={manifold} "
-                "nakedEdges={naked}".format(
-                    idx=idx,
-                    v=info.get("vertexCount"),
-                    f=info.get("faceCount"),
-                    closed=info.get("isClosed"),
-                    manifold=info.get("isManifold"),
-                    naked=info.get("nakedEdges"),
-                )
-            )
-    except Exception as e:
-        log("mesh summary log failed: " + str(e))
 
 
 def _pick_primary_piece(candidates, tol):
@@ -365,49 +349,6 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         log("mesh objects after import=" + str(len(mesh_obj_refs)))
 
-        try:
-            for i, obj in enumerate(mesh_obj_refs):
-                g = obj.Geometry
-                if g is None:
-                    continue
-                vcount = None
-                fcount = None
-                is_closed = None
-                is_manifold = None
-                naked = None
-                try:
-                    vcount = g.Vertices.Count
-                except Exception:
-                    pass
-                try:
-                    fcount = g.Faces.Count
-                except Exception:
-                    pass
-                try:
-                    is_closed = g.IsClosed
-                except Exception:
-                    pass
-                try:
-                    is_manifold = g.IsManifold(True)
-                except Exception:
-                    pass
-                try:
-                    naked = _count_naked_edges(g)
-                except Exception:
-                    pass
-                log(
-                    "mesh[{}] v={} f={} closed={} manifold={} nakedEdges={}".format(
-                        i,
-                        vcount,
-                        fcount,
-                        is_closed,
-                        is_manifold,
-                        naked,
-                    )
-                )
-        except Exception as e:
-            log("mesh summary log failed: " + str(e))
-
         # 1) Explode: RhinoCommon API를 사용하여 고속 처리
         try:
             objs = list(doc.Objects)
@@ -470,29 +411,6 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             candidates.append({"id": oid, "r": r, "maxZ": max_z, "naked": naked})
 
         # 후보 로그(top)
-        try:
-            cand_sorted = sorted(
-                candidates,
-                key=lambda x: (
-                    1 if (x.get("naked") or 0) > 0 else 0,
-                    float(x.get("r") or 0),
-                    float(x.get("maxZ") or 0),
-                ),
-                reverse=True,
-            )
-            for i, c in enumerate(cand_sorted[:12]):
-                log(
-                    "candidate[{}] id={} r={} maxZ={} nakedEdges={}".format(
-                        i,
-                        c.get("id"),
-                        c.get("r"),
-                        c.get("maxZ"),
-                        c.get("naked"),
-                    )
-                )
-        except Exception:
-            pass
-
         # nakedEdges>0 후보만 추리기
         open_candidates = [c for c in candidates if (c.get("naked") or 0) > 0]
         pool = open_candidates if open_candidates else candidates
@@ -698,41 +616,9 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         if not ok:
             fail("STL Export 실패")
 
-        # 5) 분석 (직경 추출)
-        max_r = 0.0
-        conn_r = 0.0
         try:
-            # 1. 최대 직경 (전체 Mesh 기준)
-            for o in doc.Objects:
-                if o.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
-                    g = o.Geometry
-                    if g and g.Vertices:
-                        for v in g.Vertices:
-                            r = (v.X**2 + v.Y**2)**0.5
-                            if r > max_r: max_r = r
-            
-            # 2. 커넥션 직경 (Z=0 평면 교차점 기준)
-            # STL이 원점에 정렬되어 있다고 가정 (Z=0이 커넥션 위치)
-            for o in doc.Objects:
-                if o.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
-                    g = o.Geometry
-                    if not g: continue
-                    for face in g.Faces:
-                        v1 = g.Vertices[face.A]
-                        v2 = g.Vertices[face.B]
-                        v3 = g.Vertices[face.C]
-                        
-                        # 각 변에 대해 Z=0 교차점 체크
-                        for pa, pb in [(v1, v2), (v2, v3), (v3, v1)]:
-                            if (pa.Z > 0 and pb.Z < 0) or (pa.Z < 0 and pb.Z > 0):
-                                t = abs(pa.Z) / abs(pa.Z - pb.Z)
-                                ix = pa.X + t * (pb.X - pa.X)
-                                iy = pa.Y + t * (pb.Y - pa.Y)
-                                ir = (ix**2 + iy**2)**0.5
-                                if ir > conn_r: conn_r = ir
-            
-            if conn_r == 0: conn_r = max_r
-            log("DIAMETER_RESULT:max={} conn={}".format(round(max_r*2, 2), round(conn_r*2, 2)))
+            max_d, conn_d = analyze_diameters(doc)
+            log("DIAMETER_RESULT:max={} conn={}".format(max_d, conn_d))
         except Exception as e:
             log("Analysis failed: " + str(e))
 
