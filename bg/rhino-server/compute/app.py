@@ -16,6 +16,7 @@ from watchdog.events import FileSystemEventHandler
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
+from string import Template
 
 import sys
 import json
@@ -32,7 +33,6 @@ import mimetypes
 _global_rhino_lock = asyncio.Lock()
 _processing_semaphore = asyncio.Semaphore(1)  # 라이노 인스턴스 1개만 사용하므로 세마포어로 제어
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
-
 
 APP_ROOT = Path(__file__).resolve().parent
 load_dotenv(dotenv_path=APP_ROOT / "local.env", override=False)
@@ -61,6 +61,92 @@ _BASE_FW_LOCK = threading.Lock()
 # 재기동 스캔 및 watcher 동시 실행에서 중복 처리 방지
 _IN_FLIGHT: set[str] = set()
 _IN_FLIGHT_LOCK = threading.Lock()
+
+
+def _repr_path_for_template(path: Path | str) -> str:
+    """Template 문자열 내 raw literal에 안전하게 삽입하기 위해 백슬래시 이스케이프"""
+    return str(path).replace("\\", "\\\\")
+
+
+_JOB_CALLBACK_URL = os.getenv(
+    "RHINO_JOB_CALLBACK_URL",
+    "http://127.0.0.1:8000/api/rhino/internal/job-callback",
+)
+
+_WRAPPER_TEMPLATE = Template(
+    "import json\n"
+    "import os\n"
+    "import Rhino\n"
+    "import traceback\n"
+    "import time\n"
+    "import importlib\n"
+    "def _cleanup_doc():\n"
+    "  try:\n"
+    "    doc = Rhino.RhinoDoc.ActiveDoc\n"
+    "    if doc is None: return\n"
+    "    try:\n"
+    "      Rhino.RhinoApp.RunScript('!_SelAll _Delete', True)\n"
+    "    except Exception: pass\n"
+    "    ids = [o.Id for o in list(doc.Objects)]\n"
+    "    for oid in ids:\n"
+    "      try:\n"
+    "        doc.Objects.Delete(oid, True)\n"
+    "      except Exception:\n"
+    "        pass\n"
+    "  except Exception:\n"
+    "    pass\n"
+    "def _read_log(p):\n"
+    "  try:\n"
+    "    with open(p, 'r', encoding='utf-8', errors='ignore') as f:\n"
+    "      return f.read()\n"
+    "  except Exception:\n"
+    "    return ''\n"
+    "def _send_result_via_socket(data):\n"
+    "  for i in range(3):\n"
+    "    try:\n"
+    "      import json\n"
+    "      import System.Net.Http\n"
+    "      client = System.Net.Http.HttpClient()\n"
+    "      content = System.Net.Http.StringContent(json.dumps(data), System.Text.Encoding.UTF8, 'application/json')\n"
+    "      response = client.PostAsync('${callback_url}', content).Result\n"
+    "      if response.IsSuccessStatusCode: return\n"
+    "      time.sleep(0.5)\n"
+    "    except Exception as e:\n"
+    "      if i == 2: print('callback failed after 3 retries: ' + str(e))\n"
+    "      time.sleep(0.5)\n"
+    "os.environ['ABUTS_INPUT_STL'] = r\"${input_stl}\"\n"
+    "os.environ['ABUTS_OUTPUT_STL'] = r\"${output_stl}\"\n"
+    "os.environ['ABUTS_LOG_PATH'] = r\"${log_path}\"\n"
+    "import System.Diagnostics\n"
+    "import sys\n"
+    "sys.path.append(r\"${script_dir}\")\n"
+    "import process_abutment_stl\n"
+    "process_abutment_stl = importlib.reload(process_abutment_stl)\n"
+    "try:\n"
+    "  print('JOB_PID=' + str(System.Diagnostics.Process.GetCurrentProcess().Id))\n"
+    "  _cleanup_doc()\n"
+    "  process_abutment_stl.main(input_path_arg=r\"${input_stl}\", output_path_arg=r\"${output_stl}\", log_path_arg=r\"${log_path}\")\n"
+    "  _send_result_via_socket({'token': '${token}', 'ok': True, 'log': _read_log(r\"${log_path}\")})\n"
+    "except Exception as e:\n"
+    "  _send_result_via_socket({'token': '${token}', 'ok': False, 'error': str(e), 'traceback': traceback.format_exc(), 'log': _read_log(r\"${log_path}\")})\n"
+    "  raise\n"
+)
+
+
+def _write_wrapper_script(*, token: str, input_stl: Path, output_stl: Path, log_path: Path) -> Path:
+    wrapper_path = TMP_DIR / f"job_{token}.py"
+    wrapper_path.write_text(
+        _WRAPPER_TEMPLATE.substitute(
+            callback_url=_JOB_CALLBACK_URL,
+            input_stl=_repr_path_for_template(input_stl),
+            output_stl=_repr_path_for_template(output_stl),
+            log_path=_repr_path_for_template(log_path),
+            script_dir=_repr_path_for_template(SCRIPT_DIR),
+            token=token,
+        ),
+        encoding="utf-8",
+    )
+    return wrapper_path
 
 
 def _guess_content_type(path: Path) -> str:
@@ -523,51 +609,6 @@ def _build_rhino_output_name(input_name: str) -> str:
     p = Path(input_name)
     return f"{p.stem}.rhino{p.suffix}"
 
-
-def _run_rhino_python(input_stl: Path, output_stl: Path, timeout_sec: int) -> None:
-    rhinocode = _get_rhinocode_bin()
-    if not rhinocode:
-        raise RuntimeError(
-            "rhinocode를 사용할 수 없습니다. local.env에 RHINOCODE_BIN을 설정하세요."
-        )
-
-    rhino_app = os.getenv("RHINO_APP", "").strip().strip('"')
-
-    candidates = []
-    base = Path("/Applications")
-    if base.exists():
-        for exe_name in ("Rhino", "Rhinoceros"):
-            for p in sorted(base.glob(f"Rhino*.app/Contents/MacOS/{exe_name}")):
-                if p.exists():
-                    candidates.append(str(p))
-
-    # 기존 기본값도 후보에 추가 (존재하면)
-    if DEFAULT_RHINO_APP_MAC.exists():
-        candidates.insert(0, str(DEFAULT_RHINO_APP_MAC))
-
-    # RHINO_APP가 지정되어 있으면 우선 사용하되, 경로가 틀리면 후보로 fallback
-    if rhino_app:
-        if not Path(rhino_app).exists():
-            if candidates:
-                rhino_app = candidates[0]
-            else:
-                raise RuntimeError(
-                    "RHINO_APP 경로가 존재하지 않습니다.\n"
-                    + f"RHINO_APP={rhino_app}\n"
-                    + "local.env의 RHINO_APP를 실제 실행 파일로 수정하세요.\n"
-                    + "예: RHINO_APP=\"/Applications/Rhino 8.app/Contents/MacOS/Rhinoceros\""
-                )
-    else:
-        if candidates:
-            rhino_app = candidates[0]
-        else:
-            raise RuntimeError(
-                "Rhino 실행 파일을 찾지 못했습니다.\n"
-                + "1) Rhino가 설치되어 있는지 확인하거나\n"
-                + "2) local.env에 RHINO_APP를 지정하세요.\n"
-                + "예: RHINO_APP=\"/Applications/Rhino 8.app/Contents/MacOS/Rhinoceros\""
-            )
-
 async def _run_rhino_python(
     input_stl: Path,
     output_stl: Path,
@@ -581,7 +622,6 @@ async def _run_rhino_python(
     tmp_dir = TMP_DIR
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    wrapper_path = tmp_dir / f"job_{token}.py"
     env_log_path = os.getenv("ABUTS_LOG_PATH", "").strip()
     if env_log_path:
         log_path = Path(env_log_path)
@@ -595,69 +635,13 @@ async def _run_rhino_python(
     # Future 생성 및 저장
     loop = asyncio.get_running_loop()
     future = loop.create_future()
+    wrapper_path = _write_wrapper_script(
+        token=token, input_stl=input_stl, output_stl=output_stl, log_path=log_path
+    )
+
     _job_futures[token] = future
 
     try:
-        wrapper_path.write_text(
-            "import json\n"
-            "import os\n"
-            "import Rhino\n"
-            "import traceback\n"
-            "import time\n"
-            "import importlib\n"
-            "def _cleanup_doc():\n"
-            "  try:\n"
-            "    doc = Rhino.RhinoDoc.ActiveDoc\n"
-            "    if doc is None: return\n"
-            "    try:\n"
-            "      Rhino.RhinoApp.RunScript('!_SelAll _Delete', True)\n"
-            "    except Exception: pass\n"
-            "    ids = [o.Id for o in list(doc.Objects)]\n"
-            "    for oid in ids:\n"
-            "      try:\n"
-            "        doc.Objects.Delete(oid, True)\n"
-            "      except Exception:\n"
-            "        pass\n"
-            "  except Exception:\n"
-            "    pass\n"
-            "def _read_log(p):\n"
-            "  try:\n"
-            "    with open(p, 'r', encoding='utf-8', errors='ignore') as f:\n"
-            "      return f.read()\n"
-            "  except Exception:\n"
-            "    return ''\n"
-            "def _send_result_via_socket(data):\n"
-            "  for i in range(3):\n"
-            "    try:\n"
-            "      import json\n"
-            "      import System.Net.Http\n"
-            "      client = System.Net.Http.HttpClient()\n"
-            "      content = System.Net.Http.StringContent(json.dumps(data), System.Text.Encoding.UTF8, 'application/json')\n"
-            "      response = client.PostAsync('http://127.0.0.1:8000/api/rhino/internal/job-callback', content).Result\n"
-            "      if response.IsSuccessStatusCode: return\n"
-            "      time.sleep(0.5)\n"
-            "    except Exception as e:\n"
-            "      if i == 2: print('callback failed after 3 retries: ' + str(e))\n"
-            "      time.sleep(0.5)\n"
-            f"os.environ['ABUTS_INPUT_STL'] = r\"{str(input_stl)}\"\n"
-            f"os.environ['ABUTS_OUTPUT_STL'] = r\"{str(output_stl)}\"\n"
-            f"os.environ['ABUTS_LOG_PATH'] = r\"{str(log_path)}\"\n"
-            f"import System.Diagnostics\n"
-            f"import sys\n"
-            f"sys.path.append(r\"{str(SCRIPT_DIR)}\")\n"
-            f"import process_abutment_stl\n"
-            f"process_abutment_stl = importlib.reload(process_abutment_stl)\n"
-            "try:\n"
-            "  print('JOB_PID=' + str(System.Diagnostics.Process.GetCurrentProcess().Id))\n"
-            "  _cleanup_doc()\n"
-            f"  process_abutment_stl.main(input_path_arg=r\"{str(input_stl)}\", output_path_arg=r\"{str(output_stl)}\", log_path_arg=r\"{str(log_path)}\")\n"
-            f"  _send_result_via_socket({{'token': '{token}', 'ok': True, 'log': _read_log(r\"{str(log_path)}\")}})\n"
-            "except Exception as e:\n"
-            f"  _send_result_via_socket({{'token': '{token}', 'ok': False, 'error': str(e), 'traceback': traceback.format_exc(), 'log': _read_log(r\"{str(log_path)}\")}})\n"
-            "  raise\n",
-            encoding="utf-8",
-        )
-
         async with _global_rhino_lock:
             start_time = time.time()
             async with _acquire_rhino_id() as rhino_id:
