@@ -62,7 +62,15 @@ namespace HiLinkBridgeWebApi48.Controllers
                         {
                             if (job.kind == CncJobKind.File)
                             {
-                                CncJobQueue.EnqueueFileBack(job.machineId, job.fileName, job.requestId);
+                                var enq = CncJobQueue.EnqueueFileBack(job.machineId, job.fileName, job.requestId);
+                                try
+                                {
+                                    if (enq != null && !string.IsNullOrWhiteSpace(job.bridgePath))
+                                    {
+                                        enq.bridgePath = job.bridgePath;
+                                    }
+                                }
+                                catch { }
                             }
                             else if (job.kind == CncJobKind.Dummy && job.programNo.HasValue)
                             {

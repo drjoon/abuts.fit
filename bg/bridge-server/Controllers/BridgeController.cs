@@ -519,5 +519,95 @@ namespace HiLinkBridgeWebApi48.Controllers
                 headType = dto.headType
             });
         }
+
+        // POST /machines/{machineId}/continuous/enqueue
+        [HttpPost]
+        [Route("machines/{machineId}/continuous/enqueue")]
+        public HttpResponseMessage EnqueueContinuousJob(string machineId, [FromBody] JObject payload)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            if (payload == null)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "payload is required" });
+            }
+
+            try
+            {
+                var fileName = payload.Value<string>("fileName");
+                var requestId = payload.Value<string>("requestId");
+                var jobId = payload.Value<string>("jobId") ?? Guid.NewGuid().ToString();
+                var bridgePath = payload.Value<string>("bridgePath");
+
+                if (string.IsNullOrEmpty(fileName))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "fileName is required" });
+                }
+
+                var job = new CncJobItem
+                {
+                    id = jobId,
+                    fileName = fileName,
+                    requestId = requestId,
+                    kind = CncJobKind.File
+                };
+
+                var enqueued = CncContinuousMachining.EnqueueFileJob(machineId, job.fileName, job.requestId, bridgePath);
+                if (enqueued == null)
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                    {
+                        success = false,
+                        message = "failed to enqueue job"
+                    });
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    message = "Job enqueued for continuous machining",
+                    jobId = jobId,
+                    machineId = machineId
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    message = ex.Message
+                });
+            }
+        }
+
+        // GET /machines/{machineId}/continuous/state
+        [HttpGet]
+        [Route("machines/{machineId}/continuous/state")]
+        public HttpResponseMessage GetContinuousState(string machineId)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var state = CncContinuousMachining.GetMachineState(machineId);
+            if (state == null)
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound, new
+                {
+                    success = false,
+                    message = "Machine state not found"
+                });
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                data = state
+            });
+        }
     }
 }

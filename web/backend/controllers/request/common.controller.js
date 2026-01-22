@@ -411,6 +411,8 @@ async function triggerBridgeForCnc({ request }) {
     throw err;
   }
 
+  const bridgePath = String(request?.caseInfos?.ncFile?.filePath || "").trim();
+
   const controller = new AbortController();
   const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
   const t = setTimeout(() => controller.abort(), timeoutMs);
@@ -425,6 +427,7 @@ async function triggerBridgeForCnc({ request }) {
           fileName: ncFileName,
           requestId: request.requestId,
           machineId,
+          bridgePath: bridgePath || null,
         }),
         signal: controller.signal,
       },

@@ -19,6 +19,7 @@ namespace HiLinkBridgeWebApi48
 
         // file job
         public string fileName { get; set; }
+        public string bridgePath { get; set; }
         public string requestId { get; set; }
 
         // dummy job

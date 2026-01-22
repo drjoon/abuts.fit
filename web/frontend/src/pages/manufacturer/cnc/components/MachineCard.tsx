@@ -16,6 +16,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import { parseProgramNoFromName } from "../lib/programNaming";
 import { Machine } from "@/pages/manufacturer/cnc/types";
+import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
 interface MachineCardProps {
@@ -30,6 +31,7 @@ interface MachineCardProps {
   nextProgs: any[];
   reservationSummary?: string | null;
   reservedTotalQty?: number;
+  continuousState?: ContinuousMachiningState | null;
   onSelect: () => void;
   onMaterialClick?: (e: React.MouseEvent) => void;
   onTempClick: (e: React.MouseEvent) => void;
@@ -42,7 +44,7 @@ interface MachineCardProps {
   onResetClick: (e: React.MouseEvent) => void;
   onCancelReservation?: (
     jobId: string | undefined,
-    e: React.MouseEvent
+    e: React.MouseEvent,
   ) => void;
   onOpenReservationList?: (e: React.MouseEvent) => void;
   onTogglePause?: (jobId: string | undefined, e: React.MouseEvent) => void;
@@ -103,6 +105,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   nextProgs,
   reservationSummary,
   reservedTotalQty,
+  continuousState,
   onSelect,
   onMaterialClick,
   onTempClick,
@@ -176,8 +179,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({
     totalReservedCount - remainingTotal > 0
       ? totalReservedCount - remainingTotal + 1
       : remainingTotal === 0 && totalReservedCount > 0
-      ? 1
-      : 0;
+        ? 1
+        : 0;
 
   // 예약이 모두 삭제되었거나 다음 생산이 없으면 진행 표시를 숨기기 위해 0으로 리셋한다.
   if (!hasNextProgs) {
@@ -194,8 +197,14 @@ export const MachineCard: React.FC<MachineCardProps> = ({
     hasNextProgs && totalReservedCount > 0 && currentIndex > 0;
   const statusUpper = (machine.status || "").toUpperCase();
   const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
-    statusUpper.includes(k)
+    statusUpper.includes(k),
   );
+
+  const showContinuousInfo =
+    continuousState && (continuousState.isRunning || continuousState.nextJob);
+  const continuousElapsedMin = continuousState?.isRunning
+    ? Math.floor(continuousState.elapsedSeconds / 60)
+    : 0;
 
   return (
     <div
@@ -380,7 +389,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                     if (!onCancelReservation || !nextProg) return;
                     onCancelReservation(
                       nextProg.jobId as string | undefined,
-                      e
+                      e,
                     );
                   }}
                   disabled={!isActive || !nextProg}
@@ -391,6 +400,29 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             </div>
           </div>
         </div>
+
+        {showContinuousInfo && (
+          <div className="mt-2 rounded-lg bg-purple-50 px-3 py-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-purple-700">연속가공</span>
+              {continuousState?.isRunning && (
+                <span className="text-purple-600">
+                  {continuousElapsedMin}분 경과
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-purple-600">
+              <span>현재: O{continuousState?.currentSlot}</span>
+              <span>→</span>
+              <span>대기: O{continuousState?.nextSlot}</span>
+            </div>
+            {continuousState?.nextJob && (
+              <div className="mt-1 text-purple-600 truncate">
+                다음: {continuousState.nextJob}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-1 flex items-center justify-between gap-2">
           {hasNextProgs && (
@@ -463,7 +495,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                       const nextId =
                         dummySchedules.reduce(
                           (max, s) => Math.max(max, s.id),
-                          0
+                          0,
                         ) + 1;
                       setDummySchedules((prev) => [
                         ...prev,
@@ -500,8 +532,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                             prev.map((s) =>
                               s.id === item.id
                                 ? { ...s, enabled: e.target.checked }
-                                : s
-                            )
+                                : s,
+                            ),
                           )
                         }
                       />
@@ -514,8 +546,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                             prev.map((s) =>
                               s.id === item.id
                                 ? { ...s, time: e.target.value }
-                                : s
-                            )
+                                : s,
+                            ),
                           )
                         }
                         className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm font-medium text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -525,7 +557,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                         className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100 border border-red-200"
                         onClick={() =>
                           setDummySchedules((prev) =>
-                            prev.filter((s) => s.id !== item.id)
+                            prev.filter((s) => s.id !== item.id),
                           )
                         }
                       >
@@ -567,7 +599,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                   };
                   const res = await fetch(
                     `/api/cnc-machines/${encodeURIComponent(
-                      machine.uid
+                      machine.uid,
                     )}/dummy-settings`,
                     {
                       method: "PATCH",
@@ -576,12 +608,12 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                         Authorization: `Bearer ${token}`,
                       },
                       body: JSON.stringify(payload),
-                    }
+                    },
                   );
                   const body: any = await res.json().catch(() => ({}));
                   if (!res.ok || body?.success === false) {
                     throw new Error(
-                      body?.message || "더미 설정 저장에 실패했습니다."
+                      body?.message || "더미 설정 저장에 실패했습니다.",
                     );
                   }
 
@@ -589,7 +621,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                   const progNo = parseProgramNoFromName(dummyProgram || "");
                   if (progNo == null) {
                     throw new Error(
-                      "더미 프로그램명에서 프로그램 번호를 찾을 수 없습니다. 예: O0100"
+                      "더미 프로그램명에서 프로그램 번호를 찾을 수 없습니다. 예: O0100",
                     );
                   }
 
@@ -607,14 +639,14 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                         payload: { headType: 0, programNo: progNo },
                         timeoutMilliseconds: 5000,
                       }),
-                    }
+                    },
                   );
                   const rawBody: any = await rawRes.json().catch(() => ({}));
                   if (!rawRes.ok || rawBody?.success === false) {
                     throw new Error(
                       rawBody?.message ||
                         rawBody?.error ||
-                        "더미 프로그램 활성화에 실패했습니다."
+                        "더미 프로그램 활성화에 실패했습니다.",
                     );
                   }
 
@@ -628,7 +660,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                         Authorization: `Bearer ${token}`,
                       },
                       body: JSON.stringify({ status: 0, ioUid: 0 }),
-                    }
+                    },
                   );
                   const startBody: any = await startRes
                     .json()
@@ -637,7 +669,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                     throw new Error(
                       startBody?.message ||
                         startBody?.error ||
-                        "더미 가공 시작에 실패했습니다."
+                        "더미 가공 시작에 실패했습니다.",
                     );
                   }
 

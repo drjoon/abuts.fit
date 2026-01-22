@@ -8,8 +8,9 @@ import { CncBridgePanel } from "./CncBridgePanel";
 import { parseProgramNoFromName } from "../lib/programNaming";
 import type { Machine } from "@/pages/manufacturer/cnc/types";
 import { useBridgeStore } from "@/pages/manufacturer/cnc/hooks/useBridgeStore";
-import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 type CncReservationMode = "immediate" | "reserved";
 
@@ -63,8 +64,8 @@ export const CncReservationModal = ({
   onDownloadProgram,
   initialJobs,
 }: CncReservationModalProps) => {
-  const { callRaw } = useCncRaw();
   const { toast } = useToast();
+  const { token } = useAuthStore();
   const [activeTab, setActiveTab] = useState<"machine" | "bridge">("machine");
   const [jobs, setJobs] = useState<CncJobItem[]>([]);
   const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
@@ -73,7 +74,6 @@ export const CncReservationModal = ({
   const [mkdirModalOpen, setMkdirModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [overwriteConfirmOpen, setOverwriteConfirmOpen] = useState(false);
 
   const {
     bridgeEntries,
@@ -119,43 +119,6 @@ export const CncReservationModal = ({
     });
     return base;
   }, [bridgeEntries, bridgeSort]);
-
-  const handleActivateProgram = async (prog: any) => {
-    if (!machine?.uid) return;
-    const programNo = prog?.programNo ?? prog?.no;
-    if (typeof programNo !== "number") return;
-
-    try {
-      const res = await callRaw(machine.uid, "UpdateActivateProg", {
-        headType: 0,
-        programNo,
-      });
-      const ok = res && res.success !== false && res.result !== -1;
-      if (!ok) {
-        const msg =
-          res?.message ||
-          res?.error ||
-          "활성화 프로그램 변경 실패 (UpdateActivateProg)";
-        toast({
-          title: "프로그램 활성화 실패",
-          description: msg,
-          variant: "destructive",
-        });
-        return;
-      }
-      toast({
-        title: "프로그램 활성화 완료",
-        description: `프로그램 #${programNo}가 활성화되었습니다.`,
-      });
-    } catch (e: any) {
-      const msg = e?.message ?? "활성화 프로그램 변경 중 오류";
-      toast({
-        title: "프로그램 활성화 오류",
-        description: msg,
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleAddProgram = (prog: any) => {
     if (!prog) return;
@@ -223,134 +186,61 @@ export const CncReservationModal = ({
 
   if (!open) return null;
 
-  const hasBridgeOverwriteConflict = (): boolean => {
-    if (!Array.isArray(programList) || programList.length === 0) return false;
-    const existingNos = new Set<number>();
-    for (const p of programList) {
-      const no = p?.programNo ?? p?.no;
-      const n = Number(no);
-      if (Number.isFinite(n)) {
-        existingNos.add(n);
-      }
-    }
-
-    for (const job of jobs) {
-      if (job.source !== "bridge") continue;
-      let no: number | null = null;
-      if (job.programNo != null) {
-        const n = Number(job.programNo);
-        no = Number.isFinite(n) ? n : null;
-      }
-      if (no == null && job.name) {
-        no = parseProgramNoFromName(job.name);
-      }
-      if (no != null && existingNos.has(no)) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  const submitReservation = async (strategy: "overwrite" | "auto") => {
+  const submitReservation = async () => {
     if (!machine?.uid || !jobs.length) {
       onConfirm({ mode: "reserved", jobs });
       return;
     }
 
+    if (!token) {
+      toast({
+        title: "인증이 필요합니다.",
+        description: "다시 로그인한 뒤 시도해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const existingNos = new Set<number>();
-      if (Array.isArray(programList)) {
-        for (const p of programList) {
-          const no = p?.programNo ?? p?.no;
-          const n = Number(no);
-          if (Number.isFinite(n)) {
-            existingNos.add(n);
-          }
-        }
-      }
-
-      const nextFreeNo = () => {
-        let n = existingNos.size ? Math.max(...Array.from(existingNos)) + 1 : 1;
-        // 안전을 위해 상한을 크게 두지만, 실제로는 수백 개 수준일 것으로 예상
-        while (existingNos.has(n) && n < 999999) n += 1;
-        existingNos.add(n);
-        return n;
-      };
-
       const finalJobs: CncJobItem[] = [];
 
       for (const job of jobs) {
         let effectiveProgramNo: number | string | null = job.programNo ?? null;
-
         if (job.source === "bridge") {
-          let progNo: number | null = null;
-          if (job.programNo != null) {
-            const n = Number(job.programNo);
-            progNo = Number.isFinite(n) ? n : null;
-          }
-          if (progNo == null && job.name) {
-            progNo = parseProgramNoFromName(job.name);
-          }
-
-          if (progNo == null) {
-            toast({
-              title: "프로그램 번호 추출 실패",
-              description: `${job.name} 파일명에서 번호를 찾을 수 없어 CNC 업로드를 건너뜁니다.`,
-              variant: "destructive",
-            });
-            return;
-          }
-
-          if (strategy === "auto" && existingNos.has(progNo)) {
-            progNo = nextFreeNo();
-          } else {
-            existingNos.add(progNo);
-          }
-
-          effectiveProgramNo = progNo;
-
+          // 연속 가공: CNC에 직접 업로드하지 않고, 브리지 큐에 enqueue 한다.
           const relPath = bridgePath ? `${bridgePath}/${job.name}` : job.name;
-
           try {
-            const res = await fetch(
-              `/api/bridge-store/file?path=${encodeURIComponent(relPath)}`
-            );
-            if (!res.ok) {
-              toast({
-                title: "브리지 파일 조회 실패",
-                description: `${job.name} 파일을 브리지에서 읽어오지 못했습니다.`,
-                variant: "destructive",
-              });
-              return;
-            }
-            const body: any = await res.json().catch(() => ({}));
-            const content = String(body?.content ?? "");
+            const res = await apiFetch({
+              path: `/api/cnc-machines/${encodeURIComponent(
+                machine.uid,
+              )}/continuous/enqueue`,
+              method: "POST",
+              token,
+              jsonBody: {
+                fileName: job.name,
+                bridgePath: relPath,
+                requestId: null,
+              },
+            });
 
-            const payload = {
-              headType: 0,
-              programNo: progNo,
-              programData: content,
-              isNew: true,
-            };
-            const rawRes = await callRaw(machine.uid, "UpdateProgram", payload);
-            const ok = rawRes && rawRes.success !== false;
-            if (!ok) {
+            const body: any = res.data ?? {};
+            if (!res.ok || body?.success === false) {
               const msg =
-                rawRes?.message ||
-                rawRes?.error ||
-                "CNC 프로그램 업로드 실패 (UpdateProgram)";
+                body?.message ||
+                body?.error ||
+                "브리지 연속 가공 큐 등록에 실패했습니다.";
               toast({
-                title: "CNC 업로드 실패",
+                title: "연속 가공 등록 실패",
                 description: msg,
                 variant: "destructive",
               });
               return;
             }
           } catch (e: any) {
-            const msg = e?.message ?? "브리지 → CNC 프로그램 업로드 중 오류";
+            const msg = e?.message ?? "브리지 연속 가공 큐 등록 중 오류";
             toast({
-              title: "CNC 업로드 오류",
+              title: "연속 가공 등록 오류",
               description: msg,
               variant: "destructive",
             });
@@ -367,7 +257,6 @@ export const CncReservationModal = ({
       onConfirm({ mode: "reserved", jobs: finalJobs });
     } finally {
       setSubmitting(false);
-      setOverwriteConfirmOpen(false);
     }
   };
 
@@ -449,7 +338,7 @@ export const CncReservationModal = ({
                           // 카드 표시 텍스트: 항상 `#이름` 한 줄로만 보여준다.
                           const normalizedName = String(baseName).replace(
                             /^#\s*/,
-                            ""
+                            "",
                           );
                           const displayName = `#${normalizedName}`;
 
@@ -471,7 +360,7 @@ export const CncReservationModal = ({
                                     e.stopPropagation();
                                     try {
                                       await onDeleteProgram(
-                                        programNo as number
+                                        programNo as number,
                                       );
                                     } catch {
                                       // no-op
@@ -579,8 +468,8 @@ export const CncReservationModal = ({
                           try {
                             const res = await fetch(
                               `/api/bridge-store/file?path=${encodeURIComponent(
-                                relPath
-                              )}`
+                                relPath,
+                              )}`,
                             );
                             if (!res.ok) return;
                             const body: any = await res
@@ -684,12 +573,12 @@ export const CncReservationModal = ({
                             onChange={(e) => {
                               const v = Math.max(
                                 1,
-                                Number(e.target.value) || job.qty || 1
+                                Number(e.target.value) || job.qty || 1,
                               );
                               setJobs((prev) =>
                                 prev.map((j) =>
-                                  j.id === job.id ? { ...j, qty: v } : j
-                                )
+                                  j.id === job.id ? { ...j, qty: v } : j,
+                                ),
                               );
                             }}
                             className="w-16 bg-white border border-slate-200 rounded-md px-2 py-1 text-[11px] focus:ring-blue-500 focus:border-blue-500"
@@ -721,12 +610,7 @@ export const CncReservationModal = ({
                   return;
                 }
 
-                if (hasBridgeOverwriteConflict()) {
-                  setOverwriteConfirmOpen(true);
-                  return;
-                }
-
-                await submitReservation("overwrite");
+                await submitReservation();
               }}
               className="flex-1 sm:flex-none px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
@@ -918,56 +802,6 @@ export const CncReservationModal = ({
                 ]
               : []
           }
-        />
-
-        {/* 브리지 프로그램 번호 충돌 처리 모달 (멀티 액션) */}
-        <MultiActionDialog
-          open={overwriteConfirmOpen}
-          title="프로그램 번호 중복"
-          description={
-            <div className="space-y-3 text-sm">
-              <div className="text-slate-700">
-                브리지에서 가져온 파일 중 일부는 CNC에 이미 존재하는 프로그램
-                번호를 사용합니다.
-              </div>
-              <div className="text-xs text-slate-500">
-                <strong>덮어쓰기</strong> 를 누르면 같은 번호로 기존 프로그램을
-                교체하고,
-                <br />
-                <strong>번호 증가</strong> 를 누르면 빈 번호를 찾아 자동으로
-                증가시켜 업로드합니다.
-              </div>
-            </div>
-          }
-          actions={[
-            {
-              label: "덮어쓰기",
-              variant: "danger",
-              disabled: submitting,
-              onClick: async () => {
-                if (submitting) return;
-                await submitReservation("overwrite");
-              },
-            },
-            {
-              label: "번호 증가",
-              variant: "secondary",
-              disabled: submitting,
-              onClick: async () => {
-                if (submitting) return;
-                await submitReservation("auto");
-              },
-            },
-            {
-              label: "취소",
-              variant: "ghost",
-              disabled: submitting,
-              onClick: () => {
-                if (submitting) return;
-                setOverwriteConfirmOpen(false);
-              },
-            },
-          ]}
         />
       </div>
     </div>

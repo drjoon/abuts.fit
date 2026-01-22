@@ -21,6 +21,109 @@ function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
+export async function enqueueBridgeContinuousJob(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const fileName = String(req.body?.fileName || "").trim();
+    const requestIdRaw = req.body?.requestId;
+    const requestId = requestIdRaw != null ? String(requestIdRaw).trim() : "";
+    const bridgePathRaw = req.body?.bridgePath;
+    const bridgePath =
+      bridgePathRaw != null ? String(bridgePathRaw).trim() : "";
+
+    if (!fileName) {
+      return res.status(400).json({
+        success: false,
+        message: "fileName is required",
+      });
+    }
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
+      mid,
+    )}/continuous/enqueue`;
+
+    const payload = {
+      fileName,
+      requestId: requestId || null,
+      bridgePath: bridgePath || null,
+    };
+
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok || body?.success === false) {
+      return res.status(resp.status).json({
+        success: false,
+        message:
+          body?.message ||
+          body?.error ||
+          "브리지 연속 가공 enqueue 중 오류가 발생했습니다.",
+      });
+    }
+
+    return res.status(200).json({ success: true, data: body?.data ?? body });
+  } catch (error) {
+    console.error("Error in enqueueBridgeContinuousJob:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 연속 가공 enqueue 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getBridgeContinuousState(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
+      mid,
+    )}/continuous/state`;
+
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: withBridgeHeaders(),
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok || body?.success === false) {
+      return res.status(resp.status).json({
+        success: false,
+        message:
+          body?.message ||
+          body?.error ||
+          "브리지 연속 가공 상태 조회 중 오류가 발생했습니다.",
+      });
+    }
+
+    return res.status(200).json({ success: true, data: body?.data ?? body });
+  } catch (error) {
+    console.error("Error in getBridgeContinuousState:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 연속 가공 상태 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 async function getOrCreateCncMachine(machineId, extraSet = {}) {
   const mid = String(machineId || "").trim();
   if (!mid) return null;
@@ -44,7 +147,7 @@ async function getOrCreateCncMachine(machineId, extraSet = {}) {
         ? { $set: extraSet }
         : {}),
     },
-    { new: true, upsert: true }
+    { new: true, upsert: true },
   );
 }
 
@@ -64,7 +167,7 @@ export async function getBridgeQueueForMachine(req, res) {
 
     const url = `${BRIDGE_BASE.replace(
       /\/$/,
-      ""
+      "",
     )}/api/bridge/queue/${encodeURIComponent(mid)}`;
     const resp = await fetch(url, {
       method: "GET",
@@ -110,7 +213,7 @@ export async function getBridgeActiveProgram(req, res) {
 
     const url = `${BRIDGE_BASE.replace(
       /\/$/,
-      ""
+      "",
     )}/api/cnc/machines/${encodeURIComponent(mid)}/programs/active`;
 
     const resp = await fetch(url, {
@@ -251,7 +354,7 @@ export async function deleteBridgeQueueJob(req, res) {
 
     const url = `${BRIDGE_BASE.replace(
       /\/$/,
-      ""
+      "",
     )}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(jid)}`;
     const resp = await fetch(url, {
       method: "DELETE",
@@ -310,7 +413,7 @@ export async function clearBridgeQueueForMachine(req, res) {
     // 1) 현재 큐 스냅샷 조회 (삭제 전 롤백 대상 수집)
     const snapshotUrl = `${BRIDGE_BASE.replace(
       /\/$/,
-      ""
+      "",
     )}/api/bridge/queue/${encodeURIComponent(mid)}`;
     const snapResp = await fetch(snapshotUrl, {
       method: "GET",
@@ -650,7 +753,7 @@ export async function updateMachineMaterial(req, res) {
     // 해당 직경 그룹의 unassigned 의뢰를 이 장비에 할당
     const assignedCount = await recalculateQueueOnMaterialChange(
       machineId,
-      normalizedGroup
+      normalizedGroup,
     );
 
     res.status(200).json({

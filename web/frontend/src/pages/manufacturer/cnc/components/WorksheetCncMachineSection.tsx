@@ -11,6 +11,7 @@ import type { Machine } from "@/pages/manufacturer/cnc/types";
 import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
 import { useCncTempPanel } from "@/pages/manufacturer/cnc/hooks/useCncTempPanel";
 import { useCncToolPanels } from "@/pages/manufacturer/cnc/hooks/useCncToolPanels";
+import { useCncContinuous } from "@/pages/manufacturer/cnc/hooks/useCncContinuous";
 import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempDetailModal";
 import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
 import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
@@ -147,6 +148,7 @@ interface WorksheetMachineCardProps {
   onCardClick: () => void;
   diameter?: string | null;
   onChangeDiameter: (value: string) => void;
+  continuousEnabled?: boolean;
 }
 
 const WorksheetCncMachineCard = ({
@@ -160,9 +162,21 @@ const WorksheetCncMachineCard = ({
   onCardClick,
   diameter,
   onChangeDiameter,
+  continuousEnabled,
 }: WorksheetMachineCardProps) => {
+  const { state: continuousState } = useCncContinuous(
+    continuousEnabled ? machine.uid : null,
+  );
   const statusForChip = statusOverride ?? (machine.status as string);
   const [diameterMenuOpen, setDiameterMenuOpen] = useState(false);
+  const showContinuousInfo =
+    continuousEnabled &&
+    continuousState &&
+    (continuousState.isRunning || continuousState.nextJob);
+  const continuousElapsedMin = continuousState?.isRunning
+    ? Math.floor(continuousState.elapsedSeconds / 60)
+    : 0;
+
   return (
     <div
       className="relative flex flex-col rounded-2xl border bg-white/80 p-4 sm:p-5 shadow-sm transition-all hover:shadow-lg cursor-pointer min-h-[220px] sm:min-h-[240px] border-gray-200"
@@ -216,6 +230,31 @@ const WorksheetCncMachineCard = ({
           </button>
         </div>
       </div>
+
+      {showContinuousInfo && (
+        <div className="mt-3 rounded-lg bg-purple-50 px-3 py-2 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-purple-700">연속가공</span>
+            {continuousState?.isRunning && (
+              <span className="text-purple-600">
+                {continuousElapsedMin}분 경과
+              </span>
+            )}
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-purple-600">
+            <span>현재: O{continuousState?.currentSlot}</span>
+            <span>→</span>
+            <span>대기: O{continuousState?.nextSlot}</span>
+          </div>
+          {continuousState?.nextJob && (
+            <div className="mt-1 text-purple-600 truncate">
+              다음: {continuousState.nextJob}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex-1" />
 
       {diameterMenuOpen && (
         <>
@@ -293,7 +332,7 @@ export const WorksheetCncMachineSection = ({
   >({});
   const [statusByUid, setStatusByUid] = useState<Record<string, string>>({});
   const [diameterByUid, setDiameterByUid] = useState<Record<string, string>>(
-    {}
+    {},
   );
 
   const { tempModalOpen, tempModalBody, setTempModalOpen, openTempDetail } =
@@ -390,7 +429,7 @@ export const WorksheetCncMachineSection = ({
           qty: q.qty,
         })),
       }),
-      []
+      [],
     );
 
   const handleTempClick = (machine: Machine) => {
@@ -440,8 +479,8 @@ export const WorksheetCncMachineSection = ({
         typeof data?.result === "number"
           ? data.result
           : typeof res?.result === "number"
-          ? res.result
-          : null;
+            ? res.result
+            : null;
 
       let status = machine.status || "Unknown";
       if (typeof resultCode === "number") {
@@ -519,6 +558,7 @@ export const WorksheetCncMachineSection = ({
                 onChangeDiameter={(value) => {
                   void handleChangeDiameter(m.uid, value);
                 }}
+                continuousEnabled={m.allowAutoMachining === true}
               />
             ))}
           </div>

@@ -12,13 +12,13 @@ router.get(
   "/bridge/dummy-settings",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  cncMachineController.getDummySettingsForBridge
+  cncMachineController.getDummySettingsForBridge,
 );
 router.patch(
   "/bridge/dummy-settings/:machineId/last-run-key",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  cncMachineController.updateDummyLastRunKeyForBridge
+  cncMachineController.updateDummyLastRunKeyForBridge,
 );
 
 // 모든 라우트에 인증 필요
@@ -28,83 +28,97 @@ router.use(authenticate);
 router.get(
   "/",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.getMachines
+  cncMachineController.getMachines,
 );
 
 // 브리지 예약 큐 조회 (머신별)
 router.get(
   "/:machineId/bridge-queue",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.getBridgeQueueForMachine
+  cncMachineController.getBridgeQueueForMachine,
 );
 
 // 활성 프로그램 조회 (브리지 경유)
 router.get(
   "/:machineId/programs/active",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.getBridgeActiveProgram
+  cncMachineController.getBridgeActiveProgram,
+);
+
+// 브리지 연속 가공 enqueue
+router.post(
+  "/:machineId/continuous/enqueue",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.enqueueBridgeContinuousJob,
+);
+
+// 브리지 연속 가공 상태 조회
+router.get(
+  "/:machineId/continuous/state",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getBridgeContinuousState,
 );
 
 // 브리지 예약 큐에서 단일 작업 삭제
 router.delete(
   "/:machineId/bridge-queue/:jobId",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.deleteBridgeQueueJob
+  cncMachineController.deleteBridgeQueueJob,
 );
 
 // 브리지 예약 큐 전체 삭제
 router.post(
   "/:machineId/bridge-queue/clear",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.clearBridgeQueueForMachine
+  cncMachineController.clearBridgeQueueForMachine,
 );
 
 // 생산 큐 조회 (제조사, 관리자)
 router.get(
   "/queues",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.getProductionQueues
+  cncMachineController.getProductionQueues,
 );
 
 // 소재 세팅 변경 (제조사, 관리자)
 router.patch(
   "/:machineId/material",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.updateMachineMaterial
+  cncMachineController.updateMachineMaterial,
 );
 
 router.patch(
   "/:machineId/material-remaining",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.updateMaterialRemaining
+  cncMachineController.updateMaterialRemaining,
 );
 
 // 소재 교체 예약 (제조사, 관리자)
 router.post(
   "/:machineId/schedule-material-change",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.scheduleMaterialChange
+  cncMachineController.scheduleMaterialChange,
 );
 
 // 소재 교체 예약 취소 (제조사, 관리자)
 router.delete(
   "/:machineId/schedule-material-change",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.cancelScheduledMaterialChange
+  cncMachineController.cancelScheduledMaterialChange,
 );
 
 // 더미 프로그램/스케줄 설정 저장 (제조사, 관리자)
 router.patch(
   "/:machineId/dummy-settings",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.updateDummySettings
+  cncMachineController.updateDummySettings,
 );
 
 // 장비 초기화 (개발용, 관리자만)
 router.post(
   "/initialize",
   authorizeRoles("admin"),
-  cncMachineController.initializeMachines
+  cncMachineController.initializeMachines,
 );
 
 export default router;

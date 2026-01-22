@@ -17,6 +17,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             public string fileName { get; set; }
             public string requestId { get; set; }
             public string machineId { get; set; }
+            public string bridgePath { get; set; }
         }
 
         [HttpPost]
@@ -42,6 +43,16 @@ namespace HiLinkBridgeWebApi48.Controllers
                     req.fileName,
                     string.IsNullOrWhiteSpace(req.requestId) ? null : req.requestId
                 );
+
+                try
+                {
+                    var bp = (req.bridgePath ?? string.Empty).Trim();
+                    if (!string.IsNullOrEmpty(bp))
+                    {
+                        job.bridgePath = bp;
+                    }
+                }
+                catch { }
 
                 return Content(HttpStatusCode.Accepted, new
                 {

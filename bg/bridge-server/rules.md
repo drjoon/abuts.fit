@@ -28,7 +28,6 @@
 
 - **감시 경로**: `/bg/storage/3-nc` 폴더를 실시간으로 감시합니다.
 - **가공 스케줄링**:
-
   1. 새로운 NC 파일이 발견되면 `abuts.fit` 백엔드 API를 통해 가공 스케줄을 확인합니다.
   2. 스케줄에 지정된 순서와 장비(UID)에 맞춰 NC 파일을 CNC 장비로 업로드합니다.
   3. 현재 가공 중인 작업이 완료되면 `Hi-link`를 통해 가공 개시 명령을 전송합니다.
@@ -94,3 +93,112 @@
 ### 4.2 헬스체크
 
 - 브리지 서비스의 생존 여부와 각 장비의 연결 상태를 주기적으로 확인합니다.
+
+## 5. 연속 가공 시스템 (O3000↔O3001 토글)
+
+### 5.1 개요
+
+`CncContinuousMachining` 클래스는 O3000과 O3001 두 개의 고정 슬롯을 번갈아 사용하여 가공 대기 시간을 최소화하는 연속 가공 시스템입니다.
+
+### 5.2 동작 원리
+
+1. **슬롯 토글**: O3000(현재 실행) ↔ O3001(다음 대기) 방식으로 번갈아 사용
+2. **선업로드**: 가공 중일 때 다음 작업을 대기 슬롯에 미리 업로드
+3. **빠른 전환**: 가공 완료 즉시 대기 슬롯을 활성화하여 다음 작업 시작
+4. **안전성**: 실행 중인 프로그램을 건드리지 않고, Idle 상태에서만 슬롯 전환
+
+### 5.3 주요 프로세스
+
+#### A. 첫 작업 시작
+
+1. 장비 상태 확인 (Idle 대기)
+2. O3000에 프로그램 업로드
+3. O3000 활성화 및 Start
+4. 생산 수량 기록
+
+#### B. 가공 중 선업로드
+
+1. O3000 실행 중 상태 모니터링
+2. 다음 작업을 O3001에 미리 업로드
+3. 프로그램 번호를 O3001로 자동 변경
+
+#### C. 가공 완료 및 전환
+
+1. 상태 변화 감지 (Running → Idle)
+2. 생산 수량 증가 확인 (+1)
+3. O3001 활성화 및 즉시 Start
+4. 슬롯 역할 교대 (O3001이 현재, O3000이 다음)
+
+#### D. 반복
+
+- 이후 O3001 실행 중 O3000에 다음 작업 업로드
+- C 단계 반복
+
+### 5.4 API 엔드포인트
+
+#### POST /api/cnc/machines/{machineId}/continuous/enqueue
+
+연속 가공 큐에 작업 추가
+
+**Request Body**:
+
+```json
+{
+  "fileName": "O0001.nc",
+  "requestId": "req_123",
+  "jobId": "job_456" // optional
+}
+```
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "message": "Job enqueued for continuous machining",
+  "jobId": "job_456",
+  "machineId": "machine1"
+}
+```
+
+#### GET /api/cnc/machines/{machineId}/continuous/state
+
+장비의 현재 연속 가공 상태 조회
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "machineId": "machine1",
+    "currentSlot": 3000,
+    "nextSlot": 3001,
+    "isRunning": true,
+    "currentJob": "O0001.nc",
+    "nextJob": "O0002.nc",
+    "elapsedSeconds": 125.5
+  }
+}
+```
+
+### 5.5 환경 변수
+
+- `CNC_CONTINUOUS_ENABLED`: 연속 가공 시스템 활성화 여부 (기본값: true)
+- `CNC_START_IOUID`: Start 신호 IO UID (기본값: 61)
+- `BRIDGE_STORE_ROOT`: NC 파일 저장 경로
+
+### 5.6 모니터링 및 완료 감지
+
+1. **상태 폴링**: 3초 간격으로 장비 상태 확인
+2. **완료 조건**:
+   - 장비 상태가 Running → Idle/Ready 전환
+   - 생산 수량(ProductCount) +1 증가 확인
+3. **Fallback**: 상태 확인 실패 시 1분 경과 후 완료로 간주
+
+### 5.7 주의사항
+
+- 가공 중에는 실행 슬롯(CurrentSlot)의 프로그램을 절대 삭제하거나 수정하지 않음
+- 모든 프로그램 교체는 Idle 상태에서만 수행
+- 프로그램 번호는 자동으로 슬롯 번호(3000/3001)로 변경됨
+- 기존 `CncJobDispatcher`와 독립적으로 동작
