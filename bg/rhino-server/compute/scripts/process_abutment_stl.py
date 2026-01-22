@@ -32,6 +32,137 @@ def _count_naked_edges(mesh):
         return None
 
 
+def _safe_int(value, default):
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+_FILL_TARGET_LIMIT = max(1, _safe_int(os.environ.get("ABUTS_FILL_TARGET_LIMIT", "3"), 3))
+
+
+def _get_mesh_objects(doc):
+    try:
+        settings = Rhino.DocObjects.ObjectEnumeratorSettings()
+        settings.ObjectTypeFilter = Rhino.DocObjects.ObjectType.Mesh
+        settings.IncludeLights = False
+        settings.IncludeGrips = False
+        return list(doc.Objects.GetObjectList(settings))
+    except Exception:
+        return []
+
+
+def _iter_mesh_geometries(doc):
+    for obj in _get_mesh_objects(doc):
+        geo = getattr(obj, "Geometry", None)
+        if geo is not None:
+            yield obj, geo
+
+
+def _calc_xy_radius_from_bbox(bbox):
+    try:
+        corners = bbox.GetCorners()
+    except Exception:
+        return 0.0
+
+    max_r = 0.0
+    if not corners:
+        return 0.0
+    for pt in corners:
+        try:
+            rr = float((pt.X * pt.X + pt.Y * pt.Y) ** 0.5)
+            if rr > max_r:
+                max_r = rr
+        except Exception:
+            pass
+    return max_r
+
+
+def _collect_mesh_infos(doc):
+    infos = []
+    for obj, geo in _iter_mesh_geometries(doc):
+        info = {"id": obj.Id}
+        try:
+            info["vertexCount"] = geo.Vertices.Count
+        except Exception:
+            info["vertexCount"] = None
+        try:
+            info["faceCount"] = geo.Faces.Count
+        except Exception:
+            info["faceCount"] = None
+        try:
+            info["isClosed"] = geo.IsClosed
+        except Exception:
+            info["isClosed"] = None
+        try:
+            info["isManifold"] = geo.IsManifold(True)
+        except Exception:
+            info["isManifold"] = None
+        try:
+            bbox = geo.GetBoundingBox(True)
+            info["bbox"] = bbox
+            info["maxZ"] = float(bbox.Max.Z)
+            info["r"] = _calc_xy_radius_from_bbox(bbox)
+        except Exception:
+            info["bbox"] = None
+            info["maxZ"] = 0.0
+            info["r"] = 0.0
+        info["nakedEdges"] = _count_naked_edges(geo)
+        infos.append(info)
+    return infos
+
+
+def _log_mesh_summary(mesh_infos):
+    try:
+        for idx, info in enumerate(mesh_infos):
+            log(
+                "mesh[{idx}] v={v} f={f} closed={closed} manifold={manifold} "
+                "nakedEdges={naked}".format(
+                    idx=idx,
+                    v=info.get("vertexCount"),
+                    f=info.get("faceCount"),
+                    closed=info.get("isClosed"),
+                    manifold=info.get("isManifold"),
+                    naked=info.get("nakedEdges"),
+                )
+            )
+    except Exception as e:
+        log("mesh summary log failed: " + str(e))
+
+
+def _pick_primary_piece(candidates, tol):
+    open_candidates = [c for c in candidates if (c.get("naked") or 0) > 0]
+    pool = open_candidates if open_candidates else candidates
+    if not pool:
+        return None, None, []
+
+    max_r = max(float(c.get("r") or 0.0) for c in pool)
+    band = max(tol, max_r * 0.01)
+    top_band = [c for c in pool if float(c.get("r") or 0.0) >= (max_r - band)]
+    chosen = None
+    for c in top_band:
+        key = (float(c.get("maxZ") or 0.0), float(c.get("r") or 0.0))
+        if chosen is None or key > chosen[0]:
+            chosen = (key, c)
+    if not chosen:
+        return None, None, pool
+    return chosen[1].get("id"), (chosen[1].get("r"), chosen[1].get("maxZ")), pool
+
+
+def _pick_fill_targets(pool):
+    ordered = sorted(
+        pool,
+        key=lambda x: (
+            1 if (x.get("naked") or 0) > 0 else 0,
+            float(x.get("r") or 0.0),
+            float(x.get("maxZ") or 0.0),
+        ),
+        reverse=True,
+    )
+    return ordered[:_FILL_TARGET_LIMIT]
+
+
 def fail(msg):
     print("ERROR:" + msg)
     raise Exception(msg)
