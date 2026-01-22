@@ -242,6 +242,10 @@ def _bridge_headers() -> dict:
     return headers
 
 
+def _is_force_fill_mode() -> bool:
+    return os.getenv("ABUTS_FORCE_FILL_ALL", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _fetch_pending_stl_list() -> list[dict]:
     backend = os.getenv("BACKEND_URL", "").rstrip("/")
     if not backend:
@@ -578,7 +582,15 @@ async def _run_rhino_python(
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     wrapper_path = tmp_dir / f"job_{token}.py"
-    log_path = tmp_dir / f"log_{token}.txt"
+    env_log_path = os.getenv("ABUTS_LOG_PATH", "").strip()
+    if env_log_path:
+        log_path = Path(env_log_path)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+    else:
+        log_path = tmp_dir / f"log_{token}.txt"
 
     # Future 생성 및 저장
     loop = asyncio.get_running_loop()
@@ -731,7 +743,10 @@ async def _run_rhino_python(
         try:
             if wrapper_path.exists():
                 wrapper_path.unlink()
-            if log_path.exists():
+            if env_log_path:
+                # 사용자 지정 로그 경로는 유지
+                pass
+            elif log_path.exists():
                 log_path.unlink()
         except Exception:
             pass
@@ -837,6 +852,7 @@ async def _process_single_stl(p: Path):
         return
         
     async with _processing_semaphore:
+        force_fill = _is_force_fill_mode()
         prefixed_input = _prefix_with_request_id(p.name)
         base_stem = Path(prefixed_input).stem
         out_name = _sanitize_filename(f"{base_stem}.filled.stl")
@@ -853,30 +869,37 @@ async def _process_single_stl(p: Path):
             _log(f"Checking output path: {out_path}")
             if out_path.exists():
                 _log(f"Output already exists for: {p.name}, attempting presigned upload re-sync.")
-                if _upload_via_presign(out_path, prefixed_input, {"requestId": req_id}):
-                    return
-                # presign 실패 시 기존 register-file 재통지 시도 (백업)
-                try:
-                    backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
-                    callback_url = f"{backend_url}/bg/register-file"
-                    payload = {
-                        "sourceStep": "2-filled",
-                        "fileName": out_name,
-                        "originalFileName": prefixed_input,
-                        "requestId": req_id,
-                        "status": "success",
-                        "metadata": {
-                            "jobId": "reuse_existing"
+                if force_fill:
+                    _log("Force-fill 테스트 모드: 기존 out 파일을 삭제하고 다시 생성합니다.")
+                    try:
+                        out_path.unlink()
+                    except Exception as e:
+                        _log(f"Force-fill delete failed ({out_path}): {e}")
+                else:
+                    if _upload_via_presign(out_path, prefixed_input, {"requestId": req_id}):
+                        return
+                    # presign 실패 시 기존 register-file 재통지 시도 (백업)
+                    try:
+                        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+                        callback_url = f"{backend_url}/bg/register-file"
+                        payload = {
+                            "sourceStep": "2-filled",
+                            "fileName": out_name,
+                            "originalFileName": prefixed_input,
+                            "requestId": req_id,
+                            "status": "success",
+                            "metadata": {
+                                "jobId": "reuse_existing"
+                            }
                         }
-                    }
-                    response = requests.post(callback_url, json=payload, timeout=5)
-                    if response.status_code == 200:
-                        _log(f"Backend re-notified successfully (fallback): {out_name}")
-                    else:
-                        _log(f"Backend re-notification returned status {response.status_code}")
-                except Exception as be:
-                    _log(f"Backend re-notification failed: {be}")
-                return
+                        response = requests.post(callback_url, json=payload, timeout=5)
+                        if response.status_code == 200:
+                            _log(f"Backend re-notified successfully (fallback): {out_name}")
+                        else:
+                            _log(f"Backend re-notification returned status {response.status_code}")
+                    except Exception as be:
+                        _log(f"Backend re-notification failed: {be}")
+                    return
 
             _log(f"Auto-processing starting: {p.name}")
             job_id = f"auto_{uuid.uuid4().hex[:8]}"
@@ -892,7 +915,7 @@ async def _process_single_stl(p: Path):
                 _log(f"Calling _run_rhino_python for: {p.name}")
                 await _run_rhino_python(input_stl=p, output_stl=out_path)
                 _log(f"Auto-processing done: {out_name}")
-                
+
                 # 히스토리 추가
                 _recent_history.append({
                     "file": p.name,
@@ -901,30 +924,33 @@ async def _process_single_stl(p: Path):
                     "status": "success"
                 })
                 
-                # presigned 업로드 후 등록 (우선 경로)
-                uploaded = _upload_via_presign(out_path, prefixed_input, {"requestId": req_id})
-                if not uploaded:
-                    _log("Presigned upload failed, attempting legacy register-file fallback")
-                    try:
-                        backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
-                        callback_url = f"{backend_url}/bg/register-file"
-                        payload = {
-                            "sourceStep": "2-filled",
-                            "fileName": out_name,
-                            "originalFileName": prefixed_input,
-                            "requestId": req_id,
-                            "status": "success",
-                            "metadata": {
-                                "jobId": job_id
+                if force_fill:
+                    _log("Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다.")
+                else:
+                    # presigned 업로드 후 등록 (우선 경로)
+                    uploaded = _upload_via_presign(out_path, prefixed_input, {"requestId": req_id})
+                    if not uploaded:
+                        _log("Presigned upload failed, attempting legacy register-file fallback")
+                        try:
+                            backend_url = os.getenv("BACKEND_URL", "https://abuts.fit/api")
+                            callback_url = f"{backend_url}/bg/register-file"
+                            payload = {
+                                "sourceStep": "2-filled",
+                                "fileName": out_name,
+                                "originalFileName": prefixed_input,
+                                "requestId": req_id,
+                                "status": "success",
+                                "metadata": {
+                                    "jobId": job_id
+                                }
                             }
-                        }
-                        response = requests.post(callback_url, json=payload, timeout=5)
-                        if response.status_code == 200:
-                            _log(f"Backend notified successfully (fallback): {out_name}")
-                        else:
-                            _log(f"Backend notification returned status {response.status_code}")
-                    except Exception as be:
-                        _log(f"Backend notification failed: {be}")
+                            response = requests.post(callback_url, json=payload, timeout=5)
+                            if response.status_code == 200:
+                                _log(f"Backend notified successfully (fallback): {out_name}")
+                            else:
+                                _log(f"Backend notification returned status {response.status_code}")
+                        except Exception as be:
+                            _log(f"Backend notification failed: {be}")
             except Exception as e:
                 _log(f"Auto-processing failed for {p.name}: {e}")
                 _recent_history.append({
@@ -991,6 +1017,10 @@ async def _recover_unprocessed_files() -> None:
         _ensure_dirs()
         _log("Scanning for unprocessed files on startup...")
 
+        force_fill = _is_force_fill_mode()
+        if force_fill:
+            _log("TEST MODE 활성화: 입력 폴더 내 모든 STL에 대해 FillMeshHoles 강제 실행")
+
         # 백엔드(DB)에만 있고 1-stl이 비어있는 경우를 복구: pending 목록을 내려받아 저장
         pending = _fetch_pending_stl_list()
         pending_names: set[str] = set()
@@ -1008,19 +1038,26 @@ async def _recover_unprocessed_files() -> None:
         in_files = sorted([p for p in STORE_IN_DIR.iterdir() if p.is_file() and p.suffix.lower() == ".stl"])
         _log(f"Found {len(in_files)} STL files in input directory")
         
-        for p in in_files:
+        for idx, p in enumerate(in_files):
             try:
                 # 이미 처리 중인지 확인 (방어 코드)
                 with _IN_FLIGHT_LOCK:
                     if p.name in _IN_FLIGHT:
                         continue
 
-                # pending 목록에서 내려받은 파일은 즉시 처리, 그 외는 백엔드 상태 확인
-                should_process = p.name in pending_names or _backend_should_process(p.name, "1-stl")
+                # 강제 모드면 백엔드 상태와 무관하게 처리
+                if force_fill:
+                    should_process = True
+                else:
+                    should_process = p.name in pending_names or _backend_should_process(p.name, "1-stl")
+
                 if should_process:
                     _log(f"Recover: processing {p.name}")
                     await _process_single_stl(p)
                     _log(f"Recover: {p.name} processing completed")
+                    if force_fill:
+                        _log("Force-fill 테스트 모드: 디버깅을 위해 첫 파일만 처리하고 중단합니다.")
+                        break
                 else:
                     _log(f"Recover: skipping {p.name} (already processed or not needed)")
             except Exception as inner:

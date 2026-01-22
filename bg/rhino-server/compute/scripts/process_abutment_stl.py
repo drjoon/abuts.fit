@@ -53,6 +53,107 @@ def _parse_args(argv, input_path_arg=None, output_path_arg=None):
     return argv[1], argv[2]
 
 
+def _run_fill_mesh_holes(doc, target_id):
+    target = doc.Objects.FindId(target_id)
+    if target is None:
+        return False
+
+    before_naked = None
+    try:
+        if target.Geometry is not None:
+            before_naked = _count_naked_edges(target.Geometry)
+    except Exception:
+        pass
+
+    try:
+        doc.Objects.UnselectAll()
+    except Exception:
+        pass
+
+    try:
+        target.Select(True)
+    except Exception:
+        pass
+
+    # 1st: RhinoCommon API로 직접 홀 메우기 시도
+    try:
+        geom = target.Geometry
+        if geom is not None:
+            mesh_copy = geom.DuplicateMesh()
+            if mesh_copy is not None:
+                # 기본 FillHoles는 모든 홀을 시도하며 성공 시 True 반환
+                rc_fill = mesh_copy.FillHoles()
+                if rc_fill:
+                    replaced = doc.Objects.Replace(target_id, mesh_copy)
+                    log(
+                        "FillMeshHoles (RhinoCommon) rc={} replaced={}".format(
+                            rc_fill, replaced
+                        )
+                    )
+                    if replaced:
+                        after_naked = _count_naked_edges(mesh_copy)
+                        log(
+                            "after RC FillHoles nakedEdges(before->{})={}".format(
+                                before_naked, after_naked
+                            )
+                        )
+                        if (
+                            before_naked is None
+                            or after_naked is None
+                            or after_naked < before_naked
+                        ):
+                            return True
+    except Exception as e:
+        log("FillMeshHoles RhinoCommon 예외: " + str(e))
+
+    # 2nd: Fallback - 커맨드 기반 실행
+    try:
+        Rhino.RhinoApp.RunScript("!_-SelNone _Enter", False)
+        Rhino.RhinoApp.RunScript(
+            "!_-SelID {} _Enter".format(str(target_id)),
+            False,
+        )
+    except Exception:
+        pass
+
+    cmds = [
+        "!_-FillMeshHoles _All _Enter",
+        "!_-FillMeshHoles _Auto _Enter",
+        "!_-FillMeshHoles _Enter",
+    ]
+
+    for cmd in cmds:
+        try:
+            log("RunScript=" + cmd)
+            ok_cmd = Rhino.RhinoApp.RunScript(cmd, True)
+            log("FillMeshHoles command ok=" + str(ok_cmd))
+        except Exception as e:
+            log("FillMeshHoles 커맨드 실행 예외: " + str(e))
+
+        after_naked = None
+        try:
+            refreshed = doc.Objects.FindId(target_id)
+            if refreshed and refreshed.Geometry is not None:
+                after_naked = _count_naked_edges(refreshed.Geometry)
+        except Exception:
+            pass
+
+        log(
+            "after FillMeshHoles nakedEdges(before->{})={}".format(
+                before_naked, after_naked
+            )
+        )
+
+        if (
+            before_naked is None
+            or after_naked is None
+            or after_naked < before_naked
+        ):
+            return True
+
+    return False
+
+
 def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
     if log_path_arg:
         os.environ["ABUTS_LOG_PATH"] = str(log_path_arg)
@@ -290,67 +391,86 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         log("selected piece id=" + str(best_id))
         log("selected key(r,maxZ)=" + str(best_key))
+        log("total candidates={} open_candidates={} tol={}".format(
+            len(candidates),
+            len(open_candidates),
+            tol,
+        ))
 
-        # 선택 초기화
+        fill_targets = open_candidates if open_candidates else candidates
+        fill_targets = [c for c in fill_targets if c.get("id")]
+        if not fill_targets:
+            fail("FillMeshHoles 대상 Mesh 목록을 만들지 못했습니다")
+
+        for idx, c in enumerate(fill_targets):
+            oid = c.get("id")
+            log(
+                "FillMeshHoles target[{}] id={} r={} maxZ={} nakedEdges={}".format(
+                    idx,
+                    oid,
+                    c.get("r"),
+                    c.get("maxZ"),
+                    c.get("naked"),
+                )
+            )
+            filled = _run_fill_mesh_holes(doc, oid)
+            if not filled:
+                log("FillMeshHoles 결과 변화 없음 (id={})".format(oid))
+            else:
+                log("FillMeshHoles 성공 감지 (id={})".format(oid))
+
+        # 최신 Mesh 목록으로 갱신 (Fill 과정에서 Replace가 발생했으므로)
         try:
-            for o in doc.Objects:
-                try:
-                    o.Select(False)
-                except Exception:
-                    pass
+            piece_ids = [
+                o.Id
+                for o in doc.Objects
+                if o.ObjectType == Rhino.DocObjects.ObjectType.Mesh
+            ]
         except Exception:
-            pass
-
-        # 3) FillMeshHoles 실행 (라이노 커맨드 사용)
-        target = doc.Objects.FindId(best_id)
-        if target is None:
-            fail("대상 Mesh를 찾지 못했습니다")
-
-        try:
-            target.Select(True)
-            cmd = "!_-FillMeshHoles _Enter"
-            log("RunScript=" + cmd)
-            ok_cmd = Rhino.RhinoApp.RunScript(cmd, True)
-            log("FillMeshHoles command ok=" + str(ok_cmd))
-        except Exception as e:
-            log("FillMeshHoles 커맨드 실행 예외: " + str(e))
-
-        try:
-            after_obj = doc.Objects.FindId(best_id)
-        except Exception:
-            after_obj = None
-        after_naked = None
-        try:
-            if after_obj is not None and after_obj.Geometry is not None:
-                after_naked = _count_naked_edges(after_obj.Geometry)
-        except Exception:
-            pass
-        log("after FillMeshHoles nakedEdges=" + str(after_naked))
+            piece_ids = []
 
         # 4) Join (RhinoCommon API 사용)
-        if piece_ids and len(piece_ids) > 1:
-            try:
-                # 개별 메쉬들을 하나로 합침
-                joined_mesh = Rhino.Geometry.Mesh()
-                for oid in piece_ids:
-                    o = doc.Objects.FindId(oid)
-                    if o and o.Geometry:
-                        joined_mesh.Append(o.Geometry)
-                        doc.Objects.Delete(oid, True)
-                
-                # 중복된 정점들을 합쳐서 메모리 및 성능 최적화
-                joined_mesh.Vertices.CombineIdentical(True, True)
+        try:
+            meshes = []
+            for oid in piece_ids:
+                o = doc.Objects.FindId(oid)
+                if o and o.Geometry:
+                    try:
+                        meshes.append(o.Geometry.DuplicateMesh())
+                    except Exception:
+                        pass
+
+            merged = None
+            if len(meshes) == 1:
+                merged = meshes[0]
+            elif len(meshes) > 1:
+                tol = doc.ModelAbsoluteTolerance if doc else 0.01
+                merged = Rhino.Geometry.Mesh.CreateFromMerge(meshes, tol or 0.01, True)
+
+            if merged and merged.Faces.Count > 0:
                 try:
-                    if hasattr(joined_mesh.Faces, "RedundantFaces"):
-                        joined_mesh.Faces.RedundantFaces()
+                    merged.Vertices.CombineIdentical(True, True)
                 except Exception:
                     pass
-                
-                doc.Objects.AddMesh(joined_mesh)
+                try:
+                    if hasattr(merged.Faces, "RedundantFaces"):
+                        merged.Faces.RedundantFaces()
+                except Exception:
+                    pass
+
+                # 기존 메시 제거 후 병합 메시 추가
+                for oid in piece_ids:
+                    try:
+                        doc.Objects.Delete(oid, True)
+                    except Exception:
+                        pass
+                doc.Objects.AddMesh(merged)
                 log("Join (RhinoCommon) ok")
-            except Exception as e:
-                log("Join (RhinoCommon) failed: " + str(e))
-                Rhino.RhinoApp.RunScript("!_-Join _Enter", True)
+            else:
+                log("Join (RhinoCommon) skipped: merged mesh unavailable")
+        except Exception as e:
+            log("Join (RhinoCommon) failed: " + str(e))
+            Rhino.RhinoApp.RunScript("!_-Join _Enter", True)
 
         try:
             mesh_count_after = 0
@@ -373,9 +493,18 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 pass
 
             try:
-                Rhino.RhinoApp.RunScript("!_-SelAll _Enter", True)
+                doc.Objects.UnselectAll()
+                for obj in list(doc.Objects):
+                    if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                        try:
+                            obj.Select(True)
+                        except Exception:
+                            pass
             except Exception:
-                pass
+                try:
+                    Rhino.RhinoApp.RunScript("!_-SelAll _Enter", True)
+                except Exception:
+                    pass
 
             # STL Export 최적화: RhinoCommon Write 직접 시도
             write_opts = Rhino.FileIO.FileStlWriteOptions()
@@ -493,6 +622,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
     except Exception:
         pass
 
+    log("finish")
     print("OK")
 
 
