@@ -20,6 +20,7 @@ import {
   getTodayYmdInKst,
   calculateExpressShipYmd,
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
+  ensureLotNumberForMachining,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 
@@ -46,12 +47,12 @@ export async function uploadToRhinoServer(fileBuffer, fileName) {
           ...formData.getHeaders(),
         },
         timeout: 30000,
-      }
+      },
     );
 
     if (response.data?.ok) {
       console.log(
-        `[Rhino-Server] File upload successful, processing started: ${fileName}`
+        `[Rhino-Server] File upload successful, processing started: ${fileName}`,
       );
       return true;
     }
@@ -222,8 +223,8 @@ const resolveNormalLeadDays = ({ leadDays, maxDiameter }) => {
     typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
       ? maxDiameter
       : maxDiameter != null && String(maxDiameter).trim()
-      ? Number(maxDiameter)
-      : null;
+        ? Number(maxDiameter)
+        : null;
   if (d == null || Number.isNaN(d)) return effective.d10;
   if (d <= 6) return effective.d6;
   if (d <= 8) return effective.d8;
@@ -368,9 +369,8 @@ export async function createRequest(req, res) {
       });
     }
 
-    const normalizedCaseInfos = await normalizeCaseInfosImplantFields(
-      caseInfos
-    );
+    const normalizedCaseInfos =
+      await normalizeCaseInfosImplantFields(caseInfos);
     const implantManufacturer = (
       normalizedCaseInfos.implantManufacturer || ""
     ).trim();
@@ -414,6 +414,8 @@ export async function createRequest(req, res) {
       price: computedPrice,
     });
 
+    await ensureLotNumberForMachining(newRequest);
+
     // 원본 배송 옵션 저장
     newRequest.originalShipping = {
       mode: shippingMode,
@@ -430,9 +432,8 @@ export async function createRequest(req, res) {
     };
 
     // 생산 스케줄 계산 (시각 기반)
-    const { calculateInitialProductionSchedule } = await import(
-      "./production.utils.js"
-    );
+    const { calculateInitialProductionSchedule } =
+      await import("./production.utils.js");
     const productionSchedule = await calculateInitialProductionSchedule({
       shippingMode,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
@@ -474,7 +475,7 @@ export async function createRequest(req, res) {
 
       // 즉시 실행 (응답을 기다리지 않음)
       uploadToRhinoServer(req.file.buffer, bgFileName).catch((e) =>
-        console.error(`[Rhino-Direct-Upload] Failed: ${e.message}`)
+        console.error(`[Rhino-Direct-Upload] Failed: ${e.message}`),
       );
 
       // DB에 로컬 경로 정보 업데이트
@@ -598,7 +599,7 @@ export async function createRequestsFromDraft(req, res) {
   try {
     const { draftId, clinicId } = req.body || {};
     const duplicateResolutionsRaw = Array.isArray(
-      req.body?.duplicateResolutions
+      req.body?.duplicateResolutions,
     )
       ? req.body.duplicateResolutions
       : null;
@@ -688,7 +689,7 @@ export async function createRequestsFromDraft(req, res) {
 
     // 현재는 커스텀 어벗먼트 케이스만 실제 Request 생성 대상으로 사용
     const abutmentCases = caseInfosArray.filter(
-      (ci) => (ci.workType || "abutment").trim() === "abutment"
+      (ci) => (ci.workType || "abutment").trim() === "abutment",
     );
 
     if (!abutmentCases.length) {
@@ -779,7 +780,7 @@ export async function createRequestsFromDraft(req, res) {
         missingFiles: missingFieldsByFile,
         details: missingFieldsByFile
           .map(
-            (item) => `${item.fileName}: ${item.missingFields.join(", ")} 필수`
+            (item) => `${item.fileName}: ${item.missingFields.join(", ")} 필수`,
           )
           .join("\n"),
       });
@@ -874,7 +875,7 @@ export async function createRequestsFromDraft(req, res) {
       for (const doc of candidates || []) {
         const ci = doc?.caseInfos || {};
         const key = `${String(ci.clinicName || "").trim()}|${String(
-          ci.patientName || ""
+          ci.patientName || "",
         ).trim()}|${String(ci.tooth || "").trim()}`;
         if (!latestByKey.has(key)) {
           latestByKey.set(key, doc);
@@ -952,15 +953,15 @@ export async function createRequestsFromDraft(req, res) {
       const unresolved = duplicates.filter(
         (d) =>
           !resolutionsByCaseId.has(String(d.caseId || "")) &&
-          !skipCaseIds.has(String(d.caseId || ""))
+          !skipCaseIds.has(String(d.caseId || "")),
       );
       if (unresolved.length > 0) {
         console.log(
-          `[Creation] Unresolved duplicates found: ${unresolved.length} cases`
+          `[Creation] Unresolved duplicates found: ${unresolved.length} cases`,
         );
         unresolved.forEach((d, idx) => {
           console.log(
-            `  #${idx}: CaseId=${d.caseId}, Patient=${d.patientName}, ExistingStatus=${d.existingRequest?.status}`
+            `  #${idx}: CaseId=${d.caseId}, Patient=${d.patientName}, ExistingStatus=${d.existingRequest?.status}`,
           );
         });
 
@@ -982,7 +983,7 @@ export async function createRequestsFromDraft(req, res) {
       }
 
       const duplicatesByCaseId = new Map(
-        duplicates.map((d) => [String(d.caseId || ""), d])
+        duplicates.map((d) => [String(d.caseId || ""), d]),
       );
       for (const [caseId, r] of resolutionsByCaseId.entries()) {
         const dup = duplicatesByCaseId.get(String(caseId));
@@ -1014,7 +1015,7 @@ export async function createRequestsFromDraft(req, res) {
     }
 
     const preparedCasesForCreate = preparedCases.filter(
-      (c) => !skipCaseIds.has(String(c.caseId))
+      (c) => !skipCaseIds.has(String(c.caseId)),
     );
 
     if (preparedCasesForCreate.length === 0) {
@@ -1038,7 +1039,7 @@ export async function createRequestsFromDraft(req, res) {
         // duplicateResolutions 처리 (케이스별)
         if (duplicates.length > 0 && duplicateResolutions) {
           const dupsByCaseId = new Map(
-            duplicates.map((d) => [String(d.caseId || ""), d])
+            duplicates.map((d) => [String(d.caseId || ""), d]),
           );
 
           for (const [caseId, r] of resolutionsByCaseId.entries()) {
@@ -1049,9 +1050,8 @@ export async function createRequestsFromDraft(req, res) {
             const existingRequestId = String(r?.existingRequestId || "").trim();
             if (!dup || !existingRequestId) continue;
 
-            const existingDoc = await Request.findById(
-              existingRequestId
-            ).session(session);
+            const existingDoc =
+              await Request.findById(existingRequestId).session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
               err.statusCode = 404;
@@ -1065,7 +1065,7 @@ export async function createRequestsFromDraft(req, res) {
 
             const existingStatus = String(existingDoc.status || "");
             const existingStage = String(
-              existingDoc.manufacturerStage || ""
+              existingDoc.manufacturerStage || "",
             ).trim();
             const stageOrder = {
               의뢰: 0,
@@ -1078,14 +1078,14 @@ export async function createRequestsFromDraft(req, res) {
               stageOrder[existingStage] ?? stageOrder[existingStatus] ?? 0;
             if (existingStatus === "완료") {
               const err = new Error(
-                "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요."
+                "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요.",
               );
               err.statusCode = 400;
               throw err;
             }
             if (currentStageOrder > 1) {
               const err = new Error(
-                "생산 이후 단계에서는 기존 의뢰를 교체할 수 없습니다."
+                "생산 이후 단계에서는 기존 의뢰를 교체할 수 없습니다.",
               );
               err.statusCode = 400;
               throw err;
@@ -1099,7 +1099,7 @@ export async function createRequestsFromDraft(req, res) {
             const refundAmount = Number(existingDoc?.price?.amount || 0);
             if (refundAmount > 0) {
               const refundKey = `request:${String(
-                existingDoc._id
+                existingDoc._id,
               )}:case:${String(caseId)}:replace_refund`;
               await CreditLedger.updateOne(
                 { uniqueKey: refundKey },
@@ -1114,7 +1114,7 @@ export async function createRequestsFromDraft(req, res) {
                     uniqueKey: refundKey,
                   },
                 },
-                { upsert: true, session }
+                { upsert: true, session },
               );
             }
           }
@@ -1142,7 +1142,7 @@ export async function createRequestsFromDraft(req, res) {
             const existingStatus2 = String(existingDoc.status2 || "");
             if (existingStatus2 !== "완료") {
               const err = new Error(
-                "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요."
+                "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요.",
               );
               err.statusCode = 400;
               throw err;
@@ -1163,16 +1163,16 @@ export async function createRequestsFromDraft(req, res) {
         }
 
         const dupsByCaseId = new Map(
-          duplicates.map((d) => [String(d.caseId || ""), d])
+          duplicates.map((d) => [String(d.caseId || ""), d]),
         );
 
-        const { calculateInitialProductionSchedule } = await import(
-          "./production.utils.js"
-        );
+        const { calculateInitialProductionSchedule } =
+          await import("./production.utils.js");
 
         for (const item of preparedCasesForCreate) {
           const shippingMode = item.shippingMode || "normal";
           const requestedAt = new Date();
+          const requestedShipDate = item.requestedShipDate || undefined;
 
           const newRequest = new Request({
             requestor: req.user._id,
@@ -1180,11 +1180,14 @@ export async function createRequestsFromDraft(req, res) {
               req.user?.role === "requestor" && req.user?.organizationId
                 ? req.user.organizationId
                 : null,
-            caseInfos: item.caseInfosWithFile,
             price: item.computedPrice,
+            shippingMode,
+            requestedShipDate,
+            caseInfos: item.caseInfosWithFile,
           });
 
-          // 원본 배송 옵션 저장
+          await ensureLotNumberForMachining(newRequest);
+
           newRequest.originalShipping = {
             mode: shippingMode,
             requestedAt,
@@ -1223,7 +1226,7 @@ export async function createRequestsFromDraft(req, res) {
                   new Set([
                     ...(newRequest.referenceIds || []),
                     String(oldRequestId),
-                  ])
+                  ]),
                 );
               }
             }
@@ -1255,7 +1258,7 @@ export async function createRequestsFromDraft(req, res) {
                 });
               } catch (err) {
                 console.error(
-                  `[Rhino-Parallel-Upload] Failed for request ${newRequest.requestId}: ${err.message}`
+                  `[Rhino-Parallel-Upload] Failed for request ${newRequest.requestId}: ${err.message}`,
                 );
               }
             })();
@@ -1371,7 +1374,7 @@ export async function hasDuplicateCase(req, res) {
       try {
         const hasHangul = /[가-힣]/.test(s);
         const bytes = new Uint8Array(
-          Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff)
+          Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff),
         );
         const decoded = new TextDecoder("utf-8").decode(bytes);
         const decodedHasHangul = /[가-힣]/.test(decoded);
@@ -1446,8 +1449,8 @@ export async function hasDuplicateCase(req, res) {
       const caseInfosList = Array.isArray(r?.caseInfos)
         ? r.caseInfos
         : r?.caseInfos
-        ? [r.caseInfos]
-        : [];
+          ? [r.caseInfos]
+          : [];
 
       const matched = caseInfosList.some((ci) => {
         const storedName =

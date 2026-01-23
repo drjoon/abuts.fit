@@ -4,7 +4,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Reflection;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
+using System.Text;
 using System.Text.RegularExpressions;
 using DPTechnology.AnnexLibraries.EspritAnnex;
 using Esprit;
@@ -12,12 +18,36 @@ using EspritConstants;
 using EspritTechnology;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject;
+using static Org.BouncyCastle.Math.EC.ECCurve;
 
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 {
     public class StlFileProcessor
     {
-        private const string DefaultPrcRoot = @"C:\abuts.fit\bg\esprit-addin\AcroDent";
+        private static readonly HttpClient BackendHttp;
+
+        static StlFileProcessor()
+        {
+            var handler = new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                UseProxy = false
+            };
+            BackendHttp = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+        }
+
+        private static string GetBackendUrl()
+        {
+            return AppConfig.GetBackendUrl();
+        }
+
+        private static string GetBridgeSecret()
+        {
+            return AppConfig.GetBridgeSecret();
+        }
 
         private readonly Application _espApp;
         private readonly string _outputFolder;
@@ -26,10 +56,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _capturedFrontPointX;
         private double? _capturedBackPointX;
         private double? _capturedStockDiameter;
+        private string _backendLotNumber;
 
-        public string FaceHoleProcessFilePath { get; set; } = @"C:\abuts.fit\bg\esprit-addin\AcroDent\1_Face Hole\네오_R_Connection_H.prc";
+        public string FaceHoleProcessFilePath { get; set; } = AppConfig.FaceHoleProcessPath;
 
-        public string ConnectionMachiningProcessFilePath { get; set; } = @"C:\abuts.fit\bg\esprit-addin\AcroDent\2_Connection\네오_R_Connection.prc";
+        public string ConnectionMachiningProcessFilePath { get; set; } = AppConfig.ConnectionProcessPath;
 
         public double DefaultFrontLimitX { get; set; } = -9.5;
 
@@ -37,11 +68,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public string lotNumber {get;set;} = "ACR";
 
-        public StlFileProcessor(Application app, string outputFolder = @"C:\abuts.fit\bg\storage\3-nc",
+        public StlFileProcessor(Application app, string outputFolder = null,
             string postProcessorFile = "Acro_dent_XE.asc")
         {
             _espApp = app ?? throw new InvalidOperationException("ESPRIT Application not initialized");
-            _outputFolder = outputFolder;
+            _outputFolder = string.IsNullOrWhiteSpace(outputFolder) ? AppConfig.StorageNcDirectory : outputFolder;
             _postProcessorFile = postProcessorFile;
         }
 
@@ -67,15 +98,56 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             double effectiveFrontLimit = frontLimitX ?? DefaultFrontLimitX;
             double effectiveBackLimit = backLimitX ?? DefaultBackLimitX;
 
+            string requestId = null;
+            RequestMetaCaseInfos requestMeta = null;
+            _backendLotNumber = null;
+
             try
             {
+                requestId = ExtractRequestIdFromStlPath(stlPath);
+                if (!string.IsNullOrWhiteSpace(requestId))
+                {
+                    requestMeta = FetchRequestMeta(requestId);
+                    if (requestMeta != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(requestMeta.lotNumber))
+                        {
+                            _backendLotNumber = requestMeta.lotNumber.Trim();
+                            lotNumber = _backendLotNumber;
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException($"request-meta 응답에 lotNumber가 없습니다. requestId={requestId}");
+                        }
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantSystem}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}");
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"request-meta 응답이 비어있습니다. requestId={requestId}");
+                    }
+                }
+                else
+                {
+                    AppLogger.Log("StlFileProcessor: requestId 추출 실패 - 파일명 규칙 확인 필요");
+                }
+
+                double machineBarDiameter = document?.LatheMachineSetup?.BarDiameter ?? 0;
+                if (machineBarDiameter > 0)
+                {
+                    AppLogger.Log($"StlFileProcessor: 기존 장비 BarDiameter={machineBarDiameter:F3}");
+                }
+                else
+                {
+                    AppLogger.Log("StlFileProcessor: 기존 BarDiameter 정보를 찾을 수 없어 기본 절차를 사용합니다.");
+                }
+
                 CleanupGraphics(document);
                 document.Refresh();
 
                 document.MergeFile(stlPath);
                 Connect.SetCurrentDocument(document);
 
-                UpdateLatheBarDiameter(document, stlPath);
+                UpdateLatheBarDiameter(document, stlPath, machineBarDiameter);
                 
                 Rotate90Degrees(document);
 
@@ -84,13 +156,31 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit);
 
                 CaptureNcMetadata(document);
-                RunPostProcessing(document, stlPath, ResolveBackPointForNc(effectiveBackLimit), ResolveStockDiameterForNc(document));
+
+                string ncFilePath = RunPostProcessing(document, stlPath, ResolveBackPointForNc(effectiveBackLimit), ResolveStockDiameterForNc(document));
+
+                if (!string.IsNullOrWhiteSpace(requestId) && !string.IsNullOrWhiteSpace(ncFilePath))
+                {
+                    NotifyBackendSuccess(requestId, stlPath, ncFilePath);
+                }
                 
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
             }
             catch (Exception ex)
             {
                 AppLogger.Log($"StlFileProcessor: 처리 중 오류 - {ex.Message}");
+
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(requestId))
+                    {
+                        NotifyBackendFailure(requestId, stlPath, ex.Message);
+                    }
+                }
+                catch (Exception notifyEx)
+                {
+                    AppLogger.Log($"StlFileProcessor: 실패 등록 중 오류 - {notifyEx.GetType().Name}:{notifyEx.Message}");
+                }
                 throw;
             }
         }
@@ -174,6 +264,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return string.IsNullOrWhiteSpace(sanitized) ? "output" : sanitized;
         }
 
+        private static string ExtractDisplayName(string displayName)
+        {
+            if (string.IsNullOrWhiteSpace(displayName))
+            {
+                return string.Empty;
+            }
+
+            string[] parts = displayName.Split(new[] { '-' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+            {
+                return displayName;
+            }
+
+            int length = Math.Min(2, parts.Length);
+            return string.Join("-", parts.Take(length));
+        }
+
         private void UpdateNcHeader(string ncFilePath, string displayName, double backPointX, double stockDiameter)
         {
             try
@@ -195,18 +302,55 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
 
                 lines[0] = string.IsNullOrWhiteSpace(lines[0]) ? "%" : lines[0];
-                lines[1] = $"({displayName})";
+                string truncatedDisplayName = ExtractDisplayName(displayName);
+                lines[1] = $"({truncatedDisplayName})";
 
-                ApplyOrInsertNcLine(lines, $"#520= {FormatNcNumber(backPointX)} (END POSITION)", "#520");
-                ApplyOrInsertNcLine(lines, $"#521= {FormatNcNumber(stockDiameter)} (STOCK DIA)", "#521");
+                double backPointForNc = backPointX - AppConfig.DefaultStlShift;
+                double backturnClearance = ResolveBackturnClearance(stockDiameter);
+
+                ApplyOrInsertNcLine(lines, $"#520= {FormatNcNumber(backPointForNc, "0.000")}", "#520");
+                ApplyOrInsertNcLine(lines, $"#521= {FormatNcNumber(stockDiameter, "0.000")}", "#521");
+                ApplyOrInsertNcLine(lines, $"#522= {FormatNcNumber(backturnClearance, "0.000")}", "#522");
+                ApplyOrInsertNcLine(lines, $"#523= {FormatNcNumber(AppConfig.DefaultStlShift, "0.000")}", "#523");
 
                 File.WriteAllLines(ncFilePath, lines.ToArray());
-                AppLogger.Log($"StlFileProcessor: NC 헤더 수정 완료 - #520:{FormatNcNumber(backPointX)}, #521:{FormatNcNumber(stockDiameter)}");
+                AppLogger.Log($"StlFileProcessor: NC 헤더 수정 완료 - #520:{FormatNcNumber(backPointForNc)}, #521:{FormatNcNumber(stockDiameter)}, #522:{FormatNcNumber(backturnClearance)}");
             }
             catch (Exception ex)
             {
                 AppLogger.Log($"StlFileProcessor: NC 헤더 수정 실패 - {ex.GetType().Name}:{ex.Message}");
             }
+        }
+
+        private static double ResolveBackturnClearance(double stockDiameter)
+        {
+            double[] clearances = AppConfig.DefaultBackturnClearances;
+            if (clearances == null || clearances.Length == 0)
+            {
+                return 0;
+            }
+
+            int[] diameters = AppConfig.DefaultBackturnDiameters;
+            if (diameters == null || diameters.Length == 0)
+            {
+                return clearances[0];
+            }
+            int bestIndex = 0;
+            double bestDiff = double.MaxValue;
+
+            for (int i = 0; i < diameters.Length; i++)
+            {
+                double diff = Math.Abs(stockDiameter - diameters[i]);
+                if (diff < bestDiff)
+                {
+                    bestDiff = diff;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex < 0) bestIndex = 0;
+            if (bestIndex >= clearances.Length) bestIndex = clearances.Length - 1; // 설정 배열 길이가 다를 수 있음
+            return clearances[bestIndex];
         }
 
         private static void ApplyOrInsertNcLine(List<string> lines, string newLine, string token)
@@ -222,14 +366,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             lines.Insert(insertIndex, newLine);
         }
 
-        private static string FormatNcNumber(double? value)
+        private static string FormatNcNumber(double? value, string format = "0.###############")
         {
             if (!value.HasValue)
             {
                 return "";
             }
 
-            return value.Value.ToString("0.###############", CultureInfo.InvariantCulture);
+            return value.Value.ToString(format, CultureInfo.InvariantCulture);
+        }
+
+        private static double CeilToTenth(double value)
+        {
+            return Math.Ceiling(value * 10.0) / 10.0;
         }
 
         private void UpdateSerialBlocks(string ncFilePath, string lotValue)
@@ -402,7 +551,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return new string(letters.ToArray());
         }
 
-        private void RunPostProcessing(Document document, string stlPath, double backPointX, double stockDiameter)
+        private string RunPostProcessing(Document document, string stlPath, double backPointX, double stockDiameter)
         {
             string postDir = _espApp.Configuration.GetFileDirectory(espFileType.espFileTypePostProcessor);
             string postFilePath = Path.Combine(postDir, _postProcessorFile);
@@ -413,7 +562,327 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             AppLogger.Log($"StlFileProcessor: NC 저장 완료 - {ncFileName}");
             UpdateNcHeader(ncFileName, Path.GetFileName(ncFileName), backPointX, stockDiameter);
-            UpdateSerialBlocks(ncFileName, lotNumber);
+            UpdateSerialBlocks(ncFileName, ResolveLotNumberForNc());
+            return ncFileName;
+        }
+
+        private string ResolveLotNumberForNc()
+        {
+            if (!string.IsNullOrWhiteSpace(_backendLotNumber))
+            {
+                return _backendLotNumber.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(lotNumber))
+            {
+                return lotNumber.Trim();
+            }
+
+            return "ACR";
+        }
+
+        private static string ExtractRequestIdFromStlPath(string stlPath)
+        {
+            try
+            {
+                string fileName = Path.GetFileName(stlPath);
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    return null;
+                }
+
+                string baseName = Path.GetFileNameWithoutExtension(fileName);
+                if (string.IsNullOrWhiteSpace(baseName))
+                {
+                    return null;
+                }
+
+                if (baseName.EndsWith(".filled", StringComparison.OrdinalIgnoreCase))
+                {
+                    baseName = baseName.Substring(0, baseName.Length - ".filled".Length);
+                }
+
+                var parts = baseName.Split('-');
+                if (parts.Length >= 2)
+                {
+                    return $"{parts[0]}-{parts[1]}";
+                }
+
+                return baseName;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static RequestMetaCaseInfos FetchRequestMeta(string requestId)
+        {
+            if (string.IsNullOrWhiteSpace(requestId))
+            {
+                return null;
+            }
+
+            string baseUrl = (GetBackendUrl() ?? "").TrimEnd('/');
+            string url = $"{baseUrl}/bg/request-meta?requestId={Uri.EscapeDataString(requestId)}";
+
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+
+                string bridgeSecret = GetBridgeSecret();
+                AppLogger.Log($"StlFileProcessor: request-meta GET {url} (X-Bridge-Secret set={(!string.IsNullOrWhiteSpace(bridgeSecret))})");
+
+                using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    req.Headers.Accept.Clear();
+                    req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                    if (!string.IsNullOrWhiteSpace(bridgeSecret))
+                    {
+                        req.Headers.Add("X-Bridge-Secret", bridgeSecret);
+                    }
+
+                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    string body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        AppLogger.Log($"StlFileProcessor: request-meta failed status={resp.StatusCode} body={body}");
+                        return null;
+                    }
+
+                    AppLogger.Log($"StlFileProcessor: request-meta response body={body}");
+
+                    using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(body ?? string.Empty)))
+                    {
+                        var serializer = new DataContractJsonSerializer(typeof(RequestMetaResponse));
+                        var meta = serializer.ReadObject(stream) as RequestMetaResponse;
+                        return meta?.data?.caseInfos;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: request-meta error - {ex.GetType().Name}:{ex.Message}");
+                return null;
+            }
+        }
+
+        private static void NotifyBackendSuccess(string requestId, string stlPath, string ncPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(ncPath) || !File.Exists(ncPath))
+                {
+                    AppLogger.Log($"StlFileProcessor: register-file skip (invalid args) requestId={requestId}, ncPath={ncPath}");
+                    return;
+                }
+
+                var fi = new FileInfo(ncPath);
+                var upload = UploadNcViaPresign(fi, requestId);
+                if (!upload.ok)
+                {
+                    AppLogger.Log($"StlFileProcessor: presign upload failed: {upload.error} (fallback register only)");
+                }
+
+                string baseUrl = (GetBackendUrl() ?? "").TrimEnd('/');
+                string url = $"{baseUrl}/bg/register-file";
+                string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
+
+                string json;
+                if (upload.ok)
+                {
+                    json =
+                        $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fi.Name)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"s3Key\":\"{EscapeJson(upload.s3Key)}\",\"s3Url\":\"{EscapeJson(upload.s3Url)}\",\"fileSize\":{upload.fileSize}}}";
+                }
+                else
+                {
+                    json =
+                        $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fi.Name)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
+                }
+
+                using (var req = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    string bridgeSecret = GetBridgeSecret();
+                    if (!string.IsNullOrWhiteSpace(bridgeSecret))
+                    {
+                        req.Headers.Add("X-Bridge-Secret", bridgeSecret);
+                    }
+
+                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        AppLogger.Log($"StlFileProcessor: register-file success file={fi.Name} requestId={requestId}");
+                    }
+                    else
+                    {
+                        string body = string.Empty;
+                        try { body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult(); } catch { }
+                        AppLogger.Log($"StlFileProcessor: register-file failed status={resp.StatusCode} file={fi.Name} requestId={requestId} body={body}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: register-file error - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static void NotifyBackendFailure(string requestId, string stlPath, string errorMessage)
+        {
+            try
+            {
+                string baseUrl = (GetBackendUrl() ?? "").TrimEnd('/');
+                string url = $"{baseUrl}/bg/register-file";
+                string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
+                string safeError = (errorMessage ?? "");
+
+                string json =
+                    $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"failed\",\"metadata\":{{\"error\":\"{EscapeJson(safeError)}\"}}}}";
+
+                using (var req = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    string bridgeSecret = GetBridgeSecret();
+                    if (!string.IsNullOrWhiteSpace(bridgeSecret))
+                    {
+                        req.Headers.Add("X-Bridge-Secret", bridgeSecret);
+                    }
+
+                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    AppLogger.Log($"StlFileProcessor: register-file failure notified status={resp.StatusCode} requestId={requestId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: register-file failure notify error - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static (bool ok, string s3Key, string s3Url, long fileSize, string error) UploadNcViaPresign(FileInfo fi, string requestId)
+        {
+            try
+            {
+                if (fi == null || !fi.Exists || string.IsNullOrWhiteSpace(requestId))
+                {
+                    return (false, null, null, 0, "invalid args");
+                }
+
+                string baseUrl = (GetBackendUrl() ?? "").TrimEnd('/');
+                string presignUrl = $"{baseUrl}/bg/presign-upload";
+                string presignBody = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fi.Name)}\",\"requestId\":\"{EscapeJson(requestId)}\"}}";
+
+                HttpResponseMessage presignResp;
+                using (var req = new HttpRequestMessage(HttpMethod.Post, presignUrl))
+                {
+                    req.Content = new StringContent(presignBody, Encoding.UTF8, "application/json");
+                    string bridgeSecret = GetBridgeSecret();
+                    if (!string.IsNullOrWhiteSpace(bridgeSecret))
+                    {
+                        req.Headers.Add("X-Bridge-Secret", bridgeSecret);
+                    }
+
+                    presignResp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                }
+                if (!presignResp.IsSuccessStatusCode)
+                {
+                    return (false, null, null, 0, $"presign status={presignResp.StatusCode}");
+                }
+
+                var presignJson = presignResp.Content.ReadAsStringAsync().GetAwaiter().GetResult() ?? "";
+                string Extract(string key)
+                {
+                    try
+                    {
+                        var marker = $"\"{key}\":\"";
+                        int idx = presignJson.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                        if (idx < 0) return null;
+                        idx += marker.Length;
+                        int end = presignJson.IndexOf("\"", idx, StringComparison.OrdinalIgnoreCase);
+                        if (end < 0) return null;
+                        return presignJson.Substring(idx, end - idx);
+                    }
+                    catch { return null; }
+                }
+
+                string url = Extract("url");
+                string keyValue = Extract("key");
+                string bucket = Extract("bucket");
+                string contentType = Extract("contentType") ?? "application/octet-stream";
+
+                if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(keyValue))
+                {
+                    return (false, null, null, 0, "presign response missing url/key");
+                }
+
+                long fileSize = fi.Length;
+                using (var fs = fi.OpenRead())
+                {
+                    using (var putClient = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(30) })
+                    using (var putReq = new HttpRequestMessage(HttpMethod.Put, url))
+                    {
+                        putReq.Content = new StreamContent(fs);
+                        putReq.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+
+                        var putResp = putClient.SendAsync(putReq).GetAwaiter().GetResult();
+                        if (!putResp.IsSuccessStatusCode)
+                        {
+                            return (false, null, null, 0, $"put status={putResp.StatusCode}");
+                        }
+                    }
+                }
+
+                string s3Url = BuildS3Url(bucket, keyValue);
+                return (true, keyValue, s3Url, fileSize, null);
+            }
+            catch (Exception ex)
+            {
+                return (false, null, null, 0, ex.Message);
+            }
+        }
+
+        private static string BuildS3Url(string bucket, string key)
+        {
+            bucket = (bucket ?? "").Trim();
+            key = (key ?? "").Trim().TrimStart('/');
+            if (string.IsNullOrEmpty(bucket) || string.IsNullOrEmpty(key)) return "";
+            return $"https://{bucket}.s3.amazonaws.com/{key}";
+        }
+
+        private static string EscapeJson(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
+        [DataContract]
+        private class RequestMetaResponse
+        {
+            [DataMember] public bool ok { get; set; }
+            [DataMember] public RequestMetaData data { get; set; }
+        }
+
+        [DataContract]
+        private class RequestMetaData
+        {
+            [DataMember] public string requestId { get; set; }
+            [DataMember] public RequestMetaCaseInfos caseInfos { get; set; }
+        }
+
+        [DataContract]
+        private class RequestMetaCaseInfos
+        {
+            [DataMember] public string clinicName { get; set; }
+            [DataMember] public string patientName { get; set; }
+            [DataMember] public string tooth { get; set; }
+            [DataMember] public string implantManufacturer { get; set; }
+            [DataMember] public string implantSystem { get; set; }
+            [DataMember] public string implantType { get; set; }
+            [DataMember] public double maxDiameter { get; set; }
+            [DataMember] public double connectionDiameter { get; set; }
+            [DataMember] public string workType { get; set; }
+            [DataMember] public string lotNumber { get; set; }
         }
 
         private static void CleanupGraphics(Document document)
@@ -581,11 +1050,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 ConfigureDentalProcesses(mainModuleType);
                 EnsureMainModuleContext(mainModuleType, document);
+                ApplyTurningParameters(mainModuleType);
                 EnsureMoveModuleDefaults(mainModuleType, document);
                 ApplyLimitPoints(mainModuleType, frontLimitX, backLimitX);
                 
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
+                
+                ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
+
                 AppLogger.Log("DentalAddin: MoveSTL 실행 완료");
 
                 AppLogger.Log("DentalAddin: Bind 실행 시도 (Document: {(document != null)}, EspritApp: {(_espApp != null)})");
@@ -633,6 +1106,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
             SetStaticField(mainModuleType, "PrcFileName", prcNames);
+
+            bool reverseEnabled = numCombobox != null && numCombobox.Length > 4 && numCombobox[4] == 1;
+            SetStaticField(mainModuleType, "ReverseOn", reverseEnabled);
+            AppLogger.Log(reverseEnabled
+                ? "DentalAddin: Reverse Turning 활성 (NumCombobox[4]=1)"
+                : "DentalAddin: Reverse Turning 비활성 (NumCombobox[4]!=1)" );
 
             double roughType = DetermineRoughType(numCombobox, prcPaths, out string roughReason);
             SetStaticField(mainModuleType, "RoughType", roughType);
@@ -1120,9 +1599,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     relative = relative.Substring(baseDirectory.Length);
                 }
-                else if (relative.StartsWith(DefaultPrcRoot, StringComparison.OrdinalIgnoreCase))
+                else if (relative.StartsWith(AppConfig.PrcRootDirectory, StringComparison.OrdinalIgnoreCase))
                 {
-                    relative = relative.Substring(DefaultPrcRoot.Length);
+                    relative = relative.Substring(AppConfig.PrcRootDirectory.Length);
                 }
                 else
                 {
@@ -1131,7 +1610,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
 
             relative = relative.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            string fallback = Path.Combine(DefaultPrcRoot, relative);
+            string fallback = Path.Combine(AppConfig.PrcRootDirectory, relative);
             string fallbackFull = Path.GetFullPath(fallback);
             if (File.Exists(fallbackFull))
             {
@@ -1145,9 +1624,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         private static string ResolvePrcDirectory()
         {
-            if (Directory.Exists(DefaultPrcRoot))
+            if (Directory.Exists(AppConfig.PrcRootDirectory))
             {
-                return DefaultPrcRoot;
+                return AppConfig.PrcRootDirectory;
             }
 
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -1163,8 +1642,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return relative;
             }
 
-            AppLogger.Log($"DentalAddin: PRC 디렉터리를 찾을 수 없어 기본 경로 사용 - {DefaultPrcRoot}");
-            return DefaultPrcRoot;
+            AppLogger.Log($"DentalAddin: PRC 디렉터리를 찾을 수 없어 기본 경로 사용 - {AppConfig.PrcRootDirectory}");
+            return AppConfig.PrcRootDirectory;
         }
 
         private static Type ResolveMainModuleType()
@@ -1456,6 +1935,73 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        private void ApplyAdditionalStlShift(Document document, Type mainModuleType, double deltaX)
+        {
+            if (document == null || deltaX <= 0)
+            {
+                return;
+            }
+
+            try
+            {
+                const string selectionName = "StlProcessorShift";
+                SelectionSet selectionSet = GetOrCreateSelectionSet(document, selectionName);
+                if (selectionSet == null)
+                {
+                    AppLogger.Log("DentalAddin: 추가 이동 SelectionSet 생성 실패");
+                    return;
+                }
+
+                selectionSet.RemoveAll();
+
+                foreach (GraphicObject graphic in document.GraphicsCollection)
+                {
+                    if (graphic?.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                    {
+                        selectionSet.Add(graphic, Missing.Value);
+                    }
+                }
+
+                if (selectionSet.Count == 0)
+                {
+                    AppLogger.Log("DentalAddin: 추가 X 이동 대상 STL 없음");
+                    return;
+                }
+
+                selectionSet.Translate(deltaX, 0.0, 0.0, Missing.Value);
+                selectionSet.RemoveAll();
+
+                Type moveModuleType = ResolveMoveModuleType(mainModuleType);
+                if (moveModuleType == null)
+                {
+                    AppLogger.Log("DentalAddin: 추가 이동 후 MoveSTL_Module 타입을 찾을 수 없습니다.");
+                    return;
+                }
+
+                double? originalFront = TryGetMoveModuleDouble("FrontPointX");
+                double? originalBack = TryGetMoveModuleDouble("BackPointX");
+
+                double? updatedFront = originalFront.HasValue ? originalFront + deltaX : (double?)null;
+                double? updatedBack = originalBack.HasValue ? originalBack + deltaX : (double?)null;
+
+                if (updatedFront.HasValue)
+                {
+                    SetStaticField(moveModuleType, "FrontPointX", updatedFront.Value);
+                }
+
+                if (updatedBack.HasValue)
+                {
+                    SetStaticField(moveModuleType, "BackPointX", updatedBack.Value);
+                }
+
+                AppLogger.Log($"DentalAddin: STL 추가 X 이동 dX:{deltaX:F3}, FrontPointX:{FormatNcNumber(updatedFront)}, BackPointX:{FormatNcNumber(updatedBack)}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: STL 추가 이동 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
         private static bool TryInvokeModuleMethod(Type moduleType, string methodName, params object[] args)
         {
             MethodInfo method = moduleType?.GetMethod(methodName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
@@ -1484,11 +2030,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             SetStaticProperty(mainModuleType, "EspritApp", _espApp);
         }
 
-        private void UpdateLatheBarDiameter(Document document, string stlPath)
+        private void UpdateLatheBarDiameter(Document document, string stlPath, double initialBarDiameter)
         {
             try
             {
-                double diameter = ResolveBarDiameter(document, stlPath);
+                double diameter = initialBarDiameter > 0 ? initialBarDiameter : ResolveBarDiameter(document, stlPath);
                 if (diameter <= 0)
                 {
                     diameter = 6.0;
@@ -1534,6 +2080,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             SetStaticField(moveModuleType, "NeedMoveZ", 0.0);
 
             AppLogger.Log($"DentalAddin: MoveSTL 초기화 - MTI:{mtiDefault}({mtiSet}), Front:{DefaultFrontLimitX}({frontSet}), Back:{DefaultBackLimitX}({backSet}), BarDia:{barDiameter}");
+        }
+
+        private static void ApplyTurningParameters(Type mainModuleType)
+        {
+            if (mainModuleType == null)
+            {
+                return;
+            }
+
+            SetStaticField(mainModuleType, "TurningDepth", AppConfig.TurningDepth);
+            SetStaticField(mainModuleType, "TurningExtend", AppConfig.TurningExtend);
+            SetStaticField(mainModuleType, "Chamfer", AppConfig.ExitAngle);
+            SetStaticField(mainModuleType, "AngleNumber", AppConfig.ExitAngle);
+            AppLogger.Log($"DentalAddin: Turning 파라미터 설정 - Depth:{AppConfig.TurningDepth}, Extend:{AppConfig.TurningExtend}, Angle:{AppConfig.ExitAngle}");
         }
 
         private static Type ResolveMoveModuleType(Type mainModuleType)

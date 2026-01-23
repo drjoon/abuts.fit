@@ -1,3 +1,4 @@
+using Abuts.EspritAddIns.ESPRIT2025AddinProject;
 using Esprit;
 using EspritConstants;
 using EspritFeatures;
@@ -261,6 +262,114 @@ namespace DentalAddin
                 }
             }
             return true;
+        }
+
+        private static Plane GetOrCreatePlane(string name, params string[] alternateNames)
+        {
+            if (string.IsNullOrWhiteSpace(name) || Document?.Planes == null)
+            {
+                return null;
+            }
+
+            Plane TryFindPlane(string planeName)
+            {
+                if (string.IsNullOrWhiteSpace(planeName))
+                {
+                    return null;
+                }
+
+                try
+                {
+                    Plane direct = Document.Planes[planeName];
+                    if (direct != null)
+                    {
+                        return direct;
+                    }
+                }
+                catch
+                {
+                }
+
+                int count = Document.Planes.Count;
+                for (int i = 1; i <= count; i++)
+                {
+                    Plane candidate = Document.Planes[i];
+                    if (candidate != null && Operators.CompareString(candidate.Name, planeName, false) == 0)
+                    {
+                        return candidate;
+                    }
+                }
+
+                return null;
+            }
+
+            Plane plane = TryFindPlane(name);
+            if (plane != null)
+            {
+                return plane;
+            }
+
+            if (alternateNames != null)
+            {
+                foreach (string alt in alternateNames)
+                {
+                    plane = TryFindPlane(alt);
+                    if (plane != null)
+                    {
+                        return plane;
+                    }
+                }
+            }
+
+            try
+            {
+                return Document.Planes.Add(name);
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"PlaneHelper: '{name}' 평면 생성 실패 - {ex.Message}");
+                return null;
+            }
+        }
+
+        private static Layer GetOrCreateLayer(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || Document?.Layers == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                Layer direct = Document.Layers[name];
+                if (direct != null)
+                {
+                    return direct;
+                }
+            }
+            catch
+            {
+            }
+
+            int count = Document.Layers.Count;
+            for (int i = 1; i <= count; i++)
+            {
+                Layer candidate = Document.Layers[i];
+                if (candidate != null && Operators.CompareString(candidate.Name, name, false) == 0)
+                {
+                    return candidate;
+                }
+            }
+
+            try
+            {
+                return Document.Layers.Add(name);
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"LayerHelper: '{name}' 레이어 생성 실패 - {ex.Message}");
+                return null;
+            }
         }
 
         private static void LogFreeFormFeatureSummary(string context, params string[] targetNames)
@@ -1540,17 +1649,12 @@ namespace DentalAddin
                 Plane plane;
                 if (RoughType == 2.0)
                 {
-                    int count = Document.Planes.Count;
-                    for (int i = 1; i <= count; i++)
+                    plane = GetOrCreatePlane("Rough180Degree");
+                    if (plane == null)
                     {
-                        plane = Document.Planes[i];
-                        if (Operators.CompareString(plane.Name, "Rough180Degree", false) == 0)
-                        {
-                            Document.Planes.Remove(i);
-                            break;
-                        }
+                        DentalLogger.Log("Roughworkplane: Rough180Degree plane 생성 실패");
+                        return;
                     }
-                    plane = Document.Planes.Add("Rough180Degree");
                     Plane plane2 = plane;
                     plane2.X = 0.0;
                     plane2.Y = 0.0;
@@ -1586,17 +1690,12 @@ namespace DentalAddin
                 FreeFormFeature freeFormFeature3 = Document.FreeFormFeatures.Add();
                 freeFormFeature3.Name = "3DRoughMilling_0Degree";
                 freeFormFeature3.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-                int count2 = Document.Planes.Count;
-                for (int i = 1; i <= count2; i++)
+                plane = GetOrCreatePlane("Rough120Degree");
+                if (plane == null)
                 {
-                    plane = Document.Planes[i];
-                    if (Operators.CompareString(plane.Name, "Rough120Degree", false) == 0)
-                    {
-                        Document.Planes.Remove(i);
-                        break;
-                    }
+                    DentalLogger.Log("Roughworkplane: Rough120Degree plane 생성 실패");
+                    return;
                 }
-                plane = Document.Planes.Add("Rough120Degree");
                 Plane plane3 = plane;
                 plane3.X = 0.0;
                 plane3.Y = 0.0;
@@ -1615,17 +1714,12 @@ namespace DentalAddin
                 FreeFormFeature freeFormFeature4 = Document.FreeFormFeatures.Add();
                 freeFormFeature4.Name = "3DRoughMilling_120Degree";
                 freeFormFeature4.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-                int count3 = Document.Planes.Count;
-                for (int i = 1; i <= count3; i++)
+                plane = GetOrCreatePlane("Rough240Degree");
+                if (plane == null)
                 {
-                    plane = Document.Planes[i];
-                    if (Operators.CompareString(plane.Name, "Rough240Degree", false) == 0)
-                    {
-                        Document.Planes.Remove(i);
-                        break;
-                    }
+                    DentalLogger.Log("Roughworkplane: Rough240Degree plane 생성 실패");
+                    return;
                 }
-                plane = Document.Planes.Add("Rough240Degree");
                 Plane plane4 = plane;
                 plane4.X = 0.0;
                 plane4.Y = 0.0;
@@ -1681,18 +1775,12 @@ namespace DentalAddin
                                     {
                                         (enumerator as IDisposable)?.Dispose();
                                     }
-                                    int count = Document.Planes.Count;
-                                    Plane plane;
-                                    for (int i = 1; i <= count; i++)
+                                    Plane plane = GetOrCreatePlane("180", "180Degree");
+                                    if (plane == null)
                                     {
-                                        plane = Document.Planes[i];
-                                        if (Operators.CompareString(plane.Name, "180Degree", false) == 0)
-                                        {
-                                            Document.Planes.Remove(i);
-                                            break;
-                                        }
+                                        DentalLogger.Log("WorkPlane: 180 plane 확보 실패");
+                                        return;
                                     }
-                                    plane = Document.Planes.Add("180");
                                     Plane plane2 = plane;
                                     plane2.X = 0.0;
                                     plane2.Y = 0.0;
@@ -1713,17 +1801,12 @@ namespace DentalAddin
                                     FreeFormFeature freeFormFeature = Document.FreeFormFeatures.Add();
                                     freeFormFeature.Name = "3DMilling_180Degree";
                                     freeFormFeature.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-                                    int count2 = Document.Planes.Count;
-                                    for (int i = 1; i <= count2; i++)
+                                    plane = GetOrCreatePlane("270", "270Degree");
+                                    if (plane == null)
                                     {
-                                        plane = Document.Planes[i];
-                                        if (Operators.CompareString(plane.Name, "270Degree", false) == 0)
-                                        {
-                                            Document.Planes.Remove(i);
-                                            break;
-                                        }
+                                        DentalLogger.Log("WorkPlane: 270 plane 확보 실패");
+                                        return;
                                     }
-                                    plane = Document.Planes.Add("270");
                                     Plane plane3 = plane;
                                     plane3.X = 0.0;
                                     plane3.Y = 0.0;
@@ -1747,7 +1830,12 @@ namespace DentalAddin
                                     FreeFormFeature freeFormFeature3 = Document.FreeFormFeatures.Add();
                                     freeFormFeature3.Name = "3DMilling_0Degree";
                                     freeFormFeature3.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-                                    plane = Document.Planes.Add("90");
+                                    plane = GetOrCreatePlane("90");
+                                    if (plane == null)
+                                    {
+                                        DentalLogger.Log("WorkPlane: 90 plane 확보 실패");
+                                        return;
+                                    }
                                     Plane plane4 = plane;
                                     plane4.X = 0.0;
                                     plane4.Y = 0.0;
@@ -1766,7 +1854,12 @@ namespace DentalAddin
                                     FreeFormFeature freeFormFeature4 = Document.FreeFormFeatures.Add();
                                     freeFormFeature4.Name = "3DMilling_90Degree";
                                     freeFormFeature4.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-                                    plane = Document.Planes.Add("Face");
+                                    plane = GetOrCreatePlane("Face");
+                                    if (plane == null)
+                                    {
+                                        DentalLogger.Log("WorkPlane: Face plane 확보 실패");
+                                        return;
+                                    }
                                     Plane plane5 = plane;
                                     plane5.X = 0.0;
                                     plane5.Y = 0.0;
@@ -2588,7 +2681,12 @@ namespace DentalAddin
                                 goto IL_016e;
                             IL_016e:
                                 num2 = 21;
-                                activeLayer = Document.Layers.Add("RoughFreeFormMill");
+                                activeLayer = GetOrCreateLayer("RoughFreeFormMill");
+                                if (activeLayer == null)
+                                {
+                                    DentalLogger.Log("RoughFreeFromMill: 'RoughFreeFormMill' 레이어 확보 실패");
+                                    return;
+                                }
                                 goto IL_0187;
                             IL_0187:
                                 num2 = 22;
@@ -4236,8 +4334,9 @@ namespace DentalAddin
             TechLatheMill5xComposite techLatheMill5xComposite = (TechLatheMill5xComposite)array[0];
             techLatheMill5xComposite.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
 
-            const double leftRatio = 0.05; // 5%
-            const double rightRatio = 0.55; // 55%
+            const double leftRatio = AppConfig.DefaultLeftRatio;
+            double rightRatio = (MoveSTL_Module.BackPointX + AppConfig.DefaultRightRatioOffset) / 20.0;
+            rightRatio = Clamp(rightRatio, leftRatio, 1.0);
             double span = MoveSTL_Module.BackPointX - MoveSTL_Module.FrontPointX;
             double absSpan = Math.Abs(span);
             double direction = span >= 0 ? 1.0 : -1.0;

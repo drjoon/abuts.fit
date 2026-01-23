@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<UserData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <PrcFileName>
+    <string xsi:nil="true" />
+    <string>Turning.prc</string>
+    <string>Reverse Turning Process.prc</string>
+    <string>MillRough_3D.prc</string>
+    <string>네오_R_Connection_H.prc</string>
+    <string>FACE.prc</string>
+    <string>3D.prc</string>
+    <string>3D_2.prc</string>
+    <string>네오_R_Connection.prc</string>
+    <string>SemiRough_2D.prc</string>
+    <string>5axisComposite.prc</string>
+    <string>5axisComposite.prc</string>
+    <string>MarkText.prc</string>
+  </PrcFileName>
+  <PrcFilePath>
+    <string xsi:nil="true" />
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\3_Turning prc\Turning.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\4_ReverseTurning prc\Reverse Turning Process.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\5_Rough prc\MillRough_3D.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\1_Face Hole\\\\\\네오_R_Connection_H.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\7_FrontFace prc\FACE.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\8_0-180 prc\3D.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\9_90-270 prc\3D_2.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\2_Connection\\\\\\네오_R_Connection.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\6_Semi_Rough prc\SemiRough_2D.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\12_MarginComposite prc\5axisComposite.prc</string>
+    <string>C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\10_MarkText prc\MarkText.prc</string>
+  </PrcFilePath>
+  <NumData>
+    <double>0</double>
+    <double>45</double> # Exit angle
+    <double>1</double> # Front Mill Depth
+    <double>1</double> # Turning Depth
+    <double>3</double> 
+    <double>2</double> # Turning Extend
+    <double>1.5</double> # Rough Mill Step
+    <double>5</double>
+  </NumData>
+  <NumCombobox>
+    <int>0</int>
+    <int>1</int> # Finishing Method = ['3d Milling','4 axis Milling']
+    <int>0</int>
+    <int>0</int>
+    <int>0</int> # reverse Turning: 1이면 크래시
+    <int>3</int>
+    <int>1</int> # Rough Method = ['FlatEndMillRough','BallEndMillRough2Position','BallEndMillRough3Position']
+  </NumCombobox>
+  <PrcDirectory>C:\abuts.fit\bg\esprit-addin\AcroDent</PrcDirectory>
+  <LockSetting>false</LockSetting>
+</UserData>

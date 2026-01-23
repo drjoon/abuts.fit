@@ -141,7 +141,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
     :M93001
     :
     :(Tool/Offset)
-    :(T01:CUT[KY-L/T2.0]WZ-0.4/GZ12.0)
+    :(T01:CUT[UT-L/T1.5]WZ-0.4/GZ12.0)
     :(T02:Turn[KY-R/NR0.4])
     :(T03:B-Turn[KY-R/NR0.05]WZ-0.4/GZ3.7)
     :(T06:HEX[EM*D1.5]WX-0.3/WZ-0.4/GZ10.9)
@@ -149,8 +149,8 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
     :(T08:Rough[Ball D4.0]WX-0.3/WZ-0.4/GX5.0/GZ10.9)
     :(T09:Engraving[D2.0*A90]WX-0.3/WZ-0.4/GZ15.86)
     :(T41:C-drill[D5.0*A90]WZ-0.4)
-    :(T45:S-drill[D2.015*L5.0/D2.35]WZ-0.4)
-    :(T48:Finish[Ball D2.0]WZ-0.4/GZ11.0)
+    :(T45:S-drill[D2.015*L4.8/D2.35]WZ-0.4)
+    :(T48:Finish[Ball D2.0]WZ-0.4/GZ4.0)
     :(T21:Shuter[D6.0])
     :
     :M8
@@ -162,7 +162,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
     :M11
     :G4U0.3
     :G300X-2.0Z40.0T0131
-		:G150Z9.5
+		:G150Z9.67
 		:M8
 		:M10
 		:G4U0.3
@@ -189,8 +189,8 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
 		:T4141 (D6.0*A90)
 		:M3 S3000
 		:G99 G0 X0.0 Z-1.5
-    :G1 Z-0.5 F0.1
-		:G1 Z1.288 F0.015
+    :G1 Z[#523-0.5] F0.1
+		:G1 Z[#523+1.288] F0.015
 		:G4 U0.5
 		:G0 Z-1.5
 		:G0 T0
@@ -203,7 +203,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
 		:M3 S3000
 		:G99 G0 X0.0 Z-1.5
 		:G1 Z-0.5 F0.1
-		:G83 Z[#520+3.8] Q500 P5 F0.02
+		:G83 Z[#520+#523+3.6] Q350 P5 F0.025
     :G80
 		:G0 Z-1.5
     :G0 T0

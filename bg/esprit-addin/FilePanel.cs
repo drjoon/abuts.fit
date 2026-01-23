@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
 
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 {
@@ -44,7 +45,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             this.Name = "FilePanel";
             this.Padding = new System.Windows.Forms.Padding(0);
             this.Size = new System.Drawing.Size(340, 130);
-            this.listBoxFiles.Click += new System.EventHandler(this.ListBoxFiles_Click);
+            this.listBoxFiles.DoubleClick += new System.EventHandler(this.ListBoxFiles_DoubleClick);
+            this.listBoxFiles.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ListBoxFiles_KeyDown);
             this.listBoxFiles.MeasureItem += new System.Windows.Forms.MeasureItemEventHandler(this.ListBoxFiles_MeasureItem);
             this.listBoxFiles.DrawItem += new System.Windows.Forms.DrawItemEventHandler(this.ListBoxFiles_DrawItem);
             this.ResumeLayout(false);
@@ -91,9 +93,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             e.DrawFocusRectangle();
         }
 
-        private void ListBoxFiles_Click(object sender, EventArgs e)
+        private void ListBoxFiles_DoubleClick(object sender, EventArgs e)
         {
             OpenSelectedFile();
+        }
+
+        private void ListBoxFiles_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Enter)
+            {
+                return;
+            }
+
+            OpenSelectedFile();
+            e.Handled = true; // 키보드 Enter 지원
         }
 
         private void OpenSelectedFile()
@@ -110,6 +123,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return;
             }
 
+            AppLogger.Log($"FilePanel: {fullPath}");
             FileSelected?.Invoke(fullPath);
         }
 

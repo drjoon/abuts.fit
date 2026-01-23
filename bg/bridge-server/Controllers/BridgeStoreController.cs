@@ -12,10 +12,7 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/bridge-store")]
     public class BridgeStoreController : ApiController
     {
-        // TODO: 실제 환경에 맞춰 경로 수정
-        private static readonly string RootPath =
-            Environment.GetEnvironmentVariable("BRIDGE_STORE_ROOT")
-            ?? @"C:\CNCStore";
+        private static readonly string RootPath = Config.BridgeStoreRoot;
 
         /// <summary>
         /// 파일명 또는 프로그램 번호를 O#### 형식으로 정규화합니다.

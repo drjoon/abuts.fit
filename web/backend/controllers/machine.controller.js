@@ -110,7 +110,7 @@ export async function getMachineStatusProxy(req, res) {
     if (!ensureBridgeConfigured(res)) return;
     const response = await fetch(
       `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/status`,
-      { headers: withBridgeHeaders() }
+      { headers: withBridgeHeaders() },
     );
     const data = await response.json().catch(() => ({}));
     res.status(response.status).json(data);
@@ -177,9 +177,40 @@ async function sendControl(uid, action, res) {
   lastControlCall.set(key, now);
 
   try {
+    const isStart = action === "start";
+    const isStop = action === "stop";
+    const shouldSendBody = isStart || isStop;
+
+    const ioUidDefault = isStart ? 61 : isStop ? 62 : null;
+    const panelTypeDefault = 0;
+    const statusDefault = 1;
+
+    const bodyForBridge = shouldSendBody
+      ? {
+          ioUid:
+            typeof res.req?.body?.ioUid === "number"
+              ? res.req.body.ioUid
+              : ioUidDefault,
+          panelType:
+            typeof res.req?.body?.panelType === "number"
+              ? res.req.body.panelType
+              : panelTypeDefault,
+          status:
+            typeof res.req?.body?.status === "number"
+              ? res.req.body.status
+              : statusDefault,
+        }
+      : null;
+
     const response = await fetch(
       `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/${action}`,
-      { method: "POST", headers: withBridgeHeaders() }
+      {
+        method: "POST",
+        headers: withBridgeHeaders(
+          shouldSendBody ? { "Content-Type": "application/json" } : {},
+        ),
+        body: shouldSendBody ? JSON.stringify(bodyForBridge) : undefined,
+      },
     );
     const data = await response.json().catch(() => ({}));
     res.status(response.status).json(data);
@@ -196,9 +227,19 @@ export async function resetMachineProxy(req, res) {
   await sendControl(req.params.uid, "reset", res);
 }
 
+// POST /api/machines/:uid/alarm/clear - 알람 해제(Reset 기반) 프록시
+export async function clearMachineAlarmProxy(req, res) {
+  await sendControl(req.params.uid, "reset", res);
+}
+
 // POST /api/machines/:uid/start - 가공 시작 제어 명령 프록시
 export async function startMachineProxy(req, res) {
   await sendControl(req.params.uid, "start", res);
+}
+
+// POST /api/machines/:uid/stop - 가공 중단 제어 명령 프록시
+export async function stopMachineProxy(req, res) {
+  await sendControl(req.params.uid, "stop", res);
 }
 
 export async function callRawProxy(req, res) {
@@ -239,14 +280,14 @@ export async function callRawProxy(req, res) {
               uid: uid || null,
               dataType,
               payload: payloadPreview,
-            })
+            }),
           );
         } catch (e) {
           console.warn(
             "[machine.callRawProxy] rate-limited READ (log error)",
             uid || null,
             dataType,
-            e
+            e,
           );
         }
 
@@ -319,15 +360,15 @@ export async function upsertMachine(req, res) {
       name: displayName,
       allowJobStart: normalizeBool(
         allowJobStart,
-        existing?.allowJobStart ?? true
+        existing?.allowJobStart ?? true,
       ),
       allowProgramDelete: normalizeBool(
         allowProgramDelete,
-        existing?.allowProgramDelete ?? false
+        existing?.allowProgramDelete ?? false,
       ),
       allowAutoMachining: normalizeBool(
         allowAutoMachining,
-        existing?.allowAutoMachining ?? false
+        existing?.allowAutoMachining ?? false,
       ),
       // 개발 단계에서는 인증이 없을 수 있으므로 manufacturer는 선택적으로 저장
       ...(req.user && { manufacturer: req.user._id }),
@@ -337,7 +378,7 @@ export async function upsertMachine(req, res) {
     const machine = await Machine.findOneAndUpdate(
       { uid: finalUid },
       { $set: update },
-      { new: true, upsert: true }
+      { new: true, upsert: true },
     );
 
     // hi-link 브리지에도 장비 정보를 등록 시도 (실패하더라도 DB 저장 결과는 그대로 반환)
@@ -375,7 +416,7 @@ export async function upsertMachine(req, res) {
             method: "PUT",
             headers: withBridgeHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ uid: finalUid, ip, port }),
-          }
+          },
         );
       } catch (cfgError) {
         console.warn("bridge-node config upsert error", cfgError);
@@ -422,9 +463,9 @@ export async function deleteMachine(req, res) {
       try {
         await fetch(
           `${BRIDGE_BASE}/api/bridge-config/machines/${encodeURIComponent(
-            uid
+            uid,
           )}`,
-          { method: "DELETE", headers: withBridgeHeaders() }
+          { method: "DELETE", headers: withBridgeHeaders() },
         );
       } catch (cfgError) {
         console.warn("bridge-node config delete error", cfgError);

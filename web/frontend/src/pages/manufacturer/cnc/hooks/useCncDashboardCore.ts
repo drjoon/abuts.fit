@@ -35,8 +35,8 @@ export const useCncDashboardCore = ({
           typeof data?.result === "number"
             ? data.result
             : typeof res?.result === "number"
-            ? res.result
-            : null;
+              ? res.result
+              : null;
 
         let status = "Unknown";
         if (typeof resultCode === "number") {
@@ -53,7 +53,7 @@ export const useCncDashboardCore = ({
                   lastCommand: "status",
                   lastError: null,
                 }
-              : m
+              : m,
           );
         });
       } catch (e: any) {
@@ -63,16 +63,16 @@ export const useCncDashboardCore = ({
           prev.map((m) =>
             m.uid === uid
               ? { ...m, lastCommand: "status", lastError: message }
-              : m
-          )
+              : m,
+          ),
         );
       }
     },
-    [callRaw, setMachines, setError]
+    [callRaw, setMachines, setError],
   );
 
   const sendControlCommand = useCallback(
-    async (uid: string, action: "reset") => {
+    async (uid: string, action: "reset" | "start" | "stop") => {
       const ok = await ensureCncWriteAllowed();
       if (!ok) return;
 
@@ -87,10 +87,18 @@ export const useCncDashboardCore = ({
       setLoading(true);
       setError(null);
       try {
+        const jsonBody =
+          action === "start"
+            ? { ioUid: 61, panelType: 0, status: 1 }
+            : action === "stop"
+              ? { ioUid: 62, panelType: 0, status: 1 }
+              : undefined;
+
         const res = await apiFetch({
           path: `/api/machines/${encodeURIComponent(uid)}/${action}`,
           method: "POST",
           token,
+          jsonBody,
         });
         if (!res.ok) {
           throw new Error(`${action} 실패`);
@@ -103,14 +111,21 @@ export const useCncDashboardCore = ({
           prev.map((m) =>
             m.uid === uid
               ? { ...m, lastCommand: action, lastError: message }
-              : m
-          )
+              : m,
+          ),
         );
       } finally {
         setLoading(false);
       }
     },
-    [ensureCncWriteAllowed, refreshStatusFor, setError, setLoading, setMachines]
+    [
+      ensureCncWriteAllowed,
+      refreshStatusFor,
+      setError,
+      setLoading,
+      setMachines,
+      token,
+    ],
   );
 
   const handleBackgroundRefresh = useCallback(() => {

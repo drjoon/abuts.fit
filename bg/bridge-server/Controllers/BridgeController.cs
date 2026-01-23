@@ -280,7 +280,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             short ioUid = req?.ioUid ?? 61;
             short panelType = req?.panelType ?? 0;
-            bool status = req?.status == 1;
+            bool status = req?.status == null || req?.status == 1;
 
             if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, status, out var error))
             {
@@ -297,6 +297,82 @@ namespace HiLinkBridgeWebApi48.Controllers
                 message = "Start signal sent",
                 ioUid,
                 status
+            });
+        }
+
+        // POST /machines/{machineId}/reset
+        [HttpPost]
+        [Route("machines/{machineId}/reset")]
+        public HttpResponseMessage MachineReset(string machineId)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var cooldownKey = $"reset:{machineId}";
+            if (IsControlOnCooldown(cooldownKey))
+            {
+                return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
+            }
+
+            if (!Mode1Api.TrySetMachineReset(machineId, out var error))
+            {
+                return Request.CreateResponse((HttpStatusCode)500, new
+                {
+                    success = false,
+                    message = error ?? "SetMachineReset failed"
+                });
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                message = "Machine reset requested"
+            });
+        }
+
+        public class MachineModeRequest
+        {
+            public string mode { get; set; }
+        }
+
+        // POST /machines/{machineId}/mode
+        [HttpPost]
+        [Route("machines/{machineId}/mode")]
+        public HttpResponseMessage MachineMode(string machineId, [FromBody] MachineModeRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var mode = (req?.mode ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(mode))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "mode is required (EDIT/AUTO)" });
+            }
+
+            var cooldownKey = $"mode:{machineId}:{mode.ToUpperInvariant()}";
+            if (IsControlOnCooldown(cooldownKey))
+            {
+                return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
+            }
+
+            if (!Mode1Api.TrySetMachineMode(machineId, mode, out var error))
+            {
+                return Request.CreateResponse((HttpStatusCode)500, new
+                {
+                    success = false,
+                    message = error ?? "SetMachineMode failed"
+                });
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                message = "Mode switched",
+                mode = mode.ToUpperInvariant()
             });
         }
 
@@ -362,7 +438,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             short ioUid = req?.ioUid ?? 62;
             short panelType = req?.panelType ?? 0;
-            bool status = req?.status == 1;
+            bool status = req?.status == null || req?.status == 1;
 
             if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, status, out var error))
             {
@@ -477,6 +553,54 @@ namespace HiLinkBridgeWebApi48.Controllers
         {
             public short? headType { get; set; }
             public short? programNo { get; set; }
+        }
+
+        public class DeleteProgramRequest
+        {
+            public short? headType { get; set; }
+            public short? programNo { get; set; }
+        }
+
+        // POST /machines/{machineId}/programs/delete (Mode1)
+        [HttpPost]
+        [Route("machines/{machineId}/programs/delete")]
+        public HttpResponseMessage DeleteProgram(string machineId, [FromBody] DeleteProgramRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var headType = req?.headType ?? (short)0;
+            var programNo = req?.programNo ?? (short)0;
+            if (programNo <= 0)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "programNo is required" });
+            }
+
+            var cooldownKey = $"deleteProgram:{machineId}:{headType}:{programNo}";
+            if (IsControlOnCooldown(cooldownKey))
+            {
+                return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
+            }
+
+            if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, programNo, out var activateProgNum, out var error))
+            {
+                return Request.CreateResponse((HttpStatusCode)500, new
+                {
+                    success = false,
+                    message = error ?? "DeleteMachineProgramInfo failed"
+                });
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                message = "Program deleted",
+                headType,
+                programNo,
+                activateProgNum
+            });
         }
 
         // POST /machines/{machineId}/programs/activate (Mode1)

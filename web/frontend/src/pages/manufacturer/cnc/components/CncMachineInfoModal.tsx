@@ -4,6 +4,7 @@ interface CncMachineInfoModalProps {
   open: boolean;
   loading: boolean;
   error: string | null;
+  clearing?: boolean;
   programInfo: {
     mainProgramName?: string | null;
     mainProgramComment?: string | null;
@@ -11,6 +12,7 @@ interface CncMachineInfoModalProps {
     subProgramComment?: string | null;
   } | null;
   alarms: { type: number; no: number }[];
+  onClearAlarms?: () => void;
   onRequestClose: () => void;
 }
 
@@ -18,8 +20,10 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
   open,
   loading,
   error,
+  clearing,
   programInfo,
   alarms,
+  onClearAlarms,
   onRequestClose,
 }) => {
   if (!open) return null;
@@ -101,6 +105,19 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
                           {String(a.type)}-{String(a.no)}
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {alarms.length > 0 && onClearAlarms && (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        disabled={!!clearing}
+                        onClick={onClearAlarms}
+                        className="inline-flex h-9 items-center justify-center rounded-md bg-red-600 px-4 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {clearing ? "해제 중..." : "알람 해제"}
+                      </button>
                     </div>
                   )}
                 </div>

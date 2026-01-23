@@ -31,10 +31,7 @@ namespace HiLinkBridgeWebApi48
 
         private static string GetBackendBase()
         {
-            // 예: https://abuts.fit/api
-            var env = (Environment.GetEnvironmentVariable("BACKEND_BASE") ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(env)) return env.TrimEnd('/');
-            return "https://abuts.fit/api";
+            return Config.BackendBase;
         }
 
         private static string GetBackendJwt()
@@ -44,17 +41,12 @@ namespace HiLinkBridgeWebApi48
 
         private static string GetBridgeBase()
         {
-            // 브리지 서버 내부에서 자기 자신을 호출할 때 사용하는 base
-            // (웹 백엔드가 브리지로 접근할 때 쓰는 BRIDGE_BASE와 혼동 방지)
-            var env = (Environment.GetEnvironmentVariable("BRIDGE_SELF_BASE") ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(env)) return env.TrimEnd('/');
-            // 자기 자신
-            return "http://localhost:8002";
+            return Config.BridgeSelfBase;
         }
 
         private static string GetBridgeSecret()
         {
-            return (Environment.GetEnvironmentVariable("BRIDGE_SHARED_SECRET") ?? string.Empty).Trim();
+            return Config.BridgeSharedSecret;
         }
 
         private static TimeZoneInfo GetKstTimeZone()
@@ -111,8 +103,7 @@ namespace HiLinkBridgeWebApi48
         {
             if (_timer != null) return;
 
-            var enabled = (Environment.GetEnvironmentVariable("DUMMY_CNC_SCHEDULER_ENABLED") ?? string.Empty).Trim();
-            if (string.Equals(enabled, "false", StringComparison.OrdinalIgnoreCase))
+            if (!Config.DummyCncSchedulerEnabled)
             {
                 Console.WriteLine("[DummyCncScheduler] disabled by DUMMY_CNC_SCHEDULER_ENABLED=false");
                 return;

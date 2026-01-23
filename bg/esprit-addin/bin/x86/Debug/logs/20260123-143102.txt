@@ -1,0 +1,11 @@
+==== Trace started at 2026-01-23T14:31:02.6189719+09:00 ====
+FilePanel: C:\abuts.fit\bg\storage\2-filled\20260123-AEBMNZPL-향기로운치과-구자일-44.filled.stl
+StlFileProcessor: request-meta GET https://abuts.fit/api/bg/request-meta?requestId=20260123-AEBMNZPL (X-Bridge-Secret set=True)
+StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260123-AEBMNZPL","lotNumber":{"part":"CAP260123-AAG"},"caseInfos":{"clinicName":"향기로운치과","patientName":"구자일","tooth":"44","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":5.7,"connectionDiameter":3.3,"workType":"abutment","lotNumber":"CAP260123-AAG"}},"message":"Request meta","success":true}
+StlFileProcessor: request-meta loaded requestId=20260123-AEBMNZPL, Clinic=향기로운치과, Patient=구자일, Tooth=44, Implant=OSSTEM/Regular/Hex, MaxDia=5.7, ConnDia=3.3, WorkType=abutment, Lot=CAP260123-AAG
+StlFileProcessor: BarDiameter 설정 - 6.000 (STL:20260123-AEBMNZPL-향기로운치과-구자일-44.filled.stl)
+FilePanel: C:\abuts.fit\bg\storage\2-filled\20260123-AEBMNZPL-향기로운치과-구자일-44.filled.stl
+StlFileProcessor: request-meta GET https://abuts.fit/api/bg/request-meta?requestId=20260123-AEBMNZPL (X-Bridge-Secret set=True)
+StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260123-AEBMNZPL","lotNumber":{"part":"CAP260123-AAG"},"caseInfos":{"clinicName":"향기로운치과","patientName":"구자일","tooth":"44","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":5.7,"connectionDiameter":3.3,"workType":"abutment","lotNumber":"CAP260123-AAG"}},"message":"Request meta","success":true}
+StlFileProcessor: request-meta loaded requestId=20260123-AEBMNZPL, Clinic=향기로운치과, Patient=구자일, Tooth=44, Implant=OSSTEM/Regular/Hex, MaxDia=5.7, ConnDia=3.3, WorkType=abutment, Lot=CAP260123-AAG
+StlFileProcessor: BarDiameter 설정 - 6.000 (STL:20260123-AEBMNZPL-향기로운치과-구자일-44.filled.stl)

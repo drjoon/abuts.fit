@@ -13,6 +13,7 @@ namespace DentalAddin;
 [StandardModule]
 internal sealed class TurningFeature_Module
 {
+	private const int FeatureSlotCapacity = 128;
 	private static double TurnMaxAngle;
 
 	public static void TurningMain()
@@ -683,7 +684,7 @@ internal sealed class TurningFeature_Module
 					{
 					default:
 						num2 = 1;
-						array = new FeatureChain[13];
+						array = new FeatureChain[FeatureSlotCapacity];
 						goto IL_000a;
 					case 2176:
 						{
@@ -926,7 +927,7 @@ internal sealed class TurningFeature_Module
 						goto IL_01bb;
 						IL_000a:
 						num2 = 2;
-						array2 = new FeatureChain[13];
+						array2 = new FeatureChain[FeatureSlotCapacity];
 						goto IL_0015;
 						IL_0015:
 						num2 = 3;
@@ -1095,6 +1096,11 @@ internal sealed class TurningFeature_Module
 						goto IL_030e;
 						IL_030e:
 						num2 = 63;
+						if (featureChain2 == null)
+						{
+							DentalLogger.Log("FeatureExchange: featureChain2 null - Reverse 생략");
+							goto IL_068f;
+						}
 						featureChain2.Reverse();
 						goto IL_0318;
 						IL_0318:

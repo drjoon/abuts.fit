@@ -357,6 +357,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       {
         ok: true,
         requestId: request.requestId,
+        lotNumber: request.lotNumber || null,
         caseInfos: {
           clinicName: ci.clinicName || "",
           patientName: ci.patientName || "",

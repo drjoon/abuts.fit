@@ -22,11 +22,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private Task _processingTask;
 
         // Keep folderPath optional for backward compatibility
-        public RepeatProcess(Esprit.Application app, string folderPath = @"C:\abuts.fit\bg\storage\2-filled", string outputFolder = @"C:\abuts.fit\bg\storage\3-nc")
+        public RepeatProcess(Esprit.Application app, string folderPath = null, string outputFolder = null)
         {
             _espApp = app;
-            _folderPath = folderPath;
-            _outputFolder = outputFolder;
+            _folderPath = string.IsNullOrWhiteSpace(folderPath) ? AppConfig.StorageFilledDirectory : folderPath;
+            _outputFolder = string.IsNullOrWhiteSpace(outputFolder) ? AppConfig.StorageNcDirectory : outputFolder;
         }
         public void ProcessStlFile(string path)
         {

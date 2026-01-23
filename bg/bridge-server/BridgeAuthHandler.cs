@@ -14,8 +14,7 @@ namespace HiLinkBridgeWebApi48
     /// </summary>
     public class BridgeAuthHandler : DelegatingHandler
     {
-        private static readonly string SharedSecret =
-            Environment.GetEnvironmentVariable("BRIDGE_SHARED_SECRET") ?? string.Empty;
+        private static readonly string SharedSecret = Config.BridgeSharedSecret;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

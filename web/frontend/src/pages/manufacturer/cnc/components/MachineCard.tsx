@@ -625,7 +625,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                     );
                   }
 
-                  // 3) 브리지 raw 호출로 프로그램 활성화(UpdateActivateProg)
+                  // 3) 브리지 raw 호출로 프로그램 활성화(SetActivateProgram)
                   const rawRes = await fetch(
                     `/api/machines/${encodeURIComponent(machine.uid)}/raw`,
                     {
@@ -635,8 +635,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                         Authorization: `Bearer ${token}`,
                       },
                       body: JSON.stringify({
-                        dataType: "UpdateActivateProg",
-                        payload: { headType: 0, programNo: progNo },
+                        dataType: "SetActivateProgram",
+                        payload: { headType: 1, programNo: progNo },
                         timeoutMilliseconds: 5000,
                       }),
                     },

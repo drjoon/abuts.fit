@@ -198,7 +198,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             EC.OnCommand += EC_OnCommand;
 
             // Show floating main window on launch
-            string folderPath = @"C:\abuts.fit\bg\storage\2-filled";
+            string folderPath = AppConfig.StorageFilledDirectory;
             List<string> files = Directory.Exists(folderPath) ? Directory.GetFiles(folderPath, "*.stl").ToList() : new List<string>();
 
             _stlProcessor = _stlProcessor ?? new StlFileProcessor(_espApp);

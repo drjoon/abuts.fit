@@ -20,15 +20,13 @@ namespace HiLinkBridgeWebApi48
 
         private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        private static readonly int StartIoUid = int.TryParse((Environment.GetEnvironmentVariable("CNC_START_IOUID") ?? "").Trim(), out var s) && s >= 0 ? s : 0;
-        private static readonly int BusyIoUid = int.TryParse((Environment.GetEnvironmentVariable("CNC_BUSY_IOUID") ?? "").Trim(), out var b) && b >= 0 ? b : -1;
-        private static readonly int AssumeMinutes = int.TryParse((Environment.GetEnvironmentVariable("CNC_JOB_ASSUME_MINUTES") ?? "").Trim(), out var m) && m > 0 ? m : 20;
+        private static readonly int StartIoUid = Config.CncStartIoUid;
+        private static readonly int BusyIoUid = Config.CncBusyIoUid;
+        private static readonly int AssumeMinutes = Config.CncJobAssumeMinutes;
 
         private static string GetBackendBase()
         {
-            var env = (Environment.GetEnvironmentVariable("BACKEND_BASE") ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(env)) return env.TrimEnd('/');
-            return "https://abuts.fit/api";
+            return Config.BackendBase;
         }
 
         private static string GetBackendJwt()
@@ -38,10 +36,7 @@ namespace HiLinkBridgeWebApi48
 
         private static string GetStoragePath()
         {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var root = (Environment.GetEnvironmentVariable("BRIDGE_STORE_ROOT") ?? "").Trim();
-            if (!string.IsNullOrEmpty(root)) return root;
-            return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
+            return Config.BridgeStoreRoot;
         }
 
         /// <summary>
@@ -279,13 +274,16 @@ namespace HiLinkBridgeWebApi48
         }
 
         private static readonly HttpClient Http = new HttpClient();
-        private static readonly string BridgeBase = (Environment.GetEnvironmentVariable("BRIDGE_SELF_BASE") ?? "http://localhost:8002").TrimEnd('/');
+        private static readonly string BridgeBase = Config.BridgeSelfBase;
 
         private static void AddSecretHeader(HttpRequestMessage req)
         {
-            var secret = Environment.GetEnvironmentVariable("BRIDGE_SHARED_SECRET") ?? "";
+            var secret = Config.BridgeSharedSecret;
             if (!string.IsNullOrEmpty(secret))
+            {
+                req.Headers.Remove("X-Bridge-Secret");
                 req.Headers.Add("X-Bridge-Secret", secret);
+            }
         }
 
         private static void AddAuthHeader(HttpRequestMessage req)

@@ -5,9 +5,11 @@ import {
   deleteMachine,
   getMachineStatusProxy,
   getMachineAlarmProxy,
+  clearMachineAlarmProxy,
   resetMachineProxy,
   callRawProxy,
   startMachineProxy,
+  stopMachineProxy,
 } from "../controllers/machine.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 
@@ -41,9 +43,17 @@ router.get("/:uid/status", maybeAuth(["manufacturer"]), getMachineStatusProxy);
 
 router.post("/:uid/alarm", maybeAuth(["manufacturer"]), getMachineAlarmProxy);
 
+router.post(
+  "/:uid/alarm/clear",
+  maybeAuth(["manufacturer"]),
+  clearMachineAlarmProxy,
+);
+
 router.post("/:uid/reset", maybeAuth(["manufacturer"]), resetMachineProxy);
 
 router.post("/:uid/start", maybeAuth(["manufacturer"]), startMachineProxy);
+
+router.post("/:uid/stop", maybeAuth(["manufacturer"]), stopMachineProxy);
 
 router.post("/:uid/raw", maybeAuth(["manufacturer"]), callRawProxy);
 

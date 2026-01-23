@@ -1,0 +1,842 @@
+using Esprit;
+using EspritConstants;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using System.Runtime.Serialization;
+using System.Linq;
+using System.Runtime.Serialization.Json;
+using Acrodent.EspritAddIns.ESPRIT2025AddinProject.DentalAddinCompat;
+using DentalAddin;
+using PatientContext = DentalAddin.PatientContext;
+using System.Diagnostics;
+using System.Reflection;
+
+namespace Acrodent.EspritAddIns.ESPRIT2025AddinProject
+{
+    /// <summary>
+    /// 외부 API 호출을 통해 NC 생성을 요청할 때 사용하는 데이터 구조
+    /// </summary>
+    [DataContract]
+    internal class NcGenerationRequest
+    {
+        [DataMember] public string RequestId { get; set; }
+        [DataMember] public string StlPath { get; set; }
+        [DataMember] public string NcOutputPath { get; set; }
+        [DataMember] public double[] NumData { get; set; }
+        [DataMember] public int[] NumCombobox { get; set; }
+        [DataMember] public string PostName { get; set; } = "Acro_dent_XE.asc";
+        
+        // CaseInfos alignment
+        [DataMember] public string ClinicName { get; set; }
+        [DataMember] public string PatientName { get; set; }
+        [DataMember] public string Tooth { get; set; }
+        [DataMember] public string ImplantManufacturer { get; set; }
+        [DataMember] public string ImplantSystem { get; set; }
+        [DataMember] public string ImplantType { get; set; }
+        [DataMember] public double MaxDiameter { get; set; }
+        [DataMember] public double ConnectionDiameter { get; set; }
+        [DataMember] public string WorkType { get; set; }
+        [DataMember] public string LotNumber { get; set; }
+    }
+
+    /// <summary>
+    /// 백엔드 API(saveNcFileAndMoveToMachining) 호출을 위한 페이로드
+    /// </summary>
+    [DataContract]
+    internal class BackendNcPayload
+    {
+        [DataMember] public string fileName { get; set; }
+        [DataMember] public string fileType { get; set; }
+        [DataMember] public long fileSize { get; set; }
+        [DataMember] public string filePath { get; set; }
+        [DataMember] public string s3Key { get; set; }
+        [DataMember] public string s3Url { get; set; }
+    }
+
+    internal class RepeatProcess : IDisposable
+    {
+        private readonly Esprit.Application _espApp;
+        private HttpListener _listener;
+        private CancellationTokenSource _cts;
+        private readonly string _baseUrl = "http://localhost:8001/";
+        private readonly string _backendUrl = "https://abuts.fit/api";
+        private readonly string _logFilePath;
+        private static bool _traceListenerReady;
+
+        // 운영 상태 및 히스토리 관리
+        private bool _isRunning = true;
+        private readonly List<Dictionary<string, object>> _recentHistory = new List<Dictionary<string, object>>();
+        private readonly int _maxHistory = 50;
+
+        public RepeatProcess(Esprit.Application app, string folderPath = null)
+        {
+            _espApp = app ?? throw new ArgumentNullException(nameof(app));
+            
+            // 실행 중인 애드인 DLL/EXE 위치를 우선 사용 (ESPRIT 설치 폴더 대신)
+            string baseDir = folderPath;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(baseDir))
+                {
+                    baseDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                }
+            }
+            catch
+            {
+                baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            }
+            if (string.IsNullOrWhiteSpace(baseDir))
+            {
+                baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            }
+            string logDir = Path.Combine(baseDir, "logs");
+            Directory.CreateDirectory(logDir);
+            _logFilePath = Path.Combine(logDir, $"cam_server_{DateTime.Now:yyyyMMdd}.log");
+
+            CleanupOldLogs(logDir);
+            EnsureTraceListener(logDir);
+            // SetupWatcher(); // 제거: 이제 백엔드/Rhino 명령 기반으로 동작
+            
+            // 재기동 시 미처리 파일 복구 실행 (별도 스레드)
+            _ = Task.Run(() => RecoverUnprocessedFiles());
+
+            LogInfo($"[Init] RepeatProcess created. baseDir={baseDir}, logDir={logDir}");
+        }
+
+        private void EnsureTraceListener(string logDir)
+        {
+            if (_traceListenerReady) return;
+            try
+            {
+                string tracePath = Path.Combine(logDir, $"trace_{DateTime.Now:yyyyMMdd_HHmmss}.log");
+                Trace.AutoFlush = true;
+                Trace.Listeners.Add(new TextWriterTraceListener(tracePath));
+                _traceListenerReady = true;
+                var asm = Assembly.GetExecutingAssembly();
+                var buildTime = File.GetLastWriteTime(asm.Location);
+                Trace.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Trace listener attached -> {tracePath}");
+                Trace.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [INFO] Assembly: {asm.GetName().Name}, Version={asm.GetName().Version}, Built={buildTime:yyyy-MM-dd HH:mm:ss}");
+            }
+            catch
+            {
+                // ignore trace listener errors
+            }
+        }
+
+        private async Task RecoverUnprocessedFiles()
+        {
+            try
+            {
+                LogInfo("[Recover] Scanning for unprocessed files on startup...");
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string storagePath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
+                if (!Directory.Exists(storagePath)) return;
+
+                var files = Directory.GetFiles(storagePath, "*.filled.stl");
+                foreach (var file in files)
+                {
+                    string fileName = Path.GetFileName(file);
+                    // 백엔드 API(/api/bg/file-status)를 호출하여 미처리건 확인
+                    bool shouldProcess = await CheckBackendShouldProcess(fileName, "2-filled");
+                    if (shouldProcess)
+                    {
+                        LogInfo($"[Recover] Processing {fileName} (backend confirmed)");
+                        var req = new NcGenerationRequest
+                        {
+                            RequestId = $"recover_{DateTime.Now:yyyyMMddHHmmss}",
+                            StlPath = file,
+                            NcOutputPath = Path.Combine(Path.GetDirectoryName(file), "..", "3-nc", Path.ChangeExtension(fileName, ".nc"))
+                        };
+                        bool success = ProcessStlFile(req);
+                        if (success) await NotifyBackendAndNext(req);
+                    }
+                    else
+                    {
+                        LogInfo($"[Recover] Skipping {fileName} (already processed or not needed)");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"[Recover] Failed: {ex.Message}");
+            }
+        }
+
+        private async Task<bool> CheckBackendShouldProcess(string fileName, string sourceStep)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    string url = $"{_backendUrl}/bg/file-status?sourceStep={sourceStep}&fileName={fileName}&force=true";
+                    var response = await client.GetAsync(url);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string content = await response.Content.ReadAsStringAsync();
+                        // 단순 문자열 포함 여부로 판단 (JSON 파싱 오버헤드 방지)
+                        return content.ToLower().Contains("\"shouldprocess\":true");
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private async Task NotifyBackendAndNext(NcGenerationRequest req)
+        {
+            await NotifyBackendSuccess(req);
+        }
+
+        private void CleanupOldLogs(string logDir)
+        {
+            try
+            {
+                var threshold = DateTime.Now.AddDays(-30);
+                foreach (var file in Directory.GetFiles(logDir, "cam_server_*.log"))
+                {
+                    var fi = new FileInfo(file);
+                    if (fi.CreationTime < threshold)
+                    {
+                        fi.Delete();
+                    }
+                }
+            }
+            catch { /* ignore log cleanup errors */ }
+        }
+
+        private string BuildS3Url(string bucket, string key)
+        {
+            bucket = (bucket ?? "").Trim();
+            key = (key ?? "").Trim().TrimStart('/');
+            if (string.IsNullOrEmpty(bucket) || string.IsNullOrEmpty(key)) return "";
+            return $"https://{bucket}.s3.amazonaws.com/{key}";
+        }
+
+        private async Task<(bool ok, string s3Key, string s3Url, long fileSize, string error)> UploadNcViaPresign(FileInfo fi, string requestId)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    string presignUrl = $"{_backendUrl}/bg/presign-upload";
+                    string presignBody = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"requestId\":\"{requestId}\"}}";
+                    var presignResp = await client.PostAsync(presignUrl, new StringContent(presignBody, Encoding.UTF8, "application/json"));
+                    if (!presignResp.IsSuccessStatusCode)
+                    {
+                        return (false, null, null, 0, $"presign status={presignResp.StatusCode}");
+                    }
+                    var presignJson = await presignResp.Content.ReadAsStringAsync();
+                    // 단순 파서 (JSON 라이브러리 사용 없이 최소 파싱)
+                    string Extract(string key)
+                    {
+                        try
+                        {
+                            var marker = $"\"{key}\":\"";
+                            int idx = presignJson.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                            if (idx < 0) return null;
+                            idx += marker.Length;
+                            int end = presignJson.IndexOf("\"", idx, StringComparison.OrdinalIgnoreCase);
+                            if (end < 0) return null;
+                            return presignJson.Substring(idx, end - idx);
+                        }
+                        catch { return null; }
+                    }
+                    string url = Extract("url");
+                    string key = Extract("key");
+                    string bucket = Extract("bucket");
+                    string contentType = Extract("contentType") ?? "application/octet-stream";
+                    if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(key))
+                    {
+                        return (false, null, null, 0, "presign response missing url/key");
+                    }
+
+                    long fileSize = fi.Length;
+                    using (var fs = fi.OpenRead())
+                    {
+                        var putReq = new HttpRequestMessage(HttpMethod.Put, url);
+                        putReq.Content = new StreamContent(fs);
+                        putReq.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+                        var putResp = await client.SendAsync(putReq);
+                        if (!putResp.IsSuccessStatusCode)
+                        {
+                            return (false, null, null, 0, $"put status={putResp.StatusCode}");
+                        }
+                    }
+
+                    string s3Url = BuildS3Url(bucket, key);
+                    return (true, key, s3Url, fileSize, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                return (false, null, null, 0, ex.Message);
+            }
+        }
+
+        public void Run()
+        {
+            if (_listener != null && _listener.IsListening) return;
+
+            try
+            {
+                Stop(); // Ensure previous listener is cleaned up
+
+                _listener = new HttpListener();
+                _listener.Prefixes.Add(_baseUrl);
+                _listener.Start();
+
+                _cts = new CancellationTokenSource();
+                _ = Task.Run(() => ListenLoop(_cts.Token), _cts.Token);
+
+                LogInfo($"[API Server] Started at {_baseUrl}");
+            }
+            catch (Exception ex)
+            {
+                LogError($"[API Server] Failed to start: {ex.Message}");
+            }
+        }
+
+        private async Task ListenLoop(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    if (!_listener.IsListening)
+                    {
+                        LogError("[API Server] Listener stopped unexpectedly. Restarting...");
+                        _listener.Start();
+                    }
+
+                    var context = await _listener.GetContextAsync();
+                    _ = Task.Run(() => HandleRequest(context), token);
+                }
+                catch (HttpListenerException ex)
+                {
+                    if (token.IsCancellationRequested) break;
+                    LogError($"[API Server] HttpListenerException: {ex.Message}");
+                    await Task.Delay(1000, token); // Wait before retry
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    LogError($"[API Server] Listener error: {ex.Message}");
+                    await Task.Delay(1000, token);
+                }
+            }
+        }
+
+        private async Task HandleRequest(HttpListenerContext context)
+        {
+            var request = context.Request;
+            var response = context.Response;
+            response.ContentType = "application/json";
+
+            try
+            {
+                var path = request.Url.AbsolutePath.ToLower();
+
+                // 공통 인터페이스 처리
+                if (request.HttpMethod == "GET")
+                {
+                    if (path.StartsWith("/files/") || path == "/files")
+                    {
+                        // GET /files/{name} → storage/3-nc/{name} 반환
+                        string rawName = request.Url.AbsolutePath.Length > "/files/".Length
+                            ? request.Url.AbsolutePath.Substring("/files/".Length)
+                            : (request.QueryString["name"] ?? string.Empty);
+                        string fileName = Path.GetFileName(Uri.UnescapeDataString(rawName ?? string.Empty));
+                        if (string.IsNullOrWhiteSpace(fileName))
+                        {
+                            response.StatusCode = (int)HttpStatusCode.BadRequest;
+                            byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"file name required\"}");
+                            response.OutputStream.Write(buffer, 0, buffer.Length);
+                            return;
+                        }
+
+                        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                        string storagePath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
+                        string target = Path.GetFullPath(Path.Combine(storagePath, fileName));
+
+                        if (!target.StartsWith(storagePath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            response.StatusCode = (int)HttpStatusCode.BadRequest;
+                            byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"invalid path\"}");
+                            response.OutputStream.Write(buffer, 0, buffer.Length);
+                            return;
+                        }
+
+                        if (!File.Exists(target))
+                        {
+                            response.StatusCode = (int)HttpStatusCode.NotFound;
+                            byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"file not found\"}");
+                            response.OutputStream.Write(buffer, 0, buffer.Length);
+                            return;
+                        }
+
+                        response.ContentType = "application/octet-stream";
+                        response.StatusCode = (int)HttpStatusCode.OK;
+                        using (var fs = File.OpenRead(target))
+                        {
+                            fs.CopyTo(response.OutputStream);
+                        }
+                        return;
+                    }
+                    if (path == "/health" || path == "/ping")
+                    {
+                        response.StatusCode = (int)HttpStatusCode.OK;
+                        byte[] buffer = Encoding.UTF8.GetBytes($"{{\"status\": \"UP\", \"isRunning\": {_isRunning.ToString().ToLower()}}}");
+                        response.OutputStream.Write(buffer, 0, buffer.Length);
+                        return;
+                    }
+                    if (path == "/history/recent")
+                    {
+                        response.StatusCode = (int)HttpStatusCode.OK;
+                        string json = "";
+                        lock (_recentHistory)
+                        {
+                            var items = new List<string>();
+                            foreach (var h in _recentHistory)
+                            {
+                                items.Add($"{{\"requestId\":\"{h["requestId"]}\",\"file\":\"{h["file"]}\",\"timestamp\":\"{((DateTime)h["timestamp"]):yyyy-MM-dd HH:mm:ss}\",\"status\":\"{h["status"]}\"}}");
+                            }
+                            json = $"{{\"ok\": true, \"history\": [{string.Join(",", items)}]}}";
+                        }
+                        byte[] buffer = Encoding.UTF8.GetBytes(json);
+                        response.OutputStream.Write(buffer, 0, buffer.Length);
+                        return;
+                    }
+                }
+                else if (request.HttpMethod == "POST")
+                {
+                    if (path == "/control/start")
+                    {
+                        _isRunning = true;
+                        LogInfo("[Control] Service started");
+                        response.StatusCode = (int)HttpStatusCode.OK;
+                        byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": true}");
+                        response.OutputStream.Write(buffer, 0, buffer.Length);
+                        return;
+                    }
+                    if (path == "/control/stop")
+                    {
+                        _isRunning = false;
+                        LogInfo("[Control] Service stopped");
+                        response.StatusCode = (int)HttpStatusCode.OK;
+                        byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": true}");
+                        response.OutputStream.Write(buffer, 0, buffer.Length);
+                        return;
+                    }
+                }
+
+                if (!_isRunning)
+                {
+                    response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+                    byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"Service is stopped\"}");
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+                    return;
+                }
+
+                if (request.HttpMethod != "POST")
+                {
+                    response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
+                    return;
+                }
+
+                NcGenerationRequest req;
+                using (var reader = request.InputStream)
+                {
+                    var serializer = new DataContractJsonSerializer(typeof(NcGenerationRequest));
+                    req = (NcGenerationRequest)serializer.ReadObject(reader);
+                }
+
+                if (req == null || string.IsNullOrEmpty(req.StlPath) || string.IsNullOrEmpty(req.RequestId))
+                {
+                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    return;
+                }
+
+                // 파일 경로가 상대값(파일명)으로 들어오면, bg/storage 기준으로 보정한다.
+                // 운영에서는 web(EBS) -> BG(윈도우) 구조이므로, web이 절대 경로를 알 필요가 없도록 한다.
+                req = NormalizePathsToLocalStorage(req);
+
+                LogInfo($"[CAM] Accepted request (async): {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName}, Lot: {req.LotNumber})");
+
+                // 긴 작업은 백그라운드에서 수행하고, 즉시 시작 응답만 반환한다.
+                // 완료/실패는 NotifyBackendSuccess/NotifyBackendFailure로 보고한다.
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        bool success = ProcessStlFile(req);
+                        if (success)
+                        {
+                            await NotifyBackendSuccess(req);
+                        }
+                        else
+                        {
+                            await NotifyBackendFailure(req, "CAM processing failed");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        try
+                        {
+                            await NotifyBackendFailure(req, ex.Message);
+                        }
+                        catch
+                        {
+                            // ignore
+                        }
+                        LogError($"[CAM] Async processing error for {req.RequestId}: {ex.Message}\n{ex.StackTrace}");
+                    }
+                });
+
+                response.StatusCode = (int)HttpStatusCode.Accepted;
+                byte[] okBuffer = Encoding.UTF8.GetBytes($"{{\"success\": true, \"status\": \"STARTED\", \"requestId\": \"{req.RequestId}\"}}");
+                response.OutputStream.Write(okBuffer, 0, okBuffer.Length);
+            }
+            catch (Exception ex)
+            {
+                LogError($"[API Server] Request handling error: {ex.Message}\n{ex.StackTrace}");
+                response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                byte[] buffer = Encoding.UTF8.GetBytes($"{{\"success\": false, \"message\": \"{ex.Message}\"}}");
+                response.OutputStream.Write(buffer, 0, buffer.Length);
+            }
+            finally
+            {
+                try { response.Close(); } catch { }
+            }
+        }
+
+        private bool ProcessStlFile(NcGenerationRequest req)
+        {
+            try
+            {
+                // 환자/임플란트 정보 캐시 (백엔드에서 전달된 값 사용)
+                DentalAddin.PatientContext.SetFromRequest(req);
+
+                LogInfo($"[CAM] Starting NC generation for {req.RequestId}");
+
+                // 0. 소재 템플릿 로드 (어벗 최대 직경 기준)
+                int materialDiameter = ChooseMaterialDiameter(req.MaxDiameter);
+                string baseDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                string templateDir = Path.Combine(baseDir ?? string.Empty, "Templates");
+                string templatePath = Path.Combine(templateDir, $"Hanwha_D{materialDiameter}.est");
+                LogInfo($"[CAM] Template open start: {templatePath}");
+
+                Document espdoc = _espApp.Document;
+                if (espdoc == null)
+                {
+                    throw new InvalidOperationException("ESPRIT Document is null. Template cannot be merged.");
+                }
+
+                if (File.Exists(templatePath))
+                {
+                    try
+                    {
+                        espdoc.MergeFile(templatePath);
+                        string docName = "";
+                        try { docName = espdoc?.Name ?? ""; } catch { }
+                        LogInfo($"[CAM] Template merged: {templatePath} (D{materialDiameter}, MaxDiameter={req.MaxDiameter:F2}mm, ConnectionDiameter={req.ConnectionDiameter:F2}mm, ActiveDoc={docName})");
+                    }
+                    catch (Exception exOpen)
+                    {
+                        LogWarning($"[CAM] Template merge failed: {exOpen.Message}");
+                    }
+                }
+                else
+                {
+                    LogWarning($"[CAM] Template not found: {templatePath}");
+                }
+
+                // 1. 임플란트 파라미터 업데이트
+                var userData = Connect.DentalHost.CurrentData;
+                lock (userData)
+                {
+                    if (req.NumData != null)
+                    {
+                        int count = Math.Min(req.NumData.Length, userData.NumData.Length);
+                        for (int i = 0; i < count; i++) userData.NumData[i] = req.NumData[i];
+                    }
+                    if (req.NumCombobox != null)
+                    {
+                        int count = Math.Min(req.NumCombobox.Length, userData.NumCombobox.Length);
+                        for (int i = 0; i < count; i++) userData.NumCombobox[i] = req.NumCombobox[i];
+                    }
+                }
+                LogInfo($"[CAM] Implant params updated. NumData={FormatArray(req.NumData)} NumCombobox={FormatArray(req.NumCombobox)}");
+
+                // 2. STL 병합 및 툴패스 워크플로우 실행
+                if (!File.Exists(req.StlPath))
+                {
+                    throw new FileNotFoundException($"STL file not found: {req.StlPath}");
+                }
+
+                espdoc.MergeFile(req.StlPath);
+                Connect.DentalHost.RunWorkflow(espdoc, req.StlPath);
+
+                // 3. NC 코드 생성
+                string postFileDir = _espApp.Configuration.GetFileDirectory(espFileType.espFileTypePostProcessor);
+                string postPath = Path.Combine(postFileDir, req.PostName);
+                
+                if (!File.Exists(postPath))
+                {
+                    throw new FileNotFoundException($"Post-processor not found: {postPath}");
+                }
+
+                string ncFilePath = req.NcOutputPath;
+                if (string.IsNullOrEmpty(ncFilePath))
+                {
+                    ncFilePath = Path.ChangeExtension(req.StlPath, ".nc");
+                }
+
+                string dir = Path.GetDirectoryName(ncFilePath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                espdoc.NCCode.AddAll();
+                espdoc.NCCode.Execute(postPath, ncFilePath);
+
+                LogInfo($"[CAM] NC Generated successfully: {ncFilePath}");
+
+                // 히스토리 추가
+                lock (_recentHistory)
+                {
+                    var item = new Dictionary<string, object>
+                    {
+                        { "requestId", req.RequestId },
+                        { "file", Path.GetFileName(ncFilePath) },
+                        { "timestamp", DateTime.Now },
+                        { "status", "success" }
+                    };
+                    _recentHistory.Insert(0, item);
+                    if (_recentHistory.Count > _maxHistory) _recentHistory.RemoveAt(_recentHistory.Count - 1);
+                }
+
+                // 4. 그래픽 정리
+                CleanupEsprit(espdoc);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogError($"[CAM] Error processing {req.RequestId}: {ex.Message}\n{ex.StackTrace}");
+                return false;
+            }
+        }
+
+        private void CleanupEsprit(Document espdoc)
+        {
+            if (espdoc == null) return;
+            try
+            {
+                var gc = espdoc.GraphicsCollection;
+                for (int idx = gc.Count; idx >= 1; idx--)
+                {
+                    object item = null;
+                    try
+                    {
+                        item = gc[idx];
+                        GraphicObject go = item as GraphicObject;
+                        if (go == null) continue;
+
+                        if (go.GraphicObjectType == espGraphicObjectType.espOperation ||
+                            go.GraphicObjectType == espGraphicObjectType.espFeatureChain ||
+                            go.GraphicObjectType == espGraphicObjectType.espFreeFormFeature ||
+                            go.GraphicObjectType == espGraphicObjectType.espFeatureSet ||
+                            go.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                        {
+                            gc.Remove(idx);
+                        }
+                    }
+                    finally
+                    {
+                        if (item != null && Marshal.IsComObject(item))
+                        {
+                            Marshal.ReleaseComObject(item);
+                        }
+                    }
+                }
+                espdoc.Refresh();
+            }
+            catch (Exception ex)
+            {
+                LogWarning($"[CAM] Cleanup failed: {ex.Message}");
+            }
+        }
+
+        private async Task NotifyBackendSuccess(NcGenerationRequest req)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    var fi = new FileInfo(req.NcOutputPath);
+
+                    var uploadResult = await UploadNcViaPresign(fi, req.RequestId);
+                    if (!uploadResult.ok)
+                    {
+                        LogWarning($"[Backend] Presigned upload failed: {uploadResult.error}, falling back to legacy notify (no S3)");
+                    }
+
+                    string url = $"{_backendUrl}/bg/register-file";
+                    string originalName = Path.GetFileName(req.StlPath);
+
+                    // presign이 성공하면 s3Key/s3Url/fileSize 포함, 실패 시 metadata로 fileSize만 포함
+                    string json;
+                    if (uploadResult.ok)
+                    {
+                        json =
+                            $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"originalFileName\":\"{originalName}\",\"requestId\":\"{req.RequestId}\",\"status\":\"success\",\"s3Key\":\"{uploadResult.s3Key}\",\"s3Url\":\"{uploadResult.s3Url}\",\"fileSize\":{uploadResult.fileSize}}}";
+                    }
+                    else
+                    {
+                        json =
+                            $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{fi.Name}\",\"originalFileName\":\"{originalName}\",\"requestId\":\"{req.RequestId}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
+                    }
+
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    var response = await client.PostAsync(url, content);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        LogInfo($"[Backend] Successfully notified processed file: {fi.Name}");
+                    }
+                    else
+                    {
+                        LogError($"[Backend] Failed to notify: {response.StatusCode} for {fi.Name}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"[Backend] Callback error: {ex.Message}");
+            }
+        }
+
+        private async Task NotifyBackendFailure(NcGenerationRequest req, string errorMessage)
+        {
+            try
+            {
+                using (var client = new HttpClient())
+                {
+                    string url = $"{_backendUrl}/bg/register-file";
+                    string originalName = string.IsNullOrEmpty(req?.StlPath) ? "" : Path.GetFileName(req.StlPath);
+                    string ncName = string.IsNullOrEmpty(req?.NcOutputPath) ? "" : Path.GetFileName(req.NcOutputPath);
+                    string safeError = (errorMessage ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    string json = $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{ncName}\",\"originalFileName\":\"{originalName}\",\"requestId\":\"{req?.RequestId}\",\"status\":\"failed\",\"metadata\":{{\"error\":\"{safeError}\"}}}}";
+                    var content = new StringContent(json, Encoding.UTF8, "application/json");
+                    var response = await client.PostAsync(url, content);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        LogInfo($"[Backend] Failure notified: {ncName}");
+                    }
+                    else
+                    {
+                        LogError($"[Backend] Failed to notify failure: {response.StatusCode} for {ncName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"[Backend] Failure callback error: {ex.Message}");
+            }
+        }
+
+        private NcGenerationRequest NormalizePathsToLocalStorage(NcGenerationRequest req)
+        {
+            try
+            {
+                if (req == null) return null;
+
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string storage2 = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
+                string storage3 = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
+
+                if (!string.IsNullOrWhiteSpace(req.StlPath))
+                {
+                    // 절대경로가 아니면 파일명으로 간주
+                    if (!Path.IsPathRooted(req.StlPath))
+                    {
+                        req.StlPath = Path.Combine(storage2, Path.GetFileName(req.StlPath));
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(req.NcOutputPath))
+                {
+                    if (!Path.IsPathRooted(req.NcOutputPath))
+                    {
+                        req.NcOutputPath = Path.Combine(storage3, Path.GetFileName(req.NcOutputPath));
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+            return req;
+        }
+
+        private void LogInfo(string message) { Log("INFO", message); }
+        private void LogWarning(string message) { Log("WARN", message); }
+        private void LogError(string message) { Log("ERROR", message); }
+
+        private int ChooseMaterialDiameter(double maxDiameter)
+        {
+            var stockDiameters = new[] { 6, 8, 10, 12, 14 };
+            double target = maxDiameter <= 0 ? 6 : maxDiameter;
+            return stockDiameters.FirstOrDefault(d => d >= target) == 0
+                ? stockDiameters.Last()
+                : stockDiameters.First(d => d >= target);
+        }
+
+        private string FormatArray<T>(IEnumerable<T> arr)
+        {
+            if (arr == null) return "null";
+            return "[" + string.Join(",", arr) + "]";
+        }
+
+        private void Log(string level, string message)
+        {
+            string formattedMessage = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] [{level}] {message}";
+            try
+            {
+                File.AppendAllText(_logFilePath, formattedMessage + Environment.NewLine);
+                _espApp.OutputWindow.Text(formattedMessage);
+            }
+            catch
+            {
+                System.Diagnostics.Trace.WriteLine(formattedMessage);
+            }
+        }
+
+        public void Stop()
+        {
+            try
+            {
+                _cts?.Cancel();
+                if (_listener != null)
+                {
+                    if (_listener.IsListening) _listener.Stop();
+                    _listener.Close();
+                    _listener = null;
+                }
+            }
+            catch { }
+        }
+
+        public void Dispose()
+        {
+            Stop();
+            _cts?.Dispose();
+        }
+    }
+}

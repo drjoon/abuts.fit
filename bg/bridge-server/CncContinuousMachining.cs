@@ -31,6 +31,14 @@ namespace HiLinkBridgeWebApi48
             public bool IsRunning;
             public int ProductCountBefore; // 가공 시작 전 생산 수량
             public bool SawBusy;
+
+            public string LastStartFailJobId;
+            public int StartFailCount;
+            public DateTime NextStartAttemptUtc;
+
+            public string LastPreloadFailJobId;
+            public int PreloadFailCount;
+            public DateTime NextPreloadAttemptUtc;
         }
 
         private static readonly object StateLock = new object();
@@ -135,7 +143,11 @@ namespace HiLinkBridgeWebApi48
                         CurrentSlot = SLOT_A,
                         NextSlot = SLOT_B,
                         IsRunning = false,
-                        SawBusy = false
+                        SawBusy = false,
+                        StartFailCount = 0,
+                        PreloadFailCount = 0,
+                        NextStartAttemptUtc = DateTime.MinValue,
+                        NextPreloadAttemptUtc = DateTime.MinValue,
                     };
                     MachineStates[machineId] = state;
                 }
@@ -180,10 +192,59 @@ namespace HiLinkBridgeWebApi48
                 var nextJob = CncJobQueue.Peek(machineId);
                 if (nextJob != null)
                 {
+                    var now = DateTime.UtcNow;
+                    if (!string.IsNullOrEmpty(state.LastStartFailJobId) &&
+                        string.Equals(state.LastStartFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase) &&
+                        now < state.NextStartAttemptUtc)
+                    {
+                        return;
+                    }
+
                     var started = await StartNewJob(machineId, state, nextJob);
                     if (started)
                     {
                         CncJobQueue.Pop(machineId);
+
+                        lock (StateLock)
+                        {
+                            state.LastStartFailJobId = null;
+                            state.StartFailCount = 0;
+                            state.NextStartAttemptUtc = DateTime.MinValue;
+                        }
+                    }
+                    else
+                    {
+                        lock (StateLock)
+                        {
+                            if (!string.Equals(state.LastStartFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase))
+                            {
+                                state.LastStartFailJobId = nextJob.id;
+                                state.StartFailCount = 0;
+                            }
+
+                            state.StartFailCount = Math.Min(1000, state.StartFailCount + 1);
+                            var backoffSec = Math.Min(60, Math.Max(5, state.StartFailCount * 5));
+                            state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(backoffSec);
+                        }
+
+                        // 너무 오래 실패하면 큐에서 제거하여 무한 루프를 방지
+                        if (state.StartFailCount >= 10)
+                        {
+                            CncJobQueue.Pop(machineId);
+                            Console.WriteLine(
+                                "[CncContinuous] start dropped machine={0} jobId={1} file={2} fails={3}",
+                                machineId,
+                                nextJob.id,
+                                nextJob.fileName,
+                                state.StartFailCount
+                            );
+                            lock (StateLock)
+                            {
+                                state.LastStartFailJobId = null;
+                                state.StartFailCount = 0;
+                                state.NextStartAttemptUtc = DateTime.MinValue;
+                            }
+                        }
                     }
                 }
             }
@@ -236,6 +297,14 @@ namespace HiLinkBridgeWebApi48
             var nextJob = CncJobQueue.Peek(machineId);
             if (nextJob == null) return;
 
+            var now = DateTime.UtcNow;
+            if (!string.IsNullOrEmpty(state.LastPreloadFailJobId) &&
+                string.Equals(state.LastPreloadFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase) &&
+                now < state.NextPreloadAttemptUtc)
+            {
+                return;
+            }
+
             try
             {
                 Console.WriteLine("[CncContinuous] preloading next job machine={0} file={1} to slot=O{2}",
@@ -247,10 +316,28 @@ namespace HiLinkBridgeWebApi48
                     lock (StateLock)
                     {
                         state.NextJob = nextJob;
+                        state.LastPreloadFailJobId = null;
+                        state.PreloadFailCount = 0;
+                        state.NextPreloadAttemptUtc = DateTime.MinValue;
                     }
                     CncJobQueue.Pop(machineId);
                     Console.WriteLine("[CncContinuous] preload success machine={0} slot=O{1}", 
                         machineId, state.NextSlot);
+                }
+                else
+                {
+                    lock (StateLock)
+                    {
+                        if (!string.Equals(state.LastPreloadFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase))
+                        {
+                            state.LastPreloadFailJobId = nextJob.id;
+                            state.PreloadFailCount = 0;
+                        }
+
+                        state.PreloadFailCount = Math.Min(1000, state.PreloadFailCount + 1);
+                        var backoffSec = Math.Min(120, Math.Max(10, state.PreloadFailCount * 10));
+                        state.NextPreloadAttemptUtc = DateTime.UtcNow.AddSeconds(backoffSec);
+                    }
                 }
             }
             catch (Exception ex)
@@ -266,8 +353,32 @@ namespace HiLinkBridgeWebApi48
                 Console.WriteLine("[CncContinuous] switching to next job machine={0} from O{1} to O{2}",
                     machineId, state.CurrentSlot, state.NextSlot);
 
-                // 1. Edit 모드 전환 (필요 시)
-                // 2. NextSlot 활성화
+                // 1. Edit 모드 전환 (Idle에서만)
+                if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
+                {
+                    Console.WriteLine("[CncContinuous] edit mode failed machine={0} err={1}", machineId, modeErr);
+                    return;
+                }
+
+                // 2. (옵션) 이전 슬롯 프로그램 삭제
+                try
+                {
+                    var delEnabled = (Environment.GetEnvironmentVariable("CNC_DELETE_PREV_ON_SWITCH") ?? "false").Trim();
+                    if (string.Equals(delEnabled, "true", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, 0, (short)state.CurrentSlot, out var actNo, out var delErr))
+                        {
+                            Console.WriteLine("[CncContinuous] delete prev failed machine={0} slot=O{1} err={2}", machineId, state.CurrentSlot, delErr);
+                        }
+                        else
+                        {
+                            Console.WriteLine("[CncContinuous] delete prev ok machine={0} slot=O{1} activateProgNum={2}", machineId, state.CurrentSlot, actNo);
+                        }
+                    }
+                }
+                catch { }
+
+                // 3. NextSlot 활성화
                 var dto = new UpdateMachineActivateProgNo 
                 { 
                     headType = 0, 
@@ -282,11 +393,18 @@ namespace HiLinkBridgeWebApi48
                     return;
                 }
 
-                // 3. 생산 수량 기록
+                // 4. Auto 모드 전환
+                if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
+                {
+                    Console.WriteLine("[CncContinuous] auto mode failed machine={0} err={1}", machineId, modeErr2);
+                    return;
+                }
+
+                // 5. 생산 수량 기록
                 var prodCountBefore = 0;
                 TryGetProductCount(machineId, out prodCountBefore);
 
-                // 4. Start 신호
+                // 6. Start 신호
                 if (!TryStartSignal(machineId, out var startErr))
                 {
                     Console.WriteLine("[CncContinuous] start failed machine={0} err={1}", machineId, startErr);
@@ -325,11 +443,18 @@ namespace HiLinkBridgeWebApi48
                 Console.WriteLine("[CncContinuous] starting new job machine={0} file={1} slot=O{2}",
                     machineId, job.fileName, state.CurrentSlot);
 
-                // 1. CurrentSlot에 업로드
+                // 1. Edit 모드 전환 (Idle에서만)
+                if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
+                {
+                    Console.WriteLine("[CncContinuous] edit mode failed machine={0} err={1}", machineId, modeErr);
+                    return false;
+                }
+
+                // 2. CurrentSlot에 업로드
                 var uploaded = await UploadProgramToSlot(machineId, job, state.CurrentSlot);
                 if (!uploaded) return false;
 
-                // 2. 활성화
+                // 3. 활성화
                 var dto = new UpdateMachineActivateProgNo 
                 { 
                     headType = 0, 
@@ -344,11 +469,18 @@ namespace HiLinkBridgeWebApi48
                     return false;
                 }
 
-                // 3. 생산 수량 기록
+                // 4. Auto 모드 전환
+                if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
+                {
+                    Console.WriteLine("[CncContinuous] auto mode failed machine={0} err={1}", machineId, modeErr2);
+                    return false;
+                }
+
+                // 5. 생산 수량 기록
                 var prodCountBefore = 0;
                 TryGetProductCount(machineId, out prodCountBefore);
 
-                // 4. Start 신호
+                // 6. Start 신호
                 if (!TryStartSignal(machineId, out var startErr))
                 {
                     Console.WriteLine("[CncContinuous] start failed machine={0} err={1}", machineId, startErr);
@@ -508,12 +640,7 @@ namespace HiLinkBridgeWebApi48
             fullPath = null;
             error = null;
 
-            var root = (Environment.GetEnvironmentVariable("BRIDGE_STORE_ROOT") ?? string.Empty).Trim();
-            if (string.IsNullOrEmpty(root))
-            {
-                root = GetStoragePath();
-            }
-            root = Path.GetFullPath(root);
+            var root = Path.GetFullPath(Config.BridgeStoreRoot);
 
             var bp = (job.bridgePath ?? string.Empty).Trim();
             if (!string.IsNullOrEmpty(bp))
@@ -548,39 +675,25 @@ namespace HiLinkBridgeWebApi48
 
         private static string GetStoragePath()
         {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var root = (Environment.GetEnvironmentVariable("BRIDGE_STORE_ROOT") ?? "").Trim();
-            if (!string.IsNullOrEmpty(root)) return root;
-            return Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "3-nc"));
+            return Config.BridgeStoreRoot;
         }
 
         private static bool TryStartSignal(string machineId, out string error)
         {
             error = null;
-            var ioUid = (short)61;
-            try
-            {
-                var raw = (Environment.GetEnvironmentVariable("CNC_START_IOUID") ?? "61").Trim();
-                if (int.TryParse(raw, out var n) && n > 0 && n < short.MaxValue)
-                {
-                    ioUid = (short)n;
-                }
-            }
-            catch { }
 
-            return Mode1Api.TrySetMachinePanelIO(machineId, 0, ioUid, true, out error);
+            var ioUid = Config.CncStartIoUid;
+            if (ioUid < 0) ioUid = 0;
+            if (ioUid > short.MaxValue) ioUid = 61;
+
+            return Mode1Api.TrySetMachinePanelIO(machineId, 0, (short)ioUid, true, out error);
         }
 
-        private static bool TryGetMachineBusy(string machineId, out bool busy)
+        private static bool TryGetMachineBusy(string machineId, out bool isBusy)
         {
-            busy = false;
-            var busyIoUid = -1;
-            try
-            {
-                var raw = (Environment.GetEnvironmentVariable("CNC_BUSY_IOUID") ?? "").Trim();
-                if (int.TryParse(raw, out var n) && n >= 0) busyIoUid = n;
-            }
-            catch { }
+            isBusy = false;
+
+            var busyIoUid = Config.CncBusyIoUid;
             if (busyIoUid < 0) return false;
 
             if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var err))
@@ -597,7 +710,7 @@ namespace HiLinkBridgeWebApi48
             {
                 if (io != null && io.IOUID == (short)busyIoUid)
                 {
-                    busy = io.Status != 0;
+                    isBusy = io.Status != 0;
                     return true;
                 }
             }
@@ -670,9 +783,7 @@ namespace HiLinkBridgeWebApi48
 
         private static string GetBackendBase()
         {
-            var env = (Environment.GetEnvironmentVariable("BACKEND_BASE") ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(env)) return env.TrimEnd('/');
-            return "https://abuts.fit/api";
+            return Config.BackendBase;
         }
 
         private static string GetBackendJwt()

@@ -1,0 +1,5 @@
+==== Trace started at 2026-01-20T07:20:16.6235145+09:00 ====
+StlFileProcessor: request-meta GET https://abuts.fit/api/bg/request-meta?requestId=20260112-ZQXEYVYX (X-Bridge-Secret set=True)
+StlFileProcessor: 처리 중 오류 - request-meta 응답에 lotNumber가 없습니다. requestId=20260112-ZQXEYVYX
+StlFileProcessor: register-file failure notified status=Unauthorized requestId=20260112-ZQXEYVYX
+STL 처리 중 오류가 발생했습니다: request-meta 응답에 lotNumber가 없습니다. requestId=20260112-ZQXEYVYX

@@ -232,5 +232,6 @@ namespace DentalAddin
 		MainModule.seg = MainModule.Document.GetSegment(point, point2);
 		MainModule.SS1.Rotate(MainModule.seg, MainModule.Ang, 0);
 	}
+
 }
 }

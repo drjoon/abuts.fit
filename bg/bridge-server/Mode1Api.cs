@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Hi_Link;
 using Hi_Link.Libraries.Model;
 using HiLinkBridgeWebApi48.Models;
@@ -11,6 +12,205 @@ namespace HiLinkBridgeWebApi48
     /// </summary>
     public static class Mode1Api
     {
+        public static bool TryGetMachineInfo(string uid, out MachineInfo info, out string error)
+        {
+            info = default(MachineInfo);
+            error = null;
+            if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
+            {
+                error = err;
+                return false;
+            }
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                info = new MachineInfo();
+                var result = HiLink.GetMachineInfo(handle, ref info);
+                if (result == 0)
+                {
+                    return true;
+                }
+
+                if (result == -8 && attempt == 0)
+                {
+                    Mode1HandleStore.Invalidate(uid);
+                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
+                    {
+                        error = err;
+                        info = default(MachineInfo);
+                        return false;
+                    }
+                    continue;
+                }
+
+                error = $"GetMachineInfo failed (result={result})";
+                info = default(MachineInfo);
+                return false;
+            }
+
+            error = "GetMachineInfo failed";
+            info = default(MachineInfo);
+            return false;
+        }
+
+        public static bool TryGetMachineAllOPInfo(string uid, short panelType, out List<IOInfo> list, out string error)
+        {
+            list = null;
+            error = null;
+            if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
+            {
+                error = err;
+                return false;
+            }
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                list = new List<IOInfo>();
+                var result = HiLink.GetMachineAllOPInfo(handle, panelType, ref list);
+                if (result == 0)
+                {
+                    return true;
+                }
+
+                if (result == -8 && attempt == 0)
+                {
+                    Mode1HandleStore.Invalidate(uid);
+                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
+                    {
+                        error = err;
+                        list = null;
+                        return false;
+                    }
+                    continue;
+                }
+
+                error = $"GetMachineAllOPInfo failed (result={result})";
+                list = null;
+                return false;
+            }
+
+            error = "GetMachineAllOPInfo failed";
+            list = null;
+            return false;
+        }
+
+        public static bool TrySetMachineReset(string uid, out string error)
+        {
+            error = null;
+            if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
+            {
+                error = err;
+                return false;
+            }
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var result = HiLink.SetMachineReset(handle);
+                if (result == 0)
+                {
+                    return true;
+                }
+
+                if (result == -8 && attempt == 0)
+                {
+                    Mode1HandleStore.Invalidate(uid);
+                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
+                    {
+                        error = err;
+                        return false;
+                    }
+                    continue;
+                }
+
+                error = $"SetMachineReset failed (result={result})";
+                return false;
+            }
+
+            error = "SetMachineReset failed";
+            return false;
+        }
+
+        public static bool TryDeleteMachineProgramInfo(string uid, short headType, short programNo, out int activateProgNum, out string error)
+        {
+            activateProgNum = 0;
+            error = null;
+            if (programNo <= 0)
+            {
+                error = "programNo must be > 0";
+                return false;
+            }
+
+            if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
+            {
+                error = err;
+                return false;
+            }
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var dto = new DeleteMachineProgramInfo
+                {
+                    headType = headType,
+                    programNo = programNo,
+                };
+
+                var result = HiLink.DeleteMachineProgramInfo(handle, dto, out activateProgNum);
+                if (result == 0)
+                {
+                    return true;
+                }
+
+                if (result == -8 && attempt == 0)
+                {
+                    Mode1HandleStore.Invalidate(uid);
+                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
+                    {
+                        error = err;
+                        return false;
+                    }
+                    continue;
+                }
+
+                error = $"DeleteMachineProgramInfo failed (result={result})";
+                return false;
+            }
+
+            error = "DeleteMachineProgramInfo failed";
+            return false;
+        }
+
+        public static bool TrySetMachineMode(string uid, string mode, out string error)
+        {
+            error = null;
+            var m = (mode ?? string.Empty).Trim().ToUpperInvariant();
+            var ioName = m == "EDIT" ? "MS_EDIT" : (m == "AUTO" ? "MS_AUTO" : null);
+            if (string.IsNullOrEmpty(ioName))
+            {
+                error = "unsupported mode";
+                return false;
+            }
+
+            if (!TryGetMachineInfo(uid, out var info, out error))
+            {
+                return false;
+            }
+
+            var panelType = info.panelType;
+            if (!TryGetMachineAllOPInfo(uid, panelType, out var opList, out error))
+            {
+                return false;
+            }
+
+            var target = opList?.FirstOrDefault(x => x != null && string.Equals((x.IOName ?? string.Empty).Trim(), ioName, StringComparison.OrdinalIgnoreCase));
+            if (target == null)
+            {
+                error = $"panel io not found: {ioName}";
+                return false;
+            }
+
+            return TrySetMachinePanelIO(uid, panelType, target.IOUID, true, out error);
+        }
+
         public static bool TryGetProgListInfo(string uid, short headType, out MachineProgramListInfo info, out string error)
         {
             info = default(MachineProgramListInfo);
@@ -212,13 +412,31 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            var result = HiLink.SetMachinePanelIO(handle, panelType, ioUid, status);
-            if (result != 0)
+            for (var attempt = 0; attempt < 2; attempt++)
             {
+                var result = HiLink.SetMachinePanelIO(handle, panelType, ioUid, status);
+                if (result == 0)
+                {
+                    return true;
+                }
+
+                if (result == -8 && attempt == 0)
+                {
+                    Mode1HandleStore.Invalidate(uid);
+                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
+                    {
+                        error = err;
+                        return false;
+                    }
+                    continue;
+                }
+
                 error = $"SetMachinePanelIO failed (result={result})";
                 return false;
             }
-            return true;
+
+            error = "SetMachinePanelIO failed";
+            return false;
         }
     }
 }

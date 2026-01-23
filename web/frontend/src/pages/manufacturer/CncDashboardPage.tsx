@@ -118,10 +118,10 @@ export const CncDashboardPage = () => {
     Record<string, HealthLevel>
   >({});
   const [tempTooltipMap, setTempTooltipMap] = useState<Record<string, string>>(
-    {}
+    {},
   );
   const [toolTooltipMap, setToolTooltipMap] = useState<Record<string, string>>(
-    {}
+    {},
   );
 
   const updateTempHealth = (uid: string, level: HealthLevel) => {
@@ -281,7 +281,7 @@ export const CncDashboardPage = () => {
 
   const [reservationOpen, setReservationOpen] = useState(false);
   const [reservationTarget, setReservationTarget] = useState<Machine | null>(
-    null
+    null,
   );
   const [reservationSummaryMap, setReservationSummaryMap] = useState<
     Record<string, string>
@@ -303,11 +303,13 @@ export const CncDashboardPage = () => {
   const [machineInfoLoading, setMachineInfoLoading] = useState(false);
   const [machineInfoError, setMachineInfoError] = useState<string | null>(null);
   const [machineInfoProgram, setMachineInfoProgram] = useState<any | null>(
-    null
+    null,
   );
   const [machineInfoAlarms, setMachineInfoAlarms] = useState<
     { type: number; no: number }[]
   >([]);
+  const [machineInfoUid, setMachineInfoUid] = useState<string | null>(null);
+  const [machineInfoClearing, setMachineInfoClearing] = useState(false);
 
   const reservationListJobs: CncJobItem[] =
     reservationListTarget &&
@@ -334,14 +336,14 @@ export const CncDashboardPage = () => {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         const body: any = await res.json().catch(() => ({}));
         if (!res.ok || body?.success === false) {
           throw new Error(
             body?.message ||
               body?.error ||
-              "브리지 예약 큐를 불러오지 못했습니다."
+              "브리지 예약 큐를 불러오지 못했습니다.",
           );
         }
 
@@ -405,12 +407,13 @@ export const CncDashboardPage = () => {
         });
       }
     },
-    [token, toast, setError]
+    [token, toast, setError],
   );
 
   const openMachineInfo = async (uid: string) => {
     if (!uid) return;
     setMachineInfoOpen(true);
+    setMachineInfoUid(uid);
     setMachineInfoLoading(true);
     setMachineInfoError(null);
     setMachineInfoProgram(null);
@@ -507,12 +510,12 @@ export const CncDashboardPage = () => {
         subInfo;
       if (!hasAny) {
         throw new Error(
-          "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)"
+          "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)",
         );
       }
       if (!curInfo) {
         throw new Error(
-          "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)"
+          "GetActivateProgInfo 응답이 비어있습니다.(쿨다운/프록시/브리지 설정 확인)",
         );
       }
       setMachineInfoProgram(curInfo);
@@ -526,6 +529,36 @@ export const CncDashboardPage = () => {
       setMachineInfoLoading(false);
     }
   };
+
+  const clearMachineAlarms = useCallback(async () => {
+    if (!token || !machineInfoUid) return;
+    setMachineInfoClearing(true);
+    try {
+      const res = await apiFetch({
+        path: `/api/machines/${encodeURIComponent(machineInfoUid)}/alarm/clear`,
+        method: "POST",
+        token,
+        jsonBody: {},
+      });
+      const body: any = res.data ?? {};
+      if (!res.ok || body?.success === false) {
+        throw new Error(
+          body?.message || body?.error || `알람 해제 실패 (HTTP ${res.status})`,
+        );
+      }
+
+      // 갱신
+      await openMachineInfo(machineInfoUid);
+    } catch (e: any) {
+      toast({
+        title: "알람 해제 실패",
+        description: e?.message || "알람 해제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setMachineInfoClearing(false);
+    }
+  }, [machineInfoUid, openMachineInfo, toast, token]);
 
   // 제조사 대시보드 요약 (할당된 의뢰 기준)
   const { data: cncDashboardSummary } = useQuery({
@@ -634,7 +667,7 @@ export const CncDashboardPage = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(data),
-      }
+      },
     );
 
     if (!res.ok) {
@@ -654,7 +687,7 @@ export const CncDashboardPage = () => {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-      }
+      },
     );
 
     if (!res.ok) {
@@ -674,7 +707,7 @@ export const CncDashboardPage = () => {
     if (!materialModalTarget || !token) return;
     const res = await fetch(
       `/api/cnc-machines/${encodeURIComponent(
-        materialModalTarget.uid
+        materialModalTarget.uid,
       )}/material`,
       {
         method: "PATCH",
@@ -683,7 +716,7 @@ export const CncDashboardPage = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(next),
-      }
+      },
     );
     const body: any = await res.json().catch(() => ({}));
     if (!res.ok || body?.success === false) {
@@ -696,7 +729,7 @@ export const CncDashboardPage = () => {
     if (!materialModalTarget || !token) return;
     const res = await fetch(
       `/api/cnc-machines/${encodeURIComponent(
-        materialModalTarget.uid
+        materialModalTarget.uid,
       )}/material-remaining`,
       {
         method: "PATCH",
@@ -705,7 +738,7 @@ export const CncDashboardPage = () => {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(next),
-      }
+      },
     );
     const body: any = await res.json().catch(() => ({}));
     if (!res.ok || body?.success === false) {
@@ -811,7 +844,7 @@ export const CncDashboardPage = () => {
                       machine.uid,
                       Array.isArray(toolLife) && toolLife.length
                         ? `공구 ${toolLife.length}개 상태 조회 완료`
-                        : "공구 정보가 없습니다."
+                        : "공구 정보가 없습니다.",
                     );
 
                     openToolDetail(toolLife, level);
@@ -837,7 +870,7 @@ export const CncDashboardPage = () => {
                     if (!target) return;
                     const status = (target.status || "").toUpperCase();
                     const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some(
-                      (k) => status.includes(k)
+                      (k) => status.includes(k),
                     );
 
                     if (!isRunning) {
@@ -909,7 +942,7 @@ export const CncDashboardPage = () => {
                       : jobs.slice(1);
                     const total = filtered.reduce(
                       (sum, j) => sum + (j.qty || 1),
-                      0
+                      0,
                     );
                     const next = { ...prev };
                     if (total <= 0) {
@@ -934,7 +967,7 @@ export const CncDashboardPage = () => {
                   setReservationJobsMap((prev) => {
                     const current = prev[uid] || [];
                     const nextJobs = current.map((j) =>
-                      j.id === jobId ? { ...j, paused: nextPaused } : j
+                      j.id === jobId ? { ...j, paused: nextPaused } : j,
                     );
                     return {
                       ...prev,
@@ -950,7 +983,7 @@ export const CncDashboardPage = () => {
                     setReservationJobsMap((prev) => {
                       const current = prev[uid] || [];
                       const nextJobs = current.map((j) =>
-                        j.id === jobId ? { ...j, paused: wasPaused } : j
+                        j.id === jobId ? { ...j, paused: wasPaused } : j,
                       );
                       return {
                         ...prev,
@@ -974,7 +1007,7 @@ export const CncDashboardPage = () => {
                     setReservationJobsMap((prev) => {
                       const current = prev[uid] || [];
                       const nextJobs = current.map((j) =>
-                        j.id === jobId ? { ...j, paused: wasPaused } : j
+                        j.id === jobId ? { ...j, paused: wasPaused } : j,
                       );
                       return {
                         ...prev,
@@ -986,8 +1019,8 @@ export const CncDashboardPage = () => {
 
                   try {
                     // 1) NC 프로그램 로드(활성화)
-                    const actRes = await callRaw(uid, "UpdateActivateProg", {
-                      headType: 0,
+                    const actRes = await callRaw(uid, "SetActivateProgram", {
+                      headType: 1,
                       programNo,
                     });
                     const actOk =
@@ -998,7 +1031,7 @@ export const CncDashboardPage = () => {
                       const msg =
                         actRes?.message ||
                         actRes?.error ||
-                        "프로그램 로드 실패 (UpdateActivateProg)";
+                        "프로그램 로드 실패 (SetActivateProgram)";
                       throw new Error(msg);
                     }
 
@@ -1027,7 +1060,7 @@ export const CncDashboardPage = () => {
                     setReservationJobsMap((prev) => {
                       const current = prev[uid] || [];
                       const nextJobs = current.map((j) =>
-                        j.id === jobId ? { ...j, paused: wasPaused } : j
+                        j.id === jobId ? { ...j, paused: wasPaused } : j,
                       );
                       return {
                         ...prev,
@@ -1118,25 +1151,9 @@ export const CncDashboardPage = () => {
         <CncReservationModal
           open={reservationOpen}
           machine={reservationTarget}
-          programList={(programSummary?.list as any[]) || []}
-          initialJobs={reservationJobsForTarget}
           onRequestClose={() => {
             setReservationOpen(false);
             setReservationTarget(null);
-          }}
-          onOpenProgramDetail={openProgramDetail}
-          onDownloadProgram={handleDownloadProgram}
-          onDeleteProgram={async (programNo) => {
-            if (!workUid || !programNo) return;
-            try {
-              await callRaw(workUid, "DeleteProgram", {
-                headType: 0,
-                programNo,
-              });
-              await fetchProgramList();
-            } catch (e) {
-              console.warn("DeleteProgram error", e);
-            }
           }}
           onConfirm={(config) => {
             const target = reservationTarget;
@@ -1179,7 +1196,7 @@ export const CncDashboardPage = () => {
 
               const totalQty = jobsWithPause.reduce(
                 (sum, job) => sum + (job.qty || 1),
-                0
+                0,
               );
 
               setReservationJobsMap((prev) => ({
@@ -1212,27 +1229,6 @@ export const CncDashboardPage = () => {
               });
             }
           }}
-          onCancelAll={(machine) => {
-            setReservationOpen(false);
-            setReservationTarget(null);
-            if (!machine) return;
-            const uid = machine.uid;
-            setReservationSummaryMap((prev) => {
-              const next = { ...prev };
-              delete next[uid];
-              return next;
-            });
-            setReservationJobsMap((prev) => {
-              const next = { ...prev };
-              delete next[uid];
-              return next;
-            });
-            setReservationTotalQtyMap((prev) => {
-              const next = { ...prev };
-              delete next[uid];
-              return next;
-            });
-          }}
         />
         <CncReservationListModal
           open={reservationListOpen}
@@ -1261,21 +1257,21 @@ export const CncDashboardPage = () => {
               try {
                 const res = await fetch(
                   `/api/cnc-machines/${encodeURIComponent(
-                    uid
+                    uid,
                   )}/bridge-queue/${encodeURIComponent(job.id)}`,
                   {
                     method: "DELETE",
                     headers: {
                       Authorization: `Bearer ${token}`,
                     },
-                  }
+                  },
                 );
                 const body: any = await res.json().catch(() => ({}));
                 if (!res.ok || body?.success === false) {
                   throw new Error(
                     body?.message ||
                       body?.error ||
-                      "예약 작업 삭제 중 오류가 발생했습니다."
+                      "예약 작업 삭제 중 오류가 발생했습니다.",
                   );
                 }
 
@@ -1290,7 +1286,7 @@ export const CncDashboardPage = () => {
                 setReservationSummaryMap((prev) => {
                   const remaining = reservationJobsMap[uid] || [];
                   const nextRemaining = remaining.filter(
-                    (j) => j.id !== job.id
+                    (j) => j.id !== job.id,
                   );
                   if (nextRemaining.length > 0) return prev;
                   const next = { ...prev };
@@ -1300,11 +1296,11 @@ export const CncDashboardPage = () => {
                 setReservationTotalQtyMap((prev) => {
                   const remaining = reservationJobsMap[uid] || [];
                   const nextRemaining = remaining.filter(
-                    (j) => j.id !== job.id
+                    (j) => j.id !== job.id,
                   );
                   const total = nextRemaining.reduce(
                     (sum, j) => sum + (j.qty || 1),
-                    0
+                    0,
                   );
                   const next = { ...prev };
                   if (total <= 0) delete next[uid];
@@ -1340,21 +1336,21 @@ export const CncDashboardPage = () => {
               try {
                 const res = await fetch(
                   `/api/cnc-machines/${encodeURIComponent(
-                    uid
+                    uid,
                   )}/bridge-queue/clear`,
                   {
                     method: "POST",
                     headers: {
                       Authorization: `Bearer ${token}`,
                     },
-                  }
+                  },
                 );
                 const body: any = await res.json().catch(() => ({}));
                 if (!res.ok || body?.success === false) {
                   throw new Error(
                     body?.message ||
                       body?.error ||
-                      "예약 큐 전체 삭제 중 오류가 발생했습니다."
+                      "예약 큐 전체 삭제 중 오류가 발생했습니다.",
                   );
                 }
 
@@ -1430,8 +1426,10 @@ export const CncDashboardPage = () => {
           open={machineInfoOpen}
           loading={machineInfoLoading}
           error={machineInfoError}
+          clearing={machineInfoClearing}
           programInfo={machineInfoProgram}
           alarms={machineInfoAlarms}
+          onClearAlarms={clearMachineAlarms}
           onRequestClose={() => setMachineInfoOpen(false)}
         />
 

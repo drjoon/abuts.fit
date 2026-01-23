@@ -12,7 +12,17 @@ export interface BridgeEntry {
   size?: number;
 }
 
-export const useBridgeStore = () => {
+interface BridgeStoreOptions {
+  resolveForcedProgram?: () =>
+    | Promise<{ programNo?: number | null; fileName?: string | null } | null>
+    | { programNo?: number | null; fileName?: string | null }
+    | null;
+}
+
+const ensureFanucName = (programNo: number) =>
+  `O${String(programNo).padStart(4, "0")}.nc`;
+
+export const useBridgeStore = (options?: BridgeStoreOptions) => {
   const [bridgeEntries, setBridgeEntries] = useState<BridgeEntry[]>([]);
   const [bridgePath, setBridgePath] = useState<string>("");
   const [bridgeLoading, setBridgeLoading] = useState(false);
@@ -42,7 +52,7 @@ export const useBridgeStore = () => {
 
   const getIncrementedFilename = (
     baseName: string,
-    existing: BridgeEntry[]
+    existing: BridgeEntry[],
   ): string => {
     const extIndex = baseName.lastIndexOf(".");
     const hasExt = extIndex > 0;
@@ -50,7 +60,7 @@ export const useBridgeStore = () => {
     const extPart = hasExt ? baseName.slice(extIndex) : "";
 
     const existingNames = new Set(
-      existing.filter((e) => e.type === "file").map((e) => e.name)
+      existing.filter((e) => e.type === "file").map((e) => e.name),
     );
 
     // Fanuc 스타일 이름(O####.nc)이면 숫자를 증가시킨다.
@@ -100,7 +110,7 @@ export const useBridgeStore = () => {
           name: String(e.name ?? ""),
           type: e.type === "directory" ? "directory" : "file",
           size: typeof e.size === "number" ? e.size : undefined,
-        }))
+        })),
       );
       setBridgePath(targetPath);
       setSelectedEntry(null);
@@ -226,9 +236,41 @@ export const useBridgeStore = () => {
               let content = String(reader.result ?? "");
               let suggestedName = normalizeProgramFileNameByContentFirst(
                 file.name,
-                content
+                content,
               );
               let targetName = file.name;
+
+              let forcedProgramNo: number | null = null;
+              let forcedFileName: string | null = null;
+              if (options?.resolveForcedProgram) {
+                try {
+                  const resolved = await Promise.resolve(
+                    options.resolveForcedProgram(),
+                  );
+                  if (resolved) {
+                    if (
+                      typeof resolved.programNo === "number" &&
+                      Number.isFinite(resolved.programNo)
+                    ) {
+                      forcedProgramNo = resolved.programNo;
+                      forcedFileName = ensureFanucName(resolved.programNo);
+                    }
+                    if (resolved.fileName) {
+                      forcedFileName = resolved.fileName;
+                    }
+                  }
+                } catch {
+                  // ignore resolver failure
+                }
+              }
+
+              if (forcedProgramNo != null) {
+                content = applyProgramNoToContent(forcedProgramNo, content);
+              }
+              if (forcedFileName) {
+                targetName = forcedFileName;
+                suggestedName = forcedFileName;
+              }
 
               const upper = String(file.name || "").toUpperCase();
               const isFanucName = /^O\d{1,5}\.NC$/.test(upper.trim());
@@ -265,7 +307,8 @@ export const useBridgeStore = () => {
               }
 
               const shouldAskNaming =
-                hasMismatch || (!nameMatch && suggestedName !== file.name);
+                !forcedFileName &&
+                (hasMismatch || (!nameMatch && suggestedName !== file.name));
 
               if (shouldAskNaming) {
                 await new Promise<void>((decisionDone) => {
@@ -299,18 +342,18 @@ export const useBridgeStore = () => {
               // 현재 경로 기준으로 동일한 파일명이 이미 존재하면, 외부 UI(ConfirmDialog)를 통해
               // 덮어쓰기/번호 증가/취소 중 하나를 선택할 수 있도록 uploadConflict 상태를 사용한다.
               const conflict = bridgeEntries.find(
-                (e) => e.type === "file" && e.name === targetName
+                (e) => e.type === "file" && e.name === targetName,
               );
 
-              if (conflict) {
+              if (conflict && !forcedFileName) {
                 const suggested = getIncrementedFilename(
                   targetName,
-                  bridgeEntries
+                  bridgeEntries,
                 );
 
                 await new Promise<void>((decisionDone) => {
                   const decide = (
-                    strategy: "overwrite" | "auto" | "cancel"
+                    strategy: "overwrite" | "auto" | "cancel",
                   ) => {
                     if (strategy === "auto") {
                       targetName = suggested;
@@ -371,7 +414,7 @@ export const useBridgeStore = () => {
             resolve();
           };
           reader.readAsText(file);
-        })
+        }),
       );
     }
 

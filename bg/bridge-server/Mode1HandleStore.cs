@@ -29,12 +29,6 @@ namespace HiLinkBridgeWebApi48
             return (m.ip, m.port);
         }
 
-        private static string GetSerial()
-        {
-            var serial = Environment.GetEnvironmentVariable("BRIDGE_SERIAL") ?? string.Empty;
-            return serial.Trim();
-        }
-
         public static bool TryGetHandle(string uid, out ushort handle, out string error)
         {
             error = null;
@@ -57,7 +51,7 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            var serial = GetSerial();
+            var serial = Config.BridgeSerial;
             if (string.IsNullOrWhiteSpace(serial))
             {
                 error = "BRIDGE_SERIAL is not set: " + serial;
