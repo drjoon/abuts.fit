@@ -19,8 +19,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Plus, FileText, Clock, CheckCircle, AlertCircle } from "lucide-react";
 import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
-import { CncProgramEditorPanel } from "@/pages/manufacturer/cnc/components/CncProgramEditorPanel";
-import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
+import { CncSimpleProgramEditorModal } from "@/pages/manufacturer/cnc/components/CncSimpleProgramEditorModal";
 import { useCncToolPanels } from "@/pages/manufacturer/cnc/hooks/useCncToolPanels";
 import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
 import { CncMachineManagerModal } from "@/pages/manufacturer/cnc/components/CncMachineManagerModal";
@@ -42,6 +41,8 @@ import {
 } from "@/pages/manufacturer/cnc/components/CncMaterialModal";
 
 export const CncDashboardPage = () => {
+  type HealthLevel = "unknown" | "ok" | "warn" | "alarm";
+
   const { user, token } = useAuthStore();
   const {
     machines,
@@ -165,7 +166,23 @@ export const CncDashboardPage = () => {
 
   const { toast } = useToast();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
-  const { uploadLocalFiles } = useCncQueueUpload();
+  const { uploadLocalFiles, uploadProgress } = useCncQueueUpload();
+
+  const queueBatchRef = useRef<{
+    t: any | null;
+    machineId: string | null;
+    order: string[] | null;
+    qtyByJobId: Record<string, number>;
+    deleteJobIds: Set<string>;
+  }>({
+    t: null,
+    machineId: null,
+    order: null,
+    qtyByJobId: {},
+    deleteJobIds: new Set(),
+  });
+
+  const queueCommitSeqRef = useRef<Record<string, number>>({});
 
   const refreshCncMachineMeta = useCallback(async () => {
     if (!token) return;
@@ -346,6 +363,7 @@ export const CncDashboardPage = () => {
         }
 
         const list: any[] = Array.isArray(body?.data) ? body.data : [];
+        const metaSource = String(body?.meta?.source || "").trim();
         const jobs: CncJobItem[] = list.map((job) => {
           const programNo =
             typeof job?.programNo === "number" ||
@@ -360,10 +378,12 @@ export const CncDashboardPage = () => {
             (programNo != null ? `#${programNo}` : "-");
           return {
             id: String(job?.id || `${uid}:${nameRaw}`),
-            source: "bridge",
+            source: metaSource === "db" ? "db" : "bridge",
             programNo,
             name: String(nameRaw || "-"),
             qty,
+            ...(job?.s3Key ? { s3Key: String(job.s3Key) } : {}),
+            ...(job?.s3Bucket ? { s3Bucket: String(job.s3Bucket) } : {}),
           };
         });
 
@@ -506,6 +526,163 @@ export const CncDashboardPage = () => {
       }
     },
     [loadBridgeQueueForMachine, loadDbQueueForMachine, setError, toast],
+  );
+
+  const scheduleQueueBatchCommit = useCallback(
+    (machineId: string) => {
+      if (!token) return;
+      if (!machineId) return;
+      const ref = queueBatchRef.current;
+      ref.machineId = machineId;
+      if (ref.t) {
+        clearTimeout(ref.t);
+        ref.t = null;
+      }
+      ref.t = setTimeout(() => {
+        void (async () => {
+          const commitMachineId = String(
+            ref.machineId || machineId || "",
+          ).trim();
+          if (!commitMachineId) return;
+
+          const nextSeq = (queueCommitSeqRef.current[commitMachineId] || 0) + 1;
+          queueCommitSeqRef.current[commitMachineId] = nextSeq;
+
+          const payload = {
+            order: ref.order,
+            qtyUpdates: Object.entries(ref.qtyByJobId).map(([jobId, qty]) => ({
+              jobId,
+              qty,
+            })),
+            deleteJobIds: Array.from(ref.deleteJobIds),
+          };
+
+          // reset first (allow new batch while request in-flight)
+          ref.order = null;
+          ref.qtyByJobId = {};
+          ref.deleteJobIds = new Set();
+          ref.t = null;
+
+          try {
+            const res = await fetch(
+              `/api/cnc-machines/${encodeURIComponent(
+                commitMachineId,
+              )}/bridge-queue/batch`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(payload),
+              },
+            );
+            const body: any = await res.json().catch(() => ({}));
+            if (!res.ok || body?.success === false) {
+              throw new Error(body?.message || body?.error || "예약 변경 실패");
+            }
+
+            const qRes = await fetch(
+              `/api/cnc-machines/${encodeURIComponent(
+                commitMachineId,
+              )}/bridge-queue`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              },
+            );
+            const qBody: any = await qRes.json().catch(() => ({}));
+            if (!qRes.ok || qBody?.success === false) {
+              throw new Error(
+                qBody?.message || qBody?.error || "예약 목록 재조회 실패",
+              );
+            }
+
+            const currentSeq = queueCommitSeqRef.current[commitMachineId] || 0;
+            if (currentSeq !== nextSeq) return;
+
+            const list: any[] = Array.isArray(qBody?.data) ? qBody.data : [];
+            const metaSource = String(qBody?.meta?.source || "").trim();
+            const jobs: CncJobItem[] = list.map((job) => {
+              const programNo =
+                typeof job?.programNo === "number" ||
+                typeof job?.programNo === "string"
+                  ? job.programNo
+                  : null;
+              const qtyRaw = job?.qty;
+              const qty = Math.max(1, Number(qtyRaw ?? 1) || 1);
+              const nameRaw =
+                job?.fileName ||
+                job?.programName ||
+                (programNo != null ? `#${programNo}` : "-");
+              return {
+                id: String(job?.id || `${commitMachineId}:${nameRaw}`),
+                source: metaSource === "db" ? "db" : "bridge",
+                programNo,
+                name: String(nameRaw || "-"),
+                qty,
+                ...(job?.s3Key ? { s3Key: String(job.s3Key) } : {}),
+                ...(job?.s3Bucket ? { s3Bucket: String(job.s3Bucket) } : {}),
+                paused: !!job?.paused,
+              } as any;
+            });
+
+            if (jobs.length > 0) {
+              setReservationJobsMap((prev) => ({
+                ...prev,
+                [commitMachineId]: jobs,
+              }));
+              const first = jobs[0];
+              const baseName = first?.name || "-";
+              setReservationSummaryMap((prev) => ({
+                ...prev,
+                [commitMachineId]: `[생산예약 : ${baseName}]`,
+              }));
+              const total = jobs.reduce((sum, j) => sum + (j.qty || 1), 0);
+              setReservationTotalQtyMap((prev) => ({
+                ...prev,
+                [commitMachineId]: total,
+              }));
+            } else {
+              setReservationJobsMap((prev) => {
+                const next = { ...prev };
+                delete next[commitMachineId];
+                return next;
+              });
+              setReservationSummaryMap((prev) => {
+                const next = { ...prev };
+                delete next[commitMachineId];
+                return next;
+              });
+              setReservationTotalQtyMap((prev) => {
+                const next = { ...prev };
+                delete next[commitMachineId];
+                return next;
+              });
+            }
+          } catch (e: any) {
+            const msg = e?.message || "예약 변경 중 오류";
+            setError(msg);
+            toast({
+              title: "예약 변경 실패",
+              description: msg,
+              variant: "destructive",
+            });
+          }
+        })();
+      }, 700);
+    },
+    [
+      token,
+      toast,
+      setError,
+      queueBatchRef,
+      queueCommitSeqRef,
+      setReservationJobsMap,
+      setReservationSummaryMap,
+      setReservationTotalQtyMap,
+    ],
   );
 
   const openMachineInfo = async (uid: string) => {
@@ -887,11 +1064,44 @@ export const CncDashboardPage = () => {
                 reservationJobsMap={reservationJobsMap}
                 reservationSummaryMap={reservationSummaryMap}
                 reservationTotalQtyMap={reservationTotalQtyMap}
+                uploadProgress={uploadProgress}
                 onUploadFiles={(machine, files) => {
                   void (async () => {
                     try {
-                      await uploadLocalFiles(machine.uid, files);
-                      await loadBridgeQueueForMachine(machine);
+                      const existing = new Set<string>();
+                      const jobs = reservationJobsMap[machine.uid] || [];
+                      for (const j of Array.isArray(jobs) ? jobs : []) {
+                        const n = String((j as any)?.name || "").trim();
+                        if (n) existing.add(n.toLowerCase());
+                      }
+
+                      const list = Array.from(files || []);
+                      const deduped = list.filter((f) => {
+                        const n = String(f?.name || "")
+                          .trim()
+                          .toLowerCase();
+                        if (!n) return false;
+                        return !existing.has(n);
+                      });
+
+                      if (deduped.length !== list.length) {
+                        toast({
+                          title: "중복 파일 제외",
+                          description:
+                            "이미 예약된 파일은 업로드에서 제외했습니다.",
+                        });
+                      }
+                      if (deduped.length === 0) {
+                        toast({
+                          title: "업로드할 파일 없음",
+                          description:
+                            "선택한 파일이 모두 이미 예약되어 있습니다.",
+                        });
+                        return;
+                      }
+
+                      await uploadLocalFiles(machine.uid, deduped);
+                      await loadQueueForMachine(machine);
                       toast({
                         title: "업로드 완료",
                         description: "예약목록에 추가되었습니다.",
@@ -1020,58 +1230,56 @@ export const CncDashboardPage = () => {
                   });
                 }}
                 onCancelReservation={(machine, jobId) => {
+                  const uid = machine.uid;
+                  if (jobId) {
+                    queueBatchRef.current.machineId = uid;
+                    queueBatchRef.current.deleteJobIds.add(jobId);
+                    scheduleQueueBatchCommit(uid);
+                  }
+
                   setReservationJobsMap((prev) => {
-                    const jobs = prev[machine.uid] || [];
+                    const jobs = prev[uid] || [];
                     const filtered = jobId
                       ? jobs.filter((j) => j.id !== jobId)
                       : jobs.slice(1);
+
+                    setReservationSummaryMap((prevSummary) => {
+                      const next = { ...prevSummary };
+                      if (filtered.length === 0) {
+                        delete next[uid];
+                      } else {
+                        const first = filtered[0];
+                        const baseName =
+                          first?.name ||
+                          (first?.programNo != null
+                            ? `#${first.programNo}`
+                            : "-");
+                        next[uid] = `[생산예약 : ${baseName}]`;
+                      }
+                      return next;
+                    });
+
+                    setReservationTotalQtyMap((prevTotal) => {
+                      const total = filtered.reduce(
+                        (sum, j) => sum + (j.qty || 1),
+                        0,
+                      );
+                      const next = { ...prevTotal };
+                      if (total <= 0) {
+                        delete next[uid];
+                      } else {
+                        next[uid] = total;
+                      }
+                      return next;
+                    });
 
                     const nextMap = { ...prev };
                     if (filtered.length === 0) {
-                      delete nextMap[machine.uid];
+                      delete nextMap[uid];
                     } else {
-                      nextMap[machine.uid] = filtered;
+                      nextMap[uid] = filtered;
                     }
                     return nextMap;
-                  });
-
-                  setReservationSummaryMap((prev) => {
-                    const jobs = reservationJobsMap?.[machine.uid] || [];
-                    const filtered = jobId
-                      ? jobs.filter((j) => j.id !== jobId)
-                      : jobs.slice(1);
-
-                    const next = { ...prev };
-                    if (filtered.length === 0) {
-                      delete next[machine.uid];
-                    } else {
-                      const first = filtered[0];
-                      const baseName =
-                        first?.name ||
-                        (first?.programNo != null
-                          ? `#${first.programNo}`
-                          : "-");
-                      next[machine.uid] = `[생산예약 : ${baseName}]`;
-                    }
-                    return next;
-                  });
-
-                  setReservationTotalQtyMap((prev) => {
-                    const jobs = reservationJobsMap?.[machine.uid] || [];
-                    const filtered = jobId
-                      ? jobs.filter((j) => j.id !== jobId)
-                      : jobs.slice(1);
-                    const total = filtered.reduce(
-                      (sum, j) => sum + (j.qty || 1),
-                      0,
-                    );
-                    const next = { ...prev };
-                    if (total <= 0) {
-                      delete next[machine.uid];
-                    } else {
-                      next[machine.uid] = total;
-                    }
-                    return next;
                   });
                 }}
                 onTogglePause={async (machine, jobId) => {
@@ -1241,10 +1449,10 @@ export const CncDashboardPage = () => {
           }}
         />
 
-        <CncProgramEditorPanel
+        <CncSimpleProgramEditorModal
           open={programEditorOpen}
           onClose={closeProgramEditor}
-          workUid={workUid}
+          title={String(programEditorTarget?.name || "")}
           selectedProgram={programEditorTarget}
           onLoadProgram={loadProgramCode}
           onSaveProgram={saveProgramCode}
@@ -1294,6 +1502,9 @@ export const CncDashboardPage = () => {
               programNo,
               no: programNo,
               name: job.name,
+              source: (job as any)?.source ?? "db",
+              s3Key: (job as any)?.s3Key ?? "",
+              s3Bucket: (job as any)?.s3Bucket ?? "",
               headType: 0,
             };
             void openProgramDetail(prog);
@@ -1302,117 +1513,25 @@ export const CncDashboardPage = () => {
             const m = playlistTarget;
             if (!m || !token) return;
             const uid = m.uid;
-            void (async () => {
-              try {
-                const res = await fetch(
-                  `/api/cnc-machines/${encodeURIComponent(
-                    uid,
-                  )}/bridge-queue/${encodeURIComponent(jobId)}`,
-                  {
-                    method: "DELETE",
-                    headers: {
-                      Authorization: `Bearer ${token}`,
-                    },
-                  },
-                );
-                const body: any = await res.json().catch(() => ({}));
-                if (!res.ok || body?.success === false) {
-                  throw new Error(
-                    body?.message ||
-                      body?.error ||
-                      "예약 작업 삭제 중 오류가 발생했습니다.",
-                  );
-                }
-                await loadBridgeQueueForMachine(m);
-                toast({
-                  title: "예약 취소",
-                  description:
-                    "선택한 생산 예약이 취소되고 CAM 단계로 되돌렸습니다.",
-                });
-              } catch (e: any) {
-                const msg =
-                  e?.message ||
-                  "예약 작업 삭제 중 알 수 없는 오류가 발생했습니다.";
-                setError(msg);
-                toast({
-                  title: "예약 취소 실패",
-                  description: msg,
-                  variant: "destructive",
-                });
-              }
-            })();
+            queueBatchRef.current.machineId = uid;
+            queueBatchRef.current.deleteJobIds.add(jobId);
+            scheduleQueueBatchCommit(uid);
           }}
           onReorder={(nextOrder) => {
             const m = playlistTarget;
             if (!m || !token) return;
             const uid = m.uid;
-            void (async () => {
-              try {
-                const res = await fetch(
-                  `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/reorder`,
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ order: nextOrder }),
-                  },
-                );
-                const body: any = await res.json().catch(() => ({}));
-                if (!res.ok || body?.success === false) {
-                  throw new Error(
-                    body?.message || body?.error || "예약 순서 변경 실패",
-                  );
-                }
-                await loadBridgeQueueForMachine(m);
-              } catch (e: any) {
-                const msg = e?.message || "예약 순서 변경 중 오류";
-                setError(msg);
-                toast({
-                  title: "순서 변경 실패",
-                  description: msg,
-                  variant: "destructive",
-                });
-              }
-            })();
+            queueBatchRef.current.machineId = uid;
+            queueBatchRef.current.order = nextOrder;
+            scheduleQueueBatchCommit(uid);
           }}
           onChangeQty={(jobId, qty) => {
             const m = playlistTarget;
             if (!m || !token) return;
             const uid = m.uid;
-            void (async () => {
-              try {
-                const res = await fetch(
-                  `/api/cnc-machines/${encodeURIComponent(
-                    uid,
-                  )}/bridge-queue/${encodeURIComponent(jobId)}/qty`,
-                  {
-                    method: "PATCH",
-                    headers: {
-                      "Content-Type": "application/json",
-                      Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ qty }),
-                  },
-                );
-                const body: any = await res.json().catch(() => ({}));
-                if (!res.ok || body?.success === false) {
-                  throw new Error(
-                    body?.message || body?.error || "수량 변경 실패",
-                  );
-                }
-                await loadBridgeQueueForMachine(m);
-              } catch (e: any) {
-                const msg = e?.message || "수량 변경 중 오류";
-                setError(msg);
-                toast({
-                  title: "수량 변경 실패",
-                  description: msg,
-                  variant: "destructive",
-                });
-              }
-            })();
+            queueBatchRef.current.machineId = uid;
+            queueBatchRef.current.qtyByJobId[jobId] = qty;
+            scheduleQueueBatchCommit(uid);
           }}
         />
 

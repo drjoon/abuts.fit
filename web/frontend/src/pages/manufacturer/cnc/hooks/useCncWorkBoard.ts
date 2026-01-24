@@ -9,10 +9,20 @@ export const useCncWorkBoard = (
   machines: Machine[],
   setLoading: (l: boolean) => void,
   setError: (e: string | null) => void,
-  callRaw: (uid: string, dataType: string, payload?: any) => Promise<any>
+  callRaw: (uid: string, dataType: string, payload?: any) => Promise<any>,
 ) => {
   const { toast } = useToast();
   const { token } = useAuthStore();
+
+  const shouldSilenceBridgeDownError = (msg: string) => {
+    const t = String(msg || "").toLowerCase();
+    return (
+      t.includes("proxy failed") ||
+      t.includes("raw proxy") ||
+      t.includes("bridge proxy") ||
+      t.includes("programs/active")
+    );
+  };
 
   const [opStatus, setOpStatus] = useState<any | null>(null);
   const [motorTemp, setMotorTemp] = useState<any | null>(null);
@@ -116,6 +126,10 @@ export const useCncWorkBoard = (
         ];
         return next.slice(0, 5);
       });
+      if (shouldSilenceBridgeDownError(message)) {
+        return;
+      }
+
       if (!workBoardErrorShownRef.current) {
         workBoardErrorShownRef.current = true;
         setError(message);
@@ -172,7 +186,7 @@ export const useCncWorkBoard = (
         callRaw(workUid, "GetProgListInfo", 1), // 1=메인
         apiFetch({
           path: `/api/cnc/machines/${encodeURIComponent(
-            workUid
+            workUid,
           )}/programs/active`,
           method: "GET",
           token,
@@ -199,7 +213,11 @@ export const useCncWorkBoard = (
         list: Array.isArray(progList) ? progList : [],
       });
     } catch (e: any) {
-      setError(e?.message ?? "프로그램 목록 조회 중 오류");
+      const msg = e?.message ?? "프로그램 목록 조회 중 오류";
+      if (shouldSilenceBridgeDownError(msg)) {
+        return;
+      }
+      setError(msg);
     }
   };
 
@@ -218,7 +236,7 @@ export const useCncWorkBoard = (
         return {
           ...prev,
           ioInfo: prev.ioInfo.map((io: any) =>
-            io?.IOUID === ioUid ? { ...io, Status: nextStatus } : io
+            io?.IOUID === ioUid ? { ...io, Status: nextStatus } : io,
           ),
         };
       });

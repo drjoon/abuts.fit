@@ -177,7 +177,8 @@
     1. **1-stl**: 의뢰자가 업로드한 원본 STL 파일 저장.
     2. **2-filled (Rhino)**: Rhino-server가 `1-stl`의 파일을 감지하여 홀 메꿈 처리 후 저장.
     3. **3-nc (ESPRIT)**: ESPRIT-addin이 `2-filled`를 감지하여 NC 파일 생성 후 저장.
-    4. **CNC (Bridge)**: Bridge-server가 `3-nc`를 감지, DB 스케줄 확인 후 CNC 업로드 및 가공 명령 전송.
+    4. **3-direct (Manual)**: 제조사가 CNC 대시보드에서 직접 업로드한 NC 파일 저장.
+    5. **CNC (Bridge)**: Bridge-server가 `3-nc`/`3-direct` 기반으로 CNC 업로드를 수행하며, 가공 시작은 Now Playing에서 사용자 Start로 진행.
   - **스토리지 경로**: 모든 BG 프로그램은 `/bg/storage` 하위 폴더를 기준으로 파일을 공유하며, 각 단계 완료 시 다음 폴더로 결과물을 이동/복사합니다.
 
 ### 11.2 팝빌 처리 아키텍처
@@ -260,24 +261,20 @@
 ### 6.9 회원가입 및 인증
 
 - **대상 경로**
-
   - 기본 이메일 회원가입: `/signup`
   - 리퍼럴 회원가입: `/signup?ref=...` 또는 `/signup?referredByUserId=...`
   - 소셜 회원가입: `/oauth/callback` → `/signup?mode=social_new|social_complete`
 
 - **회원가입 위저드 (이메일/리퍼럴 전용)**
-
   - Step 1: 가입 방법 선택 (Google, Kakao, Email 버튼)
   - Step 2: 기본 정보 입력 (필수: `name`, `password`, `confirmPassword`)
   - Step 3: 이메일 + 휴대폰 인증 (둘 다 인증 완료 필수)
   - Step 4: 가입 완료 및 이동
 
 - **비밀번호 정책**
-
   - 일반 이메일 가입(비소셜) 시: **길이 10자 이상 + 특수문자 1자 이상** 필수.
 
 - **이메일/휴대폰 인증 정책**
-
   - 대상: `role=requestor` & 일반 회원가입
   - 백엔드 `register` API 호출 전 `email`, `phoneNumber` 인증 완료 상태여야 함.
   - API:

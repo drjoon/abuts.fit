@@ -24,13 +24,13 @@ namespace HiLinkBridgeWebApi48
 
         private static string ResolveStoreRoot()
         {
-            var env = Get("BRIDGE_STORE_ROOT", @"C:\abuts.fit\bg\storage\3-nc");
+            var env = Get("BRIDGE_STORE_ROOT", @"C:\abuts.fit\bg\storage\3-direct");
             if (!string.IsNullOrEmpty(env))
             {
                 return Path.GetFullPath(env);
             }
 
-            return Path.GetFullPath(Path.Combine(BaseDirectory, "..", "..", "storage", "3-nc"));
+            return Path.GetFullPath(Path.Combine(BaseDirectory, "..", "..", "storage", "3-direct"));
         }
 
         private static string TrimBase(string value, string fallback)

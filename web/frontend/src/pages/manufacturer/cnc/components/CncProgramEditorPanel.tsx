@@ -16,7 +16,7 @@ interface CncProgramEditorPanelProps {
       isNew?: boolean;
       nameOverride?: string;
       programNoOverride?: number;
-    }
+    },
   ) => Promise<void>; // 프로그램 코드 저장(업데이트/새로 저장)
   readOnly?: boolean;
 }
@@ -245,7 +245,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     <>
       {!isBridgeSource && PinModal}
       <div className="fixed inset-0 z-[60] bg-black/60">
-        <div className="absolute inset-0 bg-white flex flex-col">
+        <div className="absolute inset-x-0 top-12 bottom-0 bg-white flex flex-col">
           <header className="relative h-12 px-4 flex items-center justify-between border-b border-gray-200 bg-slate-900 text-slate-50 text-sm">
             <div className="flex items-center gap-4 min-w-0">
               <span className="font-semibold truncate max-w-xs">{name}</span>

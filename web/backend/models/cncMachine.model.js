@@ -90,6 +90,31 @@ const cncMachineSchema = new mongoose.Schema(
         default: null,
       },
     },
+    bridgeQueueSnapshot: {
+      jobs: [
+        {
+          id: { type: String, trim: true },
+          kind: { type: String, trim: true },
+          fileName: { type: String, trim: true },
+          bridgePath: { type: String, trim: true },
+          s3Key: { type: String, trim: true },
+          s3Bucket: { type: String, trim: true },
+          fileSize: { type: Number },
+          contentType: { type: String, trim: true },
+          requestId: { type: String, trim: true },
+          programNo: { type: Number },
+          programName: { type: String, trim: true },
+          qty: { type: Number },
+          createdAtUtc: { type: Date },
+          source: { type: String, trim: true },
+        },
+      ],
+      updatedAt: { type: Date, default: null },
+    },
+    bridgeQueueSyncedAt: {
+      type: Date,
+      default: null,
+    },
     specifications: {
       maxDiameter: Number,
       minDiameter: Number,
@@ -101,7 +126,7 @@ const cncMachineSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 cncMachineSchema.index({ machineId: 1 });

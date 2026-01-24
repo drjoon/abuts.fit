@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { applyProgramNoToContent } from "../lib/programNaming";
 import type { Machine } from "@/pages/manufacturer/cnc/types";
 import { useToast } from "@/hooks/use-toast";
 import { apiFetch } from "@/lib/apiClient";
@@ -15,6 +14,8 @@ export interface CncJobItem {
   name: string;
   qty: number;
   paused?: boolean;
+  s3Key?: string;
+  s3Bucket?: string;
 }
 
 export interface CncReservationConfig {
@@ -42,67 +43,44 @@ export const CncReservationModal = ({
   const [dropping, setDropping] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const [allocatedSlotHint, setAllocatedSlotHint] = useState<number>(3000);
-  const nextSlotRef = useRef<number>(3000);
+  const [uploadProgress, setUploadProgress] = useState<{
+    fileName: string;
+    percent: number;
+  } | null>(null);
 
-  const ensureFanucName = useCallback((slot: number) => {
-    const sanitized = Number.isFinite(slot) ? Number(slot) : 3000;
-    return `O${String(sanitized).padStart(4, "0")}.nc`;
-  }, []);
+  const uploadToPresignedUrl = useCallback(
+    async (uploadUrl: string, file: File) => {
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", uploadUrl);
+        setUploadProgress({ fileName: file.name, percent: 0 });
+        xhr.setRequestHeader(
+          "Content-Type",
+          file.type || "application/octet-stream",
+        );
 
-  const setNextSlotFromServer = useCallback(
-    (slot?: number | null, fallback?: number | null) => {
-      const primary = Number.isFinite(slot ?? NaN) ? Number(slot) : null;
-      const secondary = Number.isFinite(fallback ?? NaN)
-        ? Number(fallback)
-        : null;
-      const resolved = primary ?? secondary ?? 3000;
-      nextSlotRef.current = resolved;
-      setAllocatedSlotHint(resolved);
+        xhr.upload.onprogress = (evt) => {
+          if (!evt.lengthComputable) return;
+          const percent = Math.max(
+            0,
+            Math.min(100, Math.round((evt.loaded / evt.total) * 100)),
+          );
+          setUploadProgress({ fileName: file.name, percent });
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setUploadProgress({ fileName: file.name, percent: 100 });
+            resolve();
+          } else reject(new Error(`S3 업로드 실패 (HTTP ${xhr.status})`));
+        };
+        xhr.onerror = () => reject(new Error("S3 업로드 실패"));
+
+        xhr.send(file);
+      });
     },
     [],
   );
-
-  const allocateNextSlot = useCallback(() => {
-    const current = Number.isFinite(nextSlotRef.current)
-      ? Number(nextSlotRef.current)
-      : 3000;
-    const next = current === 3000 ? 3001 : 3000;
-    nextSlotRef.current = next;
-    setAllocatedSlotHint(next);
-    return current;
-  }, []);
-
-  const resolveForcedProgram = useCallback(() => {
-    if (!machine?.uid) return null;
-    const slot = allocateNextSlot();
-    return {
-      programNo: slot,
-      fileName: ensureFanucName(slot),
-    };
-  }, [allocateNextSlot, ensureFanucName, machine?.uid]);
-
-  const fetchContinuousState = useCallback(async () => {
-    if (!open || !machine?.uid || !token) return;
-    try {
-      const res = await apiFetch({
-        path: `/api/cnc-machines/${encodeURIComponent(
-          machine.uid,
-        )}/continuous/state`,
-        method: "GET",
-        token,
-      });
-      if (!res.ok) return;
-      const payload: any = res.data ?? {};
-      const data = payload?.data ?? payload;
-      const nextSlot = Number(data?.nextSlot);
-      const currentSlot = Number(data?.currentSlot);
-      setNextSlotFromServer(nextSlot, currentSlot === 3000 ? 3001 : 3000);
-    } catch {
-      // ignore fetch failure
-      setNextSlotFromServer(null, 3000);
-    }
-  }, [machine?.uid, open, setNextSlotFromServer, token]);
 
   const handleUploadLocalFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -128,54 +106,61 @@ export const CncReservationModal = ({
       if (list.length === 0) return;
 
       setSubmitting(true);
+      setUploadProgress(null);
       try {
         const uploadedJobs: CncJobItem[] = [];
 
-        // next slot을 서버에서 최신으로 받아온다.
-        await fetchContinuousState();
-
-        // 장비별 폴더 보장
-        await apiFetch({
-          path: "/api/bridge-store/mkdir",
-          method: "POST",
-          token,
-          jsonBody: { path: machine.uid },
-        }).catch(() => {});
-
         for (const file of list) {
-          const raw = await file.text();
-          const forced = await Promise.resolve(resolveForcedProgram());
-          const fileName = String(forced?.fileName || "").trim();
-          const programNo = Number(forced?.programNo);
-          if (!fileName || !Number.isFinite(programNo)) {
-            throw new Error("다음 슬롯 정보를 확인하지 못했습니다.");
+          const fileName = String(file.name || "").trim();
+          if (!fileName) {
+            throw new Error("파일명이 올바르지 않습니다.");
           }
 
-          const content = applyProgramNoToContent(programNo, raw);
-          const bridgePath = `${machine.uid}/${fileName}`;
+          const contentType = file.type || "application/octet-stream";
+          const fileSize = file.size;
 
-          const saveRes = await apiFetch({
-            path: "/api/bridge-store/file",
-            method: "POST",
-            token,
-            jsonBody: { path: bridgePath, content },
-          });
-          if (!saveRes.ok) {
-            const body: any = saveRes.data ?? {};
-            throw new Error(
-              body?.message || body?.error || "브리지 스토어 저장 실패",
-            );
-          }
-
-          const enqueueRes = await apiFetch({
+          const presignRes = await apiFetch({
             path: `/api/cnc-machines/${encodeURIComponent(
               machine.uid,
-            )}/continuous/enqueue`,
+            )}/direct/presign`,
             method: "POST",
             token,
             jsonBody: {
               fileName,
-              bridgePath,
+              contentType,
+              fileSize,
+            },
+          });
+          const presignBody: any = presignRes.data ?? {};
+          const presignData = presignBody?.data ?? presignBody;
+          if (!presignRes.ok || presignBody?.success === false) {
+            throw new Error(
+              presignBody?.message || presignBody?.error || "presign 발급 실패",
+            );
+          }
+
+          const uploadUrl = String(presignData?.uploadUrl || "").trim();
+          const s3Key = String(presignData?.s3Key || "").trim();
+          const s3Bucket = String(presignData?.s3Bucket || "").trim();
+          if (!uploadUrl || !s3Key) {
+            throw new Error("presign 정보가 올바르지 않습니다.");
+          }
+
+          await uploadToPresignedUrl(uploadUrl, file);
+
+          const enqueueRes = await apiFetch({
+            path: `/api/cnc-machines/${encodeURIComponent(
+              machine.uid,
+            )}/direct/enqueue`,
+            method: "POST",
+            token,
+            jsonBody: {
+              fileName,
+              s3Key,
+              s3Bucket,
+              contentType,
+              fileSize,
+              qty: 1,
               requestId: null,
             },
           });
@@ -185,14 +170,14 @@ export const CncReservationModal = ({
             throw new Error(
               enqueueBody?.message ||
                 enqueueBody?.error ||
-                "브리지 연속 가공 큐 등록 실패",
+                "DB 예약목록 등록 실패",
             );
           }
 
           uploadedJobs.push({
             id: `upload:${fileName}:${Date.now()}`,
             source: "upload",
-            programNo,
+            programNo: null,
             name: fileName,
             qty: 1,
           });
@@ -213,23 +198,18 @@ export const CncReservationModal = ({
         });
       } finally {
         setSubmitting(false);
+        setUploadProgress(null);
       }
     },
     [
-      fetchContinuousState,
       machine?.uid,
       onConfirm,
       onRequestClose,
-      resolveForcedProgram,
       toast,
       token,
+      uploadToPresignedUrl,
     ],
   );
-
-  useEffect(() => {
-    if (!open) return;
-    void fetchContinuousState();
-  }, [fetchContinuousState, open]);
 
   useEffect(() => {
     if (!open) {
@@ -271,14 +251,24 @@ export const CncReservationModal = ({
         <div className="mt-2 text-sm text-slate-700">
           {machine?.uid && (
             <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-[12px] text-blue-700">
-              다음 업로드 파일명은 자동으로
-              <code className="mx-1 font-semibold">
-                {ensureFanucName(allocatedSlotHint)}
-              </code>
-              으로 설정되고, 브리지 서버로 전송됩니다.
+              업로드한 파일은 원본 파일명 그대로 S3/예약목록(DB)에 저장됩니다.
             </div>
           )}
 
+          {uploadProgress && (
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate">{uploadProgress.fileName}</span>
+                <span className="tabular-nums">{uploadProgress.percent}%</span>
+              </div>
+              <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
+                <div
+                  className="h-2 rounded-full bg-blue-600"
+                  style={{ width: `${uploadProgress.percent}%` }}
+                />
+              </div>
+            </div>
+          )}
           <div
             className={`mt-4 rounded-xl border-2 border-dashed overflow-hidden transition-colors cursor-pointer ${
               dropping

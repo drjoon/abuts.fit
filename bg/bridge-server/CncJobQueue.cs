@@ -22,6 +22,10 @@ namespace HiLinkBridgeWebApi48
         // file job
         public string fileName { get; set; }
         public string bridgePath { get; set; }
+        public string s3Key { get; set; }
+        public string s3Bucket { get; set; }
+        public long? fileSize { get; set; }
+        public string contentType { get; set; }
         public string requestId { get; set; }
 
         // dummy job
@@ -71,6 +75,24 @@ namespace HiLinkBridgeWebApi48
                 q.AddLast(job);
             }
             return job;
+        }
+
+        public static void ReplaceQueue(string machineId, System.Collections.Generic.IEnumerable<CncJobItem> jobs)
+        {
+            var mid = (machineId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(mid)) return;
+
+            var q = GetQueue(mid);
+            lock (GetLock(mid))
+            {
+                q.Clear();
+                if (jobs == null) return;
+                foreach (var j in jobs)
+                {
+                    if (j == null) continue;
+                    q.AddLast(j);
+                }
+            }
         }
 
         // 더미는 '끼워넣기': 현재 진행 중 작업이 끝나면 바로 다음으로 실행되도록 큐의 앞에 넣는다.

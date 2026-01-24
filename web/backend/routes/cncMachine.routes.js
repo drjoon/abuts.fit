@@ -14,6 +14,19 @@ router.get(
   requireBridgeSecret,
   cncMachineController.getDummySettingsForBridge,
 );
+router.get(
+  "/bridge/queue-snapshot/:machineId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.getDbBridgeQueueSnapshotForBridge,
+);
+
+router.get(
+  "/bridge/cnc-direct/presign-download/:machineId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.createCncDirectDownloadPresignForBridge,
+);
 router.patch(
   "/bridge/dummy-settings/:machineId/last-run-key",
   requireBridgeIpAllowlist,
@@ -52,6 +65,24 @@ router.post(
   cncMachineController.enqueueBridgeContinuousJob,
 );
 
+// CNC(3-direct) 업로드: presign 발급 + DB 예약목록 enqueue (브리지 서버 다운 시에도 동작)
+router.post(
+  "/:machineId/direct/presign",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.createCncDirectUploadPresign,
+);
+router.post(
+  "/:machineId/direct/enqueue",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.enqueueCncDirectToDb,
+);
+
+router.get(
+  "/:machineId/direct/presign-download",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.createCncDirectDownloadPresign,
+);
+
 // 브리지 연속 가공 상태 조회
 router.get(
   "/:machineId/continuous/state",
@@ -78,6 +109,13 @@ router.patch(
   "/:machineId/bridge-queue/:jobId/qty",
   authorizeRoles("manufacturer", "admin"),
   cncMachineController.updateBridgeQueueJobQty,
+);
+
+// 브리지 예약 큐 배치 변경 (qty/order/delete/clear)
+router.post(
+  "/:machineId/bridge-queue/batch",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.applyBridgeQueueBatchForMachine,
 );
 
 // 브리지 예약 큐 전체 삭제

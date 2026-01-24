@@ -1,6 +1,7 @@
 import CncMachine from "../models/cncMachine.model.js";
 import Request from "../models/request.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
+import { getPresignedGetUrl, getPresignedPutUrl } from "../utils/s3.utils.js";
 import {
   getTodayYmdInKst,
   isKoreanBusinessDay,
@@ -19,6 +20,518 @@ function withBridgeHeaders(extra = {}) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+/**
+ * 브리지 예약 큐 배치 업데이트 (머신별)
+ * - body: {
+ *    order?: string[],
+ *    qtyUpdates?: { jobId: string, qty: number }[],
+ *    deleteJobIds?: string[],
+ *    clear?: boolean,
+ *  }
+ */
+export async function applyBridgeQueueBatchForMachine(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const clear = req.body?.clear === true;
+    const orderRaw = req.body?.order;
+    const order = Array.isArray(orderRaw)
+      ? orderRaw.map((v) => String(v || "").trim()).filter(Boolean)
+      : null;
+
+    const qtyRaw = req.body?.qtyUpdates;
+    const qtyUpdates = Array.isArray(qtyRaw)
+      ? qtyRaw
+          .map((u) => {
+            if (!u) return null;
+            const jobId = String(u.jobId || u.id || "").trim();
+            if (!jobId) return null;
+            const qty = Math.max(1, Number(u.qty ?? 1) || 1);
+            return { jobId, qty };
+          })
+          .filter(Boolean)
+      : [];
+
+    const delRaw = req.body?.deleteJobIds;
+    const deleteJobIds = Array.isArray(delRaw)
+      ? delRaw.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    const jobs0 = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+
+    let jobs = clear ? [] : jobs0;
+
+    // delete first (so reorder/qty doesn't include deleted)
+    let removedJobs = [];
+    if (!clear && deleteJobIds.length > 0) {
+      const delSet = new Set(deleteJobIds);
+      removedJobs = jobs.filter((j) => delSet.has(String(j?.id || "")));
+      jobs = jobs.filter((j) => !delSet.has(String(j?.id || "")));
+    }
+
+    // qty updates
+    if (!clear && qtyUpdates.length > 0) {
+      const qtyMap = new Map(qtyUpdates.map((u) => [u.jobId, u.qty]));
+      jobs = jobs.map((j) => {
+        const id = String(j?.id || "");
+        if (!id) return j;
+        if (!qtyMap.has(id)) return j;
+        return { ...j, qty: qtyMap.get(id) };
+      });
+    }
+
+    // reorder
+    if (!clear && order && order.length > 0) {
+      const jobById = new Map();
+      for (const j of jobs) {
+        if (j?.id) jobById.set(String(j.id), j);
+      }
+
+      const reordered = [];
+      for (const id of order) {
+        const j = jobById.get(id);
+        if (j) reordered.push(j);
+      }
+      for (const j of jobs) {
+        if (!j?.id) continue;
+        if (!order.includes(String(j.id))) reordered.push(j);
+      }
+      jobs = reordered;
+    }
+
+    await saveBridgeQueueSnapshot(mid, jobs);
+
+    // 브리지 동기화 best-effort
+    try {
+      if (clear) {
+        const clearUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/clear`;
+        await fetch(clearUrl, {
+          method: "POST",
+          headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ machineId: mid }),
+        });
+      } else {
+        if (order && order.length > 0) {
+          const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/reorder`;
+          await fetch(url, {
+            method: "POST",
+            headers: withBridgeHeaders({
+              "Content-Type": "application/json",
+            }),
+            body: JSON.stringify({ machineId: mid, order }),
+          });
+        }
+
+        for (const u of qtyUpdates) {
+          try {
+            const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/${encodeURIComponent(
+              mid,
+            )}/${encodeURIComponent(u.jobId)}/qty`;
+            await fetch(url, {
+              method: "PATCH",
+              headers: withBridgeHeaders({
+                "Content-Type": "application/json",
+              }),
+              body: JSON.stringify({ qty: u.qty }),
+            });
+          } catch {
+            // ignore
+          }
+        }
+
+        for (const jid of deleteJobIds) {
+          try {
+            const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/${encodeURIComponent(
+              mid,
+            )}/${encodeURIComponent(jid)}`;
+            await fetch(url, {
+              method: "DELETE",
+              headers: withBridgeHeaders(),
+            });
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 삭제된 항목의 requestId는 CAM 단계로 롤백
+    const uniqueRequestIds = new Set();
+    for (const r of removedJobs) {
+      const rid = String(r?.requestId || "").trim();
+      if (rid) uniqueRequestIds.add(rid);
+    }
+    const rolledBack = [];
+    for (const rid of uniqueRequestIds) {
+      const rr = await rollbackRequestToCamByRequestId(rid);
+      if (rr?._id) rolledBack.push(String(rr._id));
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        jobs,
+        rolledBackRequestIds: rolledBack,
+      },
+    });
+  } catch (error) {
+    console.error("Error in applyBridgeQueueBatchForMachine:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 예약 큐 배치 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+function normalizeCncProgramFileName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+  const upper = raw.toUpperCase();
+  const m = upper.match(/^O(\d{1,5})(?:\.NC)?$/);
+  if (m) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n >= 0) {
+      return `O${String(n).padStart(4, "0")}.nc`;
+    }
+  }
+  return raw;
+}
+
+function sanitizeS3KeySegment(name) {
+  const raw = String(name || "")
+    .trim()
+    .normalize("NFC");
+  if (!raw) return "";
+  return raw.replace(/[\\/]/g, "_");
+}
+
+function parseProgramNoFromFileName(fileName) {
+  const upper = String(fileName || "")
+    .toUpperCase()
+    .trim();
+  const m = upper.match(/^O(\d{1,5})/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function saveBridgeQueueSnapshot(machineId, jobs) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return null;
+
+  const safeJobs = Array.isArray(jobs)
+    ? jobs
+        .map((j) => {
+          if (!j || typeof j !== "object") return null;
+          return {
+            id: j.id != null ? String(j.id).trim() : "",
+            kind: j.kind != null ? String(j.kind).trim() : "",
+            fileName: j.fileName != null ? String(j.fileName).trim() : "",
+            bridgePath: j.bridgePath != null ? String(j.bridgePath).trim() : "",
+            s3Key: j.s3Key != null ? String(j.s3Key).trim() : "",
+            s3Bucket: j.s3Bucket != null ? String(j.s3Bucket).trim() : "",
+            fileSize:
+              typeof j.fileSize === "number" && Number.isFinite(j.fileSize)
+                ? j.fileSize
+                : null,
+            contentType:
+              j.contentType != null ? String(j.contentType).trim() : "",
+            requestId: j.requestId != null ? String(j.requestId).trim() : "",
+            programNo:
+              typeof j.programNo === "number" && Number.isFinite(j.programNo)
+                ? j.programNo
+                : null,
+            programName:
+              j.programName != null ? String(j.programName).trim() : "",
+            qty:
+              typeof j.qty === "number" && Number.isFinite(j.qty)
+                ? j.qty
+                : null,
+            createdAtUtc: j.createdAtUtc ? new Date(j.createdAtUtc) : null,
+            source: j.source != null ? String(j.source).trim() : "",
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  const now = new Date();
+  return getOrCreateCncMachine(mid, {
+    bridgeQueueSnapshot: {
+      jobs: safeJobs,
+      updatedAt: now,
+    },
+    bridgeQueueSyncedAt: now,
+  });
+}
+
+async function getDbBridgeQueueSnapshot(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return { jobs: [], updatedAt: null, syncedAt: null };
+  const machine = await CncMachine.findOne({ machineId: mid })
+    .select("bridgeQueueSnapshot bridgeQueueSyncedAt")
+    .lean();
+  const snapshot = machine?.bridgeQueueSnapshot || null;
+  const jobs = Array.isArray(snapshot?.jobs) ? snapshot.jobs : [];
+  const updatedAt = snapshot?.updatedAt ? new Date(snapshot.updatedAt) : null;
+  const syncedAt = machine?.bridgeQueueSyncedAt
+    ? new Date(machine.bridgeQueueSyncedAt)
+    : null;
+  return { jobs, updatedAt, syncedAt };
+}
+
+async function fetchBridgeQueueFromBridge(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) {
+    return { ok: false, status: 400, error: "machineId is required", jobs: [] };
+  }
+
+  const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/${encodeURIComponent(
+    mid,
+  )}`;
+  const resp = await fetch(url, {
+    method: "GET",
+    headers: withBridgeHeaders(),
+  });
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok || body?.success === false) {
+    return {
+      ok: false,
+      status: resp.status,
+      error:
+        body?.message ||
+        body?.error ||
+        "브리지 예약 큐 조회 중 오류가 발생했습니다.",
+      jobs: [],
+    };
+  }
+  const list = Array.isArray(body?.data) ? body.data : body?.data || [];
+  const jobs = Array.isArray(list) ? list : [];
+  return { ok: true, status: resp.status, error: null, jobs };
+}
+
+/**
+ * CNC(3-direct) 업로드용 presigned PUT URL 발급 (제조사 인증 기반)
+ * - 파일은 S3에 업로드하고, DB에는 메타만 저장한다.
+ */
+export async function createCncDirectUploadPresign(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const rawName = String(req.body?.fileName || "").trim();
+    const fileName = rawName;
+    if (!fileName) {
+      return res
+        .status(400)
+        .json({ success: false, message: "fileName is required" });
+    }
+
+    const contentType = String(
+      req.body?.contentType || "application/octet-stream",
+    ).trim();
+    const fileSize = Number(req.body?.fileSize || 0);
+
+    const safeName = sanitizeS3KeySegment(fileName);
+    const key = `bg/3-direct/${mid}/${safeName}`;
+    const presign = await getPresignedPutUrl(key, contentType, 3600);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        uploadUrl: presign.url,
+        s3Key: presign.key,
+        s3Bucket: presign.bucket,
+        fileName,
+        contentType,
+        fileSize: Number.isFinite(fileSize) && fileSize > 0 ? fileSize : null,
+      },
+    });
+  } catch (error) {
+    console.error("Error in createCncDirectUploadPresign:", error);
+    return res.status(500).json({
+      success: false,
+      message: "CNC presign 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 제조사용: CNC(3-direct) 다운로드 presigned GET URL 발급
+ */
+export async function createCncDirectDownloadPresign(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const s3Key = String(req.query?.s3Key || req.body?.s3Key || "").trim();
+    if (!s3Key) {
+      return res
+        .status(400)
+        .json({ success: false, message: "s3Key is required" });
+    }
+
+    const expiresIn = Math.max(
+      60,
+      Math.min(3600, Number(req.query?.expiresIn || 300)),
+    );
+    const presign = await getPresignedGetUrl(s3Key, expiresIn);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        downloadUrl: presign.url,
+        s3Key: presign.key,
+        s3Bucket: presign.bucket,
+        expiresIn,
+      },
+    });
+  } catch (error) {
+    console.error("Error in createCncDirectDownloadPresign:", error);
+    return res.status(500).json({
+      success: false,
+      message: "CNC download presign 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 브리지 서버용: CNC(3-direct) 다운로드 presigned GET URL 발급
+ * - 브리지는 AWS 자격증명을 갖지 않으므로, 백엔드가 presigned URL을 발급한다.
+ * - 보안은 bridgeSecret/ipAllowlist 미들웨어로 처리한다.
+ */
+export async function createCncDirectDownloadPresignForBridge(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const s3Key = String(req.query?.s3Key || req.body?.s3Key || "").trim();
+    if (!s3Key) {
+      return res.status(400).json({
+        success: false,
+        message: "s3Key is required",
+      });
+    }
+
+    const expiresIn = Math.max(
+      60,
+      Math.min(3600, Number(req.query?.expiresIn || 300)),
+    );
+    const presign = await getPresignedGetUrl(s3Key, expiresIn);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        downloadUrl: presign.url,
+        s3Key: presign.key,
+        s3Bucket: presign.bucket,
+        expiresIn,
+      },
+    });
+  } catch (error) {
+    console.error("Error in createCncDirectDownloadPresignForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "CNC download presign 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * CNC(3-direct) 예약목록(DB) enqueue
+ * - 브리지 서버가 다운이어도 동작해야 하므로 브리지를 호출하지 않는다.
+ */
+export async function enqueueCncDirectToDb(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const fileName = String(req.body?.fileName || "").trim();
+    const s3Key = String(req.body?.s3Key || "").trim();
+    const s3Bucket = String(req.body?.s3Bucket || "").trim();
+    const contentType = String(req.body?.contentType || "").trim();
+    const fileSize = Number(req.body?.fileSize || 0);
+    const qty = Math.max(1, Number(req.body?.qty ?? 1) || 1);
+    const requestIdRaw = req.body?.requestId;
+    const requestId = requestIdRaw != null ? String(requestIdRaw).trim() : "";
+
+    if (!fileName || !s3Key) {
+      return res.status(400).json({
+        success: false,
+        message: "fileName and s3Key are required",
+      });
+    }
+
+    const now = new Date();
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+    const jobId = `${mid}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+
+    jobs.push({
+      id: jobId,
+      kind: "file",
+      fileName,
+      bridgePath: `${mid}/${fileName}`,
+      s3Key,
+      s3Bucket: s3Bucket || process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+      fileSize: Number.isFinite(fileSize) && fileSize > 0 ? fileSize : null,
+      contentType: contentType || "application/octet-stream",
+      requestId: requestId || "",
+      programNo: null,
+      programName: "",
+      qty,
+      createdAtUtc: now,
+      source: "manual_upload",
+    });
+
+    await saveBridgeQueueSnapshot(mid, jobs);
+
+    return res.status(200).json({
+      success: true,
+      data: { jobId, fileName },
+    });
+  } catch (error) {
+    console.error("Error in enqueueCncDirectToDb:", error);
+    return res.status(500).json({
+      success: false,
+      message: "DB 예약목록 등록 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 export async function enqueueBridgeContinuousJob(req, res) {
@@ -70,6 +583,16 @@ export async function enqueueBridgeContinuousJob(req, res) {
           body?.error ||
           "브리지 연속 가공 enqueue 중 오류가 발생했습니다.",
       });
+    }
+
+    // 브리지 enqueue 성공 시에만 DB 스냅샷 갱신
+    try {
+      const q = await fetchBridgeQueueFromBridge(mid);
+      if (q.ok) {
+        await saveBridgeQueueSnapshot(mid, q.jobs);
+      }
+    } catch {
+      // ignore: enqueue 응답 자체는 성공 유지
     }
 
     return res.status(200).json({ success: true, data: body?.data ?? body });
@@ -165,33 +688,56 @@ export async function getBridgeQueueForMachine(req, res) {
       });
     }
 
-    const url = `${BRIDGE_BASE.replace(
-      /\/$/,
-      "",
-    )}/api/bridge/queue/${encodeURIComponent(mid)}`;
-    const resp = await fetch(url, {
-      method: "GET",
-      headers: withBridgeHeaders(),
+    // DB를 단일 소스로 사용한다. (브리지 서버 다운이어도 조회 가능)
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    return res.status(200).json({
+      success: true,
+      data: snap.jobs,
+      meta: {
+        source: "db",
+        updatedAt: snap.updatedAt ? snap.updatedAt.toISOString() : null,
+        syncedAt: snap.syncedAt ? snap.syncedAt.toISOString() : null,
+      },
     });
-    const body = await resp.json().catch(() => ({}));
-
-    if (!resp.ok || body?.success === false) {
-      return res.status(resp.status).json({
-        success: false,
-        message:
-          body?.message ||
-          body?.error ||
-          "브리지 예약 큐 조회 중 오류가 발생했습니다.",
-      });
-    }
-
-    const list = Array.isArray(body?.data) ? body.data : body?.data || [];
-    return res.status(200).json({ success: true, data: list });
   } catch (error) {
     console.error("Error in getBridgeQueueForMachine:", error);
     return res.status(500).json({
       success: false,
       message: "브리지 예약 큐 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 브리지 서버 전용: DB에 저장된 큐 스냅샷 조회
+ */
+export async function getDbBridgeQueueSnapshotForBridge(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    return res.status(200).json({
+      success: true,
+      data: snap.jobs,
+      meta: {
+        source: "db",
+        updatedAt: snap.updatedAt ? snap.updatedAt.toISOString() : null,
+        syncedAt: snap.syncedAt ? snap.syncedAt.toISOString() : null,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getDbBridgeQueueSnapshotForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "DB 예약 큐 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -217,26 +763,45 @@ export async function reorderBridgeQueueForMachine(req, res) {
       ? orderRaw.map((v) => String(v || "").trim()).filter((v) => !!v)
       : [];
 
-    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/reorder`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ machineId: mid, order }),
-    });
-    const body = await resp.json().catch(() => ({}));
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+    const idOrder =
+      order.length > 0 ? order : jobs.map((j) => j?.id).filter(Boolean);
 
-    if (!resp.ok || body?.success === false) {
-      return res.status(resp.status).json({
-        success: false,
-        message:
-          body?.message ||
-          body?.error ||
-          "브리지 예약 큐 재정렬 중 오류가 발생했습니다.",
-      });
+    const jobById = new Map();
+    for (const j of jobs) {
+      if (j?.id) jobById.set(String(j.id), j);
     }
 
-    const list = Array.isArray(body?.data) ? body.data : body?.data || [];
-    return res.status(200).json({ success: true, data: list });
+    const reordered = [];
+    for (const id of idOrder) {
+      const j = jobById.get(id);
+      if (j) reordered.push(j);
+    }
+    // 누락된 항목은 뒤에 유지
+    for (const j of jobs) {
+      if (!j?.id) continue;
+      if (!idOrder.includes(String(j.id))) reordered.push(j);
+    }
+
+    await saveBridgeQueueSnapshot(mid, reordered);
+
+    // 브리지 동기화는 best-effort (실패해도 성공 유지)
+    try {
+      const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/reorder`;
+      await fetch(url, {
+        method: "POST",
+        headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          machineId: mid,
+          order: reordered.map((j) => j.id),
+        }),
+      });
+    } catch {
+      // ignore
+    }
+
+    return res.status(200).json({ success: true, data: reordered });
   } catch (error) {
     console.error("Error in reorderBridgeQueueForMachine:", error);
     return res.status(500).json({
@@ -265,28 +830,31 @@ export async function updateBridgeQueueJobQty(req, res) {
 
     const qty = Math.max(1, Number(req.body?.qty ?? 1) || 1);
 
-    const url = `${BRIDGE_BASE.replace(
-      /\/$/,
-      "",
-    )}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(jid)}/qty`;
-    const resp = await fetch(url, {
-      method: "PATCH",
-      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ qty }),
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+    const nextJobs = jobs.map((j) => {
+      if (!j?.id) return j;
+      return String(j.id) === jid ? { ...j, qty } : j;
     });
-    const body = await resp.json().catch(() => ({}));
 
-    if (!resp.ok || body?.success === false) {
-      return res.status(resp.status).json({
-        success: false,
-        message:
-          body?.message ||
-          body?.error ||
-          "브리지 예약 큐 수량 변경 중 오류가 발생했습니다.",
+    await saveBridgeQueueSnapshot(mid, nextJobs);
+
+    // 브리지 동기화는 best-effort
+    try {
+      const url = `${BRIDGE_BASE.replace(
+        /\/$/,
+        "",
+      )}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(jid)}/qty`;
+      await fetch(url, {
+        method: "PATCH",
+        headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ qty }),
       });
+    } catch {
+      // ignore
     }
 
-    return res.status(200).json({ success: true, data: body?.data ?? body });
+    return res.status(200).json({ success: true, data: { jobId: jid, qty } });
   } catch (error) {
     console.error("Error in updateBridgeQueueJobQty:", error);
     return res.status(500).json({
@@ -452,27 +1020,27 @@ export async function deleteBridgeQueueJob(req, res) {
       });
     }
 
-    const url = `${BRIDGE_BASE.replace(
-      /\/$/,
-      "",
-    )}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(jid)}`;
-    const resp = await fetch(url, {
-      method: "DELETE",
-      headers: withBridgeHeaders(),
-    });
-    const body = await resp.json().catch(() => ({}));
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+    const removedJob = jobs.find((j) => String(j?.id || "") === jid) || null;
+    const nextJobs = jobs.filter((j) => String(j?.id || "") !== jid);
 
-    if (!resp.ok || body?.success === false) {
-      return res.status(resp.status).json({
-        success: false,
-        message:
-          body?.message ||
-          body?.error ||
-          "브리지 예약 작업 삭제 중 오류가 발생했습니다.",
+    await saveBridgeQueueSnapshot(mid, nextJobs);
+
+    // 브리지 동기화는 best-effort
+    try {
+      const url = `${BRIDGE_BASE.replace(
+        /\/$/,
+        "",
+      )}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(jid)}`;
+      await fetch(url, {
+        method: "DELETE",
+        headers: withBridgeHeaders(),
       });
+    } catch {
+      // ignore
     }
 
-    const removedJob = body?.data || null;
     let rolledBackRequest = null;
     const reqIdRaw = removedJob?.requestId;
     if (reqIdRaw) {
@@ -510,40 +1078,23 @@ export async function clearBridgeQueueForMachine(req, res) {
       });
     }
 
-    // 1) 현재 큐 스냅샷 조회 (삭제 전 롤백 대상 수집)
-    const snapshotUrl = `${BRIDGE_BASE.replace(
-      /\/$/,
-      "",
-    )}/api/bridge/queue/${encodeURIComponent(mid)}`;
-    const snapResp = await fetch(snapshotUrl, {
-      method: "GET",
-      headers: withBridgeHeaders(),
-    });
-    const snapBody = await snapResp.json().catch(() => ({}));
-    const jobs =
-      snapResp.ok &&
-      snapBody?.success !== false &&
-      Array.isArray(snapBody?.data)
-        ? snapBody.data
-        : [];
+    // 1) DB 스냅샷 기준으로 롤백 대상 수집
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    const jobs = Array.isArray(snap.jobs) ? snap.jobs : [];
 
-    // 2) 큐 전체 삭제
-    const clearUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/clear`;
-    const clearResp = await fetch(clearUrl, {
-      method: "POST",
-      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ machineId: mid }),
-    });
-    const clearBody = await clearResp.json().catch(() => ({}));
+    // 2) DB에서 큐 비우기
+    await saveBridgeQueueSnapshot(mid, []);
 
-    if (!clearResp.ok || clearBody?.success === false) {
-      return res.status(clearResp.status).json({
-        success: false,
-        message:
-          clearBody?.message ||
-          clearBody?.error ||
-          "브리지 예약 큐 전체 삭제 중 오류가 발생했습니다.",
+    // 3) 브리지 동기화는 best-effort
+    try {
+      const clearUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/clear`;
+      await fetch(clearUrl, {
+        method: "POST",
+        headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ machineId: mid }),
       });
+    } catch {
+      // ignore
     }
 
     // 3) 큐에 있던 각 의뢰를 CAM 단계로 롤백 (중복 requestId는 1회만 처리)

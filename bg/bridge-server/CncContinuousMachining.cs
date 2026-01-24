@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Hi_Link;
 using Hi_Link.Libraries.Model;
+using Newtonsoft.Json.Linq;
 
 namespace HiLinkBridgeWebApi48
 {
@@ -15,10 +17,14 @@ namespace HiLinkBridgeWebApi48
     public class CncContinuousMachining
     {
         private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly HttpClient BackendClient = new HttpClient();
+        private static readonly Dictionary<string, DateTime> LastBackendSyncUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private const int BACKEND_SYNC_INTERVAL_SEC = 10;
         
         // 고정 슬롯 번호
-        private const int SLOT_A = 3000;
-        private const int SLOT_B = 3001;
+        private const int SLOT_A = 4000;
+        private const int SLOT_B = 4001;
 
         private class MachineState
         {
@@ -29,6 +35,7 @@ namespace HiLinkBridgeWebApi48
             public CncJobItem NextJob; // 선업로드된 다음 작업
             public DateTime StartedAtUtc;
             public bool IsRunning;
+            public bool AwaitingStart;
             public int ProductCountBefore; // 가공 시작 전 생산 수량
             public bool SawBusy;
 
@@ -143,6 +150,7 @@ namespace HiLinkBridgeWebApi48
                         CurrentSlot = SLOT_A,
                         NextSlot = SLOT_B,
                         IsRunning = false,
+                        AwaitingStart = false,
                         SawBusy = false,
                         StartFailCount = 0,
                         PreloadFailCount = 0,
@@ -188,6 +196,34 @@ namespace HiLinkBridgeWebApi48
             }
             else
             {
+                // 1.5) 프로그램은 올려놨지만 Start는 사용자가 직접(또는 외부) 수행해야 하는 상태
+                if (state.AwaitingStart && state.CurrentJob != null)
+                {
+                    if (TryGetMachineBusy(machineId, out var busy) && busy)
+                    {
+                        var prodCountBefore = 0;
+                        TryGetProductCount(machineId, out prodCountBefore);
+
+                        lock (StateLock)
+                        {
+                            state.IsRunning = true;
+                            state.AwaitingStart = false;
+                            state.StartedAtUtc = DateTime.UtcNow;
+                            state.ProductCountBefore = prodCountBefore;
+                            state.SawBusy = true;
+                        }
+
+                        Console.WriteLine("[CncContinuous] detected start machine={0} slot=O{1}",
+                            machineId, state.CurrentSlot);
+
+                        _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
+                    }
+
+                    // 이미 로드된 작업이 있으면, 다음 작업 선업로드만 수행한다.
+                    await PreloadNextJob(machineId, state);
+                    return;
+                }
+
                 // 2. Idle 상태: 새 작업 시작
                 var nextJob = CncJobQueue.Peek(machineId);
                 if (nextJob != null)
@@ -400,35 +436,23 @@ namespace HiLinkBridgeWebApi48
                     return;
                 }
 
-                // 5. 생산 수량 기록
-                var prodCountBefore = 0;
-                TryGetProductCount(machineId, out prodCountBefore);
-
-                // 6. Start 신호
-                if (!TryStartSignal(machineId, out var startErr))
-                {
-                    Console.WriteLine("[CncContinuous] start failed machine={0} err={1}", machineId, startErr);
-                    return;
-                }
-
-                // 5. 상태 업데이트
+                // Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
+                // 상태 업데이트
                 lock (StateLock)
                 {
                     state.CurrentSlot = state.NextSlot;
                     state.NextSlot = (state.CurrentSlot == SLOT_A) ? SLOT_B : SLOT_A;
                     state.CurrentJob = state.NextJob;
                     state.NextJob = null;
-                    state.IsRunning = true;
-                    state.StartedAtUtc = DateTime.UtcNow;
-                    state.ProductCountBefore = prodCountBefore;
+                    state.IsRunning = false;
+                    state.AwaitingStart = true;
+                    state.StartedAtUtc = DateTime.MinValue;
+                    state.ProductCountBefore = 0;
                     state.SawBusy = false;
                 }
 
-                Console.WriteLine("[CncContinuous] switch success machine={0} now running O{1}", 
+                Console.WriteLine("[CncContinuous] switch success machine={0} now ready O{1}", 
                     machineId, state.CurrentSlot);
-
-                // 6. 백엔드 알림
-                _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
             }
             catch (Exception ex)
             {
@@ -476,33 +500,20 @@ namespace HiLinkBridgeWebApi48
                     return false;
                 }
 
-                // 5. 생산 수량 기록
-                var prodCountBefore = 0;
-                TryGetProductCount(machineId, out prodCountBefore);
-
-                // 6. Start 신호
-                if (!TryStartSignal(machineId, out var startErr))
-                {
-                    Console.WriteLine("[CncContinuous] start failed machine={0} err={1}", machineId, startErr);
-                    return false;
-                }
-
-                // 5. 상태 업데이트
+                // Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
+                // 상태 업데이트
                 lock (StateLock)
                 {
                     state.CurrentJob = job;
-                    state.IsRunning = true;
-                    state.StartedAtUtc = DateTime.UtcNow;
-                    state.ProductCountBefore = prodCountBefore;
+                    state.IsRunning = false;
+                    state.AwaitingStart = true;
+                    state.StartedAtUtc = DateTime.MinValue;
+                    state.ProductCountBefore = 0;
                     state.SawBusy = false;
                 }
 
-                Console.WriteLine("[CncContinuous] start success machine={0} slot=O{1}", 
+                Console.WriteLine("[CncContinuous] start ready machine={0} slot=O{1}", 
                     machineId, state.CurrentSlot);
-
-                // 6. 백엔드 알림
-                _ = Task.Run(() => NotifyMachiningStarted(job, machineId));
-
                 return true;
             }
             catch (Exception ex)
@@ -526,8 +537,13 @@ namespace HiLinkBridgeWebApi48
 
                 if (!File.Exists(fullPath))
                 {
-                    Console.WriteLine("[CncContinuous] file not found: {0}", fullPath);
-                    return false;
+                    // 로컬 캐시에 없으면 S3에서 내려받아 캐시한다.
+                    var downloaded = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
+                    if (!downloaded || !File.Exists(fullPath))
+                    {
+                        Console.WriteLine("[CncContinuous] file not found: {0}", fullPath);
+                        return false;
+                    }
                 }
 
                 var content = File.ReadAllText(fullPath);
@@ -561,6 +577,156 @@ namespace HiLinkBridgeWebApi48
             catch (Exception ex)
             {
                 Console.WriteLine("[CncContinuous] upload error machine={0} err={1}", machineId, ex.Message);
+                return false;
+            }
+        }
+
+        private static void AddSecretHeader(HttpRequestMessage req)
+        {
+            var secret = Config.BridgeSharedSecret;
+            if (!string.IsNullOrEmpty(secret))
+            {
+                req.Headers.Remove("X-Bridge-Secret");
+                req.Headers.Add("X-Bridge-Secret", secret);
+            }
+        }
+
+        private static async Task SyncQueueFromBackend(string machineId)
+        {
+            try
+            {
+                var mid = (machineId ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(mid)) return;
+
+                var now = DateTime.UtcNow;
+                lock (LastBackendSyncUtc)
+                {
+                    if (LastBackendSyncUtc.TryGetValue(mid, out var last) && (now - last).TotalSeconds < BACKEND_SYNC_INTERVAL_SEC)
+                    {
+                        return;
+                    }
+                    LastBackendSyncUtc[mid] = now;
+                }
+
+                var backendBase = Config.BackendBase;
+                if (string.IsNullOrEmpty(backendBase)) return;
+
+                var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/queue-snapshot/" + Uri.EscapeDataString(mid);
+                var req = new HttpRequestMessage(HttpMethod.Get, url);
+                AddSecretHeader(req);
+
+                var resp = await BackendClient.SendAsync(req);
+                var text = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("[CncContinuous] backend queue snapshot failed: status={0}", (int)resp.StatusCode);
+                    return;
+                }
+
+                var root = JObject.Parse(text);
+                if (root.Value<bool?>("success") != true)
+                {
+                    Console.WriteLine("[CncContinuous] backend queue snapshot success=false");
+                    return;
+                }
+
+                var data = root["data"] as JArray;
+                if (data == null) return;
+
+                var jobs = new List<CncJobItem>();
+                foreach (var j in data)
+                {
+                    var id = (j?["id"]?.ToString() ?? string.Empty).Trim();
+                    var kind = (j?["kind"]?.ToString() ?? "file").Trim();
+                    var fileName = (j?["fileName"]?.ToString() ?? string.Empty).Trim();
+                    var bridgePath = (j?["bridgePath"]?.ToString() ?? string.Empty).Trim();
+                    var s3Key = (j?["s3Key"]?.ToString() ?? string.Empty).Trim();
+                    var s3Bucket = (j?["s3Bucket"]?.ToString() ?? string.Empty).Trim();
+                    var requestId = (j?["requestId"]?.ToString() ?? string.Empty).Trim();
+                    var qty = 1;
+                    try
+                    {
+                        qty = Math.Max(1, j?["qty"]?.Value<int?>() ?? 1);
+                    }
+                    catch { qty = 1; }
+
+                    if (string.IsNullOrEmpty(fileName)) continue;
+
+                    jobs.Add(new CncJobItem
+                    {
+                        id = string.IsNullOrEmpty(id) ? Guid.NewGuid().ToString("N") : id,
+                        kind = string.Equals(kind, "dummy", StringComparison.OrdinalIgnoreCase) ? CncJobKind.Dummy : CncJobKind.File,
+                        machineId = mid,
+                        qty = qty,
+                        fileName = fileName,
+                        bridgePath = bridgePath,
+                        s3Key = s3Key,
+                        s3Bucket = s3Bucket,
+                        requestId = requestId,
+                        createdAtUtc = DateTime.UtcNow,
+                        source = "backend_db"
+                    });
+                }
+
+                CncJobQueue.ReplaceQueue(mid, jobs);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncContinuous] SyncQueueFromBackend error: {0}", ex.Message);
+            }
+        }
+
+        private static async Task<bool> TryDownloadAndCacheFromS3(string machineId, CncJobItem job, string fullPath)
+        {
+            try
+            {
+                if (job == null) return false;
+                var s3Key = (job.s3Key ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(s3Key)) return false;
+
+                var backendBase = Config.BackendBase;
+                if (string.IsNullOrEmpty(backendBase)) return false;
+
+                var mid = (machineId ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(mid)) return false;
+
+                var presignUrl = backendBase.TrimEnd('/') + "/cnc-machines/bridge/cnc-direct/presign-download/" + Uri.EscapeDataString(mid) + "?s3Key=" + Uri.EscapeDataString(s3Key);
+                var req = new HttpRequestMessage(HttpMethod.Get, presignUrl);
+                AddSecretHeader(req);
+
+                var resp = await BackendClient.SendAsync(req);
+                var text = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("[CncContinuous] download presign failed: status={0}", (int)resp.StatusCode);
+                    return false;
+                }
+
+                var root = JObject.Parse(text);
+                if (root.Value<bool?>("success") != true) return false;
+                var data = root["data"] as JObject;
+                var downloadUrl = (data?["downloadUrl"]?.ToString() ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(downloadUrl)) return false;
+
+                var dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                using (var dl = await BackendClient.GetAsync(downloadUrl))
+                {
+                    if (!dl.IsSuccessStatusCode) return false;
+                    var bytes = await dl.Content.ReadAsByteArrayAsync();
+                    File.WriteAllBytes(fullPath, bytes);
+                }
+
+                Console.WriteLine("[CncContinuous] cached from S3: {0}", fullPath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncContinuous] TryDownloadAndCacheFromS3 error: {0}", ex.Message);
                 return false;
             }
         }

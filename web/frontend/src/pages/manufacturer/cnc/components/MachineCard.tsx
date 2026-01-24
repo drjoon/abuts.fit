@@ -28,6 +28,11 @@ interface MachineCardProps {
   nextProgs: any[];
   reservationSummary?: string | null;
   reservedTotalQty?: number;
+  uploadProgress?: {
+    machineId: string;
+    fileName: string;
+    percent: number;
+  } | null;
   continuousState?: ContinuousMachiningState | null;
   onSelect: () => void;
   onMaterialClick?: (e: React.MouseEvent) => void;
@@ -89,6 +94,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   nextProgs,
   reservationSummary,
   reservedTotalQty,
+  uploadProgress,
   continuousState,
   onSelect,
   onMaterialClick,
@@ -222,6 +228,25 @@ export const MachineCard: React.FC<MachineCardProps> = ({
       }`}
     >
       <div className="absolute inset-0 bg-gradient-to-br from-sky-50/70 via-white/40 to-violet-50/70" />
+
+      {uploadProgress && (
+        <div className="absolute top-2 left-2 right-2 z-20 rounded-2xl border border-blue-200 bg-blue-600/95 px-4 py-3 shadow-[0_18px_45px_rgba(37,99,235,0.35)]">
+          <div className="flex items-center justify-between gap-2 text-[12px] text-white">
+            <span className="truncate font-extrabold">
+              업로드 중: {uploadProgress.fileName}
+            </span>
+            <span className="tabular-nums font-black">
+              {uploadProgress.percent}%
+            </span>
+          </div>
+          <div className="mt-2 h-2.5 w-full rounded-full bg-white/25">
+            <div
+              className="h-2.5 rounded-full bg-white"
+              style={{ width: `${uploadProgress.percent}%` }}
+            />
+          </div>
+        </div>
+      )}
       {dropping && (
         <div className="absolute inset-0 rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/60 z-20 flex items-center justify-center">
           <div className="text-sm font-semibold text-blue-700">
@@ -376,59 +401,65 @@ export const MachineCard: React.FC<MachineCardProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {currentProg && isActive && isRunning && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!onStopClick) return;
-                        if (
-                          !currentProg ||
-                          !currentProg.name ||
-                          !isActive ||
-                          !isRunning
-                        )
-                          return;
-                        onStopClick(e);
-                      }}
-                      disabled={
-                        !currentProg ||
-                        !currentProg.name ||
-                        !isActive ||
-                        loading
-                      }
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
-                      title="정지(Stop)"
-                    >
-                      <Pause className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (
-                          !currentProg ||
-                          !currentProg.name ||
-                          !isActive ||
-                          !isRunning
-                        )
-                          return;
-                        onResetClick(e);
-                      }}
-                      disabled={
-                        !currentProg ||
-                        !currentProg.name ||
-                        !isActive ||
-                        loading
-                      }
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
-                      title="리셋(Reset)"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </>
-                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!onStopClick) {
+                      toast({
+                        title: "정지 불가",
+                        description: "정지 기능이 연결되어 있지 않습니다.",
+                      });
+                      return;
+                    }
+                    if (!isActive) {
+                      toast({
+                        title: "정지 불가",
+                        description: "비활성 장비입니다.",
+                      });
+                      return;
+                    }
+                    if (!isRunning) {
+                      toast({
+                        title: "정지 불가",
+                        description: "현재 가공 중이 아닙니다.",
+                      });
+                      return;
+                    }
+                    onStopClick(e);
+                  }}
+                  disabled={loading}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
+                  title="정지(Stop)"
+                >
+                  <Pause className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!isActive) {
+                      toast({
+                        title: "리셋 불가",
+                        description: "비활성 장비입니다.",
+                      });
+                      return;
+                    }
+                    if (!isRunning) {
+                      toast({
+                        title: "리셋 불가",
+                        description: "현재 가공 중이 아닙니다.",
+                      });
+                      return;
+                    }
+                    onResetClick(e);
+                  }}
+                  disabled={loading}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
+                  title="리셋(Reset)"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             </div>
           </div>
@@ -526,21 +557,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           </div>
         )}
 
-        <div className="mt-1 flex items-center justify-between gap-2">
-          {hasNextProgs && (
-            <button
-              type="button"
-              onClick={(e) => {
-                if (!onOpenReservationList) return;
-                e.stopPropagation();
-                onOpenReservationList(e);
-              }}
-              disabled={!isActive}
-              className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-2 text-xs font-extrabold text-white hover:from-emerald-700 hover:to-emerald-600 disabled:opacity-40 shadow-sm"
-            >
-              재생목록
-            </button>
-          )}
+        <div className="mt-1">
           <button
             type="button"
             onClick={(e) => {
@@ -548,7 +565,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
               onOpenJobConfig(e);
             }}
             disabled={loading}
-            className="flex-1 rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 px-4 py-2 text-xs font-extrabold text-white hover:from-blue-700 hover:to-sky-600 disabled:opacity-50 shadow-sm"
+            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 px-4 py-2 text-xs font-extrabold text-white hover:from-blue-700 hover:to-sky-600 disabled:opacity-50 shadow-sm"
           >
             예약 관리
           </button>

@@ -26,6 +26,15 @@ export const useCncDashboardCore = ({
 }: UseCncDashboardCoreParams) => {
   const controlCooldownRef = useRef<Record<string, number>>({});
 
+  const shouldSilenceBridgeDownError = (msg: string) => {
+    const t = String(msg || "").toLowerCase();
+    return (
+      t.includes("proxy failed") ||
+      t.includes("raw proxy") ||
+      t.includes("bridge proxy")
+    );
+  };
+
   const refreshStatusFor = useCallback(
     async (uid: string) => {
       try {
@@ -58,7 +67,9 @@ export const useCncDashboardCore = ({
         });
       } catch (e: any) {
         const message = e?.message ?? "알 수 없는 오류";
-        setError(message);
+        if (!shouldSilenceBridgeDownError(message)) {
+          setError(message);
+        }
         setMachines((prev) =>
           prev.map((m) =>
             m.uid === uid

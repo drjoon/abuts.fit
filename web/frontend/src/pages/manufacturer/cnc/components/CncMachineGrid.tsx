@@ -22,6 +22,11 @@ interface CncMachineGridProps {
   onOpenAddModal: () => void;
   onOpenJobConfig: (machine: Machine) => void;
   onUploadFiles?: (machine: Machine, files: FileList | File[]) => void;
+  uploadProgress?: {
+    machineId: string;
+    fileName: string;
+    percent: number;
+  } | null;
   reservationSummaryMap?: Record<string, string>;
   reservationTotalQtyMap?: Record<string, number>;
   onCancelReservation?: (machine: Machine, jobId?: string) => void;
@@ -48,6 +53,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onOpenAddModal,
   onOpenJobConfig,
   onUploadFiles,
+  uploadProgress,
   reservationSummaryMap,
   reservationTotalQtyMap,
   onCancelReservation,
@@ -77,6 +83,9 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                   no: programNo,
                   name: job.name,
                   jobId: job.id,
+                  source: (job as any).source || "db",
+                  s3Key: (job as any).s3Key,
+                  s3Bucket: (job as any).s3Bucket,
                   paused: job.paused ?? false,
                   qty: job.qty,
                 };
@@ -98,6 +107,11 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             nextProgs={nextProgs}
             reservedTotalQty={originalTotalQty}
             reservationSummary={reservationSummaryMap?.[m.uid]}
+            uploadProgress={
+              uploadProgress && uploadProgress.machineId === m.uid
+                ? uploadProgress
+                : null
+            }
             onMaterialClick={(e) => {
               e.stopPropagation();
               if (!onOpenMaterial) return;

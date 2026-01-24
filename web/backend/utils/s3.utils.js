@@ -19,13 +19,13 @@ const getS3Client = () => {
 
   const accessKeyId = String(process.env.AWS_ACCESS_KEY_ID || "").trim();
   const secretAccessKey = String(
-    process.env.AWS_SECRET_ACCESS_KEY || ""
+    process.env.AWS_SECRET_ACCESS_KEY || "",
   ).trim();
   const sessionToken = String(process.env.AWS_SESSION_TOKEN || "").trim();
 
   if ((accessKeyId && !secretAccessKey) || (!accessKeyId && secretAccessKey)) {
     throw new Error(
-      "S3 업로드 설정(AWS 자격증명)이 불완전합니다. AWS_ACCESS_KEY_ID와 AWS_SECRET_ACCESS_KEY를 둘 다 설정하거나, 둘 다 제거한 뒤 AWS_PROFILE(~/.aws/credentials)을 사용해주세요."
+      "S3 업로드 설정(AWS 자격증명)이 불완전합니다. AWS_ACCESS_KEY_ID와 AWS_SECRET_ACCESS_KEY를 둘 다 설정하거나, 둘 다 제거한 뒤 AWS_PROFILE(~/.aws/credentials)을 사용해주세요.",
     );
   }
 
@@ -83,13 +83,24 @@ const fileFilter = (req, file, cb) => {
 export const getPresignedPutUrl = async (
   key,
   contentType = "application/octet-stream",
-  expiresIn = 3600
+  expiresIn = 3600,
 ) => {
   const Bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
   const command = new PutObjectCommand({
     Bucket,
     Key: key,
     ContentType: contentType,
+  });
+  const url = await presignV3(getS3Client(), command, { expiresIn });
+  return { url, key, bucket: Bucket };
+};
+
+// presigned GET URL 생성 (브리지/프론트가 직접 다운로드하도록)
+export const getPresignedGetUrl = async (key, expiresIn = 3600) => {
+  const Bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
+  const command = new GetObjectCommand({
+    Bucket,
+    Key: key,
   });
   const url = await presignV3(getS3Client(), command, { expiresIn });
   return { url, key, bucket: Bucket };
@@ -139,7 +150,7 @@ export const getObjectBufferFromS3 = async (key) => {
       count,
     });
     throw new Error(
-      "S3 파일 조회가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요."
+      "S3 파일 조회가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
     );
   }
 
@@ -167,7 +178,7 @@ export const objectExistsInS3 = async (key) => {
       new HeadObjectCommand({
         Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
         Key: key,
-      })
+      }),
     );
     return true;
   } catch (e) {
@@ -187,7 +198,7 @@ export const uploadFileToS3 = async (fileBuffer, key, contentType) => {
       count,
     });
     throw new Error(
-      "S3 업로드가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요."
+      "S3 업로드가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
     );
   }
   const Bucket = process.env.AWS_S3_BUCKET_NAME || "abuts-fit";
@@ -209,12 +220,12 @@ export const uploadFileToS3 = async (fileBuffer, key, contentType) => {
       msg.toLowerCase().includes("missing credentials")
     ) {
       throw new Error(
-        "S3 업로드 설정(AWS 자격증명)을 찾을 수 없습니다. backend/local.env에 AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY를 설정하거나, 로컬 AWS 프로파일(~/.aws/credentials)을 설정해주세요."
+        "S3 업로드 설정(AWS 자격증명)을 찾을 수 없습니다. backend/local.env에 AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY를 설정하거나, 로컬 AWS 프로파일(~/.aws/credentials)을 설정해주세요.",
       );
     }
     if (msg.includes("Resolved credential object is not valid")) {
       throw new Error(
-        "S3 업로드 설정(AWS 자격증명)이 올바르지 않습니다. AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY 또는 로컬 AWS 프로파일 설정을 확인해주세요."
+        "S3 업로드 설정(AWS 자격증명)이 올바르지 않습니다. AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY 또는 로컬 AWS 프로파일 설정을 확인해주세요.",
       );
     }
     // 버킷이 존재하지 않을 경우 자동 생성 후 재시도
@@ -251,7 +262,7 @@ const deleteFileFromS3 = async (key, bucketOverride) => {
       new DeleteObjectCommand({
         Bucket,
         Key: key,
-      })
+      }),
     );
     return true;
   } catch (error) {
@@ -264,7 +275,7 @@ const deleteFileFromS3 = async (key, bucketOverride) => {
 const getDownloadSignedUrl = async (
   key,
   expires = 3600,
-  { responseDisposition, responseContentType } = {}
+  { responseDisposition, responseContentType } = {},
 ) => {
   const guardKey = `s3-signedUrl:${key}`;
   const { blocked, count } = shouldBlockExternalCall(guardKey);
@@ -274,7 +285,7 @@ const getDownloadSignedUrl = async (
       count,
     });
     throw new Error(
-      "S3 다운로드 URL 생성이 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요."
+      "S3 다운로드 URL 생성이 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
     );
   }
   const command = new GetObjectCommand({
@@ -287,9 +298,8 @@ const getDownloadSignedUrl = async (
       ? { ResponseContentType: responseContentType }
       : {}),
   });
-  const { getSignedUrl: getSignedUrlV3 } = await import(
-    "@aws-sdk/s3-request-presigner"
-  );
+  const { getSignedUrl: getSignedUrlV3 } =
+    await import("@aws-sdk/s3-request-presigner");
   return getSignedUrlV3(getS3Client(), command, { expiresIn: expires });
 };
 
@@ -302,7 +312,7 @@ const getUploadSignedUrl = async (key, contentType, expires = 900) => {
       count,
     });
     throw new Error(
-      "S3 업로드 URL 생성이 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요."
+      "S3 업로드 URL 생성이 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
     );
   }
 
@@ -311,9 +321,8 @@ const getUploadSignedUrl = async (key, contentType, expires = 900) => {
     Key: key,
     ContentType: String(contentType || "application/octet-stream"),
   });
-  const { getSignedUrl: getSignedUrlV3 } = await import(
-    "@aws-sdk/s3-request-presigner"
-  );
+  const { getSignedUrl: getSignedUrlV3 } =
+    await import("@aws-sdk/s3-request-presigner");
   return getSignedUrlV3(getS3Client(), command, { expiresIn: expires });
 };
 

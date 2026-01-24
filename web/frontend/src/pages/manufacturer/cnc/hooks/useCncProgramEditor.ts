@@ -2,6 +2,8 @@ import { useState } from "react";
 
 import type { Machine } from "@/pages/manufacturer/cnc/types";
 import { applyProgramNoToContent } from "../lib/programNaming";
+import { apiFetch } from "@/lib/apiClient";
+import { useAuthStore } from "@/store/useAuthStore";
 
 interface UseCncProgramEditorParams {
   workUid: string;
@@ -20,9 +22,10 @@ export const useCncProgramEditor = ({
   setError,
   fetchProgramList,
 }: UseCncProgramEditorParams) => {
+  const { token } = useAuthStore();
   const [programEditorOpen, setProgramEditorOpen] = useState(false);
   const [programEditorTarget, setProgramEditorTarget] = useState<any | null>(
-    null
+    null,
   );
   const [isReadOnly, setIsReadOnly] = useState(false);
 
@@ -31,9 +34,12 @@ export const useCncProgramEditor = ({
     const activeMachine = machines.find((m) => m.uid === workUid) || null;
     const status = (activeMachine?.status || "").toUpperCase();
     const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
-      status.includes(k)
+      status.includes(k),
     );
     let readOnly = false;
+    if (prog?.source === "db" || prog?.source === "upload") {
+      readOnly = true;
+    }
     if (isRunning) {
       const current = programSummary?.current ?? null;
       const curNo = current?.programNo ?? current?.no;
@@ -56,6 +62,57 @@ export const useCncProgramEditor = ({
 
   const loadProgramCode = async (prog: any): Promise<string> => {
     if (!workUid || !prog) return "";
+
+    const s3Key = String(prog?.s3Key || "").trim();
+    if (s3Key && token) {
+      const cacheKey = `cnc:s3:${s3Key}`;
+      try {
+        const cached =
+          typeof window !== "undefined"
+            ? window.localStorage.getItem(cacheKey)
+            : null;
+        if (cached != null) {
+          return cached;
+        }
+      } catch {
+        // no-op
+      }
+
+      const presignRes = await apiFetch({
+        path: `/api/cnc-machines/${encodeURIComponent(workUid)}/direct/presign-download?s3Key=${encodeURIComponent(
+          s3Key,
+        )}`,
+        method: "GET",
+        token,
+      });
+      const presignBody: any = presignRes.data ?? {};
+      const presignData = presignBody?.data ?? presignBody;
+      if (!presignRes.ok || presignBody?.success === false) {
+        throw new Error(
+          presignBody?.message || presignBody?.error || "다운로드 presign 실패",
+        );
+      }
+
+      const downloadUrl = String(presignData?.downloadUrl || "").trim();
+      if (!downloadUrl) {
+        throw new Error("다운로드 URL이 올바르지 않습니다.");
+      }
+
+      const resp = await fetch(downloadUrl, { method: "GET" });
+      if (!resp.ok) {
+        throw new Error(`S3 다운로드 실패 (HTTP ${resp.status})`);
+      }
+      const text = await resp.text();
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(cacheKey, text);
+        }
+      } catch {
+        // no-op
+      }
+      return text;
+    }
+
     // 브리지 서버에서 온 프로그램(source === "bridge")이고 programData가 이미 포함된 경우,
     // Hi-Link를 호출하지 않고 해당 내용을 그대로 사용한다.
     if (prog.source === "bridge" && typeof prog.programData === "string") {
@@ -100,7 +157,7 @@ export const useCncProgramEditor = ({
       nameOverride?: string;
       programNoOverride?: number;
       autoIncrementProgramNo?: boolean;
-    }
+    },
   ): Promise<void> => {
     if (!workUid || !prog) return;
 

@@ -43,6 +43,22 @@
 
 ## 5. 크레딧 및 의뢰 관리 정책
 
+## 6. CNC 예약목록(브리지 큐) DB 스냅샷
+
+- **목적**: 브리지 서버 장애/네트워크 오류 시에도 제조사 UI에서 예약목록을 조회할 수 있도록, 마지막으로 확인된 브리지 큐를 DB에 스냅샷으로 저장한다.
+- **저장 위치**: `CncMachine.bridgeQueueSnapshot` (jobs + updatedAt), `CncMachine.bridgeQueueSyncedAt`
+- **갱신 규칙**:
+  - 브리지 큐 조회가 성공한 경우에만 DB 스냅샷을 갱신한다.
+  - 큐 변경(등록/삭제/재정렬/수량변경/전체삭제)이 브리지에서 성공한 경우에만 DB 스냅샷을 갱신한다.
+- **조회 규칙**:
+  - 제조사 UI의 `/api/cnc-machines/:machineId/bridge-queue`는 브리지 우선 조회 후,
+    실패하면 DB 스냅샷을 `success: true`로 반환한다(fallback).
+
+### 6.1 브리지 전용 DB 스냅샷 조회
+
+- 브리지 서버는 JWT 없이 `X-Bridge-Secret` 기반으로 DB 스냅샷을 조회할 수 있다.
+- Endpoint: `GET /api/cnc-machines/bridge/queue-snapshot/:machineId`
+
 ### 5.1 크레딧 관리 정책
 
 - **크레딧 단위**: `organizationId` (RequestorOrganization) 기준으로 관리

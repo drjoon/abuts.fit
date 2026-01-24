@@ -156,20 +156,53 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                       <button
                         type="button"
                         className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                        onClick={() =>
-                          onChangeQty(job.id, Math.max(1, qty - 1))
-                        }
+                        onClick={() => {
+                          if (readOnly) return;
+                          const nextQty = Math.max(1, qty - 1);
+                          setLocalJobs((prev) =>
+                            prev.map((j) =>
+                              j.id === job.id ? { ...j, qty: nextQty } : j,
+                            ),
+                          );
+                          onChangeQty(job.id, nextQty);
+                        }}
                         disabled={!!readOnly}
                       >
                         <Minus className="h-4 w-4" />
                       </button>
-                      <div className="w-10 text-center text-sm font-extrabold text-slate-800">
-                        {qty}
-                      </div>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        value={qty}
+                        disabled={!!readOnly}
+                        onChange={(e) => {
+                          const v = Math.max(
+                            1,
+                            Number(e.target.value || 1) || 1,
+                          );
+                          setLocalJobs((prev) =>
+                            prev.map((j) =>
+                              j.id === job.id ? { ...j, qty: v } : j,
+                            ),
+                          );
+                          onChangeQty(job.id, v);
+                        }}
+                        className="w-12 h-9 rounded-xl border border-slate-200 bg-white text-center text-sm font-extrabold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
                       <button
                         type="button"
                         className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                        onClick={() => onChangeQty(job.id, qty + 1)}
+                        onClick={() => {
+                          if (readOnly) return;
+                          const nextQty = qty + 1;
+                          setLocalJobs((prev) =>
+                            prev.map((j) =>
+                              j.id === job.id ? { ...j, qty: nextQty } : j,
+                            ),
+                          );
+                          onChangeQty(job.id, nextQty);
+                        }}
                         disabled={!!readOnly}
                       >
                         <Plus className="h-4 w-4" />
@@ -198,7 +231,13 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                       <button
                         type="button"
                         className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-white text-red-600 hover:bg-red-50"
-                        onClick={() => onDelete(job.id)}
+                        onClick={() => {
+                          if (readOnly) return;
+                          setLocalJobs((prev) =>
+                            prev.filter((j) => j.id !== job.id),
+                          );
+                          onDelete(job.id);
+                        }}
                         disabled={!!readOnly}
                         title="삭제"
                       >
