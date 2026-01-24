@@ -272,6 +272,35 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      finishLine: {
+        version: Number,
+        sectionCount: Number,
+        maxStepDistance: Number,
+        points: {
+          type: [[Number]],
+          default: undefined,
+        },
+        pt0: {
+          type: [Number],
+          default: undefined,
+        },
+        updatedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+      finishLineFile: {
+        fileName: String,
+        fileType: String,
+        fileSize: Number,
+        filePath: String,
+        s3Key: String,
+        s3Url: String,
+        uploadedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
     },
     status: {
       // 의뢰인용 상태 (의뢰, CAM, 생산, 발송, 추적관리, 취소)

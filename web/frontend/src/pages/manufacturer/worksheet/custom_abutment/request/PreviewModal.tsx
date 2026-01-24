@@ -43,7 +43,7 @@ type PreviewModalProps = {
   onDeleteCam: (req: ManufacturerRequest) => Promise<void>;
   onDeleteNc: (
     req: ManufacturerRequest,
-    opts?: { nextStage?: string; navigate?: boolean }
+    opts?: { nextStage?: string; navigate?: boolean },
   ) => Promise<void>;
   onDeleteStageFile: (params: {
     req: ManufacturerRequest;
@@ -64,12 +64,12 @@ type PreviewModalProps = {
   onDownloadNcFile: (req: ManufacturerRequest) => Promise<void>;
   onDownloadStageFile: (
     req: ManufacturerRequest,
-    stage: string
+    stage: string,
   ) => Promise<void>;
   onOpenNextRequest?: (currentReqId: string) => void;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
-    navigateOpts?: { replace?: boolean }
+    navigateOpts?: { replace?: boolean },
   ) => void;
   setConfirmTitle: (title: string) => void;
   setConfirmDescription: (desc: ReactNode) => void;
@@ -77,8 +77,8 @@ type PreviewModalProps = {
     action:
       | ((() => void | Promise<void>) | null)
       | ((
-          prev: (() => void | Promise<void>) | null
-        ) => (() => void | Promise<void>) | null)
+          prev: (() => void | Promise<void>) | null,
+        ) => (() => void | Promise<void>) | null),
   ) => void;
   setConfirmOpen: (open: boolean) => void;
 };
@@ -118,6 +118,10 @@ export const PreviewModal = ({
   const req = previewFiles.request as ManufacturerRequest | null;
   if (!req) return null;
 
+  const finishLinePoints = (req.caseInfos?.finishLine?.points || null) as
+    | number[][]
+    | null;
+
   const currentReviewStageKey = getReviewStageKeyByTab({
     stage,
     isCamStage,
@@ -155,13 +159,13 @@ export const PreviewModal = ({
     const title = isMachiningStage
       ? "생산 → CAM 이동"
       : isCamStage
-      ? "CAM → 의뢰 이동"
-      : "의뢰 → 이전 단계";
+        ? "CAM → 의뢰 이동"
+        : "의뢰 → 이전 단계";
     const desc = isMachiningStage
       ? "생산 단계에서 CAM 단계로 돌아갑니다. 진행할까요?"
       : isCamStage
-      ? "CAM 단계에서 의뢰 단계로 돌아갑니다. 진행할까요?"
-      : "의뢰 단계에서 이전 단계로 돌아갑니다. 진행할까요?";
+        ? "CAM 단계에서 의뢰 단계로 돌아갑니다. 진행할까요?"
+        : "의뢰 단계에서 이전 단계로 돌아갑니다. 진행할까요?";
 
     setConfirmTitle(title);
     setConfirmDescription(desc);
@@ -191,21 +195,21 @@ export const PreviewModal = ({
   const leftTitle = isStageFileStage
     ? ncName
     : isCamStage
-    ? camName
-    : originalName;
+      ? camName
+      : originalName;
   const rightTitle = isStageFileStage
     ? currentReviewStageKey === "machining"
       ? "로트번호 이미지"
       : "증빙 이미지"
     : isCamStage
-    ? ncName
-    : camName;
+      ? ncName
+      : camName;
 
   const leftViewer = isCamStage
     ? previewFiles.cam
     : isStageFileStage
-    ? null
-    : previewFiles.original;
+      ? null
+      : previewFiles.original;
 
   const onUploadRight = (file: File) => {
     if (isStageFileStage) {
@@ -238,15 +242,15 @@ export const PreviewModal = ({
           | "tracking"
       ]
     : isCamStage
-    ? req.caseInfos?.ncFile
-    : req.caseInfos?.camFile;
+      ? req.caseInfos?.ncFile
+      : req.caseInfos?.camFile;
   const hasRightFile = !!rightMeta?.s3Key;
 
   const accept = isStageFileStage
     ? ".png,.jpg,.jpeg,.webp,.bmp"
     : isCamStage
-    ? ".nc"
-    : ".filled.stl";
+      ? ".nc"
+      : ".filled.stl";
 
   const fileLabel = hasRightFile
     ? String(rightMeta?.fileName || rightTitle).trim() || rightTitle
@@ -422,7 +426,11 @@ export const PreviewModal = ({
                     readOnly
                   />
                 ) : leftViewer ? (
-                  <StlPreviewViewer file={leftViewer} showOverlay={false} />
+                  <StlPreviewViewer
+                    file={leftViewer}
+                    showOverlay={false}
+                    finishLinePoints={finishLinePoints}
+                  />
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
                     파일 없음
@@ -525,6 +533,7 @@ export const PreviewModal = ({
                   <StlPreviewViewer
                     file={previewFiles.cam}
                     showOverlay={false}
+                    finishLinePoints={finishLinePoints}
                   />
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">

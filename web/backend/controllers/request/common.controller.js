@@ -961,6 +961,129 @@ export async function saveStageFile(req, res) {
   }
 }
 
+export async function getFinishLineFileUrl(req, res) {
+  try {
+    const { id } = req.params;
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    // 제조사, 관리자, 의뢰자(본인) 접근 가능해야 함.
+    // 여기서는 간단히 role 체크만 (상세 권한은 미들웨어 또는 로직 보강 필요)
+    if (
+      req.user.role !== "manufacturer" &&
+      req.user.role !== "admin" &&
+      req.user.role !== "requestor"
+    ) {
+      return res
+        .status(403)
+        .json({ success: false, message: "다운로드 권한이 없습니다." });
+    }
+
+    const request = await Request.findById(id).lean();
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const meta = request?.caseInfos?.finishLineFile;
+    const s3Key = meta?.s3Key;
+    const fileName = meta?.fileName || "finish-line.json";
+
+    if (!s3Key) {
+      return res.status(404).json({
+        success: false,
+        message: "피니시 라인 파일 정보가 없습니다.",
+      });
+    }
+
+    // JSON 데이터는 브라우저에서 바로 사용하므로 attachment 강제보다는 inline이 나을 수도 있으나,
+    // 파일 다운로드/캐싱 로직 통일을 위해 attachment 유지하되, 프론트에서 fetch로 받아 사용.
+    const disposition = `attachment; filename="${encodeURIComponent(
+      fileName,
+    )}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+
+    const url = await s3Utils.getSignedUrl(s3Key, 900, {
+      responseDisposition: disposition,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { url },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "파일 URL 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function saveFinishLineFile(req, res) {
+  try {
+    const { id } = req.params;
+    const { fileName, fileType, fileSize, s3Key, s3Url, filePath } =
+      req.body || {};
+
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+    if (!fileName || !s3Key || !s3Url) {
+      return res
+        .status(400)
+        .json({ success: false, message: "필수 파일 정보가 없습니다." });
+    }
+    // 제조사, 관리자, 의뢰자 모두 저장 가능하게 허용 (필요에 따라 제한)
+    // 일단 제조사 워크시트에서 생성되므로 manufacturer 허용 필수.
+    if (
+      req.user.role !== "manufacturer" &&
+      req.user.role !== "admin" &&
+      req.user.role !== "requestor"
+    ) {
+      return res
+        .status(403)
+        .json({ success: false, message: "업로드 권한이 없습니다." });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    request.caseInfos = request.caseInfos || {};
+    request.caseInfos.finishLineFile = {
+      fileName,
+      fileType,
+      fileSize,
+      filePath: filePath || "",
+      s3Key,
+      s3Url,
+      uploadedAt: new Date(),
+    };
+
+    await request.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "피니시 라인이 저장되었습니다.",
+      data: await normalizeRequestForResponse(request),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "피니시 라인 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 /**
  * 모든 의뢰 목록 조회 (관리자용)
  * @route GET /api/requests/all

@@ -64,9 +64,12 @@ export function usePreviewLoader({
         const fetchAsFileWithCache = async (
           cacheKey: string | null,
           signedUrl: string,
-          filename: string
+          filename: string,
+          opts?: { disableCache?: boolean },
         ) => {
-          if (cacheKey) {
+          const disableCache = !!opts?.disableCache;
+
+          if (!disableCache && cacheKey) {
             const cached = await getFileBlob(cacheKey);
             if (cached) {
               return blobToFile(cached, filename);
@@ -77,7 +80,7 @@ export function usePreviewLoader({
           if (!r.ok) throw new Error("file fetch failed");
           const blob = await r.blob();
 
-          if (cacheKey) {
+          if (!disableCache && cacheKey) {
             try {
               await setFileBlob(cacheKey, blob);
             } catch {
@@ -103,17 +106,25 @@ export function usePreviewLoader({
 
         const originalUrlRes = await fetch(
           `/api/requests/${req._id}/original-file-url`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         );
         if (!originalUrlRes.ok) throw new Error("original url failed");
         const originalUrlBody = await originalUrlRes.json();
         const originalSignedUrl = originalUrlBody?.data?.url;
         if (!originalSignedUrl) throw new Error("no original url");
 
+        const previewStageKey = getReviewStageKeyByTab({
+          stage: tabStage,
+          isCamStage,
+          isMachiningStage,
+        });
+        const disableStlCache = false;
+
         const originalFile = await fetchAsFileWithCache(
           originalCacheKey,
           originalSignedUrl,
-          originalName
+          originalName,
+          { disableCache: disableStlCache },
         );
 
         let camFile: File | null = null;
@@ -142,7 +153,7 @@ export function usePreviewLoader({
             `/api/requests/${req._id}/cam-file-url`,
             {
               headers: { Authorization: `Bearer ${token}` },
-            }
+            },
           );
           if (camUrlRes.ok) {
             const camUrlBody = await camUrlRes.json();
@@ -151,7 +162,8 @@ export function usePreviewLoader({
               camFile = await fetchAsFileWithCache(
                 camCacheKey,
                 camSignedUrl,
-                camName
+                camName,
+                { disableCache: disableStlCache },
               );
             }
           }
@@ -163,7 +175,7 @@ export function usePreviewLoader({
           if (ncMeta?.s3Key) {
             const ncUrlRes = await fetch(
               `/api/requests/${req._id}/nc-file-url`,
-              { headers: { Authorization: `Bearer ${token}` } }
+              { headers: { Authorization: `Bearer ${token}` } },
             );
             if (ncUrlRes.ok) {
               const ncUrlBody = await ncUrlRes.json();
@@ -184,31 +196,28 @@ export function usePreviewLoader({
         }
 
         // 생산/발송/추적관리 탭: stageFiles 이미지 URL도 불러온다.
-        const stageKey = getReviewStageKeyByTab({
-          stage: tabStage,
-          isCamStage,
-          isMachiningStage,
-        });
         if (
-          stageKey === "machining" ||
-          stageKey === "packaging" ||
-          stageKey === "shipping" ||
-          stageKey === "tracking"
+          previewStageKey === "machining" ||
+          previewStageKey === "packaging" ||
+          previewStageKey === "shipping" ||
+          previewStageKey === "tracking"
         ) {
-          const stageMeta = req.caseInfos?.stageFiles?.[stageKey];
+          const stageMeta = req.caseInfos?.stageFiles?.[previewStageKey];
           if (stageMeta?.s3Key) {
             const stageUrlRes = await fetch(
               `/api/requests/${
                 req._id
-              }/stage-file-url?stage=${encodeURIComponent(stageKey)}`,
-              { headers: { Authorization: `Bearer ${token}` } }
+              }/stage-file-url?stage=${encodeURIComponent(previewStageKey)}`,
+              { headers: { Authorization: `Bearer ${token}` } },
             );
             if (stageUrlRes.ok) {
               const stageUrlBody = await stageUrlRes.json();
               const signedUrl = stageUrlBody?.data?.url;
               if (signedUrl) {
                 setPreviewStageUrl(signedUrl);
-                setPreviewStageName(stageMeta?.fileName || `${stageKey}-file`);
+                setPreviewStageName(
+                  stageMeta?.fileName || `${previewStageKey}-file`,
+                );
               }
             }
           }
@@ -223,7 +232,7 @@ export function usePreviewLoader({
         setPreviewOpen(true);
         toast({
           title: "다운로드 완료",
-          description: "캐시에서 재사용됩니다.",
+          description: "캐시 또는 다운로드로 로드되었습니다.",
           duration: 2000,
         });
       } catch (error) {
@@ -250,7 +259,7 @@ export function usePreviewLoader({
       setPreviewOpen,
       setPreviewStageName,
       setPreviewStageUrl,
-    ]
+    ],
   );
 
   return { handleOpenPreview };

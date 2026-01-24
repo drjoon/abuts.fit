@@ -24,6 +24,14 @@ export interface RequestCaseInfos {
   maxDiameter?: number;
   connectionDiameter?: number;
   workType?: string;
+  finishLine?: {
+    version?: number;
+    sectionCount?: number;
+    maxStepDistance?: number;
+    points?: number[][];
+    pt0?: number[];
+    updatedAt?: string;
+  };
   reviewByStage?: {
     request?: {
       status?: "PENDING" | "APPROVED" | "REJECTED";

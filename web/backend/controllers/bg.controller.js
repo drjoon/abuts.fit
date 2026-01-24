@@ -230,6 +230,12 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           fileName,
           uploadedAt: now,
         };
+        if (metadata?.finishLine) {
+          updateData["caseInfos.finishLine"] = {
+            ...metadata.finishLine,
+            updatedAt: now,
+          };
+        }
         updateData["productionSchedule.actualCamStart"] = now;
         break;
 

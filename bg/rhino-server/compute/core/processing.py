@@ -60,6 +60,11 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
             "s3Url": s3_url,
             "fileSize": file_size,
         }
+
+        metadata = item.get("metadata") if isinstance(item, dict) else None
+        if isinstance(metadata, dict) and metadata:
+            register_payload["metadata"] = metadata
+
         reg_resp = requests.post(
             register_url,
             json=register_payload,
@@ -226,7 +231,7 @@ async def process_single_stl(p: Path):
             }
 
             log(f"Calling run_rhino_python for: {p.name}")
-            await run_rhino_python(input_stl=p, output_stl=out_path)
+            log_text = await run_rhino_python(input_stl=p, output_stl=out_path)
             log(f"Auto-processing done: {out_name}")
 
             state.recent_history.append(
@@ -238,10 +243,46 @@ async def process_single_stl(p: Path):
                 }
             )
 
+            def _parse_metadata_from_log(text: str) -> dict:
+                if not text:
+                    return {}
+                import base64
+                import json
+                import re
+
+                meta: dict = {}
+                m = re.search(r"DIAMETER_RESULT:max=([\d.]+) conn=([\d.]+)", text)
+                if m:
+                    try:
+                        meta["diameter"] = {
+                            "max": float(m.group(1)),
+                            "connection": float(m.group(2)),
+                        }
+                    except Exception:
+                        pass
+
+                m2 = re.search(r"FINISHLINE_RESULT:([A-Za-z0-9+/=]+)", text)
+                if m2:
+                    try:
+                        raw = base64.b64decode(m2.group(1)).decode("utf-8", errors="ignore")
+                        data = json.loads(raw)
+                        if isinstance(data, dict):
+                            meta["finishLine"] = data
+                    except Exception:
+                        pass
+
+                return meta
+
+            metadata = _parse_metadata_from_log(log_text)
+
             if force_fill:
                 log("Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다.")
             else:
-                upload_via_presign(out_path, prefixed_input, {"requestId": req_id})
+                upload_via_presign(
+                    out_path,
+                    prefixed_input,
+                    {"requestId": req_id, "metadata": metadata},
+                )
         except Exception as e:
             log(f"Auto-processing failed for {p.name}: {e}")
             state.recent_history.append(

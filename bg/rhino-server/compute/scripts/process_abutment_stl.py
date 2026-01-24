@@ -6,6 +6,7 @@ import Rhino
 import Rhino.FileIO
 
 from diameter_analysis import analyze_diameters
+from finishline_detection import detect_finish_line
 
 
 def log(msg):
@@ -621,6 +622,27 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             log("DIAMETER_RESULT:max={} conn={}".format(max_d, conn_d))
         except Exception as e:
             log("Analysis failed: " + str(e))
+
+        try:
+            import base64
+            import json
+
+            fl = detect_finish_line(doc=doc, visualize=False)
+            pts = fl.get("points") or []
+            pt0 = fl.get("pt0")
+
+            out = {
+                "version": 1,
+                "sectionCount": int(fl.get("plane_count") or 0),
+                "maxStepDistance": float(os.environ.get("ABUTS_FINISHLINE_MAX_STEP", "1") or 1),
+                "points": [[float(p.X), float(p.Y), float(p.Z)] for p in pts],
+                "pt0": [float(pt0.X), float(pt0.Y), float(pt0.Z)] if pt0 else None,
+            }
+
+            encoded = base64.b64encode(json.dumps(out).encode("utf-8")).decode("utf-8")
+            log("FINISHLINE_RESULT:" + encoded)
+        except Exception as e:
+            log("Finishline failed: " + str(e))
 
         log("export ok")
     finally:
