@@ -108,6 +108,67 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
+        public class ReorderRequest
+        {
+            public string machineId { get; set; }
+            public string[] order { get; set; }
+        }
+
+        [HttpPost]
+        [Route("reorder")]
+        public HttpResponseMessage Reorder(ReorderRequest req)
+        {
+            try
+            {
+                var machineId = (req?.machineId ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(machineId))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+                }
+
+                var list = CncJobQueue.Reorder(machineId, req?.order);
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = list });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = "queue reorder failed", error = ex.Message });
+            }
+        }
+
+        public class QtyRequest
+        {
+            public int qty { get; set; }
+        }
+
+        [HttpPatch]
+        [Route("{machineId}/{jobId}/qty")]
+        public HttpResponseMessage UpdateQty(string machineId, string jobId, QtyRequest req)
+        {
+            try
+            {
+                var mid = (machineId ?? string.Empty).Trim();
+                var jid = (jobId ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(mid) || string.IsNullOrEmpty(jid))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId and jobId are required" });
+                }
+
+                var qty = req != null ? req.qty : 1;
+                if (qty < 1) qty = 1;
+
+                if (!CncJobQueue.TrySetQty(mid, jid, qty, out var updated) || updated == null)
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = "job not found" });
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = updated });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = "queue qty update failed", error = ex.Message });
+            }
+        }
+
         public class ClearRequest
         {
             public string machineId { get; set; }

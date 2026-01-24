@@ -198,6 +198,106 @@ export async function getBridgeQueueForMachine(req, res) {
 }
 
 /**
+ * 브리지 예약 큐 재정렬 (머신별)
+ * - body: { order: string[] }
+ */
+export async function reorderBridgeQueueForMachine(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const orderRaw = req.body?.order;
+    const order = Array.isArray(orderRaw)
+      ? orderRaw.map((v) => String(v || "").trim()).filter((v) => !!v)
+      : [];
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/reorder`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ machineId: mid, order }),
+    });
+    const body = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || body?.success === false) {
+      return res.status(resp.status).json({
+        success: false,
+        message:
+          body?.message ||
+          body?.error ||
+          "브리지 예약 큐 재정렬 중 오류가 발생했습니다.",
+      });
+    }
+
+    const list = Array.isArray(body?.data) ? body.data : body?.data || [];
+    return res.status(200).json({ success: true, data: list });
+  } catch (error) {
+    console.error("Error in reorderBridgeQueueForMachine:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 예약 큐 재정렬 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 브리지 예약 큐 작업 수량(qty) 변경 (머신별)
+ * - body: { qty: number }
+ */
+export async function updateBridgeQueueJobQty(req, res) {
+  try {
+    const { machineId, jobId } = req.params;
+    const mid = String(machineId || "").trim();
+    const jid = String(jobId || "").trim();
+    if (!mid || !jid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId and jobId are required",
+      });
+    }
+
+    const qty = Math.max(1, Number(req.body?.qty ?? 1) || 1);
+
+    const url = `${BRIDGE_BASE.replace(
+      /\/$/,
+      "",
+    )}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(jid)}/qty`;
+    const resp = await fetch(url, {
+      method: "PATCH",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ qty }),
+    });
+    const body = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || body?.success === false) {
+      return res.status(resp.status).json({
+        success: false,
+        message:
+          body?.message ||
+          body?.error ||
+          "브리지 예약 큐 수량 변경 중 오류가 발생했습니다.",
+      });
+    }
+
+    return res.status(200).json({ success: true, data: body?.data ?? body });
+  } catch (error) {
+    console.error("Error in updateBridgeQueueJobQty:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 예약 큐 수량 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 활성 프로그램 조회 (브리지 경유)
  */
 export async function getBridgeActiveProgram(req, res) {

@@ -10,7 +10,7 @@ type CncReservationMode = "immediate" | "reserved";
 
 export interface CncJobItem {
   id: string;
-  source: "machine" | "bridge" | "upload";
+  source: "machine" | "bridge" | "upload" | "db";
   programNo: number | string | null;
   name: string;
   qty: number;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Thermometer,
   Wrench,
@@ -18,13 +18,10 @@ import { parseProgramNoFromName } from "../lib/programNaming";
 import { Machine } from "@/pages/manufacturer/cnc/types";
 import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 
-export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
 interface MachineCardProps {
   machine: Machine;
   isActive: boolean;
   loading: boolean;
-  tempHealth: HealthLevel;
-  toolHealth: HealthLevel;
   tempTooltip: string;
   toolTooltip: string;
   currentProg: any | null;
@@ -41,6 +38,8 @@ interface MachineCardProps {
   onOpenCurrentProg: (e: React.MouseEvent) => void;
   onOpenNextProg: (prog: any, e: React.MouseEvent) => void;
   onOpenJobConfig: (e: React.MouseEvent) => void;
+  onUploadFiles?: (files: FileList | File[]) => void;
+  onStopClick?: (e: React.MouseEvent) => void;
   onResetClick: (e: React.MouseEvent) => void;
   onCancelReservation?: (
     jobId: string | undefined,
@@ -80,25 +79,10 @@ const getMachineStatusChip = (status: string) => {
   );
 };
 
-const getHealthColorClass = (level: HealthLevel) => {
-  switch (level) {
-    case "ok":
-      return "text-emerald-500";
-    case "warn":
-      return "text-amber-400";
-    case "alarm":
-      return "text-red-500";
-    default:
-      return "text-gray-400";
-  }
-};
-
 export const MachineCard: React.FC<MachineCardProps> = ({
   machine,
   isActive,
   loading,
-  tempHealth,
-  toolHealth,
   tempTooltip,
   toolTooltip,
   currentProg,
@@ -115,6 +99,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   onOpenCurrentProg,
   onOpenNextProg,
   onOpenJobConfig,
+  onUploadFiles,
+  onStopClick,
   onResetClick,
   onCancelReservation,
   onOpenReservationList,
@@ -122,6 +108,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({
 }) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [dropping, setDropping] = useState(false);
   const [dummyOpen, setDummyOpen] = useState(false);
   const [dummyProgram, setDummyProgram] = useState("O0100");
   const [dummySchedules, setDummySchedules] = useState<
@@ -209,20 +197,90 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   return (
     <div
       onClick={onSelect}
-      className={`relative flex flex-col rounded-2xl border bg-white/80 p-4 sm:p-5 shadow-sm transition-all hover:shadow-lg cursor-pointer min-h-[220px] sm:min-h-[240px] ${
-        isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-gray-200"
+      onDragOver={(e) => {
+        if (!onUploadFiles) return;
+        e.preventDefault();
+        setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (!onUploadFiles) return;
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setDropping(false);
+        }
+      }}
+      onDrop={(e) => {
+        if (!onUploadFiles) return;
+        e.preventDefault();
+        setDropping(false);
+        const { files } = e.dataTransfer;
+        if (files && files.length > 0) {
+          onUploadFiles(files);
+        }
+      }}
+      className={`relative flex flex-col rounded-3xl border bg-white/85 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,23,42,0.10)] transition-all hover:shadow-[0_22px_55px_rgba(15,23,42,0.14)] cursor-pointer min-h-[240px] sm:min-h-[260px] overflow-hidden ${
+        isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"
       }`}
     >
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-lg font-bold text-gray-900">
-            {machine.name}
-          </span>
-          {getMachineStatusChip(machine.status)}
+      <div className="absolute inset-0 bg-gradient-to-br from-sky-50/70 via-white/40 to-violet-50/70" />
+      {dropping && (
+        <div className="absolute inset-0 rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/60 z-20 flex items-center justify-center">
+          <div className="text-sm font-semibold text-blue-700">
+            파일을 놓으면 예약목록에 추가됩니다
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+      )}
+      <div className="relative flex items-start justify-between gap-3 mb-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {getMachineStatusChip(machine.status)}
+            <span className="text-[11px] font-semibold text-slate-500">
+              CNC
+            </span>
+            {continuousState?.isRunning && (
+              <span className="text-[11px] font-semibold text-violet-600">
+                연속가공
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-xl font-extrabold tracking-tight text-slate-900 truncate">
+            {machine.name}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2 justify-items-end content-start">
+          {onUploadFiles && (
+            <>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+                disabled={loading}
+                title="파일 업로드"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".nc,.txt"
+                className="hidden"
+                multiple
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (!files || files.length === 0) return;
+                  onUploadFiles(files);
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = "";
+                  }
+                }}
+              />
+            </>
+          )}
           <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
             onClick={(e) => {
               e.stopPropagation();
               setDummyOpen(true);
@@ -232,7 +290,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             <Cylinder className="h-4 w-4" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
+            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
             onClick={onInfoClick}
             title="현재 프로그램/알람 정보"
             disabled={loading || !onInfoClick}
@@ -240,7 +298,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             <Info className="h-4 w-4" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40 text-xs font-medium"
+            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 text-xs font-bold shadow-sm"
             onClick={onMaterialClick}
             title="원소재"
             disabled={loading || !onMaterialClick}
@@ -250,25 +308,23 @@ export const MachineCard: React.FC<MachineCardProps> = ({
               : "Ø"}
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
+            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
             onClick={onToolClick}
             title={toolTooltip || "공구 수명, 교체 확인"}
             disabled={loading}
           >
-            <Wrench className={`h-4 w-4 ${getHealthColorClass(toolHealth)}`} />
+            <Wrench className="h-4 w-4" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
+            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
             onClick={onTempClick}
             title={tempTooltip || "모터 온도"}
             disabled={loading}
           >
-            <Thermometer
-              className={`h-4 w-4 ${getHealthColorClass(tempHealth)}`}
-            />
+            <Thermometer className="h-4 w-4" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
             onClick={onEditClick}
             title="장비 설정"
           >
@@ -281,21 +337,27 @@ export const MachineCard: React.FC<MachineCardProps> = ({
         </div>
       </div>
 
-      {machine.lastError && (
-        <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 border border-red-200">
-          마지막 오류: {machine.lastError}
-        </div>
-      )}
+      <div className="relative h-10 -mt-1 mb-2">
+        {machine.lastError ? (
+          <div className="absolute inset-x-0 top-0 rounded-2xl bg-red-50 px-3 py-2 text-xs text-red-700 border border-red-200 truncate">
+            마지막 오류: {machine.lastError}
+          </div>
+        ) : (
+          <div className="absolute inset-x-0 top-0 rounded-2xl bg-transparent px-3 py-2 text-xs text-transparent border border-transparent">
+            .
+          </div>
+        )}
+      </div>
 
-      <div className="mb-4 flex flex-col gap-3 text-sm">
-        <div className="flex flex-col gap-2">
+      <div className="mb-4 flex flex-col gap-3 text-sm relative">
+        <div className="grid grid-cols-1 gap-2">
           <div
             role="button"
             tabIndex={0}
-            className={`flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
+            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
               !currentProg || !currentProg.name || !isActive || isRunning
-                ? "bg-blue-50 text-blue-300 cursor-not-allowed"
-                : "bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer"
+                ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
+                : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
             }`}
             onClick={(e) => {
               if (!currentProg || !currentProg.name || !isActive || isRunning)
@@ -303,87 +365,126 @@ export const MachineCard: React.FC<MachineCardProps> = ({
               onOpenCurrentProg(e);
             }}
           >
-            <span>
-              {currentProg
-                ? `생산중: ${currentProg.name ?? "쉬는 중"}`
-                : "생산중: 쉬는 중"}
-            </span>
-            {currentProg && isActive && isRunning && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (
-                    !currentProg ||
-                    !currentProg.name ||
-                    !isActive ||
-                    !isRunning
-                  )
-                    return;
-                  onResetClick(e);
-                }}
-                disabled={
-                  !currentProg || !currentProg.name || !isActive || loading
-                }
-                className="ml-2 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs text-blue-500 hover:bg-blue-100 hover:text-blue-700 disabled:opacity-40"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-slate-500">
+                  Now Playing
+                </div>
+                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                  {currentProg ? (currentProg.name ?? "없음") : "없음"}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {currentProg && isActive && isRunning && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!onStopClick) return;
+                        if (
+                          !currentProg ||
+                          !currentProg.name ||
+                          !isActive ||
+                          !isRunning
+                        )
+                          return;
+                        onStopClick(e);
+                      }}
+                      disabled={
+                        !currentProg ||
+                        !currentProg.name ||
+                        !isActive ||
+                        loading
+                      }
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
+                      title="정지(Stop)"
+                    >
+                      <Pause className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (
+                          !currentProg ||
+                          !currentProg.name ||
+                          !isActive ||
+                          !isRunning
+                        )
+                          return;
+                        onResetClick(e);
+                      }}
+                      disabled={
+                        !currentProg ||
+                        !currentProg.name ||
+                        !isActive ||
+                        loading
+                      }
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
+                      title="리셋(Reset)"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
 
           <div
             role="button"
             tabIndex={0}
-            className={`flex flex-col gap-1 rounded-lg px-3 py-2.5 text-sm font-semibold text-left ${
+            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
               !isActive || !nextProg
-                ? "bg-emerald-50 text-emerald-300 cursor-not-allowed"
-                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
+                ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
+                : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
             }`}
             onClick={(e) => {
               if (!nextProg || !isActive) return;
               onOpenNextProg(nextProg, e);
             }}
           >
-            <div className="flex items-center justify-between gap-2 min-w-0">
-              <span className="truncate">
-                {nextProg
-                  ? (() => {
-                      const name = String(nextProg.name ?? "");
-                      const full = `다음 생산: ${name}`.trim();
-                      return full.length > 24
-                        ? `${full.slice(0, 21)}...`
-                        : full;
-                    })()
-                  : "다음 생산: 없음"}
-              </span>
-              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-slate-500">
+                  Next Up
+                </div>
+                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                  {nextProg ? String(nextProg.name ?? "") : "없음"}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
                 {showReservationCounter && (
-                  <span className="mr-0.5">
+                  <div className="mr-1 rounded-full bg-white/70 border border-slate-200 px-2 py-1 text-[11px] font-extrabold text-slate-700">
                     {currentIndex}/{totalReservedCount}
-                  </span>
+                  </div>
                 )}
+
                 <button
                   type="button"
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!onTogglePause || !nextProg) return;
                     onTogglePause(nextProg.jobId as string | undefined, e);
                   }}
                   disabled={!isActive || !nextProg}
+                  title={
+                    nextProg && (nextProg as any).paused ? "재생" : "일시정지"
+                  }
                 >
                   {nextProg && (nextProg as any).paused ? (
-                    // 예약이 일시정지(paused=true) 상태이면 Play 아이콘으로 표시하여 생산 시작을 의미하게 한다.
-                    <Play className="h-3.5 w-3.5" />
+                    <Play className="h-4 w-4" />
                   ) : (
-                    // 예약이 재생(paused=false) 상태이면 Pause 아이콘으로 표시하여 일시정지를 의미하게 한다.
-                    <Pause className="h-3.5 w-3.5" />
+                    <Pause className="h-4 w-4" />
                   )}
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!onCancelReservation || !nextProg) return;
@@ -393,10 +494,11 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                     );
                   }}
                   disabled={!isActive || !nextProg}
+                  title="예약 취소"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-4 w-4" />
                 </button>
-              </span>
+              </div>
             </div>
           </div>
         </div>
@@ -434,9 +536,9 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                 onOpenReservationList(e);
               }}
               disabled={!isActive}
-              className="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+              className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-4 py-2 text-xs font-extrabold text-white hover:from-emerald-700 hover:to-emerald-600 disabled:opacity-40 shadow-sm"
             >
-              예약목록
+              재생목록
             </button>
           )}
           <button
@@ -446,9 +548,9 @@ export const MachineCard: React.FC<MachineCardProps> = ({
               onOpenJobConfig(e);
             }}
             disabled={loading}
-            className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            className="flex-1 rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 px-4 py-2 text-xs font-extrabold text-white hover:from-blue-700 hover:to-sky-600 disabled:opacity-50 shadow-sm"
           >
-            생산 예약하기
+            예약 관리
           </button>
         </div>
       </div>

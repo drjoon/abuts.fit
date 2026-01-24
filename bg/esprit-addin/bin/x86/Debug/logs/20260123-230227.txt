@@ -1,4 +1,4 @@
-==== Trace started at 2026-01-24T07:26:15.8333334+09:00 ====
+==== Trace started at 2026-01-23T23:02:27.3500705+09:00 ====
 FilePanel: C:\abuts.fit\bg\storage\2-filled\20260123-AEBMNZPL-향기로운치과-구자일-44.filled.stl
 StlFileProcessor: request-meta GET https://abuts.fit/api/bg/request-meta?requestId=20260123-AEBMNZPL (X-Bridge-Secret set=True)
 StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260123-AEBMNZPL","lotNumber":{"part":"CAP260123-AAG"},"serialCode":"AAG","caseInfos":{"clinicName":"향기로운치과","patientName":"구자일","tooth":"44","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":5.7,"connectionDiameter":3.3,"workType":"abutment","lotNumber":"CAP260123-AAG"}},"message":"Request meta","success":true}
@@ -111,12 +111,7 @@ DentalAddin: FreeFormMill - FinishingMethod==1, Emerge/Composite2 실행
 DentalAddin: Emerge - MergeFile1: C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\Viles\Surface\Project1.igs
 DentalAddin: Emerge - FinishingMethod==1, Extrude 파일 로드 생략
 DentalAddin: FreeFormMill - Emerge 완료
-DentalAddin: Composite2SplitAB - enabled=1, splitX=6, prcA=C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_A_015.prc, prcB=C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_B_005.prc
-DentalAddin: OpenProcess:Composite2SplitAB:A - PRC 경로: C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_A_015.prc
-DentalAddin: OpenProcess:Composite2SplitAB:A - PRC 파일 열기 성공 (Count:1)
-DentalAddin: OpenProcess:Composite2SplitAB:B - PRC 경로: C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_B_005.prc
-DentalAddin: OpenProcess:Composite2SplitAB:B - PRC 파일 열기 성공 (Count:1)
-DentalAddin: Composite2SplitAB - PassPercent: A(1.50->48.99), B(48.99->54.23)
+DentalAddin: Composite2 - PassPercent 계산: First=1.50%(X:1.489), Last=54.23%(X:6.498), Span:9.500, BackPointX:10.846, RightOffsetUsed:0.000
 DentalAddin: FreeFormMill - Composite2 완료
 DentalAddin: PreOp:CustomCycle2 - FeatureChains.Count: 6
 DentalAddin: PreOp:CustomCycle2 - FeatureChain[1] Boundry1
@@ -135,7 +130,7 @@ DentalAddin: PreOp:CustomCycle2 - Feature[6] 3DMilling_90Degree
 DentalAddin: PreOp:CustomCycle2 - Feature[7] 3DMilling_FrontFace
 DentalAddin: Main 종료 단계 - EspritApp 처리 상태 종료
 DentalAddin: Main 실행 완료
-DentalAddin: PostMain - Operations.Count:10
+DentalAddin: PostMain - Operations.Count:9
 DentalAddin: PostMain - Op[1] NEO_FACE DRILL Key:1
 DentalAddin: PostMain - Op[2] 솔리드턴-윤곽가공 Key:2
 DentalAddin: PostMain - Op[3] 솔리드턴-윤곽가공 Key:3
@@ -144,8 +139,7 @@ DentalAddin: PostMain - Op[5] Rough Mill 3D Key:5
 DentalAddin: PostMain - Op[6] Rough Mill 3D Key:6
 DentalAddin: PostMain - Op[7] EM2.0BALL Key:7
 DentalAddin: PostMain - Op[8] 5Axis_Composite Key:8
-DentalAddin: PostMain - Op[9] 5Axis_Composite Key:9
-DentalAddin: PostMain - Op[10] NEO_CONNECTION Key:10
+DentalAddin: PostMain - Op[9] NEO_CONNECTION Key:9
 StlFileProcessor: DentalPanel 호출 완료
 StlFileProcessor: NC 메타 캡처 - Front:1.34632838055406, Back:10.8463283805541, StockDia:8
 StlFileProcessor: NC 저장 완료 - C:\abuts.fit\bg\storage\3-nc\20260123-AEBMNZPL-향기로운치과-구자일-44.nc

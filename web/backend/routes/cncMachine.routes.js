@@ -66,6 +66,20 @@ router.delete(
   cncMachineController.deleteBridgeQueueJob,
 );
 
+// 브리지 예약 큐 재정렬
+router.post(
+  "/:machineId/bridge-queue/reorder",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.reorderBridgeQueueForMachine,
+);
+
+// 브리지 예약 큐 작업 수량(qty) 변경
+router.patch(
+  "/:machineId/bridge-queue/:jobId/qty",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.updateBridgeQueueJobQty,
+);
+
 // 브리지 예약 큐 전체 삭제
 router.post(
   "/:machineId/bridge-queue/clear",

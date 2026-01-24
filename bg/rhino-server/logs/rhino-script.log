@@ -1,0 +1,351 @@
+[abuts-rhino] start
+[abuts-rhino] input=C:\\abuts.fit\\bg\\storage\\1-stl\\20260122-ADZGKBBJ-향기로운치과-구자일-44.stl
+[abuts-rhino] output=C:\\abuts.fit\\bg\\storage\\2-filled\\20260122-ADZGKBBJ-향기로운치과-구자일-44.filled.stl
+[abuts-rhino] import ok
+[abuts-rhino] mesh objects after import=1
+[abuts-rhino] mesh[0] v=6503 f=10194 closed=True manifold=(False, False, False) nakedEdges=0
+[abuts-rhino] Explode (RhinoCommon) ok, pieces=81
+[abuts-rhino] candidate[0] id=11cfb5f5-a42e-466a-bd8f-d5634876d5ae r=3.662062512033861 maxZ=10.8463773727417 nakedEdges=2
+[abuts-rhino] candidate[1] id=35759e58-47d1-471b-a545-224a29ae1f7f r=3.662062512033861 maxZ=6.4122138023376465 nakedEdges=2
+[abuts-rhino] candidate[2] id=7644f44e-37f2-4a3b-bdc0-dcf37d0fd999 r=2.451465286319765 maxZ=0.30000177025794983 nakedEdges=2
+[abuts-rhino] candidate[3] id=ce5e28b9-8e20-4e08-b9c2-06e726a1728b r=2.41693481490141 maxZ=0.30000177025794983 nakedEdges=2
+[abuts-rhino] candidate[4] id=f64557e8-365f-4d2c-ba1f-6ab62c229d8a r=1.858041364626239 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] candidate[5] id=5a9e49e0-050b-46ac-81cc-5c67577dbb01 r=1.8580413142144874 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] candidate[6] id=682a6bfc-30a2-4d4a-8ecd-ed6fe125ae67 r=1.8580413007690997 maxZ=-1.3999993801116943 nakedEdges=1
+[abuts-rhino] candidate[7] id=3cbb0c6c-0377-4eda-b697-81c8cb1e4440 r=1.858040914256648 maxZ=-1.3999996185302734 nakedEdges=1
+[abuts-rhino] candidate[8] id=7282862f-9c70-4263-b406-fb856dfcc226 r=1.854487945752038 maxZ=-2.2999985218048096 nakedEdges=12
+[abuts-rhino] candidate[9] id=9ff47240-1a9d-4537-8f31-0ba2bbfb1c29 r=1.7761250783369582 maxZ=-1.3999987840652466 nakedEdges=1
+[abuts-rhino] candidate[10] id=1ad1f7db-2333-4186-ab17-685a4abf260d r=1.7761249863298916 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] candidate[11] id=14def909-0cd8-4621-9826-1fc9e70d4f62 r=1.7761246669245256 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] selected piece id=11cfb5f5-a42e-466a-bd8f-d5634876d5ae
+[abuts-rhino] selected key(r,maxZ)=(3.662062512033861, 10.8463773727417)
+[abuts-rhino] total candidates=81 open_candidates=81 tol=0.05
+[abuts-rhino] FillMeshHoles target[0] id=11cfb5f5-a42e-466a-bd8f-d5634876d5ae r=3.662062512033861 maxZ=10.8463773727417 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=11cfb5f5-a42e-466a-bd8f-d5634876d5ae)
+[abuts-rhino] FillMeshHoles target[1] id=73b94a99-63bd-4853-bb36-4a16c2dd5d48 r=1.7323152183662733 maxZ=10.84634017944336 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=73b94a99-63bd-4853-bb36-4a16c2dd5d48)
+[abuts-rhino] FillMeshHoles target[2] id=213538aa-5504-4c30-87ea-1a00d54a6169 r=1.7323150497694209 maxZ=0.9500013589859009 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=213538aa-5504-4c30-87ea-1a00d54a6169)
+[abuts-rhino] FillMeshHoles target[3] id=ea698817-8903-4cf9-9f8d-a6298ba19feb r=1.4848418204551077 maxZ=0.7750014662742615 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=ea698817-8903-4cf9-9f8d-a6298ba19feb)
+[abuts-rhino] FillMeshHoles target[4] id=f97561e2-355c-4257-8e0b-24d2dd70e36c r=1.5424112342446465 maxZ=-2.749997615814209 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=f97561e2-355c-4257-8e0b-24d2dd70e36c)
+[abuts-rhino] FillMeshHoles target[5] id=bf70490e-9dc3-4bb6-9622-c9d35ec49af6 r=1.57613469840704 maxZ=-2.730372428894043 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=bf70490e-9dc3-4bb6-9622-c9d35ec49af6)
+[abuts-rhino] FillMeshHoles target[6] id=7282862f-9c70-4263-b406-fb856dfcc226 r=1.854487945752038 maxZ=-2.2999985218048096 nakedEdges=12
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->12)=6
+[abuts-rhino] FillMeshHoles 성공 감지 (id=7282862f-9c70-4263-b406-fb856dfcc226)
+[abuts-rhino] FillMeshHoles target[7] id=1890b291-ab85-4f34-b242-fc75cd614ede r=1.212618405197688 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=1890b291-ab85-4f34-b242-fc75cd614ede)
+[abuts-rhino] FillMeshHoles target[8] id=d99139c2-7cef-4780-995f-94565e983af8 r=1.2509309584923112 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=d99139c2-7cef-4780-995f-94565e983af8)
+[abuts-rhino] FillMeshHoles target[9] id=a957c8eb-77d1-461d-9f3e-9c75c3b921f0 r=1.25000552755786 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=a957c8eb-77d1-461d-9f3e-9c75c3b921f0)
+[abuts-rhino] FillMeshHoles target[10] id=96c295b0-67c5-4fd9-9251-eed95635f633 r=1.2466468051803359 maxZ=-2.3370590209960938 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=96c295b0-67c5-4fd9-9251-eed95635f633)
+[abuts-rhino] FillMeshHoles target[11] id=6130520a-8f49-4f36-9ad6-a5ac9a63e16b r=1.22363384736978 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=6130520a-8f49-4f36-9ad6-a5ac9a63e16b)
+[abuts-rhino] FillMeshHoles target[12] id=246a1673-0b07-4fe7-a60e-f99357b25d17 r=1.2192028950254281 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=246a1673-0b07-4fe7-a60e-f99357b25d17)
+[abuts-rhino] FillMeshHoles target[13] id=0d4c3ca4-ee84-4143-a4cf-a0fcb8d4d00a r=1.2088149266191548 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=0d4c3ca4-ee84-4143-a4cf-a0fcb8d4d00a)
+[abuts-rhino] FillMeshHoles target[14] id=0d1100e4-ac18-48e5-8259-deeb7695dca8 r=1.1976893353897928 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=0d1100e4-ac18-48e5-8259-deeb7695dca8)
+[abuts-rhino] FillMeshHoles target[15] id=bef7e8b9-9335-46ca-abf8-d7351ebbd36d r=1.1976893426578128 maxZ=-2.3370585441589355 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=bef7e8b9-9335-46ca-abf8-d7351ebbd36d)
+[abuts-rhino] FillMeshHoles target[16] id=392a0bbe-2aff-4bad-abbe-fc42522b8e19 r=1.2088153262990322 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=392a0bbe-2aff-4bad-abbe-fc42522b8e19)
+[abuts-rhino] FillMeshHoles target[17] id=37d95335-c5bc-424e-a83e-5e6cb3db3d42 r=1.2261790230246101 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=37d95335-c5bc-424e-a83e-5e6cb3db3d42)
+[abuts-rhino] FillMeshHoles target[18] id=31a55b85-ba5c-4bed-bbb4-b093ec1c2832 r=1.248759704482535 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=31a55b85-ba5c-4bed-bbb4-b093ec1c2832)
+[abuts-rhino] FillMeshHoles target[19] id=b007e1e4-2091-44c1-9919-58603e81d82e r=1.248759524813365 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=b007e1e4-2091-44c1-9919-58603e81d82e)
+[abuts-rhino] FillMeshHoles target[20] id=11a540e3-22ef-4393-ae82-8ccab39bb43e r=1.246625656412066 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=11a540e3-22ef-4393-ae82-8ccab39bb43e)
+[abuts-rhino] FillMeshHoles target[21] id=38f4888a-5314-4412-96da-8c83b489e4d7 r=1.242428005151743 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=38f4888a-5314-4412-96da-8c83b489e4d7)
+[abuts-rhino] FillMeshHoles target[22] id=727007ff-76c0-4d9c-9b0e-7ef04838cfdf r=1.2466251663914578 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=727007ff-76c0-4d9c-9b0e-7ef04838cfdf)
+[abuts-rhino] FillMeshHoles target[23] id=524024d2-ac37-44cf-9b27-ad3cb0cc597c r=1.2424281584467352 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=524024d2-ac37-44cf-9b27-ad3cb0cc597c)
+[abuts-rhino] FillMeshHoles target[24] id=ff206f90-cd84-4bab-a60f-a1d311ce859a r=1.236309498912519 maxZ=-2.3370585441589355 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=ff206f90-cd84-4bab-a60f-a1d311ce859a)
+[abuts-rhino] FillMeshHoles target[25] id=f2b52806-7563-441b-aee5-8b5c16b390b3 r=1.228476883867864 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=f2b52806-7563-441b-aee5-8b5c16b390b3)
+[abuts-rhino] FillMeshHoles target[26] id=2e20808a-41d6-408e-92fc-879e6c20f6e8 r=1.219203292800302 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=2e20808a-41d6-408e-92fc-879e6c20f6e8)
+[abuts-rhino] FillMeshHoles target[27] id=143d00c3-91cd-45e0-add8-6350d422c129 r=1.2466253359355397 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=143d00c3-91cd-45e0-add8-6350d422c129)
+[abuts-rhino] FillMeshHoles target[28] id=10284296-1d70-4145-bc41-06d9d77b1a12 r=1.215484488309561 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=10284296-1d70-4145-bc41-06d9d77b1a12)
+[abuts-rhino] FillMeshHoles target[29] id=daacf3ba-bd7f-451b-8237-2ba8ed05e068 r=1.20881537448391 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=daacf3ba-bd7f-451b-8237-2ba8ed05e068)
+[abuts-rhino] FillMeshHoles target[30] id=3bf294ce-ede1-4bb7-a2e7-a5584d600fe5 r=1.2036702875646015 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=3bf294ce-ede1-4bb7-a2e7-a5584d600fe5)
+[abuts-rhino] FillMeshHoles target[31] id=9bc8ab1c-1a6d-4bc0-a513-a0fa221d47c7 r=1.2424275905868525 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=9bc8ab1c-1a6d-4bc0-a513-a0fa221d47c7)
+[abuts-rhino] FillMeshHoles target[32] id=57e407e8-649d-4478-8b9c-f3b7678f9859 r=1.1976893601010798 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=57e407e8-649d-4478-8b9c-f3b7678f9859)
+[abuts-rhino] FillMeshHoles target[33] id=ed82e800-fba3-4c86-836d-bbc48494d422 r=1.2363095303500817 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=ed82e800-fba3-4c86-836d-bbc48494d422)
+[abuts-rhino] FillMeshHoles target[34] id=87b07791-0b10-4913-b7c6-171958339dce r=1.2154846224863738 maxZ=-2.3370585441589355 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=87b07791-0b10-4913-b7c6-171958339dce)
+[abuts-rhino] FillMeshHoles target[35] id=f723096f-dddd-4395-b04f-42b9fe8a4002 r=1.2261788490514707 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=f723096f-dddd-4395-b04f-42b9fe8a4002)
+[abuts-rhino] FillMeshHoles target[36] id=0746e61e-8dbb-46d7-a546-524e455616e0 r=1.2192033437984484 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=0746e61e-8dbb-46d7-a546-524e455616e0)
+[abuts-rhino] FillMeshHoles target[37] id=fce843bc-78b3-43e3-944b-5cdb7eb92741 r=1.2284769059998644 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=fce843bc-78b3-43e3-944b-5cdb7eb92741)
+[abuts-rhino] FillMeshHoles target[38] id=9e09c246-eb6d-4d9c-abf2-9bceed25acd3 r=1.236309555266101 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=9e09c246-eb6d-4d9c-abf2-9bceed25acd3)
+[abuts-rhino] FillMeshHoles target[39] id=35759e58-47d1-471b-a545-224a29ae1f7f r=3.662062512033861 maxZ=6.4122138023376465 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=35759e58-47d1-471b-a545-224a29ae1f7f)
+[abuts-rhino] FillMeshHoles target[40] id=8bdd902b-9590-4dd1-9ce9-b14db770737f r=1.2424277025596107 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=8bdd902b-9590-4dd1-9ce9-b14db770737f)
+[abuts-rhino] FillMeshHoles target[41] id=7a1c3a68-654a-4918-94b8-b5d1a13af4c5 r=1.2466252137783584 maxZ=-2.337057590484619 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=7a1c3a68-654a-4918-94b8-b5d1a13af4c5)
+[abuts-rhino] FillMeshHoles target[42] id=ede7d7a9-2479-4c48-be1e-56b3c56da10c r=1.2363089658100963 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=ede7d7a9-2479-4c48-be1e-56b3c56da10c)
+[abuts-rhino] FillMeshHoles target[43] id=7cfa4c6e-c4e7-4f27-9baa-ccb7cf889a68 r=1.472564277202977 maxZ=-1.558915615081787 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=7cfa4c6e-c4e7-4f27-9baa-ccb7cf889a68)
+[abuts-rhino] FillMeshHoles target[44] id=7ad5d15e-fb51-4d19-8472-e3c7e6417ec7 r=1.4150005911864907 maxZ=-1.3999989032745361 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=7ad5d15e-fb51-4d19-8472-e3c7e6417ec7)
+[abuts-rhino] FillMeshHoles target[45] id=c831f3f8-fe4b-406a-af16-6a956186d682 r=1.4725643621058742 maxZ=-1.558915615081787 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=c831f3f8-fe4b-406a-af16-6a956186d682)
+[abuts-rhino] FillMeshHoles target[46] id=2d545663-1c00-4ee5-b048-87c2a410d9d8 r=1.242427665235336 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=2d545663-1c00-4ee5-b048-87c2a410d9d8)
+[abuts-rhino] FillMeshHoles target[47] id=f64557e8-365f-4d2c-ba1f-6ab62c229d8a r=1.858041364626239 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=f64557e8-365f-4d2c-ba1f-6ab62c229d8a)
+[abuts-rhino] FillMeshHoles target[48] id=5a9e49e0-050b-46ac-81cc-5c67577dbb01 r=1.8580413142144874 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=5a9e49e0-050b-46ac-81cc-5c67577dbb01)
+[abuts-rhino] FillMeshHoles target[49] id=e3b7214e-0c1b-4a63-a511-8ac5540bfd2e r=1.4197729015642495 maxZ=-1.5589152574539185 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=e3b7214e-0c1b-4a63-a511-8ac5540bfd2e)
+[abuts-rhino] FillMeshHoles target[50] id=f9b3b79f-d656-470e-99b0-420456520e76 r=1.4197729052506631 maxZ=-1.558915138244629 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=f9b3b79f-d656-470e-99b0-420456520e76)
+[abuts-rhino] FillMeshHoles target[51] id=b865aac7-6a7d-4aa4-bff2-47a00b9b2017 r=1.2466251053129003 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=b865aac7-6a7d-4aa4-bff2-47a00b9b2017)
+[abuts-rhino] FillMeshHoles target[52] id=ce5e28b9-8e20-4e08-b9c2-06e726a1728b r=2.41693481490141 maxZ=0.30000177025794983 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=1
+[abuts-rhino] FillMeshHoles 성공 감지 (id=ce5e28b9-8e20-4e08-b9c2-06e726a1728b)
+[abuts-rhino] FillMeshHoles target[53] id=5b304967-5ad5-4c84-a049-77ebda717e94 r=1.2487596015245588 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=5b304967-5ad5-4c84-a049-77ebda717e94)
+[abuts-rhino] FillMeshHoles target[54] id=3cbb0c6c-0377-4eda-b697-81c8cb1e4440 r=1.858040914256648 maxZ=-1.3999996185302734 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=3cbb0c6c-0377-4eda-b697-81c8cb1e4440)
+[abuts-rhino] FillMeshHoles target[55] id=20315a8e-fba8-4fc0-aedb-f5bb21a5ebc6 r=1.2509310021046853 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=20315a8e-fba8-4fc0-aedb-f5bb21a5ebc6)
+[abuts-rhino] FillMeshHoles target[56] id=ff92f264-9ad6-487a-88b5-be0fc1d60d9d r=1.2487595135647698 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=ff92f264-9ad6-487a-88b5-be0fc1d60d9d)
+[abuts-rhino] FillMeshHoles target[57] id=682a6bfc-30a2-4d4a-8ecd-ed6fe125ae67 r=1.8580413007690997 maxZ=-1.3999993801116943 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=682a6bfc-30a2-4d4a-8ecd-ed6fe125ae67)
+[abuts-rhino] FillMeshHoles target[58] id=e89a947c-bebc-4ea9-8457-c62800777a12 r=1.472564091575228 maxZ=-1.5589154958724976 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=e89a947c-bebc-4ea9-8457-c62800777a12)
+[abuts-rhino] FillMeshHoles target[59] id=bb6da169-58c1-46cc-a30c-ab75b759f4c9 r=1.2500048255383016 maxZ=-2.3370578289031982 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=bb6da169-58c1-46cc-a30c-ab75b759f4c9)
+[abuts-rhino] FillMeshHoles target[60] id=37bd9a1b-88d7-43c4-a678-53446026cd84 r=1.472563943010633 maxZ=-1.5589158535003662 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=37bd9a1b-88d7-43c4-a678-53446026cd84)
+[abuts-rhino] FillMeshHoles target[61] id=3649a787-2ab3-47a6-971b-e422ecd75c96 r=1.208814647335548 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=3649a787-2ab3-47a6-971b-e422ecd75c96)
+[abuts-rhino] FillMeshHoles target[62] id=8dfae5e3-67b9-4fee-bc41-c47cf724286f r=1.436250107962612 maxZ=-1.4738558530807495 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=8dfae5e3-67b9-4fee-bc41-c47cf724286f)
+[abuts-rhino] FillMeshHoles target[63] id=67a7ada0-930d-4e72-8adf-5e3003aff3c2 r=1.236309498912519 maxZ=-2.3370587825775146 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=67a7ada0-930d-4e72-8adf-5e3003aff3c2)
+[abuts-rhino] FillMeshHoles target[64] id=d594134b-8e8e-40aa-8507-26c72c514693 r=1.415000219872038 maxZ=-1.3999992609024048 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=d594134b-8e8e-40aa-8507-26c72c514693)
+[abuts-rhino] FillMeshHoles target[65] id=92c0d745-4ec4-4ac7-aa58-15ff41ba7390 r=1.1976891053763357 maxZ=-2.3370580673217773 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=92c0d745-4ec4-4ac7-aa58-15ff41ba7390)
+[abuts-rhino] FillMeshHoles target[66] id=7644f44e-37f2-4a3b-bdc0-dcf37d0fd999 r=2.451465286319765 maxZ=0.30000177025794983 nakedEdges=2
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->2)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=7644f44e-37f2-4a3b-bdc0-dcf37d0fd999)
+[abuts-rhino] FillMeshHoles target[67] id=c9936b36-623a-4431-9c37-f0cf59862328 r=1.2332093021697508 maxZ=-2.337059259414673 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=c9936b36-623a-4431-9c37-f0cf59862328)
+[abuts-rhino] FillMeshHoles target[68] id=8b3aceb5-3fa2-43ec-945c-2292d53b7243 r=1.2284764079496864 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=8b3aceb5-3fa2-43ec-945c-2292d53b7243)
+[abuts-rhino] FillMeshHoles target[69] id=3934908b-3c9b-473c-b080-c51b5893f7b0 r=1.4950209586421654 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=3934908b-3c9b-473c-b080-c51b5893f7b0)
+[abuts-rhino] FillMeshHoles target[70] id=e1c506a4-03d6-451d-ab2a-b8c4ab5df40f r=1.1976890683094736 maxZ=-2.3370587825775146 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=e1c506a4-03d6-451d-ab2a-b8c4ab5df40f)
+[abuts-rhino] FillMeshHoles target[71] id=1904950b-275e-4daf-a832-28a36a0672d8 r=1.223633556186365 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=1904950b-275e-4daf-a832-28a36a0672d8)
+[abuts-rhino] FillMeshHoles target[72] id=1ad1f7db-2333-4186-ab17-685a4abf260d r=1.7761249863298916 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=1ad1f7db-2333-4186-ab17-685a4abf260d)
+[abuts-rhino] FillMeshHoles target[73] id=9ff47240-1a9d-4537-8f31-0ba2bbfb1c29 r=1.7761250783369582 maxZ=-1.3999987840652466 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=9ff47240-1a9d-4537-8f31-0ba2bbfb1c29)
+[abuts-rhino] FillMeshHoles target[74] id=bfd738df-4f81-4737-a7d1-4a931bea7547 r=1.2192030262490998 maxZ=-2.3370583057403564 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=bfd738df-4f81-4737-a7d1-4a931bea7547)
+[abuts-rhino] FillMeshHoles target[75] id=14def909-0cd8-4621-9826-1fc9e70d4f62 r=1.7761246669245256 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=14def909-0cd8-4621-9826-1fc9e70d4f62)
+[abuts-rhino] FillMeshHoles target[76] id=361adc30-b318-4092-9629-4fedbf573dcf r=1.4362503457066467 maxZ=-1.4738560914993286 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=361adc30-b318-4092-9629-4fedbf573dcf)
+[abuts-rhino] FillMeshHoles target[77] id=14b40f4f-dce5-4a52-af1f-fb63a969ff51 r=1.208815137651945 maxZ=-2.3370590209960938 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=14b40f4f-dce5-4a52-af1f-fb63a969ff51)
+[abuts-rhino] FillMeshHoles target[78] id=4d74a9c5-cd86-4c42-9e3e-045ef4593dcc r=1.2126177285596769 maxZ=-2.3370590209960938 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=4d74a9c5-cd86-4c42-9e3e-045ef4593dcc)
+[abuts-rhino] FillMeshHoles target[79] id=6df92261-28b2-4e05-8579-61daa241fca8 r=1.7761244395262659 maxZ=-1.3999985456466675 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=6df92261-28b2-4e05-8579-61daa241fca8)
+[abuts-rhino] FillMeshHoles target[80] id=44c0676d-db39-4b20-b6f1-08bc54af0352 r=1.495020433500411 maxZ=-1.399998426437378 nakedEdges=1
+[abuts-rhino] FillMeshHoles (RhinoCommon) rc=True replaced=True
+[abuts-rhino] after RC FillHoles nakedEdges(before->1)=0
+[abuts-rhino] FillMeshHoles 성공 감지 (id=44c0676d-db39-4b20-b6f1-08bc54af0352)
+[abuts-rhino] Join (RhinoCommon) failed: type object 'Mesh' has no attribute 'CreateFromMerge'
+[abuts-rhino] mesh objects after Join=81
+[abuts-rhino] DIAMETER_RESULT:max=5.69 conn=3.3
+[abuts-rhino] export ok
+[abuts-rhino] finish

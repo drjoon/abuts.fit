@@ -1,0 +1,15 @@
+==== Trace started at 2026-01-23T22:10:18.0867671+09:00 ====
+FilePanel: C:\abuts.fit\bg\storage\2-filled\20260123-AEBMNZPL-향기로운치과-구자일-44.filled.stl
+StlFileProcessor: request-meta GET https://abuts.fit/api/bg/request-meta?requestId=20260123-AEBMNZPL (X-Bridge-Secret set=True)
+StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260123-AEBMNZPL","lotNumber":{"part":"CAP260123-AAG"},"serialCode":"AAG","caseInfos":{"clinicName":"향기로운치과","patientName":"구자일","tooth":"44","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":5.7,"connectionDiameter":3.3,"workType":"abutment","lotNumber":"CAP260123-AAG"}},"message":"Request meta","success":true}
+StlFileProcessor: request-meta error - SerializationException:Abuts.EspritAddIns.ESPRIT2025AddinProject.StlFileProcessor+RequestMetaResponse 형식 개체를 역직렬화하는 동안 오류가 발생했습니다. 네임스페이스 ''의 끝 요소 'lotNumber'이(가) 필요한데 네임스페이스 ''의 요소 'part'을(를) 찾았습니다.
+StlFileProcessor: 처리 중 오류 - request-meta 응답이 비어있습니다. requestId=20260123-AEBMNZPL
+StlFileProcessor: register-file failure notified status=BadRequest requestId=20260123-AEBMNZPL
+STL 처리 중 오류가 발생했습니다: request-meta 응답이 비어있습니다. requestId=20260123-AEBMNZPL
+FilePanel: C:\abuts.fit\bg\storage\2-filled\20260123-AEBMNZPL-향기로운치과-구자일-44.filled.stl
+StlFileProcessor: request-meta GET https://abuts.fit/api/bg/request-meta?requestId=20260123-AEBMNZPL (X-Bridge-Secret set=True)
+StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260123-AEBMNZPL","lotNumber":{"part":"CAP260123-AAG"},"serialCode":"AAG","caseInfos":{"clinicName":"향기로운치과","patientName":"구자일","tooth":"44","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":5.7,"connectionDiameter":3.3,"workType":"abutment","lotNumber":"CAP260123-AAG"}},"message":"Request meta","success":true}
+StlFileProcessor: request-meta error - SerializationException:Abuts.EspritAddIns.ESPRIT2025AddinProject.StlFileProcessor+RequestMetaResponse 형식 개체를 역직렬화하는 동안 오류가 발생했습니다. 네임스페이스 ''의 끝 요소 'lotNumber'이(가) 필요한데 네임스페이스 ''의 요소 'part'을(를) 찾았습니다.
+StlFileProcessor: 처리 중 오류 - request-meta 응답이 비어있습니다. requestId=20260123-AEBMNZPL
+StlFileProcessor: register-file failure notified status=BadRequest requestId=20260123-AEBMNZPL
+STL 처리 중 오류가 발생했습니다: request-meta 응답이 비어있습니다. requestId=20260123-AEBMNZPL

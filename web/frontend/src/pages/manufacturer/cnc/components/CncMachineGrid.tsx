@@ -1,17 +1,12 @@
 import React from "react";
 import { Machine } from "@/pages/manufacturer/cnc/types";
-import {
-  MachineCard,
-  HealthLevel,
-} from "@/pages/manufacturer/cnc/components/MachineCard";
+import { MachineCard } from "@/pages/manufacturer/cnc/components/MachineCard";
 import type { CncJobItem } from "@/pages/manufacturer/cnc/components/CncReservationModal";
 
 interface CncMachineGridProps {
   machines: Machine[];
   workUid: string;
   loading: boolean;
-  tempHealthMap: Record<string, HealthLevel>;
-  toolHealthMap: Record<string, HealthLevel>;
   tempTooltipMap: Record<string, string>;
   toolTooltipMap: Record<string, string>;
   programSummary: { current?: any; list?: any[] } | null;
@@ -23,9 +18,10 @@ interface CncMachineGridProps {
   onOpenMachineInfo?: (uid: string) => void;
   onEditMachine: (machine: Machine) => void;
   onOpenProgramDetail: (prog: any) => void;
-  onSendControl: (uid: string, action: "reset") => void;
+  onSendControl: (uid: string, action: "reset" | "stop") => void;
   onOpenAddModal: () => void;
   onOpenJobConfig: (machine: Machine) => void;
+  onUploadFiles?: (machine: Machine, files: FileList | File[]) => void;
   reservationSummaryMap?: Record<string, string>;
   reservationTotalQtyMap?: Record<string, number>;
   onCancelReservation?: (machine: Machine, jobId?: string) => void;
@@ -37,8 +33,6 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   machines,
   workUid,
   loading,
-  tempHealthMap,
-  toolHealthMap,
   tempTooltipMap,
   toolTooltipMap,
   programSummary,
@@ -53,6 +47,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onSendControl,
   onOpenAddModal,
   onOpenJobConfig,
+  onUploadFiles,
   reservationSummaryMap,
   reservationTotalQtyMap,
   onCancelReservation,
@@ -97,8 +92,6 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             machine={m}
             isActive={isActive}
             loading={loading}
-            tempHealth={tempHealthMap[m.uid] ?? "unknown"}
-            toolHealth={toolHealthMap[m.uid] ?? "unknown"}
             tempTooltip={tempTooltipMap[m.uid] ?? ""}
             toolTooltip={toolTooltipMap[m.uid] ?? ""}
             currentProg={currentProg}
@@ -135,7 +128,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
               if (!currentProg || !isActive) return;
               const statusUpper = (m.status || "").toUpperCase();
               const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
-                statusUpper.includes(k)
+                statusUpper.includes(k),
               );
 
               // '생산중' 버튼은 비생산중 상태에서 현재 프로그램을 열어 편집할 때만 사용한다.
@@ -151,10 +144,21 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
               e.stopPropagation();
               onSendControl(m.uid, "reset");
             }}
+            onStopClick={(e) => {
+              e.stopPropagation();
+              onSendControl(m.uid, "stop");
+            }}
             onOpenJobConfig={(e) => {
               e.stopPropagation();
               onOpenJobConfig(m);
             }}
+            onUploadFiles={
+              onUploadFiles
+                ? (files) => {
+                    onUploadFiles(m, files);
+                  }
+                : undefined
+            }
             onCancelReservation={
               onCancelReservation
                 ? (jobId, e) => {

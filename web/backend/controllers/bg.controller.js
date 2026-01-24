@@ -351,6 +351,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
 
   const ci = request.caseInfos || {};
   const lotPart = request?.lotNumber?.part || "";
+  const serialCode = lotPart.length >= 3 ? lotPart.slice(-3) : "";
   return res.status(200).json(
     new ApiResponse(
       200,
@@ -358,6 +359,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
         ok: true,
         requestId: request.requestId,
         lotNumber: request.lotNumber || null,
+        serialCode,
         caseInfos: {
           clinicName: ci.clinicName || "",
           patientName: ci.patientName || "",

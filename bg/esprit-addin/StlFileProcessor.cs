@@ -57,6 +57,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double? _capturedBackPointX;
         private double? _capturedStockDiameter;
         private string _backendLotNumber;
+        private string _backendSerialCode;
 
         public string FaceHoleProcessFilePath { get; set; } = AppConfig.FaceHoleProcessPath;
 
@@ -66,7 +67,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public double DefaultBackLimitX { get; set; } = 0;
 
-        public string lotNumber {get;set;} = "ACR";
+        public string lotNumber { get; set; } = "ACR";
 
         public StlFileProcessor(Application app, string outputFolder = null,
             string postProcessorFile = "Acro_dent_XE.asc")
@@ -101,13 +102,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             string requestId = null;
             RequestMetaCaseInfos requestMeta = null;
             _backendLotNumber = null;
+            _backendSerialCode = null;
 
             try
             {
                 requestId = ExtractRequestIdFromStlPath(stlPath);
                 if (!string.IsNullOrWhiteSpace(requestId))
                 {
-                    requestMeta = FetchRequestMeta(requestId);
+                    var requestMetaResponse = FetchRequestMeta(requestId);
+                    requestMeta = requestMetaResponse?.caseInfos;
+                    _backendSerialCode = requestMetaResponse?.serialCode;
                     if (requestMeta != null)
                     {
                         if (!string.IsNullOrWhiteSpace(requestMeta.lotNumber))
@@ -119,7 +123,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         {
                             throw new InvalidOperationException($"request-meta 응답에 lotNumber가 없습니다. requestId={requestId}");
                         }
-                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantSystem}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}");
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantSystem}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}");
                     }
                     else
                     {
@@ -148,7 +152,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Connect.SetCurrentDocument(document);
 
                 UpdateLatheBarDiameter(document, stlPath, machineBarDiameter);
-                
+
                 Rotate90Degrees(document);
 
                 FitActiveWindow(document);
@@ -163,7 +167,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     NotifyBackendSuccess(requestId, stlPath, ncFilePath);
                 }
-                
+
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
             }
             catch (Exception ex)
@@ -381,7 +385,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return Math.Ceiling(value * 10.0) / 10.0;
         }
 
-        private void UpdateSerialBlocks(string ncFilePath, string lotValue)
+        private void UpdateSerialBlocks(string ncFilePath, string serialCode)
         {
             try
             {
@@ -391,16 +395,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
-                string normalizedLot = NormalizeLotNumber(lotValue);
+                string normalizedSerial = NormalizeSerialCode(serialCode);
+
                 var lines = new List<string>(File.ReadAllLines(ncFilePath));
 
-                bool serialUpdated = ReplaceSerialBlock(lines, "(Serial)", BuildSerialBlock(normalizedLot, false));
-                bool serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial Deburr)", BuildSerialBlock(normalizedLot, true));
+                bool serialUpdated = ReplaceSerialBlock(lines, "(Serial)", BuildSerialBlock(normalizedSerial, false));
+
+                bool serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial Deburr)", BuildSerialBlock(normalizedSerial, true));
+                if (!serialDeburrUpdated)
+                {
+                    serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial)", BuildSerialBlock(normalizedSerial, true), occurrenceIndex: 1);
+                }
 
                 if (serialUpdated || serialDeburrUpdated)
                 {
                     File.WriteAllLines(ncFilePath, lines);
-                    AppLogger.Log($"StlFileProcessor: Serial 블록 갱신 - Lot:{normalizedLot}, Serial:{serialUpdated}, Deburr:{serialDeburrUpdated}");
+                    AppLogger.Log($"StlFileProcessor: Serial 블록 갱신 - Serial:{serialUpdated}, Deburr:{serialDeburrUpdated}");
                 }
                 else
                 {
@@ -413,9 +423,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        private static bool ReplaceSerialBlock(List<string> lines, string marker, List<string> newBlock)
+        private static bool ReplaceSerialBlock(List<string> lines, string marker, List<string> newBlock, int occurrenceIndex = 0)
         {
-            int start = lines.FindIndex(line => string.Equals(line?.Trim(), marker, StringComparison.OrdinalIgnoreCase));
+            if (occurrenceIndex < 0)
+            {
+                occurrenceIndex = 0;
+            }
+
+            int start = -1;
+            int currentOccurrence = -1;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (string.Equals(lines[i]?.Trim(), marker, StringComparison.OrdinalIgnoreCase))
+                {
+                    currentOccurrence++;
+                    if (currentOccurrence == occurrenceIndex)
+                    {
+                        start = i;
+                        break;
+                    }
+                }
+            }
+
             if (start < 0)
             {
                 return false;
@@ -438,75 +467,43 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return true;
         }
 
-        private static List<string> BuildSerialBlock(string lot, bool isDeburr)
+        private static List<string> BuildSerialBlock(string serialCode, bool isDeburr)
         {
-            if (isDeburr)
+            var block = new List<string>
             {
-                var block = new List<string>
-                {
-                    "(Serial Deburr)",
-                    "T0909 (CENTER MILL/D2.0*A90)",
-                    "M50",
-                    "G28H0.0",
-                    "M23S2000",
-                    "G98G0X[#521+1.8]Z[#520+1.8]Y0.525C0.0",
-                    "G1X4.0F2000",
-                    "G1X3.45F500",
-                    string.Empty
-                };
+                "(Serial)",
+                "T0909 (CENTER MILL/D2.0*A90)",
+                "M23 S2000",
+                "G98 G0 X[#521+1.8]Z[#520+1.8]Y0.525C0.0",
+                "G4 U0.05",
+                "G1 X4.0 F2000",
+                "G1 X3.45 F500",
+                string.Empty
+            };
 
-                block.AddRange(BuildSerialMacroLines(lot, "G1V-0.35F1000"));
-                block.Add(string.Empty);
-                block.AddRange(new[]
-                {
-                    "G0 X30.0",
-                    "G0 Z-17.5",
-                    "G0 T0",
-                    "M1",
-                    string.Empty,
-                    string.Empty
-                });
-
-                return block;
-            }
-            else
+            block.AddRange(BuildSerialMacroLines(serialCode, "G1 V-0.35 F1000"));
+            block.Add(string.Empty);
+            block.AddRange(new[]
             {
-                var block = new List<string>
-                {
-                    "(Serial)",
-                    "T0909 (CENTER MILL/D2.0*A90)",
-                    "M23 S2000",
-                    "G98 G0 X[#521+1.8]Z[#520+1.8]Y0.525C0.0",
-                    "G4 U0.05",
-                    "G1 X4.0 F2000",
-                    "G1 X3.45 F500",
-                    string.Empty
-                };
+                "G0 X30.0",
+                "G0 Z-17.5",
+                "G0 T0",
+                "M25",
+                "M51",
+                "G99",
+                "M1",
+                string.Empty
+            });
 
-                block.AddRange(BuildSerialMacroLines(lot, "G1 V-0.35 F1000"));
-                block.Add(string.Empty);
-                block.AddRange(new[]
-                {
-                    "G0 X30.0",
-                    "G0 Z-17.5",
-                    "G0 T0",
-                    "M25",
-                    "M51",
-                    "G99",
-                    "M1",
-                    string.Empty
-                });
-
-                return block;
-            }
+            return block;
         }
 
-        private static IEnumerable<string> BuildSerialMacroLines(string lot, string moveCommand)
+        private static IEnumerable<string> BuildSerialMacroLines(string serialCode, string moveCommand)
         {
-            for (int i = 0; i < lot.Length; i++)
+            for (int i = 0; i < serialCode.Length; i++)
             {
-                yield return BuildMacroCall(lot[i]);
-                if (i < lot.Length - 1 && !string.IsNullOrWhiteSpace(moveCommand))
+                yield return BuildMacroCall(serialCode[i]);
+                if (i < serialCode.Length - 1 && !string.IsNullOrWhiteSpace(moveCommand))
                 {
                     yield return moveCommand;
                 }
@@ -525,32 +522,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return $"M98P{macroIndex.ToString("0000")}";
         }
 
-        private static string NormalizeLotNumber(string raw)
-        {
-            const string fallback = "ABC";
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                return fallback;
-            }
-
-            var letters = raw.Trim().ToUpperInvariant()
-                .Where(char.IsLetter)
-                .Take(3)
-                .ToList();
-
-            if (letters.Count == 0)
-            {
-                letters = fallback.ToList();
-            }
-
-            while (letters.Count < 3)
-            {
-                letters.Add('A');
-            }
-
-            return new string(letters.ToArray());
-        }
-
         private string RunPostProcessing(Document document, string stlPath, double backPointX, double stockDiameter)
         {
             string postDir = _espApp.Configuration.GetFileDirectory(espFileType.espFileTypePostProcessor);
@@ -562,23 +533,40 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             AppLogger.Log($"StlFileProcessor: NC 저장 완료 - {ncFileName}");
             UpdateNcHeader(ncFileName, Path.GetFileName(ncFileName), backPointX, stockDiameter);
-            UpdateSerialBlocks(ncFileName, ResolveLotNumberForNc());
+            string serialForNc = ResolveSerialCodeForNc();
+            AppLogger.Log($"StlFileProcessor: Serial 각인 코드 적용 - Raw:'{_backendSerialCode ?? string.Empty}' => Use:'{serialForNc}'");
+            UpdateSerialBlocks(ncFileName, serialForNc);
             return ncFileName;
         }
 
-        private string ResolveLotNumberForNc()
+        private string ResolveSerialCodeForNc()
         {
-            if (!string.IsNullOrWhiteSpace(_backendLotNumber))
+            return NormalizeSerialCode(_backendSerialCode);
+        }
+
+        private static string NormalizeSerialCode(string raw)
+        {
+            const string fallback = "ABC";
+            if (string.IsNullOrWhiteSpace(raw))
             {
-                return _backendLotNumber.Trim();
+                AppLogger.Log("StlFileProcessor: serialCode 누락 - 기본값 사용");
+                return fallback;
             }
 
-            if (!string.IsNullOrWhiteSpace(lotNumber))
+            string upper = raw.Trim().ToUpperInvariant();
+            var letters = new string(upper.Where(c => c >= 'A' && c <= 'Z').ToArray());
+            if (letters.Length < 3)
             {
-                return lotNumber.Trim();
+                AppLogger.Log($"StlFileProcessor: serialCode 형식 오류 - '{raw}' (정규화:'{letters}')");
+                return fallback;
             }
 
-            return "ACR";
+            if (letters.Length > 3)
+            {
+                letters = letters.Substring(0, 3);
+            }
+
+            return letters;
         }
 
         private static string ExtractRequestIdFromStlPath(string stlPath)
@@ -616,7 +604,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        private static RequestMetaCaseInfos FetchRequestMeta(string requestId)
+        private static RequestMetaData FetchRequestMeta(string requestId)
         {
             if (string.IsNullOrWhiteSpace(requestId))
             {
@@ -657,7 +645,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         var serializer = new DataContractJsonSerializer(typeof(RequestMetaResponse));
                         var meta = serializer.ReadObject(stream) as RequestMetaResponse;
-                        return meta?.data?.caseInfos;
+                        return meta?.data;
                     }
                 }
             }
@@ -867,7 +855,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private class RequestMetaData
         {
             [DataMember] public string requestId { get; set; }
+            [DataMember] public RequestMetaLotNumber lotNumber { get; set; }
+            [DataMember] public string serialCode { get; set; }
             [DataMember] public RequestMetaCaseInfos caseInfos { get; set; }
+        }
+
+        [DataContract]
+        private class RequestMetaLotNumber
+        {
+            [DataMember] public string part { get; set; }
         }
 
         [DataContract]
@@ -1057,7 +1053,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
                 
-                ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
+                // ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
 
                 AppLogger.Log("DentalAddin: MoveSTL 실행 완료");
 

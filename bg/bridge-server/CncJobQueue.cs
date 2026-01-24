@@ -17,6 +17,8 @@ namespace HiLinkBridgeWebApi48
         public CncJobKind kind { get; set; }
         public string machineId { get; set; }
 
+        public int qty { get; set; }
+
         // file job
         public string fileName { get; set; }
         public string bridgePath { get; set; }
@@ -56,6 +58,7 @@ namespace HiLinkBridgeWebApi48
                 id = Guid.NewGuid().ToString("N"),
                 kind = CncJobKind.File,
                 machineId = (machineId ?? string.Empty).Trim(),
+                qty = 1,
                 fileName = fileName,
                 requestId = requestId,
                 createdAtUtc = DateTime.UtcNow,
@@ -78,6 +81,7 @@ namespace HiLinkBridgeWebApi48
                 id = Guid.NewGuid().ToString("N"),
                 kind = CncJobKind.Dummy,
                 machineId = (machineId ?? string.Empty).Trim(),
+                qty = 1,
                 programNo = programNo,
                 programName = programName,
                 createdAtUtc = DateTime.UtcNow,
@@ -108,8 +112,100 @@ namespace HiLinkBridgeWebApi48
             {
                 if (q.First == null) return null;
                 var v = q.First.Value;
+                if (v != null && v.qty > 1)
+                {
+                    v.qty = Math.Max(1, v.qty - 1);
+                    return new CncJobItem
+                    {
+                        id = v.id,
+                        kind = v.kind,
+                        machineId = v.machineId,
+                        qty = 1,
+                        fileName = v.fileName,
+                        bridgePath = v.bridgePath,
+                        requestId = v.requestId,
+                        programNo = v.programNo,
+                        programName = v.programName,
+                        createdAtUtc = v.createdAtUtc,
+                        source = v.source,
+                    };
+                }
+
                 q.RemoveFirst();
+                if (v != null && v.qty <= 0) v.qty = 1;
                 return v;
+            }
+        }
+
+        public static bool TrySetQty(string machineId, string jobId, int qty, out CncJobItem updated)
+        {
+            updated = null;
+            var mid = (machineId ?? string.Empty).Trim();
+            var jid = (jobId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(mid) || string.IsNullOrEmpty(jid)) return false;
+
+            var q = GetQueue(mid);
+            lock (GetLock(mid))
+            {
+                foreach (var job in q)
+                {
+                    if (job == null) continue;
+                    if (!string.Equals(job.id, jid, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    job.qty = Math.Max(1, qty);
+                    updated = job;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public static List<CncJobItem> Reorder(string machineId, IList<string> order)
+        {
+            var mid = (machineId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(mid)) return new List<CncJobItem>();
+
+            var q = GetQueue(mid);
+            lock (GetLock(mid))
+            {
+                var current = q.ToList();
+                var map = new Dictionary<string, CncJobItem>(StringComparer.OrdinalIgnoreCase);
+                foreach (var j in current)
+                {
+                    if (j == null || string.IsNullOrEmpty(j.id)) continue;
+                    if (!map.ContainsKey(j.id)) map[j.id] = j;
+                }
+
+                var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var rebuilt = new List<CncJobItem>();
+                if (order != null)
+                {
+                    foreach (var id in order)
+                    {
+                        var key = (id ?? string.Empty).Trim();
+                        if (string.IsNullOrEmpty(key)) continue;
+                        if (map.TryGetValue(key, out var job) && job != null)
+                        {
+                            rebuilt.Add(job);
+                            used.Add(key);
+                        }
+                    }
+                }
+
+                foreach (var j in current)
+                {
+                    if (j == null || string.IsNullOrEmpty(j.id)) continue;
+                    if (used.Contains(j.id)) continue;
+                    rebuilt.Add(j);
+                }
+
+                q.Clear();
+                foreach (var j in rebuilt)
+                {
+                    q.AddLast(j);
+                }
+
+                return q.ToList();
             }
         }
 
