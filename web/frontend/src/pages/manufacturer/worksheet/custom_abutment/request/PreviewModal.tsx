@@ -183,12 +183,12 @@ export const PreviewModal = ({
     req.caseInfos?.file?.originalName ||
     "original.stl";
   const camName = req.caseInfos?.camFile?.s3Key
-    ? req.caseInfos?.camFile?.fileName ||
+    ? req.caseInfos?.camFile?.filePath ||
       req.caseInfos?.camFile?.originalName ||
       "filled.stl"
     : "filled.stl";
   const ncName =
-    req.caseInfos?.ncFile?.fileName ||
+    req.caseInfos?.ncFile?.filePath ||
     req.caseInfos?.ncFile?.originalName ||
     previewNcName ||
     "program.nc";
@@ -254,7 +254,7 @@ export const PreviewModal = ({
       : ".filled.stl";
 
   const fileLabel = hasRightFile
-    ? String(rightMeta?.fileName || rightTitle).trim() || rightTitle
+    ? String(rightMeta?.filePath || rightTitle).trim() || rightTitle
     : rightTitle;
 
   const onDownload = () => {

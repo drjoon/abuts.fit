@@ -53,8 +53,12 @@ const buildStoredFileMeta = ({
 };
 
 export const registerFinishLine = asyncHandler(async (req, res) => {
-  const { requestId, fileName, originalFileName, finishLine } = req.body || {};
+  const { requestId, filePath, finishLine } = req.body || {};
   const now = new Date();
+
+  if (!filePath) {
+    throw new ApiError(400, "filePath is required");
+  }
 
   if (!finishLine || !Array.isArray(finishLine?.points)) {
     throw new ApiError(400, "finishLine.points is required");
@@ -66,8 +70,7 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
   }
 
   if (!request) {
-    const targetSearchName = originalFileName || fileName;
-    const normalizedTarget = normalizeFilePath(targetSearchName);
+    const normalizedTarget = normalizeFilePath(filePath);
     if (normalizedTarget) {
       const allRequests = await Request.find({ status: { $ne: "취소" } })
         .select({ requestId: 1, caseInfos: 1 })
@@ -75,13 +78,13 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
 
       for (const r of allRequests) {
         const ci = r?.caseInfos || {};
-        const storedNames = [
-          ci?.file?.originalName,
+        const storedPaths = [
           ci?.file?.filePath,
           ci?.camFile?.filePath,
+          ci?.ncFile?.filePath,
         ].filter(Boolean);
 
-        const hit = storedNames.some(
+        const hit = storedPaths.some(
           (n) => normalizeFilePath(n) === normalizedTarget,
         );
         if (hit) {

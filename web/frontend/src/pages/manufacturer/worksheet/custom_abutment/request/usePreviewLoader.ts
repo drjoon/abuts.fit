@@ -134,7 +134,7 @@ export function usePreviewLoader({
 
         if (hasCamFile) {
           const camName =
-            req.caseInfos?.camFile?.fileName ||
+            req.caseInfos?.camFile?.filePath ||
             req.caseInfos?.camFile?.originalName ||
             originalName;
 
@@ -196,7 +196,7 @@ export function usePreviewLoader({
               const ncSignedUrl = ncUrlBody?.data?.url;
               if (ncSignedUrl) {
                 const ncName =
-                  ncMeta?.fileName || ncMeta?.originalName || "program.nc";
+                  ncMeta?.filePath || ncMeta?.originalName || "program.nc";
                 const r = await fetch(ncSignedUrl);
                 if (r.ok) {
                   const buf = await r.arrayBuffer();
@@ -230,7 +230,7 @@ export function usePreviewLoader({
               if (signedUrl) {
                 setPreviewStageUrl(signedUrl);
                 setPreviewStageName(
-                  stageMeta?.fileName || `${previewStageKey}-file`,
+                  stageMeta?.filePath || `${previewStageKey}-file`,
                 );
               }
             }
