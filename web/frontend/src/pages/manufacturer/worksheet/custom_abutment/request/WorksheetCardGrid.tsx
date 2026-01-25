@@ -73,37 +73,21 @@ export const WorksheetCardGrid = ({
         isMachiningStage,
       });
       const accept = getAcceptByStage(stageLabel || currentStageForTab);
-      const formatCamDisplayName = (name: string) => {
-        if (!name) return "파일명 없음";
-        if (isCamStage) {
-          return name
-            .replace(/\.cam\.stl$/i, ".cam")
-            .replace(/\.stl$/i, ".cam");
-        }
-        return name;
-      };
+      const formatDisplayName = (name: string) => name || "파일명 없음";
+
+      const originalFileName =
+        caseInfos.file?.filePath || caseInfos.file?.originalName || "";
+      const camFileName = caseInfos.camFile?.s3Key
+        ? caseInfos.camFile?.fileName || caseInfos.camFile?.originalName || ""
+        : "";
       const displayFileName = isMachiningStage
         ? caseInfos.ncFile?.fileName || caseInfos.ncFile?.originalName || ""
-        : formatCamDisplayName(
-            caseInfos.file?.fileName ||
-              caseInfos.file?.originalName ||
-              caseInfos.camFile?.fileName ||
-              caseInfos.camFile?.originalName ||
-              "",
-          );
+        : formatDisplayName(camFileName || originalFileName);
 
-      const hasCamFile = !!(
-        caseInfos.camFile?.s3Key ||
-        caseInfos.camFile?.fileName ||
-        caseInfos.camFile?.originalName
-      );
+      const hasCamFile = !!caseInfos.camFile?.s3Key;
       const isDeletingCam = !!deletingCam[request._id];
 
-      const hasNcFile = !!(
-        caseInfos.ncFile?.s3Key ||
-        caseInfos.ncFile?.fileName ||
-        caseInfos.ncFile?.originalName
-      );
+      const hasNcFile = !!caseInfos.ncFile?.s3Key;
       const isDeletingNc = !!deletingNc[request._id];
       const lotPart = String(request.lotNumber?.part || "").trim();
       const progress = uploadProgress[request._id];

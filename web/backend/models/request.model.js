@@ -237,7 +237,7 @@ const requestSchema = new mongoose.Schema(
       },
       file: {
         // s3에 저장된 파일의 메타 데이터를 DB에서 관리
-        fileName: String,
+        originalName: String,
         fileType: String,
         fileSize: Number,
         filePath: String,
@@ -285,18 +285,6 @@ const requestSchema = new mongoose.Schema(
           default: undefined,
         },
         updatedAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-      finishLineFile: {
-        fileName: String,
-        fileType: String,
-        fileSize: Number,
-        filePath: String,
-        s3Key: String,
-        s3Url: String,
-        uploadedAt: {
           type: Date,
           default: Date.now,
         },

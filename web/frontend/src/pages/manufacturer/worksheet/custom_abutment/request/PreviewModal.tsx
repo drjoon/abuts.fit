@@ -18,6 +18,8 @@ type PreviewFiles = {
   cam?: File | null;
   title?: string;
   request?: ManufacturerRequest | null;
+  finishLinePoints?: number[][] | null;
+  finishLineSource?: "caseInfos" | "file" | null;
 };
 
 type PreviewModalProps = {
@@ -118,9 +120,9 @@ export const PreviewModal = ({
   const req = previewFiles.request as ManufacturerRequest | null;
   if (!req) return null;
 
-  const finishLinePoints = (req.caseInfos?.finishLine?.points || null) as
-    | number[][]
-    | null;
+  const finishLinePoints = ((previewFiles.finishLinePoints ??
+    req.caseInfos?.finishLine?.points) ||
+    null) as number[][] | null;
 
   const currentReviewStageKey = getReviewStageKeyByTab({
     stage,
@@ -177,15 +179,14 @@ export const PreviewModal = ({
   const isUploading = !!uploading[req._id || ""];
 
   const originalName =
-    req.caseInfos?.file?.fileName ||
+    req.caseInfos?.file?.filePath ||
     req.caseInfos?.file?.originalName ||
     "original.stl";
-  const camName =
-    req.caseInfos?.camFile?.fileName ||
-    req.caseInfos?.camFile?.originalName ||
-    (originalName.toLowerCase().endsWith(".stl")
-      ? originalName.replace(/\.stl$/i, ".filled.stl")
-      : originalName + ".filled.stl");
+  const camName = req.caseInfos?.camFile?.s3Key
+    ? req.caseInfos?.camFile?.fileName ||
+      req.caseInfos?.camFile?.originalName ||
+      "filled.stl"
+    : "filled.stl";
   const ncName =
     req.caseInfos?.ncFile?.fileName ||
     req.caseInfos?.ncFile?.originalName ||

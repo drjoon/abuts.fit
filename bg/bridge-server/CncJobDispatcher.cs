@@ -385,11 +385,15 @@ if (busyIo >= 0)
                 var backend = GetBackendBase();
                 var url = backend + "/bg/register-file";
 
+                var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
+                    ? job?.fileName
+                    : job.originalFileName;
+
                 var payload = new
                 {
                     sourceStep = "cnc",
                     fileName = job.fileName,
-                    originalFileName = job.fileName,
+                    originalFileName = canonical,
                     requestId = job.requestId,
                     status = "success",
                     metadata = new { machineId = machineId }

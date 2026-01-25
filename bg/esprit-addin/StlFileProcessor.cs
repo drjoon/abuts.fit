@@ -675,6 +675,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 string baseUrl = (GetBackendUrl() ?? "").TrimEnd('/');
                 string url = $"{baseUrl}/bg/register-file";
+                // backend SSOT: stlPath is expected to be canonical filePath name
                 string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
 
                 string json;

@@ -15,6 +15,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         public class BridgeProcessRequest
         {
             public string fileName { get; set; }
+            public string originalFileName { get; set; }
             public string requestId { get; set; }
             public string machineId { get; set; }
             public string bridgePath { get; set; }
@@ -41,7 +42,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var job = CncJobQueue.EnqueueFileBack(
                     req.machineId,
                     req.fileName,
-                    string.IsNullOrWhiteSpace(req.requestId) ? null : req.requestId
+                    string.IsNullOrWhiteSpace(req.requestId) ? null : req.requestId,
+                    req.originalFileName
                 );
 
                 try

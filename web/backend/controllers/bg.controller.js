@@ -20,11 +20,93 @@ const REMOTE_BASE_BY_STEP = {
 const trimSlash = (s = "") => s.replace(/\/+$/, "");
 
 const buildS3Key = (sourceStep, fileName, requestId) => {
+  const safeFileName = path.basename(String(fileName || ""));
   if (requestId) {
-    return `requests/${requestId}/${sourceStep}/${fileName}`;
+    return `requests/${requestId}/${sourceStep}/${safeFileName}`;
   }
-  return `bg/${sourceStep}/${fileName}`;
+  return `bg/${sourceStep}/${safeFileName}`;
 };
+
+const selectStoredCaseFileName = (fileMeta = {}) => {
+  const pick = fileMeta?.filePath || fileMeta?.originalName || "";
+  return path.basename(String(pick || "").trim());
+};
+
+export const registerFinishLine = asyncHandler(async (req, res) => {
+  const { requestId, fileName, originalFileName, finishLine } = req.body || {};
+  const now = new Date();
+
+  if (!finishLine || !Array.isArray(finishLine?.points)) {
+    throw new ApiError(400, "finishLine.points is required");
+  }
+
+  let request = null;
+  if (requestId) {
+    request = await Request.findOne({ requestId });
+  }
+
+  if (!request) {
+    const targetSearchName = originalFileName || fileName;
+    const normalizedTarget = normalizeFilePath(targetSearchName);
+    if (normalizedTarget) {
+      const allRequests = await Request.find({ status: { $ne: "취소" } })
+        .select({ requestId: 1, caseInfos: 1 })
+        .lean();
+
+      for (const r of allRequests) {
+        const ci = r?.caseInfos || {};
+        const storedNames = [
+          ci?.file?.originalName,
+          ci?.file?.filePath,
+          ci?.camFile?.filePath,
+        ].filter(Boolean);
+
+        const hit = storedNames.some(
+          (n) => normalizeFilePath(n) === normalizedTarget,
+        );
+        if (hit) {
+          request = await Request.findById(r._id);
+          break;
+        }
+      }
+    }
+  }
+
+  if (!request) {
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { found: false },
+          "Finish line received but no matching request found",
+        ),
+      );
+  }
+
+  const points = finishLine?.points;
+  if (!Array.isArray(points) || points.length < 2) {
+    throw new ApiError(400, "finishLine.points must have at least 2 points");
+  }
+
+  const safeFinishLine = {
+    ...finishLine,
+    updatedAt: now,
+  };
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.finishLine = safeFinishLine;
+  await request.save();
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { updated: true, requestId: request.requestId },
+        "Finish line saved",
+      ),
+    );
+});
 
 async function fetchRemoteFileBuffer(sourceStep, fileName) {
   const base = REMOTE_BASE_BY_STEP[sourceStep];
@@ -81,6 +163,18 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   console.log(
     `[BG-Callback] Received from ${sourceStep}: ${fileName} (originalFileName=${originalFileName}, Status: ${status})`,
   );
+  if (metadata) {
+    try {
+      console.log(
+        "[BG-Callback] Incoming metadata:",
+        JSON.stringify(metadata, null, 2),
+      );
+    } catch (metaLogErr) {
+      console.log("[BG-Callback] Incoming metadata (raw):", metadata);
+    }
+  } else {
+    console.log("[BG-Callback] Incoming metadata: <none>");
+  }
 
   // 1. 의뢰 찾기
   let request = null;
@@ -94,7 +188,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   // requestId로 못 찾은 경우, 파일명(originalFileName 또는 fileName)으로 검색
   if (!request) {
     const targetSearchName = originalFileName || fileName;
-    const normalizedTarget = normalizeFileName(targetSearchName);
+    const normalizedTarget = normalizeFilePath(targetSearchName);
     console.log(
       `[BG-Callback] Searching by fileName: targetSearchName=${targetSearchName}, normalized=${normalizedTarget}`,
     );
@@ -111,17 +205,14 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       for (const r of allRequests) {
         const ci = r?.caseInfos || {};
         const storedNames = [
-          ci?.file?.fileName,
           ci?.file?.originalName,
           ci?.file?.filePath,
-          ci?.camFile?.fileName,
           ci?.camFile?.filePath,
-          ci?.ncFile?.fileName,
           ci?.ncFile?.filePath,
         ].filter(Boolean);
 
         const hit = storedNames.some(
-          (n) => normalizeFileName(n) === normalizedTarget,
+          (n) => normalizeFilePath(n) === normalizedTarget,
         );
         if (hit) {
           console.log(`[BG-Callback] Matched request: ${r.requestId}`);
@@ -148,9 +239,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   // 2. S3 업로드 (성공 시에만, 로컬 스토리지에서 읽어서)
   let s3Info = null;
   if (status === "success") {
+    const resolvedOriginalName = originalFileName || fileName;
     if (incomingS3Key && incomingS3Url) {
       s3Info = {
         fileName,
+        originalName: resolvedOriginalName,
         s3Key: incomingS3Key,
         s3Url: incomingS3Url,
         fileSize: incomingFileSize,
@@ -200,6 +293,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         );
         s3Info = {
           fileName,
+          originalName: resolvedOriginalName,
           s3Key: uploaded.key,
           s3Url: uploaded.location,
           fileSize: fileBuffer.length,
@@ -220,68 +314,72 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   // 3. 단계별 DB 업데이트
   const updateData = {};
   const now = new Date();
+  const metadataUpdates = {};
+
+  if (metadata && typeof metadata === "object") {
+    if (metadata.diameter) {
+      const max = Number(metadata.diameter.max);
+      const conn = Number(metadata.diameter.connection);
+      if (!Number.isNaN(max)) {
+        metadataUpdates["caseInfos.maxDiameter"] = max;
+      }
+      if (!Number.isNaN(conn)) {
+        metadataUpdates["caseInfos.connectionDiameter"] = conn;
+      }
+    }
+
+    const finishLinePoints = metadata.finishLine?.points;
+    if (Array.isArray(finishLinePoints) && finishLinePoints.length >= 2) {
+      metadataUpdates["caseInfos.finishLine"] = {
+        ...metadata.finishLine,
+        updatedAt: now,
+      };
+    }
+  }
 
   if (status === "success") {
     switch (sourceStep) {
       case "2-filled":
-        updateData.status = "CAM";
-        updateData.status2 = "중";
         updateData["caseInfos.camFile"] = s3Info || {
           fileName,
+          originalName: resolvedOriginalName,
           uploadedAt: now,
         };
-        if (metadata?.finishLine) {
-          updateData["caseInfos.finishLine"] = {
-            ...metadata.finishLine,
-            updatedAt: now,
-          };
-        }
-        updateData["productionSchedule.actualCamStart"] = now;
         break;
 
       case "3-nc":
-        updateData.status = "CAM";
-        updateData.status2 = "후";
         updateData["caseInfos.ncFile"] = s3Info || {
           fileName,
+          originalName: resolvedOriginalName,
           uploadedAt: now,
         };
         updateData["productionSchedule.actualCamComplete"] = now;
         break;
 
       case "cnc":
-        updateData.status = "생산";
-        updateData.status2 = "중";
         updateData["productionSchedule.actualMachiningStart"] = now;
         if (metadata?.machineId) {
           updateData["productionSchedule.assignedMachine"] = metadata.machineId;
         }
         break;
     }
+
+    Object.assign(updateData, metadataUpdates);
   } else {
     // 실패 시 상태 업데이트
     console.error(
       `[BG-Callback] Processing failed for ${request.requestId} at ${sourceStep}`,
     );
     // 실패 시 제조사 수동 대응을 위해 상태 변경 또는 로그 기록
-    updateData[
-      `reviewByStage.${
-        sourceStep === "2-filled"
+    const stageKey =
+      sourceStep === "2-filled"
+        ? "request"
+        : sourceStep === "3-nc"
           ? "cam"
-          : sourceStep === "3-nc"
-            ? "cam"
-            : "machining"
-      }.status`
-    ] = "REJECTED";
-    updateData[
-      `reviewByStage.${
-        sourceStep === "2-filled"
-          ? "cam"
-          : sourceStep === "3-nc"
-            ? "cam"
-            : "machining"
-      }.reason`
-    ] = `백그라운드 작업 실패 (${sourceStep})`;
+          : "machining";
+    updateData[`caseInfos.reviewByStage.${stageKey}.status`] = "REJECTED";
+    updateData[`caseInfos.reviewByStage.${stageKey}.reason`] =
+      `백그라운드 작업 실패 (${sourceStep})`;
   }
 
   console.log(
@@ -338,16 +436,42 @@ export const getBgStatus = asyncHandler(async (req, res) => {
 });
 
 // requestId로 의뢰 메타(caseInfos 등)를 조회
-// GET /api/bg/request-meta?requestId=...
+// GET /api/bg/request-meta?requestId=... or ?filePath=...
 export const getRequestMeta = asyncHandler(async (req, res) => {
-  const { requestId } = req.query;
-  if (!requestId) {
-    throw new ApiError(400, "requestId is required");
+  const { requestId, filePath } = req.query;
+  if (!requestId && !filePath) {
+    throw new ApiError(400, "requestId or filePath is required");
   }
 
-  const request = await Request.findOne({ requestId })
-    .select({ requestId: 1, caseInfos: 1, lotNumber: 1 })
-    .lean();
+  let request = null;
+  if (requestId) {
+    request = await Request.findOne({ requestId })
+      .select({ requestId: 1, caseInfos: 1, lotNumber: 1 })
+      .lean();
+  }
+
+  if (!request && filePath) {
+    const normalized = normalizeFilePath(filePath);
+    const all = await Request.find({ status: { $ne: "취소" } })
+      .select({ requestId: 1, caseInfos: 1, lotNumber: 1 })
+      .lean();
+
+    for (const r of all) {
+      const ci = r?.caseInfos || {};
+      const storedNames = [
+        ci?.file?.originalName,
+        ci?.file?.filePath,
+        ci?.camFile?.filePath,
+        ci?.ncFile?.filePath,
+      ].filter(Boolean);
+
+      const hit = storedNames.some((n) => normalizeFilePath(n) === normalized);
+      if (hit) {
+        request = r;
+        break;
+      }
+    }
+  }
 
   if (!request) {
     return res
@@ -390,10 +514,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
 export const listPendingStl = asyncHandler(async (req, res) => {
   const requests = await Request.find({
     status: { $nin: ["취소", "완료", "cancelled", "completed"] },
-    "caseInfos.file.fileName": { $exists: true, $ne: null },
+    "caseInfos.file.filePath": { $exists: true, $ne: null },
     $or: [
       { "caseInfos.camFile": { $exists: false } },
-      { "caseInfos.camFile.fileName": { $exists: false } },
       { "caseInfos.camFile.s3Key": { $exists: false } },
     ],
   })
@@ -408,14 +531,21 @@ export const listPendingStl = asyncHandler(async (req, res) => {
       ?.map((r) => {
         const ci = r?.caseInfos || {};
         const f = ci.file || {};
+        // 백엔드(DB)에 저장된 원본 파일명을 그대로 사용 (BG는 조작/재생성 금지)
+        const preferredName = selectStoredCaseFileName(f);
         return {
           requestId: r.requestId,
-          fileName: f.fileName || f.originalName || f.filePath,
+          filePath: preferredName,
           s3Key: f.s3Key,
           s3Url: f.s3Url,
+          metadata: {
+            clinicName: ci.clinicName,
+            patientName: ci.patientName,
+            tooth: ci.tooth,
+          },
         };
       })
-      ?.filter((x) => x?.fileName) || [];
+      ?.filter((x) => x?.filePath) || [];
 
   return res
     .status(200)
@@ -423,28 +553,26 @@ export const listPendingStl = asyncHandler(async (req, res) => {
 });
 
 // 원본 STL을 Rhino 서버가 다시 받아갈 수 있게 내려주는 엔드포인트
-// GET /api/bg/original-file?requestId=... or ?fileName=...
+// GET /api/bg/original-file?requestId=... or ?filePath=...
 export const downloadOriginalFile = asyncHandler(async (req, res) => {
-  const { requestId, fileName } = req.query;
-  if (!requestId && !fileName) {
-    throw new ApiError(400, "requestId or fileName is required");
+  const { requestId, filePath } = req.query;
+  if (!requestId && !filePath) {
+    throw new ApiError(400, "requestId or filePath is required");
   }
 
   let requestDoc = null;
   if (requestId) {
     requestDoc = await Request.findOne({ requestId });
   }
-  if (!requestDoc && fileName) {
-    const normalized = normalizeFileName(fileName);
+  if (!requestDoc && filePath) {
+    const normalized = normalizeFilePath(filePath);
     const all = await Request.find({}).select({ requestId: 1, caseInfos: 1 });
     for (const r of all) {
       const ci = r?.caseInfos || {};
-      const stored = [
-        ci?.file?.fileName,
-        ci?.file?.originalName,
-        ci?.file?.filePath,
-      ].filter(Boolean);
-      const hit = stored.some((n) => normalizeFileName(n) === normalized);
+      const stored = [ci?.file?.originalName, ci?.file?.filePath].filter(
+        Boolean,
+      );
+      const hit = stored.some((n) => normalizeFilePath(n) === normalized);
       if (hit) {
         requestDoc = r;
         break;
@@ -457,7 +585,7 @@ export const downloadOriginalFile = asyncHandler(async (req, res) => {
   }
 
   const f = requestDoc.caseInfos.file;
-  const targetName = f.fileName || f.originalName || f.filePath || "file.stl";
+  const targetName = selectStoredCaseFileName(f) || "file.stl";
 
   // 1) S3가 있으면 S3에서 읽기
   if (f.s3Key) {
@@ -499,46 +627,82 @@ export const downloadOriginalFile = asyncHandler(async (req, res) => {
   throw new ApiError(404, "Original file not accessible");
 });
 
-const normalizeFileName = (v) => {
+function normalizeFilePath(v) {
   if (!v) return "";
-  const s = String(v);
-  let candidate = s;
+
+  let candidate = String(v);
+
   try {
-    const hasHangul = /[가-힣]/.test(s);
+    if (/%[0-9A-Fa-f]{2}/.test(candidate)) {
+      candidate = decodeURIComponent(candidate);
+    }
+  } catch {}
+
+  try {
+    const hasHangul = /[가-힣]/.test(candidate);
     const bytes = new Uint8Array(
-      Array.from(s).map((ch) => ch.charCodeAt(0) & 0xff),
+      Array.from(candidate).map((ch) => ch.charCodeAt(0) & 0xff),
     );
     const decoded = new TextDecoder("utf-8").decode(bytes);
     const decodedHasHangul = /[가-힣]/.test(decoded);
-    candidate = !hasHangul && decodedHasHangul ? decoded : s;
-  } catch {
-    candidate = s;
-  }
+    if (!hasHangul && decodedHasHangul) {
+      candidate = decoded;
+    }
+  } catch {}
 
-  const base = String(candidate)
-    .replace(/\\/g, "/")
-    .split("/")
-    .filter(Boolean)
-    .slice(-1)[0];
+  try {
+    candidate = candidate.split(/[\\/]/).pop() || candidate;
+  } catch {}
 
-  return base
-    .normalize("NFC")
-    .replace(/\.[^/.]+$/, "")
+  return String(candidate || "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/_+/g, "_")
+    .replace(/\.(stl|cam|fw|rhino)+$/i, "")
+    .replace(/\.filled$/i, "")
+    .replace(/\.+$/g, "");
+}
+
+const sanitizeComponent = (value) =>
+  String(value || "")
+    .normalize("NFC")
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/\s+/g, "");
+
+const resolveCaseFileExt = (fileMeta = {}) => {
+  const raw = String(fileMeta?.fileName || fileMeta?.originalName || "");
+  if (raw.includes(".")) {
+    const ext = raw.split(".").pop();
+    if (ext) return `.${ext.toLowerCase()}`;
+  }
+  return ".stl";
+};
+
+const buildStandardCaseFileName = (requestDoc, fileMeta = {}) => {
+  if (!requestDoc) return "";
+  const reqId = sanitizeComponent(requestDoc.requestId || "");
+  const ci = requestDoc.caseInfos || {};
+  const clinic = sanitizeComponent(ci.clinicName || "");
+  const patient = sanitizeComponent(ci.patientName || "");
+  const tooth = sanitizeComponent(ci.tooth || "");
+  const base = [reqId, clinic, patient, tooth].filter(Boolean).join("-");
+  if (!base) return "";
+  return `${base}${resolveCaseFileExt(fileMeta)}`;
 };
 
 // BG 프로그램이 재기동될 때 input/output 폴더를 스캔하며,
 // 백엔드에 "이 파일이 아직 미처리인가?"를 확인하기 위한 API
 // GET /api/bg/file-status?sourceStep=1-stl&fileName=xxx.stl
 export const getFileProcessingStatus = asyncHandler(async (req, res) => {
-  const { sourceStep, fileName, force } = req.query;
-  if (!sourceStep || !fileName) {
-    throw new ApiError(400, "sourceStep and fileName are required");
+  const { sourceStep, filePath, force } = req.query;
+  if (!sourceStep || !filePath) {
+    throw new ApiError(400, "sourceStep and filePath are required");
   }
 
   const step = String(sourceStep);
-  const normalized = normalizeFileName(fileName);
+  const normalized = normalizeFilePath(filePath);
   if (!normalized) {
     return res
       .status(200)
@@ -546,7 +710,7 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
         new ApiResponse(
           200,
           { ok: true, processed: false, shouldProcess: false },
-          "invalid fileName",
+          "invalid filePath",
         ),
       );
   }
@@ -563,16 +727,13 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
   for (const r of requests) {
     const ci = r?.caseInfos || {};
     const storedNames = [
-      ci?.file?.fileName,
       ci?.file?.originalName,
       ci?.file?.filePath,
-      ci?.camFile?.fileName,
       ci?.camFile?.filePath,
-      ci?.ncFile?.fileName,
       ci?.ncFile?.filePath,
     ].filter(Boolean);
 
-    const hit = storedNames.some((n) => normalizeFileName(n) === normalized);
+    const hit = storedNames.some((n) => normalizeFilePath(n) === normalized);
     if (hit) {
       matched = r;
       break;
@@ -604,11 +765,12 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
     reqStatus === "완료" ||
     reqStatus.toLowerCase() === "cancelled" ||
     reqStatus.toLowerCase() === "completed";
-  const camStatus = ci?.reviewByStage?.cam?.status;
+  const requestReviewStatus = ci?.reviewByStage?.request?.status;
 
   if (step === "1-stl") {
     const processed = Boolean(ci?.camFile?.fileName || ci?.camFile?.s3Key);
-    const shouldProcess = !processed && camStatus !== "REJECTED" && !isClosed;
+    const shouldProcess =
+      !processed && requestReviewStatus !== "REJECTED" && !isClosed;
     return res.status(200).json(
       new ApiResponse(
         200,
@@ -617,7 +779,7 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
           processed,
           shouldProcess,
           requestId: matched.requestId,
-          rejected: camStatus === "REJECTED",
+          rejected: requestReviewStatus === "REJECTED",
           closed: isClosed,
         },
         "File status",

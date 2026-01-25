@@ -117,7 +117,6 @@ export interface RequestCaseInfos {
     };
   };
   file?: {
-    fileName?: string;
     originalName?: string;
     fileType?: string;
     fileSize?: number;

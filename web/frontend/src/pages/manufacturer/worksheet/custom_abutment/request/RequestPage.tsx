@@ -103,7 +103,7 @@ export const RequestPage = ({
   const [deletingCam, setDeletingCam] = useState<Record<string, boolean>>({});
   const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
-    {}
+    {},
   );
   const [visibleCount, setVisibleCount] = useState(9);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -146,8 +146,8 @@ export const RequestPage = ({
         user?.role === "admin"
           ? "/api/admin/requests"
           : user?.role === "manufacturer"
-          ? "/api/requests/all"
-          : "/api/requests";
+            ? "/api/requests/all"
+            : "/api/requests";
       const params = new URLSearchParams();
       const res = await fetch(url, {
         headers: {
@@ -169,8 +169,8 @@ export const RequestPage = ({
       const list = Array.isArray(raw?.requests)
         ? raw.requests
         : Array.isArray(raw)
-        ? raw
-        : [];
+          ? raw
+          : [];
       // DB 메타 확인용 로그
       if (list.length) {
         console.groupCollapsed("[request files] 목록");
@@ -268,7 +268,7 @@ export const RequestPage = ({
       handleUploadCam,
       handleUploadStageFile,
       tabStage,
-    ]
+    ],
   );
 
   const handleUploadFromModal = useCallback(
@@ -276,7 +276,7 @@ export const RequestPage = ({
       if (!req?._id) return;
       void handleUploadByStage(req, [file]);
     },
-    [handleUploadByStage]
+    [handleUploadByStage],
   );
 
   const handleCardRollback = useCallback(
@@ -319,7 +319,7 @@ export const RequestPage = ({
         return;
       }
     },
-    [tabStage, handleDeleteStageFile, handleDeleteNc]
+    [tabStage, handleDeleteStageFile, handleDeleteNc],
   );
 
   const enableCardRollback =
@@ -336,8 +336,8 @@ export const RequestPage = ({
         const endpoint = isMachiningStage
           ? `/api/requests/${req._id}/nc-file-url`
           : isCamStage
-          ? `/api/requests/${req._id}/cam-file-url`
-          : `/api/requests/${req._id}/original-file-url`;
+            ? `/api/requests/${req._id}/cam-file-url`
+            : `/api/requests/${req._id}/original-file-url`;
 
         const res = await fetch(endpoint, {
           headers: {
@@ -370,10 +370,10 @@ export const RequestPage = ({
           isMachiningStage || isCamStage
             ? req.caseInfos?.camFile?.fileName ||
               req.caseInfos?.camFile?.originalName ||
-              req.caseInfos?.file?.fileName ||
+              req.caseInfos?.file?.filePath ||
               req.caseInfos?.file?.originalName ||
               "download.stl"
-            : req.caseInfos?.file?.fileName ||
+            : req.caseInfos?.file?.filePath ||
               req.caseInfos?.file?.originalName ||
               "download.stl";
 
@@ -395,7 +395,7 @@ export const RequestPage = ({
         setDownloading((prev) => ({ ...prev, [req._id]: false }));
       }
     },
-    [token, isMachiningStage, isCamStage, toast]
+    [token, isMachiningStage, isCamStage, toast],
   );
 
   useEffect(() => {
@@ -406,8 +406,8 @@ export const RequestPage = ({
   const currentStageForTab = isMachiningStage
     ? "생산"
     : isCamStage
-    ? "CAM"
-    : "의뢰";
+      ? "CAM"
+      : "의뢰";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const filteredBase = (() => {
@@ -469,7 +469,7 @@ export const RequestPage = ({
   const handleOpenNextRequest = useCallback(
     (currentReqId: string) => {
       const currentIndex = filteredAndSorted.findIndex(
-        (r) => r._id === currentReqId
+        (r) => r._id === currentReqId,
       );
       if (currentIndex === -1) return;
 
@@ -484,7 +484,7 @@ export const RequestPage = ({
         void handleOpenPreview(nextReq);
       }, 200);
     },
-    [filteredAndSorted, handleOpenPreview, setPreviewOpen]
+    [filteredAndSorted, handleOpenPreview, setPreviewOpen],
   );
 
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
@@ -543,7 +543,7 @@ export const RequestPage = ({
 
   const loadMore = useCallback(() => {
     setVisibleCount((prev) =>
-      Math.min(prev + 9, filteredAndSorted.length || 0)
+      Math.min(prev + 9, filteredAndSorted.length || 0),
     );
   }, [filteredAndSorted.length]);
 
@@ -566,7 +566,7 @@ export const RequestPage = ({
           loadMore();
         }
       },
-      { root: null, threshold: 1 }
+      { root: null, threshold: 1 },
     );
     observer.observe(el);
     return () => observer.unobserve(el);
@@ -755,7 +755,7 @@ export const RequestPage = ({
                     />
                   </div>
                 );
-              }
+              },
             )}
           </div>
         ) : (

@@ -55,7 +55,7 @@ export const getDiameterBucketIndex = (diameter?: number) => {
 
 export const computeStageLabel = (
   req: ManufacturerRequest,
-  opts?: { isCamStage?: boolean; isMachiningStage?: boolean }
+  opts?: { isCamStage?: boolean; isMachiningStage?: boolean },
 ) => {
   const savedStage = (req.manufacturerStage || "").trim();
   if (savedStage) return savedStage;
@@ -100,9 +100,9 @@ export const stageOrder: Record<string, number> = {
 export const getAcceptByStage = (stage: string) => {
   switch (stage) {
     case "의뢰":
-      return ".stl";
-    case "CAM":
       return ".filled.stl";
+    case "CAM":
+      return ".nc";
     case "생산":
       return ".png,.jpg,.jpeg,.webp,.bmp";
     case "발송":

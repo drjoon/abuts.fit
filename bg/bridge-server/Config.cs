@@ -24,7 +24,7 @@ namespace HiLinkBridgeWebApi48
 
         private static string ResolveStoreRoot()
         {
-            var env = Get("BRIDGE_STORE_ROOT", @"C:\abuts.fit\bg\storage\3-direct");
+            var env = Get("BRIDGE_STORE_ROOT", @"C:\Users\user\abuts.fit\bg\storage\3-direct");
             if (!string.IsNullOrEmpty(env))
             {
                 return Path.GetFullPath(env);

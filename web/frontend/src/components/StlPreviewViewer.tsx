@@ -79,7 +79,7 @@ export function StlPreviewViewer({
     const loader = new STLLoader();
     let mesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
-    let finishLine: THREE.Line | null = null;
+    let finishLine: THREE.Object3D | null = null;
 
     let cancelled = false;
     (async () => {
@@ -194,21 +194,60 @@ export function StlPreviewViewer({
         bbox.getCenter(center);
         mesh.position.sub(center);
 
-        if (finishLinePoints && finishLinePoints.length >= 2) {
-          const pts = finishLinePoints
+        const hasFinishLine = Array.isArray(finishLinePoints);
+        console.log("[StlPreviewViewer] finish line", {
+          hasFinishLine,
+          rawCount: finishLinePoints?.length || 0,
+          sample: finishLinePoints?.slice?.(0, 5),
+        });
+        if (hasFinishLine && finishLinePoints!.length >= 2) {
+          const pts = finishLinePoints!
             .filter((p) => Array.isArray(p) && p.length >= 3)
             .map((p) => new THREE.Vector3(p[0], p[1], p[2]).sub(center));
+          console.log("[StlPreviewViewer] finish line processed", {
+            processedCount: pts.length,
+            first: pts[0]?.toArray?.(),
+            last: pts[pts.length - 1]?.toArray?.(),
+          });
           if (pts.length >= 2) {
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints(pts);
-            const lineMaterial = new THREE.LineBasicMaterial({
+            const closedPts = pts.slice();
+            const first = closedPts[0];
+            const last = closedPts[closedPts.length - 1];
+            if (first && last && !first.equals(last)) {
+              closedPts.push(first.clone());
+            }
+
+            const curve = new THREE.CatmullRomCurve3(closedPts, true);
+            const tubularSegments = Math.max(pts.length * 3, 120);
+            const size = new THREE.Vector3();
+            bbox.getSize(size);
+            const diag = size.length() || 40;
+            const radius = Math.max(diag * 0.003, 0.05);
+
+            const tubeGeometry = new THREE.TubeGeometry(
+              curve,
+              tubularSegments,
+              radius,
+              12,
+              true,
+            );
+            const tubeMaterial = new THREE.MeshPhongMaterial({
               color: 0xff2d2d,
-              linewidth: 2,
+              emissive: 0xaa0000,
+              shininess: 80,
               transparent: true,
-              opacity: 0.95,
+              opacity: 1,
+              depthTest: false,
             });
-            finishLine = new THREE.Line(lineGeometry, lineMaterial);
+            finishLine = new THREE.Mesh(tubeGeometry, tubeMaterial);
             scene.add(finishLine);
+          } else {
+            console.log(
+              "[StlPreviewViewer] finish line skipped: insufficient pts",
+            );
           }
+        } else if (hasFinishLine) {
+          console.log("[StlPreviewViewer] finish line skipped: < 2 raw points");
         }
 
         const sphere = geometry.boundingSphere;
@@ -271,14 +310,16 @@ export function StlPreviewViewer({
         }
       }
       if (finishLine) {
+        console.log("[StlPreviewViewer] dispose finish line");
         scene.remove(finishLine);
-        const g = finishLine.geometry;
-        const m = finishLine.material;
-        g.dispose();
-        if (Array.isArray(m)) {
-          m.forEach((mm) => mm.dispose());
-        } else {
-          m.dispose();
+        if (finishLine instanceof THREE.Mesh) {
+          finishLine.geometry?.dispose?.();
+          const mat = finishLine.material;
+          if (Array.isArray(mat)) {
+            mat.forEach((mm) => mm.dispose());
+          } else {
+            mat.dispose();
+          }
         }
       }
       if (geometry) {

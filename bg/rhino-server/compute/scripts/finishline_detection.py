@@ -13,10 +13,10 @@
 1. **대상 Mesh 선택**: 활성 Rhino 문서에서 가장 큰 Mesh(버텍스 수 + 대각선 길이 기준)를 골라 주 대상으로 사용한다.
 2. **pt0 결정**: Bounding box 높이의 20~60% Z 구간에서 XY 반경(r=√x²+y²)이 최대인 버텍스를 pt0로 선택한다.
 3. **단면 평면 생성**: Z축을 포함하는 평면을 60개, 6° 간격으로 회전시키며 만들어 한 바퀴를 샘플링한다.
-4. **단면 샘플링**: 각 평면과 Mesh의 교차를 PolylineCurve로 얻고, 곡선 제어점/샘플점을 추출한 뒤 동일한 20~60% Z 범위로 필터링한다.
+4. **단면 샘플링**: 각 평면과 Mesh의 교차를 PolylineCurve로 얻고, 곡선 제어점/샘플점을 추출한 뒤 20~70% Z 범위로 필터링한다.
 5. **후보 정리**: 평면별로 필터링된 후보 점 목록을 저장하고, pt0가 속한 평면 인덱스를 시작점으로 잡는다.
-6. **곡선 추적**: 이전 선택점과의 3D 거리가 1mm 이하인 후보 중 XY 반경이 가장 큰 점을 `_NEAREST_LIMIT=20` 내에서 고르며 순차적으로 이동한다. 조건을 만족하는 후보가 없으면 추적을 중단한다.
-7. **시각화**: pt0는 반경 0.1의 녹색 구, 추적 결과는 빨간 튜브(반경 0.03)로 표현하며 필요 시 모든 단면 곡선을 팔레트 색으로 그린다.
+6. **곡선 추적**: 이전 선택점과의 3D 거리가 1mm 이하인 후보 중 XY 반경이 가장 큰 점을 `_NEAREST_LIMIT=10` 내에서 고르며 순차적으로 이동한다. 조건을 만족하는 후보가 없으면 추적을 중단한다.
+7. **시각화**: pt0는 반경 0.05의 녹색 구, 추적 결과는 빨간 튜브(반경 0.05)로 표현하고, 옵션에 따라 확정된 포인트마다 인덱스 TextDot을 추가한다. 필요 시 모든 단면 곡선을 팔레트 색으로 그린다.
 
 """
 
@@ -33,12 +33,27 @@ import Rhino.Geometry.Intersect as intersect
 import System.Drawing as drawing
 import System
 
-_SECTION_COUNT = 60
-_SECTION_STEP_DEG = 6.0
-_NEAREST_LIMIT = 20
+_SECTION_COUNT = 40
+_SECTION_STEP_DEG = 9.0
+_NEAREST_LIMIT = 10
 _MAX_STEP_DISTANCE = 1
+_PT0_Z_RATIO_LOW = 0.2
+_PT0_Z_RATIO_HIGH = 0.6
+_Z_RATIO_LOW = 0.2
+_Z_RATIO_HIGH = 0.7
+_SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
 _DEBUG_TRACE = os.environ.get("FINISHLINE_TRACE_DEBUG", "1") in ("1", "true", "TRUE")
+
+
+def _merge_candidates(primary: Sequence[rg.Point3d], secondary: Sequence[rg.Point3d]) -> List[rg.Point3d]:
+    merged: List[rg.Point3d] = [rg.Point3d(pt) for pt in primary if pt is not None]
+    for pt in secondary:
+        if pt is None:
+            continue
+        if not any(existing.DistanceTo(pt) <= _DIST_TOL for existing in merged):
+            merged.append(rg.Point3d(pt))
+    return merged
 
 
 def _trace_log(msg):
@@ -101,8 +116,8 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
     z_min = bbox.Min.Z
     z_max = bbox.Max.Z
     height = max(1e-6, z_max - z_min)
-    low = z_min + 0.2 * height
-    high = z_min + 0.6 * height
+    low = z_min + _PT0_Z_RATIO_LOW * height
+    high = z_min + _PT0_Z_RATIO_HIGH * height
 
     best_pt: Optional[rg.Point3d] = None
     best_r = -1.0
@@ -201,6 +216,11 @@ def _sample_plane_section(
 
     filtered_points = _filter_points_by_z(points, low_z, high_z)
     filtered_controls = _filter_points_by_z(control_points, low_z, high_z)
+    _trace_log(
+        "[section] plane_idx={} raw_pts={} ctrl_pts={} filtered_ctrls={}".format(
+            plane, len(points), len(control_points), len(filtered_controls)
+        )
+    )
     return filtered_points, curves, filtered_controls
 
 
@@ -211,9 +231,9 @@ def _collect_section_data(mesh: rg.Mesh, planes: Sequence[rg.Plane]):
     z_max = bbox.Max.Z
     height = max(1e-6, z_max - z_min)
 
-    # _select_pt0와 동일한 20~60% 구간 필터
-    low_z = z_min + 0.2 * height
-    high_z = z_min + 0.6 * height
+    # _select_pt0와 동일한 20~80% 구간 필터
+    low_z = z_min + _Z_RATIO_LOW * height
+    high_z = z_min + _Z_RATIO_HIGH * height
 
     for idx, plane in enumerate(planes):
         pts, curves, ctrl_pts = _sample_plane_section(mesh, plane, low_z, high_z)
@@ -226,6 +246,11 @@ def _collect_section_data(mesh: rg.Mesh, planes: Sequence[rg.Plane]):
                 "plane": plane,
             }
         )
+        _trace_log(
+            "[collect] plane_idx={} ctrl_candidates={} point_candidates={}".format(
+                idx, len(ctrl_pts), len(pts)
+            )
+        )
     return sections
 
 
@@ -234,35 +259,70 @@ def _select_outermost_nearby(
     candidates: Sequence[rg.Point3d],
     limit: int = _NEAREST_LIMIT,
     max_distance: Optional[float] = None,
+    debug_label: Optional[str] = None,
+    return_details: bool = False,
 ):
     if not candidates:
-        return None
+        return (None, []) if return_details else None
 
-    filtered: List[Tuple[float, rg.Point3d]] = []
+    within_limit: List[Tuple[float, float, rg.Point3d]] = []
+    all_candidates: List[Tuple[float, float, rg.Point3d]] = []
+
     for pt in candidates:
         try:
             dist = pt.DistanceTo(ref_point)
+            radius_sq = pt.X * pt.X + pt.Y * pt.Y
+            all_candidates.append((radius_sq, dist, pt))
             if max_distance is not None and dist > (max_distance + _DIST_TOL):
                 continue
-            filtered.append((dist, pt))
+            within_limit.append((radius_sq, dist, pt))
         except Exception:
             continue
 
-    if not filtered:
-        return None
+    def pick_best(items: Sequence[Tuple[float, float, rg.Point3d]]):
+        ordered = sorted(items, key=lambda item: (-item[0], item[1]))
+        limited = ordered[: max(1, limit)]
+        return limited[0][2], limited
 
-    filtered.sort(key=lambda pair: pair[0])
-    limited = [pair[1] for pair in filtered[: max(1, limit)]]
+    if within_limit:
+        if debug_label and max_distance is not None:
+            detail = ", ".join(
+                "r={:.3f} d={:.3f}".format(math.sqrt(r_sq), dist)
+                for r_sq, dist, _ in within_limit
+            )
+            _trace_log(
+                "[filter] {} candidates (<= {:.3f}mm): {}".format(
+                    debug_label,
+                    max_distance,
+                    detail or "(none)",
+                )
+            )
+        best_pt, details = pick_best(within_limit)
+        return (best_pt, details) if return_details else best_pt
 
-    return max(limited, key=lambda pt: (pt.X * pt.X + pt.Y * pt.Y))
+    if all_candidates:
+        _trace_log(
+            "[trace] fallback: no candidates within {:.3f}mm, using outermost regardless".format(
+                max_distance or 0
+            )
+        )
+        best_pt, details = pick_best(all_candidates)
+        return (best_pt, details) if return_details else best_pt
+
+    return (None, []) if return_details else None
 
 
 def _pick_start_pt(pt0: rg.Point3d, sections: Sequence[Dict[str, Sequence]]):
     best = None
     for idx, section in enumerate(sections):
-        candidates = section.get("controls") or section.get("points") or []
+        candidates = _merge_candidates(section.get("controls") or [], section.get("points") or [])
         # 시작점은 거리 제한 없이 pt0에서 가장 가까운 영역 중 외곽 선택
-        chosen = _select_outermost_nearby(pt0, candidates, max_distance=None)
+        chosen = _select_outermost_nearby(
+            pt0,
+            candidates,
+            max_distance=None,
+            debug_label=f"start plane_idx={idx}",
+        )
         if chosen is not None:
             dist = chosen.DistanceTo(pt0)
             if best is None or dist < best[0]:
@@ -287,13 +347,22 @@ def _trace_finishline_points(
 
     for step in range(1, total):
         idx = (start_idx + step) % total
-        candidates = sections[idx].get("controls") or sections[idx].get("points", [])
-        
+        candidates = _merge_candidates(
+            sections[idx].get("controls") or [],
+            sections[idx].get("points") or [],
+        )
+        _trace_log(
+            "[trace] step={} plane_idx={} ctrl_candidates={}".format(
+                step, idx, len(candidates)
+            )
+        )
+
         # 3D 거리 1mm 제한 적용
         best_pt = _select_outermost_nearby(
             last,
             candidates,
             max_distance=_MAX_STEP_DISTANCE,
+            debug_label=f"step={step} plane_idx={idx}",
         )
 
         if best_pt is None:
@@ -344,14 +413,14 @@ def _visualize(
 ) -> Dict[str, List[str]]:
     added_ids: Dict[str, List[str]] = {"points": [], "mesh": []}
 
-    sphere = rg.Sphere(pt0, 0.02)
+    sphere = rg.Sphere(pt0, 0.05)
     sphere_id = _add_colored_object(doc, sphere.ToBrep(), drawing.Color.FromArgb(0, 200, 0))
     added_ids["points"].append(str(sphere_id))
 
     polyline = rg.Polyline(points)
     tube_curve = polyline.ToNurbsCurve()
 
-    radii = System.Array[System.Double]([0.03])
+    radii = System.Array[System.Double]([0.05])
     params = System.Array[System.Double]([tube_curve.Domain.T0])
     pipes = rg.Brep.CreatePipe(
         tube_curve,
@@ -372,6 +441,23 @@ def _visualize(
         # 파이프 생성 실패 시 폴리라인만 추가
         obj_id = _add_colored_object(doc, tube_curve, drawing.Color.FromArgb(220, 30, 30))
         added_ids["mesh"].append(str(obj_id))
+
+    if _SHOW_POINT_TEXTDOTS:
+        dot_ids: List[str] = []
+        for idx, point in enumerate(points):
+            if point is None:
+                continue
+            try:
+                dot_attrs = rdo.ObjectAttributes()
+                dot_attrs.ObjectColor = drawing.Color.FromArgb(255, 255, 255)
+                dot_attrs.ColorSource = rdo.ObjectColorSource.ColorFromObject
+                dot_id = doc.Objects.AddTextDot(str(idx), point, dot_attrs)
+                dot_ids.append(str(dot_id))
+            except Exception:
+                continue
+
+        if dot_ids:
+            added_ids["dots"] = dot_ids
 
     doc.Views.Redraw()
     return added_ids

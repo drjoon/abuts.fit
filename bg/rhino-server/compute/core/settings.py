@@ -11,12 +11,19 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=APP_ROOT / "local.env", override=False)
 
 SCRIPT_DIR = APP_ROOT / "scripts"
-BG_STORAGE_ROOT = APP_ROOT.parent.parent / "storage"
+_env_storage_root = os.getenv("BG_STORAGE_ROOT", "").strip()
+if _env_storage_root:
+    BG_STORAGE_ROOT = Path(_env_storage_root)
+else:
+    BG_STORAGE_ROOT = APP_ROOT.parent.parent / "storage"
+
 STORE_IN_DIR = BG_STORAGE_ROOT / "1-stl"
 STORE_OUT_DIR = BG_STORAGE_ROOT / "2-filled"
 TMP_DIR = APP_ROOT / ".tmp"
 
 DEFAULT_TIMEOUT_SEC = int(os.getenv("RHINO_TIMEOUT_SEC", "180"))
+OUTPUT_WAIT_TIMEOUT_SEC = float(os.getenv("ABUTS_OUTPUT_WAIT_SEC", "5"))
+OUTPUT_WAIT_POLL_SEC = float(os.getenv("ABUTS_OUTPUT_WAIT_POLL_SEC", "0.2"))
 DEFAULT_RHINOCODE_MAC = Path(
     "/Applications/Rhino 8.app/Contents/Resources/bin/rhinocode"
 )
@@ -79,6 +86,11 @@ def build_s3_url(bucket: str, key: str) -> str:
 def extract_request_id_from_name(name: str):
     try:
         base = Path(name).name
+        m = re.search(r"(\d{8}-[A-Za-z0-9]{4,})", base)
+        if m:
+            rid = m.group(1)
+            return rid if rid else None
+
         head = base.split(".", 1)[0]
         return head if head else None
     except Exception:
@@ -110,7 +122,19 @@ def is_force_fill_mode() -> bool:
 def get_rhinocode_bin() -> str:
     rhinocode = os.getenv("RHINOCODE_BIN", "").strip().strip('"')
     if not rhinocode:
-        rhinocode = shutil.which("rhinocode") or ""
+        # Common Windows paths
+        win_paths = [
+            r"C:\Program Files\Rhino 8\System\RhinoCode.exe",
+            r"C:\Program Files\Rhino 7\System\RhinoCode.exe",
+        ]
+        for p in win_paths:
+            if os.path.exists(p):
+                rhinocode = p
+                break
+    
+    if not rhinocode:
+        rhinocode = shutil.which("RhinoCode.exe") or shutil.which("rhinocode") or ""
+        
     if not rhinocode and DEFAULT_RHINOCODE_MAC.exists():
         rhinocode = str(DEFAULT_RHINOCODE_MAC)
     return rhinocode

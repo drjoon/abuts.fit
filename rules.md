@@ -99,6 +99,14 @@
 
 ## 6. 비즈니스 규칙
 
+### 6.0 파일명/파일메타 단일 소스(SSOT)
+
+- **표준 파일명**: 모든 공정 파일의 표준 파일명은 `filePath`를 사용합니다.
+- **업로더 원본명**: 업로더가 올린 로컬 파일명은 `originalName`에만 보관합니다.
+- **금지**: `fileName`(원본 STL의) 필드는 저장/참조하지 않습니다.
+- **BG 프로그램 규칙**: Rhino/ESPRIT/Bridge 등 BG 프로그램은 requestId/파일명을 조작하지 않고, 백엔드가 내려준 `filePath`를 입력/출력 naming의 기준으로 사용합니다.
+- **finish line**: 파일(finishLineFile)로 저장하지 않으며, `caseInfos.finishLine.points`만 백엔드 DB에 저장/사용합니다.
+
 ### 6.1 요금/결제 안내
 
 - 기본 서비스 금액은 **VAT 별도**, **배송비 별도**입니다.

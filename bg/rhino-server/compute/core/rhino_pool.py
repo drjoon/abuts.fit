@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -11,6 +12,10 @@ from .logger import log
 
 def list_rhino_pipe_ids(rhinocode: str) -> list[str]:
     try:
+        if not rhinocode or not os.path.exists(rhinocode):
+            log(f"RhinoCode executable not found at: {rhinocode}")
+            return []
+            
         listed = subprocess.run(
             [rhinocode, "list", "--json"],
             stdout=subprocess.PIPE,
@@ -20,6 +25,7 @@ def list_rhino_pipe_ids(rhinocode: str) -> list[str]:
             timeout=10,
         )
         if listed.returncode != 0:
+            log(f"RhinoCode list failed (code {listed.returncode}): {listed.stderr}")
             return []
         data = json.loads(listed.stdout or "[]")
         out: list[str] = []
@@ -27,8 +33,15 @@ def list_rhino_pipe_ids(rhinocode: str) -> list[str]:
             pid = item.get("pipeId") or item.get("id")
             if pid:
                 out.append(str(pid))
+        
+        if not out:
+            log(
+                "No active Rhino instances found via RhinoCode list. Make sure Rhino is running."
+            )
+
         return out
-    except Exception:
+    except Exception as e:
+        log(f"Error listing Rhino instances: {e}")
         return []
 
 

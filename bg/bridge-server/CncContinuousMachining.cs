@@ -84,7 +84,7 @@ namespace HiLinkBridgeWebApi48
             var fn = (fileName ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(fn)) return null;
 
-            var job = CncJobQueue.EnqueueFileBack(mid, fn, string.IsNullOrWhiteSpace(requestId) ? null : requestId);
+            var job = CncJobQueue.EnqueueFileBack(mid, fn, string.IsNullOrWhiteSpace(requestId) ? null : requestId, fn);
             try
             {
                 var bp = (bridgePath ?? string.Empty).Trim();

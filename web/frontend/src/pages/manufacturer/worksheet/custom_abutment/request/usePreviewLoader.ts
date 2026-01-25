@@ -20,6 +20,8 @@ type PreviewLoaderParams = {
       cam?: File | null;
       title?: string;
       request?: ManufacturerRequest | null;
+      finishLinePoints?: number[][] | null;
+      finishLineSource?: "caseInfos" | "file" | null;
     }>
   >;
   setPreviewOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -98,7 +100,7 @@ export function usePreviewLoader({
           "파일 미리보기";
 
         const originalName =
-          req.caseInfos?.file?.fileName ||
+          req.caseInfos?.file?.filePath ||
           req.caseInfos?.file?.originalName ||
           "original.stl";
 
@@ -128,11 +130,7 @@ export function usePreviewLoader({
         );
 
         let camFile: File | null = null;
-        const hasCamFile = !!(
-          req.caseInfos?.camFile?.s3Key ||
-          req.caseInfos?.camFile?.fileName ||
-          req.caseInfos?.camFile?.originalName
-        );
+        const hasCamFile = !!req.caseInfos?.camFile?.s3Key;
 
         if (hasCamFile) {
           const camName =
@@ -168,6 +166,22 @@ export function usePreviewLoader({
             }
           }
         }
+
+        const resolveFinishLine = async () => {
+          const casePoints = Array.isArray(req.caseInfos?.finishLine?.points)
+            ? req.caseInfos.finishLine.points
+            : null;
+          if (Array.isArray(casePoints) && casePoints.length >= 2) {
+            console.log("[PreviewLoader] finish line from caseInfos", {
+              count: casePoints.length,
+            });
+            return { points: casePoints, source: "caseInfos" as const };
+          }
+
+          return { points: null, source: null } as const;
+        };
+
+        const finishLineResult = await resolveFinishLine();
 
         // CAM / 생산 탭에서 NC 프리뷰를 보여주기 위해 NC를 읽어온다.
         if (isCamStage || isMachiningStage) {
@@ -228,7 +242,15 @@ export function usePreviewLoader({
           cam: camFile,
           title,
           request: req,
+          finishLinePoints: finishLineResult.points,
+          finishLineSource: finishLineResult.source,
         });
+        if (finishLineResult.points?.length) {
+          console.log("[PreviewLoader] finish line ready for preview", {
+            source: finishLineResult.source,
+            count: finishLineResult.points.length,
+          });
+        }
         setPreviewOpen(true);
         toast({
           title: "다운로드 완료",

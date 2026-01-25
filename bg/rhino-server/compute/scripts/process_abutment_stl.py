@@ -27,6 +27,59 @@ def log(msg):
         pass
 
 
+def _extract_request_id_from_path(p: str):
+    try:
+        base = os.path.basename(p or "")
+        import re
+
+        m = re.search(r"(\d{8}-[A-Za-z0-9]{4,})", base)
+        if m:
+            rid = m.group(1)
+            return rid if rid else None
+
+        head = base.split(".", 1)[0]
+        return head if head else None
+    except Exception:
+        return None
+
+
+def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
+    try:
+        import json
+        import System.Net.Http
+        import System.Text
+
+        backend = os.environ.get("BACKEND_URL", "https://abuts.fit/api").rstrip("/")
+        url = backend + "/bg/register-finish-line"
+
+        payload = {
+            "requestId": request_id,
+            "fileName": input_file_name,
+            "finishLine": finish_line,
+        }
+        body = json.dumps(payload, ensure_ascii=False)
+
+        client = System.Net.Http.HttpClient()
+        secret = os.environ.get("BRIDGE_SHARED_SECRET")
+        if secret:
+            try:
+                client.DefaultRequestHeaders.Remove("X-Bridge-Secret")
+            except Exception:
+                pass
+            client.DefaultRequestHeaders.Add("X-Bridge-Secret", str(secret))
+
+        content = System.Net.Http.StringContent(
+            body,
+            System.Text.Encoding.UTF8,
+            "application/json",
+        )
+
+        resp = client.PostAsync(url, content).Result
+        ok = bool(resp and resp.IsSuccessStatusCode)
+        log("finishline post " + ("ok" if ok else "failed"))
+    except Exception as e:
+        log("finishline post failed: " + str(e))
+
 def _count_naked_edges(mesh):
     try:
         edges = mesh.GetNakedEdges()
@@ -350,6 +403,40 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         log("mesh objects after import=" + str(len(mesh_obj_refs)))
 
+        # Finish line 계산 및 백엔드 전송 (홀 메움 전 단계)
+        try:
+            import base64
+            import json
+
+            fl = detect_finish_line(doc=doc, visualize=False)
+            pts = fl.get("points") or []
+            pt0 = fl.get("pt0")
+
+            finish_line_payload = {
+                "version": 1,
+                "sectionCount": int(fl.get("plane_count") or 0),
+                "maxStepDistance": float(
+                    os.environ.get("ABUTS_FINISHLINE_MAX_STEP", "1") or 1
+                ),
+                "points": [[float(p.X), float(p.Y), float(p.Z)] for p in pts],
+                "pt0": [float(pt0.X), float(pt0.Y), float(pt0.Z)] if pt0 else None,
+            }
+
+            req_id = _extract_request_id_from_path(input_path)
+            if req_id:
+                _post_finish_line(
+                    req_id,
+                    os.path.basename(str(input_path)),
+                    finish_line_payload,
+                )
+
+            encoded = base64.b64encode(
+                json.dumps(finish_line_payload).encode("utf-8")
+            ).decode("utf-8")
+            log("FINISHLINE_RESULT:" + encoded)
+        except Exception as e:
+            log("Finishline failed: " + str(e))
+
         # 1) Explode: RhinoCommon API를 사용하여 고속 처리
         try:
             objs = list(doc.Objects)
@@ -622,27 +709,6 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             log("DIAMETER_RESULT:max={} conn={}".format(max_d, conn_d))
         except Exception as e:
             log("Analysis failed: " + str(e))
-
-        try:
-            import base64
-            import json
-
-            fl = detect_finish_line(doc=doc, visualize=False)
-            pts = fl.get("points") or []
-            pt0 = fl.get("pt0")
-
-            out = {
-                "version": 1,
-                "sectionCount": int(fl.get("plane_count") or 0),
-                "maxStepDistance": float(os.environ.get("ABUTS_FINISHLINE_MAX_STEP", "1") or 1),
-                "points": [[float(p.X), float(p.Y), float(p.Z)] for p in pts],
-                "pt0": [float(pt0.X), float(pt0.Y), float(pt0.Z)] if pt0 else None,
-            }
-
-            encoded = base64.b64encode(json.dumps(out).encode("utf-8")).decode("utf-8")
-            log("FINISHLINE_RESULT:" + encoded)
-        except Exception as e:
-            log("Finishline failed: " + str(e))
 
         log("export ok")
     finally:

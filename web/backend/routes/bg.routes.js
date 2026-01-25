@@ -11,43 +11,50 @@ router.post(
   "/register-file",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  bgController.registerProcessedFile
+  bgController.registerProcessedFile,
+);
+
+router.post(
+  "/register-finish-line",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.registerFinishLine,
 );
 router.post(
   "/presign-upload",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  bgController.getPresignedUploadUrl
+  bgController.getPresignedUploadUrl,
 );
 router.get(
   "/file-status",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  bgController.getFileProcessingStatus
+  bgController.getFileProcessingStatus,
 );
 router.get(
   "/status",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  bgController.getBgStatus
+  bgController.getBgStatus,
 );
 router.get(
   "/pending-stl",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  bgController.listPendingStl
+  bgController.listPendingStl,
 );
 router.get(
   "/original-file",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  bgController.downloadOriginalFile
+  bgController.downloadOriginalFile,
 );
 router.get(
   "/request-meta",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  bgController.getRequestMeta
+  bgController.getRequestMeta,
 );
 
 export default router;

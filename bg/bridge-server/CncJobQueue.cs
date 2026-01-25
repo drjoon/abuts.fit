@@ -21,6 +21,8 @@ namespace HiLinkBridgeWebApi48
 
         // file job
         public string fileName { get; set; }
+        // backend SSOT: canonical filename (filePath). job.fileName may be normalized like O####.nc
+        public string originalFileName { get; set; }
         public string bridgePath { get; set; }
         public string s3Key { get; set; }
         public string s3Bucket { get; set; }
@@ -55,7 +57,7 @@ namespace HiLinkBridgeWebApi48
             return Queues.GetOrAdd(machineId ?? string.Empty, _ => new LinkedList<CncJobItem>());
         }
 
-        public static CncJobItem EnqueueFileBack(string machineId, string fileName, string requestId)
+        public static CncJobItem EnqueueFileBack(string machineId, string fileName, string requestId, string originalFileName = null)
         {
             var job = new CncJobItem
             {
@@ -64,6 +66,7 @@ namespace HiLinkBridgeWebApi48
                 machineId = (machineId ?? string.Empty).Trim(),
                 qty = 1,
                 fileName = fileName,
+                originalFileName = string.IsNullOrWhiteSpace(originalFileName) ? fileName : originalFileName,
                 requestId = requestId,
                 createdAtUtc = DateTime.UtcNow,
                 source = "cam_approve"
@@ -144,6 +147,7 @@ namespace HiLinkBridgeWebApi48
                         machineId = v.machineId,
                         qty = 1,
                         fileName = v.fileName,
+                        originalFileName = v.originalFileName,
                         bridgePath = v.bridgePath,
                         requestId = v.requestId,
                         programNo = v.programNo,

@@ -30,7 +30,7 @@ type UseRequestFileHandlersProps = {
   setPreviewLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
-    navigateOpts?: { replace?: boolean }
+    navigateOpts?: { replace?: boolean },
   ) => void;
   decodeNcText: (buffer: ArrayBuffer) => string;
 };
@@ -88,49 +88,49 @@ export const useRequestFileHandlers = ({
       }
       window.open(url, "_blank");
     },
-    [token, toast]
+    [token, toast],
   );
 
   const handleDownloadOriginalStl = useCallback(
     async (req: ManufacturerRequest) => {
       await downloadByEndpoint(
         `/api/requests/${req._id}/original-file-url`,
-        "원본 STL을 가져올 수 없습니다."
+        "원본 STL을 가져올 수 없습니다.",
       );
     },
-    [downloadByEndpoint]
+    [downloadByEndpoint],
   );
 
   const handleDownloadCamStl = useCallback(
     async (req: ManufacturerRequest) => {
       await downloadByEndpoint(
         `/api/requests/${req._id}/cam-file-url`,
-        "CAM STL을 가져올 수 없습니다."
+        "CAM STL을 가져올 수 없습니다.",
       );
     },
-    [downloadByEndpoint]
+    [downloadByEndpoint],
   );
 
   const handleDownloadNcFile = useCallback(
     async (req: ManufacturerRequest) => {
       await downloadByEndpoint(
         `/api/requests/${req._id}/nc-file-url`,
-        "NC 파일을 가져올 수 없습니다."
+        "NC 파일을 가져올 수 없습니다.",
       );
     },
-    [downloadByEndpoint]
+    [downloadByEndpoint],
   );
 
   const handleDownloadStageFile = useCallback(
     async (req: ManufacturerRequest, stage: string) => {
       await downloadByEndpoint(
         `/api/requests/${req._id}/stage-file-url?stage=${encodeURIComponent(
-          stage
+          stage,
         )}`,
-        "파일을 가져올 수 없습니다."
+        "파일을 가져올 수 없습니다.",
       );
     },
-    [downloadByEndpoint]
+    [downloadByEndpoint],
   );
 
   const handleUpdateReviewStatus = useCallback(
@@ -165,7 +165,7 @@ export const useRequestFileHandlers = ({
               status: params.status,
               reason: params.reason || "",
             }),
-          }
+          },
         );
 
         if (!res.ok) {
@@ -198,8 +198,8 @@ export const useRequestFileHandlers = ({
             params.status === "APPROVED"
               ? "승인되었습니다."
               : params.status === "REJECTED"
-              ? "반려되었습니다."
-              : "미승인 상태로 변경되었습니다.",
+                ? "반려되었습니다."
+                : "미승인 상태로 변경되었습니다.",
           duration: 3000, // 성공 토스트는 3초 후 자동 소멸
         });
 
@@ -233,13 +233,13 @@ export const useRequestFileHandlers = ({
       setSearchParams,
       setPreviewOpen,
       setReviewSaving,
-    ]
+    ],
   );
 
   const handleDeleteCam = useCallback(
     async (
       req: ManufacturerRequest,
-      opts?: { rollbackOnly?: boolean; navigate?: boolean }
+      opts?: { rollbackOnly?: boolean; navigate?: boolean },
     ) => {
       if (!token) return;
       setDeletingCam((prev) => ({ ...prev, [req._id]: true }));
@@ -255,7 +255,7 @@ export const useRequestFileHandlers = ({
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         if (!res.ok) {
           throw new Error("delete cam file failed");
@@ -293,13 +293,13 @@ export const useRequestFileHandlers = ({
       setPreviewNcText,
       setPreviewNcName,
       setSearchParams,
-    ]
+    ],
   );
 
   const handleDeleteNc = useCallback(
     async (
       req: ManufacturerRequest,
-      opts?: { nextStage?: string; rollbackOnly?: boolean; navigate?: boolean }
+      opts?: { nextStage?: string; rollbackOnly?: boolean; navigate?: boolean },
     ) => {
       if (!token) return;
       setDeletingNc((prev) => ({ ...prev, [req._id]: true }));
@@ -316,7 +316,7 @@ export const useRequestFileHandlers = ({
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
         if (!res.ok) {
           throw new Error("delete nc file failed");
@@ -354,7 +354,7 @@ export const useRequestFileHandlers = ({
       setPreviewNcName,
       setPreviewFiles,
       setSearchParams,
-    ]
+    ],
   );
 
   const handleUploadCam = useCallback(
@@ -363,7 +363,7 @@ export const useRequestFileHandlers = ({
       const normalize = (name: string) =>
         name.trim().toLowerCase().normalize("NFC");
       const originalName =
-        req.caseInfos?.file?.fileName ||
+        req.caseInfos?.file?.filePath ||
         req.caseInfos?.file?.originalName ||
         "";
       const originalBase = originalName
@@ -372,7 +372,7 @@ export const useRequestFileHandlers = ({
       const expectedCamName = originalBase ? `${originalBase}.cam.stl` : "";
 
       const filtered = files.filter((f) =>
-        f.name.toLowerCase().endsWith(".cam.stl")
+        f.name.toLowerCase().endsWith(".cam.stl"),
       );
       if (!filtered.length) {
         toast({
@@ -384,7 +384,7 @@ export const useRequestFileHandlers = ({
       }
       if (expectedCamName) {
         const mismatch = filtered.some(
-          (f) => normalize(f.name) !== normalize(expectedCamName)
+          (f) => normalize(f.name) !== normalize(expectedCamName),
         );
         if (mismatch) {
           toast({
@@ -480,7 +480,7 @@ export const useRequestFileHandlers = ({
       setUploadProgress,
       setPreviewFiles,
       setPreviewNcName,
-    ]
+    ],
   );
 
   const handleUploadNc = useCallback(
@@ -488,7 +488,7 @@ export const useRequestFileHandlers = ({
       if (!token) return;
 
       const filtered = files.filter((f) =>
-        f.name.toLowerCase().endsWith(".nc")
+        f.name.toLowerCase().endsWith(".nc"),
       );
       if (!filtered.length) {
         toast({
@@ -586,7 +586,7 @@ export const useRequestFileHandlers = ({
       setUploadProgress,
       setPreviewNcText,
       setPreviewNcName,
-    ]
+    ],
   );
 
   const handleUploadStageFile = useCallback(
@@ -695,7 +695,7 @@ export const useRequestFileHandlers = ({
       setUploadProgress,
       setPreviewStageUrl,
       setPreviewStageName,
-    ]
+    ],
   );
 
   const handleDeleteStageFile = useCallback(
@@ -724,7 +724,7 @@ export const useRequestFileHandlers = ({
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
 
         if (!res.ok) {
@@ -740,7 +740,7 @@ export const useRequestFileHandlers = ({
             : {
                 title: "삭제 완료",
                 description: "파일을 삭제했습니다.",
-              }
+              },
         );
         await fetchRequests();
 
@@ -775,7 +775,7 @@ export const useRequestFileHandlers = ({
       setUploading,
       setPreviewStageUrl,
       setPreviewStageName,
-    ]
+    ],
   );
 
   return {

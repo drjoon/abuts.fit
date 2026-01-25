@@ -6,7 +6,9 @@ from . import settings
 
 
 def repr_path_for_template(path: Union[Path, str]) -> str:
-    return str(path).replace("\\", "\\\\")
+    """Return a path string safe for template substitution."""
+
+    return str(path).replace('"', '\\"')
 
 
 WRAPPER_TEMPLATE = Template(
@@ -37,6 +39,15 @@ WRAPPER_TEMPLATE = Template(
     "      return f.read()\n"
     "  except Exception:\n"
     "    return ''\n"
+    "def _build_output_info():\n"
+    "  info = {'path': r\"${output_stl}\", 'exists': False, 'size': 0}\n"
+    "  try:\n"
+    "    if os.path.exists(info['path']):\n"
+    "      info['exists'] = True\n"
+    "      info['size'] = os.path.getsize(info['path'])\n"
+    "  except Exception:\n"
+    "    pass\n"
+    "  return info\n"
     "def _send_result(data):\n"
     "  for i in range(3):\n"
     "    try:\n"
@@ -62,9 +73,9 @@ WRAPPER_TEMPLATE = Template(
     "  print('JOB_PID=' + str(System.Diagnostics.Process.GetCurrentProcess().Id))\n"
     "  _cleanup_doc()\n"
     "  process_abutment_stl.main(input_path_arg=r\"${input_stl}\", output_path_arg=r\"${output_stl}\", log_path_arg=r\"${log_path}\")\n"
-    "  _send_result({'token': '${token}', 'ok': True, 'log': _read_log(r\"${log_path}\")})\n"
+    "  _send_result({'token': '${token}', 'ok': True, 'log': _read_log(r\"${log_path}\"), 'output': _build_output_info()})\n"
     "except Exception as e:\n"
-    "  _send_result({'token': '${token}', 'ok': False, 'error': str(e), 'traceback': traceback.format_exc(), 'log': _read_log(r\"${log_path}\")})\n"
+    "  _send_result({'token': '${token}', 'ok': False, 'error': str(e), 'traceback': traceback.format_exc(), 'log': _read_log(r\"${log_path}\"), 'output': _build_output_info()})\n"
     "  raise\n"
 )
 

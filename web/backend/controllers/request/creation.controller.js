@@ -463,14 +463,14 @@ export async function createRequest(req, res) {
 
     // [추가] Rhino 서버 업로드 시도 (병렬 처리)
     // S3 업로드 여부와 상관없이 Rhino 서버로 파일을 보내 즉시 처리를 시작하게 함
-    if (newRequest.caseInfos?.file?.fileName && req.file?.buffer) {
+    if (newRequest.caseInfos?.file?.originalName && req.file?.buffer) {
       // 표준 파일명 생성: requestId_clinicName_patientName_tooth.ext
       const bgFileName = buildStandardStlFileName({
         requestId: newRequest.requestId,
         clinicName,
         patientName,
         tooth,
-        originalFileName: newRequest.caseInfos.file.fileName,
+        originalFileName: newRequest.caseInfos.file.originalName,
       });
 
       // 즉시 실행 (응답을 기다리지 않음)
@@ -749,7 +749,7 @@ export async function createRequestsFromDraft(req, res) {
         ? {
             ...normalizedCi,
             file: {
-              fileName: ci.file.originalName,
+              originalName: ci.file.originalName,
               fileType: ci.file.mimetype,
               fileSize: ci.file.size,
               filePath: undefined,
@@ -804,7 +804,7 @@ export async function createRequestsFromDraft(req, res) {
     const keyTuplesRaw = preparedCases
       .map((item) => ({
         caseId: item.caseId,
-        fileName: item.caseInfosWithFile?.file?.fileName || undefined,
+        fileName: item.caseInfosWithFile?.file?.originalName || undefined,
         clinicName: String(item.clinicName || "").trim(),
         patientName: String(item.patientName || "").trim(),
         tooth: String(item.tooth || "").trim(),
@@ -1246,7 +1246,7 @@ export async function createRequestsFromDraft(req, res) {
                   clinicName: item.clinicName,
                   patientName: item.patientName,
                   tooth: item.tooth,
-                  originalFileName: item.caseInfosWithFile.file.fileName,
+                  originalFileName: item.caseInfosWithFile.file.originalName,
                 });
 
                 // S3에서 가져와서 Rhino 서버로 전송 및 처리 트리거
@@ -1453,11 +1453,7 @@ export async function hasDuplicateCase(req, res) {
           : [];
 
       const matched = caseInfosList.some((ci) => {
-        const storedName =
-          ci?.file?.fileName ||
-          ci?.file?.originalName ||
-          ci?.fileName ||
-          ci?.file_name;
+        const storedName = ci?.file?.filePath || ci?.file?.originalName;
         const normalizedStoredName = normalizeFileName(storedName);
         if (!normalizedStoredName) return false;
         return normalizedStoredName === normalizedFileName;

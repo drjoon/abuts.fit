@@ -60,3 +60,7 @@
 5. **후보 정리**: 평면별로 필터링된 후보 점 목록을 저장하고, pt0가 속한 평면 인덱스를 시작점으로 잡는다.
 6. **곡선 추적**: 이전 선택점과의 3D 거리가 1mm 이하인 후보 중 XY 반경이 가장 큰 점을 `_NEAREST_LIMIT=20` 내에서 고르며 순차적으로 이동한다. 조건을 만족하는 후보가 없으면 추적을 중단한다.
 7. **시각화**: pt0는 반경 0.1의 녹색 구, 추적 결과는 빨간 튜브(반경 0.03)로 표현하며 필요 시 모든 단면 곡선을 팔레트 색으로 그린다.
+
+# Trouble shooting
+
+Rhino 서버에서 "No active Rhino instances found via RhinoCode list" 메시지가 뜨면 Rhino를 실행한 뒤 명령창에서 RhinoCode 또는 ScriptEditor 명령을 한 번 호출해 RhinoCode 서비스를 깨워야 한다.

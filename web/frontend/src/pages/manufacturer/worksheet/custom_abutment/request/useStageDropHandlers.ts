@@ -163,7 +163,7 @@ export function useStageDropHandlers({
               getBase(
                 r.caseInfos?.camFile?.fileName ||
                   r.caseInfos?.camFile?.originalName ||
-                  r.caseInfos?.file?.fileName ||
+                  r.caseInfos?.file?.filePath ||
                   r.caseInfos?.file?.originalName ||
                   "",
               ),
@@ -231,7 +231,7 @@ export function useStageDropHandlers({
               getBase(
                 r.caseInfos?.camFile?.fileName ||
                   r.caseInfos?.camFile?.originalName ||
-                  r.caseInfos?.file?.fileName ||
+                  r.caseInfos?.file?.filePath ||
                   r.caseInfos?.file?.originalName ||
                   "",
               ),

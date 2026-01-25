@@ -1,8 +1,11 @@
+import asyncio
 import threading
 import time
 import uuid
 from pathlib import Path
 import os
+import json
+import re
 
 import requests
 
@@ -10,6 +13,20 @@ from . import settings
 from . import state
 from .logger import log
 from .rhino_runner import run_rhino_python
+
+
+
+# metadata sidecar 파일은 더 이상 사용하지 않으므로 더미 함수만 남겨둔다.
+def _metadata_sidecar_path(_: Path) -> Path:
+    raise RuntimeError("metadata sidecar files are no longer supported")
+
+
+def load_cached_metadata(_: Path) -> dict:
+    return {}
+
+
+def save_cached_metadata(_: Path, __: dict) -> None:
+    return
 
 
 def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
@@ -60,10 +77,23 @@ def upload_via_presign(out_path: Path, original_name: str, item: dict) -> bool:
             "s3Url": s3_url,
             "fileSize": file_size,
         }
+        if req_id:
+            register_payload["requestId"] = req_id
 
         metadata = item.get("metadata") if isinstance(item, dict) else None
         if isinstance(metadata, dict) and metadata:
+            try:
+                import json as _json
+
+                log(
+                    "[upload_via_presign] Attaching metadata: "
+                    + _json.dumps(metadata, ensure_ascii=False)[:2000]
+                )
+            except Exception:
+                log("[upload_via_presign] Attaching metadata (raw)")
             register_payload["metadata"] = metadata
+        else:
+            log("[upload_via_presign] No metadata attached")
 
         reg_resp = requests.post(
             register_url,
@@ -106,6 +136,11 @@ def fetch_pending_stl_list() -> list[dict]:
         return []
 
 
+def _compose_input_filename(file_name: str, _: str | None) -> str:
+    # 백엔드 파일명을 그대로 사용 (경로/특수문자만 sanitize)
+    return settings.sanitize_filename(Path(file_name).name)
+
+
 def download_original_to_input(item: dict) -> bool:
     import os
 
@@ -113,16 +148,17 @@ def download_original_to_input(item: dict) -> bool:
     if not backend:
         return False
 
-    file_name = item.get("fileName")
+    file_name = item.get("filePath")
     request_id = item.get("requestId")
     if not file_name:
         return False
 
-    target = settings.STORE_IN_DIR / settings.sanitize_filename(file_name)
+    target_name = _compose_input_filename(file_name, request_id)
+    target = settings.STORE_IN_DIR / target_name
     if target.exists():
         return True
 
-    params = {"requestId": request_id} if request_id else {"fileName": file_name}
+    params = {"requestId": request_id, "filePath": file_name}
     url = f"{backend}/bg/original-file"
     try:
         res = requests.get(url, params=params, timeout=30, headers=settings.bridge_headers())
@@ -138,7 +174,7 @@ def download_original_to_input(item: dict) -> bool:
         return False
 
 
-def backend_should_process(file_name: str, source_step: str) -> bool:
+def backend_should_process_source_step(source_step: str, file_name: str) -> bool:
     """백엔드에 처리 상태를 확인하여 미처리일 때만 True 반환"""
     try:
         recover_always = os.getenv("RHINO_RECOVER_ALWAYS", "").lower() in ("1", "true", "yes")
@@ -154,7 +190,7 @@ def backend_should_process(file_name: str, source_step: str) -> bool:
 
         res = requests.get(
             url,
-            params={"sourceStep": source_step, "fileName": file_name, "force": "true"},
+            params={"sourceStep": source_step, "filePath": file_name, "force": "true"},
             timeout=5,
         )
         if res.status_code != 200:
@@ -169,16 +205,8 @@ def backend_should_process(file_name: str, source_step: str) -> bool:
         return False
 
 
-def prefix_with_request_id(original: str) -> str:
-    try:
-        rid = settings.extract_request_id_from_name(original)
-        if rid:
-            base = Path(original).name
-            if base.startswith(f"{rid}."):
-                return base
-            return settings.sanitize_filename(f"{rid}.{base}")
-    except Exception:
-        pass
+def canonicalize_input_name(original: str) -> str:
+    # 백엔드 파일명을 그대로 사용 (경로/특수문자만 sanitize)
     return settings.sanitize_filename(Path(original).name)
 
 
@@ -191,12 +219,11 @@ async def process_single_stl(p: Path):
 
     async with state.processing_semaphore:
         force_fill = settings.is_force_fill_mode()
-        prefixed_input = prefix_with_request_id(p.name)
+        prefixed_input = canonicalize_input_name(p.name)
         base_stem = Path(prefixed_input).stem
         out_name = settings.sanitize_filename(f"{base_stem}.filled.stl")
-        req_id = settings.extract_request_id_from_name(prefixed_input)
+        req_id = None
         out_path = settings.STORE_OUT_DIR / out_name
-
         with state.in_flight_lock:
             if p.name in state.in_flight:
                 log(f"Already in flight: {p.name}")
@@ -216,7 +243,11 @@ async def process_single_stl(p: Path):
                     except Exception as e:
                         log(f"Force-fill delete failed ({out_path}): {e}")
                 else:
-                    if upload_via_presign(out_path, prefixed_input, {"requestId": req_id}):
+                    if upload_via_presign(
+                        out_path,
+                        prefixed_input,
+                        {"requestId": req_id, "metadata": {}},
+                    ):
                         return
                     return
 
@@ -231,7 +262,7 @@ async def process_single_stl(p: Path):
             }
 
             log(f"Calling run_rhino_python for: {p.name}")
-            log_text = await run_rhino_python(input_stl=p, output_stl=out_path)
+            log_text, output_info = await run_rhino_python(input_stl=p, output_stl=out_path)
             log(f"Auto-processing done: {out_name}")
 
             state.recent_history.append(
@@ -274,6 +305,32 @@ async def process_single_stl(p: Path):
                 return meta
 
             metadata = _parse_metadata_from_log(log_text)
+
+            output_ok = False
+            if output_info and isinstance(output_info, dict):
+                exists = output_info.get("exists")
+                size = output_info.get("size")
+                if exists and (size or 0) > 0:
+                    output_ok = True
+                else:
+                    log(
+                        f"Rhino reported export incomplete (exists={exists} size={size}) for {out_path}"
+                    )
+            if not output_ok:
+                try:
+                    if out_path.exists() and out_path.stat().st_size > 0:
+                        output_ok = True
+                except Exception as e:
+                    log(f"output stat fallback error ({out_path}): {e}")
+
+            if not output_ok:
+                log(f"Output file not confirmed after processing: {out_path}")
+                if log_text:
+                    tail = log_text.strip()
+                    if tail:
+                        tail_snippet = tail[-2000:]
+                        log("[rhino-log tail]\n" + tail_snippet)
+                return
 
             if force_fill:
                 log("Force-fill 테스트 모드: presigned 업로드와 백엔드 통지를 생략합니다.")

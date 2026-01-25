@@ -26,7 +26,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string BackendUrlEnv = "ABUTS_BACKEND_URL";
         public const string BridgeSecretEnv = "ABUTS_BRIDGE_SECRET";
 
-        private const string DefaultBaseDirectory = @"C:\abuts.fit\bg";
+        private const string DefaultBaseDirectory = @"C:\Users\user\abuts.fit\bg";
         private static readonly string DefaultStorageFilledDirectory = Path.Combine(DefaultBaseDirectory, "storage", "2-filled");
         private static readonly string DefaultStorageNcDirectory = Path.Combine(DefaultBaseDirectory, "storage", "3-nc");
         private static readonly string DefaultAddInRootDirectory = Path.Combine(DefaultBaseDirectory, "esprit-addin");
