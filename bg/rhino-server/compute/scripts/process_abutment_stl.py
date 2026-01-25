@@ -54,7 +54,7 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
 
         payload = {
             "requestId": request_id,
-            "fileName": input_file_name,
+            "filePath": input_file_name,
             "finishLine": finish_line,
         }
         body = json.dumps(payload, ensure_ascii=False)
@@ -86,6 +86,24 @@ def _count_naked_edges(mesh):
         return len(edges) if edges else 0
     except Exception:
         return None
+
+
+def _clear_doc_objects(doc):
+    if doc is None:
+        return
+    try:
+        doc.Objects.UnselectAll()
+    except Exception:
+        pass
+    try:
+        ids = [o.Id for o in list(doc.Objects)]
+    except Exception:
+        ids = []
+    for oid in ids:
+        try:
+            doc.Objects.Delete(oid, True)
+        except Exception:
+            pass
 
 
 def _safe_int(value, default):
@@ -204,6 +222,41 @@ def _pick_fill_targets(pool):
 def fail(msg):
     print("ERROR:" + msg)
     raise Exception(msg)
+
+
+def _import_stl_meshes(doc, input_path):
+    try:
+        read_opts = Rhino.FileIO.FileStlReadOptions()
+        ok = Rhino.FileIO.FileStl.Read(str(input_path), doc, read_opts)
+    except Exception as e:
+        fail("STL Import 예외: " + str(e))
+
+    if not ok:
+        fail("STL Import 실패")
+
+    log("import ok")
+
+    mesh_obj_refs = []
+    try:
+        objs = list(doc.Objects)
+    except Exception:
+        objs = []
+
+    for obj in objs:
+        if obj is None:
+            continue
+        if obj.ObjectType != Rhino.DocObjects.ObjectType.Mesh:
+            continue
+        geom = obj.Geometry
+        if geom is None:
+            continue
+        mesh_obj_refs.append(obj)
+
+    if not mesh_obj_refs:
+        fail("Import 후 Mesh가 없습니다")
+
+    log("mesh objects after import=" + str(len(mesh_obj_refs)))
+    return mesh_obj_refs
 
 
 def _parse_args(argv, input_path_arg=None, output_path_arg=None):
@@ -348,6 +401,11 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
     owns_doc = False
     if doc is None:
         doc = Rhino.RhinoDoc.CreateHeadless(None)
+        if doc is not None:
+            try:
+                doc.ModelUnitSystem = Rhino.UnitSystem.Millimeters
+            except Exception:
+                pass
         owns_doc = True
     if doc is None:
         fail("Doc를 생성할 수 없습니다")
@@ -358,50 +416,8 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         log("output=" + output_path)
 
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
-        try:
-            ids = [o.Id for o in list(doc.Objects)]
-            for oid in ids:
-                try:
-                    doc.Objects.Delete(oid, True)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # STL Import (RhinoCommon)
-        try:
-            read_opts = Rhino.FileIO.FileStlReadOptions()
-            # 메시 생성을 위한 최적의 옵션 설정 (필요한 경우)
-            ok = Rhino.FileIO.FileStl.Read(str(input_path), doc, read_opts)
-        except Exception as e:
-            fail("STL Import 예외: " + str(e))
-
-        if not ok:
-            fail("STL Import 실패")
-
-        log("import ok")
-
-        # 문서 내 Mesh 수집
-        mesh_obj_refs = []
-        try:
-            objs = list(doc.Objects)
-        except Exception:
-            objs = []
-
-        for obj in objs:
-            if obj is None:
-                continue
-            if obj.ObjectType != Rhino.DocObjects.ObjectType.Mesh:
-                continue
-            geom = obj.Geometry
-            if geom is None:
-                continue
-            mesh_obj_refs.append(obj)
-
-        if not mesh_obj_refs:
-            fail("Import 후 Mesh가 없습니다")
-
-        log("mesh objects after import=" + str(len(mesh_obj_refs)))
+        _clear_doc_objects(doc)
+        _import_stl_meshes(doc, input_path)
 
         # Finish line 계산 및 백엔드 전송 (홀 메움 전 단계)
         try:
@@ -424,18 +440,21 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
             req_id = _extract_request_id_from_path(input_path)
             if req_id:
+                canonical_name = os.path.basename(str(input_path))
                 _post_finish_line(
                     req_id,
-                    os.path.basename(str(input_path)),
+                    canonical_name,
                     finish_line_payload,
                 )
 
-            encoded = base64.b64encode(
-                json.dumps(finish_line_payload).encode("utf-8")
-            ).decode("utf-8")
-            log("FINISHLINE_RESULT:" + encoded)
+            # 로컬 콘솔에서 finish line payload를 노출하지 않는다 (로그 정리)
         except Exception as e:
             log("Finishline failed: " + str(e))
+
+        # 후속 파이프라인 전 RhinoDoc 초기화 및 STL 재로드
+        log("Resetting document after finish line computation")
+        _clear_doc_objects(doc)
+        _import_stl_meshes(doc, input_path)
 
         # 1) Explode: RhinoCommon API를 사용하여 고속 처리
         try:

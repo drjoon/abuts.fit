@@ -78,10 +78,10 @@ export const WorksheetCardGrid = ({
       const originalFileName =
         caseInfos.file?.filePath || caseInfos.file?.originalName || "";
       const camFileName = caseInfos.camFile?.s3Key
-        ? caseInfos.camFile?.fileName || caseInfos.camFile?.originalName || ""
+        ? caseInfos.camFile?.filePath || caseInfos.camFile?.originalName || ""
         : "";
       const displayFileName = isMachiningStage
-        ? caseInfos.ncFile?.fileName || caseInfos.ncFile?.originalName || ""
+        ? caseInfos.ncFile?.filePath || caseInfos.ncFile?.originalName || ""
         : formatDisplayName(camFileName || originalFileName);
 
       const hasCamFile = !!caseInfos.camFile?.s3Key;
@@ -129,7 +129,7 @@ export const WorksheetCardGrid = ({
         };
 
         const camFileName =
-          caseInfos.camFile?.fileName || caseInfos.camFile?.originalName || "";
+          caseInfos.camFile?.filePath || caseInfos.camFile?.originalName || "";
         const expectedBaseName = getBaseName(camFileName).toLowerCase();
 
         const matchingFile = ncFiles.find((f) => {

@@ -385,7 +385,8 @@ async def recover_unprocessed_files() -> None:
                     continue
 
             should_process = True if force_fill else (
-                p.name in pending_names or backend_should_process(p.name, "1-stl")
+                p.name in pending_names
+                or backend_should_process_source_step("1-stl", p.name)
             )
 
             if should_process:

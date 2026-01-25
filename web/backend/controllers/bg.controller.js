@@ -32,6 +32,26 @@ const selectStoredCaseFileName = (fileMeta = {}) => {
   return path.basename(String(pick || "").trim());
 };
 
+const buildStoredFileMeta = ({
+  filePath,
+  originalName,
+  s3Key,
+  s3Url,
+  fileSize,
+  uploadedAt,
+} = {}) => {
+  const safePath = path.basename(String(filePath || ""));
+  const meta = {
+    filePath: safePath,
+    originalName: originalName || safePath,
+    uploadedAt: uploadedAt || new Date(),
+  };
+  if (s3Key) meta.s3Key = s3Key;
+  if (s3Url) meta.s3Url = s3Url;
+  if (typeof fileSize === "number") meta.fileSize = fileSize;
+  return meta;
+};
+
 export const registerFinishLine = asyncHandler(async (req, res) => {
   const { requestId, fileName, originalFileName, finishLine } = req.body || {};
   const now = new Date();
@@ -241,14 +261,14 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   if (status === "success") {
     const resolvedOriginalName = originalFileName || fileName;
     if (incomingS3Key && incomingS3Url) {
-      s3Info = {
-        fileName,
+      s3Info = buildStoredFileMeta({
+        filePath: fileName,
         originalName: resolvedOriginalName,
         s3Key: incomingS3Key,
         s3Url: incomingS3Url,
         fileSize: incomingFileSize,
         uploadedAt: new Date(),
-      };
+      });
       console.log(
         `[BG-Callback] Using presigned upload meta: s3Key=${incomingS3Key}, s3Url=${incomingS3Url}, fileSize=${incomingFileSize}`,
       );
@@ -291,14 +311,14 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           s3Key,
           contentType,
         );
-        s3Info = {
-          fileName,
+        s3Info = buildStoredFileMeta({
+          filePath: fileName,
           originalName: resolvedOriginalName,
           s3Key: uploaded.key,
           s3Url: uploaded.location,
           fileSize: fileBuffer.length,
           uploadedAt: new Date(),
-        };
+        });
         console.log(
           `[BG-Callback] S3 upload success: s3Key=${s3Info.s3Key}, s3Url=${s3Info.s3Url}`,
         );
@@ -340,19 +360,23 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   if (status === "success") {
     switch (sourceStep) {
       case "2-filled":
-        updateData["caseInfos.camFile"] = s3Info || {
-          fileName,
-          originalName: resolvedOriginalName,
-          uploadedAt: now,
-        };
+        updateData["caseInfos.camFile"] =
+          s3Info ||
+          buildStoredFileMeta({
+            filePath: fileName,
+            originalName: resolvedOriginalName,
+            uploadedAt: now,
+          });
         break;
 
       case "3-nc":
-        updateData["caseInfos.ncFile"] = s3Info || {
-          fileName,
-          originalName: resolvedOriginalName,
-          uploadedAt: now,
-        };
+        updateData["caseInfos.ncFile"] =
+          s3Info ||
+          buildStoredFileMeta({
+            filePath: fileName,
+            originalName: resolvedOriginalName,
+            uploadedAt: now,
+          });
         updateData["productionSchedule.actualCamComplete"] = now;
         break;
 
