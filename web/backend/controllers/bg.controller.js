@@ -507,6 +507,14 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
+  const finishLinePoints = Array.isArray(ci?.finishLine?.points)
+    ? ci.finishLine.points
+    : null;
+  if (Array.isArray(finishLinePoints) && finishLinePoints.length >= 2) {
+    console.log(
+      `[BG] getRequestMeta: finishLine points available requestId=${request.requestId} count=${finishLinePoints.length}`,
+    );
+  }
   const lotPart = request?.lotNumber?.part || "";
   const serialCode = lotPart.length >= 3 ? lotPart.slice(-3) : "";
   return res.status(200).json(
@@ -528,6 +536,10 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           connectionDiameter: ci.connectionDiameter || 0,
           workType: ci.workType || "",
           lotNumber: lotPart,
+          finishLine:
+            Array.isArray(finishLinePoints) && finishLinePoints.length >= 2
+              ? { points: finishLinePoints }
+              : null,
         },
       },
       "Request meta",
