@@ -1,0 +1,2 @@
+==== Trace started at 2026-01-26T06:52:13.4305132+09:00 ====
+Connect: StorageFilledDirectory=C:\abuts.fit\bg\storage\2-filled, exists=False, fileCount=0

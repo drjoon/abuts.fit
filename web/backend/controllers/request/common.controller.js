@@ -330,7 +330,7 @@ async function triggerEspritForNc({ request, session }) {
     }
   }
 
-  const camFileName = request?.caseInfos?.camFile?.fileName;
+  const camFileName = request?.caseInfos?.camFile?.filePath;
   if (!camFileName) {
     const err = new Error("CAM 파일이 없어 NC 생성을 시작할 수 없습니다.");
     err.statusCode = 400;

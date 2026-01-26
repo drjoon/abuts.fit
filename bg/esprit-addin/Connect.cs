@@ -199,7 +199,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             // Show floating main window on launch
             string folderPath = AppConfig.StorageFilledDirectory;
-            List<string> files = Directory.Exists(folderPath) ? Directory.GetFiles(folderPath, "*.stl").ToList() : new List<string>();
+            bool folderExists = Directory.Exists(folderPath);
+            List<string> files = folderExists ? Directory.GetFiles(folderPath, "*.stl").ToList() : new List<string>();
+            AppLogger.Log($"Connect: StorageFilledDirectory={folderPath}, exists={folderExists}, fileCount={files.Count}");
 
             _stlProcessor = _stlProcessor ?? new StlFileProcessor(_espApp);
 

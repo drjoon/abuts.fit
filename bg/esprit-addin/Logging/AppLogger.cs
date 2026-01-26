@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using Abuts.EspritAddIns.ESPRIT2025AddinProject;
 
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
 {
@@ -25,17 +26,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
                     return;
                 }
 
-                string baseDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
-                if (string.IsNullOrEmpty(baseDir))
+                string baseDir = AppConfig.AddInRootDirectory;
+                if (string.IsNullOrWhiteSpace(baseDir) || !Directory.Exists(baseDir))
+                {
+                    baseDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+                }
+                if (string.IsNullOrWhiteSpace(baseDir))
                 {
                     baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 }
 
-                string logsDir = Path.Combine(baseDir, "logs");
-                Directory.CreateDirectory(logsDir);
+                string logsRoot = Path.Combine(baseDir, "logs");
+                Directory.CreateDirectory(logsRoot);
 
-                string logFile = Path.Combine(logsDir, $"{DateTime.Now:yyyyMMdd-HHmmss}.txt");
-                _latestLogPath = Path.Combine(logsDir, "latest.txt");
+                string monthFolder = Path.Combine(logsRoot, DateTime.Now.ToString("yyyy-MM"));
+                Directory.CreateDirectory(monthFolder);
+
+                string logFile = Path.Combine(monthFolder, $"{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+                _latestLogPath = Path.Combine(logsRoot, "latest.txt");
 
                 var timestampWriter = new StreamWriter(logFile, true)
                 {
