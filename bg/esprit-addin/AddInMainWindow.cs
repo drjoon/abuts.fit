@@ -12,13 +12,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public event Action<string> FileRequested;
 
-        public AddInMainWindow(StlFileProcessor processor)
+        public AddInMainWindow()
         {
-            if (processor == null)
-            {
-                throw new ArgumentNullException(nameof(processor));
-            }
-
             FormBorderStyle = FormBorderStyle.FixedSingle;
             StartPosition = FormStartPosition.Manual;
             Text = "STL 파일 선택";
@@ -29,7 +24,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             MaximizeBox = false;
             MinimizeBox = true;
 
-            _filePanel = new FilePanel(new List<string>(), processor);
+            _filePanel = new FilePanel(new List<string>());
             _filePanel.Dock = DockStyle.Fill;
             _filePanel.FileSelected += HandleFileSelected;
             Controls.Add(_filePanel);

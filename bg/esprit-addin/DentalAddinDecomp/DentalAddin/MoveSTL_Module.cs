@@ -58,7 +58,7 @@ namespace DentalAddin
             {
                 ProjectData.SetProjectError(ex, num);
                 Exception ex2 = ex;
-                Interaction.MsgBox((object)"No XYZ work Plane?", (MsgBoxStyle)0, (object)null);
+                DentalLogger.Log("No XYZ work Plane?");
                 ProjectData.ClearProjectError();
                 return;
             }
@@ -72,19 +72,9 @@ namespace DentalAddin
             {
                 ProjectData.SetProjectError(ex3, num);
                 Exception ex4 = ex3;
-                try
-                {
-                    selectionSet = MainModule.Document.SelectionSets["Tempp"];
-                }
-                catch (Exception ex5)
-                {
-                    ProjectData.SetProjectError(ex5, num);
-                    Exception ex6 = ex5;
-                    Interaction.MsgBox((object)"Error Create Selectionsets,MoveSTL_Module-MoveSTL", (MsgBoxStyle)0, (object)null);
-                    ProjectData.ClearProjectError();
-                    return;
-                }
+                DentalLogger.Log("Error Create Selectionsets,MoveSTL_Module-MoveSTL");
                 ProjectData.ClearProjectError();
+                return;
             }
             selectionSet.RemoveAll();
             foreach (GraphicObject item in MainModule.Document.GraphicsCollection)
@@ -109,7 +99,7 @@ namespace DentalAddin
             MainModule.Document.ActiveLayer = MainModule.Document.Layers["Temp"];
             if (selectionSet.Count == 0)
             {
-                Interaction.MsgBox((object)"No Stl part", (MsgBoxStyle)0, (object)null);
+                DentalLogger.Log("No Stl part");
             }
             else
             {
@@ -200,7 +190,7 @@ namespace DentalAddin
                     featureChain = NewFeature();
                     if (featureChain == null)
                     {
-                        Interaction.MsgBox((object)"Cannot find any feature,no STL model maybe.", (MsgBoxStyle)0, (object)null);
+                        DentalLogger.Log("Cannot find any feature,no STL model maybe.");
                         return;
                     }
                     double num7 = -1000.0;
@@ -246,7 +236,7 @@ namespace DentalAddin
                         featureChain = NewFeature();
                         if (featureChain == null)
                         {
-                            Interaction.MsgBox((object)"Cannot find any feature,no STL model maybe.", (MsgBoxStyle)0, (object)null);
+                            DentalLogger.Log("Cannot find any feature,no STL model maybe.");
                             return;
                         }
                         double num12 = -1000.0;
@@ -341,7 +331,6 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 ProjectData.SetProjectError(ex);
-                Exception ex2 = ex;
                 DentalLogger.Log("MoveSTL - XYZ work Plane 없음");
                 ProjectData.ClearProjectError();
                 return;
@@ -717,7 +706,7 @@ namespace DentalAddin
             {
                 flag = false;
                 int num = Information.UBound((Array)FeaList, 1);
-                for (int i = 1; i <= num; i = checked(i + 1))
+                for (int i = 1; i <= num; i++)
                 {
                     if (Conversions.ToDouble(featureChain.Key) == (double)FeaList[i])
                     {
@@ -1072,7 +1061,7 @@ namespace DentalAddin
                 {
                     ProjectData.SetProjectError(ex3);
                     Exception ex4 = ex3;
-                    Interaction.MsgBox((object)"Error Create Selectionsets", (MsgBoxStyle)0, (object)null);
+                    DentalLogger.Log("Error Create Selectionsets");
                     ProjectData.ClearProjectError();
                     return;
                 }

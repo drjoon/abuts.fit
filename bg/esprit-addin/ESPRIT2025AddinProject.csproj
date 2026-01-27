@@ -43,6 +43,7 @@
     <Reference Include="DentalAddin">
       <HintPath>.\DentalAddin.dll</HintPath>
     </Reference>
+    <Reference Include="Microsoft.CSharp" />
     <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="EspritAddInAssistant, Version=12.4.4.22230, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>

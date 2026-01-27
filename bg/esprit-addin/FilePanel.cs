@@ -13,13 +13,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private ListBox listBoxFiles;
 
         private List<string> allFiles = new List<string>();
-        private StlFileProcessor _processor;
 
         public event Action<string> FileSelected;
 
-        public FilePanel(List<string> files, StlFileProcessor processor)
+        public FilePanel(List<string> files)
         {
-            _processor = processor ?? throw new ArgumentNullException(nameof(processor));
             InitializeComponent();
             SetFiles(files);
         }

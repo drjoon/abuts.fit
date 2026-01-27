@@ -12,6 +12,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
 
         private static string _latestLogPath;
 
+        private static TextWriterTraceListener _timestampListener;
+        private static TextWriterTraceListener _latestListener;
+        private static StreamWriter _timestampWriter;
+        private static StreamWriter _latestWriter;
+        private static string _logsRoot;
+        private static string _monthFolder;
+
         public static void EnsureInitialized()
         {
             if (_initialized)
@@ -39,25 +46,76 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
                 string logsRoot = Path.Combine(baseDir, "logs");
                 Directory.CreateDirectory(logsRoot);
 
+                _logsRoot = logsRoot;
+
                 string monthFolder = Path.Combine(logsRoot, DateTime.Now.ToString("yyyy-MM"));
                 Directory.CreateDirectory(monthFolder);
 
-                string logFile = Path.Combine(monthFolder, $"{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+                _monthFolder = monthFolder;
+
                 _latestLogPath = Path.Combine(logsRoot, "latest.txt");
 
-                var timestampWriter = new StreamWriter(logFile, true)
-                {
-                    AutoFlush = true
-                };
-                var latestWriter = new StreamWriter(_latestLogPath, false)
-                {
-                    AutoFlush = true
-                };
-
-                Trace.Listeners.Add(new TextWriterTraceListener(timestampWriter));
-                Trace.Listeners.Add(new TextWriterTraceListener(latestWriter));
-                Trace.AutoFlush = true;
                 _initialized = true;
+                BeginRun();
+            }
+        }
+
+        public static void BeginRun()
+        {
+            EnsureInitialized();
+
+            lock (InitLock)
+            {
+                try
+                {
+                    if (_timestampListener != null)
+                    {
+                        Trace.Listeners.Remove(_timestampListener);
+                        _timestampListener.Flush();
+                        _timestampListener.Dispose();
+                        _timestampListener = null;
+                    }
+                    if (_latestListener != null)
+                    {
+                        Trace.Listeners.Remove(_latestListener);
+                        _latestListener.Flush();
+                        _latestListener.Dispose();
+                        _latestListener = null;
+                    }
+
+                    if (_timestampWriter != null)
+                    {
+                        _timestampWriter.Flush();
+                        _timestampWriter.Dispose();
+                        _timestampWriter = null;
+                    }
+                    if (_latestWriter != null)
+                    {
+                        _latestWriter.Flush();
+                        _latestWriter.Dispose();
+                        _latestWriter = null;
+                    }
+                }
+                catch
+                {
+                }
+
+                string monthFolder = string.IsNullOrWhiteSpace(_monthFolder)
+                    ? Path.Combine(_logsRoot ?? AppDomain.CurrentDomain.BaseDirectory, DateTime.Now.ToString("yyyy-MM"))
+                    : _monthFolder;
+                Directory.CreateDirectory(monthFolder);
+
+                string logFile = Path.Combine(monthFolder, $"{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+
+                _timestampWriter = new StreamWriter(logFile, true) { AutoFlush = true };
+                _latestWriter = new StreamWriter(_latestLogPath, false) { AutoFlush = true };
+
+                _timestampListener = new TextWriterTraceListener(_timestampWriter);
+                _latestListener = new TextWriterTraceListener(_latestWriter);
+
+                Trace.Listeners.Add(_timestampListener);
+                Trace.Listeners.Add(_latestListener);
+                Trace.AutoFlush = true;
                 Trace.WriteLine($"==== Trace started at {DateTime.Now:O} ====");
             }
         }

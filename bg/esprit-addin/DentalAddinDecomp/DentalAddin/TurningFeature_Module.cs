@@ -16,12 +16,67 @@ internal sealed class TurningFeature_Module
 	private const int FeatureSlotCapacity = 128;
 	private static double TurnMaxAngle;
 
+	private static void CleanupTurningArtifacts()
+	{
+		try
+		{
+			if (MainModule.Document == null)
+			{
+				return;
+			}
+
+			int removed = 0;
+			int count = MainModule.Document.FeatureChains.Count;
+			checked
+			{
+				for (int i = 1; i <= count && i <= MainModule.Document.FeatureChains.Count; i++)
+				{
+					FeatureChain fc = MainModule.Document.FeatureChains[i];
+					string name = fc?.Name ?? string.Empty;
+					string layerName = fc?.Layer?.Name ?? string.Empty;
+					if (Operators.CompareString(name, "Turning", false) == 0
+						|| Operators.CompareString(Strings.Left(name, 13), "TurningProfile", false) == 0
+						|| Operators.CompareString(layerName, "TurningLayer", false) == 0
+						|| Operators.CompareString(layerName, "MyLayer", false) == 0)
+					{
+						MainModule.Document.FeatureChains.Remove(fc.Key);
+						removed++;
+						i = 0;
+						continue;
+					}
+				}
+			}
+
+			try
+			{
+				MainModule.Document.Layers.Remove("MyLayer");
+			}
+			catch
+			{
+			}
+			try
+			{
+				MainModule.Document.Layers.Remove("TurningLayer");
+			}
+			catch
+			{
+			}
+
+			DentalLogger.Log($"TurningFeature: Cleanup 완료 - removedFeatureChains={removed}");
+		}
+		catch (Exception ex)
+		{
+			DentalLogger.LogException("TurningFeature: CleanupTurningArtifacts", ex);
+		}
+	}
+
 	public static void TurningMain()
 	{
 		MainModule.FirstFeatureNeed = 0;
 		MainModule.NeedFirstFeature = 0;
 		MainModule.MinF = 0;
 		MainModule.SL = 1.0;
+		CleanupTurningArtifacts();
 		TurningProfile();
 		double halfBarDiameter = 0.0;
 		double turningSpan = 0.0;

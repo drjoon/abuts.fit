@@ -188,7 +188,7 @@ namespace DentalAddin
 			{
 				ProjectData.SetProjectError(ex7);
 				Exception ex8 = ex7;
-				Interaction.MsgBox((object)ex8.Message, (MsgBoxStyle)0, (object)null);
+				DentalLogger.LogException("Milling_Module", ex8);
 				ProjectData.ClearProjectError();
 			}
 			int count4 = MainModule.Document.FeatureSets.Count;

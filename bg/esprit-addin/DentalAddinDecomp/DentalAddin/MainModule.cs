@@ -1824,7 +1824,12 @@ namespace DentalAddin
                     plane2.Wy = 0.0;
                     plane2.Wz = -1.0;
                     plane2.IsView = false;
-                    Layer activeLayer = Document.Layers.Add("RoughFreeFormLayer");
+                    Layer activeLayer = GetOrCreateLayer("RoughFreeFormLayer");
+                    if (activeLayer == null)
+                    {
+                        DentalLogger.Log("Roughworkplane 중단 - RoughFreeFormLayer 레이어 생성/조회 실패");
+                        return;
+                    }
                     Document.ActiveLayer = activeLayer;
                     Document.ActivePlane = plane;
                     FreeFormFeature freeFormFeature = Document.FreeFormFeatures.Add();

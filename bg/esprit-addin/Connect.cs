@@ -169,7 +169,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public Esprit.PMTab exTab;
         public Esprit.ProjectManager _pm;
         private AddInMainWindow _mainWindow;
-        private StlFileProcessor _stlProcessor;
 
         public static int _MyCookie;
 
@@ -203,11 +202,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             List<string> files = folderExists ? Directory.GetFiles(folderPath, "*.stl").ToList() : new List<string>();
             AppLogger.Log($"Connect: StorageFilledDirectory={folderPath}, exists={folderExists}, fileCount={files.Count}");
 
-            _stlProcessor = _stlProcessor ?? new StlFileProcessor(_espApp);
-
             if (_mainWindow == null || _mainWindow.IsDisposed)
             {
-                _mainWindow = new AddInMainWindow(_stlProcessor);
+                _mainWindow = new AddInMainWindow();
                 _mainWindow.FileRequested += HandleFileRequest;
             }
 
@@ -269,7 +266,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             try
             {
-                _stlProcessor?.Process(filePath);
+                new StlFileProcessor(_espApp).Process(filePath);
             }
             catch (Exception ex)
             {

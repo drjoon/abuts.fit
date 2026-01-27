@@ -526,7 +526,7 @@ public class Connect : IDTExtensibility2
 				{
 					ProjectData.SetProjectError(ex7);
 					Exception ex8 = ex7;
-					Interaction.MsgBox((object)ex8.Message, (MsgBoxStyle)0, (object)null);
+					DentalLogger.Log($"Connect: ToolBars[5] 접근 실패 - {ex8.Message}");
 					ProjectData.ClearProjectError();
 				}
 				TBar.AddSeparator(RuntimeHelpers.GetObjectValue(Missing.Value));
@@ -564,7 +564,7 @@ public class Connect : IDTExtensibility2
 			{
 				ProjectData.SetProjectError(ex11);
 				Exception ex12 = ex11;
-				Interaction.MsgBox((object)"Error When Load the ToolBar.", (MsgBoxStyle)0, (object)null);
+				DentalLogger.Log("Connect: Error When Load the ToolBar.");
 				ProjectData.ClearProjectError();
 			}
 			UD = (UserData)SerializableData.Load(MainModule.DefaultXmlFileName, typeof(UserData));
