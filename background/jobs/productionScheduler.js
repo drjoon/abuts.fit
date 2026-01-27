@@ -8,7 +8,7 @@ const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 const CNC_MAX_PROGRAMS = Number(process.env.CNC_MAX_PROGRAMS || 3);
 const CNC_PRELOAD_BACKOFF_MS = Number(
-  process.env.CNC_PRELOAD_BACKOFF_MS || 2 * 60 * 1000
+  process.env.CNC_PRELOAD_BACKOFF_MS || 2 * 60 * 1000,
 );
 
 function withBridgeHeaders(extra = {}) {
@@ -92,7 +92,7 @@ async function progressProductionStages() {
 
     const elapsed = Date.now() - startTime;
     console.log(
-      `[${new Date().toISOString()}] Production scheduler completed. Updated ${updatedCount} requests in ${elapsed}ms.`
+      `[${new Date().toISOString()}] Production scheduler completed. Updated ${updatedCount} requests in ${elapsed}ms.`,
     );
 
     lastRunAt = new Date();
@@ -107,7 +107,7 @@ async function callBridgeRaw(
   uid,
   dataType,
   payload = null,
-  timeoutMilliseconds
+  timeoutMilliseconds,
 ) {
   if (!BRIDGE_BASE) {
     return {
@@ -139,8 +139,8 @@ async function isMachineReady(uid) {
       typeof body?.result === "number"
         ? body.result
         : typeof body?.data?.result === "number"
-        ? body.data.result
-        : null;
+          ? body.data.result
+          : null;
     return result === 0;
   } catch {
     return false;
@@ -168,7 +168,7 @@ async function startMachiningOnMachine(uid) {
   try {
     const response = await fetch(
       `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/start`,
-      { method: "POST", headers: withBridgeHeaders() }
+      { method: "POST", headers: withBridgeHeaders() },
     );
     const data = await response.json().catch(() => ({}));
     if (response.ok && data?.success !== false) {
@@ -197,8 +197,8 @@ async function startMachiningOnMachine(uid) {
       typeof res.body?.result === "number"
         ? res.body.result
         : typeof res.body?.data?.result === "number"
-        ? res.body.data.result
-        : null;
+          ? res.body.data.result
+          : null;
     if (result === 0) {
       return { ok: true, data: res.body };
     }
@@ -233,7 +233,7 @@ async function fetchProgramSummary(uid) {
       ? listRes.body.data.machineProgramListInfo.programArray
       : [];
   const current = actRes.ok
-    ? actRes.body?.data?.machineCurrentProgInfo ?? null
+    ? (actRes.body?.data?.machineCurrentProgInfo ?? null)
     : null;
 
   const list = Array.isArray(progList) ? progList : [];
@@ -250,14 +250,14 @@ async function deleteProgramIfNeeded(uid, programNo) {
     uid,
     "DeleteProgram",
     { headType: 0, programNo },
-    30_000
+    30_000,
   );
   const rc =
     typeof res.body?.result === "number"
       ? res.body.result
       : typeof res.body?.data?.result === "number"
-      ? res.body.data.result
-      : null;
+        ? res.body.data.result
+        : null;
   return res.ok && rc === 0;
 }
 
@@ -272,7 +272,7 @@ async function ensureProgramCapacity(uid, targetProgramNo) {
   if (normalized.length < CNC_MAX_PROGRAMS) return;
 
   const candidates = normalized.filter(
-    (n) => n !== Number(activeNo) && n !== Number(targetProgramNo)
+    (n) => n !== Number(activeNo) && n !== Number(targetProgramNo),
   );
   if (candidates.length === 0) return;
   candidates.sort((a, b) => a - b);
@@ -285,13 +285,13 @@ async function uploadProgramFromStore(uid, path, programNo) {
   }
   const response = await fetch(
     `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(
-      uid
+      uid,
     )}/programs/upload-from-store`,
     {
       method: "POST",
       headers: withBridgeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ path, programNo, headType: 0, isNew: true }),
-    }
+    },
   );
   const data = await response.json().catch(() => ({}));
   return { ok: response.ok && data?.success !== false, data };
@@ -302,14 +302,14 @@ async function activateProgram(uid, programNo) {
     uid,
     "UpdateActivateProg",
     { headType: 0, programNo },
-    10_000
+    10_000,
   );
   const rc =
     typeof res.body?.result === "number"
       ? res.body.result
       : typeof res.body?.data?.result === "number"
-      ? res.body.data.result
-      : null;
+        ? res.body.data.result
+        : null;
   return res.ok && rc === 0;
 }
 
@@ -378,7 +378,7 @@ async function ensurePreloadedForRequest({ request, hiLinkUid, machineId }) {
   const uploaded = await uploadProgramFromStore(
     hiLinkUid,
     candidatePath,
-    programNo
+    programNo,
   );
   if (!uploaded.ok) {
     request.productionSchedule.ncPreload = {
@@ -388,7 +388,7 @@ async function ensurePreloadedForRequest({ request, hiLinkUid, machineId }) {
       bridgePath: candidatePath,
       updatedAt: new Date(),
       error: String(
-        uploaded.data?.message || uploaded.data?.error || "upload failed"
+        uploaded.data?.message || uploaded.data?.error || "upload failed",
       ),
     };
     await request.save();
@@ -422,17 +422,20 @@ async function processCncAutoStart(now) {
     if (!machineId) continue;
 
     const materialGroup = String(
-      cnc.currentMaterial?.diameterGroup || ""
+      cnc.currentMaterial?.diameterGroup || "",
     ).trim();
     if (!materialGroup) continue;
 
     const control = await Machine.findOne({ uid: machineId }).lean();
+    if (!control || control.allowAutoMachining !== true) {
+      continue;
+    }
     if (control && control.allowJobStart === false) {
       continue;
     }
 
     const hiLinkUid = String(
-      control?.hiLinkUid || control?.uid || machineId
+      control?.hiLinkUid || control?.uid || machineId,
     ).trim();
     if (!hiLinkUid) continue;
 
@@ -461,7 +464,7 @@ async function processCncAutoStart(now) {
     if (!candidate) continue;
 
     const camReview = String(
-      candidate.caseInfos?.reviewByStage?.cam?.status || ""
+      candidate.caseInfos?.reviewByStage?.cam?.status || "",
     ).trim();
     if (camReview && camReview !== "APPROVED") {
       continue;
@@ -479,7 +482,7 @@ async function processCncAutoStart(now) {
     const activated = await activateProgram(hiLinkUid, preload.programNo);
     if (!activated) {
       console.warn(
-        `[productionScheduler] CNC activate program failed: machine=${machineId} uid=${hiLinkUid} request=${candidate.requestId} programNo=${preload.programNo}`
+        `[productionScheduler] CNC activate program failed: machine=${machineId} uid=${hiLinkUid} request=${candidate.requestId} programNo=${preload.programNo}`,
       );
       continue;
     }
@@ -489,7 +492,7 @@ async function processCncAutoStart(now) {
       const msg =
         started.data?.message || started.data?.error || "start command failed";
       console.warn(
-        `[productionScheduler] CNC start failed: machine=${machineId} uid=${hiLinkUid} request=${candidate.requestId} msg=${msg}`
+        `[productionScheduler] CNC start failed: machine=${machineId} uid=${hiLinkUid} request=${candidate.requestId} msg=${msg}`,
       );
       continue;
     }
@@ -505,7 +508,7 @@ async function processCncAutoStart(now) {
 
     startedCount++;
     console.log(
-      `  [CNC start] ${candidate.requestId} -> ${machineId} (diameterGroup=${materialGroup})`
+      `  [CNC start] ${candidate.requestId} -> ${machineId} (diameterGroup=${materialGroup})`,
     );
   }
 
@@ -537,7 +540,7 @@ async function processScheduledMaterialChanges(now) {
       console.log(
         `  [소재교체] ${machine.machineId}: ${
           machine.currentMaterial.diameterGroup
-        }mm → ${newDiameterGroup}mm (target: ${targetTime.toISOString()})`
+        }mm → ${newDiameterGroup}mm (target: ${targetTime.toISOString()})`,
       );
 
       // 현재 장비에 할당된 의뢰 조회
@@ -559,7 +562,7 @@ async function processScheduledMaterialChanges(now) {
           console.log(
             `    [unassign] ${
               req.requestId
-            } (완료예정: ${estimatedCompletion.toISOString()} > 교체시각)`
+            } (완료예정: ${estimatedCompletion.toISOString()} > 교체시각)`,
           );
         }
       }
@@ -589,7 +592,7 @@ async function processScheduledMaterialChanges(now) {
       }
 
       console.log(
-        `    [완료] unassigned: ${unassignedCount}, 신규할당: ${assignedCount}`
+        `    [완료] unassigned: ${unassignedCount}, 신규할당: ${assignedCount}`,
       );
       changeCount++;
     }

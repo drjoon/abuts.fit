@@ -393,7 +393,7 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX.ToString(CultureInfo.InvariantCulture)}, prcA={prcA}, prcB={prcB}");
 
             const double leftRatio = AppConfig.DefaultLeftRatio;
-            double rightOffset = (AppConfig.DefaultRightRatioOffset > 0.0) ? 0.0 : AppConfig.DefaultRightRatioOffset;
+            double rightOffset = AppConfig.DefaultRightRatioOffset;
             double backXForComposite = MoveSTL_Module.BackPointX + rightOffset;
             double rightRatio = backXForComposite / 20.0;
             rightRatio = Clamp(rightRatio, leftRatio, 1.0);
@@ -3470,15 +3470,21 @@ namespace DentalAddin
                 return Array.Empty<ITechnology>();
             }
 
-            if (string.IsNullOrWhiteSpace(filePath))
+            if (string.IsNullOrWhiteSpace(fullPath))
             {
                 DentalLogger.Log($"OpenProcess:{context} - PRC 경로가 비어 있음");
                 return Array.Empty<ITechnology>();
             }
 
+            if (!File.Exists(fullPath))
+            {
+                DentalLogger.Log($"OpenProcess:{context} - PRC 파일이 존재하지 않음");
+                return Array.Empty<ITechnology>();
+            }
+
             try
             {
-                ITechnology[] result = (ITechnology[])technologyUtility.OpenProcess(filePath);
+                ITechnology[] result = (ITechnology[])technologyUtility.OpenProcess(fullPath);
                 DentalLogger.Log($"OpenProcess:{context} - PRC 파일 열기 성공 (Count:{result?.Length ?? 0})");
                 return result ?? Array.Empty<ITechnology>();
             }

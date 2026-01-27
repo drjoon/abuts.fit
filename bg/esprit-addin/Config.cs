@@ -23,6 +23,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string ExitAngleEnv = "ABUTS_EXIT_ANGLE";
         public const string TurningExtendEnv = "ABUTS_TURNING_EXTEND";
 
+        public const string RoughfreeformSplitEnableEnv = "ABUTS_ROUGHFREEFORM_SPLIT_ENABLE";
+        public const string CompositeSplitEnableEnv = "ABUTS_COMPOSITE_SPLIT_ENABLE";
+        public const string CompositeSplitXEnv = "ABUTS_COMPOSITE_SPLIT_X";
+        public const string CompositePrcAEnv = "ABUTS_COMPOSITE_PRC_A";
+        public const string CompositePrcBEnv = "ABUTS_COMPOSITE_PRC_B";
+
         public const string BackendUrlEnv = "ABUTS_BACKEND_URL";
         public const string BridgeSecretEnv = "ABUTS_BRIDGE_SECRET";
 
@@ -39,9 +45,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const double DefaultStlShift = 0.0;  // # 523
 
-        public const double DefaultLeftRatioOffset = 0.3;
+        public const int DefaultRoughfreeformSplitEnable = 0;
+        public const int DefaultCompositeSplitEnable = 1;
+        public const double DefaultCompositeSplitX = 6.0;
+        public const string DefaultCompositePrcA = @"C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\AcroDent\\11_Composite prc\\5axisComposite_A_015.prc";
+        public const string DefaultCompositePrcB = @"C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\AcroDent\\11_Composite prc\\5axisComposite_B_005.prc";
+
+        public const double DefaultLeftRatioOffset = 0.3;   // Left of DefaultCompositePrcA+DefaultCompositePrcB
         public const double DefaultLeftRatio = (DefaultLeftRatioOffset+DefaultStlShift) / 20.0;
-        public const double DefaultRightRatioOffset = 0.3 - DefaultLeftRatioOffset;
+        public const double DefaultRightRatioOffset = -0.3; // Right of DefaultCompositePrcA+DefaultCompositePrcB
+        // -0.2 for left 0.2 to #520(STL origin) which means back-turning will compensate
+
 
 
         public static int[] DefaultBackturnDiameters = { 6, 8, 10, 12, 14 };
@@ -64,6 +78,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public static double TurningDepth => GetDoubleEnvOrDefault(TurningDepthEnv, DefaultTurningDepth);
         public static double ExitAngle => GetDoubleEnvOrDefault(ExitAngleEnv, DefaultExitAngle);
         public static double TurningExtend => GetDoubleEnvOrDefault(TurningExtendEnv, DefaultTurningExtend);
+
+        public static int RoughfreeformSplitEnable => GetIntEnvOrDefault(RoughfreeformSplitEnableEnv, DefaultRoughfreeformSplitEnable);
+        public static int CompositeSplitEnable => GetIntEnvOrDefault(CompositeSplitEnableEnv, DefaultCompositeSplitEnable);
+        public static double CompositeSplitX => GetDoubleEnvOrDefault(CompositeSplitXEnv, DefaultCompositeSplitX);
+        public static string CompositePrcA => GetEnvOrDefault(CompositePrcAEnv, DefaultCompositePrcA);
+        public static string CompositePrcB => GetEnvOrDefault(CompositePrcBEnv, DefaultCompositePrcB);
 
         public static string GetBackendUrl()
         {
@@ -94,6 +114,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 var value = Environment.GetEnvironmentVariable(key);
                 if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var result))
+                {
+                    return result;
+                }
+            }
+            catch
+            {
+            }
+
+            return fallback;
+        }
+
+        private static int GetIntEnvOrDefault(string key, int fallback)
+        {
+            try
+            {
+                var value = Environment.GetEnvironmentVariable(key);
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
                 {
                     return result;
                 }

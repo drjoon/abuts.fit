@@ -1977,6 +1977,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return AppConfig.PrcRootDirectory;
             }
+            string programFilesPrc = @"C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\AcroDent";
+            if (Directory.Exists(programFilesPrc))
+            {
+                AppLogger.Log($"DentalAddin: PRC 경로를 Program Files에서 사용 - {programFilesPrc}");
+                return programFilesPrc;
+            }
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string direct = Path.Combine(baseDir, "AcroDent");
             if (Directory.Exists(direct))
