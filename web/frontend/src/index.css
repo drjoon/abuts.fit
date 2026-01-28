@@ -128,24 +128,53 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(
+        circle at top right,
+        hsl(var(--accent) / 0.45),
+        transparent 35%
+      ),
+      radial-gradient(
+        circle at 20% 20%,
+        hsl(var(--primary) / 0.32),
+        transparent 30%
+      ),
+      radial-gradient(
+        circle at 80% 65%,
+        hsl(var(--secondary) / 0.2),
+        transparent 50%
+      );
+    background-blend-mode: screen;
   }
 }
 
 @layer components {
   .app-glass-card {
-    @apply relative overflow-hidden border border-slate-200 bg-white/95 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition-all hover:shadow-[0_12px_30px_rgba(15,23,42,0.08)];
+    @apply relative overflow-hidden border border-white/40 bg-white/60 shadow-[0_12px_30px_rgba(15,23,42,0.15)] transition-all hover:shadow-[0_16px_40px_rgba(15,23,42,0.2)];
+    backdrop-filter: blur(20px) saturate(150%);
+    background: linear-gradient(
+      135deg,
+      hsl(var(--background) / 0.6),
+      hsl(var(--background) / 0.15)
+    );
+    border: 1px solid hsl(var(--foreground) / 0.08);
   }
 
   .app-glass-card::before {
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      135deg,
-      rgba(240, 249, 255, 0.25),
-      rgba(255, 255, 255, 0.15),
-      rgba(245, 243, 255, 0.25)
-    );
+    background:
+      radial-gradient(
+        circle at top right,
+        rgba(255, 255, 255, 0.35),
+        transparent 55%
+      ),
+      radial-gradient(
+        circle at 20% 20%,
+        rgba(255, 255, 255, 0.45),
+        transparent 45%
+      );
     pointer-events: none;
   }
 

@@ -163,7 +163,7 @@ export const WorksheetCardGrid = ({
       return (
         <Card
           key={request._id}
-          className={`relative shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed group/card ${
+          className={`relative shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-solid group/card ${
             isCompletedForCurrentStage
               ? "border-emerald-500 border-2"
               : urgencyClass || "border-slate-200"

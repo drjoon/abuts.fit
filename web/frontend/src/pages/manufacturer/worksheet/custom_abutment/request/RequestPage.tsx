@@ -629,7 +629,7 @@ export const RequestPage = ({
     >
       {(isMachiningStage || isCamStage) && isDraggingOver && (
         <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-dashed border-blue-500 text-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-blue-500 text-center">
             <div className="text-2xl font-bold text-blue-700 mb-2">
               {isMachiningStage
                 ? "생산 이미지를 드롭하세요"
@@ -688,7 +688,7 @@ export const RequestPage = ({
         {tabStage === "machining" ? (
           <MachiningMachineQueueBoard searchQuery={worksheetSearch} />
         ) : isEmpty ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
             표시할 의뢰가 없습니다.
           </div>
         ) : tabStage === "shipping" && groupedByShippingPackage ? (
