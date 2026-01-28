@@ -131,6 +131,53 @@ All colors MUST be HSL.
   }
 }
 
+@layer components {
+  .app-glass-card {
+    @apply relative overflow-hidden border border-slate-200 bg-white/95 shadow-[0_8px_20px_rgba(15,23,42,0.04)] transition-all hover:shadow-[0_12px_30px_rgba(15,23,42,0.08)];
+  }
+
+  .app-glass-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      135deg,
+      rgba(240, 249, 255, 0.25),
+      rgba(255, 255, 255, 0.15),
+      rgba(245, 243, 255, 0.25)
+    );
+    pointer-events: none;
+  }
+
+  .app-glass-card--xl {
+    @apply rounded-3xl p-4 sm:p-5;
+  }
+
+  .app-glass-card--lg {
+    @apply rounded-2xl p-4 sm:p-5;
+  }
+
+  .app-glass-card-content {
+    @apply relative z-10;
+  }
+
+  .app-surface {
+    @apply border border-slate-200 bg-white/85 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)];
+  }
+
+  .app-surface--panel {
+    @apply rounded-2xl p-3;
+  }
+
+  .app-surface--item {
+    @apply rounded-xl px-3 py-3;
+  }
+
+  .app-surface--modal {
+    @apply rounded-2xl shadow-[0_20px_60px_rgba(15,23,42,0.15)];
+  }
+}
+
 /* Custom scrollbar styles */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;

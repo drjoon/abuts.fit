@@ -29,7 +29,7 @@ export const JoinRequestsSection = ({
     return null;
 
   return (
-    <div className="rounded-lg border bg-white/60 p-4">
+    <div className="app-surface app-surface--panel">
       <div className="text-sm font-medium mb-2">내 소속 신청:</div>
       <div className="space-y-2">
         {myJoinRequests.map((r) => (

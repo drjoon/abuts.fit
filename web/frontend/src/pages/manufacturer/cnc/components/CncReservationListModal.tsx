@@ -36,7 +36,7 @@ export const CncReservationListModal: React.FC<
       onClick={onClose}
     >
       <div
-        className="bg-white/95 p-6 sm:p-8 rounded-2xl shadow-[0_24px_80px_rgba(15,23,42,0.45)] w-full max-w-3xl transform transition-all border border-slate-100"
+        className="app-surface app-surface--modal p-6 sm:p-8 w-full max-w-3xl transform transition-all"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between mb-4 gap-4 border-b border-slate-100 pb-3">

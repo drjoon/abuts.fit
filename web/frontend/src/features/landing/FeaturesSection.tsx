@@ -83,7 +83,7 @@ export const FeaturesSection = () => {
           {features.map((feature, index) => (
             <Card
               key={index}
-              className="group relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
+              className="group app-glass-card app-glass-card--lg"
             >
               <CardHeader>
                 <div className="flex items-center justify-between mb-4">

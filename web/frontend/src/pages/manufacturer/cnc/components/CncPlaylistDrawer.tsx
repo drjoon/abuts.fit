@@ -93,7 +93,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
 
         <div className="max-h-[70vh] overflow-y-auto px-4 py-4">
           {readOnly && (
-            <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            <div className="mb-3 app-surface app-surface--panel border-2 border-amber-500 bg-white px-4 py-3 text-xs text-amber-800">
               브리지 서버가 오프라인이라 예약목록을 DB에서 조회했습니다. 현재는
               읽기 전용입니다.
             </div>
@@ -109,7 +109,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                 return (
                   <div
                     key={job.id}
-                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-3 shadow-sm"
+                    className="app-surface app-surface--panel flex items-center gap-3 px-3 py-3"
                     draggable={!readOnly}
                     onDragStart={() => {
                       if (readOnly) return;

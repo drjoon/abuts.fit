@@ -126,31 +126,6 @@ export const CncMachineManagerModal = ({
                 />
               </button>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">
-                원격 파일 삭제 허용
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const next = {
-                    ...form,
-                    allowProgramDelete: !form.allowProgramDelete,
-                  };
-                  onChange("allowProgramDelete", next.allowProgramDelete);
-                  scheduleSubmit(next);
-                }}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  form.allowProgramDelete ? "bg-red-500" : "bg-gray-300"
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    form.allowProgramDelete ? "translate-x-5" : "translate-x-1"
-                  }`}
-                />
-              </button>
-            </div>
           </div>
         </div>
         <div className="flex justify-between items-center gap-3 mt-6">

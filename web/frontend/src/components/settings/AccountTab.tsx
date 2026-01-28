@@ -307,7 +307,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     ];
     return seeds.map(
       (seed) =>
-        `https://robohash.org/${encodeURIComponent(seed)}?set=set4&bgset=bg1`
+        `https://robohash.org/${encodeURIComponent(seed)}?set=set4&bgset=bg1`,
     );
   }, [accountData.email, accountData.name, avatarNonce]);
 
@@ -345,7 +345,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         });
 
         setPhoneVerifiedAt(
-          data?.phoneVerifiedAt ? String(data.phoneVerifiedAt) : null
+          data?.phoneVerifiedAt ? String(data.phoneVerifiedAt) : null,
         );
 
         const nextAuthMethods = (data as any)?.authMethods;
@@ -372,7 +372,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const phoneValidation = useMemo(() => {
     const normalized = normalizeE164FromParts(
       accountData.phoneDialCode,
-      accountData.phoneNationalNumber
+      accountData.phoneNationalNumber,
     );
     const ok = isValidE164(normalized);
     return {
@@ -518,7 +518,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
       const body: any = res.data || {};
       const data = body.data || body;
       setPhoneVerifiedAt(
-        data?.phoneVerifiedAt ? String(data.phoneVerifiedAt) : null
+        data?.phoneVerifiedAt ? String(data.phoneVerifiedAt) : null,
       );
       setVerificationSent(false);
       setTimeLeft(0);
@@ -722,7 +722,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const selectedCountry = useMemo(() => {
     return (
       COUNTRY_DIAL_CODES.find(
-        (c) => c.dialCode === accountData.phoneDialCode
+        (c) => c.dialCode === accountData.phoneDialCode,
       ) || COUNTRY_DIAL_CODES[0]
     );
   }, [accountData.phoneDialCode]);
@@ -737,7 +737,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
 
   return (
     <div className="space-y-6">
-      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+      <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -752,8 +752,8 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   {userData?.role === "requestor"
                     ? "의뢰자"
                     : userData?.role === "manufacturer"
-                    ? "제조사"
-                    : "어벗츠.핏"}
+                      ? "제조사"
+                      : "어벗츠.핏"}
                 </Badge>
               </div>
             </div>
@@ -795,7 +795,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                           "rounded-full border bg-white/80 p-0.5 transition-colors",
                           accountData.profileImage === url
                             ? "border-primary"
-                            : "border-border hover:border-muted-foreground/40"
+                            : "border-border hover:border-muted-foreground/40",
                         )}
                         onClick={() => {
                           setAccountData((prev) => ({
@@ -817,7 +817,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                       type="button"
                       className={cn(
                         "rounded-full border bg-white/80 p-0.5 transition-colors",
-                        "border-border hover:border-muted-foreground/40"
+                        "border-border hover:border-muted-foreground/40",
                       )}
                       onClick={() => setAvatarNonce((v) => v + 1)}
                     >
@@ -839,7 +839,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                   className={cn(
                     fieldErrors.name
                       ? "border-destructive focus-visible:ring-destructive"
-                      : ""
+                      : "",
                   )}
                   onChange={(e) =>
                     setAccountData((prev) => ({
@@ -921,7 +921,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                                   "mr-2 h-4 w-4",
                                   accountData.phoneDialCode === c.dialCode
                                     ? "opacity-100"
-                                    : "opacity-0"
+                                    : "opacity-0",
                                 )}
                               />
                               {c.country} (+{c.dialCode})
@@ -947,7 +947,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                     "h-10",
                     fieldErrors.phone || !phoneValidation.ok
                       ? "border-destructive focus-visible:ring-destructive"
-                      : ""
+                      : "",
                   )}
                   onChange={(e) => {
                     setFieldErrors((prev) => ({ ...prev, phone: undefined }));

@@ -82,7 +82,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
           data?.extracted?.businessNumber ||
             data?.organization?.businessNumber ||
             data?.businessNumber ||
-            ""
+            "",
         ).trim();
         const digits = businessNumberRaw.replace(/\D/g, "");
         if (!digits) return;
@@ -188,11 +188,11 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
   };
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-2xl">
           <Truck className="h-5 w-5" />
-          묶음배송
+          배송 설정
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 text-lg">

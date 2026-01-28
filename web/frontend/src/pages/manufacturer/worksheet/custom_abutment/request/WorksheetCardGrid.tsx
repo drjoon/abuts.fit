@@ -90,6 +90,19 @@ export const WorksheetCardGrid = ({
       const hasNcFile = !!caseInfos.ncFile?.s3Key;
       const isDeletingNc = !!deletingNc[request._id];
       const lotPart = String(request.lotNumber?.part || "").trim();
+      const camMaterialDiameter = request.productionSchedule?.diameter;
+      const camMaterialDiameterGroup =
+        request.productionSchedule?.diameterGroup;
+      const camGroup = (() => {
+        const g = String(camMaterialDiameterGroup || "").trim();
+        if (g) return g;
+        const d = Number(camMaterialDiameter);
+        if (!Number.isFinite(d) || d <= 0) return "";
+        if (d <= 6) return "6";
+        if (d <= 8) return "8";
+        if (d <= 10) return "10";
+        return "10+";
+      })();
       const progress = uploadProgress[request._id];
       const isUploading = uploading[request._id];
       const requestStageLabel = stageLabel;
@@ -101,10 +114,10 @@ export const WorksheetCardGrid = ({
       const urgencyClass = (() => {
         if (isCompletedForCurrentStage) return "";
         if (urgency === "danger") {
-          return "border-rose-300 bg-rose-50/80 shadow-[0_0_0_1px_rgba(244,63,94,0.25)]";
+          return "border-rose-500 border-2";
         }
         if (urgency === "warning") {
-          return "border-amber-300 bg-amber-50/80 shadow-[0_0_0_1px_rgba(245,158,11,0.25)]";
+          return "border-amber-500 border-2";
         }
         return "";
       })();
@@ -152,7 +165,7 @@ export const WorksheetCardGrid = ({
           key={request._id}
           className={`relative shadow-sm hover:shadow-lg transition-all duration-300 h-full flex flex-col border-dashed group/card ${
             isCompletedForCurrentStage
-              ? "border-emerald-300 bg-emerald-50/80 shadow-[0_0_0_1px_rgba(16,185,129,0.25)]"
+              ? "border-emerald-500 border-2"
               : urgencyClass || "border-slate-200"
           }`}
           onClick={() => onOpenPreview(request)}
@@ -188,16 +201,6 @@ export const WorksheetCardGrid = ({
           )}
           <CardContent className="p-3 flex-1 flex flex-col gap-2">
             <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
-              {lotPart && (
-                <div className="flex items-center justify-end mb-1">
-                  <Badge
-                    variant="outline"
-                    className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-600 border-slate-200"
-                  >
-                    Lot: {lotPart}
-                  </Badge>
-                </div>
-              )}
               {request.referenceIds && request.referenceIds.length > 0 && (
                 <div className="mb-1">
                   {(() => {
@@ -251,12 +254,24 @@ export const WorksheetCardGrid = ({
                               신속
                             </Badge>
                           )}
-                          <Badge
-                            variant="outline"
-                            className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
-                          >
-                            {stageLabel}
-                          </Badge>
+                          {!isCamStage && (
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
+                            >
+                              {stageLabel}
+                            </Badge>
+                          )}
+                          {isCamStage &&
+                            Number.isFinite(Number(camMaterialDiameter)) &&
+                            Number(camMaterialDiameter) > 0 && (
+                              <Badge
+                                variant="outline"
+                                className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap"
+                              >
+                                CAM:{camGroup || "-"}
+                              </Badge>
+                            )}
                         </div>
                       </div>
                     </div>
@@ -312,6 +327,19 @@ export const WorksheetCardGrid = ({
                   )}
                 </div>
                 <div className="flex items-center gap-1">
+                  {sp?.label &&
+                    (urgency === "danger" || urgency === "warning") && (
+                      <Badge
+                        variant="outline"
+                        className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] ${
+                          urgency === "danger"
+                            ? "bg-white text-rose-700 border-rose-500"
+                            : "bg-white text-amber-700 border-amber-500"
+                        }`}
+                      >
+                        {sp.label}
+                      </Badge>
+                    )}
                   {lotPart && (
                     <Badge
                       variant="outline"
@@ -339,20 +367,6 @@ export const WorksheetCardGrid = ({
               )}
             </div>
           </CardContent>
-          {sp?.label && (urgency === "danger" || urgency === "warning") && (
-            <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1">
-              <Badge
-                variant="outline"
-                className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] flex flex-col items-center justify-center ${
-                  urgency === "danger"
-                    ? "bg-rose-50 text-rose-700 border-rose-200"
-                    : "bg-amber-50 text-amber-700 border-amber-200"
-                }`}
-              >
-                <span>{sp.label}</span>
-              </Badge>
-            </div>
-          )}
         </Card>
       );
     })}

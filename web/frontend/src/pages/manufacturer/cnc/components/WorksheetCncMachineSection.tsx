@@ -179,10 +179,10 @@ const WorksheetCncMachineCard = ({
 
   return (
     <div
-      className="relative flex flex-col rounded-2xl border bg-white/80 p-4 sm:p-5 shadow-sm transition-all hover:shadow-lg cursor-pointer min-h-[220px] sm:min-h-[240px] border-gray-200"
+      className="app-glass-card app-glass-card--lg flex flex-col cursor-pointer min-h-[220px] sm:min-h-[240px] border-gray-200"
       onClick={onCardClick}
     >
-      <div className="flex items-start justify-between gap-3 mb-4">
+      <div className="app-glass-card-content flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-lg font-bold text-gray-900">
             {machine.name}
@@ -232,7 +232,7 @@ const WorksheetCncMachineCard = ({
       </div>
 
       {showContinuousInfo && (
-        <div className="mt-3 rounded-lg bg-purple-50 px-3 py-2 text-xs">
+        <div className="app-glass-card-content mt-3 rounded-lg bg-purple-50 px-3 py-2 text-xs">
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold text-purple-700">연속가공</span>
             {continuousState?.isRunning && (
@@ -291,7 +291,7 @@ const WorksheetCncMachineCard = ({
         </>
       )}
 
-      <div className="mb-2 text-sm text-muted-foreground space-y-1">
+      <div className="app-glass-card-content mb-2 text-sm text-muted-foreground space-y-1">
         {machine.lastUpdated && (
           <div className="flex justify-between">
             <span className="font-medium text-slate-700">최근 상태 갱신</span>
@@ -300,7 +300,7 @@ const WorksheetCncMachineCard = ({
         )}
       </div>
 
-      <div className="mt-auto pt-1 text-sm text-slate-800 space-y-1">
+      <div className="app-glass-card-content mt-auto pt-1 text-sm text-slate-800 space-y-1">
         <div className="flex justify-between">
           <span className="font-medium">생산중</span>
           <span className="text-slate-900">-</span>

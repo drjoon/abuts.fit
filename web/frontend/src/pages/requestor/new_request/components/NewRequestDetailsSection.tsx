@@ -33,13 +33,13 @@ type Props = {
   syncSelectedConnection: (
     manufacturer: string,
     system: string,
-    type: string
+    type: string,
   ) => void;
   fileVerificationStatus: Record<string, boolean>;
   setFileVerificationStatus: (
     next:
       | Record<string, boolean>
-      | ((prev: Record<string, boolean>) => Record<string, boolean>)
+      | ((prev: Record<string, boolean>) => Record<string, boolean>),
   ) => void;
   highlightUnverifiedArrows: boolean;
   setHighlightUnverifiedArrows: (v: boolean) => void;
@@ -144,7 +144,7 @@ export function NewRequestDetailsSection({
   const previewFile = selectedFile;
 
   const hasSelectedFile = Boolean(
-    selectedPreviewIndex !== null && files[selectedPreviewIndex]
+    selectedPreviewIndex !== null && files[selectedPreviewIndex],
   );
 
   const showImplantSelect = useMemo(() => {
@@ -156,7 +156,7 @@ export function NewRequestDetailsSection({
 
   return (
     <div
-      className={`relative flex flex-col rounded-2xl border-2 border-gray-300 p-4 md:p-6 transition-shadow hover:shadow-md ${
+      className={`app-surface app-surface--panel relative flex flex-col border-2 border-gray-300 p-4 md:p-6 ${
         highlight ? sectionHighlightClass : ""
       }`}
     >
@@ -171,7 +171,7 @@ export function NewRequestDetailsSection({
                   onDiameterComputed={(
                     _filename,
                     maxDiameter,
-                    connectionDiameter
+                    connectionDiameter,
                   ) => {
                     const roundedMax = Math.round((maxDiameter ?? 0) * 10) / 10;
                     const roundedConn =
@@ -187,7 +187,7 @@ export function NewRequestDetailsSection({
           )}
 
           {(!files.length || selectedPreviewIndex === null) && (
-            <div className="px-4 flex items-center justify-center h-[260px] md:h-[320px] rounded-2xl border border-dashed border-gray-200 bg-white/60 text-xs md:text-sm text-muted-foreground">
+            <div className="app-surface app-surface--panel px-4 flex items-center justify-center h-[260px] md:h-[320px] border border-dashed text-xs md:text-sm text-muted-foreground">
               STL Preview
             </div>
           )}
@@ -238,7 +238,7 @@ export function NewRequestDetailsSection({
                       ({ file }) =>
                         !fileVerificationStatus[
                           `${normalizeKeyPart(file.name)}:${file.size}`
-                        ]
+                        ],
                     )
                     .map(({ file, index }) => {
                       const filename = file.name;
@@ -287,7 +287,7 @@ export function NewRequestDetailsSection({
                                     toast({
                                       title: "정보를 먼저 채워주세요",
                                       description: `${missingFields.join(
-                                        ", "
+                                        ", ",
                                       )}가(이) 비어 있습니다. 디자인과 정보가 모두 맞는지 확인 후 완료해 주세요.`,
                                       variant: "destructive",
                                     });
@@ -306,7 +306,7 @@ export function NewRequestDetailsSection({
                                     i++
                                   ) {
                                     const key = `${normalizeKeyPart(
-                                      files[i].name
+                                      files[i].name,
                                     )}:${files[i].size}`;
                                     if (!nextStatus[key]) {
                                       nextIndex = i;
@@ -317,7 +317,7 @@ export function NewRequestDetailsSection({
                                   if (nextIndex === -1) {
                                     for (let i = 0; i < index; i++) {
                                       const key = `${normalizeKeyPart(
-                                        files[i].name
+                                        files[i].name,
                                       )}:${files[i].size}`;
                                       if (!nextStatus[key]) {
                                         nextIndex = i;
@@ -366,7 +366,7 @@ export function NewRequestDetailsSection({
                                     } catch (err) {
                                       console.error(
                                         "Duplicate check error:",
-                                        err
+                                        err,
                                       );
                                     }
 
@@ -408,7 +408,7 @@ export function NewRequestDetailsSection({
                     ({ file }) =>
                       fileVerificationStatus[
                         `${normalizeKeyPart(file.name)}:${file.size}`
-                      ]
+                      ],
                   )
                   .map(({ file, index }) => {
                     const filename = file.name;
@@ -460,7 +460,7 @@ export function NewRequestDetailsSection({
                     );
                   })}
                 {files.filter(
-                  (file) => fileVerificationStatus[`${file.name}:${file.size}`]
+                  (file) => fileVerificationStatus[`${file.name}:${file.size}`],
                 ).length === 0 && (
                   <div className="flex items-center justify-center w-full min-h-[120px] rounded-xl border border-dashed border-gray-200 bg-white/60 text-[11px] md:text-sm text-muted-foreground px-6">
                     확인된 파일이 없습니다

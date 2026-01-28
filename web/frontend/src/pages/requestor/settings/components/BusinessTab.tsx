@@ -59,7 +59,7 @@ const getSetupModeStorageKey = (userId?: string | null) => {
 };
 
 const readStoredSetupMode = (
-  userId?: string | null
+  userId?: string | null,
 ): "license" | "search" | null => {
   if (typeof window === "undefined") return null;
   try {
@@ -75,7 +75,7 @@ const readStoredSetupMode = (
 
 const writeStoredSetupMode = (
   userId: string | null,
-  mode: "license" | "search" | null
+  mode: "license" | "search" | null,
 ) => {
   if (typeof window === "undefined") return;
   try {
@@ -108,7 +108,7 @@ type BusinessDraftPayload = {
 };
 
 const readStoredBusinessDraft = (
-  userId?: string | null
+  userId?: string | null,
 ): BusinessDraftPayload | null => {
   if (typeof window === "undefined") return null;
   try {
@@ -126,7 +126,7 @@ const readStoredBusinessDraft = (
 
 const writeStoredBusinessDraft = (
   userId: string | null,
-  payload: BusinessDraftPayload | null
+  payload: BusinessDraftPayload | null,
 ) => {
   if (typeof window === "undefined") return;
   try {
@@ -219,7 +219,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const [licenseFileId, setLicenseFileId] = useState<string>("");
   const [licenseS3Key, setLicenseS3Key] = useState<string>("");
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>(
-    userData?.companyName ? "missing" : "missing"
+    userData?.companyName ? "missing" : "missing",
   );
   const resetVersionRef = useRef(0);
   const suppressPrefillRef = useRef(false);
@@ -328,10 +328,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         const ex = data?.extracted || {};
         setBusinessData((prev) => {
           const nextBusinessNumber = formatBusinessNumberInput(
-            String(ex?.businessNumber || "").trim()
+            String(ex?.businessNumber || "").trim(),
           );
           const nextPhone = formatPhoneNumberInput(
-            String(ex?.phoneNumber || "").trim()
+            String(ex?.phoneNumber || "").trim(),
           );
           return {
             ...prev,
@@ -442,7 +442,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       setSetupMode(mode);
       writeStoredSetupMode(authUserId, mode);
     },
-    [authUserId]
+    [authUserId],
   );
 
   useEffect(() => {
@@ -498,7 +498,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       try {
         const res = await request<any>({
           path: `/api/requestor-organizations/search?q=${encodeURIComponent(
-            q
+            q,
           )}`,
           method: "GET",
           token,
@@ -919,7 +919,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         const nextExtracted: LicenseExtracted = data?.extracted || {};
         const verification = data?.verification;
         const hasAnyExtracted = Object.values(nextExtracted || {}).some((v) =>
-          String(v || "").trim()
+          String(v || "").trim(),
         );
         const nextCompanyName = String(nextExtracted?.companyName || "").trim();
         setExtracted((prev) => ({
@@ -946,10 +946,10 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         }));
         setBusinessData((prev) => {
           const aiBusinessNumber = formatBusinessNumberInput(
-            String(nextExtracted?.businessNumber || "").trim()
+            String(nextExtracted?.businessNumber || "").trim(),
           );
           const aiPhone = formatPhoneNumberInput(
-            String(nextExtracted?.phoneNumber || "").trim()
+            String(nextExtracted?.phoneNumber || "").trim(),
           );
           return {
             ...prev,
@@ -1039,7 +1039,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       onFiles={handleLicenseFilesDrop}
       activeClassName="ring-2 ring-primary/30"
     >
-      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+      <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -1073,7 +1073,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         <CardContent className="space-y-6">
           {membership === "none" && !setupMode && showSelectionChoices && (
             <div className="space-y-4">
-              <div className="rounded-lg bg-white/60 p-3 text-sm">
+              <div className="app-surface app-surface--panel text-sm">
                 아래 두 가지 방법 중 하나를 선택해 기공소 소속을 설정해주세요.
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1083,14 +1083,14 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 >
                   <button
                     type="button"
-                    className="w-full text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
+                    className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
                     onClick={() => {
                       setSetupModeLocked(true);
                       resetLocalBusinessState();
                       updateSetupMode("license");
                       startTour(
                         "requestor-onboarding",
-                        "requestor.business.licenseUpload"
+                        "requestor.business.licenseUpload",
                       );
                       requestAnimationFrame(() => {
                         licenseUploadRef.current?.focusUpload();
@@ -1109,7 +1109,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
                 >
                   <button
                     type="button"
-                    className="w-full text-left rounded-lg border bg-white/70 p-4 transition-colors hover:bg-white"
+                    className="app-surface app-surface--panel w-full text-left p-4 transition-colors hover:bg-white"
                     onClick={() => {
                       setSetupModeLocked(true);
                       updateSetupMode("search");

@@ -51,6 +51,24 @@ export async function getMachines(req, res) {
   }
 }
 
+// hi-link 브리지 프록시: 전체 장비 상태 일괄 조회
+export async function getAllMachineStatusProxy(req, res) {
+  try {
+    if (!ensureBridgeConfigured(res)) return;
+    const response = await fetch(`${BRIDGE_BASE}/api/cnc/machines/status`, {
+      headers: withBridgeHeaders(),
+    });
+    const data = await response.json().catch(() => ({}));
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error("getAllMachineStatusProxy error", error);
+    res.status(500).json({
+      success: false,
+      message: "status proxy failed",
+    });
+  }
+}
+
 // POST /api/machines/sync-bridge - DB 기준으로 Hi-Link 브리지에 장비 재등록
 export async function syncBridgeMachines(_req, res) {
   try {

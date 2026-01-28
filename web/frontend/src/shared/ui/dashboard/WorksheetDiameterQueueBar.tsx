@@ -36,7 +36,7 @@ export const WorksheetDiameterQueueBar = ({
             <button
               key={label}
               type="button"
-              className="flex-1 min-w-[130px] max-w-[220px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-lg hover:border-blue-400 hover:bg-blue-50/60 transition-colors"
+              className="app-surface app-surface--item flex-1 min-w-[130px] max-w-[220px] text-left text-lg hover:border-blue-400 hover:bg-blue-50/60 transition-colors"
               onClick={() => onBucketClick?.(label)}
             >
               <div className="flex items-center justify-between mb-1 px-2">

@@ -35,7 +35,7 @@ export const WorksheetDiameterQueueModal = ({
 }: WorksheetDiameterQueueModalProps) => {
   const labels: DiameterBucketKey[] = useMemo(
     () => ["6", "8", "10", "10+"],
-    []
+    [],
   );
 
   const effectiveBucket: DiameterBucketKey = useMemo(() => {
@@ -92,7 +92,7 @@ export const WorksheetDiameterQueueModal = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-base text-slate-700">
           {/* STL 뷰어 자리 (모크) */}
           <div className="md:col-span-1 flex flex-col">
-            <div className="flex-1 min-h-[350px] rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-base text-slate-400">
+            <div className="app-surface app-surface--panel flex-1 min-h-[350px] border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-base text-slate-400">
               STL 뷰어 연동 예정
             </div>
           </div>
@@ -107,10 +107,10 @@ export const WorksheetDiameterQueueModal = ({
                     key={item.id}
                     type="button"
                     onClick={() => setSelectedItemId(item.id)}
-                    className={`w-full text-left rounded-lg border px-5 py-4 text-lg transition-colors ${
+                    className={`app-surface app-surface--item w-full text-left px-5 py-4 text-lg transition-colors ${
                       active
                         ? "border-blue-400 bg-blue-50"
-                        : "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/60"
+                        : "bg-slate-50 hover:border-blue-300 hover:bg-blue-50/60"
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
@@ -139,7 +139,7 @@ export const WorksheetDiameterQueueModal = ({
 
           {/* 선택된 항목 상세 */}
           <div className="md:col-span-1 flex flex-col min-h-[330px]">
-            <div className="flex-1 rounded-lg border border-slate-200 bg-white px-6 py-5 text-lg text-slate-700">
+            <div className="app-surface app-surface--panel flex-1 px-6 py-5 text-lg text-slate-700">
               {activeItem ? (
                 <div className="space-y-2">
                   <div>

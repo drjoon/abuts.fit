@@ -32,6 +32,8 @@ interface CncMachineGridProps {
   onCancelReservation?: (machine: Machine, jobId?: string) => void;
   onOpenReservationList?: (machine: Machine) => void;
   onTogglePause?: (machine: Machine, jobId: string) => void;
+  onToggleAllowJobStart?: (machine: Machine, next: boolean) => void;
+  onToggleAllowAutoMachining?: (machine: Machine, next: boolean) => void;
 }
 
 export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
@@ -59,6 +61,8 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onCancelReservation,
   onOpenReservationList,
   onTogglePause,
+  onToggleAllowJobStart,
+  onToggleAllowAutoMachining,
 }) => {
   return (
     <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
@@ -195,6 +199,22 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                 ? (e) => {
                     e.stopPropagation();
                     onOpenReservationList(m);
+                  }
+                : undefined
+            }
+            onToggleAllowJobStart={
+              onToggleAllowJobStart
+                ? (next, e) => {
+                    e.stopPropagation();
+                    onToggleAllowJobStart(m, next);
+                  }
+                : undefined
+            }
+            onToggleAllowAutoMachining={
+              onToggleAllowAutoMachining
+                ? (next, e) => {
+                    e.stopPropagation();
+                    onToggleAllowAutoMachining(m, next);
                   }
                 : undefined
             }

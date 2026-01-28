@@ -1,4 +1,5 @@
 import CncMachine from "../models/cncMachine.model.js";
+import Machine from "../models/machine.model.js";
 import Request from "../models/request.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
 import { getPresignedGetUrl, getPresignedPutUrl } from "../utils/s3.utils.js";
@@ -11,6 +12,13 @@ import {
   recalculateQueueOnMaterialChange,
 } from "./request/production.utils.js";
 
+const CAM_RETRY_BATCH_LIMIT = Number(process.env.CAM_RETRY_BATCH_LIMIT || 30);
+
+const toNumberOrNull = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
 const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://localhost:8002";
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
@@ -20,6 +28,43 @@ function withBridgeHeaders(extra = {}) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+async function fetchBridgeMachineStatusMap() {
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.BRIDGE_STATUS_TIMEOUT_MS || 2500);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(
+      `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/status`,
+      {
+        method: "GET",
+        headers: withBridgeHeaders(),
+        signal: controller.signal,
+      },
+    );
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok || body?.success === false) return null;
+    const list = Array.isArray(body?.data) ? body.data : [];
+    const map = new Map();
+    for (const item of list) {
+      const id = String(item?.machineId || item?.id || "").trim();
+      if (!id) continue;
+      map.set(id, item);
+    }
+    return map;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function isBridgeOnlineStatus(status) {
+  const s = String(status || "")
+    .trim()
+    .toUpperCase();
+  return ["OK", "ONLINE", "RUN", "RUNNING", "IDLE", "STOP"].includes(s);
 }
 
 /**
@@ -1354,8 +1399,14 @@ export async function getProductionQueues(req, res) {
 export async function updateMachineMaterial(req, res) {
   try {
     const { machineId } = req.params;
-    const { diameter, diameterGroup, materialType, heatNo, remainingLength } =
-      req.body;
+    const {
+      diameter,
+      diameterGroup,
+      materialType,
+      heatNo,
+      remainingLength,
+      maxModelDiameterGroups,
+    } = req.body;
 
     // 프론트에서 '8mm' 같은 포맷으로 올 수 있으므로 그룹 문자열을 정규화한다.
     const rawGroup = String(diameterGroup || "").trim();
@@ -1378,6 +1429,30 @@ export async function updateMachineMaterial(req, res) {
         success: false,
         message: "machineId is required",
       });
+    }
+
+    const normalizedMaxGroups = Array.isArray(maxModelDiameterGroups)
+      ? maxModelDiameterGroups
+          .map((v) =>
+            String(v || "")
+              .trim()
+              .replace(/mm$/i, ""),
+          )
+          .filter(Boolean)
+      : [];
+
+    if (normalizedMaxGroups.length > 0) {
+      const uniq = Array.from(new Set(normalizedMaxGroups));
+      const ok = uniq.every((g) => ["6", "8", "10", "10+"].includes(g));
+      if (!ok) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 최대 직경 그룹입니다.",
+        });
+      }
+      machine.maxModelDiameterGroups = uniq;
+    } else {
+      machine.maxModelDiameterGroups = [normalizedGroup];
     }
 
     // 소재 세팅 업데이트
@@ -1406,6 +1481,63 @@ export async function updateMachineMaterial(req, res) {
       machineId,
       normalizedGroup,
     );
+
+    // b5(A): 소재 변경 직후 CAM 대기건 재시도 (best-effort)
+    try {
+      const matDia = toNumberOrNull(machine.currentMaterial?.diameter);
+      if (matDia) {
+        const machineMeta = await Machine.findOne({
+          $or: [{ uid: machineId }, { name: machineId }],
+        })
+          .lean()
+          .catch(() => null);
+        if (machineMeta?.allowAutoMachining !== true) {
+          throw new Error("allowAutoMachining is false");
+        }
+        if (machineMeta?.allowJobStart === false) {
+          throw new Error("allowJobStart is false");
+        }
+
+        const statusMap = await fetchBridgeMachineStatusMap();
+        if (statusMap) {
+          const st = statusMap.get(machineId);
+          if (!st || st.success !== true || !isBridgeOnlineStatus(st.status)) {
+            throw new Error("bridge status is not online");
+          }
+        }
+
+        const pending = await Request.find({
+          manufacturerStage: "CAM",
+          "caseInfos.reviewByStage.cam.status": "PENDING",
+          "productionSchedule.diameter": matDia,
+          $or: [
+            { "productionSchedule.assignedMachine": { $exists: false } },
+            { "productionSchedule.assignedMachine": null },
+            { "productionSchedule.assignedMachine": "" },
+          ],
+        })
+          .limit(CAM_RETRY_BATCH_LIMIT)
+          .exec();
+
+        let baseQueueLen = await Request.countDocuments({
+          status: { $in: ["의뢰", "CAM", "생산"] },
+          "productionSchedule.assignedMachine": machineId,
+        });
+
+        for (const reqItem of pending) {
+          reqItem.productionSchedule = reqItem.productionSchedule || {};
+          reqItem.productionSchedule.assignedMachine = machineId;
+          baseQueueLen += 1;
+          reqItem.productionSchedule.queuePosition = baseQueueLen;
+          await reqItem.save();
+        }
+      }
+    } catch (e) {
+      console.warn("[updateMachineMaterial] CAM retry skipped", {
+        machineId,
+        error: String(e?.message || e),
+      });
+    }
 
     res.status(200).json({
       success: true,

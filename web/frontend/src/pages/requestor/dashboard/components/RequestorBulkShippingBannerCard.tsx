@@ -156,10 +156,10 @@ export const RequestorBulkShippingBannerCard = ({
   }, [items]);
 
   const bulkItems = items.filter(
-    (i) => (i.shippingMode || "normal") === "normal"
+    (i) => (i.shippingMode || "normal") === "normal",
   );
   const expressItems = items.filter(
-    (i) => (i.shippingMode || "normal") === "express"
+    (i) => (i.shippingMode || "normal") === "express",
   );
 
   const earliestEta = (list: ShippingItemApi[]) => {
@@ -244,7 +244,7 @@ export const RequestorBulkShippingBannerCard = ({
       };
 
       const sorted = [...policy.weeklyBatchDays].sort(
-        (a, b) => order[a] - order[b]
+        (a, b) => order[a] - order[b],
       );
 
       let minDiff = 7;
@@ -332,7 +332,7 @@ export const RequestorBulkShippingBannerCard = ({
 
   const patchShippingMode = async (
     requestIds: string[],
-    shippingMode: "normal" | "express"
+    shippingMode: "normal" | "express",
   ) => {
     if (!requestIds.length) {
       return {
@@ -518,7 +518,7 @@ export const RequestorBulkShippingBannerCard = ({
           shippingMode: "express",
           shipDateYmd: result.shipDateYmd ?? it.shipDateYmd ?? null,
         };
-      })
+      }),
     );
 
     // 토글은 PATCH 1회로 끝내서 체감 속도를 극대화
@@ -526,7 +526,7 @@ export const RequestorBulkShippingBannerCard = ({
 
   return (
     <>
-      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg flex-none">
+      <Card className="app-glass-card app-glass-card--lg flex-none">
         <CardHeader className="pb-0 space-y-2">
           <div className="flex items-center justify-between gap-4">
             <CardTitle className="text-base font-semibold">
@@ -606,7 +606,7 @@ export const RequestorBulkShippingBannerCard = ({
                     </h3>
                   </div>
                 </div>
-                <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-3 max-h-96 overflow-y-auto">
+                <div className="app-glass-card app-glass-card--lg p-6 space-y-3 max-h-96 overflow-y-auto">
                   {bulkItems.length === 0 ? (
                     <div className="text-sm text-gray-500 text-center py-8">
                       묶음 배송 대기 중인 제품이 없습니다.
@@ -615,7 +615,7 @@ export const RequestorBulkShippingBannerCard = ({
                     bulkGroups.map((group) => (
                       <div
                         key={group.etaKey}
-                        className="rounded-xl border border-gray-100 bg-gray-50 p-3"
+                        className="app-surface app-surface--panel"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-xs text-gray-600">
@@ -635,7 +635,7 @@ export const RequestorBulkShippingBannerCard = ({
                           {group.items.map((item) => (
                             <div
                               key={item.id}
-                              className="flex items-center justify-between p-2 rounded-lg border border-gray-100 bg-white"
+                              className="app-surface app-surface--item flex items-center justify-between p-2"
                             >
                               <div className="flex-1 text-left">
                                 <p className="text-sm font-medium text-gray-900">
@@ -690,7 +690,7 @@ export const RequestorBulkShippingBannerCard = ({
                     </div>
                   )}
                 </div>
-                <div className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm hover:shadow-md transition-shadow p-6 space-y-2 max-h-96 overflow-y-auto">
+                <div className="app-glass-card app-glass-card--lg p-6 space-y-2 max-h-96 overflow-y-auto">
                   {expressItems.length === 0 ? (
                     <div className="text-sm text-gray-500 text-center py-8">
                       신속 배송 제품이 없습니다.
@@ -699,7 +699,7 @@ export const RequestorBulkShippingBannerCard = ({
                     expressItems.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-gray-50"
+                        className="app-surface app-surface--item flex items-center justify-between p-3"
                       >
                         <div className="flex-1 text-right">
                           <p className="text-sm font-medium text-gray-900">

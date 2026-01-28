@@ -111,7 +111,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
             _id: String(r._id),
             name: r.name,
             email: r.email,
-          }))
+          })),
       );
       return;
     }
@@ -217,7 +217,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
 
   const handleApprove = async (
     userId: string,
-    role: "representative" | "staff"
+    role: "representative" | "staff",
   ) => {
     try {
       if (!token) return;
@@ -300,7 +300,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         (entry) =>
           !isDeletedAccount(entry.email) &&
           !isDeletedAccount(entry.name) &&
-          !isDeletedAccount(entry._id)
+          !isDeletedAccount(entry._id),
       );
   }, [isDeletedAccount, representatives]);
 
@@ -311,7 +311,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
         (m) =>
           !isDeletedAccount(m.email) &&
           !isDeletedAccount(m.name) &&
-          !isDeletedAccount(m._id)
+          !isDeletedAccount(m._id),
       );
   }, [isDeletedAccount, staff]);
 
@@ -331,20 +331,20 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
   }, [isDeletedAccount, pending]);
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader>
         <CardTitle>임직원 관리</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         {membership !== "owner" && (
-          <div className="rounded-lg border bg-white/60 p-3 text-sm">
+          <div className="app-surface app-surface--panel text-sm">
             대표 계정만 직원 관리를 할 수 있습니다.
           </div>
         )}
 
         {membership === "owner" && (
           <>
-            <div className="rounded-lg border bg-white/60 p-4 space-y-4">
+            <div className="app-surface app-surface--panel space-y-4">
               <div className="text-sm font-medium">등록된 임직원</div>
 
               {loading &&
@@ -421,7 +421,7 @@ export const StaffTab = ({ userData }: StaffTabProps) => {
               )}
             </div>
 
-            <div className="rounded-lg border bg-white/60 p-4">
+            <div className="app-surface app-surface--panel">
               <div className="text-sm font-medium mb-3">등록 신청자 관리</div>
               {loading && pendingEntries.length === 0 ? (
                 <div className="text-sm text-muted-foreground">

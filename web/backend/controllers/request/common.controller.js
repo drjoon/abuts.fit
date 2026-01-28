@@ -67,6 +67,137 @@ function toDiameterGroup(diameter) {
   return "10+";
 }
 
+function isBridgeOnlineStatus(status) {
+  const s = String(status || "")
+    .trim()
+    .toUpperCase();
+  if (!s) return false;
+  if (s === "UNKNOWN") return false;
+  // 연결/가공 가능(=기계가 응답하고 제어 가능한 상태)
+  return ["OK", "ONLINE", "RUN", "RUNNING", "IDLE", "STOP"].includes(s);
+}
+
+async function fetchBridgeMachineStatusMap() {
+  if (!BRIDGE_BASE) return null;
+  const controller = new AbortController();
+  const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(`${BRIDGE_BASE}/api/cnc/machines/status`, {
+      method: "GET",
+      headers: withBridgeHeaders(),
+      signal: controller.signal,
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok || body?.success === false) return null;
+    const list = Array.isArray(body?.machines) ? body.machines : [];
+    const map = new Map();
+    for (const item of list) {
+      const uid = String(item?.uid || "").trim();
+      if (!uid) continue;
+      map.set(uid, {
+        success: item?.success === true,
+        status: String(item?.status || "UNKNOWN"),
+      });
+    }
+    return map;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function screenCamMachineForRequest({ request }) {
+  const maxDiameter = Number(request?.caseInfos?.maxDiameter);
+  if (!Number.isFinite(maxDiameter) || maxDiameter <= 0) {
+    const err = new Error(
+      "최대 직경 정보가 없어 CAM 스크리닝을 진행할 수 없습니다.",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const reqGroup = toDiameterGroup(maxDiameter);
+  if (!reqGroup) {
+    const err = new Error("최대 직경 그룹을 계산할 수 없습니다.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const statusMap = await fetchBridgeMachineStatusMap();
+
+  // 1) 장비 제어 허용(가공 가능) ON
+  const machinable = await Machine.find({ allowJobStart: { $ne: false } })
+    .lean()
+    .catch(() => []);
+  const machinableIdSet = new Set(
+    (Array.isArray(machinable) ? machinable : [])
+      .map((m) => String(m?.uid || m?.name || "").trim())
+      .filter(Boolean),
+  );
+
+  // 2) CNC 소재/직경/최대가공 그룹
+  const machines = await CncMachine.find({ status: "active" }).lean();
+  const candidates = (Array.isArray(machines) ? machines : [])
+    .map((m) => {
+      const machineId = String(m?.machineId || "").trim();
+      const matDia = Number(m?.currentMaterial?.diameter);
+      const diff = matDia - maxDiameter;
+      const groups = Array.isArray(m?.maxModelDiameterGroups)
+        ? m.maxModelDiameterGroups.map((g) => String(g || "").trim())
+        : [];
+      return {
+        machineId,
+        materialDiameter: matDia,
+        diff,
+        maxGroups: groups,
+      };
+    })
+    .filter((m) => {
+      if (!m.machineId) return false;
+      if (!machinableIdSet.has(m.machineId)) return false;
+
+      // 3) 브리지 온라인/가공 가능(연결됨)
+      if (statusMap) {
+        const st = statusMap.get(m.machineId);
+        if (!st || st.success !== true || !isBridgeOnlineStatus(st.status)) {
+          return false;
+        }
+      }
+
+      // 4) 모델 최대직경 그룹(6/8/10/10+)에 해당 그룹이 포함되어야 함
+      if (!m.maxGroups.includes(reqGroup)) return false;
+
+      // 5) 소재 직경은 maxDiameter 이상이어야 함
+      return (
+        Number.isFinite(m.materialDiameter) &&
+        m.materialDiameter > 0 &&
+        Number.isFinite(m.diff) &&
+        m.diff >= 0
+      );
+    });
+
+  if (!candidates.length) {
+    return { ok: false, reqGroup };
+  }
+
+  const best = candidates.slice().sort((a, b) => {
+    // 1) 소재 직경 차이(diff) 작은 순
+    if (a.diff !== b.diff) return a.diff - b.diff;
+    // 2) machineId 사전순
+    return String(a.machineId).localeCompare(String(b.machineId));
+  })[0];
+
+  return {
+    ok: true,
+    reqGroup,
+    diameter: best.materialDiameter,
+    diameterGroup: toDiameterGroup(best.materialDiameter),
+    machineId: best.machineId,
+  };
+}
+
 async function fetchBridgeQueueSnapshot() {
   const controller = new AbortController();
   const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
@@ -208,6 +339,106 @@ async function chooseMachineForRequest({ request }) {
     queuePosition: queueLen + 1,
     diameter: best.materialDiameter,
     diameterGroup: toDiameterGroup(best.materialDiameter),
+  };
+}
+
+async function chooseMachineForCamMachining({ request }) {
+  const camMaterialDiameter = Number(request?.productionSchedule?.diameter);
+  if (!Number.isFinite(camMaterialDiameter) || camMaterialDiameter <= 0) {
+    const err = new Error(
+      "CAM 소재 직경 정보가 없어 생산 장비를 선택할 수 없습니다.",
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const machines = await CncMachine.find({ status: "active" }).lean();
+  const machineMetas = await Machine.find({})
+    .select({ uid: 1, name: 1, allowJobStart: 1, allowAutoMachining: 1 })
+    .lean()
+    .catch(() => []);
+  const metaById = new Map(
+    (Array.isArray(machineMetas) ? machineMetas : [])
+      .map((m) => {
+        const id = String(m?.uid || m?.name || "").trim();
+        return [id, m];
+      })
+      .filter(([id]) => !!id),
+  );
+
+  const statusMap = await fetchBridgeMachineStatusMap();
+
+  // "정확히" 일치: DB/장비에서 10, 10.0, 10.00 등으로 들어올 수 있어 소수점 오차만 허용
+  const EPS = 0.0001;
+  const candidates = (Array.isArray(machines) ? machines : [])
+    .map((m) => {
+      const machineId = String(m?.machineId || "").trim();
+      const matDia = Number(m?.currentMaterial?.diameter);
+      return { machineId, materialDiameter: matDia };
+    })
+    .filter((m) => {
+      if (!m.machineId) return false;
+
+      const meta = metaById.get(m.machineId);
+      if (meta?.allowJobStart === false) return false;
+
+      if (!Number.isFinite(m.materialDiameter) || m.materialDiameter <= 0)
+        return false;
+      if (Math.abs(m.materialDiameter - camMaterialDiameter) > EPS)
+        return false;
+
+      if (statusMap) {
+        const st = statusMap.get(m.machineId);
+        if (!st || st.success !== true || !isBridgeOnlineStatus(st.status)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+  if (!candidates.length) {
+    const err = new Error(
+      `CAM에서 사용한 소재 직경(${camMaterialDiameter}mm)과 일치하는 CNC 장비가 없습니다.`,
+    );
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const bridgeQueues = await fetchBridgeQueueSnapshot();
+  const queueLenByMachineId = {};
+  if (bridgeQueues) {
+    for (const c of candidates) {
+      const list = bridgeQueues?.[c.machineId];
+      queueLenByMachineId[c.machineId] = Array.isArray(list) ? list.length : 0;
+    }
+  } else {
+    const pairs = await Promise.all(
+      candidates.map(async (c) => {
+        const n = await Request.countDocuments({
+          status: { $in: ["의뢰", "CAM", "생산"] },
+          "productionSchedule.assignedMachine": c.machineId,
+        });
+        return [c.machineId, n];
+      }),
+    );
+    for (const [k, v] of pairs) {
+      queueLenByMachineId[k] = v;
+    }
+  }
+
+  const best = candidates.slice().sort((a, b) => {
+    const qa = Number(queueLenByMachineId[a.machineId] ?? 0);
+    const qb = Number(queueLenByMachineId[b.machineId] ?? 0);
+    if (qa !== qb) return qa - qb;
+    return String(a.machineId).localeCompare(String(b.machineId));
+  })[0];
+
+  const queueLen = Number(queueLenByMachineId[best.machineId] ?? 0);
+  return {
+    machineId: best.machineId,
+    queuePosition: queueLen + 1,
+    diameter: camMaterialDiameter,
+    diameterGroup: toDiameterGroup(camMaterialDiameter),
   };
 }
 
@@ -364,6 +595,10 @@ async function triggerEspritForNc({ request, session }) {
         ImplantType: request?.caseInfos?.implantType || "",
         MaxDiameter: Number(request?.caseInfos?.maxDiameter || 0),
         ConnectionDiameter: Number(request?.caseInfos?.connectionDiameter || 0),
+        MaterialDiameter: Number(request?.productionSchedule?.diameter || 0),
+        MaterialDiameterGroup: String(
+          request?.productionSchedule?.diameterGroup || "",
+        ),
         WorkType: request?.caseInfos?.workType || "",
         LotNumber: request?.lotNumber?.part || "",
       }),
@@ -748,6 +983,23 @@ export async function updateReviewStatusByStage(req, res) {
         throw err;
       }
 
+      // b3: 의뢰 승인 시, 조건에 맞는 장비가 없으면 승인 자체를 막는다(상태 변경 없음)
+      if (String(stage || "").trim() === "request" && status === "APPROVED") {
+        const screening = await screenCamMachineForRequest({ request });
+        if (!screening.ok) {
+          const err = new Error(
+            "조건에 맞는 CNC 장비가 없습니다. (가공 가능 ON + 온라인 + 최대직경 매칭 필요)",
+          );
+          err.statusCode = 409;
+          throw err;
+        }
+      }
+
+      // b4: CAM 승인 시, CAM에서 확정된 소재 직경과 일치하는 장비가 없으면 승인 자체를 막는다
+      if (String(stage || "").trim() === "cam" && status === "APPROVED") {
+        await chooseMachineForCamMachining({ request });
+      }
+
       ensureReviewByStageDefaults(request);
       request.caseInfos.reviewByStage[stage] = {
         status,
@@ -758,26 +1010,38 @@ export async function updateReviewStatusByStage(req, res) {
 
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
       if (status === "APPROVED") {
-        await advanceManufacturerStageByReviewStage({
-          request,
-          stage,
-          userId: req.user?._id,
-          session,
-        });
-
         const stageKey = String(stage || "").trim();
+
+        if (stageKey === "request") {
+          // b3: 사전 스크리닝 통과한 경우에만 CAM로 전환 + CAM 소재 직경 확정
+          const screening = await screenCamMachineForRequest({ request });
+          request.caseInfos.reviewByStage.request.reason = "";
+          await advanceManufacturerStageByReviewStage({
+            request,
+            stage,
+            userId: req.user?._id,
+            session,
+          });
+          await ensureLotNumberForMachining(request);
+          request.productionSchedule = request.productionSchedule || {};
+          request.productionSchedule.diameter = screening.diameter;
+          request.productionSchedule.diameterGroup = screening.diameterGroup;
+          await triggerEspritForNc({ request, session });
+        } else {
+          await advanceManufacturerStageByReviewStage({
+            request,
+            stage,
+            userId: req.user?._id,
+            session,
+          });
+        }
+
         if (stageKey === "packaging") {
           await ensureFinishedLotNumberForPackaging(request);
         }
 
-        // CAM 단계 진입 직후(의뢰 승인 시) 반제품 로트번호 부여
-        if (stageKey === "request") {
-          await ensureLotNumberForMachining(request);
-          await triggerEspritForNc({ request, session });
-        }
-
         if (stageKey === "cam") {
-          const selected = await chooseMachineForRequest({ request });
+          const selected = await chooseMachineForCamMachining({ request });
           request.productionSchedule = request.productionSchedule || {};
           request.productionSchedule.assignedMachine = selected.machineId;
           request.productionSchedule.queuePosition = selected.queuePosition;
@@ -788,7 +1052,18 @@ export async function updateReviewStatusByStage(req, res) {
             request.productionSchedule.diameter = selected.diameter;
           }
           request.assignedMachine = selected.machineId;
-          await triggerBridgeForCnc({ request });
+
+          const meta = await Machine.findOne({ uid: selected.machineId })
+            .select({ allowAutoMachining: 1, allowJobStart: 1 })
+            .lean()
+            .session(session)
+            .catch(() => null);
+          if (
+            meta?.allowJobStart === true &&
+            meta?.allowAutoMachining === true
+          ) {
+            await triggerBridgeForCnc({ request });
+          }
         }
       } else if (status === "PENDING") {
         revertManufacturerStageByReviewStage(request, stage);
@@ -1788,7 +2063,15 @@ export async function getNcFileUrl(req, res) {
 export async function saveNcFileAndMoveToMachining(req, res) {
   try {
     const { id } = req.params;
-    const { fileName, fileType, fileSize, s3Key, s3Url, filePath } = req.body;
+    const {
+      fileName,
+      fileType,
+      fileSize,
+      s3Key,
+      s3Url,
+      filePath,
+      materialDiameter,
+    } = req.body;
     if (!Types.ObjectId.isValid(id)) {
       return res
         .status(400)
@@ -1925,6 +2208,13 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       s3Url: s3Url || "",
       uploadedAt: new Date(),
     };
+
+    const matDia = Number(materialDiameter);
+    if (Number.isFinite(matDia) && matDia > 0) {
+      request.productionSchedule = request.productionSchedule || {};
+      request.productionSchedule.diameter = matDia;
+      request.productionSchedule.diameterGroup = toDiameterGroup(matDia);
+    }
 
     // 업로드 시 공정 전환은 하지 않고, 생산(검토) 대상으로만 전환
     request.manufacturerStage = "생산";

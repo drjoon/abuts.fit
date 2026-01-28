@@ -501,9 +501,33 @@ export const useRequestFileHandlers = ({
 
       const firstLocal = filtered[0];
 
+      const parseMaterialDiameterFromNc = (text: string) => {
+        const s = String(text || "");
+        const matches = Array.from(
+          s.matchAll(/#521\s*=\s*([0-9]+(?:\.[0-9]+)?)/gi),
+        );
+        if (!matches.length) return null;
+        const last = matches[matches.length - 1];
+        const raw = last?.[1];
+        if (!raw) return null;
+        const v = Number(raw);
+        if (!Number.isFinite(v) || v <= 0) return null;
+        return v;
+      };
+
       setUploading((prev) => ({ ...prev, [req._id]: true }));
       setUploadProgress((prev) => ({ ...prev, [req._id]: 0 }));
       try {
+        let localNcText = "";
+        let localMaterialDiameter: number | null = null;
+        try {
+          const buf = await firstLocal.arrayBuffer();
+          localNcText = decodeNcText(buf);
+          localMaterialDiameter = parseMaterialDiameterFromNc(localNcText);
+        } catch {
+          // ignore
+        }
+
         const uploaded = await uploadFiles([firstLocal], (p) => {
           if (p[firstLocal.name] !== undefined) {
             setUploadProgress((prev) => ({
@@ -528,6 +552,7 @@ export const useRequestFileHandlers = ({
             fileSize: first.size,
             s3Key: first.key,
             s3Url: first.location,
+            materialDiameter: localMaterialDiameter,
           }),
         });
         if (!res.ok) {
@@ -552,13 +577,9 @@ export const useRequestFileHandlers = ({
         });
         await fetchRequests();
 
-        try {
-          const buf = await firstLocal.arrayBuffer();
-          const text = decodeNcText(buf);
-          setPreviewNcText(text);
+        if (localNcText) {
+          setPreviewNcText(localNcText);
           setPreviewNcName(firstLocal.name);
-        } catch {
-          // ignore
         }
       } catch (error: any) {
         console.error(error);

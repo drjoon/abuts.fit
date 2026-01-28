@@ -47,7 +47,7 @@ export const CustomerSupportSection = ({
   const handleEmailClick = () => {
     window.open(
       `mailto:${SUPPORT_EMAIL}?subject=어벗츠.핏 문의&body=안녕하세요, 어벗츠.핏에 대해 문의드립니다.`,
-      "_blank"
+      "_blank",
     );
   };
   return (
@@ -63,7 +63,7 @@ export const CustomerSupportSection = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg text-center">
+          <Card className="app-glass-card app-glass-card--lg text-center">
             <CardHeader>
               <CardTitle className="flex flex-col items-center gap-3">
                 <MessageSquare className="h-8 w-8 text-primary" />
@@ -80,7 +80,7 @@ export const CustomerSupportSection = ({
             </CardContent>
           </Card>
 
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg text-center">
+          <Card className="app-glass-card app-glass-card--lg text-center">
             <CardHeader>
               <CardTitle className="flex flex-col items-center gap-3">
                 <Phone className="h-8 w-8 text-primary" />
@@ -101,7 +101,7 @@ export const CustomerSupportSection = ({
             </CardContent>
           </Card>
 
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg text-center">
+          <Card className="app-glass-card app-glass-card--lg text-center">
             <CardHeader>
               <CardTitle className="flex flex-col items-center gap-3">
                 <Mail className="h-8 w-8 text-primary" />

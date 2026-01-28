@@ -165,7 +165,7 @@ export const NotificationsTab = () => {
   };
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bell className="h-5 w-5" />

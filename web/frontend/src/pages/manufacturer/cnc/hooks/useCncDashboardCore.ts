@@ -142,13 +142,52 @@ export const useCncDashboardCore = ({
   const handleBackgroundRefresh = useCallback(() => {
     if (loading || machines.length === 0) return;
 
-    const VISIBLE_LIMIT = 12; // 3열 기준 4행 정도
-    const targets = machines.slice(0, VISIBLE_LIMIT);
+    void (async () => {
+      try {
+        const res = await apiFetch({
+          path: "/api/machines/status",
+          method: "GET",
+          token,
+        });
+        const body: any = res.data ?? {};
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "상태 조회 실패");
+        }
+        const list: any[] = Array.isArray(body?.machines) ? body.machines : [];
+        const map = new Map(
+          list
+            .filter((x) => x && x.uid)
+            .map((x) => [String(x.uid), String(x.status || "Unknown")]),
+        );
 
-    targets.forEach((m) => {
-      void refreshStatusFor(m.uid);
-    });
-  }, [loading, machines, refreshStatusFor]);
+        setMachines((prev) =>
+          prev.map((m) =>
+            map.has(m.uid)
+              ? {
+                  ...m,
+                  status: map.get(m.uid) || m.status,
+                  lastUpdated: new Date().toLocaleTimeString(),
+                  lastCommand: "status",
+                  lastError: null,
+                }
+              : m,
+          ),
+        );
+      } catch (e: any) {
+        const message = e?.message ?? "알 수 없는 오류";
+        if (!shouldSilenceBridgeDownError(message)) {
+          setError(message);
+        }
+      }
+    })();
+  }, [
+    loading,
+    machines.length,
+    setError,
+    setMachines,
+    shouldSilenceBridgeDownError,
+    token,
+  ]);
 
   return {
     refreshStatusFor,

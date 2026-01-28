@@ -61,7 +61,7 @@ export const RequestorPricingReferralPolicyCard = () => {
 
   if (shouldShowSkeleton) {
     return (
-      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm">
+      <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pt-6 pb-2">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="mt-2 h-4 w-64" />
@@ -78,7 +78,7 @@ export const RequestorPricingReferralPolicyCard = () => {
 
   if (isError) {
     return (
-      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm">
+      <Card className="app-glass-card app-glass-card--lg">
         <CardHeader>
           <CardTitle className="text-base font-semibold">
             가격 & 리퍼럴 정책
@@ -161,7 +161,7 @@ export const RequestorPricingReferralPolicyCard = () => {
 
   return (
     <>
-      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+      <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pt-6 pb-2">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base font-semibold">

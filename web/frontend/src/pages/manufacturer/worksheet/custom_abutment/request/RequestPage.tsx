@@ -44,6 +44,7 @@ import {
   getDiameterBucketIndex,
 } from "./utils";
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
+import { MachiningMachineQueueBoard } from "./MachiningMachineQueueBoard";
 import { PreviewModal } from "./PreviewModal";
 import { useRequestFileHandlers } from "./useRequestFileHandlers";
 import { usePreviewLoader } from "./usePreviewLoader";
@@ -684,7 +685,9 @@ export const RequestPage = ({
             </Button>
           </div>
         )}
-        {isEmpty ? (
+        {tabStage === "machining" ? (
+          <MachiningMachineQueueBoard searchQuery={worksheetSearch} />
+        ) : isEmpty ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
             표시할 의뢰가 없습니다.
           </div>

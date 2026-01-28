@@ -13,7 +13,7 @@ export const ServicePage = () => {
       const vat = Math.round(supply * 0.1);
       const total = supply + vat;
       return { supply, vat, total };
-    }
+    },
   );
 
   return (
@@ -93,7 +93,7 @@ export const ServicePage = () => {
                     {products.map((p) => (
                       <div
                         key={p.supply}
-                        className="rounded-lg border border-gray-200 bg-white p-4"
+                        className="app-surface app-surface--panel p-4"
                       >
                         <div className="text-sm font-medium text-foreground">
                           크레딧 충전{" "}

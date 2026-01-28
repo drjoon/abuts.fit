@@ -23,7 +23,7 @@ export function NewRequestUploadSection({
   return (
     <div className="mb-4 lg:mb-0 w-full">
       <div
-        className={`relative flex flex-col rounded-2xl border-2 border-gray-300 p-1 md:p-1 transition-shadow hover:shadow-md ${
+        className={`app-surface app-surface--panel relative flex flex-col border-2 border-gray-300 p-1 md:p-1 ${
           highlight ? sectionHighlightClass : ""
         }`}
       >
@@ -32,8 +32,8 @@ export function NewRequestUploadSection({
             isDragOver
               ? "border-primary bg-primary/5"
               : highlight
-              ? "border-gray-300 hover:border-primary/50 bg-primary/5"
-              : "border-gray-300 hover:border-primary/50 bg-white"
+                ? "border-gray-300 hover:border-primary/50 bg-primary/5"
+                : "border-gray-300 hover:border-primary/50 bg-white"
           }`}
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}

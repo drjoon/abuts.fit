@@ -116,15 +116,15 @@ export const RequestorRecentRequestsCard = ({
 
   const clinicNameOptions = useMemo(
     () => clinicPresets.map((p) => ({ id: p.id, label: p.label })),
-    [clinicPresets]
+    [clinicPresets],
   );
   const patientNameOptions = useMemo(
     () => patientPresets.map((p) => ({ id: p.id, label: p.label })),
-    [patientPresets]
+    [patientPresets],
   );
   const teethOptions = useMemo(
     () => teethPresets.map((p) => ({ id: p.id, label: p.label })),
-    [teethPresets]
+    [teethPresets],
   );
 
   const handleCancelRequest = async (requestId: string) => {
@@ -166,7 +166,7 @@ export const RequestorRecentRequestsCard = ({
       (c: any) =>
         c.manufacturer === rawManufacturer &&
         c.system === rawSystem &&
-        c.type === rawType
+        c.type === rawType,
     );
     if (direct) {
       return {
@@ -179,7 +179,7 @@ export const RequestorRecentRequestsCard = ({
     // case1) rawManufacturer 자리에 시스템이 들어간 케이스 (예: Regular / Hex / Hex)
     if (!manufacturers.has(rawManufacturer) && systems.has(rawManufacturer)) {
       let candidates = connections.filter(
-        (c: any) => c.system === rawManufacturer
+        (c: any) => c.system === rawManufacturer,
       );
       if (rawSystem) {
         candidates = candidates.filter((c: any) => c.type === rawSystem);
@@ -200,7 +200,7 @@ export const RequestorRecentRequestsCard = ({
     // case2) 제조사는 맞는데 시스템/유형이 꼬인 케이스
     if (manufacturers.has(rawManufacturer)) {
       let candidates = connections.filter(
-        (c: any) => c.manufacturer === rawManufacturer
+        (c: any) => c.manufacturer === rawManufacturer,
       );
       if (rawSystem && systems.has(rawSystem)) {
         candidates = candidates.filter((c: any) => c.system === rawSystem);
@@ -388,11 +388,11 @@ export const RequestorRecentRequestsCard = ({
 
   return (
     <Card
-      className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg cursor-pointer"
+      className="app-glass-card app-glass-card--lg cursor-pointer"
       onClick={onRefresh}
     >
       <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
-        <CardTitle className="text-base font-semibold m-0">최근 의뢰</CardTitle>
+        <CardTitle className="text-base font-semibold">최근 의뢰</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-between pt-0">
         <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
@@ -518,7 +518,7 @@ export const RequestorRecentRequestsCard = ({
                       <span className="text-green-600 font-medium">
                         완료:{" "}
                         {new Date(
-                          item.deliveryInfoRef.deliveredAt
+                          item.deliveryInfoRef.deliveredAt,
                         ).toLocaleDateString()}
                       </span>
                     )}
@@ -572,10 +572,10 @@ export const RequestorRecentRequestsCard = ({
                             {detail?.createdAt
                               ? new Date(detail.createdAt).toLocaleString()
                               : selectedSummary?.createdAt
-                              ? new Date(
-                                  selectedSummary.createdAt
-                                ).toLocaleString()
-                              : "-"}
+                                ? new Date(
+                                    selectedSummary.createdAt,
+                                  ).toLocaleString()
+                                : "-"}
                           </span>
                         </div>
                         {(detail?.timeline?.estimatedCompletion ||
@@ -599,7 +599,7 @@ export const RequestorRecentRequestsCard = ({
                             <span>배송 완료일:</span>
                             <span>
                               {new Date(
-                                detail.deliveryInfoRef.deliveredAt
+                                detail.deliveryInfoRef.deliveredAt,
                               ).toLocaleString()}
                             </span>
                           </div>
@@ -609,7 +609,7 @@ export const RequestorRecentRequestsCard = ({
                         {getStatusBadge(
                           detail?.status || selectedSummary?.status || "-",
                           detail?.manufacturerStage ||
-                            selectedSummary?.manufacturerStage
+                            selectedSummary?.manufacturerStage,
                         )}
                       </div>
                     </div>
@@ -670,7 +670,7 @@ export const RequestorRecentRequestsCard = ({
                                 : ""}
                               {connectionDiameter != null
                                 ? ` / 커넥션 ${Number(
-                                    connectionDiameter
+                                    connectionDiameter,
                                   ).toFixed(1)}`
                                 : ""}
                             </div>

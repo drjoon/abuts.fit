@@ -31,7 +31,7 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
 }) => {
   const current = programSummary?.current ?? null;
   const list = Array.isArray(programSummary?.list)
-    ? programSummary?.list ?? []
+    ? (programSummary?.list ?? [])
     : [];
 
   const currentNo = current?.programNo ?? current?.no ?? "-";
@@ -84,7 +84,7 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
 
   return (
     <aside className="mt-6 sm:mt-0 sm:ml-6 w-full sm:w-80 lg:w-96 flex-shrink-0">
-      <div className="h-full rounded-2xl bg-white/80 border border-gray-200 shadow-sm flex flex-col overflow-hidden">
+      <div className="app-glass-card app-glass-card--lg h-full flex flex-col">
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
           <div>
             <div className="text-xs font-semibold text-gray-500 mb-0.5">
@@ -119,8 +119,8 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
                 statusLabel === "OK"
                   ? "text-emerald-600"
                   : statusLabel === "Error"
-                  ? "text-red-600"
-                  : "text-slate-500"
+                    ? "text-red-600"
+                    : "text-slate-500"
               }`}
             >
               {statusLabel}
@@ -168,7 +168,7 @@ export const CncWorkBoardPanel: React.FC<CncWorkBoardPanelProps> = ({
             >
               <div className="text-[11px] text-gray-500 mb-0.5">번호</div>
               <div className="text-sm font-semibold text-gray-900">
-                {nextProgram ? nextNo ?? "-" : "-"}
+                {nextProgram ? (nextNo ?? "-") : "-"}
               </div>
               <div className="mt-1 text-[11px] text-gray-600 truncate">
                 {nextProgram ? nextName : "예상되는 다음 프로그램이 없습니다."}

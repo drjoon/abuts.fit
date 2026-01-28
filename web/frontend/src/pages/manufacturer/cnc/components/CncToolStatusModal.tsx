@@ -45,15 +45,15 @@ export const CncToolStatusModal = ({
           <div className="flex items-center gap-3">
             {title === "공구 상태" && (
               <div className="hidden sm:flex items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border-emerald-100">
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-emerald-700 border border-emerald-500">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   정상
                 </span>
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-50 text-amber-700 border-amber-100">
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-amber-700 border border-amber-500">
                   <span className="w-2 h-2 rounded-full bg-amber-400" />
                   주의
                 </span>
-                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-50 text-red-700 border-red-100">
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white text-red-700 border border-red-500">
                   <span className="w-2 h-2 rounded-full bg-red-500" />
                   교체 필요
                 </span>

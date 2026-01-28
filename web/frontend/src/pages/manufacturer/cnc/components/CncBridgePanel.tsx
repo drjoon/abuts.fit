@@ -179,7 +179,7 @@ export const CncBridgePanel: React.FC<CncBridgePanelProps> = ({
                       ? `${rawName.slice(0, 15)}...`
                       : rawName;
                   const cardClass = isDir
-                    ? "border border-amber-400 bg-amber-50 hover:border-amber-500 hover:bg-amber-100"
+                    ? "border-2 border-amber-500 bg-white hover:border-amber-600"
                     : "border border-blue-200 bg-white hover:border-blue-400 hover:bg-blue-50/60";
 
                   return (
@@ -263,8 +263,8 @@ export const CncBridgePanel: React.FC<CncBridgePanelProps> = ({
                                   try {
                                     const res = await fetch(
                                       `/api/bridge-store/file?path=${encodeURIComponent(
-                                        relPath
-                                      )}`
+                                        relPath,
+                                      )}`,
                                     );
                                     if (!res.ok) return;
                                     const body: any = await res
@@ -316,8 +316,8 @@ export const CncBridgePanel: React.FC<CncBridgePanelProps> = ({
                                   try {
                                     const res = await fetch(
                                       `/api/bridge-store/folder-zip?path=${encodeURIComponent(
-                                        relPath
-                                      )}`
+                                        relPath,
+                                      )}`,
                                     );
                                     if (!res.ok) return;
                                     const blob = await res.blob();

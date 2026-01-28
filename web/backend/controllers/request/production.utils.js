@@ -139,7 +139,7 @@ export async function calculateInitialProductionSchedule({
 
   // CAM 시작 → CAM 완료 (5분)
   const scheduledCamComplete = new Date(
-    scheduledCamStart.getTime() + CAM_DURATION_MINUTES * 60 * 1000
+    scheduledCamStart.getTime() + CAM_DURATION_MINUTES * 60 * 1000,
   );
 
   // CAM 완료 → 가공 시작 (즉시)
@@ -147,7 +147,7 @@ export async function calculateInitialProductionSchedule({
 
   // 가공 시작 → 가공 완료 (15분)
   const scheduledMachiningComplete = new Date(
-    scheduledMachiningStart.getTime() + MACHINING_DURATION_MINUTES * 60 * 1000
+    scheduledMachiningStart.getTime() + MACHINING_DURATION_MINUTES * 60 * 1000,
   );
 
   // 가공 완료 → 배치 처리 (세척/검사/포장, 1일 소요)
@@ -219,11 +219,7 @@ export function getProductionQueueForMachine(machineId, requests) {
  * @returns {Object} { M3: [...], M4: [...], unassigned: [...] }
  */
 export function getAllProductionQueues(requests) {
-  const queues = {
-    M3: [],
-    M4: [],
-    unassigned: [],
-  };
+  const queues = { unassigned: [] };
 
   for (const req of requests) {
     const schedule = req.productionSchedule;
@@ -233,10 +229,9 @@ export function getAllProductionQueues(requests) {
     if (!["의뢰", "CAM", "생산"].includes(req.status)) continue;
 
     const machine = schedule.assignedMachine;
-    if (machine === "M3") {
-      queues.M3.push(req);
-    } else if (machine === "M4") {
-      queues.M4.push(req);
+    if (machine && typeof machine === "string") {
+      if (!queues[machine]) queues[machine] = [];
+      queues[machine].push(req);
     } else {
       queues.unassigned.push(req);
     }
@@ -284,7 +279,7 @@ export function recalculateProductionSchedule({
  */
 export async function recalculateQueueOnMaterialChange(
   machineId,
-  newDiameterGroup
+  newDiameterGroup,
 ) {
   const Request = (await import("../../models/request.model.js")).default;
 

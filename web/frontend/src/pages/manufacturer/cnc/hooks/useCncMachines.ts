@@ -13,7 +13,7 @@ export const useCncMachines = () => {
     uid: "", // Hi-Link UID와 통합된 장비 식별자
     name: "M1", // 표시용 장비 이름
     ip: "192.168.0.10",
-    allowJobStart: true,
+    allowJobStart: false,
     allowProgramDelete: false,
     allowAutoMachining: false,
   });
@@ -82,7 +82,7 @@ export const useCncMachines = () => {
       setForm((prev) =>
         addModalMode === "create"
           ? { ...prev, name: nameValue, uid: nameValue }
-          : { ...prev, name: nameValue }
+          : { ...prev, name: nameValue },
       );
     } else {
       setForm((prev) => ({ ...prev, [field]: value }));
@@ -136,7 +136,7 @@ export const useCncMachines = () => {
     const duplicate = machines.find(
       (m) =>
         (m.uid === submit.uid || m.name === submit.name) &&
-        (addModalMode === "create" || m.uid !== submit.uid)
+        (addModalMode === "create" || m.uid !== submit.uid),
     );
     if (duplicate) {
       const msg =

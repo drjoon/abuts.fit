@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -25,6 +26,13 @@ import {
 } from "@/components/ui/select";
 
 type DiameterGroup = "6" | "8" | "10" | "10+";
+
+const diameterRank: Record<DiameterGroup, number> = {
+  "6": 6,
+  "8": 8,
+  "10": 10,
+  "10+": 999,
+};
 
 export type CncMaterialInfo = {
   materialType?: string;
@@ -42,12 +50,14 @@ interface CncMaterialModalProps {
   machineId: string;
   machineName: string;
   currentMaterial?: CncMaterialInfo | null;
+  maxModelDiameterGroups?: DiameterGroup[];
   onReplace: (next: {
     materialType: string;
     heatNo: string;
     diameter: number;
     diameterGroup: DiameterGroup;
     remainingLength: number;
+    maxModelDiameterGroups: DiameterGroup[];
   }) => Promise<void>;
   onAdd: (next: { remainingLength: number }) => Promise<void>;
 }
@@ -65,6 +75,7 @@ export const CncMaterialModal = ({
   machineId,
   machineName,
   currentMaterial,
+  maxModelDiameterGroups,
   onReplace,
   onAdd,
 }: CncMaterialModalProps) => {
@@ -86,13 +97,18 @@ export const CncMaterialModal = ({
   const [materialType, setMaterialType] = useState(base.materialType);
   const [heatNo, setHeatNo] = useState(base.heatNo);
   const [diameterGroup, setDiameterGroup] = useState<DiameterGroup>(
-    base.diameterGroup
+    base.diameterGroup,
+  );
+  const [maxDiaGroups, setMaxDiaGroups] = useState<DiameterGroup[]>(
+    Array.isArray(maxModelDiameterGroups) && maxModelDiameterGroups.length > 0
+      ? (maxModelDiameterGroups as DiameterGroup[])
+      : ([base.diameterGroup] as DiameterGroup[]),
   );
   const [diameterInput, setDiameterInput] = useState<string>(
-    String(base.diameter || "")
+    String(base.diameter || ""),
   );
   const [remainingInput, setRemainingInput] = useState<string>(
-    String(base.remainingLength || "")
+    String(base.remainingLength || ""),
   );
   const [loading, setLoading] = useState(false);
 
@@ -102,16 +118,28 @@ export const CncMaterialModal = ({
     setMaterialType(base.materialType);
     setHeatNo(base.heatNo);
     setDiameterGroup(base.diameterGroup);
+    const allowedMaxRank = diameterRank[base.diameterGroup] ?? 0;
+    const incoming =
+      Array.isArray(maxModelDiameterGroups) && maxModelDiameterGroups.length > 0
+        ? (maxModelDiameterGroups as DiameterGroup[])
+        : ([base.diameterGroup] as DiameterGroup[]);
+    const filtered = incoming.filter(
+      (g) => (diameterRank[g] ?? 0) <= allowedMaxRank,
+    );
+    const ensured = Array.from(
+      new Set([base.diameterGroup, ...(filtered as DiameterGroup[])]),
+    ) as DiameterGroup[];
+    setMaxDiaGroups(ensured.length > 0 ? ensured : [base.diameterGroup]);
     setDiameterInput(String(base.diameter || ""));
     setRemainingInput(String(base.remainingLength || ""));
-  }, [open, base]);
+  }, [open, base, maxModelDiameterGroups]);
 
   const title: ReactNode =
     mode === "replace"
       ? `소재교체 - ${machineName}`
       : mode === "add"
-      ? `소재추가 - ${machineName}`
-      : `원소재 - ${machineName}`;
+        ? `소재추가 - ${machineName}`
+        : `원소재 - ${machineName}`;
 
   const parseLengths = () => {
     const rem = remainingInput.trim();
@@ -134,6 +162,33 @@ export const CncMaterialModal = ({
     return { diaNum, remNum };
   };
 
+  const allowedMaxRank = diameterRank[base.diameterGroup] ?? 0;
+  const maxRank = Math.max(...maxDiaGroups.map((g) => diameterRank[g] ?? 0), 0);
+  const effectiveMaxRank = Math.min(maxRank, allowedMaxRank);
+  const canUseDiameterGroup = (g: DiameterGroup) =>
+    (diameterRank[g] ?? 0) <= effectiveMaxRank;
+
+  const canCheckMaxDiaGroup = (g: DiameterGroup) =>
+    (diameterRank[g] ?? 0) <= allowedMaxRank;
+
+  const toggleMaxDiaGroup = (g: DiameterGroup) => {
+    if (g === base.diameterGroup) return;
+    if (!canCheckMaxDiaGroup(g)) return;
+    setMaxDiaGroups((prev) => {
+      const has = prev.includes(g);
+      if (has) {
+        const next = prev.filter((x) => x !== g);
+        return next.length > 0
+          ? next
+          : ([base.diameterGroup] as DiameterGroup[]);
+      }
+      const next = Array.from(new Set([...(prev || []), g]));
+      return next.length > 0
+        ? (next as DiameterGroup[])
+        : ([base.diameterGroup] as DiameterGroup[]);
+    });
+  };
+
   const handleReplace = async () => {
     try {
       const { diaNum, remNum } = parseLengths();
@@ -144,6 +199,7 @@ export const CncMaterialModal = ({
         diameter: diaNum,
         diameterGroup,
         remainingLength: remNum,
+        maxModelDiameterGroups: maxDiaGroups,
       });
       toast({ title: "소재교체", description: "소재 정보를 변경했습니다." });
       onClose();
@@ -178,7 +234,7 @@ export const CncMaterialModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -228,10 +284,24 @@ export const CncMaterialModal = ({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="6">6mm</SelectItem>
-                    <SelectItem value="8">8mm</SelectItem>
-                    <SelectItem value="10">10mm</SelectItem>
-                    <SelectItem value="10+">10mm+</SelectItem>
+                    <SelectItem value="6" disabled={!canUseDiameterGroup("6")}>
+                      6mm
+                    </SelectItem>
+                    <SelectItem value="8" disabled={!canUseDiameterGroup("8")}>
+                      8mm
+                    </SelectItem>
+                    <SelectItem
+                      value="10"
+                      disabled={!canUseDiameterGroup("10")}
+                    >
+                      10mm
+                    </SelectItem>
+                    <SelectItem
+                      value="10+"
+                      disabled={!canUseDiameterGroup("10+")}
+                    >
+                      10mm+
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {diameterGroup === "10+" && (
@@ -245,6 +315,33 @@ export const CncMaterialModal = ({
                     }
                   />
                 )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>가공 가능한 최대직경</Label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(["6", "8", "10", "10+"] as DiameterGroup[]).map((g) =>
+                    (() => {
+                      const isBase = g === base.diameterGroup;
+                      const isChecked = isBase || maxDiaGroups.includes(g);
+                      const isDisabled = isBase || !canCheckMaxDiaGroup(g);
+                      return (
+                        <label
+                          key={g}
+                          className="flex items-center gap-1.5 rounded-md border bg-white px-2 py-2 text-sm"
+                        >
+                          <Checkbox
+                            disabled={isDisabled}
+                            checked={isChecked}
+                            onCheckedChange={() => toggleMaxDiaGroup(g)}
+                          />
+                          <span className="select-none">
+                            {g === "10+" ? "10+" : g}
+                          </span>
+                        </label>
+                      );
+                    })(),
+                  )}
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label>수량</Label>

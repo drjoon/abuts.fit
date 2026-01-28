@@ -122,7 +122,7 @@ function formatRemaining(ms: number) {
 
   if (hours > 0) {
     return `${hours}시간 ${String(minutes).padStart(2, "0")}분 ${String(
-      seconds
+      seconds,
     ).padStart(2, "0")}초`;
   }
   return `${minutes}분 ${String(seconds).padStart(2, "0")}초`;
@@ -247,7 +247,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
   const oneMonthSupply = useMemo(() => {
     return normalizeSupplyAmount(
-      Number(spendInsights?.recommended?.oneMonthSupply || 500000)
+      Number(spendInsights?.recommended?.oneMonthSupply || 500000),
     );
   }, [spendInsights?.recommended?.oneMonthSupply]);
 
@@ -257,14 +257,14 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
   useEffect(() => {
     setSelectedSupply(
-      selectedPlan === "3m" ? threeMonthsSupply : oneMonthSupply
+      selectedPlan === "3m" ? threeMonthsSupply : oneMonthSupply,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPlan, oneMonthSupply, threeMonthsSupply]);
 
   const totalAmount = useMemo(
     () => supplyAmount + roundVat(supplyAmount),
-    [supplyAmount]
+    [supplyAmount],
   );
 
   const filteredOrders = useMemo(() => {
@@ -282,10 +282,10 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     if (ordersPeriod === "all") {
       return [...items].sort((a, b) => {
         const ta = new Date(
-          String(a.createdAt || a.matchedAt || a.expiresAt || 0)
+          String(a.createdAt || a.matchedAt || a.expiresAt || 0),
         ).getTime();
         const tb = new Date(
-          String(b.createdAt || b.matchedAt || b.expiresAt || 0)
+          String(b.createdAt || b.matchedAt || b.expiresAt || 0),
         ).getTime();
         return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
       });
@@ -308,17 +308,17 @@ export const CreditPaymentTab = ({ userData }: Props) => {
       return items
         .filter((o) => {
           const t = new Date(
-            String(o.createdAt || o.matchedAt || o.expiresAt || "")
+            String(o.createdAt || o.matchedAt || o.expiresAt || ""),
           ).getTime();
           if (!Number.isFinite(t)) return true;
           return t >= start.getTime() && t < end.getTime();
         })
         .sort((a, b) => {
           const ta = new Date(
-            String(a.createdAt || a.matchedAt || a.expiresAt || 0)
+            String(a.createdAt || a.matchedAt || a.expiresAt || 0),
           ).getTime();
           const tb = new Date(
-            String(b.createdAt || b.matchedAt || b.expiresAt || 0)
+            String(b.createdAt || b.matchedAt || b.expiresAt || 0),
           ).getTime();
           return (
             (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0)
@@ -331,17 +331,17 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     return items
       .filter((o) => {
         const t = new Date(
-          String(o.createdAt || o.matchedAt || o.expiresAt || "")
+          String(o.createdAt || o.matchedAt || o.expiresAt || ""),
         ).getTime();
         if (!Number.isFinite(t)) return true;
         return t >= cutoff;
       })
       .sort((a, b) => {
         const ta = new Date(
-          String(a.createdAt || a.matchedAt || a.expiresAt || 0)
+          String(a.createdAt || a.matchedAt || a.expiresAt || 0),
         ).getTime();
         const tb = new Date(
-          String(b.createdAt || b.matchedAt || b.expiresAt || 0)
+          String(b.createdAt || b.matchedAt || b.expiresAt || 0),
         ).getTime();
         return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
       });
@@ -401,7 +401,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
   const hasChargedBefore = useMemo(() => {
     return orders.some((o) =>
-      ["DONE", "REFUND_REQUESTED", "REFUNDED"].includes(String(o.status))
+      ["DONE", "REFUND_REQUESTED", "REFUNDED"].includes(String(o.status)),
     );
   }, [orders]);
 
@@ -525,7 +525,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     try {
       const res = await request<any>({
         path: `/api/credits/b-plan/orders/${encodeURIComponent(
-          chargeOrderId
+          chargeOrderId,
         )}/cancel`,
         method: "POST",
         token,
@@ -552,14 +552,14 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   };
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader>
         <CardTitle>크레딧 충전</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         {!isFirstCharge && (
           <>
-            <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <div className="app-surface app-surface--panel p-4">
               <div className="text-sm text-muted-foreground">보유 크레딧</div>
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
                 <div>
@@ -616,14 +616,14 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                     const canCancel = o.status === "PENDING";
 
                     const orderDate = formatKoreanDate(
-                      o.createdAt || o.matchedAt || null
+                      o.createdAt || o.matchedAt || null,
                     );
                     const shortId = formatOrderShortId(String(o._id || ""));
 
                     return (
                       <div
                         key={String(o._id || shortId || orderDate)}
-                        className="rounded-lg border border-gray-200 bg-white p-3"
+                        className="app-surface app-surface--panel p-3"
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="space-y-0.5">
@@ -680,7 +680,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
         <div className="space-y-4">
           {isFirstCharge ? (
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-4">
+              <div className="app-surface app-surface--panel space-y-2 p-4">
                 <div className="text-sm font-medium">첫 충전</div>
                 <div className="text-sm text-muted-foreground">
                   가입 후 첫 충전은 50만원(공급가)으로 진행됩니다.
@@ -695,7 +695,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 </div>
               </div>
 
-              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+              <div className="app-surface app-surface--panel space-y-3 p-4">
                 <div className="text-xs text-muted-foreground">결제금액</div>
                 <div className="text-3xl font-bold text-primary">55만원</div>
                 <Button
@@ -712,7 +712,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
+              <div className="app-surface app-surface--panel space-y-3 p-4">
                 <div className="text-sm text-muted-foreground">
                   최근 3개월 사용량 기반 추천 충전액입니다.
                 </div>
@@ -754,8 +754,8 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                   {loadingInsights
                     ? "추천 정보를 계산하는 중..."
                     : spendInsights?.estimatedDaysFor500k
-                    ? `50만원(공급가) 예상 소진: 약 ${spendInsights.estimatedDaysFor500k}일`
-                    : "최근 사용 내역이 부족하여 예상 소진일을 계산할 수 없습니다."}
+                      ? `50만원(공급가) 예상 소진: 약 ${spendInsights.estimatedDaysFor500k}일`
+                      : "최근 사용 내역이 부족하여 예상 소진일을 계산할 수 없습니다."}
                 </div>
               </div>
 

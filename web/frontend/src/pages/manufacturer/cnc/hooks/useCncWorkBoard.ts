@@ -52,6 +52,18 @@ export const useCncWorkBoard = (
       return;
     }
 
+    const targetMachine = machines.find((m) => m.uid === targetUid);
+    const isConfigured = !!(
+      targetMachine?.ip && Number(targetMachine?.port || 0) > 0
+    );
+    if (!isConfigured) {
+      setOpStatus(null);
+      setProgramSummary(null);
+      setScanStatus("idle");
+      setScanError(null);
+      return;
+    }
+
     setLoading(true);
     setScanStatus("running");
     setScanError(null);

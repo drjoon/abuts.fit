@@ -35,7 +35,7 @@ export const RequestorRiskSummaryCard = ({
 }: Props) => {
   if (loading) {
     return (
-      <Card className="relative flex flex-1 flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm h-full">
+      <Card className="app-glass-card app-glass-card--lg h-full">
         <CardHeader className="pb-3">
           <Skeleton className="h-5 w-32" />
         </CardHeader>
@@ -93,7 +93,7 @@ export const RequestorRiskSummaryCard = ({
   };
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold">
           지연 위험 요약

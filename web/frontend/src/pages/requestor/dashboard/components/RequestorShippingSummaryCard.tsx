@@ -81,7 +81,7 @@ export const RequestorShippingSummaryCard = () => {
     const todayRequests = items
       .filter((it) => it.shipDateYmd === data.today?.shipDateYmd)
       .flatMap((it) =>
-        Array.isArray((it as any).requests) ? (it as any).requests : []
+        Array.isArray((it as any).requests) ? (it as any).requests : [],
       );
 
     return {
@@ -100,7 +100,7 @@ export const RequestorShippingSummaryCard = () => {
 
   return (
     <>
-      <Card className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm">
+      <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold">
             오늘 발송 박스 요약

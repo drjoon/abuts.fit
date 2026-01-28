@@ -18,6 +18,15 @@ const cncMachineSchema = new mongoose.Schema(
       enum: ["active", "maintenance", "inactive"],
       default: "active",
     },
+    maxModelDiameterGroups: {
+      type: [
+        {
+          type: String,
+          enum: ["6", "8", "10", "10+"],
+        },
+      ],
+      default: ["10+"],
+    },
     currentMaterial: {
       materialType: {
         type: String,

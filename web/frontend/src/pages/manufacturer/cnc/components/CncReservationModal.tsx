@@ -225,7 +225,7 @@ export const CncReservationModal = ({
       onClick={onRequestClose}
     >
       <div
-        className="bg-white/95 p-6 sm:p-8 rounded-2xl shadow-[0_24px_80px_rgba(15,23,42,0.45)] w-full max-w-5xl transform transition-all border border-slate-100 relative"
+        className="app-surface app-surface--modal p-6 sm:p-8 w-full max-w-5xl transform transition-all relative"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 border-b border-slate-100 pb-3 flex items-center justify-between gap-4">

@@ -4,6 +4,7 @@ import {
   upsertMachine,
   deleteMachine,
   getMachineStatusProxy,
+  getAllMachineStatusProxy,
   getMachineAlarmProxy,
   clearMachineAlarmProxy,
   resetMachineProxy,
@@ -38,6 +39,8 @@ const maybeAuth =
 router.get("/", maybeAuth(["manufacturer"]), getMachines);
 router.post("/", maybeAuth(["manufacturer"]), upsertMachine);
 router.delete("/:uid", maybeAuth(["manufacturer"]), deleteMachine);
+
+router.get("/status", maybeAuth(["manufacturer"]), getAllMachineStatusProxy);
 
 router.get("/:uid/status", maybeAuth(["manufacturer"]), getMachineStatusProxy);
 

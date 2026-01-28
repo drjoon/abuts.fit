@@ -35,7 +35,7 @@ export function NewRequestShippingSection({
   const isDisabled = !!disabled;
   return (
     <div
-      className={`relative flex flex-col justify-center gap-2 rounded-2xl border-2 border-gray-300 p-4 md:p-6 transition-shadow hover:shadow-md ${
+      className={`app-surface app-surface--panel relative flex flex-col justify-center gap-2 border-2 border-gray-300 p-4 md:p-6 ${
         highlight ? sectionHighlightClass : ""
       }`}
     >

@@ -20,16 +20,16 @@ export const BusinessMemberView = ({
 }: BusinessMemberViewProps) => {
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border bg-white/60 p-3 text-sm">
+      <div className="app-surface app-surface--panel text-sm">
         현재 소속됨{currentOrgName ? `: ${currentOrgName}` : ""}
       </div>
 
-      <div className="rounded-lg border bg-white/60 p-3 text-xs text-muted-foreground">
+      <div className="app-surface app-surface--panel text-xs text-muted-foreground">
         기공소 사업자 정보는 대표자만 수정할 수 있어요. 여기서는 확인만
         가능합니다.
       </div>
 
-      <div className="rounded-lg border bg-white/60 p-4 space-y-4">
+      <div className="app-surface app-surface--panel space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-medium">사업자 식별 정보</div>
           <div className="text-xs text-muted-foreground flex items-center gap-1">

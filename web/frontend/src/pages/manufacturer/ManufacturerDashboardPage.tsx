@@ -90,7 +90,7 @@ export const ManufacturerDashboardPage = () => {
       : undefined;
 
   const riskSummary = riskSummaryResponse?.success
-    ? riskSummaryResponse.data?.riskSummary ?? null
+    ? (riskSummaryResponse.data?.riskSummary ?? null)
     : null;
 
   const stats = [
@@ -188,14 +188,14 @@ export const ManufacturerDashboardPage = () => {
           <div className="space-y-3">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
               <WorksheetDiameterCard stats={diameterStatsFromApi} />
-              <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 mt-6">
                     {managementCards.map((item) => (
                       <div
                         key={item.key}
                         onClick={() => navigate(item.href)}
-                        className="cursor-pointer rounded-xl border border-border bg-white/70 px-3 py-3 transition-all hover:shadow-md"
+                        className="cursor-pointer app-surface app-surface--item"
                       >
                         <div className="flex items-center gap-3">
                           <item.icon className="h-4 w-4 text-primary" />
@@ -245,7 +245,7 @@ export const ManufacturerDashboardPage = () => {
                 onClick={() => {
                   if (stat.key === "risk") setRiskModalOpen(true);
                 }}
-                className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
+                className="app-glass-card app-glass-card--lg cursor-pointer"
               >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">

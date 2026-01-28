@@ -18,6 +18,8 @@ import { parseProgramNoFromName } from "../lib/programNaming";
 import { Machine } from "@/pages/manufacturer/cnc/types";
 import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 
+export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
+
 interface MachineCardProps {
   machine: Machine;
   isActive: boolean;
@@ -52,6 +54,8 @@ interface MachineCardProps {
   ) => void;
   onOpenReservationList?: (e: React.MouseEvent) => void;
   onTogglePause?: (jobId: string | undefined, e: React.MouseEvent) => void;
+  onToggleAllowJobStart?: (next: boolean, e: React.MouseEvent) => void;
+  onToggleAllowAutoMachining?: (next: boolean, e: React.MouseEvent) => void;
 }
 
 const getMachineStatusChip = (status: string) => {
@@ -111,6 +115,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   onCancelReservation,
   onOpenReservationList,
   onTogglePause,
+  onToggleAllowJobStart,
+  onToggleAllowAutoMachining,
 }) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -223,11 +229,76 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           onUploadFiles(files);
         }
       }}
-      className={`relative flex flex-col rounded-3xl border bg-white/85 p-4 sm:p-5 shadow-[0_18px_40px_rgba(15,23,42,0.10)] transition-all hover:shadow-[0_22px_55px_rgba(15,23,42,0.14)] cursor-pointer min-h-[240px] sm:min-h-[260px] overflow-hidden ${
+      className={`app-glass-card app-glass-card--xl flex flex-col cursor-pointer min-h-[240px] sm:min-h-[260px] ${
         isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"
       }`}
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-sky-50/70 via-white/40 to-violet-50/70" />
+      <div className="app-glass-card-content mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="text-[16px] font-extrabold text-slate-900">
+            {machine.name}
+          </div>
+          {getMachineStatusChip(machine.status)}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <div className="text-[11px] font-extrabold text-slate-700">
+              원격 가공
+            </div>
+            <button
+              type="button"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                machine.allowJobStart !== false ? "bg-blue-500" : "bg-gray-300"
+              } ${!onToggleAllowJobStart ? "opacity-50" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!onToggleAllowJobStart) return;
+                const next = machine.allowJobStart === false;
+                onToggleAllowJobStart(next, e);
+              }}
+              disabled={loading || !onToggleAllowJobStart}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  machine.allowJobStart !== false
+                    ? "translate-x-5"
+                    : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="text-[11px] font-extrabold text-slate-700">
+              자동 가공
+            </div>
+            <button
+              type="button"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                machine.allowAutoMachining === true
+                  ? "bg-emerald-500"
+                  : "bg-gray-300"
+              } ${!onToggleAllowAutoMachining ? "opacity-50" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!onToggleAllowAutoMachining) return;
+                const next = machine.allowAutoMachining !== true;
+                onToggleAllowAutoMachining(next, e);
+              }}
+              disabled={loading || !onToggleAllowAutoMachining}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  machine.allowAutoMachining === true
+                    ? "translate-x-5"
+                    : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
 
       {uploadProgress && (
         <div className="absolute top-2 left-2 right-2 z-20 rounded-2xl border border-blue-200 bg-blue-600/95 px-4 py-3 shadow-[0_18px_45px_rgba(37,99,235,0.35)]">
@@ -254,30 +325,13 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           </div>
         </div>
       )}
-      <div className="relative flex items-start justify-between gap-3 mb-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            {getMachineStatusChip(machine.status)}
-            <span className="text-[11px] font-semibold text-slate-500">
-              CNC
-            </span>
-            {continuousState?.isRunning && (
-              <span className="text-[11px] font-semibold text-violet-600">
-                연속가공
-              </span>
-            )}
-          </div>
-          <div className="mt-1 text-xl font-extrabold tracking-tight text-slate-900 truncate">
-            {machine.name}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-2 justify-items-end content-start">
+      <div className="relative flex items-start justify-end gap-3 mb-4">
+        <div className="flex flex-nowrap items-center justify-end gap-1.5">
           {onUploadFiles && (
             <>
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+                className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   fileInputRef.current?.click();
@@ -285,7 +339,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
                 disabled={loading}
                 title="파일 업로드"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5" />
               </button>
               <input
                 ref={fileInputRef}
@@ -305,25 +359,25 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             </>
           )}
           <button
-            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
             onClick={(e) => {
               e.stopPropagation();
               setDummyOpen(true);
             }}
             title="더미 작업"
           >
-            <Cylinder className="h-4 w-4" />
+            <Cylinder className="h-3.5 w-3.5" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
             onClick={onInfoClick}
             title="현재 프로그램/알람 정보"
             disabled={loading || !onInfoClick}
           >
-            <Info className="h-4 w-4" />
+            <Info className="h-3.5 w-3.5" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 text-xs font-bold shadow-sm"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 text-[11px] font-bold shadow-sm"
             onClick={onMaterialClick}
             title="원소재"
             disabled={loading || !onMaterialClick}
@@ -333,30 +387,30 @@ export const MachineCard: React.FC<MachineCardProps> = ({
               : "Ø"}
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
             onClick={onToolClick}
             title={toolTooltip || "공구 수명, 교체 확인"}
             disabled={loading}
           >
-            <Wrench className="h-4 w-4" />
+            <Wrench className="h-3.5 w-3.5" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
             onClick={onTempClick}
             title={tempTooltip || "모터 온도"}
             disabled={loading}
           >
-            <Thermometer className="h-4 w-4" />
+            <Thermometer className="h-3.5 w-3.5" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-9 h-9 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
             onClick={onEditClick}
             title="장비 설정"
           >
             {machine.allowJobStart === false ? (
-              <ShieldOff className="h-4 w-4 text-red-500" />
+              <ShieldOff className="h-3.5 w-3.5 text-red-500" />
             ) : (
-              <Settings className="h-4 w-4" />
+              <Settings className="h-3.5 w-3.5" />
             )}
           </button>
         </div>

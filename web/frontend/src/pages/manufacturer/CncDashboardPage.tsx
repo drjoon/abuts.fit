@@ -15,6 +15,7 @@ import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
 import { useCncWorkBoard } from "@/pages/manufacturer/cnc/hooks/useCncWorkBoard";
 import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
 import { CncMachineGrid } from "@/pages/manufacturer/cnc/components/CncMachineGrid";
+import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Plus, FileText, Clock, CheckCircle, AlertCircle } from "lucide-react";
@@ -41,8 +42,6 @@ import {
 } from "@/pages/manufacturer/cnc/components/CncMaterialModal";
 
 export const CncDashboardPage = () => {
-  type HealthLevel = "unknown" | "ok" | "warn" | "alarm";
-
   const { user, token } = useAuthStore();
   const {
     machines,
@@ -108,6 +107,7 @@ export const CncDashboardPage = () => {
         currentMaterial?: CncMaterialInfo;
         scheduledMaterialChange?: any;
         dummySettings?: { programName?: string; schedules?: any[] };
+        maxModelDiameterGroups?: ("6" | "8" | "10" | "10+")[];
       }
     >
   >({});
@@ -204,6 +204,7 @@ export const CncDashboardPage = () => {
           schedules?: any[];
           excludeHolidays?: boolean;
         };
+        maxModelDiameterGroups?: ("6" | "8" | "10" | "10+")[];
       }
     > = {};
     for (const item of list) {
@@ -213,6 +214,9 @@ export const CncDashboardPage = () => {
         currentMaterial: item?.currentMaterial || undefined,
         scheduledMaterialChange: item?.scheduledMaterialChange || undefined,
         dummySettings: item?.dummySettings || undefined,
+        maxModelDiameterGroups: Array.isArray(item?.maxModelDiameterGroups)
+          ? item.maxModelDiameterGroups
+          : undefined,
       };
     }
     setCncMachineMetaMap(nextMap);
@@ -233,6 +237,8 @@ export const CncDashboardPage = () => {
         scheduledMaterialChange:
           meta.scheduledMaterialChange || m.scheduledMaterialChange,
         dummySettings: meta.dummySettings || m.dummySettings,
+        maxModelDiameterGroups:
+          meta.maxModelDiameterGroups || m.maxModelDiameterGroups,
       };
     });
   }, [cncMachineMetaMap, machines]);
@@ -867,6 +873,141 @@ export const CncDashboardPage = () => {
     await handleAddMachine(snapshot);
   };
 
+  const updateMachineFlags = useCallback(
+    async (
+      machine: Machine,
+      next: {
+        allowJobStart?: boolean;
+        allowAutoMachining?: boolean;
+      },
+    ) => {
+      if (!token) return;
+
+      const uid = machine.uid;
+
+      // UI는 즉시 반영하고, 실패 시 롤백한다.
+      const prevAllowJobStart = machine.allowJobStart !== false;
+      const prevAllowAutoMachining = machine.allowAutoMachining === true;
+
+      setMachines((prev) =>
+        prev.map((m) =>
+          m.uid === uid
+            ? {
+                ...m,
+                ...(typeof next.allowJobStart === "boolean"
+                  ? { allowJobStart: next.allowJobStart }
+                  : null),
+                ...(typeof next.allowAutoMachining === "boolean"
+                  ? { allowAutoMachining: next.allowAutoMachining }
+                  : null),
+              }
+            : m,
+        ),
+      );
+
+      try {
+        const res = await apiFetch({
+          path: "/api/machines",
+          method: "POST",
+          token,
+          jsonBody: {
+            uid: machine.uid,
+            name: machine.name,
+            ip: machine.ip,
+            port: machine.port,
+            allowJobStart:
+              typeof next.allowJobStart === "boolean"
+                ? next.allowJobStart
+                : prevAllowJobStart,
+            allowAutoMachining:
+              typeof next.allowAutoMachining === "boolean"
+                ? next.allowAutoMachining
+                : prevAllowAutoMachining,
+          },
+        });
+
+        const body: any = res.data ?? {};
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "장비 설정 저장 실패");
+        }
+      } catch (e: any) {
+        setMachines((prev) =>
+          prev.map((m) =>
+            m.uid === uid
+              ? {
+                  ...m,
+                  allowJobStart: prevAllowJobStart,
+                  allowAutoMachining: prevAllowAutoMachining,
+                }
+              : m,
+          ),
+        );
+        toast({
+          title: "설정 저장 실패",
+          description: e?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    },
+    [setMachines, toast, token],
+  );
+
+  const globalAutoEnabled = useMemo(() => {
+    if (!Array.isArray(machines) || machines.length === 0) return false;
+    return machines.every((m) => m.allowAutoMachining === true);
+  }, [machines]);
+
+  const setGlobalAutoEnabled = useCallback(
+    async (enabled: boolean) => {
+      if (!token) return;
+
+      const list = Array.isArray(machines) ? machines : [];
+      if (list.length === 0) return;
+
+      const prevMap = new Map(
+        list.map((m) => [m.uid, m.allowAutoMachining === true]),
+      );
+
+      setMachines((prev) =>
+        prev.map((m) => ({ ...m, allowAutoMachining: enabled })),
+      );
+
+      try {
+        for (const m of list) {
+          const res = await apiFetch({
+            path: "/api/machines",
+            method: "POST",
+            token,
+            jsonBody: {
+              uid: m.uid,
+              name: m.name,
+              ip: m.ip,
+              port: m.port,
+              allowAutoMachining: enabled,
+            },
+          });
+          const body: any = res.data ?? {};
+          if (!res.ok || body?.success === false) {
+            throw new Error(body?.message || "전체 자동 가공 설정 저장 실패");
+          }
+        }
+      } catch (e: any) {
+        setMachines((prev) =>
+          prev.map((m) => ({
+            ...m,
+            allowAutoMachining: prevMap.get(m.uid) === true,
+          })),
+        );
+        toast({
+          title: "전체 자동 가공 설정 실패",
+          description: e?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    },
+    [machines, setMachines, toast, token],
+  );
+
   const handleDownloadProgram = async (prog: any) => {
     if (!prog) return;
     const code = await loadProgramCode(prog);
@@ -978,6 +1119,7 @@ export const CncDashboardPage = () => {
     diameter: number;
     diameterGroup: "6" | "8" | "10" | "10+";
     remainingLength: number;
+    maxModelDiameterGroups: ("6" | "8" | "10" | "10+")[];
   }) => {
     if (!materialModalTarget || !token) return;
     const res = await fetch(
@@ -1027,13 +1169,36 @@ export const CncDashboardPage = () => {
       <main
         className="flex-1 min-h-full bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-2xl shadow-lg cursor-pointer transition-shadow hover:shadow-xl"
         onClick={(e) => {
-          // 배경 영역 클릭 시에만 전체 장비 상태를 갱신하고,
-          // 카드/버튼 등 자식 요소 클릭 시에는 이벤트 버블링으로 인한 중복 갱신을 막는다.
-          if (e.target === e.currentTarget) {
-            handleBackgroundRefresh();
-          }
+          handleBackgroundRefresh();
         }}
       >
+        <div className="mb-4 flex items-center justify-end">
+          <div
+            className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3"
+            title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
+          >
+            <div className="text-[12px] font-extrabold text-slate-700">
+              전체 자동 가공 허용
+            </div>
+            <button
+              type="button"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                globalAutoEnabled ? "bg-emerald-500" : "bg-gray-300"
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void setGlobalAutoEnabled(!globalAutoEnabled);
+              }}
+              disabled={loading}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  globalAutoEnabled ? "translate-x-5" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
         <div className="flex flex-col sm:flex-row">
           <div className="flex-1 min-w-0">
             {/* 여기 아래부터는 장비 카드 그리드 */}
@@ -1041,7 +1206,7 @@ export const CncDashboardPage = () => {
               <div className="mt-2 grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
                 <button
                   type="button"
-                  className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-300 bg-white/70 p-6 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/60 transition-colors shadow-sm"
+                  className="app-surface app-surface--panel flex flex-col items-center justify-center border-2 border-dashed border-gray-300 p-6 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/60 transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
                     setAddModalMode("create");
@@ -1065,6 +1230,14 @@ export const CncDashboardPage = () => {
                 reservationSummaryMap={reservationSummaryMap}
                 reservationTotalQtyMap={reservationTotalQtyMap}
                 uploadProgress={uploadProgress}
+                onToggleAllowJobStart={(machine, next) => {
+                  void updateMachineFlags(machine, { allowJobStart: next });
+                }}
+                onToggleAllowAutoMachining={(machine, next) => {
+                  void updateMachineFlags(machine, {
+                    allowAutoMachining: next,
+                  });
+                }}
                 onUploadFiles={(machine, files) => {
                   void (async () => {
                     try {
@@ -1123,11 +1296,17 @@ export const CncDashboardPage = () => {
                   setMaterialModalOpen(true);
                 }}
                 onSelectMachine={(uid) => {
+                  const selected = mergedMachines.find((m) => m.uid === uid);
+                  const isConfigured = !!(
+                    selected?.ip && Number(selected?.port || 0) > 0
+                  );
                   if (workUid !== uid) {
                     setWorkUid(uid);
                   }
-                  void refreshStatusFor(uid);
-                  void fetchProgramList();
+                  if (isConfigured) {
+                    void refreshStatusFor(uid);
+                    void fetchProgramList();
+                  }
                 }}
                 onTempClick={(machine) => {
                   void openTempDetail(machine.uid);
@@ -1611,6 +1790,9 @@ export const CncDashboardPage = () => {
           machineId={materialModalTarget?.uid || ""}
           machineName={materialModalTarget?.name || ""}
           currentMaterial={materialModalTarget?.currentMaterial || null}
+          maxModelDiameterGroups={
+            (materialModalTarget?.maxModelDiameterGroups as any) || ["10+"]
+          }
           onReplace={handleReplaceMaterial}
           onAdd={handleAddMaterial}
         />

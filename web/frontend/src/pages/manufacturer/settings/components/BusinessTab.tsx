@@ -32,7 +32,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       organization: (user as any)?.organization || "",
       phoneNumber: (user as any)?.phoneNumber || "",
     }),
-    [user]
+    [user],
   );
 
   const lastSavedKeyRef = useRef<string>(JSON.stringify(initialBusiness));
@@ -103,7 +103,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   handleSaveRef.current = handleSave;
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Building2 className="h-5 w-5" />

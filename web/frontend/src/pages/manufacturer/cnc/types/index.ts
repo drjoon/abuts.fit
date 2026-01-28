@@ -12,6 +12,8 @@ export interface Machine {
   allowProgramDelete?: boolean;
   allowAutoMachining?: boolean;
 
+  maxModelDiameterGroups?: ("6" | "8" | "10" | "10+")[];
+
   // cnc-machines 연동(소재/스케줄)
   currentMaterial?: {
     materialType?: string;

@@ -63,6 +63,9 @@ export function usePreviewLoader({
             type: blob.type || "model/stl",
           });
 
+        let cacheHitCount = 0;
+        let cacheMissCount = 0;
+
         const fetchAsFileWithCache = async (
           cacheKey: string | null,
           signedUrl: string,
@@ -74,10 +77,12 @@ export function usePreviewLoader({
           if (!disableCache && cacheKey) {
             const cached = await getFileBlob(cacheKey);
             if (cached) {
+              cacheHitCount += 1;
               return blobToFile(cached, filename);
             }
           }
 
+          cacheMissCount += 1;
           const r = await fetch(signedUrl);
           if (!r.ok) throw new Error("file fetch failed");
           const blob = await r.blob();
@@ -104,7 +109,14 @@ export function usePreviewLoader({
           req.caseInfos?.file?.originalName ||
           "original.stl";
 
-        const originalCacheKey = req.caseInfos?.file?.s3Key || null;
+        const originalCacheKeyBase = req.caseInfos?.file?.s3Key || null;
+        const originalFileMeta: any = (req as any)?.caseInfos?.file;
+        const originalCacheVersion =
+          originalFileMeta?.fileSize || originalFileMeta?.uploadedAt;
+        const originalCacheKey =
+          originalCacheKeyBase && originalCacheVersion
+            ? `${originalCacheKeyBase}:${originalCacheVersion}`
+            : originalCacheKeyBase;
 
         const originalUrlRes = await fetch(
           `/api/requests/${req._id}/original-file-url`,
@@ -254,7 +266,10 @@ export function usePreviewLoader({
         setPreviewOpen(true);
         toast({
           title: "다운로드 완료",
-          description: "캐시 또는 다운로드로 로드되었습니다.",
+          description:
+            cacheHitCount > 0
+              ? `캐시(IndexedDB) ${cacheHitCount}건 + 다운로드 ${cacheMissCount}건`
+              : `다운로드 ${cacheMissCount}건`,
           duration: 2000,
         });
       } catch (error) {

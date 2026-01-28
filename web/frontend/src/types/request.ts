@@ -177,6 +177,10 @@ export interface RequestBase {
   productionSchedule?: {
     scheduledShipPickup?: string | Date;
     estimatedDelivery?: string | Date;
+    assignedMachine?: string;
+    queuePosition?: number;
+    diameter?: number;
+    diameterGroup?: string;
   };
 
   shippingPriority?: {

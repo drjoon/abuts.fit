@@ -34,7 +34,7 @@ export const BusinessLicenseUpload = forwardRef<
       onFileUpload,
       onDeleteLicense,
     },
-    ref
+    ref,
   ) => {
     const { toast } = useToast();
     const licenseInputRef = useRef<HTMLInputElement | null>(null);
@@ -50,7 +50,7 @@ export const BusinessLicenseUpload = forwardRef<
           uploadButtonRef.current?.focus();
         },
       }),
-      []
+      [],
     );
 
     return (
@@ -72,10 +72,10 @@ export const BusinessLicenseUpload = forwardRef<
           >
             <div
               className={cn(
-                "border-2 border-dashed rounded-lg p-4",
+                "app-surface app-surface--panel border-2 border-dashed rounded-lg p-4",
                 licenseStatus === "missing"
                   ? "border-orange-300 bg-orange-50/80"
-                  : "border-border bg-white/60"
+                  : "border-border bg-white/60",
               )}
             >
               <div className="text-center">
@@ -112,8 +112,8 @@ export const BusinessLicenseUpload = forwardRef<
                   {licenseStatus === "uploading"
                     ? "업로드 중..."
                     : licenseStatus === "processing"
-                    ? "분석 중..."
-                    : "사업자등록증 업로드"}
+                      ? "분석 중..."
+                      : "사업자등록증 업로드"}
                 </Button>
                 <input
                   ref={licenseInputRef}
@@ -137,7 +137,7 @@ export const BusinessLicenseUpload = forwardRef<
                     </p>
                     <button
                       type="button"
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md border bg-white/60 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                      className="app-surface inline-flex h-6 w-6 items-center justify-center rounded-md border bg-white/60 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                       onClick={onDeleteLicense}
                       disabled={
                         licenseDeleteLoading ||
@@ -157,7 +157,7 @@ export const BusinessLicenseUpload = forwardRef<
         </div>
       </div>
     );
-  }
+  },
 );
 
 BusinessLicenseUpload.displayName = "BusinessLicenseUpload";

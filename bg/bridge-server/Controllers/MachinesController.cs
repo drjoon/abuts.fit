@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
+using Hi_Link.Libraries.Model;
 using HiLinkBridgeWebApi48.Models;
+using Mode1Api = HiLinkBridgeWebApi48.Mode1Api;
 
 namespace HiLinkBridgeWebApi48.Controllers
 {
@@ -103,6 +106,60 @@ namespace HiLinkBridgeWebApi48.Controllers
                 success = true,
                 machines = list
             });
+        }
+
+        // GET /api/cnc/machines/status
+        // - machines.json 설정(등록된 UID)을 기준으로 현재 상태를 일괄 조회한다.
+        // - 목적: Node 백엔드에서 온라인/가공가능 장비 필터링에 사용
+        [HttpGet]
+        [Route("status")]
+        public HttpResponseMessage GetAllStatus()
+        {
+            try
+            {
+                var configs = MachinesConfigStore.Load();
+                var list = new List<object>();
+
+                foreach (var m in configs ?? new List<MachineConfigItem>())
+                {
+                    var uid = m?.uid;
+                    if (string.IsNullOrWhiteSpace(uid)) continue;
+
+                    if (!Mode1Api.TryGetMachineStatus(uid, out MachineStatusType status, out string error))
+                    {
+                        list.Add(new
+                        {
+                            uid,
+                            success = false,
+                            status = "UNKNOWN",
+                            error
+                        });
+                        continue;
+                    }
+
+                    list.Add(new
+                    {
+                        uid,
+                        success = true,
+                        status = status.ToString(),
+                        error = (string)null
+                    });
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    machines = list
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    error = ex.Message
+                });
+            }
         }
     }
 }

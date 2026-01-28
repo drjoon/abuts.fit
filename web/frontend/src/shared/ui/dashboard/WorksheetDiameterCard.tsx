@@ -18,7 +18,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
 
   if (!stats || buckets.length === 0) {
     return (
-      <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+      <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium mb-2">
             커스텀 어벗먼트 최대 직경별 진행 현황
@@ -34,7 +34,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
   }
 
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-0">
         <CardTitle className="text-md font-medium mb-2">
           커스텀 어벗먼트 최대 직경별 진행 상태

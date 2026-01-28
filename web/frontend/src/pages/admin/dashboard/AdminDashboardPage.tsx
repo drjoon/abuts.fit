@@ -85,7 +85,7 @@ export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
   const [pricingSummary, setPricingSummary] = useState<PricingSummary | null>(
-    null
+    null,
   );
   const [pricingRows, setPricingRows] = useState<PricingUserRow[]>([]);
   const [pricingLoading, setPricingLoading] = useState(false);
@@ -270,11 +270,11 @@ export const AdminDashboardPage = () => {
       : undefined;
 
   const riskSummary = riskSummaryResponse?.success
-    ? riskSummaryResponse.data?.riskSummary ?? null
+    ? (riskSummaryResponse.data?.riskSummary ?? null)
     : null;
 
   const diameterTopSection = !token ? (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium mb-2">
           커스텀 어벗먼트 최대 직경별 진행 현황
@@ -287,7 +287,7 @@ export const AdminDashboardPage = () => {
       </CardContent>
     </Card>
   ) : isDiameterStatsError ? (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium mb-2">
           커스텀 어벗먼트 최대 직경별 진행 현황
@@ -303,7 +303,7 @@ export const AdminDashboardPage = () => {
       </CardContent>
     </Card>
   ) : !isDiameterStatsFetching && !diameterStatsFromApi ? (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium mb-2">
           커스텀 어벗먼트 최대 직경별 진행 현황
@@ -381,10 +381,7 @@ export const AdminDashboardPage = () => {
       stats={
         <>
           {data.stats.map((stat: any, index: number) => (
-            <Card
-              key={index}
-              className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
-            >
+            <Card key={index} className="app-glass-card app-glass-card--lg">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
                   {stat.label}
@@ -400,7 +397,7 @@ export const AdminDashboardPage = () => {
               </CardContent>
             </Card>
           ))}
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+          <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">총 주문</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
@@ -414,7 +411,7 @@ export const AdminDashboardPage = () => {
               </p>
             </CardContent>
           </Card>
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+          <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">거래 금액</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -426,7 +423,7 @@ export const AdminDashboardPage = () => {
               <p className="text-xs text-muted-foreground">VAT·배송비 별도</p>
             </CardContent>
           </Card>
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+          <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">총 할인액</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -440,7 +437,7 @@ export const AdminDashboardPage = () => {
               </p>
             </CardContent>
           </Card>
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+          <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">평균 단가</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
@@ -460,7 +457,7 @@ export const AdminDashboardPage = () => {
       }
       mainLeft={
         <div className="space-y-6">
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+          <Card className="app-glass-card app-glass-card--lg">
             <CardHeader>
               <CardTitle>시스템 알림</CardTitle>
               <CardDescription>시스템 상태 및 알림입니다.</CardDescription>
@@ -485,11 +482,11 @@ export const AdminDashboardPage = () => {
             </CardContent>
           </Card>
 
-          <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+          <Card className="app-glass-card app-glass-card--lg">
             <CardHeader>
               <CardTitle>사용자별 주문/할인</CardTitle>
               <CardDescription>
-                기간 내 주문(취소 제외) 기준 통계입니다.
+                주문 수 및 할인 내역을 확인하세요.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -556,7 +553,7 @@ export const AdminDashboardPage = () => {
         </div>
       }
       mainRight={
-        <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg">
+        <Card className="app-glass-card app-glass-card--lg">
           <CardHeader>
             <CardTitle>빠른 작업</CardTitle>
             <CardDescription>자주 사용하는 기능들입니다.</CardDescription>

@@ -11,7 +11,7 @@ export const SettingsCardSkeleton = ({
   bodyLines = 4,
 }: SettingsCardSkeletonProps) => {
   return (
-    <Card className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm">
+    <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="space-y-3">
         {Array.from({ length: headerLines }).map((_, index) => (
           <Skeleton key={`header-line-${index}`} className="h-5 w-40" />

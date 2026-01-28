@@ -53,8 +53,8 @@ export const AnnouncementSection = () => {
           {announcements.map((announcement) => (
             <Card
               key={announcement.id}
-              className={`relative flex flex-col rounded-2xl border bg-white/80 shadow-sm transition-all hover:shadow-lg cursor-pointer ${getAnnouncementStyle(
-                announcement.type
+              className={`app-glass-card app-glass-card--lg cursor-pointer ${getAnnouncementStyle(
+                announcement.type,
               )}`}
             >
               <CardHeader>

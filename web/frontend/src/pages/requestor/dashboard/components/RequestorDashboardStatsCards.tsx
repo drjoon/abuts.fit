@@ -25,7 +25,7 @@ export const RequestorDashboardStatsCards = ({
         {Array.from({ length: 4 }).map((_, index) => (
           <Card
             key={`skeleton-${index}`}
-            className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm"
+            className="app-glass-card app-glass-card--lg"
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <Skeleton className="h-4 w-20" />
@@ -48,7 +48,7 @@ export const RequestorDashboardStatsCards = ({
         return (
           <Card
             key={stat.label}
-            className="relative flex flex-col rounded-2xl border border-gray-200 bg-white/80 shadow-sm transition-all hover:shadow-lg"
+            className="app-glass-card app-glass-card--lg"
             onClick={() => onCardClick?.(stat)}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
