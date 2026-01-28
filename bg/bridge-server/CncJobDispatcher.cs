@@ -323,42 +323,42 @@ namespace HiLinkBridgeWebApi48
                 if (st == null) return true;
 
                 var busyIo = BusyIoUid;
-if (busyIo >= 0)
-{
-    if (Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errOp))
-    {
-        var panelList = new List<IOInfo>();
-        // panelType은 0(Main) 기준으로 사용 (필요 시 설정 변경 가능)
-        var rc = HiLink.GetMachineAllOPInfo(handle, 0, ref panelList);
-        if (rc == 0 && panelList != null)
-        {
-            short? status = null;
-            foreach (var io in panelList)
-            {
-                if (io != null && io.IOUID == (short)busyIo)
+                if (busyIo >= 0)
                 {
-                    status = io.Status;
-                    break;
-                }
-            }
+                    if (Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errOp))
+                    {
+                        var panelList = new List<IOInfo>();
+                        // panelType은 0(Main) 기준으로 사용 (필요 시 설정 변경 가능)
+                        var rc = HiLink.GetMachineAllOPInfo(handle, 0, ref panelList);
+                        if (rc == 0 && panelList != null)
+                        {
+                            short? status = null;
+                            foreach (var io in panelList)
+                            {
+                                if (io != null && io.IOUID == (short)busyIo)
+                                {
+                                    status = io.Status;
+                                    break;
+                                }
+                            }
 
-            if (status.HasValue)
-            {
-                var busy = status.Value != 0;
-                if (busy) st.SawBusy = true;
-                if (st.SawBusy && !busy) return true;
-            }
-        }
-        else
-        {
-            Console.WriteLine("[CncJobDispatcher] GetMachineAllOPInfo failed machine={0} rc={1}", machineId, rc);
-        }
-    }
-    else
-    {
-        Console.WriteLine("[CncJobDispatcher] handle error machine={0} err={1}", machineId, errOp);
-    }
-}
+                            if (status.HasValue)
+                            {
+                                var busy = status.Value != 0;
+                                if (busy) st.SawBusy = true;
+                                if (st.SawBusy && !busy) return true;
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("[CncJobDispatcher] GetMachineAllOPInfo failed machine={0} rc={1}", machineId, rc);
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("[CncJobDispatcher] handle error machine={0} err={1}", machineId, errOp);
+                    }
+                }
 
                 // fallback: 일정 시간 지나면 완료로 간주
                 var elapsed = DateTime.UtcNow - st.StartedAtUtc;

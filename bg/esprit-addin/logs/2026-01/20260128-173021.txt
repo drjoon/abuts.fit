@@ -1,14 +1,14 @@
-==== Trace started at 2026-01-28T20:48:04.3226823+09:00 ====
+==== Trace started at 2026-01-28T17:30:21.3616312+09:00 ====
 StlFileProcessor: 초기화 전 - Ops:0, Chains:0, FreeForms:0, Graphics:159
 StlFileProcessor: 초기화 후 - Ops:0, Chains:0, FreeForms:0, Graphics:159
 StlFileProcessor: DentalAddin static 필드 초기화 완료
-StlFileProcessor: request-meta GET https://abuts.fit/api/bg/request-meta?requestId=20260128-BEYXSJYN (X-Bridge-Secret set=True)
-StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260128-BEYXSJYN","lotNumber":{"part":"CAP260128-ACF"},"serialCode":"ACF","caseInfos":{"clinicName":"향기로운치과","patientName":"구자일","tooth":"44","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":5.69,"connectionDiameter":3.3,"workType":"abutment","lotNumber":"CAP260128-ACF","finishLine":{"points":[[2.5288056031875383,1.28849081164816,4.953641860358175],[2.2442804716875075,1.630565207452905,5.2784966659086905],[1.8968182846260826,1.896818284626082,5.629163483436723],[1.5290186973580715,2.104513691106033,5.96028046925764],[1.1559758473141044,2.268730342048878,6.227591947257831],[0.7766037225123583,2.390140491685302,6.38166832331999],[0.38980613691817223,2.4611390873967345,6.405016873870318],[4.56228159944942e-16,2.4835904265762494,6.326982824330176],[-0.38959199091582375,2.459787022750051,6.187000459232867],[-0.7746849886831102,2.3842352361668078,6.025309890288784],[-1.1429388424382432,2.2431437793191935,5.8832952179600255],[-1.474613803762192,2.029631779175509,5.787179764277584],[-1.76903545387314,1.769035453873141,5.725826884660261],[-2.0299890624119836,1.4748733852280358,5.681481702475099],[-2.2536443920084426,1.1482891718387012,5.635639156969579],[-2.4165663489215907,0.7851900040182676,5.568813012372507],[-2.4823961685009017,0.3931729278117892,5.469237926119019],[-2.45880537907471,0,5.3393789993321645],[-2.363203184920053,-0.3742946138167242,5.18456536085081],[-2.2054809223193175,-0.7166041913274628,5.010219492744346],[-1.9896459627581011,-1.013775253509097,4.8224380297604394],[-1.7384380272346391,-1.263049159087707,4.630984631918933],[-1.4739501445031045,-1.4739501445031045,4.447870242804621],[-1.2012171559890517,-1.6533335760631327,4.283733601125519],[-0.9184430236737204,-1.8025459269699597,4.152199601238461],[-0.6240681977026659,-1.9206844181441252,4.06176554103516],[-0.3169252990203746,-2.000987586728731,4.020724528018902],[-1.2560826995101263e-16,-2.0513387213107652,4.016186086024915],[0.328192539797152,-2.072126145249319,4.03765541027615],[0.6704379897057507,-2.063395963614262,4.069923852225314],[1.0251763453730476,-2.01202186542452,4.100857953194546],[1.3769568331443711,-1.8952184904091554,4.116717033436168],[1.706752290529453,-1.7067522905294528,4.11675532949457],[2.0015124615180486,-1.454183923625556,4.113212720519781],[2.247391119058748,-1.145102970128196,4.119420929653564],[2.4312554294176354,-0.7899627755909826,4.148460295427386],[2.55606384542745,-0.40484074159180905,4.213372471594582],[2.6422425186657854,-3.235813843055095e-16,4.320143347369006],[2.686427216023376,0.42548827108246423,4.475036164014748],[2.6674643827225104,0.8667117169462946,4.684013902753338],[2.5288056031875383,1.28849081164816,4.953641860358175]]}}},"message":"Request meta","success":true}
-StlFileProcessor: request-meta loaded requestId=20260128-BEYXSJYN, Clinic=향기로운치과, Patient=구자일, Tooth=44, Implant=OSSTEM/Regular/Hex, MaxDia=5.69, ConnDia=3.3, WorkType=abutment, Lot=CAP260128-ACF, SerialCode=ACF
-StlFileProcessor: finishLine topZ=6.4050
+StlFileProcessor: request-meta GET https://abuts.fit/api/bg/request-meta?requestId=20260128-MMSESKHM (X-Bridge-Secret set=True)
+StlFileProcessor: request-meta response body={"statusCode":200,"data":{"ok":true,"requestId":"20260128-MMSESKHM","lotNumber":{"part":"CAP260128-ACE"},"serialCode":"ACE","caseInfos":{"clinicName":"향기로운치과","patientName":"김선미","tooth":"27","implantManufacturer":"OSSTEM","implantSystem":"Regular","implantType":"Hex","maxDiameter":7.55,"connectionDiameter":3.3,"workType":"abutment","lotNumber":"CAP260128-ACE","finishLine":{"points":[[-1.7115543896662904,-3.359114625902517,2.3758463210169607],[-1.1512442230591153,-3.5431653925771536,2.3458296224245374],[-0.5641230364644381,-3.56173267594043,2.3333345778326913],[-2.1372516635161742e-16,-3.490396847489761,2.326650590222828],[0.5332007156933052,-3.3664968263344237,2.3136383316607487],[1.0429806592261046,-3.2099644044923767,2.283257022043551],[1.5380307822660648,-3.018555371065684,2.2274754735341173],[2.0207716207172766,-2.781353524156491,2.1573319002680944],[2.4740600721395074,-2.4740600721395074,2.0865739685931093],[2.8476129071245295,-2.0689118803229514,2.029405500616238],[3.03341810808487,-1.5456037250264838,1.9994381776772376],[3.026391711842573,-0.9833342756936746,1.9992821344916825],[2.9322248308323466,-0.46441878873708964,2.0196911161681315],[2.7992403151883867,-3.4280806920396854e-16,2.0520297958032034],[2.645676879808071,0.4190340518879664,2.0871653356982534],[2.475365948192443,0.8042951519519681,2.115756165092983],[2.2829242866043784,1.1632080232938433,2.130237202193059],[2.0674121736804545,1.5020628670948555,2.1283838365361443],[1.8269622303084345,1.826962230308434,2.109361245940561],[1.5551144193743502,2.1404313710908816,2.072755560332809],[1.2414085674252626,2.4364014960529192,2.0177295383798373],[0.8728279969217952,2.6862883569118607,1.9430286224649542],[0.447536700425465,2.8256355201839476,1.8493329295341492],[5.201828852487004e-16,2.8317437354774295,1.7460659965273793],[-0.43549166018486063,2.749586129120517,1.647614854502652],[-0.85213922406729,2.6226148612931945,1.5681609181506477],[-1.26078354648824,2.4744270335058625,1.5216712046802607],[-1.6804950441819724,2.3130029962534735,1.5195557111589053],[-2.123568937797451,2.123568937797452,1.5644349919992018],[-2.595554075610413,1.8857804196686079,1.6486055291820099],[-3.0759564157458588,1.5672780753581814,1.7668771844145117],[-3.4648587131598,1.125800840569822,1.9127177192287004],[-3.6214704476828707,0.5735845700081001,2.071725748559028],[-3.6067322290238986,0,2.240477441870994],[-3.4876259392923723,-0.5523856824561577,2.3909148602818924],[-3.309043009957907,-1.075173249617145,2.497493914191731],[-3.088019462411232,-1.573424504632627,2.538792056360013],[-2.8322622364703953,-2.0577589652593185,2.527980216828709],[-2.5324581863405333,-2.5324581863405333,2.484595959243661],[-2.168181116666712,-2.984245289287063,2.42744193555499],[-1.7115543896662904,-3.359114625902517,2.3758463210169607]]}}},"message":"Request meta","success":true}
+StlFileProcessor: request-meta loaded requestId=20260128-MMSESKHM, Clinic=향기로운치과, Patient=김선미, Tooth=27, Implant=OSSTEM/Regular/Hex, MaxDia=7.55, ConnDia=3.3, WorkType=abutment, Lot=CAP260128-ACE, SerialCode=ACE
+StlFileProcessor: finishLine topZ=2.5388
 StlFileProcessor: 기존 장비 BarDiameter=8.000
-StlFileProcessor: STL bounding topZ=10.8463
-StlFileProcessor: BarDiameter 설정 - 8.000 (STL:20260128-BEYXSJYN-향기로운치과-구자일-44.filled.stl)
+StlFileProcessor: STL bounding topZ=6.2393
+StlFileProcessor: BarDiameter 설정 - 8.000 (STL:20260128-MMSESKHM-향기로운치과-김선미-27.filled.stl)
 DentalAddin: MainModuleType - DentalAddin.MainModule, Assembly:ESPRIT2025AddinProject, Version:1.0.0.0, Location:C:\Users\user\abuts.fit\bg\esprit-addin\bin\x86\Debug\ESPRIT2025AddinProject.dll
 DentalAddin: PRC 경로를 Program Files에서 사용 - C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\AcroDent
 DentalAddin: UserData.PrctDirectory 적용 - C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\
@@ -29,8 +29,8 @@ DentalAddin: Turning 파라미터 설정 - Depth:1, Extend:3.5, Angle:30
 DentalAddin: MoveSTL 초기화 - MTI:0(True), Front:-9.5(True), Back:0(True), BarDia:8
 DentalAddin: 한계점 설정 완료 - FrontPointX:-9.5, BackPointX:0
 DentalAddin: MoveSTL 실행 시작 (FrontLimit:-9.5, BackLimit:0)
-DentalAddin: MoveSTL - 초기 X이동 dX:10.846, FrontPointX:1.346, BackPointX:10.846
-DentalAddin: finishLine split 적용 - bboxTopZ:10.8463, finishTopZ:6.4050, rawRatio:0.2221, ratio(clamped):0.2221, splitX:3.4560 (Front:1.3463, Back:10.8463)
+DentalAddin: MoveSTL - 초기 X이동 dX:6.239, FrontPointX:-3.261, BackPointX:6.239
+DentalAddin: finishLine split 적용 - bboxTopZ:6.2393, finishTopZ:2.5388, rawRatio:0.1850, ratio(clamped):0.1850, splitX:-1.5029 (Front:-3.2607, Back:6.2393)
 DentalAddin: MoveSTL 실행 완료
 DentalAddin: Bind 실행 시도 (Document: {(document != null)}, EspritApp: {(_espApp != null)})
 DentalAddin: Main 실행 시작
@@ -40,9 +40,9 @@ CompositeTool - ToolNs 설정: BM_D1.2 (FinishingMethod:1)
 DentalAddin: Main 시작 - Document:True, EspritApp:True, Jump:1, RL:0, SpindleSide:False
 DentalAddin: Main - Clean 완료
 DentalAddin: Main - Boundry 호출 준비 (RL:1)
-DentalAddin: Boundry 시작 - Document:True, RL:1, MTI:0, FrontPointX:1.34632838055406, BackPointX:10.8463283805541
+DentalAddin: Boundry 시작 - Document:True, RL:1, MTI:0, FrontPointX:-3.26066398038117, BackPointX:6.23933601961883
 DentalAddin: Boundry - LatheMachineSetup.BarDiameter:8
-DentalAddin: Boundry: RoughBoundry point1(X:0.000, Y:9.000), point2 원래(X:-5.000, Y:-9.000) -> 수정(X:10.846, Y:-9.000)
+DentalAddin: Boundry: RoughBoundry point1(X:0.000, Y:9.000), point2 원래(X:-5.000, Y:-9.000) -> 수정(X:6.239, Y:-9.000)
 DentalAddin: TurningFeature: Cleanup 완료 - removedFeatureChains=0
 DentalAddin: Roughworkplane 시작 - RoughType:2
 DentalAddin: PreOp:CustomCycle - FeatureChains.Count: 6
@@ -118,12 +118,12 @@ DentalAddin: FreeFormMill - FinishingMethod==1, Emerge/Composite2 실행
 DentalAddin: Emerge - MergeFile1: C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\Viles\Surface\Project1.igs
 DentalAddin: Emerge - FinishingMethod==1, Extrude 파일 로드 생략
 DentalAddin: FreeFormMill - Emerge 완료
-DentalAddin: Composite2SplitAB - enabled=1, splitX=3.45595092515252, prcA=C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_A.prc, prcB=C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_B.prc
+DentalAddin: Composite2SplitAB - enabled=1, splitX=-1.50290559945427, prcA=C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_A.prc, prcB=C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_B.prc
 DentalAddin: OpenProcess:Composite2SplitAB:A - PRC 경로: C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_A.prc
 DentalAddin: OpenProcess:Composite2SplitAB:A - PRC 파일 열기 성공 (Count:1)
 DentalAddin: OpenProcess:Composite2SplitAB:B - PRC 경로: C:\Program Files (x86)\D.P.Technology\ESPRIT\AddIns\DentalAddin\AcroDent\11_Composite prc\5axisComposite_B.prc
 DentalAddin: OpenProcess:Composite2SplitAB:B - PRC 파일 열기 성공 (Count:1)
-DentalAddin: Composite2SplitAB - PassPercent: A(0.00->22.21), B(22.21->52.73)
+DentalAddin: Composite2SplitAB - PassPercent: A(0.00->18.50), B(18.50->29.70)
 DentalAddin: FreeFormMill - Composite2 완료
 DentalAddin: PreOp:CustomCycle2 - FeatureChains.Count: 6
 DentalAddin: PreOp:CustomCycle2 - FeatureChain[1] Boundry1
@@ -155,10 +155,10 @@ DentalAddin: PostMain - Op[8] 5Axis_Composite Key:8
 DentalAddin: PostMain - Op[9] 5Axis_Composite Key:9
 DentalAddin: PostMain - Op[10] NEO_CONNECTION Key:10
 StlFileProcessor: DentalPanel 호출 완료
-StlFileProcessor: NC 메타 캡처 - Front:1.34632838055406, Back:10.8463283805541, StockDia:8
-StlFileProcessor: NC 저장 완료 - C:\Users\user\abuts.fit\bg\storage\3-nc\20260128-BEYXSJYN-향기로운치과-구자일-44.nc
-StlFileProcessor: NC 헤더 수정 완료 - #520:10.8463283805541, #521:8, #522:1.161
-StlFileProcessor: Serial 각인 코드 적용 - Raw:'ACF' => Use:'ACF'
+StlFileProcessor: NC 메타 캡처 - Front:-3.26066398038117, Back:6.23933601961883, StockDia:8
+StlFileProcessor: NC 저장 완료 - C:\Users\user\abuts.fit\bg\storage\3-nc\20260128-MMSESKHM-향기로운치과-김선미-27.nc
+StlFileProcessor: NC 헤더 수정 완료 - #520:6.23933601961883, #521:8, #522:1.161
+StlFileProcessor: Serial 각인 코드 적용 - Raw:'ACE' => Use:'ACE'
 StlFileProcessor: Serial 블록 갱신 - Serial:True, Deburr:True
-StlFileProcessor: register-file success file=20260128-BEYXSJYN-향기로운치과-구자일-44.nc requestId=20260128-BEYXSJYN
-StlFileProcessor: 완료 - C:\Users\user\abuts.fit\bg\storage\2-filled\20260128-BEYXSJYN-향기로운치과-구자일-44.filled.stl
+StlFileProcessor: register-file success file=20260128-MMSESKHM-향기로운치과-김선미-27.nc requestId=20260128-MMSESKHM
+StlFileProcessor: 완료 - C:\Users\user\abuts.fit\bg\storage\2-filled\20260128-MMSESKHM-향기로운치과-김선미-27.filled.stl

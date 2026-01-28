@@ -51,7 +51,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         public const string DefaultCompositePrcA = @"C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\AcroDent\\11_Composite prc\\5axisComposite_A_015.prc";
         public const string DefaultCompositePrcB = @"C:\\Program Files (x86)\\D.P.Technology\\ESPRIT\\AddIns\\DentalAddin\\AcroDent\\11_Composite prc\\5axisComposite_B_005.prc";
 
-        public const double DefaultLeftRatioOffset = 0.3;   // Left of DefaultCompositePrcA+DefaultCompositePrcB
+        public const double DefaultLeftRatioOffset = 0.0;   // Left of DefaultCompositePrcA+DefaultCompositePrcB
+        // public const double DefaultLeftRatioOffset = 0.3;   // Left of DefaultCompositePrcA+DefaultCompositePrcB
         public const double DefaultLeftRatio = (DefaultLeftRatioOffset+DefaultStlShift) / 20.0;
         public const double DefaultRightRatioOffset = -0.3; // Right of DefaultCompositePrcA+DefaultCompositePrcB
         // -0.2 for left 0.2 to #520(STL origin) which means back-turning will compensate

@@ -2128,6 +2128,7 @@ namespace DentalAddin
         public static void CustomCycle()
         {
             string file = PrcFilePath[4];
+            DentalLogger.Log($"CustomCycle - OpenProcess: PRC[4]={file}");
             TechLatheCustom pITechnology = (TechLatheCustom)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
             Layer activeLayer = Document.Layers.Add("FaceDrill");
             Document.ActiveLayer = activeLayer;
@@ -2139,11 +2140,13 @@ namespace DentalAddin
             FeatureChain[] array = new FeatureChain[16];
             FeatureChain[] array2 = new FeatureChain[9];
             string file = PrcFilePath[1];
+            DentalLogger.Log($"TurningOp - OpenProcess: PRC[1]={file}");
             TechLatheContour1 techLatheContour = (TechLatheContour1)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
             TechLatheContour1 techLatheContour2 = default(TechLatheContour1);
             if (ReverseOn)
             {
                 string file2 = PrcFilePath[2];
+                DentalLogger.Log($"TurningOp - OpenProcess Reverse: PRC[2]={file2}");
                 techLatheContour2 = (TechLatheContour1)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file2))[0];
             }
             int count = Document.FeatureChains.Count;
@@ -2251,6 +2254,7 @@ namespace DentalAddin
             FeatureChain[] array4 = new FeatureChain[20];
             FeatureChain[] array5 = new FeatureChain[20];
             string file = PrcFilePath[3];
+            DentalLogger.Log($"RoughMill - OpenProcess: PRC[3]={file}");
             TechLatheMillContour1 techLatheMillContour = (TechLatheMillContour1)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
             if (RL == 1.0)
             {
@@ -2458,6 +2462,7 @@ namespace DentalAddin
                     selectionSet.Add(featureChain, RuntimeHelpers.GetObjectValue(Missing.Value));
                 }
                 string file = PrcFilePath[9];
+                DentalLogger.Log($"OP36 - OpenProcess: PRC[9]={file}");
                 TechLatheMillContour1 techLatheMillContour = (TechLatheMillContour1)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
                 bool flag = false;
                 int count2 = Document.Layers.Count;
@@ -3579,6 +3584,7 @@ namespace DentalAddin
             if (string.IsNullOrWhiteSpace(prcFile))
             {
                 prcFile = (PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null;
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - {region} 기본 PRC 사용: PRC[3]={prcFile}");
             }
 
             AddSplitOp(region, "0Degree", boundaryKey, ff0, prcFile, technologyUtility);
@@ -3641,10 +3647,12 @@ namespace DentalAddin
             if (string.IsNullOrWhiteSpace(prcA))
             {
                 prcA = (PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null;
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - prcA 기본값 사용: PRC[3]={prcA}");
             }
             if (string.IsNullOrWhiteSpace(prcB))
             {
                 prcB = (PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null;
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - prcB 기본값 사용: PRC[3]={prcB}");
             }
 
             return true;
@@ -4772,6 +4780,7 @@ namespace DentalAddin
                 return;
             }
             string file = PrcFilePath[11];
+            DentalLogger.Log($"Composite2 - OpenProcess: PRC[11]={file}");
             ITechnology[] array = (ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file);
             Layer activeLayer;
             try
@@ -4909,6 +4918,7 @@ namespace DentalAddin
         {
             FeatureChain[] array = new FeatureChain[7];
             string file = PrcFilePath[1];
+            DentalLogger.Log($"BackTurning - OpenProcess: PRC[1]={file}");
             TechLatheContour1 pITechnology = (TechLatheContour1)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
             int count = Document.FeatureChains.Count;
             checked
@@ -4948,6 +4958,7 @@ namespace DentalAddin
         public static void CustomCycle2()
         {
             string file = PrcFilePath[8];
+            DentalLogger.Log($"CustomCycle2 - OpenProcess: PRC[8]={file}");
             TechLatheCustom pITechnology = (TechLatheCustom)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
             Layer activeLayer = Document.Layers.Add("EndTurning");
             Document.ActiveLayer = activeLayer;

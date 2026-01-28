@@ -21,7 +21,7 @@ namespace HiLinkBridgeWebApi48
         private static readonly HttpClient BackendClient = new HttpClient();
         private static readonly Dictionary<string, DateTime> LastBackendSyncUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private const int BACKEND_SYNC_INTERVAL_SEC = 10;
-        
+
         // 고정 슬롯 번호
         private const int SLOT_A = 4000;
         private const int SLOT_B = 4001;
@@ -49,7 +49,7 @@ namespace HiLinkBridgeWebApi48
         }
 
         private static readonly object StateLock = new object();
-        private static readonly Dictionary<string, MachineState> MachineStates 
+        private static readonly Dictionary<string, MachineState> MachineStates
             = new Dictionary<string, MachineState>(StringComparer.OrdinalIgnoreCase);
 
         private static Timer _timer;
@@ -58,7 +58,7 @@ namespace HiLinkBridgeWebApi48
         public static void Start()
         {
             if (_timer != null) return;
-            
+
             var enabled = (Environment.GetEnvironmentVariable("CNC_CONTINUOUS_ENABLED") ?? "true").Trim();
             if (string.Equals(enabled, "false", StringComparison.OrdinalIgnoreCase))
             {
@@ -172,9 +172,9 @@ namespace HiLinkBridgeWebApi48
                 var done = await CheckJobCompleted(machineId, state);
                 if (done)
                 {
-                    Console.WriteLine("[CncContinuous] job completed machine={0} slot=O{1}", 
+                    Console.WriteLine("[CncContinuous] job completed machine={0} slot=O{1}",
                         machineId, state.CurrentSlot);
-                    
+
                     lock (StateLock)
                     {
                         state.IsRunning = false;
@@ -357,7 +357,7 @@ namespace HiLinkBridgeWebApi48
                         state.NextPreloadAttemptUtc = DateTime.MinValue;
                     }
                     CncJobQueue.Pop(machineId);
-                    Console.WriteLine("[CncContinuous] preload success machine={0} slot=O{1}", 
+                    Console.WriteLine("[CncContinuous] preload success machine={0} slot=O{1}",
                         machineId, state.NextSlot);
                 }
                 else
@@ -415,16 +415,16 @@ namespace HiLinkBridgeWebApi48
                 catch { }
 
                 // 3. NextSlot 활성화
-                var dto = new UpdateMachineActivateProgNo 
-                { 
-                    headType = 0, 
-                    programNo = (short)state.NextSlot 
+                var dto = new UpdateMachineActivateProgNo
+                {
+                    headType = 0,
+                    programNo = (short)state.NextSlot
                 };
-                
+
                 var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
                 if (res != 0)
                 {
-                    Console.WriteLine("[CncContinuous] activate failed machine={0} res={1} err={2}", 
+                    Console.WriteLine("[CncContinuous] activate failed machine={0} res={1} err={2}",
                         machineId, res, err);
                     return;
                 }
@@ -451,7 +451,7 @@ namespace HiLinkBridgeWebApi48
                     state.SawBusy = false;
                 }
 
-                Console.WriteLine("[CncContinuous] switch success machine={0} now ready O{1}", 
+                Console.WriteLine("[CncContinuous] switch success machine={0} now ready O{1}",
                     machineId, state.CurrentSlot);
             }
             catch (Exception ex)
@@ -479,16 +479,16 @@ namespace HiLinkBridgeWebApi48
                 if (!uploaded) return false;
 
                 // 3. 활성화
-                var dto = new UpdateMachineActivateProgNo 
-                { 
-                    headType = 0, 
-                    programNo = (short)state.CurrentSlot 
+                var dto = new UpdateMachineActivateProgNo
+                {
+                    headType = 0,
+                    programNo = (short)state.CurrentSlot
                 };
-                
+
                 var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
                 if (res != 0)
                 {
-                    Console.WriteLine("[CncContinuous] activate failed machine={0} res={1} err={2}", 
+                    Console.WriteLine("[CncContinuous] activate failed machine={0} res={1} err={2}",
                         machineId, res, err);
                     return false;
                 }
@@ -512,7 +512,7 @@ namespace HiLinkBridgeWebApi48
                     state.SawBusy = false;
                 }
 
-                Console.WriteLine("[CncContinuous] start ready machine={0} slot=O{1}", 
+                Console.WriteLine("[CncContinuous] start ready machine={0} slot=O{1}",
                     machineId, state.CurrentSlot);
                 return true;
             }
@@ -547,7 +547,7 @@ namespace HiLinkBridgeWebApi48
                 }
 
                 var content = File.ReadAllText(fullPath);
-                
+
                 // 프로그램 번호를 slotNo로 강제 변경
                 content = ReplaceProgramHeaderLine(content, slotNo);
 
