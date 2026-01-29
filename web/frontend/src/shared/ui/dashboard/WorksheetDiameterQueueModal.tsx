@@ -58,17 +58,25 @@ export const WorksheetDiameterQueueModal = ({
   const items = queues[effectiveBucket] ?? [];
   const activeItem = items.find((it) => it.id === selectedItemId) ?? null;
 
+  const bucketCount = (queues[effectiveBucket] ?? []).length;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[80vw] max-w-5xl max-h-[80vh] px-6 pt-3 pb-4 overflow-y-auto
+        className="w-[80vw] max-w-3xl max-h-[80vh] px-6 pt-3 pb-4 overflow-y-auto
                    [&>[aria-label='Close']]:h-12 [&>[aria-label='Close']]:w-12
                    [&>[aria-label='Close']>svg]:h-12 [&>[aria-label='Close']>svg]:w-12"
       >
-        <div className="flex flex-wrap items-center gap-6 mb-1">
-          <span className="text-lg font-semibold text-slate-800">
-            {processLabel}
-          </span>
+        <div className="flex flex-wrap items-center gap-6 mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-semibold text-slate-800">
+              M{effectiveBucket}
+            </span>
+            <span className="w-3 h-3 rounded-full bg-blue-500" />
+            <span className="text-lg font-semibold text-slate-800">
+              {bucketCount}건
+            </span>
+          </div>
           <div className="flex flex-wrap gap-2">
             {labels.map((label) => (
               <button
