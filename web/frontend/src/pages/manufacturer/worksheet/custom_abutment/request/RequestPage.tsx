@@ -552,7 +552,7 @@ export const RequestPage = ({
   }, [filteredAndSorted.length]);
 
   useEffect(() => {
-    setVisibleCount(Math.min(9, filteredAndSorted.length));
+    setVisibleCount(Math.min(3, filteredAndSorted.length));
   }, [
     filteredAndSorted.length,
     worksheetSearch,

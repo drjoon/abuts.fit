@@ -620,12 +620,18 @@ export async function getMyDashboardSummary(req, res) {
     const responseData = {
       stats: {
         totalRequests: stats.designCount,
+        totalRequestsChange: "+0%",
         inCam: stats.camCount,
+        inCamChange: "+0%",
         inProduction: stats.machiningCount,
+        inProductionChange: "+0%",
         inPackaging: stats.packagingCount,
+        inPackagingChange: "+0%",
         inShipping: stats.shippingCount,
+        inShippingChange: "+0%",
         completed: stats.completed,
         doneOrCanceled: stats.completed + stats.canceledCount,
+        doneOrCanceledChange: "+0%",
       },
       manufacturingSummary,
       riskSummary,

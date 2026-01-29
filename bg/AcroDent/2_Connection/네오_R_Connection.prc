@@ -132,8 +132,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
     :G00G99G40G18G80T0
     :(Deburr Step drill)
 		:M88
-		:T4545 (D2.015*L5.0/D2.35)
-		:M3 S3000
+		:M3 S3000 T4545 (D2.015*D2.35)
 		:G99 G0 X0.0 Z-1.5
 		:G1 Z[#523-0.5] F0.1
 		:G1 Z[#523+4.5] F0.04
@@ -144,8 +143,9 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
     :M89
 		:M1
 		:
-		:T0303(Rough U0.1 B-Turn/NR0.05)
-    :M3 S3500 T0303
+		:
+		:(Rough U0.1)
+    :M3 S3500 T0303 (B-Turn/NR0.05)
 		:G0 X[#521+1.8]Z[#520+#523-0.381]
 		:G1 X4.3 F0.015
 		:G1 X3.76 F0.01
@@ -163,11 +163,11 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		: 
 		:
 		:(HEX2.49/1st)
+		:T0606 (EndMill/D1.5)
+		:M88
 		:M50
 		:G28H0
-		:M88
-		:M23 S5500 T0606 (EndMill/D1.5)
-		:M88
+		:M23 S5500
 		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.262] C0.0
 		:G98 G1X2.49 F1000
 		:G1 Y-2.0 F200
@@ -186,12 +186,15 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:G0 Z-12.5
 		:G0 T0
     :M25
+    :M51
 		:M89
 		:M1
 		:
 		:
 		:(Serial)
 		:T0909 (CENTER MILL/D2.0*A90)
+		:M50
+		:G28H0
 		:M23 S1000
 		:G98 G0 X[#521+1.8]Z[#520+#523+1.775]Y0.525C0.0
 		:G4 U0.05
@@ -211,6 +214,7 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:M51
 		:G99
 		:M1
+		:
 		:
     :(Finish Connection)
     :M3 S3500 T0303(B-Turn/NR0.05)
@@ -233,9 +237,10 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:M1
 		:
 		:(Deburr HEX2.49)
+		:T0606(EndMill/D1.5)
 		:M50
 		:G28H0.0
-		:M23 S5500 T0606(EndMill/D1.5)
+		:M23 S5500
 		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.262] C0.0
 		:G98 G1X2.49 F1000
 		:G1 Y-2.0 F200
@@ -253,12 +258,15 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:G0 X30.0
 		:G0 Z-12.5
 		:G0 T0
+		:M51
 		:M25
 		:M1
 		:
 		:
 		:(Serial)
 		:T0909 (CENTER MILL/D2.0*A90)
+		:M50
+		:G28H0
 		:M23S2000
 		:G98G0X[#521+1.8]Z[#520+#523+1.775]Y0.525C0.0
 		:G1X4.0F2000
@@ -273,11 +281,16 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:G0 X30.0
 		:G0 Z-17.5
 		:G0 T0
+		:M51
+		:M25
 		:M1
 		:
 		:
 		:(HEX2.49 Deburr2)
-		:M23 S5500 T0606 (EndMill/D1.5)
+		:T0606 (EndMill/D1.5)
+		:M50
+		:G28H0
+		:M23 S5500 
 		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.262] C0.0
 		:G98 G1 X2.49 F3000
 		:G1Y-2.0 F500
@@ -302,7 +315,8 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:
 		:
     :(Final Deburr)
-    :M3 S3500 T0303 (B-Turn/NR0.05)
+    :T0303 (B-Turn NR0.05)
+    :M3 S3500 
 		:G0 X[#521+1.8]Z[#520+#523-0.39]
 		:G4 U0.05
 		:G1 X6.0 F0.1
@@ -322,9 +336,10 @@ BEGIN_OPERATION; 316; CONNECTION; 0;
 		:M1
 		:
 		:
+		:M510
 		:(CUT-OFF)
-		:M510 
-		:T0101M3S3000(KY-L/T1.5)
+		:T0101 (UT-L T1.5)
+		:M3 S3000
 		:M12
 		:G0X[#521+1.8]Z[#520+#523+2.9] 
 		:G1X[#521+1.2]F0.1

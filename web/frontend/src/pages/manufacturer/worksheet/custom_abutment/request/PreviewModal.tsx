@@ -294,7 +294,7 @@ export const PreviewModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent hideClose className="max-w-4xl">
+      <DialogContent hideClose className="max-w-2xl">
         <DialogTitle className="sr-only">의뢰 미리보기</DialogTitle>
         <DialogDescription className="sr-only">
           의뢰 파일과 NC 내용을 확인하는 영역입니다.
@@ -395,6 +395,30 @@ export const PreviewModal = ({
         </div>
 
         <div className="space-y-4">
+          {/* 모달 제목 영역 */}
+          <div className="flex items-center gap-2 pb-2 border-b">
+            {req.referenceIds && req.referenceIds.length > 0 && (
+              <>
+                {req.referenceIds.map((ref, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center px-2 py-1 rounded text-sm font-semibold bg-purple-50 text-purple-700 border border-purple-200"
+                  >
+                    #{idx + 1}
+                  </span>
+                ))}
+                <span className="inline-flex items-center px-2 py-1 rounded text-sm font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  {req.referenceIds.length}
+                </span>
+              </>
+            )}
+            <span className="text-sm text-slate-600">
+              {req.requestor?.organization || req.requestor?.name} •{" "}
+              {req.caseInfos?.patientName || "미지정"} •{" "}
+              {req.caseInfos?.tooth || "-"}
+            </span>
+          </div>
+
           {previewLoading ? (
             <div className="rounded-lg border border-dashed p-8 flex flex-col items-center gap-2 text-sm text-slate-500">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />

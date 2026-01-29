@@ -220,60 +220,45 @@ export const WorksheetCardGrid = ({
                 const bucketIndex = getDiameterBucketIndex(
                   caseInfos.maxDiameter,
                 );
-                const labels = ["6", "8", "10", "10+"];
+                const statusColor = isCompletedForCurrentStage
+                  ? "bg-emerald-500"
+                  : urgency === "danger"
+                    ? "bg-rose-500"
+                    : urgency === "warning"
+                      ? "bg-amber-500"
+                      : "bg-blue-500";
 
                 return (
                   <div className="space-y-2">
-                    <div className="grid grid-cols-5 items-center gap-2">
-                      <div className="col-span-4 flex gap-1">
-                        {labels.map((label, index) => {
-                          const isActive = index === bucketIndex;
-                          return (
-                            <div
-                              key={label}
-                              className={`relative flex-1 h-4 rounded-full ${
-                                isActive ? "bg-blue-500" : "bg-slate-200"
-                              }`}
-                            >
-                              {isActive && caseInfos.maxDiameter != null && (
-                                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white">
-                                  {caseInfos.maxDiameter.toFixed(2)}mm
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="col-span-1 flex justify-end">
-                        <div className="flex items-center gap-1">
-                          {sp?.mode === "express" && (
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] px-2 py-0.5 bg-violet-50 text-violet-700 border-violet-200 font-semibold"
-                            >
-                              신속
-                            </Badge>
-                          )}
-                          {!isCamStage && (
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
-                            >
-                              {stageLabel}
-                            </Badge>
-                          )}
-                          {isCamStage &&
-                            Number.isFinite(Number(camMaterialDiameter)) &&
-                            Number(camMaterialDiameter) > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className={`w-3 h-3 rounded-full ${statusColor}`} />
+                      <span className="text-sm font-semibold text-slate-700">
+                        {camGroup || "-"}건
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {request.referenceIds &&
+                        request.referenceIds.length > 0 && (
+                          <>
+                            {request.referenceIds.map((ref, idx) => (
+                              <Badge
+                                key={idx}
+                                variant="outline"
+                                className="text-[11px] px-2 py-0.5 bg-purple-50 text-purple-700 border-purple-200 font-semibold"
+                              >
+                                #{idx + 1}
+                              </Badge>
+                            ))}
+                            {request.referenceIds.length > 0 && (
                               <Badge
                                 variant="outline"
-                                className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 whitespace-nowrap"
+                                className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
                               >
-                                CAM:{camGroup || "-"}
+                                {request.referenceIds.length}
                               </Badge>
                             )}
-                        </div>
-                      </div>
+                          </>
+                        )}
                     </div>
                   </div>
                 );
