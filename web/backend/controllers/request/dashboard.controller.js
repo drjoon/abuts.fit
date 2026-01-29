@@ -445,7 +445,7 @@ export async function getMyDashboardSummary(req, res) {
     const { calculateRiskSummary } = await import("./production.utils.js");
     const activeRequests = await Request.find({
       ...requestFilter,
-      status: { $in: ["의뢰", "CAM", "생산"] },
+      status: { $in: ["의뢰", "CAM", "가공", "세척.포장"] },
     }).select("requestId title status manufacturerStage productionSchedule");
 
     const riskSummary = calculateRiskSummary(activeRequests);

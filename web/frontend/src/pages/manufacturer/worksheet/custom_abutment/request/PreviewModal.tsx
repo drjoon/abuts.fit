@@ -462,7 +462,7 @@ export const PreviewModal = ({
                     onClick={onDownload}
                     title={fileLabel}
                   >
-                    {fileLabel}
+                    {stage === "packaging" ? "완료 이미지" : fileLabel}
                   </button>
 
                   <div className="flex items-center gap-2">

@@ -230,8 +230,7 @@ export const PackagingPage = () => {
 
     return requests.filter((req) => {
       const stage = deriveStageForFilter(req);
-      const order = stageOrder[stage] ?? 0;
-      return order <= currentStageOrder;
+      return stage === "세척.포장";
     });
   })();
 
