@@ -408,7 +408,7 @@ export const RequestPage = ({
 
   const searchLower = worksheetSearch.toLowerCase();
   const currentStageForTab = isMachiningStage
-    ? "생산"
+    ? "가공"
     : isCamStage
       ? "CAM"
       : "의뢰";

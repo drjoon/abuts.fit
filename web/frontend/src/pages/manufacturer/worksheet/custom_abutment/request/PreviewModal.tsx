@@ -159,12 +159,12 @@ export const PreviewModal = ({
 
   const openBackConfirm = (fn: () => void | Promise<void>) => {
     const title = isMachiningStage
-      ? "생산 → CAM 이동"
+      ? "가공 → CAM 이동"
       : isCamStage
         ? "CAM → 의뢰 이동"
         : "의뢰 → 이전 단계";
     const desc = isMachiningStage
-      ? "생산 단계에서 CAM 단계로 돌아갑니다. 진행할까요?"
+      ? "가공 단계에서 CAM 단계로 돌아갑니다. 진행할까요?"
       : isCamStage
         ? "CAM 단계에서 의뢰 단계로 돌아갑니다. 진행할까요?"
         : "의뢰 단계에서 이전 단계로 돌아갑니다. 진행할까요?";

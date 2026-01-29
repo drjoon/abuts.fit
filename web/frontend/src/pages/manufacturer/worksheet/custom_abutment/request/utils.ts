@@ -59,7 +59,7 @@ export const computeStageLabel = (
 ) => {
   const savedStage = (req.manufacturerStage || "").trim();
   if (savedStage) return savedStage;
-  if (opts?.isMachiningStage) return "생산";
+  if (opts?.isMachiningStage) return "가공";
   if (opts?.isCamStage) return "CAM";
   return "의뢰";
 };
@@ -76,7 +76,7 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
     case "가공전":
       return "CAM";
     case "가공후":
-      return "생산";
+      return "가공";
     case "배송대기":
     case "배송중":
       return "발송";
@@ -92,9 +92,10 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
 export const stageOrder: Record<string, number> = {
   의뢰: 0,
   CAM: 1,
-  생산: 2,
-  발송: 3,
-  추적관리: 4,
+  가공: 2,
+  "세척.포장": 3,
+  발송: 4,
+  추적관리: 5,
 };
 
 export const getAcceptByStage = (stage: string) => {
@@ -103,7 +104,9 @@ export const getAcceptByStage = (stage: string) => {
       return ".filled.stl";
     case "CAM":
       return ".nc";
-    case "생산":
+    case "가공":
+      return ".png,.jpg,.jpeg,.webp,.bmp";
+    case "세척.포장":
       return ".png,.jpg,.jpeg,.webp,.bmp";
     case "발송":
     case "추적관리":

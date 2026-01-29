@@ -279,7 +279,7 @@ async function chooseMachineForRequest({ request }) {
           ? bridgeQueues[keep.machineId].length
           : 0
         : await Request.countDocuments({
-            status: { $in: ["의뢰", "CAM", "생산"] },
+            status: { $in: ["의뢰", "CAM", "가공"] },
             "productionSchedule.assignedMachine": keep.machineId,
           });
 
@@ -311,7 +311,7 @@ async function chooseMachineForRequest({ request }) {
     const pairs = await Promise.all(
       candidates.map(async (c) => {
         const n = await Request.countDocuments({
-          status: { $in: ["의뢰", "CAM", "생산"] },
+          status: { $in: ["의뢰", "CAM", "가공"] },
           "productionSchedule.assignedMachine": c.machineId,
         });
         return [c.machineId, n];
@@ -346,7 +346,7 @@ async function chooseMachineForCamMachining({ request }) {
   const camMaterialDiameter = Number(request?.productionSchedule?.diameter);
   if (!Number.isFinite(camMaterialDiameter) || camMaterialDiameter <= 0) {
     const err = new Error(
-      "CAM 소재 직경 정보가 없어 생산 장비를 선택할 수 없습니다.",
+      "CAM 소재 직경 정보가 없어 가공 장비를 선택할 수 없습니다.",
     );
     err.statusCode = 400;
     throw err;
@@ -415,7 +415,7 @@ async function chooseMachineForCamMachining({ request }) {
     const pairs = await Promise.all(
       candidates.map(async (c) => {
         const n = await Request.countDocuments({
-          status: { $in: ["의뢰", "CAM", "생산"] },
+          status: { $in: ["의뢰", "CAM", "가공"] },
           "productionSchedule.assignedMachine": c.machineId,
         });
         return [c.machineId, n];
@@ -753,8 +753,8 @@ const revertManufacturerStageByReviewStage = (request, stage) => {
   const map = {
     request: "의뢰",
     cam: "CAM",
-    machining: "생산",
-    packaging: "생산",
+    machining: "가공",
+    packaging: "세척.포장",
     shipping: "발송",
     tracking: "추적관리",
   };
@@ -816,8 +816,8 @@ export async function deleteStageFile(req, res) {
 
       const prevStageMap = {
         machining: "CAM",
-        packaging: "CAM",
-        shipping: "생산",
+        packaging: "가공",
+        shipping: "세척.포장",
         tracking: "발송",
       };
       const prevStage = prevStageMap[stage];
@@ -885,7 +885,7 @@ const advanceManufacturerStageByReviewStage = async ({
   }
 
   if (stage === "cam") {
-    // [변경] CAM 승인(생산 시작) 시점에 크레딧 차감
+    // [변경] CAM 승인(가공 시작) 시점에 크레딧 차감
     const organizationId =
       request.requestorOrganizationId || request.requestor?.organizationId;
     if (organizationId) {
@@ -896,7 +896,7 @@ const advanceManufacturerStageByReviewStage = async ({
       const amountToDeduct = Number(request.price?.amount || 0);
 
       if (balance < amountToDeduct) {
-        const err = new Error("크레딧이 부족하여 생산을 시작할 수 없습니다.");
+        const err = new Error("크레딧이 부족하여 가공을 시작할 수 없습니다.");
         err.statusCode = 402;
         throw err;
       }
@@ -919,7 +919,7 @@ const advanceManufacturerStageByReviewStage = async ({
       );
     }
 
-    applyStatusMapping(request, "생산");
+    applyStatusMapping(request, "가공");
     return;
   }
 
@@ -1527,11 +1527,11 @@ export async function updateRequest(req, res) {
       const currentStatus = String(request.status || "");
       const stageStatus = String(request.manufacturerStage || "");
 
-      // CAM 승인 이후(또는 생산/발송/추적 단계)는 caseInfos 수정 전면 차단
+      // CAM 승인 이후(또는 가공/세척.포장/발송/추적 단계)는 caseInfos 수정 전면 차단
       const afterCam =
         camApproved ||
-        ["생산", "발송", "추적관리"].includes(currentStatus) ||
-        ["생산", "발송", "추적관리"].includes(stageStatus) ||
+        ["가공", "세척.포장", "발송", "추적관리"].includes(currentStatus) ||
+        ["가공", "세척.포장", "발송", "추적관리"].includes(stageStatus) ||
         (currentStatus === "CAM" && camApproved);
 
       if (afterCam) {
@@ -1616,7 +1616,15 @@ export async function updateRequestStatus(req, res) {
     const { status } = req.body;
 
     // 상태 유효성 검사 (새 워크플로우)
-    const validStatuses = ["의뢰", "CAM", "생산", "발송", "추적관리", "취소"];
+    const validStatuses = [
+      "의뢰",
+      "CAM",
+      "가공",
+      "세척.포장",
+      "발송",
+      "추적관리",
+      "취소",
+    ];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -1664,7 +1672,7 @@ export async function updateRequestStatus(req, res) {
       });
     }
 
-    // 취소는 의뢰 또는 CAM 상태에서만 가능 (생산 단계부터는 취소 불가)
+    // 취소는 의뢰 또는 CAM 상태에서만 가능 (가공 단계부터는 취소 불가)
     if (status === "취소") {
       const currentStatus = String(request.status || "").trim();
       const allowedCancelStatuses = ["의뢰", "의뢰접수", "CAM", "가공전"];
@@ -1672,7 +1680,7 @@ export async function updateRequestStatus(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "의뢰 또는 CAM 단계에서만 취소할 수 있습니다. 생산 단계부터는 취소가 불가능합니다.",
+            "의뢰 또는 CAM 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
         });
       }
     }
@@ -2224,8 +2232,8 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       request.productionSchedule.diameterGroup = toDiameterGroup(matDia);
     }
 
-    // 업로드 시 공정 전환은 하지 않고, 생산(검토) 대상으로만 전환
-    request.manufacturerStage = "생산";
+    // 업로드 시 공정 전환은 하지 않고, 가공(검토) 대상으로만 전환
+    request.manufacturerStage = "가공";
 
     await request.save();
 
@@ -2370,12 +2378,12 @@ export async function deleteRequest(req, res) {
       });
     }
 
-    // 단계 검증: 관리자면 생산(machining) 단계 이전까지, 의뢰자면 의뢰/CAM 단계까지만 허용
+    // 단계 검증: 관리자면 가공(machining) 단계 이전까지, 의뢰자면 의뢰/CAM 단계까지만 허용
     const currentStatus = String(request.status || "");
     const isAdmin = req.user.role === "admin";
 
     const deletableStatuses = isAdmin
-      ? ["의뢰", "CAM", "생산"]
+      ? ["의뢰", "CAM", "가공"]
       : ["의뢰", "CAM"];
 
     if (!deletableStatuses.includes(currentStatus)) {
@@ -2383,7 +2391,7 @@ export async function deleteRequest(req, res) {
         success: false,
         message: isAdmin
           ? "발송 단계 이후의 의뢰는 삭제할 수 없습니다."
-          : "생산 단계 이후의 의뢰는 직접 삭제할 수 없습니다. 고객센터에 문의해주세요.",
+          : "가공 단계 이후의 의뢰는 직접 삭제할 수 없습니다. 고객센터에 문의해주세요.",
       });
     }
 
