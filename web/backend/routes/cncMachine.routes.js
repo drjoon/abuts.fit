@@ -1,5 +1,6 @@
 import express from "express";
 import * as cncMachineController from "../controllers/cncMachine.controller.js";
+import * as cncEventController from "../controllers/cncEvent.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/role.middleware.js";
 import { requireBridgeSecret } from "../middlewares/bridgeSecret.middleware.js";
@@ -88,6 +89,13 @@ router.get(
   "/:machineId/continuous/state",
   authorizeRoles("manufacturer", "admin"),
   cncMachineController.getBridgeContinuousState,
+);
+
+// 장비별 CNC 이벤트 조회
+router.get(
+  "/:machineId/events",
+  authorizeRoles("manufacturer", "admin"),
+  cncEventController.getCncEventsByMachineId,
 );
 
 // 브리지 예약 큐에서 단일 작업 삭제

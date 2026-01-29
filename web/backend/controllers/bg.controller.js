@@ -5,6 +5,7 @@ import { ApiError } from "../utils/ApiError.js";
 import path from "path";
 import fs from "fs/promises";
 import Request from "../models/request.model.js";
+import CncEvent from "../models/cncEvent.model.js";
 import { getPresignedPutUrl } from "../utils/s3.utils.js";
 
 const BG_STORAGE_BASE =
@@ -474,6 +475,40 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     `[BG-Callback] Updating request ${request.requestId} with updateData:`,
     JSON.stringify(updateData, null, 2),
   );
+
+  try {
+    const step = String(sourceStep || "").trim();
+    if (step.toLowerCase().startsWith("cnc")) {
+      const machineId = metadata?.machineId ? String(metadata.machineId) : null;
+      const isOk =
+        String(status || "")
+          .trim()
+          .toLowerCase() === "success";
+      const eventType =
+        step === "cnc-preload"
+          ? "NC_PRELOAD"
+          : step === "cnc" && isOk
+            ? "MACHINING_START"
+            : "CNC";
+
+      await CncEvent.create({
+        requestId: request?.requestId || null,
+        machineId,
+        sourceStep: step,
+        status: isOk ? "success" : "failed",
+        eventType,
+        message: isOk ? "OK" : String(metadata?.error || "") || "FAILED",
+        metadata: {
+          fileName,
+          originalFileName,
+          ...(metadata && typeof metadata === "object" ? metadata : {}),
+        },
+      });
+    }
+  } catch (e) {
+    console.error("[BG-Callback] CncEvent.create failed:", e?.message);
+  }
+
   const updatedRequest = await Request.findByIdAndUpdate(
     request._id,
     { $set: updateData },

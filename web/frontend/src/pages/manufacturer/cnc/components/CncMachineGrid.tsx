@@ -22,6 +22,7 @@ interface CncMachineGridProps {
   onSendControl: (uid: string, action: "reset" | "stop") => void;
   onOpenAddModal: () => void;
   onOpenJobConfig: (machine: Machine) => void;
+  onOpenEventLog?: (machine: Machine) => void;
   onUploadFiles?: (machine: Machine, files: FileList | File[]) => void;
   uploadProgress?: {
     machineId: string;
@@ -55,6 +56,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onSendControl,
   onOpenAddModal,
   onOpenJobConfig,
+  onOpenEventLog,
   onUploadFiles,
   uploadProgress,
   reservationSummaryMap,
@@ -171,6 +173,14 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
               e.stopPropagation();
               onOpenJobConfig(m);
             }}
+            onOpenEventLog={
+              onOpenEventLog
+                ? (e) => {
+                    e.stopPropagation();
+                    onOpenEventLog(m);
+                  }
+                : undefined
+            }
             onUploadFiles={
               onUploadFiles
                 ? (files) => {

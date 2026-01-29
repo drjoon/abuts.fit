@@ -40,6 +40,7 @@ import {
   CncMaterialModal,
   type CncMaterialInfo,
 } from "@/pages/manufacturer/cnc/components/CncMaterialModal";
+import { CncEventLogModal } from "@/components/CncEventLogModal";
 
 export const CncDashboardPage = () => {
   const { user, token } = useAuthStore();
@@ -118,6 +119,10 @@ export const CncDashboardPage = () => {
   const [toolHealthMap, setToolHealthMap] = useState<
     Record<string, HealthLevel>
   >({});
+
+  const [eventLogMachineId, setEventLogMachineId] = useState<string | null>(
+    null,
+  );
   const [tempTooltipMap, setTempTooltipMap] = useState<Record<string, string>>(
     {},
   );
@@ -1219,371 +1224,378 @@ export const CncDashboardPage = () => {
                 </button>
               </div>
             ) : (
-              <CncMachineGrid
-                machines={mergedMachines}
-                workUid={workUid}
-                loading={loading}
-                tempTooltipMap={tempTooltipMap}
-                toolTooltipMap={toolTooltipMap}
-                programSummary={programSummary}
-                reservationJobsMap={reservationJobsMap}
-                reservationSummaryMap={reservationSummaryMap}
-                reservationTotalQtyMap={reservationTotalQtyMap}
-                uploadProgress={uploadProgress}
-                onToggleAllowJobStart={(machine, next) => {
-                  void updateMachineFlags(machine, { allowJobStart: next });
-                }}
-                onToggleAllowAutoMachining={(machine, next) => {
-                  void updateMachineFlags(machine, {
-                    allowAutoMachining: next,
-                  });
-                }}
-                onUploadFiles={(machine, files) => {
-                  void (async () => {
-                    try {
-                      const existing = new Set<string>();
-                      const jobs = reservationJobsMap[machine.uid] || [];
-                      for (const j of Array.isArray(jobs) ? jobs : []) {
-                        const n = String((j as any)?.name || "").trim();
-                        if (n) existing.add(n.toLowerCase());
-                      }
+              <>
+                <CncMachineGrid
+                  machines={mergedMachines}
+                  workUid={workUid}
+                  loading={loading}
+                  tempTooltipMap={tempTooltipMap}
+                  toolTooltipMap={toolTooltipMap}
+                  programSummary={programSummary}
+                  reservationJobsMap={reservationJobsMap}
+                  reservationSummaryMap={reservationSummaryMap}
+                  reservationTotalQtyMap={reservationTotalQtyMap}
+                  uploadProgress={uploadProgress}
+                  onOpenEventLog={(machine) => {
+                    setEventLogMachineId(machine.uid);
+                  }}
+                  onToggleAllowJobStart={(machine, next) => {
+                    void updateMachineFlags(machine, { allowJobStart: next });
+                  }}
+                  onToggleAllowAutoMachining={(machine, next) => {
+                    void updateMachineFlags(machine, {
+                      allowAutoMachining: next,
+                    });
+                  }}
+                  onUploadFiles={(machine, files) => {
+                    void (async () => {
+                      try {
+                        const existing = new Set<string>();
+                        const jobs = reservationJobsMap[machine.uid] || [];
+                        for (const j of Array.isArray(jobs) ? jobs : []) {
+                          const n = String((j as any)?.name || "").trim();
+                          if (n) existing.add(n.toLowerCase());
+                        }
 
-                      const list = Array.from(files || []);
-                      const deduped = list.filter((f) => {
-                        const n = String(f?.name || "")
-                          .trim()
-                          .toLowerCase();
-                        if (!n) return false;
-                        return !existing.has(n);
-                      });
+                        const list = Array.from(files || []);
+                        const deduped = list.filter((f) => {
+                          const n = String(f?.name || "")
+                            .trim()
+                            .toLowerCase();
+                          if (!n) return false;
+                          return !existing.has(n);
+                        });
 
-                      if (deduped.length !== list.length) {
+                        if (deduped.length !== list.length) {
+                          toast({
+                            title: "중복 파일 제외",
+                            description:
+                              "이미 예약된 파일은 업로드에서 제외했습니다.",
+                          });
+                        }
+                        if (deduped.length === 0) {
+                          toast({
+                            title: "업로드할 파일 없음",
+                            description:
+                              "선택한 파일이 모두 이미 예약되어 있습니다.",
+                          });
+                          return;
+                        }
+
+                        await uploadLocalFiles(machine.uid, deduped);
+                        await loadQueueForMachine(machine);
                         toast({
-                          title: "중복 파일 제외",
-                          description:
-                            "이미 예약된 파일은 업로드에서 제외했습니다.",
+                          title: "업로드 완료",
+                          description: "예약목록에 추가되었습니다.",
+                        });
+                      } catch (e: any) {
+                        const msg =
+                          e?.message || "업로드 중 오류가 발생했습니다.";
+                        setError(msg);
+                        toast({
+                          title: "업로드 실패",
+                          description: msg,
+                          variant: "destructive",
                         });
                       }
-                      if (deduped.length === 0) {
+                    })();
+                  }}
+                  onOpenMaterial={(machine) => {
+                    setMaterialModalTarget(machine);
+                    setMaterialModalOpen(true);
+                  }}
+                  onSelectMachine={(uid) => {
+                    const selected = mergedMachines.find((m) => m.uid === uid);
+                    const isConfigured = !!(
+                      selected?.ip && Number(selected?.port || 0) > 0
+                    );
+                    if (workUid !== uid) {
+                      setWorkUid(uid);
+                    }
+                    if (isConfigured) {
+                      void refreshStatusFor(uid);
+                      void fetchProgramList();
+                    }
+                  }}
+                  onTempClick={(machine) => {
+                    void openTempDetail(machine.uid);
+                  }}
+                  onToolClick={async (machine) => {
+                    try {
+                      const res = await callRaw(machine.uid, "GetToolLifeInfo");
+                      const data: any = res?.data ?? res;
+                      const toolLife =
+                        data?.machineToolLife?.toolLife ??
+                        data?.machineToolLife?.toolLifeInfo ??
+                        [];
+
+                      let level: HealthLevel = "unknown";
+                      if (Array.isArray(toolLife) && toolLife.length) {
+                        let anyAlarm = false;
+                        let anyWarn = false;
+                        for (const t of toolLife) {
+                          const use = t.useCount ?? 0;
+                          const cfg = t.configCount ?? 0;
+                          if (cfg <= 0) continue;
+                          const ratio = use / cfg;
+                          if (ratio >= 1) {
+                            anyAlarm = true;
+                          } else if (ratio >= 0.95) {
+                            anyWarn = true;
+                          }
+                        }
+
+                        if (anyAlarm) level = "alarm";
+                        else if (anyWarn) level = "warn";
+                        else level = "ok";
+                      }
+
+                      updateToolTooltip(
+                        machine.uid,
+                        Array.isArray(toolLife) && toolLife.length
+                          ? `공구 ${toolLife.length}개 상태 조회 완료`
+                          : "공구 정보가 없습니다.",
+                      );
+
+                      openToolDetail(toolLife, level);
+                    } catch (e: any) {
+                      const msg = e?.message ?? "공구 상세 조회 중 오류";
+                      setError(msg);
+                      updateToolHealth(machine.uid, "alarm");
+                      updateToolTooltip(machine.uid, msg);
+                    }
+                  }}
+                  onEditMachine={(machine) => {
+                    handleEditMachine(machine);
+                  }}
+                  onOpenMachineInfo={(uid) => {
+                    void openMachineInfo(uid);
+                  }}
+                  onOpenProgramDetail={(prog) => {
+                    void openProgramDetail(prog);
+                  }}
+                  onSendControl={(uid, action) => {
+                    if (action === "reset") {
+                      const target =
+                        machines.find((m) => m.uid === uid) || null;
+                      if (!target) return;
+                      const status = (target.status || "").toUpperCase();
+                      const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some(
+                        (k) => status.includes(k),
+                      );
+
+                      if (!isRunning) {
                         toast({
-                          title: "업로드할 파일 없음",
-                          description:
-                            "선택한 파일이 모두 이미 예약되어 있습니다.",
+                          title: "생산 중단",
+                          description: "현재 정지 상태입니다.",
                         });
                         return;
                       }
 
-                      await uploadLocalFiles(machine.uid, deduped);
-                      await loadQueueForMachine(machine);
-                      toast({
-                        title: "업로드 완료",
-                        description: "예약목록에 추가되었습니다.",
-                      });
-                    } catch (e: any) {
-                      const msg =
-                        e?.message || "업로드 중 오류가 발생했습니다.";
-                      setError(msg);
-                      toast({
-                        title: "업로드 실패",
-                        description: msg,
-                        variant: "destructive",
-                      });
+                      setResetTarget(target);
+                      setResetConfirmOpen(true);
+                    } else if (action === "stop") {
+                      void sendControlCommand(uid, "stop");
                     }
-                  })();
-                }}
-                onOpenMaterial={(machine) => {
-                  setMaterialModalTarget(machine);
-                  setMaterialModalOpen(true);
-                }}
-                onSelectMachine={(uid) => {
-                  const selected = mergedMachines.find((m) => m.uid === uid);
-                  const isConfigured = !!(
-                    selected?.ip && Number(selected?.port || 0) > 0
-                  );
-                  if (workUid !== uid) {
-                    setWorkUid(uid);
-                  }
-                  if (isConfigured) {
-                    void refreshStatusFor(uid);
+                  }}
+                  onOpenAddModal={() => {
+                    setAddModalMode("create");
+                    setAddModalOpen(true);
+                  }}
+                  onOpenJobConfig={(machine) => {
+                    if (workUid !== machine.uid) {
+                      setWorkUid(machine.uid);
+                    }
+                    void refreshStatusFor(machine.uid);
                     void fetchProgramList();
-                  }
-                }}
-                onTempClick={(machine) => {
-                  void openTempDetail(machine.uid);
-                }}
-                onToolClick={async (machine) => {
-                  try {
-                    const res = await callRaw(machine.uid, "GetToolLifeInfo");
-                    const data: any = res?.data ?? res;
-                    const toolLife =
-                      data?.machineToolLife?.toolLife ??
-                      data?.machineToolLife?.toolLifeInfo ??
-                      [];
-
-                    let level: HealthLevel = "unknown";
-                    if (Array.isArray(toolLife) && toolLife.length) {
-                      // CncToolStatusModal 행 수준과 동일한 기준으로 집계:
-                      // - 각 툴별 ratio = useCount/configCount
-                      //   - ratio >= 1.0  => alarm (교체 필요)
-                      //   - ratio >= 0.95 => warn  (주의)
-                      //   - 그 외        => ok    (정상)
-                      let anyAlarm = false;
-                      let anyWarn = false;
-                      for (const t of toolLife) {
-                        const use = t.useCount ?? 0;
-                        const cfg = t.configCount ?? 0;
-                        if (cfg <= 0) continue;
-                        const ratio = use / cfg;
-                        if (ratio >= 1) {
-                          anyAlarm = true;
-                        } else if (ratio >= 0.95) {
-                          anyWarn = true;
-                        }
-                      }
-
-                      if (anyAlarm) level = "alarm";
-                      else if (anyWarn) level = "warn";
-                      else level = "ok";
+                    setPlaylistTarget(machine);
+                    void loadQueueForMachine(machine).finally(() => {
+                      setPlaylistOpen(true);
+                    });
+                  }}
+                  onOpenReservationList={(machine) => {
+                    setPlaylistTarget(machine);
+                    void loadQueueForMachine(machine).finally(() => {
+                      setPlaylistOpen(true);
+                    });
+                  }}
+                  onCancelReservation={(machine, jobId) => {
+                    const uid = machine.uid;
+                    if (jobId) {
+                      queueBatchRef.current.machineId = uid;
+                      queueBatchRef.current.deleteJobIds.add(jobId);
+                      scheduleQueueBatchCommit(uid);
                     }
 
-                    updateToolTooltip(
-                      machine.uid,
-                      Array.isArray(toolLife) && toolLife.length
-                        ? `공구 ${toolLife.length}개 상태 조회 완료`
-                        : "공구 정보가 없습니다.",
-                    );
+                    setReservationJobsMap((prev) => {
+                      const jobs = prev[uid] || [];
+                      const filtered = jobId
+                        ? jobs.filter((j) => j.id !== jobId)
+                        : jobs.slice(1);
 
-                    openToolDetail(toolLife, level);
-                  } catch (e: any) {
-                    const msg = e?.message ?? "공구 상세 조회 중 오류";
-                    setError(msg);
-                    updateToolHealth(machine.uid, "alarm");
-                    updateToolTooltip(machine.uid, msg);
-                  }
-                }}
-                onEditMachine={(machine) => {
-                  handleEditMachine(machine);
-                }}
-                onOpenMachineInfo={(uid) => {
-                  void openMachineInfo(uid);
-                }}
-                onOpenProgramDetail={(prog) => {
-                  void openProgramDetail(prog);
-                }}
-                onSendControl={(uid, action) => {
-                  if (action === "reset") {
-                    const target = machines.find((m) => m.uid === uid) || null;
-                    if (!target) return;
-                    const status = (target.status || "").toUpperCase();
-                    const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some(
-                      (k) => status.includes(k),
-                    );
+                      setReservationSummaryMap((prevSummary) => {
+                        const next = { ...prevSummary };
+                        if (filtered.length === 0) {
+                          delete next[uid];
+                        } else {
+                          const first = filtered[0];
+                          const baseName =
+                            first?.name ||
+                            (first?.programNo != null
+                              ? `#${first.programNo}`
+                              : "-");
+                          next[uid] = `[생산예약 : ${baseName}]`;
+                        }
+                        return next;
+                      });
 
-                    if (!isRunning) {
-                      toast({
-                        title: "생산 중단",
-                        description: "현재 정지 상태입니다.",
+                      setReservationTotalQtyMap((prevTotal) => {
+                        const total = filtered.reduce(
+                          (sum, j) => sum + (j.qty || 1),
+                          0,
+                        );
+                        const next = { ...prevTotal };
+                        if (total <= 0) {
+                          delete next[uid];
+                        } else {
+                          next[uid] = total;
+                        }
+                        return next;
+                      });
+
+                      const nextMap = { ...prev };
+                      if (filtered.length === 0) {
+                        delete nextMap[uid];
+                      } else {
+                        nextMap[uid] = filtered;
+                      }
+                      return nextMap;
+                    });
+                  }}
+                  onTogglePause={async (machine, jobId) => {
+                    if (!jobId) return;
+                    const uid = machine.uid;
+
+                    const currentJobs = reservationJobsMap?.[uid] || [];
+                    const targetJob = currentJobs.find((j) => j.id === jobId);
+                    if (!targetJob) return;
+
+                    const wasPaused = !!targetJob.paused;
+                    const nextPaused = !wasPaused;
+
+                    setReservationJobsMap((prev) => {
+                      const current = prev[uid] || [];
+                      const nextJobs = current.map((j) =>
+                        j.id === jobId ? { ...j, paused: nextPaused } : j,
+                      );
+                      return {
+                        ...prev,
+                        [uid]: nextJobs,
+                      };
+                    });
+
+                    if (!(wasPaused && !nextPaused)) return;
+
+                    const ok = await ensureCncWriteAllowed();
+                    if (!ok) {
+                      setReservationJobsMap((prev) => {
+                        const current = prev[uid] || [];
+                        const nextJobs = current.map((j) =>
+                          j.id === jobId ? { ...j, paused: wasPaused } : j,
+                        );
+                        return {
+                          ...prev,
+                          [uid]: nextJobs,
+                        };
                       });
                       return;
                     }
 
-                    setResetTarget(target);
-                    setResetConfirmOpen(true);
-                  } else if (action === "stop") {
-                    void sendControlCommand(uid, "stop");
-                  }
-                }}
-                onOpenAddModal={() => {
-                  setAddModalMode("create");
-                  setAddModalOpen(true);
-                }}
-                onOpenJobConfig={(machine) => {
-                  if (workUid !== machine.uid) {
-                    setWorkUid(machine.uid);
-                  }
-                  void refreshStatusFor(machine.uid);
-                  void fetchProgramList();
-                  setPlaylistTarget(machine);
-                  void loadQueueForMachine(machine).finally(() => {
-                    setPlaylistOpen(true);
-                  });
-                }}
-                onCancelReservation={(machine, jobId) => {
-                  const uid = machine.uid;
-                  if (jobId) {
-                    queueBatchRef.current.machineId = uid;
-                    queueBatchRef.current.deleteJobIds.add(jobId);
-                    scheduleQueueBatchCommit(uid);
-                  }
-
-                  setReservationJobsMap((prev) => {
-                    const jobs = prev[uid] || [];
-                    const filtered = jobId
-                      ? jobs.filter((j) => j.id !== jobId)
-                      : jobs.slice(1);
-
-                    setReservationSummaryMap((prevSummary) => {
-                      const next = { ...prevSummary };
-                      if (filtered.length === 0) {
-                        delete next[uid];
-                      } else {
-                        const first = filtered[0];
-                        const baseName =
-                          first?.name ||
-                          (first?.programNo != null
-                            ? `#${first.programNo}`
-                            : "-");
-                        next[uid] = `[생산예약 : ${baseName}]`;
-                      }
-                      return next;
-                    });
-
-                    setReservationTotalQtyMap((prevTotal) => {
-                      const total = filtered.reduce(
-                        (sum, j) => sum + (j.qty || 1),
-                        0,
-                      );
-                      const next = { ...prevTotal };
-                      if (total <= 0) {
-                        delete next[uid];
-                      } else {
-                        next[uid] = total;
-                      }
-                      return next;
-                    });
-
-                    const nextMap = { ...prev };
-                    if (filtered.length === 0) {
-                      delete nextMap[uid];
-                    } else {
-                      nextMap[uid] = filtered;
-                    }
-                    return nextMap;
-                  });
-                }}
-                onTogglePause={async (machine, jobId) => {
-                  if (!jobId) return;
-                  const uid = machine.uid;
-
-                  const currentJobs = reservationJobsMap?.[uid] || [];
-                  const targetJob = currentJobs.find((j) => j.id === jobId);
-                  if (!targetJob) return;
-
-                  const wasPaused = !!targetJob.paused;
-                  const nextPaused = !wasPaused;
-
-                  setReservationJobsMap((prev) => {
-                    const current = prev[uid] || [];
-                    const nextJobs = current.map((j) =>
-                      j.id === jobId ? { ...j, paused: nextPaused } : j,
-                    );
-                    return {
-                      ...prev,
-                      [uid]: nextJobs,
-                    };
-                  });
-
-                  // 일시정지 → 재생으로 전환될 때만 실제 생산 시작 명령을 보낸다.
-                  if (!(wasPaused && !nextPaused)) return;
-
-                  const ok = await ensureCncWriteAllowed();
-                  if (!ok) {
-                    setReservationJobsMap((prev) => {
-                      const current = prev[uid] || [];
-                      const nextJobs = current.map((j) =>
-                        j.id === jobId ? { ...j, paused: wasPaused } : j,
-                      );
-                      return {
-                        ...prev,
-                        [uid]: nextJobs,
-                      };
-                    });
-                    return;
-                  }
-
-                  const programNoRaw = (targetJob as any)?.programNo ?? null;
-                  const programNo = Number(programNoRaw);
-                  if (!Number.isFinite(programNo) || programNo <= 0) {
-                    const msg =
-                      "프로그램 번호가 없어 생산을 시작할 수 없습니다. (예약 등록 시 프로그램 번호를 확인해 주세요.)";
-                    setError(msg);
-                    toast({
-                      title: "생산 시작 실패",
-                      description: msg,
-                      variant: "destructive",
-                    });
-                    setReservationJobsMap((prev) => {
-                      const current = prev[uid] || [];
-                      const nextJobs = current.map((j) =>
-                        j.id === jobId ? { ...j, paused: wasPaused } : j,
-                      );
-                      return {
-                        ...prev,
-                        [uid]: nextJobs,
-                      };
-                    });
-                    return;
-                  }
-
-                  try {
-                    // 1) NC 프로그램 로드(활성화)
-                    const actRes = await callRaw(uid, "SetActivateProgram", {
-                      headType: 1,
-                      programNo,
-                    });
-                    const actOk =
-                      actRes &&
-                      actRes.success !== false &&
-                      (actRes.result == null || actRes.result === 0);
-                    if (!actOk) {
+                    const programNoRaw = (targetJob as any)?.programNo ?? null;
+                    const programNo = Number(programNoRaw);
+                    if (!Number.isFinite(programNo) || programNo <= 0) {
                       const msg =
-                        actRes?.message ||
-                        actRes?.error ||
-                        "프로그램 로드 실패 (SetActivateProgram)";
-                      throw new Error(msg);
+                        "프로그램 번호가 없어 생산을 시작할 수 없습니다. (예약 등록 시 프로그램 번호를 확인해 주세요.)";
+                      setError(msg);
+                      toast({
+                        title: "생산 시작 실패",
+                        description: msg,
+                        variant: "destructive",
+                      });
+                      setReservationJobsMap((prev) => {
+                        const current = prev[uid] || [];
+                        const nextJobs = current.map((j) =>
+                          j.id === jobId ? { ...j, paused: wasPaused } : j,
+                        );
+                        return {
+                          ...prev,
+                          [uid]: nextJobs,
+                        };
+                      });
+                      return;
                     }
 
-                    // 2) 가공 시작
-                    const res = await apiFetch({
-                      path: `/api/machines/${encodeURIComponent(uid)}/start`,
-                      method: "POST",
-                      token,
-                    });
+                    try {
+                      const actRes = await callRaw(uid, "SetActivateProgram", {
+                        headType: 1,
+                        programNo,
+                      });
+                      const actOk =
+                        actRes &&
+                        actRes.success !== false &&
+                        (actRes.result == null || actRes.result === 0);
+                      if (!actOk) {
+                        const msg =
+                          actRes?.message ||
+                          actRes?.error ||
+                          "프로그램 로드 실패 (SetActivateProgram)";
+                        throw new Error(msg);
+                      }
 
-                    if (!res.ok) {
-                      throw new Error("가공 시작 실패");
+                      const res = await apiFetch({
+                        path: `/api/machines/${encodeURIComponent(uid)}/start`,
+                        method: "POST",
+                        token,
+                      });
+
+                      if (!res.ok) {
+                        throw new Error("가공 시작 실패");
+                      }
+
+                      void refreshStatusFor(uid);
+                    } catch (e: any) {
+                      const msg = e?.message ?? "가공 시작 요청 중 오류";
+                      setError(msg);
+                      toast({
+                        title: "가공 시작 오류",
+                        description: msg,
+                        variant: "destructive",
+                      });
+
+                      setReservationJobsMap((prev) => {
+                        const current = prev[uid] || [];
+                        const nextJobs = current.map((j) =>
+                          j.id === jobId ? { ...j, paused: wasPaused } : j,
+                        );
+                        return {
+                          ...prev,
+                          [uid]: nextJobs,
+                        };
+                      });
                     }
+                  }}
+                />
 
-                    void refreshStatusFor(uid);
-                  } catch (e: any) {
-                    const msg = e?.message ?? "가공 시작 요청 중 오류";
-                    setError(msg);
-                    toast({
-                      title: "가공 시작 오류",
-                      description: msg,
-                      variant: "destructive",
-                    });
-
-                    // 실패 시 UI 상태 원복
-                    setReservationJobsMap((prev) => {
-                      const current = prev[uid] || [];
-                      const nextJobs = current.map((j) =>
-                        j.id === jobId ? { ...j, paused: wasPaused } : j,
-                      );
-                      return {
-                        ...prev,
-                        [uid]: nextJobs,
-                      };
-                    });
-                  }
-                }}
-                onOpenReservationList={(machine) => {
-                  setPlaylistTarget(machine);
-                  void loadQueueForMachine(machine).finally(() => {
-                    setPlaylistOpen(true);
-                  });
-                }}
-              />
+                {eventLogMachineId ? (
+                  <CncEventLogModal
+                    open={!!eventLogMachineId}
+                    onOpenChange={(v) => {
+                      if (!v) setEventLogMachineId(null);
+                    }}
+                    mode={{ kind: "machine", machineId: eventLogMachineId }}
+                  />
+                ) : null}
+              </>
             )}
           </div>
         </div>

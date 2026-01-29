@@ -4,6 +4,7 @@ import {
   Wrench,
   Settings,
   Info,
+  FileText,
   X,
   ShieldOff,
   Pause,
@@ -30,6 +31,7 @@ interface MachineCardProps {
   nextProgs: any[];
   reservationSummary?: string | null;
   reservedTotalQty?: number;
+  onOpenEventLog?: (e: React.MouseEvent) => void;
   uploadProgress?: {
     machineId: string;
     fileName: string;
@@ -98,6 +100,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   nextProgs,
   reservationSummary,
   reservedTotalQty,
+  onOpenEventLog,
   uploadProgress,
   continuousState,
   onSelect,
@@ -382,6 +385,14 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             <Info className="h-3.5 w-3.5" />
           </button>
           <button
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+            onClick={onOpenEventLog}
+            title="이벤트 로그"
+            disabled={loading || !onOpenEventLog}
+          >
+            <FileText className="h-3.5 w-3.5" />
+          </button>
+          <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 text-[11px] font-bold shadow-sm"
             onClick={onMaterialClick}
             title="원소재"
@@ -398,14 +409,6 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             disabled={loading}
           >
             <Wrench className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
-            onClick={onTempClick}
-            title={tempTooltip || "모터 온도"}
-            disabled={loading}
-          >
-            <Thermometer className="h-3.5 w-3.5" />
           </button>
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"

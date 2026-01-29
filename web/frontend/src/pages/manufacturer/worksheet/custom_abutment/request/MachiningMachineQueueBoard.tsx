@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";
+import { CncEventLogModal } from "@/components/CncEventLogModal";
 
 type QueueItem = {
   requestId?: string;
@@ -67,6 +68,7 @@ type MachineQueueCardProps = {
   machineName?: string;
   queue: QueueItem[];
   onOpenMore: () => void;
+  onOpenRequestLog?: (requestId: string) => void;
   autoEnabled: boolean;
   onToggleAuto: (next: boolean) => void;
   machineStatus?: MachineStatus | null;
@@ -162,6 +164,7 @@ const MachineQueueCard = ({
   machineName,
   queue,
   onOpenMore,
+  onOpenRequestLog,
   autoEnabled,
   onToggleAuto,
   machineStatus,
@@ -249,7 +252,21 @@ const MachineQueueCard = ({
                 <div className="min-w-0 truncate text-[13px] font-extrabold text-slate-800">
                   {formatLabel(q)}
                 </div>
-                {getNcPreloadBadge(q)}
+                <div className="flex items-center gap-2 shrink-0">
+                  {q.requestId ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-extrabold text-slate-700 hover:bg-slate-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenRequestLog?.(String(q.requestId));
+                      }}
+                    >
+                      로그
+                    </button>
+                  ) : null}
+                  {getNcPreloadBadge(q)}
+                </div>
               </div>
             ))
           : null}
@@ -300,6 +317,9 @@ export const MachiningMachineQueueBoard = ({
   >(null);
 
   const [openMachineId, setOpenMachineId] = useState<string | null>(null);
+  const [eventLogRequestId, setEventLogRequestId] = useState<string | null>(
+    null,
+  );
   const [openVisibleCount, setOpenVisibleCount] = useState(20);
   const openSentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -686,6 +706,7 @@ export const MachiningMachineQueueBoard = ({
             machineName={m.name}
             queue={Array.isArray(queueMap?.[m.uid]) ? queueMap[m.uid] : []}
             onOpenMore={() => setOpenMachineId(m.uid)}
+            onOpenRequestLog={(requestId) => setEventLogRequestId(requestId)}
             autoEnabled={m.allowAutoMachining === true}
             onToggleAuto={(next) => {
               requestToggleMachineAuto(m.uid, next);
@@ -742,6 +763,18 @@ export const MachiningMachineQueueBoard = ({
                       >
                         #{idx + 1}
                       </Badge>
+                      {q.requestId ? (
+                        <button
+                          type="button"
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-extrabold text-slate-700 hover:bg-slate-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEventLogRequestId(String(q.requestId));
+                          }}
+                        >
+                          로그
+                        </button>
+                      ) : null}
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
                       <div className="min-w-0 truncate text-[14px] font-extrabold text-slate-900">
@@ -764,6 +797,16 @@ export const MachiningMachineQueueBoard = ({
           </div>
         </DialogContent>
       </Dialog>
+
+      {eventLogRequestId ? (
+        <CncEventLogModal
+          open={!!eventLogRequestId}
+          onOpenChange={(v) => {
+            if (!v) setEventLogRequestId(null);
+          }}
+          mode={{ kind: "request", requestId: eventLogRequestId }}
+        />
+      ) : null}
     </div>
   );
 };

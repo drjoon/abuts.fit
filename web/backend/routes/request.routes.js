@@ -1,6 +1,7 @@
 import express from "express";
 const router = express.Router();
 import requestController from "../controllers/request.controller.js";
+import * as cncEventController from "../controllers/cncEvent.controller.js";
 import { authenticate, authorize } from "../middlewares/auth.middleware.js";
 
 // 모든 라우트에 인증 미들웨어 적용
@@ -136,6 +137,13 @@ router.patch(
   "/:id/review-status",
   authorize(["manufacturer", "admin"]),
   requestController.updateReviewStatusByStage,
+);
+
+// 제조사/관리자: CNC 이벤트 조회 (의뢰 단위)
+router.get(
+  "/:requestId/cnc-events",
+  authorize(["manufacturer", "admin"]),
+  cncEventController.getCncEventsByRequestId,
 );
 
 // 제조사/관리자: 원본 STL 다운로드 URL
