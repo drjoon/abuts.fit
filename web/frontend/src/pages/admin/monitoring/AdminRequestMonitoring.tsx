@@ -29,7 +29,7 @@ import {
 const normalizeStage = (
   status?: string,
   manufacturerStage?: string,
-  status2?: string
+  status2?: string,
 ) => {
   const s = String(status || "");
   const stage = String(manufacturerStage || "");
@@ -40,8 +40,8 @@ const normalizeStage = (
 
   if (["shipping", "tracking", "발송", "추적관리"].includes(stage))
     return "발송";
-  if (["machining", "packaging", "production", "생산"].includes(stage))
-    return "생산";
+  if (["packaging", "세척.포장"].includes(stage)) return "세척.포장";
+  if (["machining", "production", "가공"].includes(stage)) return "가공";
   if (["cam", "CAM", "가공전"].includes(stage)) return "CAM";
   return "의뢰";
 };
@@ -49,7 +49,7 @@ const normalizeStage = (
 const getStatusBadge = (
   status?: string,
   manufacturerStage?: string,
-  status2?: string
+  status2?: string,
 ) => {
   const norm = normalizeStage(status, manufacturerStage, status2);
   switch (norm) {
@@ -57,10 +57,16 @@ const getStatusBadge = (
       return <Badge variant="outline">의뢰</Badge>;
     case "CAM":
       return <Badge variant="default">CAM</Badge>;
-    case "생산":
+    case "가공":
       return (
         <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
-          생산
+          가공
+        </Badge>
+      );
+    case "세척.포장":
+      return (
+        <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-xs">
+          세척.포장
         </Badge>
       );
     case "발송":
@@ -106,14 +112,15 @@ const getPriorityBadge = (priority: string) => {
 const getStatusIcon = (
   status: string,
   manufacturerStage?: string,
-  status2?: string
+  status2?: string,
 ) => {
   const norm = normalizeStage(status, manufacturerStage, status2);
   switch (norm) {
     case "의뢰":
       return <FileText className="h-4 w-4 text-blue-500" />;
     case "CAM":
-    case "생산":
+    case "가공":
+    case "세척.포장":
       return <Clock className="h-4 w-4 text-green-500" />;
     case "발송":
       return <Truck className="h-4 w-4 text-orange-500" />;
@@ -186,7 +193,7 @@ export const AdminRequestMonitoring = () => {
     const effectiveStatus = normalizeStage(
       request.status,
       request.manufacturerStage,
-      request.status2
+      request.status2,
     );
     const matchesSearch =
       (caseInfos.patientName || "")
@@ -212,7 +219,8 @@ export const AdminRequestMonitoring = () => {
   const byStatus = requestStats.byStatus || {};
   const receiveCount = byStatus["의뢰"] || 0;
   const camCount = byStatus["CAM"] || 0;
-  const productionCount = byStatus["생산"] || 0;
+  const machiningCount = byStatus["가공"] || 0;
+  const packagingCount = byStatus["세척.포장"] || 0;
   const shippingCount = byStatus["발송"] || 0;
   const doneCount = byStatus["완료"] || 0;
   const canceledCount = byStatus["취소"] || 0;
@@ -256,11 +264,18 @@ export const AdminRequestMonitoring = () => {
                 CAM
               </Button>
               <Button
-                variant={selectedStatus === "생산" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("생산")}
+                variant={selectedStatus === "가공" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("가공")}
                 size="sm"
               >
-                생산
+                가공
+              </Button>
+              <Button
+                variant={selectedStatus === "세척.포장" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("세척.포장")}
+                size="sm"
+              >
+                세척.포장
               </Button>
               <Button
                 variant={selectedStatus === "발송" ? "default" : "outline"}
@@ -268,13 +283,6 @@ export const AdminRequestMonitoring = () => {
                 size="sm"
               >
                 발송
-              </Button>
-              <Button
-                variant={selectedStatus === "추적관리" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("추적관리")}
-                size="sm"
-              >
-                추적관리
               </Button>
               <Button
                 variant={selectedStatus === "취소" ? "default" : "outline"}
@@ -326,9 +334,24 @@ export const AdminRequestMonitoring = () => {
                   <Clock className="h-4 w-4 text-cyan-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">생산</p>
+                  <p className="text-sm text-muted-foreground">가공</p>
                   <p className="text-2xl font-bold">
-                    {productionCount.toLocaleString()}
+                    {machiningCount.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Clock className="h-4 w-4 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">세척.포장</p>
+                  <p className="text-2xl font-bold">
+                    {packagingCount.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -338,7 +361,7 @@ export const AdminRequestMonitoring = () => {
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-orange-100 rounded-lg">
-                  <FileText className="h-4 w-4 text-orange-600" />
+                  <Truck className="h-4 w-4 text-orange-600" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">발송</p>
@@ -402,7 +425,7 @@ export const AdminRequestMonitoring = () => {
                         {getStatusIcon(
                           request.status,
                           request.manufacturerStage,
-                          request.status2
+                          request.status2,
                         )}
                         <h3 className="font-medium">
                           {request.caseInfos?.patientName} (
@@ -428,7 +451,7 @@ export const AdminRequestMonitoring = () => {
                       {getStatusBadge(
                         request.status,
                         request.manufacturerStage,
-                        request.status2
+                        request.status2,
                       )}
                       <div className="text-right text-sm">
                         <p className="font-medium text-primary">
