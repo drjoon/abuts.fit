@@ -107,7 +107,12 @@ export const CncDashboardPage = () => {
       {
         currentMaterial?: CncMaterialInfo;
         scheduledMaterialChange?: any;
-        dummySettings?: { programName?: string; schedules?: any[] };
+        dummySettings?: {
+          enabled?: boolean;
+          programName?: string;
+          schedules?: any[];
+          excludeHolidays?: boolean;
+        };
         maxModelDiameterGroups?: ("6" | "8" | "10" | "10+")[];
       }
     >
@@ -878,83 +883,154 @@ export const CncDashboardPage = () => {
     await handleAddMachine(snapshot);
   };
 
+  const debounceTimersRef = useRef<
+    Record<string, ReturnType<typeof setTimeout> | null>
+  >({});
+  const debounceBaselineRef = useRef<Record<string, any>>({});
+  const debounceLatestRef = useRef<Record<string, any>>({});
+
+  const scheduleDebounced = useCallback(
+    (key: string, nextValue: any, baselineValue: any, commit: () => void) => {
+      debounceLatestRef.current[key] = nextValue;
+
+      if (debounceTimersRef.current[key] == null) {
+        debounceBaselineRef.current[key] = baselineValue;
+      }
+
+      const existing = debounceTimersRef.current[key];
+      if (existing) {
+        clearTimeout(existing);
+      }
+
+      debounceTimersRef.current[key] = setTimeout(() => {
+        const latest = debounceLatestRef.current[key];
+        const baseline = debounceBaselineRef.current[key];
+
+        debounceTimersRef.current[key] = null;
+        delete debounceLatestRef.current[key];
+        delete debounceBaselineRef.current[key];
+
+        if (latest === baseline) return;
+        commit();
+      }, 700);
+    },
+    [],
+  );
+
   const updateMachineFlags = useCallback(
-    async (
+    (
       machine: Machine,
-      next: {
-        allowJobStart?: boolean;
-        allowAutoMachining?: boolean;
-      },
+      next: { allowJobStart?: boolean; allowAutoMachining?: boolean },
     ) => {
       if (!token) return;
 
       const uid = machine.uid;
-
-      // UI는 즉시 반영하고, 실패 시 롤백한다.
       const prevAllowJobStart = machine.allowJobStart !== false;
       const prevAllowAutoMachining = machine.allowAutoMachining === true;
 
-      setMachines((prev) =>
-        prev.map((m) =>
-          m.uid === uid
-            ? {
-                ...m,
-                ...(typeof next.allowJobStart === "boolean"
-                  ? { allowJobStart: next.allowJobStart }
-                  : null),
-                ...(typeof next.allowAutoMachining === "boolean"
-                  ? { allowAutoMachining: next.allowAutoMachining }
-                  : null),
-              }
-            : m,
-        ),
-      );
-
-      try {
-        const res = await apiFetch({
-          path: "/api/machines",
-          method: "POST",
-          token,
-          jsonBody: {
-            uid: machine.uid,
-            name: machine.name,
-            ip: machine.ip,
-            port: machine.port,
-            allowJobStart:
-              typeof next.allowJobStart === "boolean"
-                ? next.allowJobStart
-                : prevAllowJobStart,
-            allowAutoMachining:
-              typeof next.allowAutoMachining === "boolean"
-                ? next.allowAutoMachining
-                : prevAllowAutoMachining,
-          },
-        });
-
-        const body: any = res.data ?? {};
-        if (!res.ok || body?.success === false) {
-          throw new Error(body?.message || "장비 설정 저장 실패");
-        }
-      } catch (e: any) {
+      if (typeof next.allowJobStart === "boolean") {
+        const desired = next.allowJobStart;
         setMachines((prev) =>
           prev.map((m) =>
-            m.uid === uid
-              ? {
-                  ...m,
-                  allowJobStart: prevAllowJobStart,
-                  allowAutoMachining: prevAllowAutoMachining,
-                }
-              : m,
+            m.uid === uid ? { ...m, allowJobStart: desired } : m,
           ),
         );
-        toast({
-          title: "설정 저장 실패",
-          description: e?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
+        scheduleDebounced(
+          `machine:${uid}:allowJobStart`,
+          desired,
+          prevAllowJobStart,
+          () => {
+            void (async () => {
+              try {
+                const res = await apiFetch({
+                  path: "/api/machines",
+                  method: "POST",
+                  token,
+                  jsonBody: {
+                    uid: machine.uid,
+                    name: machine.name,
+                    ip: machine.ip,
+                    port: machine.port,
+                    allowJobStart: desired,
+                    allowAutoMachining: prevAllowAutoMachining,
+                  },
+                });
+
+                const body: any = res.data ?? {};
+                if (!res.ok || body?.success === false) {
+                  throw new Error(body?.message || "장비 설정 저장 실패");
+                }
+              } catch (e: any) {
+                setMachines((prev) =>
+                  prev.map((m) =>
+                    m.uid === uid
+                      ? { ...m, allowJobStart: prevAllowJobStart }
+                      : m,
+                  ),
+                );
+                toast({
+                  title: "설정 저장 실패",
+                  description: e?.message || "잠시 후 다시 시도해주세요.",
+                  variant: "destructive",
+                });
+              }
+            })();
+          },
+        );
+      }
+
+      if (typeof next.allowAutoMachining === "boolean") {
+        const desired = next.allowAutoMachining;
+        setMachines((prev) =>
+          prev.map((m) =>
+            m.uid === uid ? { ...m, allowAutoMachining: desired } : m,
+          ),
+        );
+        scheduleDebounced(
+          `machine:${uid}:allowAutoMachining`,
+          desired,
+          prevAllowAutoMachining,
+          () => {
+            void (async () => {
+              try {
+                const res = await apiFetch({
+                  path: "/api/machines",
+                  method: "POST",
+                  token,
+                  jsonBody: {
+                    uid: machine.uid,
+                    name: machine.name,
+                    ip: machine.ip,
+                    port: machine.port,
+                    allowJobStart: prevAllowJobStart,
+                    allowAutoMachining: desired,
+                  },
+                });
+
+                const body: any = res.data ?? {};
+                if (!res.ok || body?.success === false) {
+                  throw new Error(body?.message || "장비 설정 저장 실패");
+                }
+              } catch (e: any) {
+                setMachines((prev) =>
+                  prev.map((m) =>
+                    m.uid === uid
+                      ? { ...m, allowAutoMachining: prevAllowAutoMachining }
+                      : m,
+                  ),
+                );
+                toast({
+                  title: "설정 저장 실패",
+                  description: e?.message || "잠시 후 다시 시도해주세요.",
+                  variant: "destructive",
+                });
+              }
+            })();
+          },
+        );
       }
     },
-    [setMachines, toast, token],
+    [scheduleDebounced, setMachines, toast, token],
   );
 
   const globalAutoEnabled = useMemo(() => {
@@ -962,8 +1038,21 @@ export const CncDashboardPage = () => {
     return machines.every((m) => m.allowAutoMachining === true);
   }, [machines]);
 
+  const globalRemoteEnabled = useMemo(() => {
+    if (!Array.isArray(machines) || machines.length === 0) return false;
+    return machines.every((m) => m.allowJobStart !== false);
+  }, [machines]);
+
+  const globalDummyEnabled = useMemo(() => {
+    const list = Array.isArray(machines) ? machines : [];
+    if (list.length === 0) return false;
+    return list.every(
+      (m) => cncMachineMetaMap[m.uid]?.dummySettings?.enabled !== false,
+    );
+  }, [cncMachineMetaMap, machines]);
+
   const setGlobalAutoEnabled = useCallback(
-    async (enabled: boolean) => {
+    (enabled: boolean) => {
       if (!token) return;
 
       const list = Array.isArray(machines) ? machines : [];
@@ -972,45 +1061,205 @@ export const CncDashboardPage = () => {
       const prevMap = new Map(
         list.map((m) => [m.uid, m.allowAutoMachining === true]),
       );
+      const baselineEnabled = globalAutoEnabled;
 
       setMachines((prev) =>
         prev.map((m) => ({ ...m, allowAutoMachining: enabled })),
       );
 
-      try {
-        for (const m of list) {
-          const res = await apiFetch({
-            path: "/api/machines",
-            method: "POST",
-            token,
-            jsonBody: {
-              uid: m.uid,
-              name: m.name,
-              ip: m.ip,
-              port: m.port,
-              allowAutoMachining: enabled,
-            },
-          });
-          const body: any = res.data ?? {};
-          if (!res.ok || body?.success === false) {
-            throw new Error(body?.message || "전체 자동 가공 설정 저장 실패");
+      scheduleDebounced("global:auto", enabled, baselineEnabled, () => {
+        void (async () => {
+          try {
+            for (const m of list) {
+              const res = await apiFetch({
+                path: "/api/machines",
+                method: "POST",
+                token,
+                jsonBody: {
+                  uid: m.uid,
+                  name: m.name,
+                  ip: m.ip,
+                  port: m.port,
+                  allowAutoMachining: enabled,
+                },
+              });
+              const body: any = res.data ?? {};
+              if (!res.ok || body?.success === false) {
+                throw new Error(
+                  body?.message || "전체 자동 가공 설정 저장 실패",
+                );
+              }
+            }
+          } catch (e: any) {
+            setMachines((prev) =>
+              prev.map((m) => ({
+                ...m,
+                allowAutoMachining: prevMap.get(m.uid) === true,
+              })),
+            );
+            toast({
+              title: "전체 자동 가공 설정 실패",
+              description: e?.message || "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
           }
-        }
-      } catch (e: any) {
-        setMachines((prev) =>
-          prev.map((m) => ({
-            ...m,
-            allowAutoMachining: prevMap.get(m.uid) === true,
-          })),
-        );
-        toast({
-          title: "전체 자동 가공 설정 실패",
-          description: e?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      }
+        })();
+      });
     },
-    [machines, setMachines, toast, token],
+    [globalAutoEnabled, machines, scheduleDebounced, setMachines, toast, token],
+  );
+
+  const setGlobalRemoteEnabled = useCallback(
+    (enabled: boolean) => {
+      if (!token) return;
+
+      const list = Array.isArray(machines) ? machines : [];
+      if (list.length === 0) return;
+
+      const prevMap = new Map(
+        list.map((m) => [m.uid, m.allowJobStart !== false]),
+      );
+      const baselineEnabled = globalRemoteEnabled;
+
+      setMachines((prev) =>
+        prev.map((m) => ({ ...m, allowJobStart: enabled })),
+      );
+
+      scheduleDebounced("global:remote", enabled, baselineEnabled, () => {
+        void (async () => {
+          try {
+            for (const m of list) {
+              const res = await apiFetch({
+                path: "/api/machines",
+                method: "POST",
+                token,
+                jsonBody: {
+                  uid: m.uid,
+                  name: m.name,
+                  ip: m.ip,
+                  port: m.port,
+                  allowJobStart: enabled,
+                },
+              });
+              const body: any = res.data ?? {};
+              if (!res.ok || body?.success === false) {
+                throw new Error(
+                  body?.message || "전체 원격 가공 설정 저장 실패",
+                );
+              }
+            }
+          } catch (e: any) {
+            setMachines((prev) =>
+              prev.map((m) => ({
+                ...m,
+                allowJobStart: prevMap.get(m.uid) !== false,
+              })),
+            );
+            toast({
+              title: "전체 원격 가공 설정 실패",
+              description: e?.message || "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+          }
+        })();
+      });
+    },
+    [
+      globalRemoteEnabled,
+      machines,
+      scheduleDebounced,
+      setMachines,
+      toast,
+      token,
+    ],
+  );
+
+  const setGlobalDummyEnabled = useCallback(
+    (enabled: boolean) => {
+      if (!token) return;
+
+      const list = Array.isArray(machines) ? machines : [];
+      if (list.length === 0) return;
+
+      const prevMap = new Map(
+        list.map((m) => [
+          m.uid,
+          cncMachineMetaMap[m.uid]?.dummySettings?.enabled !== false,
+        ]),
+      );
+      const baselineEnabled = globalDummyEnabled;
+
+      setCncMachineMetaMap((prev) => {
+        const next = { ...prev };
+        for (const m of list) {
+          const existing = next[m.uid] || {};
+          next[m.uid] = {
+            ...existing,
+            dummySettings: {
+              ...(existing as any).dummySettings,
+              enabled,
+            },
+          } as any;
+        }
+        return next;
+      });
+
+      scheduleDebounced("global:dummy", enabled, baselineEnabled, () => {
+        void (async () => {
+          try {
+            for (const m of list) {
+              const res = await fetch(
+                `/api/cnc-machines/${encodeURIComponent(m.uid)}/dummy-settings`,
+                {
+                  method: "PATCH",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ enabled }),
+                },
+              );
+              const body: any = await res.json().catch(() => ({}));
+              if (!res.ok || body?.success === false) {
+                throw new Error(
+                  body?.message || "전체 더미 가공 설정 저장 실패",
+                );
+              }
+            }
+            await refreshCncMachineMeta();
+          } catch (e: any) {
+            setCncMachineMetaMap((prev) => {
+              const next = { ...prev };
+              for (const m of list) {
+                const existing = next[m.uid] || {};
+                next[m.uid] = {
+                  ...existing,
+                  dummySettings: {
+                    ...(existing as any).dummySettings,
+                    enabled: prevMap.get(m.uid) !== false,
+                  },
+                } as any;
+              }
+              return next;
+            });
+            toast({
+              title: "전체 더미 가공 설정 실패",
+              description: e?.message || "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+          }
+        })();
+      });
+    },
+    [
+      cncMachineMetaMap,
+      globalDummyEnabled,
+      machines,
+      refreshCncMachineMeta,
+      scheduleDebounced,
+      toast,
+      token,
+    ],
   );
 
   const handleDownloadProgram = async (prog: any) => {
@@ -1174,10 +1423,57 @@ export const CncDashboardPage = () => {
       <main
         className="flex-1 min-h-full bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-2xl shadow-lg cursor-pointer transition-shadow hover:shadow-xl"
         onClick={(e) => {
+          if (e.target !== e.currentTarget) return;
           handleBackgroundRefresh();
         }}
       >
-        <div className="mb-4 flex items-center justify-end">
+        <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+          <div className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3">
+            <div className="text-[12px] font-extrabold text-slate-700">
+              전체 더미 가공 허용
+            </div>
+            <button
+              type="button"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                globalDummyEnabled ? "bg-blue-500" : "bg-gray-300"
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void setGlobalDummyEnabled(!globalDummyEnabled);
+              }}
+              disabled={loading}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  globalDummyEnabled ? "translate-x-5" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3">
+            <div className="text-[12px] font-extrabold text-slate-700">
+              전체 원격 가공 허용
+            </div>
+            <button
+              type="button"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                globalRemoteEnabled ? "bg-blue-500" : "bg-gray-300"
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void setGlobalRemoteEnabled(!globalRemoteEnabled);
+              }}
+              disabled={loading}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  globalRemoteEnabled ? "translate-x-5" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
           <div
             className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3"
             title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."

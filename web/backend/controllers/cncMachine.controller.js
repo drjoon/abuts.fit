@@ -1659,7 +1659,7 @@ export async function cancelScheduledMaterialChange(req, res) {
 export async function updateDummySettings(req, res) {
   try {
     const { machineId } = req.params;
-    const { programName, schedules, excludeHolidays } = req.body || {};
+    const { enabled, programName, schedules, excludeHolidays } = req.body || {};
 
     const machine = await CncMachine.findOne({ machineId });
     if (!machine) {
@@ -1669,8 +1669,24 @@ export async function updateDummySettings(req, res) {
       });
     }
 
-    const nextProgram = (programName || "").trim() || "O0100";
-    let nextSchedules = Array.isArray(schedules) ? schedules : [];
+    const existingDummy = machine.dummySettings || {};
+
+    const enabledProvided = enabled === true || enabled === false;
+    const nextEnabled = enabledProvided
+      ? enabled === true
+      : existingDummy.enabled !== false;
+
+    const nextProgram =
+      typeof programName === "string"
+        ? (programName || "").trim() || "O0100"
+        : (existingDummy.programName || "O0100").trim() || "O0100";
+
+    let nextSchedules =
+      Array.isArray(schedules) && schedules.length >= 0
+        ? schedules
+        : Array.isArray(existingDummy.schedules)
+          ? existingDummy.schedules
+          : [];
     nextSchedules = nextSchedules
       .map((s) => ({
         time: typeof s?.time === "string" ? s.time : "08:00",
@@ -1684,11 +1700,16 @@ export async function updateDummySettings(req, res) {
       ];
     }
 
-    const existingDummy = machine.dummySettings || {};
+    const nextExcludeHolidays =
+      typeof excludeHolidays === "boolean"
+        ? excludeHolidays
+        : Boolean(existingDummy.excludeHolidays);
+
     machine.dummySettings = {
+      enabled: nextEnabled,
       programName: nextProgram,
       schedules: nextSchedules,
-      excludeHolidays: Boolean(excludeHolidays),
+      excludeHolidays: nextExcludeHolidays,
       // 워커에서 사용하는 마지막 실행 키는 유지
       lastRunKey: existingDummy.lastRunKey || null,
     };

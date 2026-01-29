@@ -30,6 +30,7 @@ export interface Machine {
     notes?: string;
   };
   dummySettings?: {
+    enabled?: boolean;
     programName?: string;
     schedules?: { time: string; enabled?: boolean }[];
     excludeHolidays?: boolean;

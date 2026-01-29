@@ -104,9 +104,6 @@ export const CncMaterialModal = ({
       ? (maxModelDiameterGroups as DiameterGroup[])
       : ([base.diameterGroup] as DiameterGroup[]),
   );
-  const [diameterInput, setDiameterInput] = useState<string>(
-    String(base.diameter || ""),
-  );
   const [remainingInput, setRemainingInput] = useState<string>(
     String(base.remainingLength || ""),
   );
@@ -114,7 +111,7 @@ export const CncMaterialModal = ({
 
   useEffect(() => {
     if (!open) return;
-    setMode("view");
+    setMode("replace");
     setMaterialType(base.materialType);
     setHeatNo(base.heatNo);
     setDiameterGroup(base.diameterGroup);
@@ -130,16 +127,15 @@ export const CncMaterialModal = ({
       new Set([base.diameterGroup, ...(filtered as DiameterGroup[])]),
     ) as DiameterGroup[];
     setMaxDiaGroups(ensured.length > 0 ? ensured : [base.diameterGroup]);
-    setDiameterInput(String(base.diameter || ""));
     setRemainingInput(String(base.remainingLength || ""));
   }, [open, base, maxModelDiameterGroups]);
 
   const title: ReactNode =
     mode === "replace"
-      ? `소재교체 - ${machineName}`
+      ? `원소재 - ${machineName}`
       : mode === "add"
-        ? `소재추가 - ${machineName}`
-        : `원소재 - ${machineName}`;
+        ? "소재추가"
+        : "원소재";
 
   const parseLengths = () => {
     const rem = remainingInput.trim();
@@ -150,11 +146,7 @@ export const CncMaterialModal = ({
 
     let diaNum: number;
     if (diameterGroup === "10+") {
-      const raw = diameterInput.trim();
-      diaNum = raw === "" ? 12 : Number(raw);
-      if (!Number.isFinite(diaNum) || diaNum <= 10) {
-        throw new Error("직경은 10mm 초과 숫자로 입력해주세요.");
-      }
+      diaNum = 12;
     } else {
       diaNum = Number(diameterGroup);
     }
@@ -162,30 +154,36 @@ export const CncMaterialModal = ({
     return { diaNum, remNum };
   };
 
-  const allowedMaxRank = diameterRank[base.diameterGroup] ?? 0;
+  const allowedMaxRank = diameterRank[diameterGroup] ?? 0;
   const maxRank = Math.max(...maxDiaGroups.map((g) => diameterRank[g] ?? 0), 0);
   const effectiveMaxRank = Math.min(maxRank, allowedMaxRank);
-  const canUseDiameterGroup = (g: DiameterGroup) =>
-    (diameterRank[g] ?? 0) <= effectiveMaxRank;
-
   const canCheckMaxDiaGroup = (g: DiameterGroup) =>
     (diameterRank[g] ?? 0) <= allowedMaxRank;
 
+  useEffect(() => {
+    // 선택한 소재 직경은 항상 최대직경 목록에 포함되고, 선택 직경을 초과하는 값은 제거
+    setMaxDiaGroups((prev) => {
+      const clamped = (prev || []).filter(
+        (g) => (diameterRank[g] ?? 0) <= allowedMaxRank,
+      );
+      const ensured = Array.from(new Set([diameterGroup, ...clamped]));
+      return ensured as DiameterGroup[];
+    });
+  }, [allowedMaxRank, diameterGroup]);
+
   const toggleMaxDiaGroup = (g: DiameterGroup) => {
-    if (g === base.diameterGroup) return;
+    if (g === diameterGroup) return;
     if (!canCheckMaxDiaGroup(g)) return;
     setMaxDiaGroups((prev) => {
       const has = prev.includes(g);
       if (has) {
         const next = prev.filter((x) => x !== g);
-        return next.length > 0
-          ? next
-          : ([base.diameterGroup] as DiameterGroup[]);
+        return next.length > 0 ? next : ([diameterGroup] as DiameterGroup[]);
       }
       const next = Array.from(new Set([...(prev || []), g]));
       return next.length > 0
         ? (next as DiameterGroup[])
-        : ([base.diameterGroup] as DiameterGroup[]);
+        : ([diameterGroup] as DiameterGroup[]);
     });
   };
 
@@ -232,6 +230,13 @@ export const CncMaterialModal = ({
     }
   };
 
+  const adjustRemaining = (delta: number) => {
+    const v = Number(remainingInput || 0);
+    const baseValue = Number.isFinite(v) ? v : 0;
+    const next = Math.max(0, baseValue + delta);
+    setRemainingInput(String(next));
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl">
@@ -272,6 +277,7 @@ export const CncMaterialModal = ({
                   }
                 />
               </div>
+
               <div className="space-y-1.5">
                 <Label>소재 직경</Label>
                 <Select
@@ -284,74 +290,86 @@ export const CncMaterialModal = ({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="6" disabled={!canUseDiameterGroup("6")}>
-                      6mm
-                    </SelectItem>
-                    <SelectItem value="8" disabled={!canUseDiameterGroup("8")}>
-                      8mm
-                    </SelectItem>
-                    <SelectItem
-                      value="10"
-                      disabled={!canUseDiameterGroup("10")}
-                    >
-                      10mm
-                    </SelectItem>
-                    <SelectItem
-                      value="10+"
-                      disabled={!canUseDiameterGroup("10+")}
-                    >
-                      10mm+
-                    </SelectItem>
+                    <SelectItem value="6">6mm</SelectItem>
+                    <SelectItem value="8">8mm</SelectItem>
+                    <SelectItem value="10">10mm</SelectItem>
+                    <SelectItem value="10+">10mm+</SelectItem>
                   </SelectContent>
                 </Select>
-                {diameterGroup === "10+" && (
-                  <Input
-                    className="mt-1"
-                    type="number"
-                    placeholder="직경(mm)"
-                    value={diameterInput}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                      setDiameterInput(e.target.value)
-                    }
-                  />
-                )}
               </div>
+
               <div className="space-y-1.5">
                 <Label>가공 가능한 최대직경</Label>
                 <div className="grid grid-cols-4 gap-2">
-                  {(["6", "8", "10", "10+"] as DiameterGroup[]).map((g) =>
-                    (() => {
-                      const isBase = g === base.diameterGroup;
-                      const isChecked = isBase || maxDiaGroups.includes(g);
-                      const isDisabled = isBase || !canCheckMaxDiaGroup(g);
-                      return (
-                        <label
-                          key={g}
-                          className="flex items-center gap-1.5 rounded-md border bg-white px-2 py-2 text-sm"
-                        >
-                          <Checkbox
-                            disabled={isDisabled}
-                            checked={isChecked}
-                            onCheckedChange={() => toggleMaxDiaGroup(g)}
-                          />
-                          <span className="select-none">
-                            {g === "10+" ? "10+" : g}
-                          </span>
-                        </label>
-                      );
-                    })(),
-                  )}
+                  {(["6", "8", "10", "10+"] as DiameterGroup[]).map((g) => {
+                    const isBase = g === diameterGroup;
+                    const isChecked = isBase || maxDiaGroups.includes(g);
+                    const isDisabled = isBase || !canCheckMaxDiaGroup(g);
+                    return (
+                      <label
+                        key={g}
+                        className="flex items-center gap-1.5 rounded-md border bg-white px-2 py-2 text-sm"
+                      >
+                        <Checkbox
+                          disabled={isDisabled}
+                          checked={isChecked}
+                          onCheckedChange={() => toggleMaxDiaGroup(g)}
+                        />
+                        <span className="select-none">{g}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
+
               <div className="space-y-1.5">
                 <Label>수량</Label>
-                <Input
-                  type="number"
-                  value={remainingInput}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setRemainingInput(e.target.value)
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 px-2"
+                      onClick={() => adjustRemaining(-10)}
+                    >
+                      -10
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 px-2"
+                      onClick={() => adjustRemaining(-1)}
+                    >
+                      -1
+                    </Button>
+                  </div>
+                  <Input
+                    type="number"
+                    value={remainingInput}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      setRemainingInput(e.target.value)
+                    }
+                    className="w-24"
+                  />
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 px-2"
+                      onClick={() => adjustRemaining(1)}
+                    >
+                      +1
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 px-2"
+                      onClick={() => adjustRemaining(10)}
+                    >
+                      +10
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -360,62 +378,69 @@ export const CncMaterialModal = ({
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
                 <Label>추가 후 잔여량</Label>
-                <Input
-                  type="number"
-                  value={remainingInput}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setRemainingInput(e.target.value)
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 px-2"
+                      onClick={() => adjustRemaining(-10)}
+                    >
+                      -10
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 px-2"
+                      onClick={() => adjustRemaining(-1)}
+                    >
+                      -1
+                    </Button>
+                  </div>
+                  <Input
+                    type="number"
+                    value={remainingInput}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      setRemainingInput(e.target.value)
+                    }
+                    className="w-24"
+                  />
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 px-2"
+                      onClick={() => adjustRemaining(1)}
+                    >
+                      +1
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 px-2"
+                      onClick={() => adjustRemaining(10)}
+                    >
+                      +10
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </div>
 
         <DialogFooter>
-          {mode === "view" ? (
-            <>
-              <Button variant="outline" onClick={onClose} disabled={loading}>
-                닫기
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setMode("add")}
-                disabled={loading || !machineId}
-              >
-                소재추가
-              </Button>
-              <Button
-                onClick={() => setMode("replace")}
-                disabled={loading || !machineId}
-              >
-                소재교체
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setMode("view");
-                  setMaterialType(base.materialType);
-                  setHeatNo(base.heatNo);
-                  setDiameterGroup(base.diameterGroup);
-                  setDiameterInput(String(base.diameter || ""));
-                  setRemainingInput(String(base.remainingLength || ""));
-                }}
-                disabled={loading}
-              >
-                뒤로
-              </Button>
-              <Button
-                onClick={mode === "replace" ? handleReplace : handleAdd}
-                disabled={loading || !machineId}
-              >
-                {loading ? "저장 중..." : "저장"}
-              </Button>
-            </>
-          )}
+          <>
+            <Button variant="outline" onClick={onClose} disabled={loading}>
+              닫기
+            </Button>
+            <Button
+              onClick={mode === "replace" ? handleReplace : handleAdd}
+              disabled={loading || !machineId}
+            >
+              {loading ? "저장 중..." : "저장"}
+            </Button>
+          </>
         </DialogFooter>
       </DialogContent>
     </Dialog>

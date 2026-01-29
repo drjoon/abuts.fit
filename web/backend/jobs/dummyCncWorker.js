@@ -66,11 +66,13 @@ async function runDummySchedulesOnce() {
 
   try {
     const machines = await CncMachine.find({
+      "dummySettings.enabled": { $ne: false },
       "dummySettings.schedules.enabled": true,
     }).lean();
 
     for (const machine of machines) {
       const dummy = machine.dummySettings || {};
+      if (dummy.enabled === false) continue;
       const programName = dummy.programName || "O0100";
       const schedules = Array.isArray(dummy.schedules) ? dummy.schedules : [];
       const excludeHolidays = Boolean(dummy.excludeHolidays);
@@ -90,7 +92,7 @@ async function runDummySchedulesOnce() {
       const progNo = parseProgramNoFromName(programName);
       if (!Number.isFinite(progNo)) {
         console.warn(
-          `dummyCncWorker: cannot parse program number from name '${programName}' for machine ${machine.machineId}`
+          `dummyCncWorker: cannot parse program number from name '${programName}' for machine ${machine.machineId}`,
         );
         continue;
       }
@@ -105,7 +107,7 @@ async function runDummySchedulesOnce() {
         const uid = String(machine.machineId || "").trim();
         if (!uid) {
           console.warn(
-            `dummyCncWorker: machine ${machine._id} has no machineId, skip`
+            `dummyCncWorker: machine ${machine._id} has no machineId, skip`,
           );
           continue;
         }
@@ -126,7 +128,7 @@ async function runDummySchedulesOnce() {
             console.error(
               "dummyCncWorker: UpdateActivateProg failed",
               uid,
-              rawBody
+              rawBody,
             );
             continue;
           }
@@ -139,20 +141,20 @@ async function runDummySchedulesOnce() {
                 "Content-Type": "application/json",
               }),
               body: JSON.stringify({ status: 0, ioUid: 0 }),
-            }
+            },
           );
           const startBody = await startRes.json().catch(() => ({}));
           if (!startRes.ok || startBody?.success === false) {
             console.error(
               "dummyCncWorker: start machine failed",
               uid,
-              startBody
+              startBody,
             );
             continue;
           }
 
           console.log(
-            `dummyCncWorker: started dummy program ${programName} (no=${progNo}) on ${uid} at ${currentHm} (KST)`
+            `dummyCncWorker: started dummy program ${programName} (no=${progNo}) on ${uid} at ${currentHm} (KST)`,
           );
           executedForThisMinute = true;
         } catch (err) {
@@ -168,13 +170,13 @@ async function runDummySchedulesOnce() {
         try {
           await CncMachine.updateOne(
             { _id: machine._id },
-            { $set: { "dummySettings.lastRunKey": minuteKey } }
+            { $set: { "dummySettings.lastRunKey": minuteKey } },
           );
         } catch (e) {
           console.error(
             "dummyCncWorker: failed to update lastRunKey",
             machine.machineId,
-            e
+            e,
           );
         }
       }

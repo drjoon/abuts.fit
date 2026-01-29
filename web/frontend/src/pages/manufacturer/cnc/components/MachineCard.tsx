@@ -13,6 +13,12 @@ import {
   Plus,
   Minus,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import { parseProgramNoFromName } from "../lib/programNaming";
@@ -237,16 +243,13 @@ export const MachineCard: React.FC<MachineCardProps> = ({
       }`}
     >
       <div className="app-glass-card-content mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="text-[16px] font-extrabold text-slate-900">
-            {machine.name}
-          </div>
-          {getMachineStatusChip(machine.status)}
-          {machine.lastUpdated ? (
-            <div className="ml-1 text-[12px] font-semibold text-slate-500">
-              장비 상태 갱신 {machine.lastUpdated}
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <div className="text-[16px] font-extrabold text-slate-900">
+              {machine.name}
             </div>
-          ) : null}
+            {getMachineStatusChip(machine.status)}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -403,7 +406,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
               : "Ø"}
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
             onClick={onToolClick}
             title={toolTooltip || "공구 수명, 교체 확인"}
             disabled={loading}
@@ -415,11 +418,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             onClick={onEditClick}
             title="장비 설정"
           >
-            {machine.allowJobStart === false ? (
-              <ShieldOff className="h-3.5 w-3.5 text-red-500" />
-            ) : (
-              <Settings className="h-3.5 w-3.5" />
-            )}
+            <Settings className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -429,9 +428,13 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           <div className="absolute inset-x-0 top-0 rounded-2xl bg-red-50 px-3 py-2 text-xs text-red-700 border border-red-200 truncate">
             마지막 오류: {machine.lastError}
           </div>
+        ) : machine.lastUpdated ? (
+          <div className="absolute inset-x-0 top-0 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 border border-slate-200 truncate">
+            장비 상태 갱신 {machine.lastUpdated}
+          </div>
         ) : (
           <div className="absolute inset-x-0 top-0 rounded-2xl bg-transparent px-3 py-2 text-xs text-transparent border border-transparent">
-            .
+            -
           </div>
         )}
       </div>
@@ -635,249 +638,232 @@ export const MachineCard: React.FC<MachineCardProps> = ({
       </div>
 
       {dummyOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-          onClick={(e) => {
-            e.stopPropagation();
-            setDummyOpen(false);
-          }}
-        >
-          <div
-            className="bg-white w-full max-w-[16rem] rounded-2xl shadow-[0_20px_50px_rgba(15,23,42,0.25)] border border-gray-100 p-6 space-y-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-gray-900 tracking-tight">
-                더미 작업 설정
-              </h3>
-              <button
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 text-gray-600"
-                onClick={() => setDummyOpen(false)}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-3 text-sm text-gray-800">
-              <label className="flex flex-col gap-2">
-                <span className="font-semibold">더미 프로그램명</span>
-                <input
-                  value={dummyProgram}
-                  onChange={(e) => setDummyProgram(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </label>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">더미 가공 스케줄</span>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200"
-                    onClick={() => {
-                      const nextId =
-                        dummySchedules.reduce(
-                          (max, s) => Math.max(max, s.id),
-                          0,
-                        ) + 1;
-                      setDummySchedules((prev) => [
-                        ...prev,
-                        { id: nextId, time: "12:00", enabled: true },
-                      ]);
-                    }}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-gray-700 border border-slate-100">
+        <Dialog open={dummyOpen} onOpenChange={(open) => setDummyOpen(open)}>
+          <DialogContent className="w-full max-w-[16rem] rounded-2xl p-6">
+            <DialogHeader>
+              <DialogTitle>더미 작업 설정</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-5">
+              <div className="space-y-3 text-sm text-gray-800">
+                <label className="flex flex-col gap-2">
+                  <span className="font-semibold">더미 프로그램명</span>
                   <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
-                    checked={dummyExcludeHolidays}
-                    onChange={(e) => setDummyExcludeHolidays(e.target.checked)}
+                    value={dummyProgram}
+                    onChange={(e) => setDummyProgram(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
-                  <div className="flex flex-col leading-tight">
-                    <span className="font-medium text-xs">쉬는 날 제외</span>
-                  </div>
                 </label>
-                <div className="space-y-2">
-                  {dummySchedules.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 shadow-inner"
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">더미 가공 스케줄</span>
+                    <button
+                      type="button"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200"
+                      onClick={() => {
+                        const nextId =
+                          dummySchedules.reduce(
+                            (max, s) => Math.max(max, s.id),
+                            0,
+                          ) + 1;
+                        setDummySchedules((prev) => [
+                          ...prev,
+                          { id: nextId, time: "12:00", enabled: true },
+                        ]);
+                      }}
                     >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
-                        checked={item.enabled}
-                        onChange={(e) =>
-                          setDummySchedules((prev) =>
-                            prev.map((s) =>
-                              s.id === item.id
-                                ? { ...s, enabled: e.target.checked }
-                                : s,
-                            ),
-                          )
-                        }
-                      />
-                      <input
-                        type="time"
-                        step={600}
-                        value={item.time}
-                        onChange={(e) =>
-                          setDummySchedules((prev) =>
-                            prev.map((s) =>
-                              s.id === item.id
-                                ? { ...s, time: e.target.value }
-                                : s,
-                            ),
-                          )
-                        }
-                        className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm font-medium text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <button
-                        type="button"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100 border border-red-200"
-                        onClick={() =>
-                          setDummySchedules((prev) =>
-                            prev.filter((s) => s.id !== item.id),
-                          )
-                        }
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-gray-700 border border-slate-100">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
+                      checked={dummyExcludeHolidays}
+                      onChange={(e) =>
+                        setDummyExcludeHolidays(e.target.checked)
+                      }
+                    />
+                    <div className="flex flex-col leading-tight">
+                      <span className="font-medium text-xs">쉬는 날 제외</span>
+                    </div>
+                  </label>
+                  <div className="space-y-2">
+                    {dummySchedules.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 shadow-inner"
                       >
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  {dummySchedules.length === 0 && (
-                    <div className="text-xs text-gray-500">
-                      스케줄이 없습니다.
-                    </div>
-                  )}
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 accent-blue-600"
+                          checked={item.enabled}
+                          onChange={(e) =>
+                            setDummySchedules((prev) =>
+                              prev.map((s) =>
+                                s.id === item.id
+                                  ? { ...s, enabled: e.target.checked }
+                                  : s,
+                              ),
+                            )
+                          }
+                        />
+                        <input
+                          type="time"
+                          step={600}
+                          value={item.time}
+                          onChange={(e) =>
+                            setDummySchedules((prev) =>
+                              prev.map((s) =>
+                                s.id === item.id
+                                  ? { ...s, time: e.target.value }
+                                  : s,
+                              ),
+                            )
+                          }
+                          className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm font-medium text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100 border border-red-200"
+                          onClick={() =>
+                            setDummySchedules((prev) =>
+                              prev.filter((s) => s.id !== item.id),
+                            )
+                          }
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {dummySchedules.length === 0 && (
+                      <div className="text-xs text-gray-500">
+                        스케줄이 없습니다.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+              <button
+                type="button"
+                className="w-full rounded-xl bg-blue-600 text-white font-semibold py-2.5 hover:bg-blue-700 transition-colors disabled:opacity-60"
+                disabled={dummySaving}
+                onClick={async () => {
+                  if (!token) {
+                    toast({
+                      title: "로그인이 필요합니다",
+                      description: "다시 로그인 후 시도해 주세요.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setDummySaving(true);
+                  try {
+                    const payload = {
+                      programName: dummyProgram,
+                      schedules: dummySchedules.map((s) => ({
+                        time: s.time,
+                        enabled: s.enabled !== false,
+                      })),
+                      excludeHolidays: dummyExcludeHolidays,
+                    };
+                    const res = await fetch(
+                      `/api/cnc-machines/${encodeURIComponent(
+                        machine.uid,
+                      )}/dummy-settings`,
+                      {
+                        method: "PATCH",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify(payload),
+                      },
+                    );
+                    const body: any = await res.json().catch(() => ({}));
+                    if (!res.ok || body?.success === false) {
+                      throw new Error(
+                        body?.message || "더미 설정 저장에 실패했습니다.",
+                      );
+                    }
+
+                    const progNo = parseProgramNoFromName(dummyProgram || "");
+                    if (progNo == null) {
+                      throw new Error(
+                        "더미 프로그램명에서 프로그램 번호를 찾을 수 없습니다. 예: O0100",
+                      );
+                    }
+
+                    const rawRes = await fetch(
+                      `/api/machines/${encodeURIComponent(machine.uid)}/raw`,
+                      {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({
+                          dataType: "SetActivateProgram",
+                          payload: { headType: 1, programNo: progNo },
+                          timeoutMilliseconds: 5000,
+                        }),
+                      },
+                    );
+                    const rawBody: any = await rawRes.json().catch(() => ({}));
+                    if (!rawRes.ok || rawBody?.success === false) {
+                      throw new Error(
+                        rawBody?.message ||
+                          rawBody?.error ||
+                          "더미 프로그램 활성화에 실패했습니다.",
+                      );
+                    }
+
+                    const startRes = await fetch(
+                      `/api/machines/${encodeURIComponent(machine.uid)}/start`,
+                      {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ status: 0, ioUid: 0 }),
+                      },
+                    );
+                    const startBody: any = await startRes
+                      .json()
+                      .catch(() => ({}));
+                    if (!startRes.ok || startBody?.success === false) {
+                      throw new Error(
+                        startBody?.message ||
+                          startBody?.error ||
+                          "더미 가공 시작에 실패했습니다.",
+                      );
+                    }
+
+                    toast({
+                      title: "즉시 가공 시작",
+                      description: `프로그램 ${
+                        dummyProgram || `O${String(progNo).padStart(4, "0")}`
+                      } 즉시 가공을 시작했습니다.`,
+                    });
+                    setDummyOpen(false);
+                  } catch (e: any) {
+                    toast({
+                      title: "즉시 가공 실패",
+                      description:
+                        e?.message ??
+                        "더미 즉시 가공 처리 중 오류가 발생했습니다.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setDummySaving(false);
+                  }
+                }}
+              >
+                {dummySaving ? "즉시 가공 중..." : "즉시 가공"}
+              </button>
             </div>
-            <button
-              type="button"
-              className="w-full rounded-xl bg-blue-600 text-white font-semibold py-2.5 hover:bg-blue-700 transition-colors disabled:opacity-60"
-              disabled={dummySaving}
-              onClick={async () => {
-                if (!token) {
-                  toast({
-                    title: "로그인이 필요합니다",
-                    description: "다시 로그인 후 시도해 주세요.",
-                    variant: "destructive",
-                  });
-                  return;
-                }
-                setDummySaving(true);
-                try {
-                  // 1) 더미 설정 저장 (프로그램명/스케줄)
-                  const payload = {
-                    programName: dummyProgram,
-                    schedules: dummySchedules.map((s) => ({
-                      time: s.time,
-                      enabled: s.enabled !== false,
-                    })),
-                    excludeHolidays: dummyExcludeHolidays,
-                  };
-                  const res = await fetch(
-                    `/api/cnc-machines/${encodeURIComponent(
-                      machine.uid,
-                    )}/dummy-settings`,
-                    {
-                      method: "PATCH",
-                      headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                      },
-                      body: JSON.stringify(payload),
-                    },
-                  );
-                  const body: any = await res.json().catch(() => ({}));
-                  if (!res.ok || body?.success === false) {
-                    throw new Error(
-                      body?.message || "더미 설정 저장에 실패했습니다.",
-                    );
-                  }
-
-                  // 2) 더미 프로그램 번호 파싱 (예: "O0100" → 100)
-                  const progNo = parseProgramNoFromName(dummyProgram || "");
-                  if (progNo == null) {
-                    throw new Error(
-                      "더미 프로그램명에서 프로그램 번호를 찾을 수 없습니다. 예: O0100",
-                    );
-                  }
-
-                  // 3) 브리지 raw 호출로 프로그램 활성화(SetActivateProgram)
-                  const rawRes = await fetch(
-                    `/api/machines/${encodeURIComponent(machine.uid)}/raw`,
-                    {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                      },
-                      body: JSON.stringify({
-                        dataType: "SetActivateProgram",
-                        payload: { headType: 1, programNo: progNo },
-                        timeoutMilliseconds: 5000,
-                      }),
-                    },
-                  );
-                  const rawBody: any = await rawRes.json().catch(() => ({}));
-                  if (!rawRes.ok || rawBody?.success === false) {
-                    throw new Error(
-                      rawBody?.message ||
-                        rawBody?.error ||
-                        "더미 프로그램 활성화에 실패했습니다.",
-                    );
-                  }
-
-                  // 4) 가공 시작 제어 명령(/start)
-                  const startRes = await fetch(
-                    `/api/machines/${encodeURIComponent(machine.uid)}/start`,
-                    {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                      },
-                      body: JSON.stringify({ status: 0, ioUid: 0 }),
-                    },
-                  );
-                  const startBody: any = await startRes
-                    .json()
-                    .catch(() => ({}));
-                  if (!startRes.ok || startBody?.success === false) {
-                    throw new Error(
-                      startBody?.message ||
-                        startBody?.error ||
-                        "더미 가공 시작에 실패했습니다.",
-                    );
-                  }
-
-                  toast({
-                    title: "즉시 가공 시작",
-                    description: `프로그램 ${
-                      dummyProgram || `O${String(progNo).padStart(4, "0")}`
-                    } 즉시 가공을 시작했습니다.`,
-                  });
-                  setDummyOpen(false);
-                } catch (e: any) {
-                  toast({
-                    title: "즉시 가공 실패",
-                    description:
-                      e?.message ??
-                      "더미 즉시 가공 처리 중 오류가 발생했습니다.",
-                    variant: "destructive",
-                  });
-                } finally {
-                  setDummySaving(false);
-                }
-              }}
-            >
-              {dummySaving ? "즉시 가공 중..." : "즉시 가공"}
-            </button>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

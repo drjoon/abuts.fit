@@ -72,6 +72,10 @@ const cncMachineSchema = new mongoose.Schema(
       notes: String,
     },
     dummySettings: {
+      enabled: {
+        type: Boolean,
+        default: true,
+      },
       programName: {
         type: String,
         trim: true,
