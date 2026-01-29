@@ -617,10 +617,15 @@ export async function getMyDashboardSummary(req, res) {
       };
     });
 
+    const inProgress =
+      stats.camCount + stats.machiningCount + stats.packagingCount;
+
     const responseData = {
       stats: {
         totalRequests: stats.designCount,
         totalRequestsChange: "+0%",
+        inProgress,
+        inProgressChange: "+0%",
         inCam: stats.camCount,
         inCamChange: "+0%",
         inProduction: stats.machiningCount,

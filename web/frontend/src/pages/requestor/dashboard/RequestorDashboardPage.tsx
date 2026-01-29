@@ -404,17 +404,23 @@ export const RequestorDashboardPage = () => {
   const stats: RequestorDashboardStat[] = (() => {
     if (!summaryResponse?.success) {
       return [
+        { label: "진행중", value: "0", icon: Clock },
         { label: "의뢰", value: "0", icon: FileText },
         { label: "CAM", value: "0", icon: Clock },
         { label: "가공", value: "0", icon: Clock },
         { label: "세척.포장", value: "0", icon: Clock },
         { label: "발송", value: "0", icon: TrendingUp },
-        { label: "완료/취소", value: "0", icon: CheckCircle },
       ];
     }
 
     const s = summaryResponse.data.stats ?? {};
     return [
+      {
+        label: "진행중",
+        value: String(s.inProgress ?? 0),
+        change: s.inProgressChange ?? "+0%",
+        icon: Clock,
+      },
       {
         label: "의뢰",
         value: String(s.totalRequests ?? 0),
@@ -444,12 +450,6 @@ export const RequestorDashboardPage = () => {
         value: String(s.inShipping ?? 0),
         change: s.inShippingChange ?? "+0%",
         icon: TrendingUp,
-      },
-      {
-        label: "완료/취소",
-        value: String(s.doneOrCanceled ?? 0),
-        change: s.doneOrCanceledChange ?? "+0%",
-        icon: CheckCircle,
       },
     ];
   })();
