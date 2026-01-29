@@ -37,7 +37,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private readonly Application _espApp;
         private HttpListener _listener;
         private CancellationTokenSource _cts;
-        private readonly string _baseUrl = "http://localhost:8001/";
+        private readonly string _baseUrl = "http://+:8001/";
         private bool _isRunning = true;
 
         public EspritHttpServer(Application app)
@@ -61,10 +61,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _ = Task.Run(() => ListenLoop(_cts.Token), _cts.Token);
 
                 AppLogger.Log($"[HTTP Server] Started at {_baseUrl}");
+                AppLogger.Log($"[HTTP Server] Listening on all interfaces on port 8001");
             }
             catch (Exception ex)
             {
                 AppLogger.Log($"[HTTP Server] Failed to start: {ex.Message}");
+                AppLogger.Log($"[HTTP Server] Note: Administrator privileges may be required for http://+:8001/");
             }
         }
 
