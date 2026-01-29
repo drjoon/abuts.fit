@@ -39,6 +39,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private CancellationTokenSource _cts;
         private readonly string _baseUrl = "http://+:8001/";
         private bool _isRunning = true;
+        
+        private readonly Queue<NcGenerationRequest> _ncQueue = new Queue<NcGenerationRequest>();
+        private readonly object _queueLock = new object();
+        private Task _queueProcessorTask;
+        private CancellationTokenSource _queueProcessorCts;
 
         public EspritHttpServer(Application app)
         {
@@ -60,8 +65,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _cts = new CancellationTokenSource();
                 _ = Task.Run(() => ListenLoop(_cts.Token), _cts.Token);
 
+                _queueProcessorCts = new CancellationTokenSource();
+                _queueProcessorTask = Task.Run(() => ProcessQueueLoop(_queueProcessorCts.Token), _queueProcessorCts.Token);
+
                 AppLogger.Log($"[HTTP Server] Started at {_baseUrl}");
                 AppLogger.Log($"[HTTP Server] Listening on all interfaces on port 8001");
+                AppLogger.Log($"[HTTP Server] NC processing queue started");
             }
             catch (Exception ex)
             {
@@ -75,9 +84,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             try
             {
                 _cts?.Cancel();
+                _queueProcessorCts?.Cancel();
                 _listener?.Stop();
                 _listener?.Close();
                 _listener = null;
+                
+                try
+                {
+                    if (_queueProcessorTask != null && !_queueProcessorTask.IsCompleted)
+                    {
+                        _queueProcessorTask.Wait(TimeSpan.FromSeconds(5));
+                    }
+                }
+                catch { }
+                
                 AppLogger.Log("[HTTP Server] Stopped");
             }
             catch (Exception ex)
@@ -170,24 +190,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 AppLogger.Log($"[HTTP Server] Accepted NC request: {req.RequestId} (Clinic: {req.ClinicName}, Patient: {req.PatientName})");
 
+                // 큐에 요청 추가
+                lock (_queueLock)
+                {
+                    int queueSize = _ncQueue.Count;
+                    _ncQueue.Enqueue(req);
+                    AppLogger.Log($"[HTTP Server] Request queued: {req.RequestId} (Queue size: {queueSize + 1})");
+                }
+
                 // 즉시 응답 반환
                 response.StatusCode = (int)HttpStatusCode.OK;
-                byte[] okBuffer = Encoding.UTF8.GetBytes("{\"ok\": true, \"message\": \"Processing started\"}");
+                byte[] okBuffer = Encoding.UTF8.GetBytes("{\"ok\": true, \"message\": \"Request queued for processing\"}");
                 response.OutputStream.Write(okBuffer, 0, okBuffer.Length);
                 response.OutputStream.Close();
-
-                // 백그라운드에서 처리
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await ProcessNcRequest(req);
-                    }
-                    catch (Exception ex)
-                    {
-                        AppLogger.Log($"[HTTP Server] Error processing NC request: {ex.Message}");
-                    }
-                });
             }
             catch (Exception ex)
             {
@@ -241,6 +256,53 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
+        private async Task ProcessQueueLoop(CancellationToken token)
+        {
+            AppLogger.Log("[Queue Processor] Started");
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    NcGenerationRequest req = null;
+                    lock (_queueLock)
+                    {
+                        if (_ncQueue.Count > 0)
+                        {
+                            req = _ncQueue.Dequeue();
+                        }
+                    }
+
+                    if (req != null)
+                    {
+                        try
+                        {
+                            AppLogger.Log($"[Queue Processor] Processing: {req.RequestId} (Remaining in queue: {_ncQueue.Count})");
+                            await ProcessNcRequest(req);
+                            AppLogger.Log($"[Queue Processor] Completed: {req.RequestId}");
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLogger.Log($"[Queue Processor] Error processing {req.RequestId}: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay(500, token);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Log($"[Queue Processor] Error: {ex.Message}");
+                    await Task.Delay(1000, token);
+                }
+            }
+            AppLogger.Log("[Queue Processor] Stopped");
+        }
+
         private string NormalizeFilePath(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -262,6 +324,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             Stop();
             _cts?.Dispose();
+            _queueProcessorCts?.Dispose();
         }
     }
 }
