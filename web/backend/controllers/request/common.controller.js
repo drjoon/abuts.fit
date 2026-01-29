@@ -579,7 +579,12 @@ async function triggerEspritForNc({ request, session }) {
   const t = setTimeout(() => controller.abort(), timeoutMs);
   let resp;
   try {
-    resp = await fetch(`${ESPRIT_BASE.replace(/\/$/, "")}/`, {
+    const espritUrl = `${ESPRIT_BASE.replace(/\/$/, "")}/`;
+    console.log(
+      `[Esprit] Triggering NC generation at ${espritUrl} for request ${request.requestId}`,
+    );
+
+    resp = await fetch(espritUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -604,7 +609,10 @@ async function triggerEspritForNc({ request, session }) {
       }),
       signal: controller.signal,
     });
+
+    console.log(`[Esprit] Response status: ${resp.status}`);
   } catch (e) {
+    console.error(`[Esprit] Connection error: ${e.message}`);
     const err = new Error(
       "Esprit 서버에 연결할 수 없습니다. Esprit 서버(8001)를 실행한 후 다시 시도해주세요.",
     );

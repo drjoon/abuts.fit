@@ -112,6 +112,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         private static Esprit.Application _espApp;
         private static Document _currentDocument;
+        private static EspritHttpServer _httpServer;
         private static readonly _IApplicationEvents_AfterDocumentOpenEventHandler _afterDocumentOpenHandler = OnApplicationAfterDocumentOpen;
         private static readonly _IApplicationEvents_AfterNewDocumentOpenEventHandler _afterNewDocumentOpenHandler = OnApplicationAfterNewDocumentOpen;
         private static readonly _IApplicationEvents_AfterTemplateOpenEventHandler _afterTemplateOpenHandler = OnApplicationAfterTemplateOpen;
@@ -187,7 +188,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _pm = _espApp.ProjectManager;
 
             // -------------------------
-            // 1. Apply commands
+            // 1. Start HTTP Server for NC generation requests
+            // -------------------------
+            if (_httpServer == null)
+            {
+                _httpServer = new EspritHttpServer(espritApplication);
+                _httpServer.Start();
+            }
+
+            // -------------------------
+            // 2. Apply commands
             // -------------------------
             var EC = espritApplication.AddIn as EspritCommands.AddIn;
             _MyCookie = EC.GetCookie();
@@ -253,6 +263,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _mainWindow.FileRequested -= HandleFileRequest;
                 _mainWindow.Close();
                 _mainWindow = null;
+            }
+            if (_httpServer != null)
+            {
+                _httpServer.Stop();
+                _httpServer.Dispose();
+                _httpServer = null;
             }
             ReleaseApplicationEventHandlers();
         }
