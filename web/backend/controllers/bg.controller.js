@@ -234,13 +234,43 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           ci?.ncFile?.filePath,
         ].filter(Boolean);
 
-        const hit = storedNames.some(
-          (n) => normalizeFilePath(n) === normalizedTarget,
+        const normalizedNames = storedNames.map((n) => ({
+          original: n,
+          normalized: normalizeFilePath(n),
+        }));
+
+        const hit = normalizedNames.some(
+          (item) => item.normalized === normalizedTarget,
         );
+
         if (hit) {
           console.log(`[BG-Callback] Matched request: ${r.requestId}`);
+          console.log(
+            `[BG-Callback] Match details - target: ${normalizedTarget}, stored: ${normalizedNames.map((n) => n.normalized).join(", ")}`,
+          );
           request = await Request.findById(r._id); // 갱신을 위해 도큐먼트 객체로 다시 가져옴
           break;
+        }
+      }
+
+      if (!request) {
+        console.log(
+          `[BG-Callback] No matching request found by fileName. Searched normalized target: ${normalizedTarget}`,
+        );
+        console.log(
+          `[BG-Callback] Sample of stored file paths from first 3 requests:`,
+        );
+        for (let i = 0; i < Math.min(3, allRequests.length); i++) {
+          const r = allRequests[i];
+          const ci = r?.caseInfos || {};
+          const paths = [
+            ci?.file?.filePath,
+            ci?.camFile?.filePath,
+            ci?.ncFile?.filePath,
+          ].filter(Boolean);
+          console.log(
+            `  Request ${r.requestId}: ${paths.map((p) => normalizeFilePath(p)).join(", ")}`,
+          );
         }
       }
     }

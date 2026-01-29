@@ -163,9 +163,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ);
                 CaptureNcMetadata(document);
                 string ncFilePath = RunPostProcessing(document, stlPath, ResolveBackPointForNc(effectiveBackLimit), ResolveStockDiameterForNc(document));
-                if (!string.IsNullOrWhiteSpace(requestId) && !string.IsNullOrWhiteSpace(ncFilePath))
+                if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
+                    AppLogger.Log($"StlFileProcessor: NC file generated - {ncFilePath}");
                     NotifyBackendSuccess(requestId, stlPath, ncFilePath);
+                }
+                else
+                {
+                    AppLogger.Log($"StlFileProcessor: NC file generation failed - ncFilePath is empty");
                 }
                 AppLogger.Log($"StlFileProcessor: 완료 - {stlPath}");
             }
@@ -643,21 +648,30 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(ncPath) || !File.Exists(ncPath))
+                if (string.IsNullOrWhiteSpace(ncPath) || !File.Exists(ncPath))
                 {
-                    AppLogger.Log($"StlFileProcessor: register-file skip (invalid args) requestId={requestId}, ncPath={ncPath}");
+                    AppLogger.Log($"StlFileProcessor: register-file skip (invalid ncPath) ncPath={ncPath}");
                     return;
                 }
+                
                 var fi = new FileInfo(ncPath);
                 var upload = UploadNcViaPresign(fi, requestId);
                 if (!upload.ok)
                 {
                     AppLogger.Log($"StlFileProcessor: presign upload failed: {upload.error} (fallback register only)");
                 }
+                
                 string baseUrl = (GetBackendUrl() ?? "").TrimEnd('/');
                 string url = $"{baseUrl}/bg/register-file";
-                // backend SSOT: stlPath is expected to be canonical filePath name
                 string originalName = string.IsNullOrWhiteSpace(stlPath) ? "" : Path.GetFileName(stlPath);
+                
+                // requestId가 없으면 STL 파일명에서 추출 시도
+                if (string.IsNullOrWhiteSpace(requestId) && !string.IsNullOrWhiteSpace(stlPath))
+                {
+                    requestId = ExtractRequestIdFromStlPath(stlPath);
+                    AppLogger.Log($"StlFileProcessor: requestId extracted from stlPath: {requestId}");
+                }
+                
                 string json;
                 if (upload.ok)
                 {
@@ -669,6 +683,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     json =
                         $"{{\"sourceStep\":\"3-nc\",\"fileName\":\"{EscapeJson(fi.Name)}\",\"originalFileName\":\"{EscapeJson(originalName)}\",\"requestId\":\"{EscapeJson(requestId)}\",\"status\":\"success\",\"metadata\":{{\"fileSize\":{fi.Length},\"upload\":\"fallback_no_s3\"}}}}";
                 }
+                
+                AppLogger.Log($"StlFileProcessor: register-file POST {url} with requestId={requestId}, fileName={fi.Name}");
+                
                 using (var req = new HttpRequestMessage(HttpMethod.Post, url))
                 {
                     req.Content = new StringContent(json, Encoding.UTF8, "application/json");
