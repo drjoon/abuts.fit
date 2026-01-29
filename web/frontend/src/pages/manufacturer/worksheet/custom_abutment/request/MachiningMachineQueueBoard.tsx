@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { ToastAction } from "@/components/ui/toast";
 
 type QueueItem = {
   requestId?: string;
@@ -18,6 +19,12 @@ type QueueItem = {
   estimatedDelivery?: string | Date;
   diameter?: number;
   diameterGroup?: string;
+  ncPreload?: {
+    status?: "NONE" | "UPLOADING" | "READY" | "FAILED" | string;
+    machineId?: string;
+    updatedAt?: string | Date;
+    error?: string;
+  } | null;
   clinicName?: string;
   patientName?: string;
 };
@@ -105,6 +112,51 @@ const formatLabel = (q: QueueItem) => {
   return rid ? `${base} (${rid})` : base;
 };
 
+const getNcPreloadBadge = (item?: QueueItem | null) => {
+  const s = String(item?.ncPreload?.status || "")
+    .trim()
+    .toUpperCase();
+  if (!s || s === "NONE") return null;
+  if (s === "UPLOADING") {
+    return (
+      <Badge
+        variant="outline"
+        className="shrink-0 bg-amber-50 text-[10px] font-extrabold text-amber-700 border-amber-200 px-2 py-0.5"
+      >
+        업로드중
+      </Badge>
+    );
+  }
+  if (s === "READY") {
+    return (
+      <Badge
+        variant="outline"
+        className="shrink-0 bg-emerald-50 text-[10px] font-extrabold text-emerald-700 border-emerald-200 px-2 py-0.5"
+      >
+        준비됨
+      </Badge>
+    );
+  }
+  if (s === "FAILED") {
+    return (
+      <Badge
+        variant="outline"
+        className="shrink-0 bg-rose-50 text-[10px] font-extrabold text-rose-700 border-rose-200 px-2 py-0.5"
+      >
+        실패
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 bg-slate-50 text-[10px] font-extrabold text-slate-700 border-slate-200 px-2 py-0.5"
+    >
+      {s}
+    </Badge>
+  );
+};
+
 const MachineQueueCard = ({
   machineId,
   machineName,
@@ -118,6 +170,8 @@ const MachineQueueCard = ({
   const machiningQueue = (Array.isArray(queue) ? queue : [])
     .filter((q) => isMachiningStatus(q?.status))
     .slice(0, 4);
+
+  const headPreloadBadge = getNcPreloadBadge(machiningQueue[0]);
 
   const totalMachiningCount = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q?.status),
@@ -143,6 +197,7 @@ const MachineQueueCard = ({
             <div className="shrink-0 text-[12px] font-extrabold text-slate-700">
               {totalMachiningCount}건
             </div>
+            {headPreloadBadge ? headPreloadBadge : null}
           </div>
           {machineStatus?.currentProgram || machineStatus?.nextProgram ? (
             <div className="mt-1 text-[11px] font-semibold text-slate-600">
@@ -189,11 +244,12 @@ const MachineQueueCard = ({
           ? machiningQueue.map((q, idx) => (
               <div
                 key={`${machineId}:${q.requestId || idx}`}
-                className="app-surface app-surface--item flex flex-col gap-1 px-3 py-2"
+                className="app-surface app-surface--item flex items-center justify-between gap-2 px-3 py-2"
               >
-                <div className="truncate text-[13px] font-extrabold text-slate-800">
+                <div className="min-w-0 truncate text-[13px] font-extrabold text-slate-800">
                   {formatLabel(q)}
                 </div>
+                {getNcPreloadBadge(q)}
               </div>
             ))
           : null}
@@ -467,6 +523,23 @@ export const MachiningMachineQueueBoard = ({
       if (!res.ok || body?.success === false) {
         throw new Error(body?.message || "자동 가공 설정 저장 실패");
       }
+
+      const trigger = body?.autoMachiningTrigger;
+      if (next === true) {
+        if (trigger?.attempted) {
+          toast({
+            title: "자동 가공 ON",
+            description: trigger?.requestId
+              ? `대기 의뢰(${String(trigger.requestId)}) 자동 시작을 트리거했습니다.`
+              : "자동 시작을 트리거했습니다.",
+          });
+        } else {
+          toast({
+            title: "자동 가공 ON",
+            description: "대기 의뢰가 없어 자동 시작 트리거를 건너뜁니다.",
+          });
+        }
+      }
     } catch (e: any) {
       setMachines((prevList) =>
         prevList.map((m) =>
@@ -480,6 +553,39 @@ export const MachiningMachineQueueBoard = ({
       });
     }
   };
+
+  const requestToggleMachineAuto = useCallback(
+    (uid: string, next: boolean) => {
+      if (!next) {
+        void updateMachineAuto(uid, false);
+        return;
+      }
+
+      const t = (Array.isArray(machines) ? machines : []).find(
+        (m) => m.uid === uid,
+      );
+      const name = t?.name || uid;
+
+      toast({
+        title: "자동 가공을 켤까요?",
+        description:
+          "ON 하면 대기 중인 의뢰의 자동 가공이 즉시 시작될 수 있습니다. 계속 진행하시겠습니까?",
+        variant: "destructive",
+        duration: 8000,
+        action: (
+          <ToastAction
+            altText="자동 가공 ON"
+            onClick={() => {
+              void updateMachineAuto(uid, true);
+            }}
+          >
+            {name} ON
+          </ToastAction>
+        ),
+      });
+    },
+    [machines, toast, updateMachineAuto],
+  );
 
   const setGlobalAutoEnabled = async (enabled: boolean) => {
     if (!token) return;
@@ -582,7 +688,7 @@ export const MachiningMachineQueueBoard = ({
             onOpenMore={() => setOpenMachineId(m.uid)}
             autoEnabled={m.allowAutoMachining === true}
             onToggleAuto={(next) => {
-              void updateMachineAuto(m.uid, next);
+              requestToggleMachineAuto(m.uid, next);
             }}
             machineStatus={machineStatusMap?.[m.uid] ?? null}
             statusRefreshing={statusRefreshing}
@@ -637,8 +743,11 @@ export const MachiningMachineQueueBoard = ({
                         #{idx + 1}
                       </Badge>
                     </div>
-                    <div className="mt-1 truncate text-[14px] font-extrabold text-slate-900">
-                      {formatLabel(q)}
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <div className="min-w-0 truncate text-[14px] font-extrabold text-slate-900">
+                        {formatLabel(q)}
+                      </div>
+                      {getNcPreloadBadge(q)}
                     </div>
                   </div>
                 </div>

@@ -220,6 +220,7 @@ namespace HiLinkBridgeWebApi48
                 if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
                 {
                     Console.WriteLine("[CncJobDispatcher] handle error machine={0} err={1}", machineId, errUp);
+                    _ = Task.Run(() => NotifyMachiningFailed(job, machineId, "handle error: " + errUp));
                     return false;
                 }
 
@@ -227,6 +228,7 @@ namespace HiLinkBridgeWebApi48
                 if (upRc != 0)
                 {
                     Console.WriteLine("[CncJobDispatcher] upload failed machine={0} rc={1}", machineId, upRc);
+                    _ = Task.Run(() => NotifyMachiningFailed(job, machineId, "upload failed rc=" + upRc));
                     return false;
                 }
 
@@ -236,12 +238,17 @@ namespace HiLinkBridgeWebApi48
                 if (act != 0)
                 {
                     Console.WriteLine("[CncJobDispatcher] activate failed machine={0} res={1} err={2}", machineId, act, err2);
+                    _ = Task.Run(() => NotifyMachiningFailed(job, machineId, "activate failed res=" + act + " err=" + err2));
                     return false;
                 }
 
                 // 3) 시작(Start)
                 var okStart = await CallStartApi(machineId, true);
-                if (!okStart) return false;
+                if (!okStart)
+                {
+                    _ = Task.Run(() => NotifyMachiningFailed(job, machineId, "start api failed"));
+                    return false;
+                }
 
                 // 4) 백엔드에 machining start 알림(기존 bg/register-file 패턴 유지)
                 _ = Task.Run(() => NotifyMachiningStarted(job, machineId));
@@ -252,6 +259,7 @@ namespace HiLinkBridgeWebApi48
             catch (Exception ex)
             {
                 Console.WriteLine("[CncJobDispatcher] StartJob error machine={0} err={1}", machineId, ex.Message);
+                _ = Task.Run(() => NotifyMachiningFailed(job, machineId, "exception: " + ex.Message));
                 return false;
             }
         }
@@ -436,6 +444,41 @@ namespace HiLinkBridgeWebApi48
             catch (Exception ex)
             {
                 Console.WriteLine("[CncJobDispatcher] NotifyMachiningStarted error: {0}", ex.Message);
+            }
+        }
+
+        private static async Task NotifyMachiningFailed(CncJobItem job, string machineId, string error)
+        {
+            try
+            {
+                var backend = GetBackendBase();
+                var url = backend + "/bg/register-file";
+
+                var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
+                    ? job?.fileName
+                    : job.originalFileName;
+
+                var payload = new
+                {
+                    sourceStep = "cnc",
+                    fileName = job?.fileName,
+                    originalFileName = canonical,
+                    requestId = job?.requestId,
+                    status = "failed",
+                    metadata = new { machineId = machineId, error = error }
+                };
+
+                var json = JsonConvert.SerializeObject(payload);
+                var req = new HttpRequestMessage(HttpMethod.Post, url);
+                AddAuthHeader(req);
+                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var resp = await Http.SendAsync(req);
+                _ = await resp.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncJobDispatcher] NotifyMachiningFailed error: {0}", ex.Message);
             }
         }
     }

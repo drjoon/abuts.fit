@@ -405,45 +405,106 @@ export async function upsertMachine(req, res) {
     // - 브리지는 매번 DB를 조회하지 않으므로, 백엔드에서 process-file 호출을 해줘야 자동 가공이 시작될 수 있다.
     // - 실패하더라도 장비 설정 저장 자체는 성공으로 반환한다.
     const nextAuto = machine?.allowAutoMachining === true;
+    let autoMachiningTrigger = null;
     if (!prevAuto && nextAuto && BRIDGE_BASE) {
       try {
         const pending = await Request.find({
           status: { $in: ["CAM", "가공", "생산"] },
           "productionSchedule.assignedMachine": finalUid,
         })
-          .sort({ updatedAt: 1 })
+          .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
           .limit(1)
           .lean();
 
         const req0 = Array.isArray(pending) ? pending[0] : null;
         const requestId = String(req0?.requestId || "").trim();
-        const fileName = String(req0?.caseInfos?.ncFile?.fileName || "").trim();
         const bridgePath = String(
           req0?.caseInfos?.ncFile?.filePath || "",
         ).trim();
+        const rawFileName = String(
+          req0?.caseInfos?.ncFile?.fileName || "",
+        ).trim();
+        const derivedFileName = bridgePath
+          ? String(bridgePath).split(/[/\\]/).pop()
+          : "";
+        const fileName = rawFileName || derivedFileName;
 
-        if (requestId && fileName) {
+        autoMachiningTrigger = {
+          attempted: false,
+          requestId: requestId || null,
+          machineId: finalUid,
+          fileName: fileName || null,
+          bridgePath: bridgePath || null,
+          error: null,
+        };
+
+        if (requestId && bridgePath) {
+          // DB에 선업로드 진행 상태 기록 (UI에서 표시 가능)
+          try {
+            await Request.updateOne(
+              { requestId },
+              {
+                $set: {
+                  "productionSchedule.ncPreload": {
+                    status: "UPLOADING",
+                    machineId: finalUid,
+                    bridgePath: bridgePath || null,
+                    updatedAt: new Date(),
+                    error: null,
+                  },
+                },
+              },
+            );
+          } catch (e) {
+            console.warn("autoMachining ncPreload UPLOADING update failed", e);
+          }
+
           const base =
             process.env.BRIDGE_NODE_URL ||
             process.env.BRIDGE_PROCESS_BASE ||
             process.env.CNC_BRIDGE_BASE ||
             process.env.BRIDGE_BASE ||
             "http://localhost:8002";
-          await fetch(
-            `${String(base).replace(/\/$/, "")}/api/bridge/process-file`,
-            {
-              method: "POST",
-              headers: withBridgeHeaders({
-                "Content-Type": "application/json",
-              }),
-              body: JSON.stringify({
-                fileName,
-                requestId,
-                machineId: finalUid,
-                bridgePath: bridgePath || null,
-              }),
-            },
-          );
+          try {
+            await fetch(
+              `${String(base).replace(/\/$/, "")}/api/bridge/process-file`,
+              {
+                method: "POST",
+                headers: withBridgeHeaders({
+                  "Content-Type": "application/json",
+                }),
+                body: JSON.stringify({
+                  fileName: fileName || null,
+                  requestId,
+                  machineId: finalUid,
+                  bridgePath: bridgePath || null,
+                }),
+              },
+            );
+
+            autoMachiningTrigger.attempted = true;
+          } catch (e) {
+            autoMachiningTrigger.error = String(e?.message || e);
+            console.warn("autoMachining trigger bridge call failed", e);
+            try {
+              await Request.updateOne(
+                { requestId },
+                {
+                  $set: {
+                    "productionSchedule.ncPreload": {
+                      status: "FAILED",
+                      machineId: finalUid,
+                      bridgePath: bridgePath || null,
+                      updatedAt: new Date(),
+                      error: autoMachiningTrigger.error,
+                    },
+                  },
+                },
+              );
+            } catch (e2) {
+              console.warn("autoMachining ncPreload FAILED update failed", e2);
+            }
+          }
         }
       } catch (e) {
         console.warn("autoMachining trigger on toggle failed", e);
@@ -497,9 +558,12 @@ export async function upsertMachine(req, res) {
       };
     }
 
-    res
-      .status(201)
-      .json({ success: true, data: machine, hiLink: hiLinkResult });
+    res.status(201).json({
+      success: true,
+      data: machine,
+      hiLink: hiLinkResult,
+      autoMachiningTrigger,
+    });
   } catch (error) {
     console.error("upsertMachine error", error);
     res.status(500).json({

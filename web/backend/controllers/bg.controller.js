@@ -413,8 +413,29 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         updateData["productionSchedule.actualCamComplete"] = now;
         break;
 
+      case "cnc-preload":
+        updateData["productionSchedule.ncPreload"] = {
+          status: "READY",
+          machineId: metadata?.machineId
+            ? String(metadata.machineId)
+            : undefined,
+          bridgePath: request?.caseInfos?.ncFile?.filePath,
+          updatedAt: now,
+          error: null,
+        };
+        break;
+
       case "cnc":
         updateData["productionSchedule.actualMachiningStart"] = now;
+        updateData["productionSchedule.ncPreload"] = {
+          status: "READY",
+          machineId: metadata?.machineId
+            ? String(metadata.machineId)
+            : undefined,
+          bridgePath: request?.caseInfos?.ncFile?.filePath,
+          updatedAt: now,
+          error: null,
+        };
         if (metadata?.machineId) {
           updateData["productionSchedule.assignedMachine"] = metadata.machineId;
         }
@@ -427,16 +448,26 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     console.error(
       `[BG-Callback] Processing failed for ${request.requestId} at ${sourceStep}`,
     );
-    // 실패 시 제조사 수동 대응을 위해 상태 변경 또는 로그 기록
-    const stageKey =
-      sourceStep === "2-filled"
-        ? "request"
-        : sourceStep === "3-nc"
-          ? "cam"
-          : "machining";
-    updateData[`caseInfos.reviewByStage.${stageKey}.status`] = "REJECTED";
-    updateData[`caseInfos.reviewByStage.${stageKey}.reason`] =
-      `백그라운드 작업 실패 (${sourceStep})`;
+    if (sourceStep === "cnc" || sourceStep === "cnc-preload") {
+      updateData["productionSchedule.ncPreload"] = {
+        status: "FAILED",
+        machineId: metadata?.machineId ? String(metadata.machineId) : undefined,
+        bridgePath: request?.caseInfos?.ncFile?.filePath,
+        updatedAt: now,
+        error: String(metadata?.error || "") || `CNC 작업 실패 (${sourceStep})`,
+      };
+    } else {
+      // 실패 시 제조사 수동 대응을 위해 상태 변경 또는 로그 기록
+      const stageKey =
+        sourceStep === "2-filled"
+          ? "request"
+          : sourceStep === "3-nc"
+            ? "cam"
+            : "machining";
+      updateData[`caseInfos.reviewByStage.${stageKey}.status`] = "REJECTED";
+      updateData[`caseInfos.reviewByStage.${stageKey}.reason`] =
+        `백그라운드 작업 실패 (${sourceStep})`;
+    }
   }
 
   console.log(

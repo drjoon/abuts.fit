@@ -1374,6 +1374,14 @@ export async function getProductionQueues(req, res) {
         estimatedDelivery: req.productionSchedule?.estimatedDelivery,
         diameter: req.productionSchedule?.diameter,
         diameterGroup: req.productionSchedule?.diameterGroup,
+        ncPreload: req.productionSchedule?.ncPreload
+          ? {
+              status: req.productionSchedule.ncPreload.status,
+              machineId: req.productionSchedule.ncPreload.machineId,
+              updatedAt: req.productionSchedule.ncPreload.updatedAt,
+              error: req.productionSchedule.ncPreload.error,
+            }
+          : null,
         clinicName: req.caseInfos?.clinicName,
         patientName: req.caseInfos?.patientName,
       }));

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -250,36 +251,19 @@ namespace HiLinkBridgeWebApi48
                     }
                     else
                     {
+                        // 재시도하지 않고 큐에서 제거 (관리자가 확인 후 재등록)
+                        CncJobQueue.Pop(machineId);
+                        Console.WriteLine(
+                            "[CncContinuous] start dropped machine={0} jobId={1} file={2}",
+                            machineId,
+                            nextJob.id,
+                            nextJob.fileName
+                        );
                         lock (StateLock)
                         {
-                            if (!string.Equals(state.LastStartFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase))
-                            {
-                                state.LastStartFailJobId = nextJob.id;
-                                state.StartFailCount = 0;
-                            }
-
-                            state.StartFailCount = Math.Min(1000, state.StartFailCount + 1);
-                            var backoffSec = Math.Min(60, Math.Max(5, state.StartFailCount * 5));
-                            state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(backoffSec);
-                        }
-
-                        // 너무 오래 실패하면 큐에서 제거하여 무한 루프를 방지
-                        if (state.StartFailCount >= 10)
-                        {
-                            CncJobQueue.Pop(machineId);
-                            Console.WriteLine(
-                                "[CncContinuous] start dropped machine={0} jobId={1} file={2} fails={3}",
-                                machineId,
-                                nextJob.id,
-                                nextJob.fileName,
-                                state.StartFailCount
-                            );
-                            lock (StateLock)
-                            {
-                                state.LastStartFailJobId = null;
-                                state.StartFailCount = 0;
-                                state.NextStartAttemptUtc = DateTime.MinValue;
-                            }
+                            state.LastStartFailJobId = null;
+                            state.StartFailCount = 0;
+                            state.NextStartAttemptUtc = DateTime.MinValue;
                         }
                     }
                 }
@@ -346,7 +330,7 @@ namespace HiLinkBridgeWebApi48
                 Console.WriteLine("[CncContinuous] preloading next job machine={0} file={1} to slot=O{2}",
                     machineId, nextJob.fileName, state.NextSlot);
 
-                var uploaded = await UploadProgramToSlot(machineId, nextJob, state.NextSlot);
+                var uploaded = await UploadProgramToSlot(machineId, nextJob, state.NextSlot, out var uploadErr);
                 if (uploaded)
                 {
                     lock (StateLock)
@@ -359,26 +343,28 @@ namespace HiLinkBridgeWebApi48
                     CncJobQueue.Pop(machineId);
                     Console.WriteLine("[CncContinuous] preload success machine={0} slot=O{1}",
                         machineId, state.NextSlot);
+
+                    _ = Task.Run(() => NotifyNcPreloadStatus(nextJob, machineId, "READY", null));
                 }
                 else
                 {
+                    _ = Task.Run(() => NotifyNcPreloadStatus(nextJob, machineId, "FAILED", uploadErr ?? "preload upload failed"));
+
+                    // 재시도하지 않고 큐에서 제거 (관리자가 확인 후 재등록)
+                    CncJobQueue.Pop(machineId);
                     lock (StateLock)
                     {
-                        if (!string.Equals(state.LastPreloadFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase))
-                        {
-                            state.LastPreloadFailJobId = nextJob.id;
-                            state.PreloadFailCount = 0;
-                        }
-
-                        state.PreloadFailCount = Math.Min(1000, state.PreloadFailCount + 1);
-                        var backoffSec = Math.Min(120, Math.Max(10, state.PreloadFailCount * 10));
-                        state.NextPreloadAttemptUtc = DateTime.UtcNow.AddSeconds(backoffSec);
+                        state.LastPreloadFailJobId = null;
+                        state.PreloadFailCount = 0;
+                        state.NextPreloadAttemptUtc = DateTime.MinValue;
                     }
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine("[CncContinuous] preload error machine={0} err={1}", machineId, ex.Message);
+                _ = Task.Run(() => NotifyNcPreloadStatus(nextJob, machineId, "FAILED", "exception: " + ex.Message));
+                CncJobQueue.Pop(machineId);
             }
         }
 
@@ -475,8 +461,14 @@ namespace HiLinkBridgeWebApi48
                 }
 
                 // 2. CurrentSlot에 업로드
-                var uploaded = await UploadProgramToSlot(machineId, job, state.CurrentSlot);
-                if (!uploaded) return false;
+                var uploaded = await UploadProgramToSlot(machineId, job, state.CurrentSlot, out var uploadErr);
+                if (!uploaded)
+                {
+                    _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", uploadErr ?? "start upload failed"));
+                    return false;
+                }
+
+                _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "READY", null));
 
                 // 3. 활성화
                 var dto = new UpdateMachineActivateProgNo
@@ -519,12 +511,14 @@ namespace HiLinkBridgeWebApi48
             catch (Exception ex)
             {
                 Console.WriteLine("[CncContinuous] start error machine={0} err={1}", machineId, ex.Message);
+                _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", "exception: " + ex.Message));
                 return false;
             }
         }
 
-        private static async Task<bool> UploadProgramToSlot(string machineId, CncJobItem job, int slotNo)
+        private static async Task<bool> UploadProgramToSlot(string machineId, CncJobItem job, int slotNo, out string error)
         {
+            error = null;
             try
             {
                 if (job == null) return false;
@@ -532,7 +526,17 @@ namespace HiLinkBridgeWebApi48
                 if (!TryResolveJobFilePath(job, out var fullPath, out var resolveErr))
                 {
                     Console.WriteLine("[CncContinuous] file resolve failed: {0}", resolveErr);
+                    error = resolveErr;
                     return false;
+                }
+
+                if (!File.Exists(fullPath))
+                {
+                    var resolved = TryResolveExistingPath(fullPath, out var existingPath);
+                    if (resolved)
+                    {
+                        fullPath = existingPath;
+                    }
                 }
 
                 if (!File.Exists(fullPath))
@@ -542,6 +546,7 @@ namespace HiLinkBridgeWebApi48
                     if (!downloaded || !File.Exists(fullPath))
                     {
                         Console.WriteLine("[CncContinuous] file not found: {0}", fullPath);
+                        error = "file not found: " + fullPath;
                         return false;
                     }
                 }
@@ -562,6 +567,7 @@ namespace HiLinkBridgeWebApi48
                 if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
                 {
                     Console.WriteLine("[CncContinuous] handle error machine={0} err={1}", machineId, errUp);
+                    error = "handle error: " + errUp;
                     return false;
                 }
 
@@ -569,6 +575,7 @@ namespace HiLinkBridgeWebApi48
                 if (upRc != 0)
                 {
                     Console.WriteLine("[CncContinuous] upload failed machine={0} rc={1}", machineId, upRc);
+                    error = "upload failed rc=" + upRc;
                     return false;
                 }
 
@@ -577,6 +584,44 @@ namespace HiLinkBridgeWebApi48
             catch (Exception ex)
             {
                 Console.WriteLine("[CncContinuous] upload error machine={0} err={1}", machineId, ex.Message);
+                error = "exception: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryResolveExistingPath(string expectedFullPath, out string existingFullPath)
+        {
+            existingFullPath = null;
+            try
+            {
+                var dir = Path.GetDirectoryName(expectedFullPath);
+                var file = Path.GetFileName(expectedFullPath);
+                if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(file)) return false;
+                if (!Directory.Exists(dir)) return false;
+
+                var targetC = file.Normalize(NormalizationForm.FormC);
+                foreach (var p in Directory.EnumerateFiles(dir))
+                {
+                    try
+                    {
+                        var f = Path.GetFileName(p);
+                        if (string.Equals(f, file, StringComparison.OrdinalIgnoreCase))
+                        {
+                            existingFullPath = p;
+                            return true;
+                        }
+                        if (string.Equals(f.Normalize(NormalizationForm.FormC), targetC, StringComparison.OrdinalIgnoreCase))
+                        {
+                            existingFullPath = p;
+                            return true;
+                        }
+                    }
+                    catch { }
+                }
+                return false;
+            }
+            catch
+            {
                 return false;
             }
         }
@@ -1000,6 +1045,38 @@ namespace HiLinkBridgeWebApi48
             catch (Exception ex)
             {
                 Console.WriteLine("[CncContinuous] NotifyMachiningStarted error: {0}", ex.Message);
+            }
+        }
+
+        private static async Task NotifyNcPreloadStatus(CncJobItem job, string machineId, string status, string error)
+        {
+            try
+            {
+                var backend = GetBackendBase();
+                if (string.IsNullOrEmpty(backend)) return;
+                var url = backend + "/bg/register-file";
+
+                var payload = new
+                {
+                    sourceStep = "cnc-preload",
+                    fileName = job?.fileName,
+                    originalFileName = job?.fileName,
+                    requestId = job?.requestId,
+                    status = string.Equals(status, "READY", StringComparison.OrdinalIgnoreCase) ? "success" : "failed",
+                    metadata = new { machineId = machineId, error = error }
+                };
+
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+                var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+                AddAuthHeader(req);
+                req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                var resp = await Http.SendAsync(req);
+                _ = await resp.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[CncContinuous] NotifyNcPreloadStatus error: {0}", ex.Message);
             }
         }
 

@@ -59,3 +59,20 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/activate-sub
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
  -d '{"programNo":3001}'
+
+# 프로그램 삭제 (대용량 NC 정리: 3000/4000/4001 등)
+
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{"headType":0,"programNo":3000}'
+
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{"headType":0,"programNo":4000}'
+
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{"headType":0,"programNo":4001}'
