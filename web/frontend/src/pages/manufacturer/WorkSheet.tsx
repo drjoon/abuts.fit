@@ -1,6 +1,7 @@
 import { useLocation } from "react-router-dom";
 import { RequestPage } from "./worksheet/custom_abutment/request/RequestPage";
 import { MachiningPage } from "./worksheet/custom_abutment/machining/MachiningPage";
+import { PackagingPage } from "./worksheet/custom_abutment/packaging/PackagingPage";
 import { TrackingInquiryPage } from "./worksheet/custom_abutment/tracking/TrackingInquiryPage";
 
 export const ManufacturerWorksheetPage = () => {
@@ -43,10 +44,12 @@ export const ManufacturerWorksheetPage = () => {
               showQueueBar={true}
               filterRequests={(req) => {
                 const stage = String(req.manufacturerStage || "").trim();
-                return stage === "생산";
+                return stage === "가공";
               }}
             />
           );
+        case "packaging":
+          return <PackagingPage />;
         case "shipping":
           return (
             <RequestPage
