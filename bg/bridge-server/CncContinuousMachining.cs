@@ -548,14 +548,14 @@ namespace HiLinkBridgeWebApi48
 
                 var content = File.ReadAllText(fullPath);
 
-                // 프로그램 번호를 slotNo로 강제 변경
-                content = ReplaceProgramHeaderLine(content, slotNo);
+                // NC 파일 content 전처리: 상단에 OXXXX 헤더가 없으면 삽입
+                var processedContent = EnsureProgramHeader(content, slotNo);
 
                 var info = new UpdateMachineProgramInfo
                 {
                     headType = 0,
                     programNo = (short)slotNo,
-                    programData = content,
+                    programData = processedContent,
                     isNew = true,
                 };
 
@@ -731,7 +731,10 @@ namespace HiLinkBridgeWebApi48
             }
         }
 
-        private static string ReplaceProgramHeaderLine(string content, int newNo)
+        /// <summary>
+        /// NC 파일 content 상단에 OXXXX 프로그램 헤더가 없으면 삽입
+        /// </summary>
+        private static string EnsureProgramHeader(string content, int newNo)
         {
             if (newNo <= 0) return content;
             var newLine = string.Format("O{0:D4}", newNo);

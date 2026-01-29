@@ -143,12 +143,21 @@ export const RequestPage = ({
 
     try {
       setIsLoading(true);
-      const path =
+      const basePath =
         user?.role === "admin"
           ? "/api/admin/requests"
           : user?.role === "manufacturer"
             ? "/api/requests/all"
             : "/api/requests";
+
+      const path = (() => {
+        if (user?.role !== "manufacturer") return basePath;
+        const url = new URL(basePath, window.location.origin);
+        // /api/requests/all 은 기본 limit=10 페이지네이션이므로, 워크시트 집계/큐바를 위해 넉넉히 가져온다.
+        url.searchParams.set("page", "1");
+        url.searchParams.set("limit", "5000");
+        return url.pathname + url.search;
+      })();
 
       // 캐시를 무시하고 항상 최신 데이터를 조회 (NC 파일 업데이트 반영용)
       const res = await fetch(path, {
@@ -185,6 +194,8 @@ export const RequestPage = ({
             ncFile: req.caseInfos?.ncFile,
             status: req.status,
             status2: req.status2,
+            manufacturerStage: req.manufacturerStage,
+            derivedStage: deriveStageForFilter(req),
           });
         });
         console.groupEnd();

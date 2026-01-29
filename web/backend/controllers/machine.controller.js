@@ -11,6 +11,7 @@ const lastControlCall = new Map();
 const lastRawReadCall = new Map();
 
 import Machine from "../models/machine.model.js";
+import Request from "../models/request.model.js";
 
 function withBridgeHeaders(extra = {}) {
   const base = {};
@@ -368,6 +369,7 @@ export async function upsertMachine(req, res) {
 
     // 기존 값이 있다면, 전달되지 않은 필드는 기존 값을 유지한다.
     const existing = await Machine.findOne({ uid: finalUid }).lean();
+    const prevAuto = existing?.allowAutoMachining === true;
     const update = {
       // uid: 앱에서 사용하는 논리 UID, hiLinkUid: Hi-Link DLL에 전달되는 실제 UID
       uid: finalUid,
@@ -398,6 +400,55 @@ export async function upsertMachine(req, res) {
       { $set: update },
       { new: true, upsert: true },
     );
+
+    // OFF -> ON 전환 시, 해당 장비에 할당된 대기(CAM 승인 이후) 의뢰를 브리지로 트리거한다.
+    // - 브리지는 매번 DB를 조회하지 않으므로, 백엔드에서 process-file 호출을 해줘야 자동 가공이 시작될 수 있다.
+    // - 실패하더라도 장비 설정 저장 자체는 성공으로 반환한다.
+    const nextAuto = machine?.allowAutoMachining === true;
+    if (!prevAuto && nextAuto && BRIDGE_BASE) {
+      try {
+        const pending = await Request.find({
+          status: { $in: ["CAM", "가공", "생산"] },
+          "productionSchedule.assignedMachine": finalUid,
+        })
+          .sort({ updatedAt: 1 })
+          .limit(1)
+          .lean();
+
+        const req0 = Array.isArray(pending) ? pending[0] : null;
+        const requestId = String(req0?.requestId || "").trim();
+        const fileName = String(req0?.caseInfos?.ncFile?.fileName || "").trim();
+        const bridgePath = String(
+          req0?.caseInfos?.ncFile?.filePath || "",
+        ).trim();
+
+        if (requestId && fileName) {
+          const base =
+            process.env.BRIDGE_NODE_URL ||
+            process.env.BRIDGE_PROCESS_BASE ||
+            process.env.CNC_BRIDGE_BASE ||
+            process.env.BRIDGE_BASE ||
+            "http://localhost:8002";
+          await fetch(
+            `${String(base).replace(/\/$/, "")}/api/bridge/process-file`,
+            {
+              method: "POST",
+              headers: withBridgeHeaders({
+                "Content-Type": "application/json",
+              }),
+              body: JSON.stringify({
+                fileName,
+                requestId,
+                machineId: finalUid,
+                bridgePath: bridgePath || null,
+              }),
+            },
+          );
+        }
+      } catch (e) {
+        console.warn("autoMachining trigger on toggle failed", e);
+      }
+    }
 
     // hi-link 브리지에도 장비 정보를 등록 시도 (실패하더라도 DB 저장 결과는 그대로 반환)
     let hiLinkResult = null;

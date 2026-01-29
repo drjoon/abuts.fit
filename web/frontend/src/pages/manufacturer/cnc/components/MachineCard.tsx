@@ -239,6 +239,11 @@ export const MachineCard: React.FC<MachineCardProps> = ({
             {machine.name}
           </div>
           {getMachineStatusChip(machine.status)}
+          {machine.lastUpdated ? (
+            <div className="ml-1 text-[12px] font-semibold text-slate-500">
+              장비 상태 갱신 {machine.lastUpdated}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">

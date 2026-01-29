@@ -66,17 +66,38 @@ export const computeStageLabel = (
 
 export const deriveStageForFilter = (req: ManufacturerRequest) => {
   const saved = (req.manufacturerStage || "").trim();
-  if (saved) return saved;
+  if (saved) {
+    switch (saved) {
+      case "가공전":
+        return "CAM";
+      case "가공후":
+      case "생산":
+      case "가공":
+        return "가공";
+      case "배송대기":
+      case "배송중":
+        return "발송";
+      case "완료":
+        return "추적관리";
+      default:
+        return saved;
+    }
+  }
 
   // Fallback for legacy data (should be rare after backend updates)
   const status = (req.status || "").trim();
   switch (status) {
+    case "생산":
+    case "가공":
+      return "가공";
     case "의뢰접수":
       return "의뢰";
     case "가공전":
       return "CAM";
     case "가공후":
       return "가공";
+    case "세척.포장":
+      return "세척.포장";
     case "배송대기":
     case "배송중":
       return "발송";

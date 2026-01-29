@@ -205,12 +205,15 @@ namespace HiLinkBridgeWebApi48
                     return false;
                 }
 
+                // NC 파일 content 전처리: 상단에 OXXXX 헤더가 없으면 삽입
+                var processedContent = EnsureProgramHeader(content, progNo);
+
                 // 1) 업로드(UpdateProgram) - Mode1 API 사용
                 var info = new UpdateMachineProgramInfo
                 {
                     headType = 0,
                     programNo = (short)progNo,
-                    programData = content,
+                    programData = processedContent,
                     isNew = true,
                 };
 
@@ -264,6 +267,29 @@ namespace HiLinkBridgeWebApi48
             if (m2.Success && int.TryParse(m2.Groups[1].Value, out var n2) && n2 > 0) return n2;
 
             return 0;
+        }
+
+        /// <summary>
+        /// NC 파일 content 상단에 OXXXX 프로그램 헤더가 없으면 삽입
+        /// </summary>
+        private static string EnsureProgramHeader(string content, int programNo)
+        {
+            if (string.IsNullOrEmpty(content)) return content;
+
+            var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+            if (lines.Length == 0) return content;
+
+            // 첫 줄이 이미 OXXXX 형태면 그대로 반환
+            var firstLine = lines[0].Trim();
+            var m = FanucRegex.Match(firstLine);
+            if (m.Success && int.TryParse(m.Groups[1].Value, out var existing) && existing == programNo)
+            {
+                return content;
+            }
+
+            // 헤더 삽입: O#### 형태로 4자리 패딩
+            var header = $"O{programNo.ToString().PadLeft(4, '0')}";
+            return header + "\r\n" + content;
         }
 
         private static int ToResultCode(object obj)

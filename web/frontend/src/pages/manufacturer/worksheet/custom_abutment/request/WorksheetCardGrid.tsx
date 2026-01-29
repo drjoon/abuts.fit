@@ -217,51 +217,8 @@ export const WorksheetCardGrid = ({
                 </div>
               )}
               {(() => {
-                const bucketIndex = getDiameterBucketIndex(
-                  caseInfos.maxDiameter,
-                );
-                const statusColor = isCompletedForCurrentStage
-                  ? "bg-emerald-500"
-                  : urgency === "danger"
-                    ? "bg-rose-500"
-                    : urgency === "warning"
-                      ? "bg-amber-500"
-                      : "bg-blue-500";
-
-                return (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-3 h-3 rounded-full ${statusColor}`} />
-                      <span className="text-sm font-semibold text-slate-700">
-                        {camGroup || "-"}건
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {request.referenceIds &&
-                        request.referenceIds.length > 0 && (
-                          <>
-                            {request.referenceIds.map((ref, idx) => (
-                              <Badge
-                                key={idx}
-                                variant="outline"
-                                className="text-[11px] px-2 py-0.5 bg-purple-50 text-purple-700 border-purple-200 font-semibold"
-                              >
-                                #{idx + 1}
-                              </Badge>
-                            ))}
-                            {request.referenceIds.length > 0 && (
-                              <Badge
-                                variant="outline"
-                                className="text-[11px] px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-semibold"
-                              >
-                                {request.referenceIds.length}
-                              </Badge>
-                            )}
-                          </>
-                        )}
-                    </div>
-                  </div>
-                );
+                // (의뢰/CAM) 카드 상단의 진행상태 표시/배지는 사용하지 않음
+                return null;
               })()}
               <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
                 <span>

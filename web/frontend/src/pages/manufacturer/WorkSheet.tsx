@@ -3,6 +3,7 @@ import { RequestPage } from "./worksheet/custom_abutment/request/RequestPage";
 import { MachiningPage } from "./worksheet/custom_abutment/machining/MachiningPage";
 import { PackagingPage } from "./worksheet/custom_abutment/packaging/PackagingPage";
 import { TrackingInquiryPage } from "./worksheet/custom_abutment/tracking/TrackingInquiryPage";
+import { deriveStageForFilter } from "./worksheet/custom_abutment/request/utils";
 
 export const ManufacturerWorksheetPage = () => {
   const location = useLocation();
@@ -23,8 +24,7 @@ export const ManufacturerWorksheetPage = () => {
             <RequestPage
               showQueueBar={true}
               filterRequests={(req) => {
-                const stage = String(req.manufacturerStage || "").trim();
-                return !stage || stage === "의뢰";
+                return deriveStageForFilter(req) === "의뢰";
               }}
             />
           );
@@ -33,8 +33,7 @@ export const ManufacturerWorksheetPage = () => {
             <RequestPage
               showQueueBar={true}
               filterRequests={(req) => {
-                const stage = String(req.manufacturerStage || "").trim();
-                return stage === "CAM";
+                return deriveStageForFilter(req) === "CAM";
               }}
             />
           );
@@ -43,8 +42,7 @@ export const ManufacturerWorksheetPage = () => {
             <RequestPage
               showQueueBar={true}
               filterRequests={(req) => {
-                const stage = String(req.manufacturerStage || "").trim();
-                return stage === "가공";
+                return deriveStageForFilter(req) === "가공";
               }}
             />
           );

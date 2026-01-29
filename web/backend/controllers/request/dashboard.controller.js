@@ -290,6 +290,12 @@ export async function getMyDashboardSummary(req, res) {
                                   ["shipping", "tracking", "발송", "추적관리"],
                                 ],
                               },
+                              {
+                                $in: [
+                                  "$$status",
+                                  ["shipping", "tracking", "발송", "추적관리"],
+                                ],
+                              },
                             ],
                           },
                           then: "shipping",
@@ -299,6 +305,9 @@ export async function getMyDashboardSummary(req, res) {
                             $or: [
                               {
                                 $in: ["$$stage", ["packaging", "세척.포장"]],
+                              },
+                              {
+                                $in: ["$$status", ["packaging", "세척.포장"]],
                               },
                             ],
                           },
@@ -310,7 +319,13 @@ export async function getMyDashboardSummary(req, res) {
                               {
                                 $in: [
                                   "$$stage",
-                                  ["machining", "production", "가공"],
+                                  ["machining", "production", "가공", "생산"],
+                                ],
+                              },
+                              {
+                                $in: [
+                                  "$$status",
+                                  ["machining", "production", "가공", "생산"],
                                 ],
                               },
                             ],
@@ -321,6 +336,7 @@ export async function getMyDashboardSummary(req, res) {
                           case: {
                             $or: [
                               { $in: ["$$stage", ["cam", "CAM", "가공전"]] },
+                              { $in: ["$$status", ["cam", "CAM", "가공전"]] },
                             ],
                           },
                           then: "cam",
@@ -331,6 +347,12 @@ export async function getMyDashboardSummary(req, res) {
                               {
                                 $in: [
                                   "$$stage",
+                                  ["request", "receive", "의뢰", "의뢰접수"],
+                                ],
+                              },
+                              {
+                                $in: [
+                                  "$$status",
                                   ["request", "receive", "의뢰", "의뢰접수"],
                                 ],
                               },

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
@@ -24,6 +24,37 @@ type QueueItem = {
 
 type QueueMap = Record<string, QueueItem[]>;
 
+type MachineStatus = {
+  uid: string;
+  status?: string;
+  currentProgram?: string;
+  nextProgram?: string;
+};
+
+const extractActiveProgramLabel = (data: any) => {
+  if (!data || typeof data !== "object") return null;
+  const src =
+    (data as any)?.machineCurrentProgInfo ??
+    (data as any)?.machineActivateProgInfo ??
+    (data as any)?.data ??
+    data;
+
+  const rawNo =
+    (src as any)?.programNo ??
+    (src as any)?.activateProgNum ??
+    (src as any)?.activateProgNo ??
+    (src as any)?.progNo;
+  const n = Number(rawNo);
+  if (Number.isFinite(n) && n > 0) {
+    return `O${String(n).padStart(4, "0")}`;
+  }
+
+  const name =
+    (src as any)?.programName ?? (src as any)?.progName ?? (src as any)?.name;
+  const s = String(name || "").trim();
+  return s ? s : null;
+};
+
 type MachineQueueCardProps = {
   machineId: string;
   machineName?: string;
@@ -31,12 +62,35 @@ type MachineQueueCardProps = {
   onOpenMore: () => void;
   autoEnabled: boolean;
   onToggleAuto: (next: boolean) => void;
+  machineStatus?: MachineStatus | null;
+  statusRefreshing?: boolean;
+};
+
+const getStatusDotColor = (status?: string) => {
+  const s = String(status || "")
+    .trim()
+    .toUpperCase();
+  if (!s) return "bg-slate-300";
+  if (["ALARM", "ERROR", "FAULT"].some((k) => s.includes(k))) {
+    return "bg-rose-500";
+  }
+  if (["WARN", "WARNING"].some((k) => s.includes(k))) {
+    return "bg-amber-500";
+  }
+  if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
+    return "bg-emerald-500";
+  }
+  if (["STOP", "IDLE", "READY"].some((k) => s.includes(k))) {
+    return "bg-emerald-500";
+  }
+  return "bg-blue-500";
 };
 
 const isMachiningStatus = (status?: string) => {
   // /api/cnc-machines/queues(getProductionQueues)에서 내려오는 status는 Request.status이며
   // 값은 "의뢰" | "CAM" | "생산" 으로 내려온다.
-  return String(status || "").trim() === "생산";
+  const s = String(status || "").trim();
+  return s === "생산" || s === "가공";
 };
 
 const formatLabel = (q: QueueItem) => {
@@ -58,10 +112,18 @@ const MachineQueueCard = ({
   onOpenMore,
   autoEnabled,
   onToggleAuto,
+  machineStatus,
+  statusRefreshing,
 }: MachineQueueCardProps) => {
   const machiningQueue = (Array.isArray(queue) ? queue : [])
     .filter((q) => isMachiningStatus(q?.status))
-    .slice(0, 5);
+    .slice(0, 4);
+
+  const totalMachiningCount = (Array.isArray(queue) ? queue : []).filter((q) =>
+    isMachiningStatus(q?.status),
+  ).length;
+
+  const statusColor = getStatusDotColor(machineStatus?.status);
 
   const headerTitle = machineName || machineId;
 
@@ -73,85 +135,81 @@ const MachineQueueCard = ({
             <div className="truncate text-[15px] font-extrabold text-slate-900">
               {headerTitle}
             </div>
-            <Badge
-              variant="outline"
-              className="shrink-0 bg-white/70 text-[11px] font-extrabold text-slate-700 border-slate-200"
-            >
-              {machiningQueue.length}건
-            </Badge>
-            <div
-              className="hidden sm:flex items-center gap-2"
-              title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
-            >
-              <div className="text-[11px] font-extrabold text-slate-700">
-                자동 가공
-              </div>
-              <button
-                type="button"
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  autoEnabled ? "bg-emerald-500" : "bg-gray-300"
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleAuto(!autoEnabled);
-                }}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    autoEnabled ? "translate-x-5" : "translate-x-1"
-                  }`}
-                />
-              </button>
+            <span
+              className={`w-3 h-3 rounded-full ${statusColor} ${
+                statusRefreshing ? "animate-pulse" : ""
+              }`}
+            />
+            <div className="shrink-0 text-[12px] font-extrabold text-slate-700">
+              {totalMachiningCount}건
             </div>
           </div>
+          {machineStatus?.currentProgram || machineStatus?.nextProgram ? (
+            <div className="mt-1 text-[11px] font-semibold text-slate-600">
+              {machineStatus?.currentProgram ? (
+                <span className="mr-2">
+                  현재: {machineStatus.currentProgram}
+                </span>
+              ) : null}
+              {machineStatus?.nextProgram ? (
+                <span>다음: {machineStatus.nextProgram}</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
-        <button
-          type="button"
-          className="relative z-10 shrink-0 app-surface app-surface--item px-3 py-2 text-[12px] font-extrabold text-slate-700 hover:bg-white"
-          onClick={onOpenMore}
-          disabled={!machiningQueue.length}
+        <div
+          className="flex items-center gap-2"
+          title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
-          더보기
-        </button>
+          <div className="text-[11px] font-extrabold text-slate-700">
+            자동 가공
+          </div>
+          <button
+            type="button"
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              autoEnabled ? "bg-emerald-500" : "bg-gray-300"
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleAuto(!autoEnabled);
+            }}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                autoEnabled ? "translate-x-5" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       <div className="app-glass-card-content mt-4 space-y-2">
-        {machiningQueue.length ? (
-          machiningQueue.map((q, idx) => (
-            <div
-              key={`${machineId}:${q.requestId || idx}`}
-              className="app-surface app-surface--item flex items-center justify-between gap-2 px-3 py-2"
-            >
-              <div className="min-w-0">
+        {machiningQueue.length
+          ? machiningQueue.map((q, idx) => (
+              <div
+                key={`${machineId}:${q.requestId || idx}`}
+                className="app-surface app-surface--item flex flex-col gap-1 px-3 py-2"
+              >
                 <div className="truncate text-[13px] font-extrabold text-slate-800">
                   {formatLabel(q)}
                 </div>
-                <div className="mt-0.5 flex items-center gap-2">
-                  {q?.diameterGroup ? (
-                    <Badge
-                      variant="outline"
-                      className="bg-white text-[11px] font-extrabold text-slate-700 border-slate-200"
-                    >
-                      {String(q.diameterGroup)}
-                    </Badge>
-                  ) : null}
-                  {typeof q.queuePosition === "number" ? (
-                    <Badge
-                      variant="outline"
-                      className="bg-white text-[11px] font-extrabold text-slate-700 border-slate-200"
-                    >
-                      #{q.queuePosition}
-                    </Badge>
-                  ) : null}
-                </div>
               </div>
-            </div>
-          ))
-        ) : (
-          <div className="text-[12px] font-semibold text-slate-500">없음</div>
-        )}
+            ))
+          : null}
       </div>
+
+      {totalMachiningCount > 0 && (
+        <div className="app-glass-card-content mt-4 flex justify-center">
+          <button
+            type="button"
+            className="app-surface app-surface--item px-4 py-2 text-[12px] font-extrabold text-slate-700 hover:bg-white"
+            onClick={onOpenMore}
+          >
+            더보기
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -170,7 +228,24 @@ export const MachiningMachineQueueBoard = ({
   const [queueMap, setQueueMap] = useState<QueueMap>({});
   const [loading, setLoading] = useState(false);
 
+  const [machineStatusMap, setMachineStatusMap] = useState<
+    Record<string, MachineStatus>
+  >({});
+
+  const [statusRefreshing, setStatusRefreshing] = useState(false);
+  const [statusRefreshedAt, setStatusRefreshedAt] = useState<string | null>(
+    null,
+  );
+  const [statusRefreshError, setStatusRefreshError] = useState<string | null>(
+    null,
+  );
+  const [statusRefreshErroredAt, setStatusRefreshErroredAt] = useState<
+    string | null
+  >(null);
+
   const [openMachineId, setOpenMachineId] = useState<string | null>(null);
+  const [openVisibleCount, setOpenVisibleCount] = useState(20);
+  const openSentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -208,6 +283,106 @@ export const MachiningMachineQueueBoard = ({
     };
   }, [token, toast]);
 
+  const refreshMachineStatuses = useCallback(async () => {
+    if (!token) return;
+    setStatusRefreshing(true);
+    setStatusRefreshError(null);
+    setStatusRefreshErroredAt(null);
+    try {
+      const res = await apiFetch({
+        path: "/api/machines/status",
+        method: "GET",
+        token,
+      });
+      const body: any = res.data ?? {};
+      if (!res.ok || body?.success === false) {
+        const msg = String(body?.message || body?.error || "상태 조회 실패");
+        setStatusRefreshError(msg);
+        setStatusRefreshErroredAt(new Date().toLocaleTimeString());
+
+        setMachineStatusMap((prev) => {
+          const next = { ...prev };
+          const list = Array.isArray(machines) ? machines : [];
+          for (const m of list) {
+            const uid = String(m?.uid || "").trim();
+            if (!uid) continue;
+            next[uid] = {
+              ...(next[uid] || { uid }),
+              uid,
+              status: "ERROR",
+            };
+          }
+          return next;
+        });
+        return;
+      }
+
+      const list: any[] = Array.isArray(body?.data)
+        ? body.data
+        : Array.isArray(body?.machines)
+          ? body.machines
+          : Array.isArray(body?.data?.machines)
+            ? body.data.machines
+            : Array.isArray(body?.data?.data)
+              ? body.data.data
+              : [];
+
+      setMachineStatusMap((prev) => {
+        const next = { ...prev };
+        for (const it of list) {
+          const uid = String(it?.uid || it?.machineId || it?.id || "").trim();
+          if (!uid) continue;
+          next[uid] = {
+            ...(next[uid] || { uid }),
+            uid,
+            status: String(
+              it?.status || it?.state || it?.opStatus || "",
+            ).trim(),
+            currentProgram: next[uid]?.currentProgram,
+            nextProgram: next[uid]?.nextProgram,
+          };
+        }
+        return next;
+      });
+
+      setStatusRefreshedAt(new Date().toLocaleTimeString());
+    } catch {
+      // 브리지/백엔드 오류 시에도 UI에서 즉시 확인할 수 있도록 ERROR 상태를 반영한다.
+      setMachineStatusMap((prev) => {
+        const next = { ...prev };
+        const list = Array.isArray(machines) ? machines : [];
+        for (const m of list) {
+          const uid = String(m?.uid || "").trim();
+          if (!uid) continue;
+          next[uid] = {
+            ...(next[uid] || { uid }),
+            uid,
+            status: "ERROR",
+          };
+        }
+        return next;
+      });
+
+      setStatusRefreshError("status proxy failed");
+      setStatusRefreshErroredAt(new Date().toLocaleTimeString());
+    } finally {
+      setStatusRefreshing(false);
+    }
+  }, [machines, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    void refreshMachineStatuses();
+  }, [token, refreshMachineStatuses]);
+
+  const lastRefreshAtRef = useRef(0);
+  const handleBoardClickCapture = useCallback(() => {
+    const now = Date.now();
+    if (now - lastRefreshAtRef.current < 800) return;
+    lastRefreshAtRef.current = now;
+    void refreshMachineStatuses();
+  }, [refreshMachineStatuses]);
+
   const filteredMachines = useMemo(() => {
     const q = String(searchQuery || "")
       .trim()
@@ -224,6 +399,34 @@ export const MachiningMachineQueueBoard = ({
   const openQueue = (Array.isArray(openQueueRaw) ? openQueueRaw : []).filter(
     (q) => isMachiningStatus(q?.status),
   );
+
+  useEffect(() => {
+    setOpenVisibleCount(20);
+  }, [openMachineId]);
+
+  const openQueuePaginated = openQueue.slice(0, openVisibleCount);
+  const canLoadMoreOpenQueue = openQueuePaginated.length < openQueue.length;
+
+  useEffect(() => {
+    const el = openSentinelRef.current;
+    if (!el) return;
+    if (!openMachineId) return;
+    if (!canLoadMoreOpenQueue) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (!first?.isIntersecting) return;
+        setOpenVisibleCount((prev) => Math.min(prev + 20, openQueue.length));
+      },
+      { root: el.parentElement, rootMargin: "120px", threshold: 0.01 },
+    );
+
+    obs.observe(el);
+    return () => {
+      obs.disconnect();
+    };
+  }, [openMachineId, canLoadMoreOpenQueue, openQueue.length]);
 
   const globalAutoEnabled = useMemo(() => {
     const list = Array.isArray(machines) ? machines : [];
@@ -327,8 +530,23 @@ export const MachiningMachineQueueBoard = ({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-end">
+    <div
+      className="space-y-4"
+      onMouseDownCapture={handleBoardClickCapture}
+      onTouchStartCapture={handleBoardClickCapture}
+    >
+      <div className="flex items-center justify-between">
+        <div className="text-[12px] font-semibold text-slate-600">
+          {statusRefreshing
+            ? "장비 상태 조회중…"
+            : statusRefreshError
+              ? `장비 상태 조회 실패${
+                  statusRefreshErroredAt ? ` ${statusRefreshErroredAt}` : ""
+                } (${statusRefreshError})`
+              : statusRefreshedAt
+                ? `장비 상태 갱신 ${statusRefreshedAt}`
+                : ""}
+        </div>
         <div
           className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
@@ -366,6 +584,8 @@ export const MachiningMachineQueueBoard = ({
             onToggleAuto={(next) => {
               void updateMachineAuto(m.uid, next);
             }}
+            machineStatus={machineStatusMap?.[m.uid] ?? null}
+            statusRefreshing={statusRefreshing}
           />
         ))}
       </div>
@@ -376,48 +596,49 @@ export const MachiningMachineQueueBoard = ({
           if (!v) setOpenMachineId(null);
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>
-              {openMachineId ? `${openMachineId} 전체 큐` : "전체 큐"}
+              {(() => {
+                const machine = openMachineId
+                  ? (Array.isArray(machines) ? machines : []).find(
+                      (m) => m.uid === openMachineId,
+                    )
+                  : null;
+                const name = machine?.name || openMachineId || "M?";
+                const count = openQueue.length;
+                const status = openMachineId
+                  ? machineStatusMap?.[openMachineId]?.status
+                  : undefined;
+                const dot = getStatusDotColor(status);
+                return (
+                  <div className="flex items-center gap-2">
+                    <span>{name}</span>
+                    <span className={`w-3 h-3 rounded-full ${dot}`} />
+                    <span>{count}건</span>
+                  </div>
+                );
+              })()}
             </DialogTitle>
           </DialogHeader>
           <div className="max-h-[70vh] overflow-auto space-y-2">
-            {openQueue.length ? (
-              openQueue.map((q, idx) => (
+            {openQueuePaginated.length ? (
+              openQueuePaginated.map((q, idx) => (
                 <div
                   key={`${openMachineId}:${q.requestId || idx}`}
-                  className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3"
+                  className="rounded-2xl border border-slate-200 bg-white p-3"
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-[14px] font-extrabold text-slate-900">
-                      {formatLabel(q)}
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className="bg-slate-50 text-[11px] font-extrabold text-slate-700 border-slate-200"
+                      >
+                        #{idx + 1}
+                      </Badge>
                     </div>
-                    <div className="mt-1 flex items-center gap-2">
-                      {q?.status ? (
-                        <Badge
-                          variant="outline"
-                          className="bg-slate-50 text-[11px] font-extrabold text-slate-700 border-slate-200"
-                        >
-                          {String(q.status)}
-                        </Badge>
-                      ) : null}
-                      {q?.diameterGroup ? (
-                        <Badge
-                          variant="outline"
-                          className="bg-slate-50 text-[11px] font-extrabold text-slate-700 border-slate-200"
-                        >
-                          {String(q.diameterGroup)}
-                        </Badge>
-                      ) : null}
-                      {typeof q.queuePosition === "number" ? (
-                        <Badge
-                          variant="outline"
-                          className="bg-slate-50 text-[11px] font-extrabold text-slate-700 border-slate-200"
-                        >
-                          #{q.queuePosition}
-                        </Badge>
-                      ) : null}
+                    <div className="mt-1 truncate text-[14px] font-extrabold text-slate-900">
+                      {formatLabel(q)}
                     </div>
                   </div>
                 </div>
@@ -427,6 +648,10 @@ export const MachiningMachineQueueBoard = ({
                 표시할 큐가 없습니다.
               </div>
             )}
+
+            {canLoadMoreOpenQueue ? (
+              <div ref={openSentinelRef} className="h-8" />
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

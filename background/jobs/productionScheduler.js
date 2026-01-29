@@ -316,7 +316,7 @@ async function activateProgram(uid, programNo) {
 async function ensurePreloadedForRequest({ request, hiLinkUid, machineId }) {
   const filePath = String(request?.caseInfos?.ncFile?.filePath || "").trim();
   const fileName = String(request?.caseInfos?.ncFile?.fileName || "").trim();
-  const candidatePath = filePath || fileName;
+  const candidatePath = filePath;
   if (!candidatePath) {
     return { ok: false, reason: "missing ncFile.filePath" };
   }

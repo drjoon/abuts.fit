@@ -2,6 +2,7 @@ import React from "react";
 import { Machine } from "@/pages/manufacturer/cnc/types";
 import { MachineCard } from "@/pages/manufacturer/cnc/components/MachineCard";
 import type { CncJobItem } from "@/pages/manufacturer/cnc/components/CncReservationModal";
+import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 
 interface CncMachineGridProps {
   machines: Machine[];
@@ -68,7 +69,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
     <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
       {machines.map((m) => {
         const isActive = workUid === m.uid;
-        const currentProg: any = programSummary?.current;
+        const currentProg: any = isActive ? programSummary?.current : null;
         const progList: any[] = Array.isArray(programSummary?.list)
           ? (programSummary?.list as any[])
           : [];
