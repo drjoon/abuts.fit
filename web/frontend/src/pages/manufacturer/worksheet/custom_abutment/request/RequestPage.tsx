@@ -143,17 +143,20 @@ export const RequestPage = ({
 
     try {
       setIsLoading(true);
-      const url =
+      const path =
         user?.role === "admin"
           ? "/api/admin/requests"
           : user?.role === "manufacturer"
             ? "/api/requests/all"
             : "/api/requests";
-      const params = new URLSearchParams();
-      const res = await fetch(url, {
+
+      // 캐시를 무시하고 항상 최신 데이터를 조회 (NC 파일 업데이트 반영용)
+      const res = await fetch(path, {
+        method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        cache: "no-store", // 브라우저 캐시 무시
       });
 
       if (!res.ok) {
