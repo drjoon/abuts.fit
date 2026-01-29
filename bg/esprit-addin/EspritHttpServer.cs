@@ -213,24 +213,31 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 // STL 파일 경로 정규화
                 string stlPath = NormalizeFilePath(req.StlPath);
+                AppLogger.Log($"[NC Processing] Resolved STL path: {stlPath}");
+                
                 if (!File.Exists(stlPath))
                 {
                     AppLogger.Log($"[NC Processing] STL file not found: {stlPath}");
                     return;
                 }
 
-                AppLogger.Log($"[NC Processing] Starting: {req.RequestId} from {stlPath}");
+                AppLogger.Log($"[NC Processing] Starting CAM processing: RequestId={req.RequestId}, Clinic={req.ClinicName}, Patient={req.PatientName}, Tooth={req.Tooth}");
+                AppLogger.Log($"[NC Processing] Implant: {req.ImplantManufacturer}/{req.ImplantSystem}/{req.ImplantType}, MaxDia={req.MaxDiameter}, ConnDia={req.ConnectionDiameter}");
+                AppLogger.Log($"[NC Processing] WorkType={req.WorkType}, LotNumber={req.LotNumber}");
 
-                // StlFileProcessor를 사용하여 NC 생성
+                // StlFileProcessor를 사용하여 NC 생성 (자동 CAM 처리)
                 var processor = new StlFileProcessor(_espApp);
                 processor.lotNumber = req.LotNumber ?? "ACR";
+                
+                AppLogger.Log($"[NC Processing] Invoking StlFileProcessor.Process()...");
                 processor.Process(stlPath);
 
-                AppLogger.Log($"[NC Processing] Completed: {req.RequestId}");
+                AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
             }
             catch (Exception ex)
             {
-                AppLogger.Log($"[NC Processing] Error: {ex.Message}\n{ex.StackTrace}");
+                AppLogger.Log($"[NC Processing] CAM processing failed: {ex.Message}");
+                AppLogger.Log($"[NC Processing] Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -242,9 +249,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             // 상대 경로면 storage 기준으로 보정
             if (!Path.IsPathRooted(path))
             {
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string storagePath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "storage", "2-filled"));
-                return Path.Combine(storagePath, Path.GetFileName(path));
+                string storagePath = AppConfig.StorageFilledDirectory;
+                string fullPath = Path.Combine(storagePath, Path.GetFileName(path));
+                AppLogger.Log($"[NC Processing] Path normalization: {path} -> {fullPath}");
+                return fullPath;
             }
 
             return path;
