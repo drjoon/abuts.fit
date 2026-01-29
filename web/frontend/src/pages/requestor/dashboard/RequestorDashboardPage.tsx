@@ -86,8 +86,11 @@ export const RequestorDashboardPage = () => {
     if (["shipping", "tracking", "발송", "추적관리"].includes(stage)) {
       return "shipping";
     }
-    if (["machining", "packaging", "production", "생산"].includes(stage)) {
-      return "production";
+    if (["packaging", "세척.포장"].includes(stage)) {
+      return "packaging";
+    }
+    if (["machining", "production", "가공"].includes(stage)) {
+      return "machining";
     }
     if (["cam", "CAM", "가공전"].includes(stage)) {
       return "cam";
@@ -99,10 +102,11 @@ export const RequestorDashboardPage = () => {
   };
 
   const stageGroupByLabel: Record<string, string[] | null> = {
-    // 4단계 공통 공정: 의뢰 → CAM → 생산 → 발송
+    // 6단계 공통 공정: 의뢰 → CAM → 가공 → 세척.포장 → 발송 → 추적관리
     의뢰: ["request"],
     CAM: ["cam"],
-    생산: ["production"],
+    가공: ["machining"],
+    "세척.포장": ["packaging"],
     발송: ["shipping"],
     "완료/취소": ["completed", "cancel"],
   };
@@ -125,7 +129,8 @@ export const RequestorDashboardPage = () => {
     const s = normalizeStage(r);
     if (s === "request") return "의뢰";
     if (s === "cam") return "CAM";
-    if (s === "production") return "생산";
+    if (s === "machining") return "가공";
+    if (s === "packaging") return "세척.포장";
     if (s === "shipping") return "발송";
     if (s === "completed") return "완료";
     if (s === "cancel") return "취소";
@@ -325,12 +330,12 @@ export const RequestorDashboardPage = () => {
       ci.clinicName ||
         request.clinicName ||
         request.requestor?.organization ||
-        ""
+        "",
     );
     setEditingPatientName(ci.patientName || request.patientName || "");
     setEditingTeethText(ci.tooth || request.toothNumber || request.tooth || "");
     setEditingImplantManufacturer(
-      ci.implantManufacturer || request.implantManufacturer || ""
+      ci.implantManufacturer || request.implantManufacturer || "",
     );
     setEditingImplantSystem(ci.implantSystem || request.implantSystem || "");
     setEditingImplantType(ci.implantType || request.implantType || "");
@@ -401,7 +406,8 @@ export const RequestorDashboardPage = () => {
       return [
         { label: "의뢰", value: "0", icon: FileText },
         { label: "CAM", value: "0", icon: Clock },
-        { label: "생산", value: "0", icon: Clock },
+        { label: "가공", value: "0", icon: Clock },
+        { label: "세척.포장", value: "0", icon: Clock },
         { label: "발송", value: "0", icon: TrendingUp },
         { label: "완료/취소", value: "0", icon: CheckCircle },
       ];
@@ -422,9 +428,15 @@ export const RequestorDashboardPage = () => {
         icon: Clock,
       },
       {
-        label: "생산",
+        label: "가공",
         value: String(s.inProduction ?? 0),
         change: s.inProductionChange ?? "+0%",
+        icon: Clock,
+      },
+      {
+        label: "세척.포장",
+        value: String(s.inPackaging ?? 0),
+        change: s.inPackagingChange ?? "+0%",
         icon: Clock,
       },
       {
@@ -443,12 +455,12 @@ export const RequestorDashboardPage = () => {
   })();
 
   const riskSummary = summaryResponse?.success
-    ? summaryResponse.data.riskSummary ?? null
+    ? (summaryResponse.data.riskSummary ?? null)
     : null;
 
   const recentRequests = summaryResponse?.success
     ? (summaryResponse.data.recentRequests ?? []).filter(
-        (r: any) => r?.status !== "취소"
+        (r: any) => r?.status !== "취소",
       )
     : [];
 
@@ -462,10 +474,10 @@ export const RequestorDashboardPage = () => {
         diameter: stat.range?.includes("≤")
           ? 6
           : stat.range?.includes("6-8")
-          ? 8
-          : stat.range?.includes("8-10")
-          ? 10
-          : 10,
+            ? 8
+            : stat.range?.includes("8-10")
+              ? 10
+              : 10,
         shipLabel: stat.leadDays ? `${stat.leadDays}일` : "-",
         ratio: 0, // 계산 필요
         count: stat.count || 0,
@@ -516,7 +528,7 @@ export const RequestorDashboardPage = () => {
                       {loadingCreditBalance
                         ? "보유 크레딧: ..."
                         : `보유 크레딧: ${Number(
-                            creditBalance || 0
+                            creditBalance || 0,
                           ).toLocaleString()}원`}
                     </Button>
                   </TooltipTrigger>
@@ -549,13 +561,13 @@ export const RequestorDashboardPage = () => {
                   riskSummary={riskSummary}
                   onItemClick={(requestId) => {
                     const found = recentRequests.find(
-                      (r) => r.requestId === requestId
+                      (r) => r.requestId === requestId,
                     );
                     if (found) {
                       openEditDialogFromRequest(found);
                     } else {
                       const foundInRisk = riskSummary?.items?.find(
-                        (it) => it.id === requestId
+                        (it) => it.id === requestId,
                       );
                       if (foundInRisk) {
                         openEditDialogFromRequest({
@@ -665,7 +677,7 @@ export const RequestorDashboardPage = () => {
             if (!res.ok) {
               console.error(
                 "의뢰 수정 실패",
-                await res.raw.text().catch(() => "")
+                await res.raw.text().catch(() => ""),
               );
             } else {
               await refreshDashboard();

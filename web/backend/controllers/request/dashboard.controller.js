@@ -86,20 +86,20 @@ export async function getDiameterStats(req, res) {
       role === "requestor"
         ? { ...baseFilter, ...(await buildRequestorOrgScopeFilter(req)) }
         : isManufacturer
-        ? {
-            $and: [
-              baseFilter,
-              { status2: { $ne: "완료" } },
-              {
-                $or: [
-                  { manufacturer: req.user._id },
-                  { manufacturer: null },
-                  { manufacturer: { $exists: false } },
-                ],
-              },
-            ],
-          }
-        : baseFilter;
+          ? {
+              $and: [
+                baseFilter,
+                { status2: { $ne: "완료" } },
+                {
+                  $or: [
+                    { manufacturer: req.user._id },
+                    { manufacturer: null },
+                    { manufacturer: { $exists: false } },
+                  ],
+                },
+              ],
+            }
+          : baseFilter;
 
     // 집계 쿼리로 직경별 통계 계산 (메모리 사용량 대폭 감소)
     const stats = await Request.aggregate([
@@ -298,19 +298,24 @@ export async function getMyDashboardSummary(req, res) {
                           case: {
                             $or: [
                               {
+                                $in: ["$$stage", ["packaging", "세척.포장"]],
+                              },
+                            ],
+                          },
+                          then: "packaging",
+                        },
+                        {
+                          case: {
+                            $or: [
+                              {
                                 $in: [
                                   "$$stage",
-                                  [
-                                    "machining",
-                                    "packaging",
-                                    "production",
-                                    "생산",
-                                  ],
+                                  ["machining", "production", "가공"],
                                 ],
                               },
                             ],
                           },
-                          then: "production",
+                          then: "machining",
                         },
                         {
                           case: {
@@ -363,9 +368,14 @@ export async function getMyDashboardSummary(req, res) {
                   $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0],
                 },
               },
-              productionCount: {
+              machiningCount: {
                 $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "production"] }, 1, 0],
+                  $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
+                },
+              },
+              packagingCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "packaging"] }, 1, 0],
                 },
               },
               shippingCount: {
@@ -405,14 +415,16 @@ export async function getMyDashboardSummary(req, res) {
       completed: 0,
       designCount: 0,
       camCount: 0,
-      productionCount: 0,
+      machiningCount: 0,
+      packagingCount: 0,
       shippingCount: 0,
     };
 
     const totalActive =
       stats.designCount +
         stats.camCount +
-        stats.productionCount +
+        stats.machiningCount +
+        stats.packagingCount +
         stats.shippingCount || 1;
 
     const manufacturingSummary = {
@@ -420,7 +432,8 @@ export async function getMyDashboardSummary(req, res) {
       stages: [
         { key: "design", label: "의뢰 접수", count: stats.designCount },
         { key: "cam", label: "CAM", count: stats.camCount },
-        { key: "production", label: "생산", count: stats.productionCount },
+        { key: "machining", label: "가공", count: stats.machiningCount },
+        { key: "packaging", label: "세척.포장", count: stats.packagingCount },
         { key: "shipping", label: "발송", count: stats.shippingCount },
       ].map((s) => ({
         ...s,
@@ -542,8 +555,8 @@ export async function getMyDashboardSummary(req, res) {
         typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
           ? maxDiameter
           : maxDiameter != null && String(maxDiameter).trim()
-          ? Number(maxDiameter)
-          : null;
+            ? Number(maxDiameter)
+            : null;
       if (d == null || Number.isNaN(d)) return effectiveLeadDays.d10;
       if (d <= 6) return effectiveLeadDays.d6;
       if (d <= 8) return effectiveLeadDays.d8;
@@ -581,7 +594,7 @@ export async function getMyDashboardSummary(req, res) {
           caseInfos: ci,
           estimatedCompletion: etaYmd,
         };
-      })
+      }),
     );
 
     const recentRequestsData = recentRequests.map((r) => {
@@ -608,7 +621,8 @@ export async function getMyDashboardSummary(req, res) {
       stats: {
         totalRequests: stats.designCount,
         inCam: stats.camCount,
-        inProduction: stats.productionCount,
+        inProduction: stats.machiningCount,
+        inPackaging: stats.packagingCount,
         inShipping: stats.shippingCount,
         completed: stats.completed,
         doneOrCanceled: stats.completed + stats.canceledCount,
@@ -810,9 +824,9 @@ export async function getDashboardRiskSummary(req, res) {
       Math.min(
         100,
         Math.round(
-          ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100
-        )
-      )
+          ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100,
+        ),
+      ),
     );
 
     const toRiskItem = (entry, level) => {
@@ -863,7 +877,7 @@ export async function getDashboardRiskSummary(req, res) {
         .sort(
           (a, b) =>
             (b?.shippingPriority?.score || 0) -
-            (a?.shippingPriority?.score || 0)
+            (a?.shippingPriority?.score || 0),
         )
         .slice(0, 5) // 지연 최대 5건
         .map((entry) => toRiskItem(entry, "danger")),
@@ -872,7 +886,7 @@ export async function getDashboardRiskSummary(req, res) {
         .sort(
           (a, b) =>
             (b?.shippingPriority?.score || 0) -
-            (a?.shippingPriority?.score || 0)
+            (a?.shippingPriority?.score || 0),
         )
         .slice(0, 5) // 주의 최대 5건
         .map((entry) => toRiskItem(entry, "warning")),
@@ -943,7 +957,7 @@ export async function getMyPricingReferralStats(req, res) {
     const maxDiscountPerUnit = 5000;
     const discountAmount = Math.min(
       totalOrders * discountPerOrder,
-      maxDiscountPerUnit
+      maxDiscountPerUnit,
     );
 
     const user = await User.findById(requestorId)

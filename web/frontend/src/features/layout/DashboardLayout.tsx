@@ -245,7 +245,7 @@ export const DashboardLayout = () => {
           rows
             .filter((s: any) => String(s?.status || "") === "done")
             .map((s: any) => String(s?.stepId || "").trim())
-            .filter(Boolean)
+            .filter(Boolean),
         );
 
         const firstIncomplete =
@@ -311,7 +311,7 @@ export const DashboardLayout = () => {
           rows
             .filter((s: any) => String(s?.status || "") === "done")
             .map((s: any) => String(s?.stepId || "").trim())
-            .filter(Boolean)
+            .filter(Boolean),
         );
 
         const firstIncomplete =
@@ -536,7 +536,7 @@ export const DashboardLayout = () => {
 
         const balance = Number(balanceData?.balance || 0);
         const avgDailySpendSupply = Number(
-          insightsData?.avgDailySpendSupply || 0
+          insightsData?.avgDailySpendSupply || 0,
         );
         const estimatedDaysFor500k = insightsData?.estimatedDaysFor500k;
         const fallbackDailySpend =
@@ -852,7 +852,7 @@ export const DashboardLayout = () => {
                           size="sm"
                           onClick={() =>
                             navigate(
-                              "/dashboard/worksheet?type=cnc&stage=receive"
+                              "/dashboard/worksheet?type=cnc&stage=receive",
                             )
                           }
                         >
@@ -886,7 +886,7 @@ export const DashboardLayout = () => {
                               className="h-7 px-2 text-xs"
                               onClick={() =>
                                 navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=request"
+                                  "/dashboard/worksheet?type=cnc&stage=request",
                                 )
                               }
                             >
@@ -900,7 +900,7 @@ export const DashboardLayout = () => {
                               className="h-7 px-2 text-xs"
                               onClick={() =>
                                 navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=cam"
+                                  "/dashboard/worksheet?type=cnc&stage=cam",
                                 )
                               }
                             >
@@ -916,11 +916,27 @@ export const DashboardLayout = () => {
                               className="h-7 px-2 text-xs"
                               onClick={() =>
                                 navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=machining"
+                                  "/dashboard/worksheet?type=cnc&stage=machining",
                                 )
                               }
                             >
-                              생산
+                              가공
+                            </Button>
+                            <Button
+                              variant={
+                                worksheetStage === "packaging"
+                                  ? "default"
+                                  : "ghost"
+                              }
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() =>
+                                navigate(
+                                  "/dashboard/worksheet?type=cnc&stage=packaging",
+                                )
+                              }
+                            >
+                              세척.포장
                             </Button>
                             <Button
                               variant={
@@ -932,7 +948,7 @@ export const DashboardLayout = () => {
                               className="h-7 px-2 text-xs"
                               onClick={() =>
                                 navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=shipping"
+                                  "/dashboard/worksheet?type=cnc&stage=shipping",
                                 )
                               }
                             >
@@ -948,7 +964,7 @@ export const DashboardLayout = () => {
                               className="h-7 px-2 text-xs"
                               onClick={() =>
                                 navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=tracking"
+                                  "/dashboard/worksheet?type=cnc&stage=tracking",
                                 )
                               }
                             >
