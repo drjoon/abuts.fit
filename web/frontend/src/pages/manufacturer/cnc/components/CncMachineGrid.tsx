@@ -12,6 +12,7 @@ interface CncMachineGridProps {
   toolTooltipMap: Record<string, string>;
   programSummary: { current?: any; list?: any[] } | null;
   reservationJobsMap?: Record<string, CncJobItem[]>;
+  worksheetQueueCountMap?: Record<string, number>;
   onSelectMachine: (uid: string) => void;
   onOpenMaterial?: (machine: Machine) => void;
   onTempClick: (machine: Machine) => void;
@@ -19,7 +20,6 @@ interface CncMachineGridProps {
   onOpenMachineInfo?: (uid: string) => void;
   onEditMachine: (machine: Machine) => void;
   onOpenProgramDetail: (prog: any) => void;
-  onEnqueueDbJob?: (machine: Machine, requestId: string) => void;
   onSendControl: (uid: string, action: "reset" | "stop") => void;
   onOpenAddModal: () => void;
   onOpenJobConfig: (machine: Machine) => void;
@@ -37,13 +37,6 @@ interface CncMachineGridProps {
   onTogglePause?: (machine: Machine, jobId: string) => void;
   onToggleAllowJobStart?: (machine: Machine, next: boolean) => void;
   onToggleAllowAutoMachining?: (machine: Machine, next: boolean) => void;
-  onInsertFiles?: (machine: Machine, files: FileList | File[]) => void;
-  onPauseInsert?: (
-    machine: Machine,
-    jobId: string,
-    nextPaused: boolean,
-  ) => void;
-  onDeleteInsert?: (machine: Machine, jobId: string) => void;
 }
 
 export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
@@ -54,6 +47,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   toolTooltipMap,
   programSummary,
   reservationJobsMap,
+  worksheetQueueCountMap,
   onSelectMachine,
   onOpenMaterial,
   onTempClick,
@@ -61,7 +55,6 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onOpenMachineInfo,
   onEditMachine,
   onOpenProgramDetail,
-  onEnqueueDbJob,
   onSendControl,
   onOpenAddModal,
   onOpenJobConfig,
@@ -75,9 +68,6 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onTogglePause,
   onToggleAllowJobStart,
   onToggleAllowAutoMachining,
-  onInsertFiles,
-  onPauseInsert,
-  onDeleteInsert,
 }) => {
   return (
     <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
@@ -90,8 +80,9 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
         const currentNo = currentProg?.programNo ?? currentProg?.no;
 
         const reservedJobs: CncJobItem[] = reservationJobsMap?.[m.uid] || [];
-        const manualInsert = reservedJobs.find(
-          (j) => String((j as any)?.source || "") === "manual_insert",
+        const worksheetQueueCount = Math.max(
+          0,
+          Number(worksheetQueueCountMap?.[m.uid] ?? 0) || 0,
         );
         const originalTotalQty: number | undefined =
           reservationTotalQtyMap?.[m.uid];
@@ -110,7 +101,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                     no: programNo,
                     name: job.name,
                     jobId: job.id,
-                    source: (job as any).source || "db",
+                    source: (job as any).source || "bridge",
                     requestId: (job as any).requestId,
                     s3Key: (job as any).s3Key,
                     s3Bucket: (job as any).s3Bucket,
@@ -129,39 +120,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             machine={m}
             isActive={isActive}
             loading={loading}
-            onEnqueueDbJob={onEnqueueDbJob}
-            onInsertFiles={
-              onInsertFiles
-                ? (files) => {
-                    onInsertFiles(m, files);
-                  }
-                : undefined
-            }
-            insertJob={
-              manualInsert
-                ? {
-                    id: manualInsert.id,
-                    jobId: manualInsert.id,
-                    name: manualInsert.name,
-                    fileName: manualInsert.name,
-                    paused: !!manualInsert.paused,
-                  }
-                : null
-            }
-            onPauseInsert={
-              onPauseInsert
-                ? (jobId, nextPaused) => {
-                    onPauseInsert(m, jobId, nextPaused);
-                  }
-                : undefined
-            }
-            onDeleteInsert={
-              onDeleteInsert
-                ? (jobId) => {
-                    onDeleteInsert(m, jobId);
-                  }
-                : undefined
-            }
+            worksheetQueueCount={worksheetQueueCount}
             tempTooltip={tempTooltipMap[m.uid] ?? ""}
             toolTooltip={toolTooltipMap[m.uid] ?? ""}
             currentProg={currentProg}

@@ -31,6 +31,7 @@ interface MachineCardProps {
   machine: Machine;
   isActive: boolean;
   loading: boolean;
+  worksheetQueueCount?: number;
   tempTooltip: string;
   toolTooltip: string;
   currentProg: any | null;
@@ -53,7 +54,6 @@ interface MachineCardProps {
   onEditClick: (e: React.MouseEvent) => void;
   onOpenCurrentProg: (e: React.MouseEvent) => void;
   onOpenNextProg: (prog: any, e: React.MouseEvent) => void;
-  onEnqueueDbJob?: (machine: Machine, requestId: string) => void;
   onResetClick: (e: React.MouseEvent) => void;
   onStopClick?: (e: React.MouseEvent) => void;
   onOpenJobConfig: (e: React.MouseEvent) => void;
@@ -66,10 +66,6 @@ interface MachineCardProps {
   onTogglePause?: (jobId: string | undefined, e: React.MouseEvent) => void;
   onToggleAllowJobStart?: (next: boolean, e: React.MouseEvent) => void;
   onToggleAllowAutoMachining?: (next: boolean, e: React.MouseEvent) => void;
-  onInsertFiles?: (files: FileList | File[]) => void;
-  insertJob?: any | null;
-  onPauseInsert?: (jobId: string, nextPaused: boolean) => void;
-  onDeleteInsert?: (jobId: string) => void;
 }
 
 const getMachineStatusChip = (status: string) => {
@@ -99,11 +95,29 @@ const getMachineStatusChip = (status: string) => {
   );
 };
 
+const getMachineStatusLabel = (status: string) => {
+  const s = (status || "").toUpperCase();
+  if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
+    return "가공중";
+  }
+  if (["ALARM", "ERROR", "FAULT"].some((k) => s.includes(k))) {
+    return "알람";
+  }
+  if (["STOP", "IDLE"].some((k) => s.includes(k))) {
+    return "중단중";
+  }
+  if (["WARN", "WARNING"].some((k) => s.includes(k))) {
+    return "주의";
+  }
+  return "대기";
+};
+
 export const MachineCard = (props: MachineCardProps) => {
   const {
     machine,
     isActive,
     loading,
+    worksheetQueueCount,
     tempTooltip,
     toolTooltip,
     currentProg,
@@ -122,7 +136,6 @@ export const MachineCard = (props: MachineCardProps) => {
     onEditClick,
     onOpenCurrentProg,
     onOpenNextProg,
-    onEnqueueDbJob,
     onResetClick,
     onStopClick,
     onOpenJobConfig,
@@ -132,16 +145,11 @@ export const MachineCard = (props: MachineCardProps) => {
     onTogglePause,
     onToggleAllowJobStart,
     onToggleAllowAutoMachining,
-    onInsertFiles,
-    insertJob,
-    onPauseInsert,
-    onDeleteInsert,
   } = props;
 
   const { token } = useAuthStore();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const insertInputRef = useRef<HTMLInputElement | null>(null);
   const [dropping, setDropping] = useState(false);
   const [dummyOpen, setDummyOpen] = useState(false);
   const [dummyProgram, setDummyProgram] = useState("O0100");
@@ -220,6 +228,12 @@ export const MachineCard = (props: MachineCardProps) => {
   const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
     statusUpper.includes(k),
   );
+
+  const worksheetCount =
+    typeof worksheetQueueCount === "number" && worksheetQueueCount > 0
+      ? worksheetQueueCount
+      : 0;
+  const statusLabel = getMachineStatusLabel(machine.status || "");
 
   const showContinuousInfo =
     continuousState && (continuousState.isRunning || continuousState.nextJob);
@@ -452,6 +466,12 @@ export const MachineCard = (props: MachineCardProps) => {
       </div>
 
       <div className="mb-4 flex flex-col gap-3 text-sm relative">
+        <div className="-mt-1">
+          <div className="rounded-2xl bg-slate-50 px-3 py-2 text-[11px] font-extrabold text-slate-700 border border-slate-200">
+            {statusLabel} · 의뢰건 가공 대기 {worksheetCount}건
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-2">
           <div
             role="button"
@@ -541,110 +561,6 @@ export const MachineCard = (props: MachineCardProps) => {
             </div>
           </div>
 
-          {onInsertFiles ? (
-            <div
-              role="button"
-              tabIndex={0}
-              className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
-                !isActive
-                  ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
-                  : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
-              }`}
-              onClick={(e) => {
-                if (!isActive) return;
-                if (insertJob) return;
-                e.stopPropagation();
-                insertInputRef.current?.click();
-              }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold text-slate-500">
-                    끼워넣기
-                  </div>
-                  <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                    {insertJob ? String(insertJob.name ?? "") : "+ 파일 업로드"}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  {insertJob ? (
-                    <>
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-40"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const jid = String(
-                            insertJob?.jobId || insertJob?.id || "",
-                          ).trim();
-                          if (!jid) return;
-                          if (!onPauseInsert) return;
-                          const paused = !!insertJob?.paused;
-                          onPauseInsert(jid, !paused);
-                        }}
-                        disabled={loading || !onPauseInsert}
-                        title={insertJob?.paused ? "재생" : "일시정지"}
-                      >
-                        {insertJob?.paused ? (
-                          <Play className="h-4 w-4" />
-                        ) : (
-                          <Pause className="h-4 w-4" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-40"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const jid = String(
-                            insertJob?.jobId || insertJob?.id || "",
-                          ).trim();
-                          if (!jid) return;
-                          if (!onDeleteInsert) return;
-                          onDeleteInsert(jid);
-                        }}
-                        disabled={loading || !onDeleteInsert}
-                        title="삭제"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-40"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!isActive) return;
-                        insertInputRef.current?.click();
-                      }}
-                      disabled={loading}
-                      title="파일 선택"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <input
-                ref={insertInputRef}
-                type="file"
-                accept=".nc,.txt"
-                className="hidden"
-                multiple
-                onChange={(e) => {
-                  const files = e.target.files;
-                  if (!files || files.length === 0) return;
-                  onInsertFiles(files);
-                  if (insertInputRef.current) {
-                    insertInputRef.current.value = "";
-                  }
-                }}
-              />
-            </div>
-          ) : null}
-
           <div
             role="button"
             tabIndex={0}
@@ -679,16 +595,8 @@ export const MachineCard = (props: MachineCardProps) => {
                   const nextJobId = nextProg
                     ? ((nextProg as any).jobId as string | undefined)
                     : undefined;
-                  const isDbItem = nextProg
-                    ? String((nextProg as any).source || "") === "db"
-                    : false;
-                  const requestId = nextProg
-                    ? String((nextProg as any).requestId || "").trim()
-                    : "";
                   const canControlNext =
-                    !!isActive &&
-                    !!nextProg &&
-                    (!isDbItem ? !!nextJobId : !!requestId);
+                    !!isActive && !!nextProg && !!nextJobId;
                   const paused = !!(nextProg as any)?.paused;
 
                   return (
@@ -698,12 +606,6 @@ export const MachineCard = (props: MachineCardProps) => {
                       onClick={(e) => {
                         e.stopPropagation();
                         if (!canControlNext || !nextProg) return;
-
-                        if (isDbItem) {
-                          if (!onEnqueueDbJob || !requestId) return;
-                          onEnqueueDbJob(machine, requestId);
-                          return;
-                        }
 
                         if (!onTogglePause) return;
                         onTogglePause(nextJobId, e);
@@ -719,9 +621,7 @@ export const MachineCard = (props: MachineCardProps) => {
                               : "일시정지"
                       }
                     >
-                      {isDbItem ? (
-                        <Play className="h-4 w-4" />
-                      ) : paused ? (
+                      {paused ? (
                         <Play className="h-4 w-4" />
                       ) : (
                         <Pause className="h-4 w-4" />

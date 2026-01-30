@@ -454,13 +454,29 @@ async function saveBridgeQueueSnapshot(machineId, jobs) {
     : [];
 
   const now = new Date();
-  return getOrCreateCncMachine(mid, {
+  const updated = await getOrCreateCncMachine(mid, {
     bridgeQueueSnapshot: {
       jobs: safeJobs,
       updatedAt: now,
     },
     bridgeQueueSyncedAt: now,
   });
+
+  // 이벤트 드리븐: DB(SSOT) 변경 시 브리지로 즉시 push (best-effort)
+  try {
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/${encodeURIComponent(
+      mid,
+    )}/replace`;
+    await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ jobs: safeJobs }),
+    });
+  } catch {
+    // ignore
+  }
+
+  return updated;
 }
 
 async function getDbBridgeQueueSnapshot(machineId) {
@@ -738,6 +754,7 @@ export async function enqueueBridgeContinuousJob(req, res) {
     const bridgePathRaw = req.body?.bridgePath;
     const bridgePath =
       bridgePathRaw != null ? String(bridgePathRaw).trim() : "";
+    const enqueueFront = req.body?.enqueueFront === true;
 
     if (!fileName) {
       return res.status(400).json({
@@ -754,6 +771,7 @@ export async function enqueueBridgeContinuousJob(req, res) {
       fileName,
       requestId: requestId || null,
       bridgePath: bridgePath || null,
+      enqueueFront,
     };
 
     const resp = await fetch(url, {

@@ -54,6 +54,14 @@
   - 제조사 UI의 `/api/cnc-machines/:machineId/bridge-queue`는 브리지 우선 조회 후,
     실패하면 DB 스냅샷을 `success: true`로 반환한다(fallback).
 
+### 6.2 동기화 방식 (이벤트 드리븐 우선)
+
+- **대전제**: 폴링은 최대한 자제하고, 가능한 모든 동기화는 **이벤트 드리븐(push)** 으로 구현한다.
+- **폴링 도입 금지**: 주기적 폴링이 꼭 필요하다고 판단되면, 반드시 사전에 사용자 승인 후 도입한다.
+- **브리지 큐 동기화 기본**:
+  - DB(SSOT)의 `bridgeQueueSnapshot`이 변경되면 백엔드는 브리지 서버로 즉시 push한다.
+  - Endpoint: `POST {BRIDGE_BASE}/api/bridge/queue/:machineId/replace` (jobs 전체 스냅샷)
+
 ### 6.1 브리지 전용 DB 스냅샷 조회
 
 - 브리지 서버는 JWT 없이 `X-Bridge-Secret` 기반으로 DB 스냅샷을 조회할 수 있다.

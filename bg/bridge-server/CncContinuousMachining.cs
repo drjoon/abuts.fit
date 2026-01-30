@@ -23,6 +23,15 @@ private const int BACKEND_SYNC_INTERVAL_SEC = 10;
 // 고정 슬롯 번호
 private const int SLOT_A = 4000;
 private const int SLOT_B = 4001;
+
+private static int GetJobPriority(CncJobItem job)
+{
+if (job == null) return 0;
+var src = (job.source ?? string.Empty).Trim();
+if (string.Equals(src, "manual_insert", StringComparison.OrdinalIgnoreCase)) return 2;
+if (string.Equals(src, "cam_approve", StringComparison.OrdinalIgnoreCase)) return 1;
+return 0;
+}
 private class MachineState
 {
 public string MachineId;
@@ -56,8 +65,58 @@ if (string.Equals(enabled, "false", StringComparison.OrdinalIgnoreCase))
 Console.WriteLine("[CncContinuous] disabled by CNC_CONTINUOUS_ENABLED=false");
 return;
 }
+
+// 부팅 시 1회: DB(SSOT) 큐 스냅샷을 받아 메모리 큐를 복구한다.
+// 주기적 폴링은 금지하며, 이후 동기화는 백엔드 push(/api/bridge/queue/{machineId}/replace)로만 수행한다.
+_ = Task.Run(async () =>
+{
+await InitialSyncFromBackendOnce();
+});
+
 _timer = new Timer(async _ => await Tick(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
 Console.WriteLine("[CncContinuous] started (3s interval)");
+}
+
+private static async Task InitialSyncFromBackendOnce()
+{
+try
+{
+var backendBase = Config.BackendBase;
+if (string.IsNullOrEmpty(backendBase))
+{
+Console.WriteLine("[CncContinuous] initial sync skipped: BACKEND_URL is empty");
+return;
+}
+
+var list = MachinesConfigStore.Load() ?? new List<Models.MachineConfigItem>();
+if (list.Count == 0)
+{
+Console.WriteLine("[CncContinuous] initial sync skipped: machines.json is empty");
+return;
+}
+
+Console.WriteLine("[CncContinuous] initial queue sync started machines={0}", list.Count);
+
+foreach (var m in list)
+{
+try
+{
+var uid = (m?.uid ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(uid)) continue;
+await SyncQueueFromBackend(uid);
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncContinuous] initial sync failed uid={0} err={1}", m?.uid, ex.Message);
+}
+}
+
+Console.WriteLine("[CncContinuous] initial queue sync done");
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncContinuous] initial queue sync error: {0}", ex.Message);
+}
 }
 public static void Stop()
 {
@@ -165,14 +224,6 @@ if (done)
 {
 Console.WriteLine("[CncContinuous] job completed machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
-try
-{
-await SyncQueueFromBackend(machineId);
-}
-catch (Exception ex)
-{
-Console.WriteLine("[CncContinuous] backend sync error machine={0} err={1}", machineId, ex.Message);
-}
 lock (StateLock)
 {
 state.IsRunning = false;
@@ -220,14 +271,6 @@ return;
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
 {
-try
-{
-await SyncQueueFromBackend(machineId);
-}
-catch (Exception ex)
-{
-Console.WriteLine("[CncContinuous] backend sync error machine={0} err={1}", machineId, ex.Message);
-}
 nextJob = CncJobQueue.Peek(machineId);
 }
 if (nextJob != null)
@@ -308,8 +351,57 @@ return false;
 }
 private static async Task PreloadNextJob(string machineId, MachineState state)
 {
-// 이미 선업로드 완료했으면 스킵
-if (state.NextJob != null) return;
+// 이미 선업로드 완료했으면, 더 높은 우선순위 작업이 큐에 생겼는지 확인한다.
+// (manual_insert는 다음 작업으로 최우선 처리해야 함)
+if (state.NextJob != null)
+{
+var queued = CncJobQueue.Peek(machineId);
+if (queued == null) return;
+if (queued.paused) return;
+
+var queuedPri = GetJobPriority(queued);
+var nextPri = GetJobPriority(state.NextJob);
+if (queuedPri > nextPri)
+{
+try
+{
+Console.WriteLine("[CncContinuous] higher priority job arrived; requeue preloaded nextJob machine={0} queued={1} nextJob={2}",
+machineId, queued?.source, state.NextJob?.source);
+
+// 기존 NextJob을 큐로 되돌리고(queued 다음 순서), NextJob을 비워서 다음 Tick에서 queued를 선업로드한다.
+var list = CncJobQueue.Snapshot(machineId) ?? new List<CncJobItem>();
+if (list.Count > 0)
+{
+var rebuilt = new List<CncJobItem>();
+
+// 현재 큐 맨 앞(queued)은 그대로 두고, 그 다음에 기존 NextJob을 삽입한다.
+rebuilt.Add(list[0]);
+rebuilt.Add(state.NextJob);
+for (int i = 1; i < list.Count; i++)
+{
+rebuilt.Add(list[i]);
+}
+
+CncJobQueue.ReplaceQueue(machineId, rebuilt);
+}
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncContinuous] priority override failed machine={0} err={1}", machineId, ex.Message);
+}
+
+lock (StateLock)
+{
+state.NextJob = null;
+state.LastPreloadFailJobId = null;
+state.PreloadFailCount = 0;
+state.NextPreloadAttemptUtc = DateTime.MinValue;
+}
+}
+
+return;
+}
+
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null) return;
 var now = DateTime.UtcNow;

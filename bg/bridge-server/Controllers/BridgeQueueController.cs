@@ -8,6 +8,45 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/bridge/queue")]
     public class BridgeQueueController : ApiController
     {
+        public class ReplaceQueueRequest
+        {
+            public CncJobItem[] jobs { get; set; }
+        }
+
+        [HttpPost]
+        [Route("{machineId}/replace")]
+        public HttpResponseMessage Replace(string machineId, ReplaceQueueRequest req)
+        {
+            try
+            {
+                var mid = (machineId ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(mid))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+                }
+
+                var list = new System.Collections.Generic.List<CncJobItem>();
+                var input = req != null && req.jobs != null ? req.jobs : new CncJobItem[0];
+                foreach (var j in input)
+                {
+                    if (j == null) continue;
+                    var fn = (j.fileName ?? string.Empty).Trim();
+                    if (string.IsNullOrEmpty(fn)) continue;
+                    // machineId는 path param을 우선한다.
+                    j.machineId = mid;
+                    if (j.qty < 1) j.qty = 1;
+                    list.Add(j);
+                }
+
+                CncJobQueue.ReplaceQueue(mid, list);
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = CncJobQueue.Snapshot(mid) });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = "queue replace failed", error = ex.Message });
+            }
+        }
+
         [HttpGet]
         [Route("")]
         public HttpResponseMessage GetAll()
