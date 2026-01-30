@@ -70,7 +70,7 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":0,"programNo":4000}'
+ -d '{"headType":0,"programNo":4002}'
 
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
  -H "Content-Type: application/json" \

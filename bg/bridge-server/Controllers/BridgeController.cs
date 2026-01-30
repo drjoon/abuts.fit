@@ -665,6 +665,9 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var requestId = payload.Value<string>("requestId");
                 var jobId = payload.Value<string>("jobId") ?? Guid.NewGuid().ToString();
                 var bridgePath = payload.Value<string>("bridgePath");
+                var s3Key = payload.Value<string>("s3Key");
+                var s3Bucket = payload.Value<string>("s3Bucket");
+                var enqueueFront = payload.Value<bool?>("enqueueFront") ?? false;
 
                 if (string.IsNullOrEmpty(fileName))
                 {
@@ -679,7 +682,15 @@ namespace HiLinkBridgeWebApi48.Controllers
                     kind = CncJobKind.File
                 };
 
-                var enqueued = CncContinuousMachining.EnqueueFileJob(machineId, job.fileName, job.requestId, bridgePath);
+                var enqueued = CncContinuousMachining.EnqueueFileJob(
+                    machineId,
+                    job.fileName,
+                    job.requestId,
+                    bridgePath,
+                    s3Key,
+                    s3Bucket,
+                    enqueueFront
+                );
                 if (enqueued == null)
                 {
                     return Request.CreateResponse(HttpStatusCode.BadRequest, new

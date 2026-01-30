@@ -23,6 +23,33 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
+        [HttpPatch]
+        [Route("{machineId}/{jobId}/pause")]
+        public HttpResponseMessage UpdatePause(string machineId, string jobId, PauseRequest req)
+        {
+            try
+            {
+                var mid = (machineId ?? string.Empty).Trim();
+                var jid = (jobId ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(mid) || string.IsNullOrEmpty(jid))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId and jobId are required" });
+                }
+
+                var paused = req != null && req.paused;
+                if (!CncJobQueue.TrySetPaused(mid, jid, paused, out var updated) || updated == null)
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = "job not found" });
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = updated });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = "queue pause update failed", error = ex.Message });
+            }
+        }
+
         [HttpDelete]
         [Route("{machineId}/{jobId}")]
         public HttpResponseMessage DeleteJob(string machineId, string jobId)
@@ -138,6 +165,11 @@ namespace HiLinkBridgeWebApi48.Controllers
         public class QtyRequest
         {
             public int qty { get; set; }
+        }
+
+        public class PauseRequest
+        {
+            public bool paused { get; set; }
         }
 
         [HttpPatch]

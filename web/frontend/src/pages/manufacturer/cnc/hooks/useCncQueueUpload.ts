@@ -135,9 +135,77 @@ export const useCncQueueUpload = () => {
     [token, uploadToPresignedUrl],
   );
 
+  const uploadManualInsertFiles = useCallback(
+    async (machineId: string, files: FileList | File[]) => {
+      const mid = String(machineId || "").trim();
+      if (!mid || !token) return;
+      const list = Array.from(files || []);
+      if (list.length === 0) return;
+
+      setUploading(true);
+      setUploadProgress(null);
+      try {
+        for (const file of list) {
+          const fileName = String(file.name || "").trim();
+          if (!fileName) throw new Error("파일명이 올바르지 않습니다.");
+
+          const presignRes = await apiFetch({
+            path: `/api/cnc-machines/${encodeURIComponent(mid)}/direct/presign`,
+            method: "POST",
+            token,
+            jsonBody: {
+              fileName,
+              contentType: file.type || "application/octet-stream",
+              fileSize: file.size,
+            },
+          });
+          const presignBody: any = presignRes.data ?? {};
+          const presignData = presignBody?.data ?? presignBody;
+          if (!presignRes.ok || presignBody?.success === false) {
+            throw new Error(
+              presignBody?.message || presignBody?.error || "presign 발급 실패",
+            );
+          }
+          const uploadUrl = String(presignData?.uploadUrl || "").trim();
+          const s3Key = String(presignData?.s3Key || "").trim();
+          const s3Bucket = String(presignData?.s3Bucket || "").trim();
+          if (!uploadUrl || !s3Key)
+            throw new Error("presign 정보가 올바르지 않습니다.");
+
+          await uploadToPresignedUrl(mid, uploadUrl, file);
+
+          const enqueueRes = await apiFetch({
+            path: `/api/cnc-machines/${encodeURIComponent(
+              mid,
+            )}/continuous/enqueue-manual-insert`,
+            method: "POST",
+            token,
+            jsonBody: {
+              fileName,
+              s3Key,
+              s3Bucket,
+            },
+          });
+          const enqueueBody: any = enqueueRes.data ?? {};
+          if (!enqueueRes.ok || enqueueBody?.success === false) {
+            throw new Error(
+              enqueueBody?.message ||
+                enqueueBody?.error ||
+                "수동 끼워넣기 등록 실패",
+            );
+          }
+        }
+      } finally {
+        setUploading(false);
+      }
+    },
+    [token, uploadToPresignedUrl],
+  );
+
   return {
     uploading,
     uploadProgress,
     uploadLocalFiles,
+    uploadManualInsertFiles,
   };
 };

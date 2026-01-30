@@ -662,7 +662,7 @@ export const MachiningMachineQueueBoard = ({
       onTouchStartCapture={handleBoardClickCapture}
     >
       <div className="flex items-center justify-between">
-        <div className="text-[12px] font-semibold text-slate-600">
+        <div className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 border border-slate-200 truncate">
           {statusRefreshing
             ? "장비 상태 조회중…"
             : statusRefreshError

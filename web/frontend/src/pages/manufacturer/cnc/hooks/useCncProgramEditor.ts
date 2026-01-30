@@ -31,6 +31,14 @@ export const useCncProgramEditor = ({
 
   const openProgramDetail = async (prog: any) => {
     if (!workUid || !prog) return;
+
+    if (prog?.source === "db") {
+      const hasS3Key = String(prog?.s3Key || "").trim().length > 0;
+      const programNo = prog?.programNo ?? prog?.no ?? null;
+      if (!hasS3Key && programNo == null) {
+        return;
+      }
+    }
     const activeMachine = machines.find((m) => m.uid === workUid) || null;
     const status = (activeMachine?.status || "").toUpperCase();
     const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>

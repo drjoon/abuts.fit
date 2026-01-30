@@ -37,6 +37,8 @@ namespace HiLinkBridgeWebApi48
         public DateTime createdAtUtc { get; set; }
 
         public string source { get; set; }
+
+        public bool paused { get; set; }
     }
 
     public static class CncJobQueue
@@ -76,6 +78,32 @@ namespace HiLinkBridgeWebApi48
             lock (GetLock(job.machineId))
             {
                 q.AddLast(job);
+            }
+            return job;
+        }
+
+
+
+        // 파일을 '끼워넣기': 현재 진행 중 작업이 끝나면 바로 다음으로 실행되도록 큐의 앞에 넣는다.
+        public static CncJobItem EnqueueFileFront(string machineId, string fileName, string requestId, string originalFileName = null)
+        {
+            var job = new CncJobItem
+            {
+                id = Guid.NewGuid().ToString("N"),
+                kind = CncJobKind.File,
+                machineId = (machineId ?? string.Empty).Trim(),
+                qty = 1,
+                fileName = fileName,
+                originalFileName = string.IsNullOrWhiteSpace(originalFileName) ? fileName : originalFileName,
+                requestId = requestId,
+                createdAtUtc = DateTime.UtcNow,
+                source = "manual_insert"
+            };
+
+            var q = GetQueue(job.machineId);
+            lock (GetLock(job.machineId))
+            {
+                q.AddFirst(job);
             }
             return job;
         }
@@ -149,11 +177,14 @@ namespace HiLinkBridgeWebApi48
                         fileName = v.fileName,
                         originalFileName = v.originalFileName,
                         bridgePath = v.bridgePath,
+                        s3Key = v.s3Key,
+                        s3Bucket = v.s3Bucket,
                         requestId = v.requestId,
                         programNo = v.programNo,
                         programName = v.programName,
                         createdAtUtc = v.createdAtUtc,
                         source = v.source,
+                        paused = v.paused,
                     };
                 }
 
@@ -161,6 +192,28 @@ namespace HiLinkBridgeWebApi48
                 if (v != null && v.qty <= 0) v.qty = 1;
                 return v;
             }
+        }
+
+        public static bool TrySetPaused(string machineId, string jobId, bool paused, out CncJobItem updated)
+        {
+            updated = null;
+            var mid = (machineId ?? string.Empty).Trim();
+            var jid = (jobId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(mid) || string.IsNullOrEmpty(jid)) return false;
+
+            var q = GetQueue(mid);
+            lock (GetLock(mid))
+            {
+                foreach (var job in q)
+                {
+                    if (job == null) continue;
+                    if (!string.Equals(job.id, jid, StringComparison.OrdinalIgnoreCase)) continue;
+                    job.paused = paused;
+                    updated = job;
+                    return true;
+                }
+            }
+            return false;
         }
 
         public static bool TrySetQty(string machineId, string jobId, int qty, out CncJobItem updated)

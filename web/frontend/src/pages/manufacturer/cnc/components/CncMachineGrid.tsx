@@ -19,6 +19,7 @@ interface CncMachineGridProps {
   onOpenMachineInfo?: (uid: string) => void;
   onEditMachine: (machine: Machine) => void;
   onOpenProgramDetail: (prog: any) => void;
+  onEnqueueDbJob?: (machine: Machine, requestId: string) => void;
   onSendControl: (uid: string, action: "reset" | "stop") => void;
   onOpenAddModal: () => void;
   onOpenJobConfig: (machine: Machine) => void;
@@ -36,6 +37,13 @@ interface CncMachineGridProps {
   onTogglePause?: (machine: Machine, jobId: string) => void;
   onToggleAllowJobStart?: (machine: Machine, next: boolean) => void;
   onToggleAllowAutoMachining?: (machine: Machine, next: boolean) => void;
+  onInsertFiles?: (machine: Machine, files: FileList | File[]) => void;
+  onPauseInsert?: (
+    machine: Machine,
+    jobId: string,
+    nextPaused: boolean,
+  ) => void;
+  onDeleteInsert?: (machine: Machine, jobId: string) => void;
 }
 
 export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
@@ -53,6 +61,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onOpenMachineInfo,
   onEditMachine,
   onOpenProgramDetail,
+  onEnqueueDbJob,
   onSendControl,
   onOpenAddModal,
   onOpenJobConfig,
@@ -66,6 +75,9 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onTogglePause,
   onToggleAllowJobStart,
   onToggleAllowAutoMachining,
+  onInsertFiles,
+  onPauseInsert,
+  onDeleteInsert,
 }) => {
   return (
     <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
@@ -78,25 +90,34 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
         const currentNo = currentProg?.programNo ?? currentProg?.no;
 
         const reservedJobs: CncJobItem[] = reservationJobsMap?.[m.uid] || [];
+        const manualInsert = reservedJobs.find(
+          (j) => String((j as any)?.source || "") === "manual_insert",
+        );
         const originalTotalQty: number | undefined =
           reservationTotalQtyMap?.[m.uid];
 
         const nextProgs: any[] =
           reservedJobs.length > 0
-            ? reservedJobs.map((job) => {
-                const programNo = job.programNo ?? null;
-                return {
-                  programNo,
-                  no: programNo,
-                  name: job.name,
-                  jobId: job.id,
-                  source: (job as any).source || "db",
-                  s3Key: (job as any).s3Key,
-                  s3Bucket: (job as any).s3Bucket,
-                  paused: job.paused ?? false,
-                  qty: job.qty,
-                };
-              })
+            ? reservedJobs
+                .filter(
+                  (job) =>
+                    String((job as any)?.source || "") !== "manual_insert",
+                )
+                .map((job) => {
+                  const programNo = job.programNo ?? null;
+                  return {
+                    programNo,
+                    no: programNo,
+                    name: job.name,
+                    jobId: job.id,
+                    source: (job as any).source || "db",
+                    requestId: (job as any).requestId,
+                    s3Key: (job as any).s3Key,
+                    s3Bucket: (job as any).s3Bucket,
+                    paused: job.paused ?? false,
+                    qty: job.qty,
+                  };
+                })
             : progList.filter((p: any) => {
                 const no = p?.programNo ?? p?.no;
                 return currentNo == null ? true : no !== currentNo;
@@ -108,6 +129,39 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             machine={m}
             isActive={isActive}
             loading={loading}
+            onEnqueueDbJob={onEnqueueDbJob}
+            onInsertFiles={
+              onInsertFiles
+                ? (files) => {
+                    onInsertFiles(m, files);
+                  }
+                : undefined
+            }
+            insertJob={
+              manualInsert
+                ? {
+                    id: manualInsert.id,
+                    jobId: manualInsert.id,
+                    name: manualInsert.name,
+                    fileName: manualInsert.name,
+                    paused: !!manualInsert.paused,
+                  }
+                : null
+            }
+            onPauseInsert={
+              onPauseInsert
+                ? (jobId, nextPaused) => {
+                    onPauseInsert(m, jobId, nextPaused);
+                  }
+                : undefined
+            }
+            onDeleteInsert={
+              onDeleteInsert
+                ? (jobId) => {
+                    onDeleteInsert(m, jobId);
+                  }
+                : undefined
+            }
             tempTooltip={tempTooltipMap[m.uid] ?? ""}
             toolTooltip={toolTooltipMap[m.uid] ?? ""}
             currentProg={currentProg}
