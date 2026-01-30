@@ -3,15 +3,13 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
 import { apiFetch } from "@/lib/apiClient";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";
 import { CncEventLogModal } from "@/components/CncEventLogModal";
+import {
+  CncPlaylistDrawer,
+  type PlaylistJobItem,
+} from "@/pages/manufacturer/cnc/components/CncPlaylistDrawer";
 
 type QueueItem = {
   requestId?: string;
@@ -39,40 +37,16 @@ type MachineStatus = {
   nextProgram?: string;
 };
 
-const extractActiveProgramLabel = (data: any) => {
-  if (!data || typeof data !== "object") return null;
-  const src =
-    (data as any)?.machineCurrentProgInfo ??
-    (data as any)?.machineActivateProgInfo ??
-    (data as any)?.data ??
-    data;
-
-  const rawNo =
-    (src as any)?.programNo ??
-    (src as any)?.activateProgNum ??
-    (src as any)?.activateProgNo ??
-    (src as any)?.progNo;
-  const n = Number(rawNo);
-  if (Number.isFinite(n) && n > 0) {
-    return `O${String(n).padStart(4, "0")}`;
-  }
-
-  const name =
-    (src as any)?.programName ?? (src as any)?.progName ?? (src as any)?.name;
-  const s = String(name || "").trim();
-  return s ? s : null;
-};
-
 type MachineQueueCardProps = {
   machineId: string;
   machineName?: string;
   queue: QueueItem[];
-  onOpenMore: () => void;
   onOpenRequestLog?: (requestId: string) => void;
   autoEnabled: boolean;
   onToggleAuto: (next: boolean) => void;
   machineStatus?: MachineStatus | null;
   statusRefreshing?: boolean;
+  onOpenReservation: () => void;
 };
 
 const getStatusDotColor = (status?: string) => {
@@ -163,18 +137,20 @@ const MachineQueueCard = ({
   machineId,
   machineName,
   queue,
-  onOpenMore,
   onOpenRequestLog,
   autoEnabled,
   onToggleAuto,
   machineStatus,
   statusRefreshing,
+  onOpenReservation,
 }: MachineQueueCardProps) => {
-  const machiningQueue = (Array.isArray(queue) ? queue : [])
-    .filter((q) => isMachiningStatus(q?.status))
-    .slice(0, 4);
-
-  const headPreloadBadge = getNcPreloadBadge(machiningQueue[0]);
+  const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
+    isMachiningStatus(q?.status),
+  );
+  const headPreloadBadge = getNcPreloadBadge(machiningQueueAll[0]);
+  const headRequestId = machiningQueueAll[0]?.requestId
+    ? String(machiningQueueAll[0].requestId)
+    : "";
 
   const totalMachiningCount = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q?.status),
@@ -183,9 +159,17 @@ const MachineQueueCard = ({
   const statusColor = getStatusDotColor(machineStatus?.status);
 
   const headerTitle = machineName || machineId;
+  const nowPlayingLabel = machineStatus?.currentProgram
+    ? String(machineStatus.currentProgram)
+    : "없음";
+  const nextUpLabel = machineStatus?.nextProgram
+    ? String(machineStatus.nextProgram)
+    : machiningQueueAll[0]
+      ? formatLabel(machiningQueueAll[0])
+      : "없음";
 
   return (
-    <div className="app-glass-card app-glass-card--xl">
+    <div className="app-glass-card app-glass-card--xl flex flex-col">
       <div className="app-glass-card-content flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -242,47 +226,63 @@ const MachineQueueCard = ({
         </div>
       </div>
 
-      <div className="app-glass-card-content mt-4 space-y-2">
-        {machiningQueue.length
-          ? machiningQueue.map((q, idx) => (
-              <div
-                key={`${machineId}:${q.requestId || idx}`}
-                className="app-surface app-surface--item flex items-center justify-between gap-2 px-3 py-2"
-              >
-                <div className="min-w-0 truncate text-[13px] font-extrabold text-slate-800">
-                  {formatLabel(q)}
+      <div className="app-glass-card-content mt-4 flex flex-col gap-2 text-sm">
+        <div className="grid grid-cols-1 gap-2">
+          <div className="group rounded-2xl px-4 py-3 border shadow-sm transition-all bg-white/85 border-slate-200">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-slate-500">
+                  Now Playing
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {q.requestId ? (
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-extrabold text-slate-700 hover:bg-slate-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenRequestLog?.(String(q.requestId));
-                      }}
-                    >
-                      로그
-                    </button>
-                  ) : null}
-                  {getNcPreloadBadge(q)}
+                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                  {nowPlayingLabel}
                 </div>
               </div>
-            ))
-          : null}
-      </div>
+              <div className="flex items-center gap-2">
+                {machineStatus?.currentProgram ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-extrabold text-slate-700 hover:bg-slate-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!headRequestId) return;
+                      onOpenRequestLog?.(headRequestId);
+                    }}
+                  >
+                    로그
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
 
-      {totalMachiningCount > 0 && (
-        <div className="app-glass-card-content mt-4 flex justify-center">
+          <div className="group rounded-2xl px-4 py-3 border shadow-sm transition-all bg-white/85 border-slate-200">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-slate-500">
+                  Next Up
+                </div>
+                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                  {nextUpLabel}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-1">
           <button
             type="button"
-            className="app-surface app-surface--item px-4 py-2 text-[12px] font-extrabold text-slate-700 hover:bg-white"
-            onClick={onOpenMore}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenReservation();
+            }}
+            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 px-4 py-2 text-xs font-extrabold text-white hover:from-blue-700 hover:to-sky-600 disabled:opacity-50 shadow-sm"
           >
-            더보기
+            예약 관리
           </button>
         </div>
-      )}
+      </div>
     </div>
   );
 };
@@ -316,12 +316,12 @@ export const MachiningMachineQueueBoard = ({
     string | null
   >(null);
 
-  const [openMachineId, setOpenMachineId] = useState<string | null>(null);
   const [eventLogRequestId, setEventLogRequestId] = useState<string | null>(
     null,
   );
-  const [openVisibleCount, setOpenVisibleCount] = useState(20);
-  const openSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [playlistTitle, setPlaylistTitle] = useState<string>("");
+  const [playlistJobs, setPlaylistJobs] = useState<PlaylistJobItem[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -471,38 +471,30 @@ export const MachiningMachineQueueBoard = ({
     });
   }, [machines, searchQuery]);
 
-  const openQueueRaw = openMachineId ? queueMap?.[openMachineId] || [] : [];
-  const openQueue = (Array.isArray(openQueueRaw) ? openQueueRaw : []).filter(
-    (q) => isMachiningStatus(q?.status),
+  const openReservationForMachine = useCallback(
+    (uid: string) => {
+      const raw = queueMap?.[uid] || [];
+      const jobs = (Array.isArray(raw) ? raw : [])
+        .filter((q) => isMachiningStatus(q?.status))
+        .map((q, idx) => {
+          const id = String(q.requestId || `${uid}:${idx}`);
+          return {
+            id,
+            name: formatLabel(q),
+            qty: 1,
+          } satisfies PlaylistJobItem;
+        });
+
+      const machine = (Array.isArray(machines) ? machines : []).find(
+        (m) => m.uid === uid,
+      );
+
+      setPlaylistTitle(machine?.name || uid);
+      setPlaylistJobs(jobs);
+      setPlaylistOpen(true);
+    },
+    [machines, queueMap],
   );
-
-  useEffect(() => {
-    setOpenVisibleCount(20);
-  }, [openMachineId]);
-
-  const openQueuePaginated = openQueue.slice(0, openVisibleCount);
-  const canLoadMoreOpenQueue = openQueuePaginated.length < openQueue.length;
-
-  useEffect(() => {
-    const el = openSentinelRef.current;
-    if (!el) return;
-    if (!openMachineId) return;
-    if (!canLoadMoreOpenQueue) return;
-
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const first = entries[0];
-        if (!first?.isIntersecting) return;
-        setOpenVisibleCount((prev) => Math.min(prev + 20, openQueue.length));
-      },
-      { root: el.parentElement, rootMargin: "120px", threshold: 0.01 },
-    );
-
-    obs.observe(el);
-    return () => {
-      obs.disconnect();
-    };
-  }, [openMachineId, canLoadMoreOpenQueue, openQueue.length]);
 
   const globalAutoEnabled = useMemo(() => {
     const list = Array.isArray(machines) ? machines : [];
@@ -705,7 +697,6 @@ export const MachiningMachineQueueBoard = ({
             machineId={m.uid}
             machineName={m.name}
             queue={Array.isArray(queueMap?.[m.uid]) ? queueMap[m.uid] : []}
-            onOpenMore={() => setOpenMachineId(m.uid)}
             onOpenRequestLog={(requestId) => setEventLogRequestId(requestId)}
             autoEnabled={m.allowAutoMachining === true}
             onToggleAuto={(next) => {
@@ -713,90 +704,10 @@ export const MachiningMachineQueueBoard = ({
             }}
             machineStatus={machineStatusMap?.[m.uid] ?? null}
             statusRefreshing={statusRefreshing}
+            onOpenReservation={() => openReservationForMachine(m.uid)}
           />
         ))}
       </div>
-
-      <Dialog
-        open={!!openMachineId}
-        onOpenChange={(v: boolean) => {
-          if (!v) setOpenMachineId(null);
-        }}
-      >
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>
-              {(() => {
-                const machine = openMachineId
-                  ? (Array.isArray(machines) ? machines : []).find(
-                      (m) => m.uid === openMachineId,
-                    )
-                  : null;
-                const name = machine?.name || openMachineId || "M?";
-                const count = openQueue.length;
-                const status = openMachineId
-                  ? machineStatusMap?.[openMachineId]?.status
-                  : undefined;
-                const dot = getStatusDotColor(status);
-                return (
-                  <div className="flex items-center gap-2">
-                    <span>{name}</span>
-                    <span className={`w-3 h-3 rounded-full ${dot}`} />
-                    <span>{count}건</span>
-                  </div>
-                );
-              })()}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="max-h-[70vh] overflow-auto space-y-2">
-            {openQueuePaginated.length ? (
-              openQueuePaginated.map((q, idx) => (
-                <div
-                  key={`${openMachineId}:${q.requestId || idx}`}
-                  className="rounded-2xl border border-slate-200 bg-white p-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className="bg-slate-50 text-[11px] font-extrabold text-slate-700 border-slate-200"
-                      >
-                        #{idx + 1}
-                      </Badge>
-                      {q.requestId ? (
-                        <button
-                          type="button"
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-extrabold text-slate-700 hover:bg-slate-50"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEventLogRequestId(String(q.requestId));
-                          }}
-                        >
-                          로그
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <div className="min-w-0 truncate text-[14px] font-extrabold text-slate-900">
-                        {formatLabel(q)}
-                      </div>
-                      {getNcPreloadBadge(q)}
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-sm text-slate-500">
-                표시할 큐가 없습니다.
-              </div>
-            )}
-
-            {canLoadMoreOpenQueue ? (
-              <div ref={openSentinelRef} className="h-8" />
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {eventLogRequestId ? (
         <CncEventLogModal
@@ -807,6 +718,43 @@ export const MachiningMachineQueueBoard = ({
           mode={{ kind: "request", requestId: eventLogRequestId }}
         />
       ) : null}
+
+      <CncPlaylistDrawer
+        open={playlistOpen}
+        title={playlistTitle}
+        jobs={playlistJobs}
+        readOnly={true}
+        onClose={() => {
+          setPlaylistOpen(false);
+        }}
+        onOpenCode={() => {
+          toast({
+            title: "코드 보기",
+            description: "코드 보기는 CNC 페이지에서 확인할 수 있습니다.",
+          });
+        }}
+        onDelete={() => {
+          toast({
+            title: "삭제 불가",
+            description: "가공(워크시트)에서는 예약목록을 수정할 수 없습니다.",
+            variant: "destructive",
+          });
+        }}
+        onReorder={() => {
+          toast({
+            title: "순서 변경 불가",
+            description: "가공(워크시트)에서는 예약목록을 수정할 수 없습니다.",
+            variant: "destructive",
+          });
+        }}
+        onChangeQty={() => {
+          toast({
+            title: "수량 변경 불가",
+            description: "가공(워크시트)에서는 예약목록을 수정할 수 없습니다.",
+            variant: "destructive",
+          });
+        }}
+      />
     </div>
   );
 };
