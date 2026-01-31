@@ -561,6 +561,7 @@ export const CncDashboardPage = () => {
       worksheetQueueCountMap={queues.worksheetQueueCountMap}
       reservationSummaryMap={queues.reservationSummaryMap}
       reservationTotalQtyMap={queues.reservationTotalQtyMap}
+      uploadProgress={queues.uploadProgress}
       updateMachineFlags={updateMachineFlags}
       updateMachineDummyEnabled={materials.updateMachineDummyEnabled}
       uploadManualCardFiles={queues.uploadManualCardFiles}

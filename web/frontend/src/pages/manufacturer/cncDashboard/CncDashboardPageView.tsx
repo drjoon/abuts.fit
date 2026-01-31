@@ -37,6 +37,7 @@ export function CncDashboardPageView(props: any) {
     worksheetQueueCountMap,
     reservationSummaryMap,
     reservationTotalQtyMap,
+    uploadProgress,
     updateMachineFlags,
     updateMachineDummyEnabled,
     uploadManualCardFiles,
@@ -219,6 +220,7 @@ export function CncDashboardPageView(props: any) {
                   worksheetQueueCountMap={worksheetQueueCountMap}
                   reservationSummaryMap={reservationSummaryMap}
                   reservationTotalQtyMap={reservationTotalQtyMap}
+                  uploadProgress={uploadProgress}
                   onToggleAllowJobStart={(machine, next) => {
                     updateMachineFlags(machine, { allowJobStart: next });
                   }}
