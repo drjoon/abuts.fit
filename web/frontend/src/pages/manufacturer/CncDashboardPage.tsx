@@ -33,7 +33,6 @@ import {
   CncPlaylistDrawer,
   type PlaylistJobItem,
 } from "@/pages/manufacturer/cnc/components/CncPlaylistDrawer";
-import { useCncQueueUpload } from "@/pages/manufacturer/cnc/hooks/useCncQueueUpload";
 import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
 import { CncMaterialChangeModal } from "@/pages/manufacturer/cnc/components/CncMaterialChangeModal";
 import {
@@ -176,7 +175,51 @@ export const CncDashboardPage = () => {
 
   const { toast } = useToast();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
-  const { uploadLocalFiles, uploadProgress } = useCncQueueUpload();
+
+  const handleManualCardPlay = useCallback(
+    async (machineId: string) => {
+      const mid = String(machineId || "").trim();
+      if (!mid) return;
+      if (!token) {
+        toast({
+          title: "로그인이 필요합니다",
+          description: "다시 로그인 후 시도해 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const ok = await ensureCncWriteAllowed();
+      if (!ok) {
+        toast({
+          title: "가공 시작 불가",
+          description: "CNC 가공 시작은 제조사 권한/PIN 확인이 필요합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const res = await apiFetch({
+        path: `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/play`,
+        method: "POST",
+        token,
+      });
+      const body: any = res.data ?? {};
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || body?.error || "가공 시작 실패");
+      }
+
+      const data = body?.data ?? body;
+      const slotNo = data?.slotNo;
+      toast({
+        title: "가공 시작",
+        description: slotNo
+          ? `O${slotNo} 가공을 시작했습니다.`
+          : "가공을 시작했습니다.",
+      });
+    },
+    [ensureCncWriteAllowed, toast, token],
+  );
 
   const queueBatchRef = useRef<{
     t: any | null;
@@ -388,6 +431,7 @@ export const CncDashboardPage = () => {
           const jobSourceRaw = String(job?.source || "").trim();
           const pausedRaw = job?.paused;
           const paused = typeof pausedRaw === "boolean" ? pausedRaw : true;
+          const kindRaw = String(job?.kind || "").trim();
           const programNo =
             typeof job?.programNo === "number" ||
             typeof job?.programNo === "string"
@@ -399,14 +443,19 @@ export const CncDashboardPage = () => {
             job?.fileName ||
             job?.programName ||
             (programNo != null ? `#${programNo}` : "-");
+          const id = String(job?.id || `${uid}:${nameRaw}`);
           return {
-            id: String(job?.id || `${uid}:${nameRaw}`),
+            id,
+            jobId: id as any,
             source:
               metaSource === "db"
                 ? "db"
                 : jobSourceRaw === "manual_insert"
                   ? "manual_insert"
                   : "bridge",
+            kind:
+              kindRaw ||
+              (jobSourceRaw === "manual_insert" ? "manual_file" : ""),
             programNo,
             name: String(nameRaw || "-"),
             qty,
@@ -460,6 +509,64 @@ export const CncDashboardPage = () => {
       }
     },
     [token, toast, setError],
+  );
+
+  const uploadManualCardFiles = useCallback(
+    async (machineId: string, files: FileList | File[]) => {
+      const mid = String(machineId || "").trim();
+      if (!mid) throw new Error("장비 ID가 올바르지 않습니다.");
+      if (!token) throw new Error("로그인이 필요합니다.");
+
+      const list = Array.isArray(files) ? files : Array.from(files || []);
+      if (list.length === 0) return;
+
+      // 장비카드는 1개 파일만 처리(프리로드 슬롯 토글을 단순화)
+      const file = list[0];
+      if (!file) return;
+
+      const ok = await ensureCncWriteAllowed();
+      if (!ok) {
+        toast({
+          title: "업로드 불가",
+          description: "CNC 업로드는 제조사 권한/PIN 확인이 필요합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const form = new FormData();
+      form.append("file", file);
+
+      const res = await apiFetch({
+        path: `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/upload`,
+        method: "POST",
+        token,
+        body: form,
+        headers: {},
+      });
+
+      const body: any = res.data ?? {};
+      if (!res.ok || body?.success === false) {
+        throw new Error(
+          body?.message || body?.error || "장비카드 업로드에 실패했습니다.",
+        );
+      }
+
+      const data = body?.data ?? body;
+      const slotNo = data?.slotNo;
+      toast({
+        title: "업로드 완료",
+        description: slotNo
+          ? `CNC 슬롯 O${slotNo}에 업로드되었습니다.`
+          : "업로드되었습니다.",
+      });
+
+      const m = machines.find((x) => x?.uid === mid) || null;
+      if (m) {
+        await loadBridgeQueueForMachine(m, { silent: true });
+      }
+    },
+    [ensureCncWriteAllowed, loadBridgeQueueForMachine, machines, toast, token],
   );
 
   const refreshDbQueuesForAllMachines = useCallback(async () => {
@@ -600,90 +707,12 @@ export const CncDashboardPage = () => {
               throw new Error(body?.message || body?.error || "예약 변경 실패");
             }
 
-            const qRes = await fetch(
-              `/api/cnc-machines/${encodeURIComponent(
-                commitMachineId,
-              )}/bridge-queue`,
-              {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-              },
-            );
-            const qBody: any = await qRes.json().catch(() => ({}));
-            if (!qRes.ok || qBody?.success === false) {
-              throw new Error(
-                qBody?.message || qBody?.error || "예약 목록 재조회 실패",
-              );
-            }
-
             const currentSeq = queueCommitSeqRef.current[commitMachineId] || 0;
             if (currentSeq !== nextSeq) return;
 
-            const list: any[] = Array.isArray(qBody?.data) ? qBody.data : [];
-            const metaSource = String(qBody?.meta?.source || "").trim();
-            const jobs: CncJobItem[] = list.map((job) => {
-              const jobSourceRaw = String(job?.source || "").trim();
-              const programNo =
-                typeof job?.programNo === "number" ||
-                typeof job?.programNo === "string"
-                  ? job.programNo
-                  : null;
-              const qtyRaw = job?.qty;
-              const qty = Math.max(1, Number(qtyRaw ?? 1) || 1);
-              const nameRaw =
-                job?.fileName ||
-                job?.programName ||
-                (programNo != null ? `#${programNo}` : "-");
-              return {
-                id: String(job?.id || `${commitMachineId}:${nameRaw}`),
-                source:
-                  metaSource === "db"
-                    ? "db"
-                    : jobSourceRaw === "manual_insert"
-                      ? "manual_insert"
-                      : "bridge",
-                programNo,
-                name: String(nameRaw || "-"),
-                qty,
-                ...(job?.s3Key ? { s3Key: String(job.s3Key) } : {}),
-                ...(job?.s3Bucket ? { s3Bucket: String(job.s3Bucket) } : {}),
-                paused: !!job?.paused,
-              } as any;
-            });
-
-            if (jobs.length > 0) {
-              setReservationJobsMap((prev) => ({
-                ...prev,
-                [commitMachineId]: jobs,
-              }));
-              const first = jobs[0];
-              const baseName = first?.name || "-";
-              setReservationSummaryMap((prev) => ({
-                ...prev,
-                [commitMachineId]: `[생산예약 : ${baseName}]`,
-              }));
-              const total = jobs.reduce((sum, j) => sum + (j.qty || 1), 0);
-              setReservationTotalQtyMap((prev) => ({
-                ...prev,
-                [commitMachineId]: total,
-              }));
-            } else {
-              setReservationJobsMap((prev) => {
-                const next = { ...prev };
-                delete next[commitMachineId];
-                return next;
-              });
-              setReservationSummaryMap((prev) => {
-                const next = { ...prev };
-                delete next[commitMachineId];
-                return next;
-              });
-              setReservationTotalQtyMap((prev) => {
-                const next = { ...prev };
-                delete next[commitMachineId];
-                return next;
-              });
+            const m = machines.find((x) => x?.uid === commitMachineId) || null;
+            if (m) {
+              await loadBridgeQueueForMachine(m, { silent: true });
             }
           } catch (e: any) {
             const msg = e?.message || "예약 변경 중 오류";
@@ -703,6 +732,8 @@ export const CncDashboardPage = () => {
       setError,
       queueBatchRef,
       queueCommitSeqRef,
+      machines,
+      loadBridgeQueueForMachine,
       setReservationJobsMap,
       setReservationSummaryMap,
       setReservationTotalQtyMap,
@@ -1546,7 +1577,6 @@ export const CncDashboardPage = () => {
                   programSummary={programSummary}
                   reservationJobsMap={reservationJobsMap}
                   worksheetQueueCountMap={worksheetQueueCountMap}
-                  uploadProgress={uploadProgress}
                   reservationSummaryMap={reservationSummaryMap}
                   reservationTotalQtyMap={reservationTotalQtyMap}
                   onToggleAllowJobStart={(machine, next) => {
@@ -1558,67 +1588,29 @@ export const CncDashboardPage = () => {
                   onUploadFiles={(machine, files) => {
                     void (async () => {
                       try {
-                        const list = Array.isArray(files)
-                          ? files
-                          : Array.from(files || []);
-                        if (list.length === 0) return;
-
-                        const ok = await ensureCncWriteAllowed();
-                        if (!ok) {
-                          toast({
-                            title: "업로드 불가",
-                            description:
-                              "CNC 업로드는 제조사 권한/PIN 확인이 필요합니다.",
-                            variant: "destructive",
-                          });
-                          return;
-                        }
-
-                        const existing = new Set(
-                          (reservationJobsMap?.[machine.uid] || []).map((j) =>
-                            String(j?.name || "")
-                              .trim()
-                              .toLowerCase(),
-                          ),
-                        );
-                        const deduped = list.filter((f) => {
-                          const n = String(f?.name || "")
-                            .trim()
-                            .toLowerCase();
-                          if (!n) return false;
-                          return !existing.has(n);
-                        });
-
-                        if (deduped.length !== list.length) {
-                          toast({
-                            title: "중복 파일 제외",
-                            description:
-                              "이미 예약된 파일은 업로드에서 제외했습니다.",
-                          });
-                        }
-                        if (deduped.length === 0) {
-                          toast({
-                            title: "업로드할 파일 없음",
-                            description:
-                              "선택한 파일이 모두 이미 예약되어 있습니다.",
-                          });
-                          return;
-                        }
-
-                        await uploadLocalFiles(machine.uid, deduped);
-                        await loadBridgeQueueForMachine(machine);
-
-                        toast({
-                          title: "업로드 완료",
-                          description:
-                            "장비 예약목록(3-direct, DB)에 추가되었습니다.",
-                        });
+                        // 장비카드 업로드는 즉시 CNC 메모리(O4000/O4001)에 프리로드한다.
+                        await uploadManualCardFiles(machine.uid, files);
                       } catch (e: any) {
                         const msg =
                           e?.message || "업로드 중 오류가 발생했습니다.";
                         setError(msg);
                         toast({
                           title: "업로드 실패",
+                          description: msg,
+                          variant: "destructive",
+                        });
+                      }
+                    })();
+                  }}
+                  onManualPlay={(machine) => {
+                    void (async () => {
+                      try {
+                        await handleManualCardPlay(machine.uid);
+                      } catch (e: any) {
+                        const msg = e?.message || "가공 시작 요청 중 오류";
+                        setError(msg);
+                        toast({
+                          title: "가공 시작 오류",
                           description: msg,
                           variant: "destructive",
                         });
@@ -1799,6 +1791,15 @@ export const CncDashboardPage = () => {
                     const currentJobs = reservationJobsMap?.[uid] || [];
                     const targetJob = currentJobs.find((j) => j.id === jobId);
                     if (!targetJob) return;
+
+                    const kind = String((targetJob as any)?.kind || "").trim();
+                    const source = String(
+                      (targetJob as any)?.source || "",
+                    ).trim();
+                    if (kind === "manual_file" || source === "manual_insert") {
+                      await handleManualCardPlay(uid);
+                      return;
+                    }
 
                     const wasPaused = !!targetJob.paused;
                     // pause(일시정지)로 전환이면 여기서 처리하고 종료

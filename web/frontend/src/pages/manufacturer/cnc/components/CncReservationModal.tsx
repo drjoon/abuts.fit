@@ -82,6 +82,19 @@ export const CncReservationModal = ({
     [],
   );
 
+  const handleRequestCloseSafe = useCallback(() => {
+    if (submitting) {
+      toast({
+        title: "업로드 중",
+        description:
+          "NC 업로드는 30초 이상 걸릴 수 있습니다. 업로드가 끝날 때까지 브리지 서버/페이지를 종료하지 마세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    onRequestClose();
+  }, [onRequestClose, submitting, toast]);
+
   const handleUploadLocalFiles = useCallback(
     async (files: FileList | File[]) => {
       if (!machine?.uid) {
@@ -222,7 +235,7 @@ export const CncReservationModal = ({
   return (
     <div
       className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 pt-16 backdrop-blur-sm"
-      onClick={onRequestClose}
+      onClick={handleRequestCloseSafe}
     >
       <div
         className="app-surface app-surface--modal p-6 sm:p-8 w-full max-w-5xl transform transition-all relative"
@@ -241,7 +254,7 @@ export const CncReservationModal = ({
           </div>
           <button
             type="button"
-            onClick={onRequestClose}
+            onClick={handleRequestCloseSafe}
             className="inline-flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-slate-100 text-xl sm:text-2xl leading-none"
           >
             &times;
@@ -276,10 +289,12 @@ export const CncReservationModal = ({
                 : "border-slate-200 bg-slate-50/80"
             }`}
             onClick={() => {
+              if (submitting) return;
               if (!fileInputRef.current) return;
               fileInputRef.current.click();
             }}
             onDragOver={(e) => {
+              if (submitting) return;
               e.preventDefault();
               setDropping(true);
             }}
@@ -289,6 +304,7 @@ export const CncReservationModal = ({
               }
             }}
             onDrop={async (e) => {
+              if (submitting) return;
               e.preventDefault();
               setDropping(false);
               const { files } = e.dataTransfer;

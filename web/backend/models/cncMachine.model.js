@@ -129,6 +129,28 @@ const cncMachineSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    manualCard: {
+      preload: {
+        nowItemId: { type: String, trim: true, default: null },
+        nextItemId: { type: String, trim: true, default: null },
+        updatedAt: { type: Date, default: null },
+      },
+      lastUpload: {
+        fileName: { type: String, trim: true, default: null },
+        bridgePath: { type: String, trim: true, default: null },
+        slotNo: { type: Number, default: null },
+        nextSlotNo: { type: Number, default: null },
+        uploadedAt: { type: Date, default: null },
+        error: { type: String, trim: true, default: null },
+      },
+      lastPlay: {
+        slotNo: { type: Number, default: null },
+        startedAt: { type: Date, default: null },
+        error: { type: String, trim: true, default: null },
+      },
+      lastPromotionAt: { type: Date, default: null },
+      updatedAt: { type: Date, default: null },
+    },
     specifications: {
       maxDiameter: Number,
       minDiameter: Number,

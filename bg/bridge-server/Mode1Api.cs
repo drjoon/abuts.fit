@@ -234,6 +234,8 @@ namespace HiLinkBridgeWebApi48
         {
             info = default(MachineAlarmInfo);
             error = null;
+
+            // 1) 최초 호출
             if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
             {
                 error = err;
@@ -246,10 +248,33 @@ namespace HiLinkBridgeWebApi48
             {
                 return true;
             }
+
+            // 2) -8(잘못된 핸들) 이면 핸들을 폐기 후 1회 재시도
             if (result == -8)
             {
                 Mode1HandleStore.Invalidate(uid);
+                if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
+                {
+                    info = new MachineAlarmInfo { headType = headType };
+                    var result2 = HiLink.GetMachineAlarmInfo(handle2, ref info);
+                    if (result2 == 0)
+                    {
+                        return true;
+                    }
+                    if (result2 == -8)
+                    {
+                        Mode1HandleStore.Invalidate(uid);
+                    }
+                    error = $"GetMachineAlarmInfo failed (result={result2})";
+                    info = default(MachineAlarmInfo);
+                    return false;
+                }
+
+                error = err2;
+                info = default(MachineAlarmInfo);
+                return false;
             }
+
             error = $"GetMachineAlarmInfo failed (result={result})";
             info = default(MachineAlarmInfo);
             return false;

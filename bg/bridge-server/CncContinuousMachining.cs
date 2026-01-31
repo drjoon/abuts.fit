@@ -1013,43 +1013,20 @@ return Mode1Api.TrySetMachinePanelIO(machineId, 0, (short)ioUid, true, out error
 }
 private static bool TryGetMachineBusy(string machineId, out bool isBusy)
 {
-isBusy = false;
-var busyIoUid = Config.CncBusyIoUid;
-if (busyIoUid < 0) return false;
-if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var err))
-{
-Console.WriteLine("[CncContinuous] handle error machine={0} err={1}", machineId, err);
-return false;
-}
-var panelList = new List<IOInfo>();
-var rc = HiLink.GetMachineAllOPInfo(handle, 0, ref panelList);
-if (rc != 0 || panelList == null) return false;
-foreach (var io in panelList)
-{
-if (io != null && io.IOUID == (short)busyIoUid)
-{
-isBusy = io.Status != 0;
-return true;
-}
-}
-return false;
+    if (CncMachineSignalUtils.TryGetMachineBusy(machineId, out isBusy))
+    {
+        return true;
+    }
+    return false;
 }
 private static bool TryGetProductCount(string machineId, out int count)
 {
-count = 0;
-if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var err))
-{
-Console.WriteLine("[CncContinuous] handle error machine={0} err={1}", machineId, err);
-return false;
-}
-var prodInfo = new MachineProductInfo();
-var rc = HiLink.GetMachineProductInfo(handle, ref prodInfo);
-if (rc != 0) return false;
-var prodCount = prodInfo.currentProdCount;
-if (prodCount < int.MinValue) prodCount = int.MinValue;
-if (prodCount > int.MaxValue) prodCount = int.MaxValue;
-count = (int)prodCount;
-return true;
+    if (CncMachineSignalUtils.TryGetProductCount(machineId, out count))
+    {
+        return true;
+    }
+    Console.WriteLine("[CncContinuous] productCount read failed machine={0}", machineId);
+    return false;
 }
 private static void RefreshSlotsFromMachine(string machineId, MachineState state)
 {
@@ -1059,7 +1036,7 @@ if (!Mode1Api.TryGetActivateProgInfo(machineId, out var info, out _))
 {
 return;
 }
-var active = ParseActiveProgramNo(info);
+var active = CncMachineSignalUtils.TryGetActiveProgramNo(machineId) ?? ParseActiveProgramNo(info);
 if (active == SLOT_A)
 {
 state.CurrentSlot = SLOT_A;

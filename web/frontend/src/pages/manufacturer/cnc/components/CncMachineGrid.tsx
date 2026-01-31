@@ -25,6 +25,7 @@ interface CncMachineGridProps {
   onOpenJobConfig: (machine: Machine) => void;
   onOpenEventLog?: (machine: Machine) => void;
   onUploadFiles?: (machine: Machine, files: FileList | File[]) => void;
+  onManualPlay?: (machine: Machine) => void;
   uploadProgress?: {
     machineId: string;
     fileName: string;
@@ -60,6 +61,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onOpenJobConfig,
   onOpenEventLog,
   onUploadFiles,
+  onManualPlay,
   uploadProgress,
   reservationSummaryMap,
   reservationTotalQtyMap,
@@ -89,26 +91,21 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
 
         const nextProgs: any[] =
           reservedJobs.length > 0
-            ? reservedJobs
-                .filter(
-                  (job) =>
-                    String((job as any)?.source || "") !== "manual_insert",
-                )
-                .map((job) => {
-                  const programNo = job.programNo ?? null;
-                  return {
-                    programNo,
-                    no: programNo,
-                    name: job.name,
-                    jobId: job.id,
-                    source: (job as any).source || "bridge",
-                    requestId: (job as any).requestId,
-                    s3Key: (job as any).s3Key,
-                    s3Bucket: (job as any).s3Bucket,
-                    paused: job.paused ?? false,
-                    qty: job.qty,
-                  };
-                })
+            ? reservedJobs.map((job) => {
+                const programNo = job.programNo ?? null;
+                return {
+                  programNo,
+                  no: programNo,
+                  name: job.name,
+                  jobId: job.id,
+                  source: (job as any).source || "bridge",
+                  requestId: (job as any).requestId,
+                  s3Key: (job as any).s3Key,
+                  s3Bucket: (job as any).s3Bucket,
+                  paused: job.paused ?? false,
+                  qty: job.qty,
+                };
+              })
             : progList.filter((p: any) => {
                 const no = p?.programNo ?? p?.no;
                 return currentNo == null ? true : no !== currentNo;
@@ -198,6 +195,14 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
               onUploadFiles
                 ? (files) => {
                     onUploadFiles(m, files);
+                  }
+                : undefined
+            }
+            onManualPlay={
+              onManualPlay
+                ? (e) => {
+                    e.stopPropagation();
+                    onManualPlay(m);
                   }
                 : undefined
             }

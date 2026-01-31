@@ -3,6 +3,7 @@ import Machine from "../models/machine.model.js";
 import Request from "../models/request.model.js";
 import CreditLedger from "../models/creditLedger.model.js";
 import { getPresignedGetUrl, getPresignedPutUrl } from "../utils/s3.utils.js";
+import multer from "multer";
 import {
   getTodayYmdInKst,
   isKoreanBusinessDay,
@@ -22,12 +23,521 @@ const toNumberOrNull = (v) => {
 const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://localhost:8002";
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
+const MANUAL_SLOT_NOW = 4000;
+const MANUAL_SLOT_NEXT = 4001;
+
+function makeSafeFileStem(input) {
+  const raw = String(input || "")
+    .trim()
+    .replace(/\.nc$/i, "")
+    .replace(/\.[a-z0-9]{1,6}$/i, "");
+  const safe = raw
+    .replace(/[^a-zA-Z0-9-_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .slice(0, 80);
+  return safe;
+}
+
+function makeManualCardFilePath({ machineId, originalFilename }) {
+  const mid = String(machineId || "").trim();
+  const stem = makeSafeFileStem(originalFilename);
+  const rand = Math.random().toString(36).slice(2, 10);
+  const base = stem ? `${mid}_${stem}_${rand}` : `${mid}_${Date.now()}_${rand}`;
+  return base;
+}
+
+function normalizeOriginalFilename(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return raw;
+
+  // multer에서 한글 파일명이 latin1로 들어오는 케이스를 보정
+  // (ex: "향기로운치과" -> "í–¥ê¸°..." 같은 깨짐)
+  try {
+    const fixed = Buffer.from(raw, "latin1").toString("utf8").trim();
+    if (fixed && fixed !== raw) {
+      return fixed;
+    }
+  } catch {
+    // ignore
+  }
+  return raw;
+}
+
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+const manualCardUploadMulter = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+});
+
+function runMulter(mw, req, res) {
+  return new Promise((resolve, reject) => {
+    mw(req, res, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+async function callBridgeJson({ url, method = "POST", body }) {
+  const resp = await fetch(url, {
+    method,
+    headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+    body: body != null ? JSON.stringify(body) : undefined,
+  });
+  const json = await resp.json().catch(() => ({}));
+  return { resp, json };
+}
+
+async function saveManualCardStatus(machineId, patch) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return;
+  try {
+    const now = new Date();
+    const set = { "manualCard.updatedAt": now };
+    if (patch?.lastUpload) {
+      set["manualCard.lastUpload"] = patch.lastUpload;
+    }
+    if (patch?.lastPlay) {
+      set["manualCard.lastPlay"] = patch.lastPlay;
+    }
+    await CncMachine.updateOne(
+      { machineId: mid },
+      {
+        $set: set,
+      },
+      { upsert: false },
+    );
+  } catch (e) {
+    console.warn("manualCard status update failed", e);
+  }
+}
+
+/**
+ * 브리지 서버 전용: manual-file 완료 통보
+ * - DB(SSOT) 큐에서 head pop
+ * - 상위 2개를 O4000/O4001에 preload
+ * - Machine.allowAutoMachining이 true면 O4000을 자동 시작
+ */
+export async function completeManualFileJobForBridge(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const q0 = await loadManualCardQueue(mid);
+    const items0 = Array.isArray(q0.items) ? q0.items : [];
+    const popped = items0.length > 0 ? items0[0] : null;
+    const nextItems = items0.slice(1);
+
+    await setManualCardQueue(mid, nextItems);
+
+    // preload top2 (throws on failure)
+    await preloadManualCardTop2(mid);
+
+    // auto machining: follow Machine.allowAutoMachining
+    let autoStarted = false;
+    try {
+      const machine = await Machine.findOne({ uid: mid }).select(
+        "allowAutoMachining",
+      );
+      const allowAuto = Boolean(machine?.allowAutoMachining);
+      if (allowAuto) {
+        const playUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
+          mid,
+        )}/manual/play`;
+        const { resp, json } = await callBridgeJson({
+          url: playUrl,
+          method: "POST",
+          body: { slotNo: MANUAL_SLOT_NOW },
+        });
+        if (resp.ok && json?.success !== false) {
+          autoStarted = true;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        poppedId: popped?.id || null,
+        nextSize: nextItems.length,
+        autoStarted,
+      },
+    });
+  } catch (error) {
+    console.error("Error in completeManualFileJobForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "manual-file 완료 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function loadManualCardQueue(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return { items: [], updatedAt: null };
+
+  // SSOT: bridgeQueueSnapshot.jobs 중 kind === "manual_file" 만 사용
+  const snap = await getDbBridgeQueueSnapshot(mid);
+  const jobs = Array.isArray(snap.jobs) ? snap.jobs : [];
+  const manualJobs = jobs.filter(
+    (j) => String(j?.kind || "") === "manual_file",
+  );
+  const items = manualJobs
+    .map((j) => {
+      const id = String(j?.id || "").trim();
+      if (!id) return null;
+      const bridgePath = String(j?.bridgePath || "").trim();
+      const originalFilename = String(
+        j?.fileName || j?.programName || "",
+      ).trim();
+      const filePath = String(j?.requestId || "").trim();
+      return {
+        id,
+        fileName: originalFilename,
+        filePath,
+        originalFilename,
+        bridgePath,
+        createdAtUtc: j?.createdAtUtc ? new Date(j.createdAtUtc) : new Date(),
+      };
+    })
+    .filter(Boolean);
+
+  return { items, updatedAt: snap.updatedAt };
+}
+
+async function setManualCardQueue(machineId, items) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return;
+  const safeItems = Array.isArray(items)
+    ? items
+        .map((it) => {
+          if (!it || typeof it !== "object") return null;
+          const id = String(it.id || "").trim();
+          const fileName = String(it.fileName || "").trim();
+          const filePath = String(it.filePath || "").trim();
+          const originalFilename = String(it.originalFilename || "").trim();
+          const bridgePath = String(it.bridgePath || "").trim();
+          if (!id || !bridgePath) return null;
+          return {
+            id,
+            fileName,
+            filePath,
+            originalFilename,
+            bridgePath,
+            createdAtUtc: it.createdAtUtc
+              ? new Date(it.createdAtUtc)
+              : new Date(),
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  // SSOT: bridgeQueueSnapshot.jobs = [manual_file..., others...]
+  const snap = await getDbBridgeQueueSnapshot(mid);
+  const jobs0 = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+  const rest = jobs0.filter((j) => String(j?.kind || "") !== "manual_file");
+  const manualJobs = safeItems.map((it) => {
+    const originalFilename = String(
+      it?.originalFilename || it?.fileName || "",
+    ).trim();
+    const filePath = String(it?.filePath || "").trim();
+    return {
+      id: String(it.id),
+      kind: "manual_file",
+      fileName: originalFilename,
+      bridgePath: String(it.bridgePath || ""),
+      s3Key: "",
+      s3Bucket: "",
+      fileSize: null,
+      contentType: "",
+      requestId: filePath,
+      programNo: null,
+      programName: originalFilename,
+      qty: 1,
+      createdAtUtc: it.createdAtUtc ? new Date(it.createdAtUtc) : new Date(),
+      source: "manual_insert",
+      paused: true,
+    };
+  });
+
+  await saveBridgeQueueSnapshot(mid, [...manualJobs, ...rest]);
+}
+
+async function preloadManualCardTop2(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return;
+
+  const { items } = await loadManualCardQueue(mid);
+  const head = items[0] || null;
+  const next = items[1] || null;
+
+  const base = BRIDGE_BASE.replace(/\/$/, "");
+
+  // head -> O4000
+  if (head?.bridgePath) {
+    const url = `${base}/api/cnc/machines/${encodeURIComponent(mid)}/manual/preload`;
+    const { resp, json } = await callBridgeJson({
+      url,
+      method: "POST",
+      body: { path: head.bridgePath, slotNo: MANUAL_SLOT_NOW },
+    });
+    if (!resp.ok || json?.success === false) {
+      throw new Error(
+        json?.message ||
+          json?.error ||
+          `manual preload(O${MANUAL_SLOT_NOW}) failed`,
+      );
+    }
+  }
+
+  // next -> O4001
+  if (next?.bridgePath) {
+    const url = `${base}/api/cnc/machines/${encodeURIComponent(mid)}/manual/preload`;
+    const { resp, json } = await callBridgeJson({
+      url,
+      method: "POST",
+      body: { path: next.bridgePath, slotNo: MANUAL_SLOT_NEXT },
+    });
+    if (!resp.ok || json?.success === false) {
+      throw new Error(
+        json?.message ||
+          json?.error ||
+          `manual preload(O${MANUAL_SLOT_NEXT}) failed`,
+      );
+    }
+  }
+
+  // DB에 preload 상태 저장 (best-effort)
+  try {
+    await CncMachine.updateOne(
+      { machineId: mid },
+      {
+        $set: {
+          "manualCard.preload.nowItemId": head?.id ? String(head.id) : null,
+          "manualCard.preload.nextItemId": next?.id ? String(next.id) : null,
+          "manualCard.preload.updatedAt": new Date(),
+          "manualCard.updatedAt": new Date(),
+        },
+      },
+      { upsert: false },
+    );
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * 장비 카드: 파일 업로드 -> bridge-store 저장 -> 브리지 manual/preload (CNC 메모리 O4000/O4001 업로드)
+ * - 연속가공(continuous) 큐/로직과 완전히 분리
+ * - S3 미사용
+ */
+export async function manualFileUploadAndPreload(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    await runMulter(manualCardUploadMulter.single("file"), req, res);
+
+    const file = req.file;
+    if (!file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "file is required" });
+    }
+
+    const originalFilename = normalizeOriginalFilename(file.originalname);
+    if (!originalFilename) {
+      return res
+        .status(400)
+        .json({ success: false, message: "invalid file name" });
+    }
+
+    const content = Buffer.isBuffer(file.buffer)
+      ? file.buffer.toString("utf8")
+      : Buffer.from(file.buffer || "").toString("utf8");
+    if (!content) {
+      return res.status(400).json({ success: false, message: "empty file" });
+    }
+
+    const requestedPath = String(req.body?.filePath || "").trim();
+    const filePath =
+      requestedPath ||
+      makeManualCardFilePath({
+        machineId: mid,
+        originalFilename,
+      });
+    const bridgePath = `${filePath}.nc`;
+
+    // 1) bridge-store 저장
+    const storeUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/upload`;
+    const { resp: storeResp, json: storeBody } = await callBridgeJson({
+      url: storeUrl,
+      method: "POST",
+      body: { path: bridgePath, content, normalizeName: false },
+    });
+    if (!storeResp.ok || storeBody?.success === false) {
+      const msg = String(
+        storeBody?.message || storeBody?.error || "bridge-store upload failed",
+      );
+      await saveManualCardStatus(mid, {
+        lastUpload: {
+          fileName: originalFilename,
+          bridgePath,
+          slotNo: null,
+          nextSlotNo: null,
+          uploadedAt: new Date(),
+          error: msg,
+        },
+      });
+      return res
+        .status(storeResp.status)
+        .json({ success: false, message: msg });
+    }
+
+    const savedPath = String(storeBody?.path || bridgePath);
+
+    // 2) DB 예약목록(SSOT)에 등록
+    const q0 = await loadManualCardQueue(mid);
+    const items0 = Array.isArray(q0.items) ? q0.items.slice() : [];
+    const itemId = `${mid}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+    items0.push({
+      id: itemId,
+      fileName: originalFilename,
+      filePath,
+      originalFilename,
+      bridgePath: savedPath,
+      createdAtUtc: new Date(),
+    });
+    await setManualCardQueue(mid, items0);
+
+    // 3) 상위 2개만 CNC 메모리(O4000/O4001)에 프리로드
+    try {
+      await preloadManualCardTop2(mid);
+    } catch (e) {
+      const msg = String(e?.message || e);
+      await saveManualCardStatus(mid, {
+        lastUpload: {
+          fileName: originalFilename,
+          bridgePath: savedPath,
+          slotNo: null,
+          nextSlotNo: null,
+          uploadedAt: new Date(),
+          error: msg,
+        },
+      });
+      return res.status(500).json({ success: false, message: msg });
+    }
+
+    await saveManualCardStatus(mid, {
+      lastUpload: {
+        fileName: originalFilename,
+        bridgePath: savedPath,
+        slotNo: MANUAL_SLOT_NOW,
+        nextSlotNo: MANUAL_SLOT_NEXT,
+        uploadedAt: new Date(),
+        error: null,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: itemId,
+        filePath,
+        originalFilename,
+        fileName: originalFilename,
+        bridgePath: savedPath,
+        slotNo: MANUAL_SLOT_NOW,
+        nextSlotNo: MANUAL_SLOT_NEXT,
+        queueSize: items0.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error in manualFileUploadAndPreload:", error);
+    return res.status(500).json({
+      success: false,
+      message: "장비카드 업로드 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 장비 카드: Play -> 브리지 manual/play (activate+start)
+ */
+export async function manualFilePlay(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const playUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
+      mid,
+    )}/manual/play`;
+
+    const { resp, json } = await callBridgeJson({
+      url: playUrl,
+      method: "POST",
+      body: { slotNo: MANUAL_SLOT_NOW },
+    });
+    if (!resp.ok || json?.success === false) {
+      const msg = String(json?.message || json?.error || "manual play failed");
+      await saveManualCardStatus(mid, {
+        lastPlay: {
+          slotNo: null,
+          startedAt: new Date(),
+          error: msg,
+        },
+      });
+      return res.status(resp.status).json({ success: false, message: msg });
+    }
+
+    const slotNo = Number(json?.slotNo ?? json?.data?.slotNo ?? null);
+    await saveManualCardStatus(mid, {
+      lastPlay: {
+        slotNo: Number.isFinite(slotNo) ? slotNo : null,
+        startedAt: new Date(),
+        error: null,
+      },
+    });
+
+    return res.status(200).json({ success: true, data: json?.data ?? json });
+  } catch (error) {
+    console.error("Error in manualFilePlay:", error);
+    return res.status(500).json({
+      success: false,
+      message: "장비카드 Play 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 export async function updateBridgeQueueJobPause(req, res) {
@@ -244,7 +754,7 @@ export async function enqueueBridgeManualInsertJob(req, res) {
     const jobId = `${mid}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
     const manualJob = {
       id: jobId,
-      kind: "File",
+      kind: "requested_file",
       fileName,
       bridgePath: "",
       s3Key,
@@ -382,12 +892,56 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
 
     let jobs = clear ? [] : jobs0;
 
+    // clear 시에도 manual_file 파일은 브리지 스토리지에서 함께 삭제(best-effort)
+    if (clear && jobs0.length > 0) {
+      const targets = jobs0.filter(
+        (j) => String(j?.kind || "") === "manual_file",
+      );
+      for (const j of targets) {
+        const p = String(j?.bridgePath || "").trim();
+        if (!p) continue;
+        try {
+          const delUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/file?path=${encodeURIComponent(
+            p,
+          )}`;
+          await fetch(delUrl, {
+            method: "DELETE",
+            headers: withBridgeHeaders(),
+          }).catch(() => null);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     // delete first (so reorder/qty doesn't include deleted)
     let removedJobs = [];
     if (!clear && deleteJobIds.length > 0) {
       const delSet = new Set(deleteJobIds);
       removedJobs = jobs.filter((j) => delSet.has(String(j?.id || "")));
       jobs = jobs.filter((j) => !delSet.has(String(j?.id || "")));
+    }
+
+    // manual_file 삭제 시 bridge-store 파일 삭제(best-effort)
+    if (!clear && removedJobs.length > 0) {
+      const targets = removedJobs.filter(
+        (j) => String(j?.kind || "") === "manual_file",
+      );
+      for (const j of targets) {
+        const p = String(j?.bridgePath || "").trim();
+        if (!p) continue;
+        try {
+          const delUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/file?path=${encodeURIComponent(
+            p,
+          )}`;
+          await fetch(delUrl, {
+            method: "DELETE",
+            headers: withBridgeHeaders(),
+          }).catch(() => null);
+        } catch {
+          // ignore
+        }
+      }
     }
 
     // qty updates
@@ -832,7 +1386,7 @@ export async function enqueueCncDirectToDb(req, res) {
 
     jobs.push({
       id: jobId,
-      kind: "file",
+      kind: "requested_file",
       fileName,
       bridgePath: `${mid}/${fileName}`,
       s3Key,

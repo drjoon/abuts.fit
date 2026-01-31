@@ -7,6 +7,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -23,6 +24,88 @@ namespace HiLinkBridgeWebApi48.Controllers
         private static readonly TimeSpan ControlCooldownWindow = TimeSpan.FromSeconds(5);
         private static readonly ConcurrentDictionary<string, DateTime> RawReadCooldowns = new ConcurrentDictionary<string, DateTime>();
         private static readonly TimeSpan RawReadCooldownWindow = TimeSpan.FromSeconds(5);
+
+        private const int MANUAL_SLOT_A = 4000;
+        private const int MANUAL_SLOT_B = 4001;
+        private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private class ManualMachineState
+        {
+            public int NextSlot;
+            public int? LastPreloadedSlot;
+            public string LastPreloadedPath;
+            public DateTime LastPreloadedAtUtc;
+        }
+
+        private static readonly ConcurrentDictionary<string, ManualMachineState> ManualStates =
+            new ConcurrentDictionary<string, ManualMachineState>(StringComparer.OrdinalIgnoreCase);
+
+        private static ManualMachineState GetOrCreateManualState(string machineId)
+        {
+            return ManualStates.GetOrAdd(machineId, _ => new ManualMachineState
+            {
+                NextSlot = MANUAL_SLOT_A,
+                LastPreloadedSlot = null,
+                LastPreloadedPath = null,
+                LastPreloadedAtUtc = DateTime.MinValue,
+            });
+        }
+
+        private static string EnsureProgramHeader(string content, int programNo)
+        {
+            if (string.IsNullOrEmpty(content)) return content;
+            var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+            if (lines.Length == 0) return content;
+
+            var firstLine = (lines[0] ?? string.Empty).Trim();
+            var m = FanucRegex.Match(firstLine);
+            var header = $"O{programNo.ToString().PadLeft(4, '0')}";
+            if (m.Success)
+            {
+                if (int.TryParse(m.Groups[1].Value, out var existing) && existing == programNo)
+                {
+                    return content;
+                }
+                // 첫 줄이 이미 O번호라면 교체
+                lines[0] = header;
+                return string.Join("\r\n", lines);
+            }
+
+            // 헤더 삽입
+            return header + "\r\n" + content;
+        }
+
+        private static string SanitizeProgramTextForCnc(string content)
+        {
+            if (string.IsNullOrEmpty(content)) return content;
+            // CNC 컨트롤러/Hi-Link가 비 ASCII 문자를 포함한 프로그램 데이터 업로드에 실패하는 경우가 있어 방어적으로 제거한다.
+            // (파일명은 그대로 유지하고, CNC로 보내는 본문만 정리)
+            var arr = content.ToCharArray();
+            for (int i = 0; i < arr.Length; i++)
+            {
+                var c = arr[i];
+                if (c == '\r' || c == '\n' || c == '\t') continue;
+                if (c >= 32 && c <= 126) continue;
+                arr[i] = ' ';
+            }
+            return new string(arr);
+        }
+
+        private static string GetSafeBridgeStorePath(string relativePath)
+        {
+            var root = Path.GetFullPath(Config.BridgeStoreRoot);
+            var rel = (relativePath ?? string.Empty)
+                .Replace('/', Path.DirectorySeparatorChar)
+                .Replace("..", string.Empty);
+
+            var combined = Path.Combine(root, rel);
+            var full = Path.GetFullPath(combined);
+            if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Path is outside of bridge store root");
+            }
+            return full;
+        }
 
         private static bool IsControlOnCooldown(string key)
         {
@@ -45,6 +128,188 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             RawReadCooldowns[key] = now;
             return false;
+        }
+
+        public class ManualPreloadRequest
+        {
+            public string path { get; set; }
+            public int? slotNo { get; set; }
+        }
+
+        public class ManualPlayRequest
+        {
+            public int? slotNo { get; set; }
+        }
+
+        // POST /machines/{machineId}/manual/preload
+        [HttpPost]
+        [Route("machines/{machineId}/manual/preload")]
+        public HttpResponseMessage ManualPreload(string machineId, [FromBody] ManualPreloadRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var relPath = (req?.path ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(relPath))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
+            }
+
+            var desired = req?.slotNo;
+            if (desired.HasValue && desired.Value != MANUAL_SLOT_A && desired.Value != MANUAL_SLOT_B)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "invalid slotNo" });
+            }
+
+            try
+            {
+                var st = GetOrCreateManualState(machineId);
+                var slotNo = desired.HasValue
+                    ? desired.Value
+                    : (st.NextSlot == MANUAL_SLOT_B ? MANUAL_SLOT_B : MANUAL_SLOT_A);
+                var nextSlotNo = slotNo == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
+
+                var fullPath = GetSafeBridgeStorePath(relPath);
+                if (!File.Exists(fullPath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new
+                    {
+                        success = false,
+                        message = "file not found",
+                        path = relPath
+                    });
+                }
+
+                var content = File.ReadAllText(fullPath);
+                var processed = SanitizeProgramTextForCnc(EnsureProgramHeader(content, slotNo));
+
+                // CNC 메모리 제약 대응: 대상 슬롯은 삭제 후 업로드
+                try
+                {
+                    Mode1Api.TryDeleteMachineProgramInfo(machineId, 0, (short)slotNo, out var _, out var _);
+                }
+                catch { }
+
+                if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = "handle error: " + errUp });
+                }
+
+                var info = new UpdateMachineProgramInfo
+                {
+                    headType = 0,
+                    programNo = (short)slotNo,
+                    programData = processed,
+                    isNew = true,
+                };
+                var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                if (upRc != 0)
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = "upload failed rc=" + upRc,
+                        slotNo
+                    });
+                }
+
+                st.LastPreloadedSlot = slotNo;
+                st.LastPreloadedPath = relPath;
+                st.LastPreloadedAtUtc = DateTime.UtcNow;
+                // 사용자가 slotNo를 고정 지정하면 내부 토글 상태는 그대로 둔다.
+                if (!desired.HasValue)
+                {
+                    st.NextSlot = nextSlotNo;
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    message = "Manual preload ok",
+                    slotNo,
+                    nextSlotNo,
+                    path = relPath,
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
+        // POST /machines/{machineId}/manual/play
+        [HttpPost]
+        [Route("machines/{machineId}/manual/play")]
+        public HttpResponseMessage ManualPlay(string machineId, [FromBody] ManualPlayRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var cooldownKey = $"manualPlay:{machineId}";
+            if (IsControlOnCooldown(cooldownKey))
+            {
+                return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
+            }
+
+            try
+            {
+                var st = GetOrCreateManualState(machineId);
+                var desired = req?.slotNo;
+                if (desired.HasValue && desired.Value != MANUAL_SLOT_A && desired.Value != MANUAL_SLOT_B)
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "invalid slotNo" });
+                }
+
+                var slotNo = desired.HasValue ? desired.Value : (st.LastPreloadedSlot ?? 0);
+                if (slotNo <= 0)
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "no preloaded slot" });
+                }
+
+                if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = modeErr ?? "SetMachineMode(EDIT) failed" });
+                }
+
+                var dto = new PayloadUpdateActivateProg
+                {
+                    headType = 0,
+                    programNo = (short)slotNo,
+                };
+                var act = Mode1HandleStore.SetActivateProgram(machineId, dto, out var actErr);
+                if (act != 0)
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = actErr ?? ("SetActivateProgram failed (result=" + act + ")") });
+                }
+
+                if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = modeErr2 ?? "SetMachineMode(AUTO) failed" });
+                }
+
+                // Start
+                short ioUid = 61;
+                short panelType = 0;
+                if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, true, out var startErr))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = startErr ?? "SetMachinePanelIO failed" });
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    message = "Manual start ok",
+                    slotNo,
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
         }
 
         // POST /raw (Mode1 + Mode2 지원: Alarm은 Mode1, 그 외 CollectDataType은 Mode2)
