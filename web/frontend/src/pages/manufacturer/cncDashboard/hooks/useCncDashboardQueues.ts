@@ -198,9 +198,6 @@ export function useCncDashboardQueues({
       const list = Array.isArray(files) ? files : Array.from(files || []);
       if (list.length === 0) return;
 
-      const file = list[0];
-      if (!file) return;
-
       const ok = await ensureCncWriteAllowed();
       if (!ok) {
         toast({
@@ -211,31 +208,42 @@ export function useCncDashboardQueues({
         return;
       }
 
-      const form = new FormData();
-      form.append("file", file);
+      let uploadedCount = 0;
+      let lastSlotNo: any = null;
+      for (const file of list) {
+        if (!file) continue;
 
-      const res = await apiFetch({
-        path: `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/upload`,
-        method: "POST",
-        token,
-        body: form,
-        headers: {},
-      });
+        const form = new FormData();
+        form.append("file", file);
 
-      const body: any = res.data ?? {};
-      if (!res.ok || body?.success === false) {
-        throw new Error(
-          body?.message || body?.error || "장비카드 업로드에 실패했습니다.",
-        );
+        const res = await apiFetch({
+          path: `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/upload`,
+          method: "POST",
+          token,
+          body: form,
+          headers: {},
+        });
+
+        const body: any = res.data ?? {};
+        if (!res.ok || body?.success === false) {
+          throw new Error(
+            body?.message || body?.error || "장비카드 업로드에 실패했습니다.",
+          );
+        }
+
+        const data = body?.data ?? body;
+        lastSlotNo = data?.slotNo ?? lastSlotNo;
+        uploadedCount += 1;
       }
 
-      const data = body?.data ?? body;
-      const slotNo = data?.slotNo;
       toast({
         title: "업로드 완료",
-        description: slotNo
-          ? `CNC 슬롯 O${slotNo}에 업로드되었습니다.`
-          : "업로드되었습니다.",
+        description:
+          uploadedCount <= 1
+            ? lastSlotNo
+              ? `CNC 슬롯 O${lastSlotNo}에 업로드되었습니다.`
+              : "업로드되었습니다."
+            : `${uploadedCount}개 파일이 업로드되었습니다.`,
       });
 
       const m = machines.find((x) => x?.uid === mid) || null;
