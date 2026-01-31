@@ -24,6 +24,13 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/raw" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
  -d '{"uid":"M5","dataType":"GetMachineAlarmInfo","payload":{"headType":0}}'
 
+# Reset
+
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/reset" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{}'
+
 # GetOPStatus (Mode2, payload 없음)
 
 curl -X POST "http://1.217.31.227:8002/api/cnc/raw" \

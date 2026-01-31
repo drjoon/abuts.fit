@@ -3,6 +3,7 @@ import {
   X,
   GripVertical,
   ArrowLeft,
+  Trash,
   ArrowUp,
   ArrowDown,
   Minus,
@@ -23,6 +24,7 @@ interface CncPlaylistDrawerProps {
   readOnly?: boolean;
   readOnlyMessage?: string;
   headerExtras?: React.ReactNode;
+  deleteVariant?: "worksheet" | "cnc";
   onClose: () => void;
   onOpenCode: (jobId: string) => void;
   onDelete: (jobId: string) => void;
@@ -37,6 +39,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   readOnly,
   readOnlyMessage,
   headerExtras,
+  deleteVariant = "worksheet",
   onClose,
   onOpenCode,
   onDelete,
@@ -244,9 +247,15 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                           onDelete(job.id);
                         }}
                         disabled={!!readOnly}
-                        title="CAM으로 되돌리기"
+                        title={
+                          deleteVariant === "cnc" ? "삭제" : "CAM으로 되돌리기"
+                        }
                       >
-                        <ArrowLeft className="h-4 w-4" />
+                        {deleteVariant === "cnc" ? (
+                          <Trash className="h-4 w-4" />
+                        ) : (
+                          <ArrowLeft className="h-4 w-4" />
+                        )}
                       </button>
                     </div>
                   </div>

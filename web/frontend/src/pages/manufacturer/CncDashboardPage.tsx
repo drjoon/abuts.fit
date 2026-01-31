@@ -20,7 +20,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Plus, FileText, Clock, CheckCircle, AlertCircle } from "lucide-react";
 import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
-import { CncSimpleProgramEditorModal } from "@/pages/manufacturer/cnc/components/CncSimpleProgramEditorModal";
+import { CncProgramEditorPanel } from "@/pages/manufacturer/cnc/components/CncProgramEditorPanel";
 import { useCncToolPanels } from "@/pages/manufacturer/cnc/hooks/useCncToolPanels";
 import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
 import { CncMachineManagerModal } from "@/pages/manufacturer/cnc/components/CncMachineManagerModal";
@@ -386,6 +386,8 @@ export const CncDashboardPage = () => {
         const metaSource = String(body?.meta?.source || "").trim();
         const jobs: CncJobItem[] = list.map((job) => {
           const jobSourceRaw = String(job?.source || "").trim();
+          const pausedRaw = job?.paused;
+          const paused = typeof pausedRaw === "boolean" ? pausedRaw : true;
           const programNo =
             typeof job?.programNo === "number" ||
             typeof job?.programNo === "string"
@@ -408,6 +410,7 @@ export const CncDashboardPage = () => {
             programNo,
             name: String(nameRaw || "-"),
             qty,
+            paused,
             ...(job?.s3Key ? { s3Key: String(job.s3Key) } : {}),
             ...(job?.s3Bucket ? { s3Bucket: String(job.s3Bucket) } : {}),
           };
@@ -1561,7 +1564,15 @@ export const CncDashboardPage = () => {
                         if (list.length === 0) return;
 
                         const ok = await ensureCncWriteAllowed();
-                        if (!ok) return;
+                        if (!ok) {
+                          toast({
+                            title: "업로드 불가",
+                            description:
+                              "CNC 업로드는 제조사 권한/PIN 확인이 필요합니다.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
 
                         const existing = new Set(
                           (reservationJobsMap?.[machine.uid] || []).map((j) =>
@@ -1790,75 +1801,121 @@ export const CncDashboardPage = () => {
                     if (!targetJob) return;
 
                     const wasPaused = !!targetJob.paused;
-                    const nextPaused = !wasPaused;
-
-                    setReservationJobsMap((prev) => {
-                      const current = prev[uid] || [];
-                      const nextJobs = current.map((j) =>
-                        j.id === jobId ? { ...j, paused: nextPaused } : j,
-                      );
-                      return {
-                        ...prev,
-                        [uid]: nextJobs,
-                      };
-                    });
-
-                    if (!(wasPaused && !nextPaused)) return;
-
-                    const ok = await ensureCncWriteAllowed();
-                    if (!ok) {
+                    // pause(일시정지)로 전환이면 여기서 처리하고 종료
+                    if (!wasPaused) {
                       setReservationJobsMap((prev) => {
                         const current = prev[uid] || [];
                         const nextJobs = current.map((j) =>
-                          j.id === jobId ? { ...j, paused: wasPaused } : j,
+                          j.id === jobId ? { ...j, paused: true } : j,
                         );
                         return {
                           ...prev,
                           [uid]: nextJobs,
                         };
                       });
+
+                      try {
+                        const pauseRes = await apiFetch({
+                          path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/${encodeURIComponent(
+                            jobId,
+                          )}/pause`,
+                          method: "PATCH",
+                          token,
+                          jsonBody: { paused: true },
+                        });
+                        const pauseBody: any = pauseRes.data ?? {};
+                        if (!pauseRes.ok || pauseBody?.success === false) {
+                          throw new Error(
+                            pauseBody?.message ||
+                              pauseBody?.error ||
+                              "일시정지 상태 저장 실패",
+                          );
+                        }
+                      } catch (e: any) {
+                        const msg = e?.message ?? "일시정지 변경 중 오류";
+                        setError(msg);
+                        toast({
+                          title: "일시정지 변경 실패",
+                          description: msg,
+                          variant: "destructive",
+                        });
+                        setReservationJobsMap((prev) => {
+                          const current = prev[uid] || [];
+                          const nextJobs = current.map((j) =>
+                            j.id === jobId ? { ...j, paused: wasPaused } : j,
+                          );
+                          return {
+                            ...prev,
+                            [uid]: nextJobs,
+                          };
+                        });
+                      }
                       return;
                     }
 
-                    const programNoRaw = (targetJob as any)?.programNo ?? null;
-                    const programNo = Number(programNoRaw);
-                    if (!Number.isFinite(programNo) || programNo <= 0) {
-                      const msg =
-                        "프로그램 번호가 없어 생산을 시작할 수 없습니다. (예약 등록 시 프로그램 번호를 확인해 주세요.)";
-                      setError(msg);
-                      toast({
-                        title: "생산 시작 실패",
-                        description: msg,
-                        variant: "destructive",
-                      });
-                      setReservationJobsMap((prev) => {
-                        const current = prev[uid] || [];
-                        const nextJobs = current.map((j) =>
-                          j.id === jobId ? { ...j, paused: wasPaused } : j,
-                        );
-                        return {
-                          ...prev,
-                          [uid]: nextJobs,
-                        };
-                      });
+                    const ok = await ensureCncWriteAllowed();
+                    if (!ok) {
                       return;
                     }
 
                     try {
-                      const actRes = await callRaw(uid, "SetActivateProgram", {
-                        headType: 1,
-                        programNo,
-                      });
-                      const actOk =
-                        actRes &&
-                        actRes.success !== false &&
-                        (actRes.result == null || actRes.result === 0);
-                      if (!actOk) {
+                      // 1.5) Alarm 상태면 시작을 막고 사용자에게 원인을 안내한다.
+                      try {
+                        const [statusRes, alarmRes] = await Promise.all([
+                          apiFetch({
+                            path: `/api/machines/${encodeURIComponent(uid)}/status`,
+                            method: "GET",
+                            token,
+                          }),
+                          apiFetch({
+                            path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
+                            method: "POST",
+                            token,
+                            jsonBody: { headType: 0 },
+                          }),
+                        ]);
+
+                        const statusBody: any = statusRes.data ?? {};
+                        const machineStatus = String(
+                          statusBody?.status ?? statusBody?.data?.status ?? "",
+                        ).trim();
+                        const isAlarm =
+                          machineStatus.toLowerCase() === "alarm" ||
+                          machineStatus.toLowerCase().includes("alarm");
+
+                        const alarmBody: any = alarmRes.data ?? {};
+                        const alarmData =
+                          alarmBody?.data != null ? alarmBody.data : alarmBody;
+                        const alarms: any[] = Array.isArray(alarmData?.alarms)
+                          ? alarmData.alarms
+                          : [];
+
+                        if (isAlarm || alarms.length > 0) {
+                          const alarmText =
+                            alarms.length > 0
+                              ? alarms
+                                  .map((a) =>
+                                    a
+                                      ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}`
+                                      : "-",
+                                  )
+                                  .join(", ")
+                              : "-";
+                          throw new Error(
+                            `장비가 Alarm 상태입니다. (${alarmText})`,
+                          );
+                        }
+                      } catch (e: any) {
                         const msg =
-                          actRes?.message ||
-                          actRes?.error ||
-                          "프로그램 로드 실패 (SetActivateProgram)";
-                        throw new Error(msg);
+                          e?.message ||
+                          "장비 상태가 Alarm이라 가공을 시작할 수 없습니다.";
+                        toast({
+                          title: "가공 시작 불가 (알람)",
+                          description: msg,
+                          variant: "destructive",
+                        });
+
+                        return;
                       }
 
                       const res = await apiFetch({
@@ -1867,9 +1924,68 @@ export const CncDashboardPage = () => {
                         token,
                       });
 
-                      if (!res.ok) {
-                        throw new Error("가공 시작 실패");
+                      const startBody: any = res.data ?? {};
+                      if (!res.ok || startBody?.success === false) {
+                        throw new Error(
+                          startBody?.message ||
+                            startBody?.error ||
+                            "가공 시작 실패",
+                        );
                       }
+
+                      // 2) 브리지/장비가 실제로 시작됐는지(=Now Playing/active program이 뜨는지) 짧게 검증한다.
+                      let verified = false;
+                      let lastVerifyError: string | null = null;
+                      for (let i = 0; i < 6; i += 1) {
+                        try {
+                          const activeRes = await apiFetch({
+                            path: `/api/cnc-machines/${encodeURIComponent(uid)}/programs/active`,
+                            method: "GET",
+                            token,
+                          });
+                          const activeBody: any = activeRes.data ?? {};
+                          const activeData =
+                            activeBody?.data != null
+                              ? activeBody.data
+                              : activeBody;
+                          if (
+                            activeRes.ok &&
+                            activeBody?.success !== false &&
+                            (activeData?.programNo != null ||
+                              activeData?.no != null ||
+                              String(activeData?.name || "").trim().length > 0)
+                          ) {
+                            verified = true;
+                            break;
+                          }
+                          if (activeBody?.message) {
+                            lastVerifyError = String(activeBody.message);
+                          }
+                        } catch (e: any) {
+                          lastVerifyError = e?.message || null;
+                        }
+
+                        await new Promise((r) => setTimeout(r, 500));
+                      }
+
+                      if (!verified) {
+                        throw new Error(
+                          lastVerifyError ||
+                            "가공이 시작되지 않았습니다. (Now Playing 확인 실패)",
+                        );
+                      }
+
+                      // 2) 성공 시 UI에서 Next Up을 제거(=Now Playing으로 넘어간 것처럼 표시)하고 갱신한다.
+                      setReservationJobsMap((prev) => {
+                        const current = prev[uid] || [];
+                        const filtered = current.filter((j) => j.id !== jobId);
+                        if (filtered.length === 0) {
+                          const nextMap = { ...prev };
+                          delete nextMap[uid];
+                          return nextMap;
+                        }
+                        return { ...prev, [uid]: filtered };
+                      });
 
                       void refreshStatusFor(uid);
                     } catch (e: any) {
@@ -1891,6 +2007,20 @@ export const CncDashboardPage = () => {
                           [uid]: nextJobs,
                         };
                       });
+
+                      // DB(SSOT)도 원복(best-effort)
+                      try {
+                        await apiFetch({
+                          path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/${encodeURIComponent(
+                            jobId,
+                          )}/pause`,
+                          method: "PATCH",
+                          token,
+                          jsonBody: { paused: true },
+                        });
+                      } catch {
+                        // ignore
+                      }
                     }
                   }}
                 />
@@ -1949,10 +2079,10 @@ export const CncDashboardPage = () => {
           }}
         />
 
-        <CncSimpleProgramEditorModal
+        <CncProgramEditorPanel
           open={programEditorOpen}
           onClose={closeProgramEditor}
-          title={String(programEditorTarget?.name || "")}
+          workUid={workUid}
           selectedProgram={programEditorTarget}
           onLoadProgram={loadProgramCode}
           onSaveProgram={saveProgramCode}
@@ -1986,10 +2116,15 @@ export const CncDashboardPage = () => {
           title={playlistTarget?.name || ""}
           jobs={playlistJobs}
           readOnly={playlistReadOnly}
+          deleteVariant="cnc"
           onClose={() => {
+            const target = playlistTarget;
             setPlaylistOpen(false);
             setPlaylistTarget(null);
             setPlaylistReadOnly(false);
+            if (target) {
+              void loadBridgeQueueForMachine(target, { silent: true });
+            }
           }}
           onOpenCode={(jobId) => {
             const m = playlistTarget;

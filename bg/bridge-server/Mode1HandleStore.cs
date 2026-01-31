@@ -17,7 +17,17 @@ namespace HiLinkBridgeWebApi48
         public static void Invalidate(string uid)
         {
             if (string.IsNullOrWhiteSpace(uid)) return;
-            Handles.TryRemove(uid, out _);
+            if (Handles.TryRemove(uid, out var handle) && handle != 0)
+            {
+                try
+                {
+                    HiLink.FreeMachineHandle(handle);
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
             Enabled.TryRemove(uid, out _);
         }
 
@@ -89,11 +99,6 @@ namespace HiLinkBridgeWebApi48
             if (res == -8)
             {
                 Invalidate(uid);
-                if (!TryGetHandle(uid, out handle, out error))
-                {
-                    return -1;
-                }
-                res = HiLink.SetActivateProgram(handle, dto);
             }
             return res;
         }

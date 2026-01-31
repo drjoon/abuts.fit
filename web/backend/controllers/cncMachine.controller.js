@@ -257,7 +257,7 @@ export async function enqueueBridgeManualInsertJob(req, res) {
       qty: 1,
       createdAtUtc: new Date(),
       source: "manual_insert",
-      paused: false,
+      paused: true,
     };
     await saveBridgeQueueSnapshot(mid, [manualJob, ...rest]);
 
@@ -845,6 +845,7 @@ export async function enqueueCncDirectToDb(req, res) {
       qty,
       createdAtUtc: now,
       source: "manual_upload",
+      paused: true,
     });
 
     await saveBridgeQueueSnapshot(mid, jobs);

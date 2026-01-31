@@ -753,6 +753,7 @@ export const MachiningMachineQueueBoard = ({
         title={playlistTitle}
         jobs={playlistJobs}
         readOnly={false}
+        deleteVariant="worksheet"
         onClose={() => {
           setPlaylistOpen(false);
         }}

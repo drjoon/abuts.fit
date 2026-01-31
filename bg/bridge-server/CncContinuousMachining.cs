@@ -273,6 +273,11 @@ if (nextJob == null)
 {
 nextJob = CncJobQueue.Peek(machineId);
 }
+if (nextJob != null && nextJob.paused)
+{
+// paused 상태의 Next Up은 자동 시작/업로드를 하지 않는다.
+return;
+}
 if (nextJob != null)
 {
 var now = DateTime.UtcNow;
@@ -498,23 +503,6 @@ if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
 Console.WriteLine("[CncContinuous] auto mode failed machine={0} err={1}", machineId, modeErr2);
 return;
 }
-// 4.5 Auto Start (옵션)
-try
-{
-var autoStart = (Environment.GetEnvironmentVariable("CNC_CONTINUOUS_AUTO_START") ?? "true").Trim();
-if (!string.Equals(autoStart, "false", StringComparison.OrdinalIgnoreCase))
-{
-if (TryStartSignal(machineId, out var startErr))
-{
-Console.WriteLine("[CncContinuous] start signal sent machine={0}", machineId);
-}
-else if (!string.IsNullOrEmpty(startErr))
-{
-Console.WriteLine("[CncContinuous] start signal failed machine={0} err={1}", machineId, startErr);
-}
-}
-}
-catch { }
 // Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
 // 상태 업데이트
 lock (StateLock)
@@ -576,23 +564,6 @@ if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
 Console.WriteLine("[CncContinuous] auto mode failed machine={0} err={1}", machineId, modeErr2);
 return false;
 }
-// 4.5 Auto Start (옵션)
-try
-{
-var autoStart = (Environment.GetEnvironmentVariable("CNC_CONTINUOUS_AUTO_START") ?? "true").Trim();
-if (!string.Equals(autoStart, "false", StringComparison.OrdinalIgnoreCase))
-{
-if (TryStartSignal(machineId, out var startErr))
-{
-Console.WriteLine("[CncContinuous] start signal sent machine={0}", machineId);
-}
-else if (!string.IsNullOrEmpty(startErr))
-{
-Console.WriteLine("[CncContinuous] start signal failed machine={0} err={1}", machineId, startErr);
-}
-}
-}
-catch { }
 // Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
 // 상태 업데이트
 lock (StateLock)
@@ -824,6 +795,12 @@ var bridgePath = (j?["bridgePath"]?.ToString() ?? string.Empty).Trim();
 var s3Key = (j?["s3Key"]?.ToString() ?? string.Empty).Trim();
 var s3Bucket = (j?["s3Bucket"]?.ToString() ?? string.Empty).Trim();
 var requestId = (j?["requestId"]?.ToString() ?? string.Empty).Trim();
+var paused = false;
+try
+{
+paused = j?["paused"]?.Value<bool?>() ?? false;
+}
+catch { paused = false; }
 var qty = 1;
 try
 {
@@ -843,7 +820,8 @@ s3Key = s3Key,
 s3Bucket = s3Bucket,
 requestId = requestId,
 createdAtUtc = DateTime.UtcNow,
-source = "backend_db"
+source = "backend_db",
+paused = paused
 });
 }
 CncJobQueue.ReplaceQueue(mid, jobs);
@@ -983,6 +961,29 @@ return false;
 fullPath = combined;
 return true;
 }
+// 한글/긴 파일명/경로길이 문제를 피하기 위해, S3 기반 job은 로컬 캐시 파일명을 jobId 기반으로 고정한다.
+try
+{
+var sk = (job.s3Key ?? string.Empty).Trim();
+var jid = (job.id ?? string.Empty).Trim();
+if (!string.IsNullOrEmpty(sk) && !string.IsNullOrEmpty(jid))
+{
+var mid = (job.machineId ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(mid)) mid = "_";
+var safeId = Regex.Replace(jid, @"[^A-Za-z0-9_\-]", "_");
+if (string.IsNullOrEmpty(safeId)) safeId = Guid.NewGuid().ToString("N");
+var safeFile = safeId + ".nc";
+var p2 = Path.GetFullPath(Path.Combine(root, mid, "cache", safeFile));
+if (!p2.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+{
+error = "cache path is outside of root";
+return false;
+}
+fullPath = p2;
+return true;
+}
+}
+catch { }
 var fn = (job.fileName ?? string.Empty).Trim();
 if (string.IsNullOrEmpty(fn))
 {

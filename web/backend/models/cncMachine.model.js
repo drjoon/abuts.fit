@@ -120,6 +120,7 @@ const cncMachineSchema = new mongoose.Schema(
           qty: { type: Number },
           createdAtUtc: { type: Date },
           source: { type: String, trim: true },
+          paused: { type: Boolean, default: false },
         },
       ],
       updatedAt: { type: Date, default: null },

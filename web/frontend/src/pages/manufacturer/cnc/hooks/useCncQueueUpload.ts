@@ -62,7 +62,12 @@ export const useCncQueueUpload = () => {
   const uploadLocalFiles = useCallback(
     async (machineId: string, files: FileList | File[]) => {
       const mid = String(machineId || "").trim();
-      if (!mid || !token) return;
+      if (!mid) {
+        throw new Error("장비 ID가 올바르지 않습니다.");
+      }
+      if (!token) {
+        throw new Error("로그인이 필요합니다.");
+      }
       const list = Array.from(files || []);
       if (list.length === 0) return;
 
@@ -138,7 +143,12 @@ export const useCncQueueUpload = () => {
   const uploadManualInsertFiles = useCallback(
     async (machineId: string, files: FileList | File[]) => {
       const mid = String(machineId || "").trim();
-      if (!mid || !token) return;
+      if (!mid) {
+        throw new Error("장비 ID가 올바르지 않습니다.");
+      }
+      if (!token) {
+        throw new Error("로그인이 필요합니다.");
+      }
       const list = Array.from(files || []);
       if (list.length === 0) return;
 

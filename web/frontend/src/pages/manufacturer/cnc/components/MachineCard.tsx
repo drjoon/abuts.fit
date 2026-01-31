@@ -527,9 +527,13 @@ export const MachineCard = (props: MachineCardProps) => {
                   }}
                   disabled={loading}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
-                  title="정지(Stop)"
+                  title={isRunning ? "정지(Stop)" : "중단 상태"}
                 >
-                  <Pause className="h-4 w-4" />
+                  {isRunning ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
                 </button>
                 <button
                   type="button"
@@ -597,7 +601,9 @@ export const MachineCard = (props: MachineCardProps) => {
                     : undefined;
                   const canControlNext =
                     !!isActive && !!nextProg && !!nextJobId;
-                  const paused = !!(nextProg as any)?.paused;
+                  const pausedRaw = (nextProg as any)?.paused;
+                  const paused =
+                    typeof pausedRaw === "boolean" ? pausedRaw : true;
 
                   return (
                     <button

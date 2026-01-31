@@ -316,12 +316,20 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
             }
 
+            // Reset은 항상 새 핸들로 수행한다.
+            Mode1HandleStore.Invalidate(machineId);
+
             if (!Mode1Api.TrySetMachineReset(machineId, out var error))
             {
+                var msg = (error ?? "SetMachineReset failed") as string;
+                if (!string.IsNullOrEmpty(msg) && msg.Contains("result=-8"))
+                {
+                    msg = msg + " (무효 핸들러: 다시 시도하세요)";
+                }
                 return Request.CreateResponse((HttpStatusCode)500, new
                 {
                     success = false,
-                    message = error ?? "SetMachineReset failed"
+                    message = msg
                 });
             }
 
@@ -501,19 +509,18 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
             }
 
-            // 핸들이 무효(-8)일 수 있으므로 1회 Invalidate 후 재시도
             if (!Mode1Api.TryGetProgListInfo(machineId, headType, out var info, out var error))
             {
-                // -8 등 무효 핸들 케이스에서 재시도
-                Mode1HandleStore.Invalidate(machineId);
-                if (!Mode1Api.TryGetProgListInfo(machineId, headType, out info, out error))
+                var msg = (error ?? "GetMachineProgramListInfo failed") as string;
+                if (!string.IsNullOrEmpty(msg) && msg.Contains("result=-8"))
                 {
-                    return Request.CreateResponse((HttpStatusCode)500, new
-                    {
-                        success = false,
-                        message = error ?? "GetMachineProgramListInfo failed"
-                    });
+                    msg = msg + " (무효 핸들러: 다시 시도하세요)";
                 }
+                return Request.CreateResponse((HttpStatusCode)500, new
+                {
+                    success = false,
+                    message = msg
+                });
             }
 
             return Request.CreateResponse(HttpStatusCode.OK, new

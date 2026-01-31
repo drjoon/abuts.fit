@@ -4,6 +4,7 @@ import type { Machine } from "@/pages/manufacturer/cnc/types";
 import { applyProgramNoToContent } from "../lib/programNaming";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { getFileBlob, setFileBlob } from "@/utils/fileBlobCache";
 
 interface UseCncProgramEditorParams {
   workUid: string;
@@ -75,12 +76,10 @@ export const useCncProgramEditor = ({
     if (s3Key && token) {
       const cacheKey = `cnc:s3:${s3Key}`;
       try {
-        const cached =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem(cacheKey)
-            : null;
-        if (cached != null) {
-          return cached;
+        const cachedBlob = await getFileBlob(cacheKey);
+        if (cachedBlob) {
+          const cachedText = await cachedBlob.text();
+          if (cachedText != null) return cachedText;
         }
       } catch {
         // no-op
@@ -112,9 +111,7 @@ export const useCncProgramEditor = ({
       }
       const text = await resp.text();
       try {
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(cacheKey, text);
-        }
+        await setFileBlob(cacheKey, new Blob([text], { type: "text/plain" }));
       } catch {
         // no-op
       }

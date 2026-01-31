@@ -22,33 +22,17 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            for (var attempt = 0; attempt < 2; attempt++)
+            info = new MachineInfo();
+            var result = HiLink.GetMachineInfo(handle, ref info);
+            if (result == 0)
             {
-                info = new MachineInfo();
-                var result = HiLink.GetMachineInfo(handle, ref info);
-                if (result == 0)
-                {
-                    return true;
-                }
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        info = default(MachineInfo);
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"GetMachineInfo failed (result={result})";
-                info = default(MachineInfo);
-                return false;
+                return true;
             }
-
-            error = "GetMachineInfo failed";
+            if (result == -8)
+            {
+                Mode1HandleStore.Invalidate(uid);
+            }
+            error = $"GetMachineInfo failed (result={result})";
             info = default(MachineInfo);
             return false;
         }
@@ -63,33 +47,17 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            for (var attempt = 0; attempt < 2; attempt++)
+            list = new List<IOInfo>();
+            var result = HiLink.GetMachineAllOPInfo(handle, panelType, ref list);
+            if (result == 0)
             {
-                list = new List<IOInfo>();
-                var result = HiLink.GetMachineAllOPInfo(handle, panelType, ref list);
-                if (result == 0)
-                {
-                    return true;
-                }
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        list = null;
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"GetMachineAllOPInfo failed (result={result})";
-                list = null;
-                return false;
+                return true;
             }
-
-            error = "GetMachineAllOPInfo failed";
+            if (result == -8)
+            {
+                Mode1HandleStore.Invalidate(uid);
+            }
+            error = $"GetMachineAllOPInfo failed (result={result})";
             list = null;
             return false;
         }
@@ -103,30 +71,16 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            for (var attempt = 0; attempt < 2; attempt++)
+            var result = HiLink.SetMachineReset(handle);
+            if (result == 0)
             {
-                var result = HiLink.SetMachineReset(handle);
-                if (result == 0)
-                {
-                    return true;
-                }
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"SetMachineReset failed (result={result})";
-                return false;
+                return true;
             }
-
-            error = "SetMachineReset failed";
+            if (result == -8)
+            {
+                Mode1HandleStore.Invalidate(uid);
+            }
+            error = $"SetMachineReset failed (result={result})";
             return false;
         }
 
@@ -146,36 +100,22 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            for (var attempt = 0; attempt < 2; attempt++)
+            var dto = new DeleteMachineProgramInfo
             {
-                var dto = new DeleteMachineProgramInfo
-                {
-                    headType = headType,
-                    programNo = programNo,
-                };
+                headType = headType,
+                programNo = programNo,
+            };
 
-                var result = HiLink.DeleteMachineProgramInfo(handle, dto, out activateProgNum);
-                if (result == 0)
-                {
-                    return true;
-                }
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"DeleteMachineProgramInfo failed (result={result})";
-                return false;
+            var result = HiLink.DeleteMachineProgramInfo(handle, dto, out activateProgNum);
+            if (result == 0)
+            {
+                return true;
             }
-
-            error = "DeleteMachineProgramInfo failed";
+            if (result == -8)
+            {
+                Mode1HandleStore.Invalidate(uid);
+            }
+            error = $"DeleteMachineProgramInfo failed (result={result})";
             return false;
         }
 
@@ -221,31 +161,14 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            // -8 무효 핸들 대응: 최대 2회 시도
-            for (var attempt = 0; attempt < 2; attempt++)
+            info = new MachineProgramListInfo { headType = headType };
+            var result = HiLink.GetMachineProgramListInfo(handle, ref info);
+            if (result == 0) return true;
+            if (result == -8)
             {
-                info = new MachineProgramListInfo { headType = headType };
-                var result = HiLink.GetMachineProgramListInfo(handle, ref info);
-                if (result == 0) return true;
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        info = default(MachineProgramListInfo);
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"GetMachineProgramListInfo failed (result={result})";
-                info = default(MachineProgramListInfo);
-                return false;
+                Mode1HandleStore.Invalidate(uid);
             }
-
-            error = "GetMachineProgramListInfo failed";
+            error = $"GetMachineProgramListInfo failed (result={result})";
             info = default(MachineProgramListInfo);
             return false;
         }
@@ -260,34 +183,17 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            // 일부 환경에서 캐시된 handler가 무효(-8)로 떨어지는 경우가 있어 1회 재시도한다.
-            for (var attempt = 0; attempt < 2; attempt++)
+            info = new MachineProgramInfo();
+            var result = HiLink.GetMachineActivateProgInfo(handle, ref info);
+            if (result == 0)
             {
-                info = new MachineProgramInfo();
-                var result = HiLink.GetMachineActivateProgInfo(handle, ref info);
-                if (result == 0)
-                {
-                    return true;
-                }
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        info = default(MachineProgramInfo);
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"GetMachineActivateProgInfo failed (result={result})";
-                info = default(MachineProgramInfo);
-                return false;
+                return true;
             }
-
-            error = "GetMachineActivateProgInfo failed";
+            if (result == -8)
+            {
+                Mode1HandleStore.Invalidate(uid);
+            }
+            error = $"GetMachineActivateProgInfo failed (result={result})";
             info = default(MachineProgramInfo);
             return false;
         }
@@ -334,34 +240,17 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            // 일부 환경에서 캐시된 handler가 무효(-8)로 떨어지는 경우가 있어 1회 재시도한다.
-            for (var attempt = 0; attempt < 2; attempt++)
+            info = new MachineAlarmInfo { headType = headType };
+            var result = HiLink.GetMachineAlarmInfo(handle, ref info);
+            if (result == 0)
             {
-                info = new MachineAlarmInfo { headType = headType };
-                var result = HiLink.GetMachineAlarmInfo(handle, ref info);
-                if (result == 0)
-                {
-                    return true;
-                }
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        info = default(MachineAlarmInfo);
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"GetMachineAlarmInfo failed (result={result})";
-                info = default(MachineAlarmInfo);
-                return false;
+                return true;
             }
-
-            error = "GetMachineAlarmInfo failed";
+            if (result == -8)
+            {
+                Mode1HandleStore.Invalidate(uid);
+            }
+            error = $"GetMachineAlarmInfo failed (result={result})";
             info = default(MachineAlarmInfo);
             return false;
         }
@@ -376,30 +265,16 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            for (var attempt = 0; attempt < 2; attempt++)
+            var result = HiLink.GetMachineStatus(handle, ref status);
+            if (result == 0)
             {
-                var result = HiLink.GetMachineStatus(handle, ref status);
-                if (result == 0)
-                {
-                    return true;
-                }
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"GetMachineStatus failed (result={result})";
-                return false;
+                return true;
             }
-
-            error = "GetMachineStatus failed";
+            if (result == -8)
+            {
+                Mode1HandleStore.Invalidate(uid);
+            }
+            error = $"GetMachineStatus failed (result={result})";
             return false;
         }
 
@@ -412,30 +287,16 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            for (var attempt = 0; attempt < 2; attempt++)
+            var result = HiLink.SetMachinePanelIO(handle, panelType, ioUid, status);
+            if (result == 0)
             {
-                var result = HiLink.SetMachinePanelIO(handle, panelType, ioUid, status);
-                if (result == 0)
-                {
-                    return true;
-                }
-
-                if (result == -8 && attempt == 0)
-                {
-                    Mode1HandleStore.Invalidate(uid);
-                    if (!Mode1HandleStore.TryGetHandle(uid, out handle, out err))
-                    {
-                        error = err;
-                        return false;
-                    }
-                    continue;
-                }
-
-                error = $"SetMachinePanelIO failed (result={result})";
-                return false;
+                return true;
             }
-
-            error = "SetMachinePanelIO failed";
+            if (result == -8)
+            {
+                Mode1HandleStore.Invalidate(uid);
+            }
+            error = $"SetMachinePanelIO failed (result={result})";
             return false;
         }
     }
