@@ -146,6 +146,31 @@ export const useCncProgramEditor = ({
       return text;
     }
 
+    const bridgePath = String(
+      prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
+    ).trim();
+    if (bridgePath) {
+      const res = await fetch(
+        `/api/bridge-store/file?path=${encodeURIComponent(bridgePath)}`,
+        token
+          ? {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          : undefined,
+      );
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(
+          body?.message || body?.error || "브리지 파일 로드 실패",
+        );
+      }
+      const text = body?.content;
+      if (typeof text === "string") return text;
+      return "";
+    }
+
     // 브리지 서버에서 온 프로그램(source === "bridge")이고 programData가 이미 포함된 경우,
     // Hi-Link를 호출하지 않고 해당 내용을 그대로 사용한다.
     if (prog.source === "bridge" && typeof prog.programData === "string") {

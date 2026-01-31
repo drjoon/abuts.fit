@@ -98,6 +98,10 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                   requestId: (job as any).requestId,
                   s3Key: (job as any).s3Key,
                   s3Bucket: (job as any).s3Bucket,
+                  bridgePath:
+                    (job as any).bridgePath ||
+                    (job as any).bridge_store_path ||
+                    (job as any).path,
                   paused: job.paused ?? false,
                   qty: job.qty,
                 };

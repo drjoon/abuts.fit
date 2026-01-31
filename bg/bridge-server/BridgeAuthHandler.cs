@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Web.Http.Owin;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -15,10 +18,54 @@ namespace HiLinkBridgeWebApi48
     public class BridgeAuthHandler : DelegatingHandler
     {
         private static readonly string SharedSecret = Config.BridgeSharedSecret;
+        private static readonly HashSet<string> AllowIps = new HashSet<string>(
+            (Config.BridgeAllowIpsRaw ?? string.Empty)
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrEmpty(s)),
+            StringComparer.OrdinalIgnoreCase
+        );
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Console.WriteLine("[BridgeAuth] {0} {1}", request.Method, request.RequestUri);
+
+            if (AllowIps.Count > 0)
+            {
+                string ip = string.Empty;
+                try
+                {
+                    var xff = request.Headers.Contains("X-Forwarded-For")
+                        ? string.Join(",", request.Headers.GetValues("X-Forwarded-For"))
+                        : string.Empty;
+                    if (!string.IsNullOrWhiteSpace(xff))
+                    {
+                        ip = xff.Split(',')[0].Trim();
+                    }
+                    else
+                    {
+                        var ctx = request.GetOwinContext();
+                        ip = ctx?.Request?.RemoteIpAddress ?? string.Empty;
+                    }
+                }
+                catch
+                {
+                    ip = string.Empty;
+                }
+
+                if (string.IsNullOrWhiteSpace(ip) || !AllowIps.Contains(ip))
+                {
+                    Console.WriteLine("[BridgeAuth] Forbidden by allowlist: ip={0}", ip);
+                    var forbidden = request.CreateResponse(HttpStatusCode.Forbidden, new
+                    {
+                        success = false,
+                        message = "forbidden"
+                    });
+                    var tcs = new TaskCompletionSource<HttpResponseMessage>();
+                    tcs.SetResult(forbidden);
+                    return tcs.Task;
+                }
+            }
 
             // 시크릿이 비어 있으면 인증 비활성화
             if (string.IsNullOrEmpty(SharedSecret))

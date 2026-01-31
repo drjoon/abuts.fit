@@ -142,6 +142,25 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             var response = context.Response;
             response.ContentType = "application/json";
 
+            var allowRaw = (AppConfig.GetEspritAllowIpsRaw() ?? string.Empty).Trim();
+            if (!string.IsNullOrEmpty(allowRaw))
+            {
+                var ip = request.RemoteEndPoint?.Address?.ToString() ?? string.Empty;
+                var allow = allowRaw
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => (s ?? string.Empty).Trim())
+                    .Where(s => !string.IsNullOrEmpty(s))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (string.IsNullOrWhiteSpace(ip) || !allow.Contains(ip))
+                {
+                    response.StatusCode = (int)HttpStatusCode.Forbidden;
+                    byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"forbidden\"}");
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+                    return;
+                }
+            }
+
             try
             {
                 var path = request.Url.AbsolutePath.ToLower();

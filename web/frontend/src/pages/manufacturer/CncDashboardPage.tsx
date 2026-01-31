@@ -432,6 +432,9 @@ export const CncDashboardPage = () => {
           const pausedRaw = job?.paused;
           const paused = typeof pausedRaw === "boolean" ? pausedRaw : true;
           const kindRaw = String(job?.kind || "").trim();
+          const bridgePath = String(
+            job?.bridgePath || job?.bridge_store_path || job?.path || "",
+          ).trim();
           const programNo =
             typeof job?.programNo === "number" ||
             typeof job?.programNo === "string"
@@ -462,6 +465,7 @@ export const CncDashboardPage = () => {
             paused,
             ...(job?.s3Key ? { s3Key: String(job.s3Key) } : {}),
             ...(job?.s3Bucket ? { s3Bucket: String(job.s3Bucket) } : {}),
+            ...(bridgePath ? { bridgePath } : {}),
           };
         });
 
@@ -2114,6 +2118,7 @@ export const CncDashboardPage = () => {
               source: (job as any)?.source ?? "db",
               s3Key: (job as any)?.s3Key ?? "",
               s3Bucket: (job as any)?.s3Bucket ?? "",
+              bridgePath: (job as any)?.bridgePath ?? "",
               headType: 0,
             };
             void openProgramDetail(prog, m.uid);
