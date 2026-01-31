@@ -76,6 +76,132 @@ export async function updateBridgeQueueJobPause(req, res) {
   }
 }
 
+/**
+ * 생산 큐 배치 변경 (순서/수량/삭제)
+ * - body: {
+ *    order?: string[], // requestId 배열
+ *    qtyUpdates?: { requestId: string, qty: number }[],
+ *    deleteRequestIds?: string[],
+ *  }
+ */
+export async function applyProductionQueueBatchForMachine(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const orderRaw = req.body?.order;
+    const order = Array.isArray(orderRaw)
+      ? orderRaw.map((v) => String(v || "").trim()).filter(Boolean)
+      : null;
+
+    const qtyRaw = req.body?.qtyUpdates;
+    const qtyUpdates = Array.isArray(qtyRaw)
+      ? qtyRaw
+          .map((u) => {
+            if (!u) return null;
+            const requestId = String(u.requestId || u.id || "").trim();
+            if (!requestId) return null;
+            const qty = Math.max(1, Number(u.qty ?? 1) || 1);
+            return { requestId, qty };
+          })
+          .filter(Boolean)
+      : [];
+
+    const delRaw = req.body?.deleteRequestIds;
+    const deleteRequestIds = Array.isArray(delRaw)
+      ? delRaw.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+
+    const list = await Request.find({
+      status: { $in: ["의뢰", "CAM", "생산", "가공"] },
+      "productionSchedule.assignedMachine": mid,
+    }).select("_id requestId productionSchedule status manufacturerStage");
+
+    const byRequestId = new Map();
+    for (const r of list) {
+      const rid = String(r?.requestId || "").trim();
+      if (rid) byRequestId.set(rid, r);
+    }
+
+    // 1) 삭제: 생산(또는 생산 스테이지)인 경우 CAM으로 롤백 (기존 로직 재사용)
+    const uniqueDel = Array.from(new Set(deleteRequestIds));
+    for (const rid of uniqueDel) {
+      if (!rid) continue;
+      await rollbackRequestToCamByRequestId(rid);
+    }
+
+    // 2) 수량 변경
+    if (qtyUpdates.length > 0) {
+      const ops = [];
+      for (const u of qtyUpdates) {
+        if (!u?.requestId) continue;
+        ops.push({
+          updateOne: {
+            filter: { requestId: u.requestId },
+            update: { $set: { "productionSchedule.machiningQty": u.qty } },
+          },
+        });
+      }
+      if (ops.length > 0) {
+        await Request.bulkWrite(ops);
+      }
+    }
+
+    // 3) 순서 변경(=queuePosition 갱신)
+    if (order && order.length > 0) {
+      const current = Array.from(byRequestId.keys());
+      const delSet = new Set(uniqueDel);
+      const kept = current.filter((rid) => !delSet.has(rid));
+
+      const nextOrder = [];
+      const seen = new Set();
+      for (const rid of order) {
+        if (!rid) continue;
+        if (delSet.has(rid)) continue;
+        if (!byRequestId.has(rid)) continue;
+        if (seen.has(rid)) continue;
+        seen.add(rid);
+        nextOrder.push(rid);
+      }
+      for (const rid of kept) {
+        if (seen.has(rid)) continue;
+        seen.add(rid);
+        nextOrder.push(rid);
+      }
+
+      const ops = nextOrder.map((rid, idx) => ({
+        updateOne: {
+          filter: { requestId: rid },
+          update: {
+            $set: {
+              "productionSchedule.queuePosition": idx + 1,
+              "productionSchedule.assignedMachine": mid,
+              assignedMachine: mid,
+            },
+          },
+        },
+      }));
+      if (ops.length > 0) {
+        await Request.bulkWrite(ops);
+      }
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Error in applyProductionQueueBatchForMachine:", error);
+    return res.status(500).json({
+      success: false,
+      message: "생산 큐 배치 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function enqueueBridgeManualInsertJob(req, res) {
   try {
     const { machineId } = req.params;
@@ -1272,7 +1398,7 @@ async function rollbackRequestToCamByRequestId(requestId) {
   const stage = String(request.manufacturerStage || "").trim();
 
   // 생산 단계가 아니면 롤백하지 않는다.
-  if (status !== "생산" && stage !== "생산") {
+  if (!["생산", "가공"].includes(status) && !["생산", "가공"].includes(stage)) {
     return request;
   }
 
@@ -1348,6 +1474,9 @@ async function rollbackRequestToCamByRequestId(requestId) {
   request.productionSchedule = request.productionSchedule || {};
   request.productionSchedule.actualMachiningStart = null;
   request.productionSchedule.actualMachiningComplete = null;
+  request.productionSchedule.assignedMachine = null;
+  request.productionSchedule.queuePosition = null;
+  request.assignedMachine = null;
 
   await request.save();
   return request;
@@ -1664,17 +1793,24 @@ export async function updateMaterialRemaining(req, res) {
 export async function getProductionQueues(req, res) {
   try {
     const requests = await Request.find({
-      status: { $in: ["의뢰", "CAM", "생산"] },
+      status: { $in: ["의뢰", "CAM", "생산", "가공"] },
     }).select("requestId status productionSchedule caseInfos");
 
     const queues = getAllProductionQueues(requests);
 
-    // 각 큐에 위치 번호 추가
+    // 각 큐에 위치 번호 및 수량 추가
     for (const machineId in queues) {
       queues[machineId] = queues[machineId].map((req, index) => ({
         requestId: req.requestId,
         status: req.status,
-        queuePosition: index + 1,
+        queuePosition:
+          req.productionSchedule?.queuePosition != null
+            ? req.productionSchedule.queuePosition
+            : index + 1,
+        machiningQty:
+          req.productionSchedule?.machiningQty != null
+            ? req.productionSchedule.machiningQty
+            : 1,
         estimatedDelivery: req.productionSchedule?.estimatedDelivery,
         diameter: req.productionSchedule?.diameter,
         diameterGroup: req.productionSchedule?.diameterGroup,

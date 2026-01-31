@@ -68,10 +68,11 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
   const saved = (req.manufacturerStage || "").trim();
   if (saved) {
     switch (saved) {
-      case "가공전":
-        return "CAM";
-      case "가공후":
       case "생산":
+        return "가공";
+      case "가공전":
+        return "가공";
+      case "가공후":
       case "가공":
         return "가공";
       case "배송대기":

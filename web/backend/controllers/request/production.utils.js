@@ -200,13 +200,18 @@ export function getProductionQueueForMachine(machineId, requests) {
       // 해당 장비에 할당된 의뢰만
       if (schedule.assignedMachine !== machineId) return false;
 
-      // 의뢰, CAM, 생산 단계만 (발송 이후는 제외)
-      if (!["의뢰", "CAM", "생산"].includes(req.status)) return false;
+      // 의뢰, CAM, 가공 단계만 (발송 이후는 제외)
+      if (!["의뢰", "CAM", "생산", "가공"].includes(req.status)) return false;
 
       return true;
     })
     .sort((a, b) => {
-      // 도착 예정시각 순서만 고려 (FIFO)
+      const ap = Number(a.productionSchedule?.queuePosition ?? 0);
+      const bp = Number(b.productionSchedule?.queuePosition ?? 0);
+      const apOk = Number.isFinite(ap) && ap > 0;
+      const bpOk = Number.isFinite(bp) && bp > 0;
+      if (apOk && bpOk && ap !== bp) return ap - bp;
+      if (apOk !== bpOk) return apOk ? -1 : 1;
       const aTime = a.productionSchedule?.estimatedDelivery || new Date(0);
       const bTime = b.productionSchedule?.estimatedDelivery || new Date(0);
       return aTime - bTime;
@@ -225,8 +230,8 @@ export function getAllProductionQueues(requests) {
     const schedule = req.productionSchedule;
     if (!schedule) continue;
 
-    // 의뢰, CAM, 생산 단계만
-    if (!["의뢰", "CAM", "생산"].includes(req.status)) continue;
+    // 의뢰, CAM, 가공 단계만
+    if (!["의뢰", "CAM", "생산", "가공"].includes(req.status)) continue;
 
     const machine = schedule.assignedMachine;
     if (machine && typeof machine === "string") {
@@ -237,9 +242,15 @@ export function getAllProductionQueues(requests) {
     }
   }
 
-  // 각 큐를 도착 예정시각 순으로 정렬
+  // 각 큐를 queuePosition 우선, 없으면 도착 예정시각 순으로 정렬
   for (const key in queues) {
     queues[key].sort((a, b) => {
+      const ap = Number(a.productionSchedule?.queuePosition ?? 0);
+      const bp = Number(b.productionSchedule?.queuePosition ?? 0);
+      const apOk = Number.isFinite(ap) && ap > 0;
+      const bpOk = Number.isFinite(bp) && bp > 0;
+      if (apOk && bpOk && ap !== bp) return ap - bp;
+      if (apOk !== bpOk) return apOk ? -1 : 1;
       const aTime = a.productionSchedule?.estimatedDelivery || new Date(0);
       const bTime = b.productionSchedule?.estimatedDelivery || new Date(0);
       return aTime - bTime;

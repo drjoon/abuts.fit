@@ -15,6 +15,7 @@ type QueueItem = {
   requestId?: string;
   status?: string;
   queuePosition?: number;
+  machiningQty?: number;
   estimatedDelivery?: string | Date;
   diameter?: number;
   diameterGroup?: string;
@@ -320,8 +321,36 @@ export const MachiningMachineQueueBoard = ({
     null,
   );
   const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [playlistMachineId, setPlaylistMachineId] = useState<string>("");
   const [playlistTitle, setPlaylistTitle] = useState<string>("");
   const [playlistJobs, setPlaylistJobs] = useState<PlaylistJobItem[]>([]);
+
+  const buildPlaylistJobsFromQueue = useCallback((raw: QueueItem[]) => {
+    const jobs = (Array.isArray(raw) ? raw : [])
+      .filter((q) => isMachiningStatus(q?.status))
+      .map((q) => {
+        const rid = String(q.requestId || "").trim();
+        if (!rid) return null;
+        const qty = Math.max(1, Number(q?.machiningQty ?? 1) || 1);
+        return {
+          id: rid,
+          name: formatLabel(q),
+          qty,
+        } satisfies PlaylistJobItem;
+      })
+      .filter(Boolean) as PlaylistJobItem[];
+    return jobs;
+  }, []);
+
+  const loadProductionQueueForMachine = useCallback(
+    async (machineId: string, rawOverride?: QueueItem[]) => {
+      const mid = String(machineId || "").trim();
+      if (!mid) return;
+      const raw = rawOverride ?? queueMap?.[mid] ?? [];
+      setPlaylistJobs(buildPlaylistJobsFromQueue(raw));
+    },
+    [buildPlaylistJobsFromQueue, queueMap],
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -473,27 +502,27 @@ export const MachiningMachineQueueBoard = ({
 
   const openReservationForMachine = useCallback(
     (uid: string) => {
-      const raw = queueMap?.[uid] || [];
-      const jobs = (Array.isArray(raw) ? raw : [])
-        .filter((q) => isMachiningStatus(q?.status))
-        .map((q, idx) => {
-          const id = String(q.requestId || `${uid}:${idx}`);
-          return {
-            id,
-            name: formatLabel(q),
-            qty: 1,
-          } satisfies PlaylistJobItem;
-        });
-
       const machine = (Array.isArray(machines) ? machines : []).find(
         (m) => m.uid === uid,
       );
 
+      setPlaylistMachineId(uid);
       setPlaylistTitle(machine?.name || uid);
-      setPlaylistJobs(jobs);
-      setPlaylistOpen(true);
+
+      void (async () => {
+        try {
+          await loadProductionQueueForMachine(uid);
+          setPlaylistOpen(true);
+        } catch (e: any) {
+          toast({
+            title: "예약목록 조회 실패",
+            description: e?.message || "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+          });
+        }
+      })();
     },
-    [machines, queueMap],
+    [loadProductionQueueForMachine, machines, toast],
   );
 
   const globalAutoEnabled = useMemo(() => {
@@ -723,7 +752,7 @@ export const MachiningMachineQueueBoard = ({
         open={playlistOpen}
         title={playlistTitle}
         jobs={playlistJobs}
-        readOnly={true}
+        readOnly={false}
         onClose={() => {
           setPlaylistOpen(false);
         }}
@@ -733,26 +762,155 @@ export const MachiningMachineQueueBoard = ({
             description: "코드 보기는 CNC 페이지에서 확인할 수 있습니다.",
           });
         }}
-        onDelete={() => {
-          toast({
-            title: "삭제 불가",
-            description: "가공(워크시트)에서는 예약목록을 수정할 수 없습니다.",
-            variant: "destructive",
-          });
+        onDelete={(jobId) => {
+          void (async () => {
+            try {
+              if (!token) return;
+              const mid = String(playlistMachineId || "").trim();
+              if (!mid) return;
+              const res = await fetch(
+                `/api/cnc-machines/${encodeURIComponent(mid)}/production-queue/batch`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ deleteRequestIds: [jobId] }),
+                },
+              );
+              const body: any = await res.json().catch(() => ({}));
+              if (!res.ok || body?.success === false) {
+                throw new Error(
+                  body?.message || body?.error || "CAM으로 되돌리기 실패",
+                );
+              }
+
+              const qRes = await fetch("/api/cnc-machines/queues", {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const qBody: any = await qRes.json().catch(() => ({}));
+              if (qRes.ok && qBody?.success !== false) {
+                const map =
+                  qBody?.data && typeof qBody.data === "object"
+                    ? qBody.data
+                    : {};
+                setQueueMap(map);
+                const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                await loadProductionQueueForMachine(mid, rawNext);
+                return;
+              }
+              await loadProductionQueueForMachine(mid);
+            } catch (e: any) {
+              toast({
+                title: "CAM으로 되돌리기 실패",
+                description: e?.message || "잠시 후 다시 시도해주세요.",
+                variant: "destructive",
+              });
+            }
+          })();
         }}
-        onReorder={() => {
-          toast({
-            title: "순서 변경 불가",
-            description: "가공(워크시트)에서는 예약목록을 수정할 수 없습니다.",
-            variant: "destructive",
-          });
+        onReorder={(nextOrder) => {
+          void (async () => {
+            try {
+              if (!token) return;
+              const mid = String(playlistMachineId || "").trim();
+              if (!mid) return;
+              const res = await fetch(
+                `/api/cnc-machines/${encodeURIComponent(mid)}/production-queue/batch`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ order: nextOrder }),
+                },
+              );
+              const body: any = await res.json().catch(() => ({}));
+              if (!res.ok || body?.success === false) {
+                throw new Error(
+                  body?.message || body?.error || "순서 변경 실패",
+                );
+              }
+
+              const qRes = await fetch("/api/cnc-machines/queues", {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const qBody: any = await qRes.json().catch(() => ({}));
+              if (qRes.ok && qBody?.success !== false) {
+                const map =
+                  qBody?.data && typeof qBody.data === "object"
+                    ? qBody.data
+                    : {};
+                setQueueMap(map);
+                const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                await loadProductionQueueForMachine(mid, rawNext);
+                return;
+              }
+              await loadProductionQueueForMachine(mid);
+            } catch (e: any) {
+              toast({
+                title: "순서 변경 실패",
+                description: e?.message || "잠시 후 다시 시도해주세요.",
+                variant: "destructive",
+              });
+            }
+          })();
         }}
-        onChangeQty={() => {
-          toast({
-            title: "수량 변경 불가",
-            description: "가공(워크시트)에서는 예약목록을 수정할 수 없습니다.",
-            variant: "destructive",
-          });
+        onChangeQty={(jobId, qty) => {
+          void (async () => {
+            try {
+              if (!token) return;
+              const mid = String(playlistMachineId || "").trim();
+              if (!mid) return;
+              const safeQty = Math.max(1, Number(qty || 1) || 1);
+              const res = await fetch(
+                `/api/cnc-machines/${encodeURIComponent(mid)}/production-queue/batch`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    qtyUpdates: [{ requestId: jobId, qty: safeQty }],
+                  }),
+                },
+              );
+              const body: any = await res.json().catch(() => ({}));
+              if (!res.ok || body?.success === false) {
+                throw new Error(
+                  body?.message || body?.error || "수량 변경 실패",
+                );
+              }
+
+              const qRes = await fetch("/api/cnc-machines/queues", {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const qBody: any = await qRes.json().catch(() => ({}));
+              if (qRes.ok && qBody?.success !== false) {
+                const map =
+                  qBody?.data && typeof qBody.data === "object"
+                    ? qBody.data
+                    : {};
+                setQueueMap(map);
+                const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                await loadProductionQueueForMachine(mid, rawNext);
+                return;
+              }
+              await loadProductionQueueForMachine(mid);
+            } catch (e: any) {
+              toast({
+                title: "수량 변경 실패",
+                description: e?.message || "잠시 후 다시 시도해주세요.",
+                variant: "destructive",
+              });
+            }
+          })();
         }}
       />
     </div>

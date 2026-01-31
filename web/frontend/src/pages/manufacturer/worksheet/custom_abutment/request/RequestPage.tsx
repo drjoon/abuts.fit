@@ -200,8 +200,8 @@ export const RequestPage = ({
         });
         console.groupEnd();
       }
-      if (data.success && Array.isArray(raw?.requests)) {
-        setRequests(raw.requests);
+      if (data?.success && Array.isArray(list)) {
+        setRequests(list);
       }
     } catch (error) {
       console.error("Error fetching requests:", error);
@@ -414,8 +414,8 @@ export const RequestPage = ({
   );
 
   useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
+    void fetchRequests();
+  }, [fetchRequests, tabStage]);
 
   const searchLower = worksheetSearch.toLowerCase();
   const currentStageForTab = isMachiningStage

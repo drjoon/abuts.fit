@@ -29,7 +29,7 @@ async function progressStages() {
   try {
     await mongoose.connect(mongoUri);
     console.log(
-      `[${new Date().toISOString()}] Stage progression worker started`
+      `[${new Date().toISOString()}] Stage progression worker started`,
     );
 
     const todayYmd = getTodayYmdInKst();
@@ -55,26 +55,25 @@ async function progressStages() {
       await req.save();
       updatedCount++;
       console.log(
-        `  [의뢰→CAM] ${req.requestId} (ETA: ${req.timeline.estimatedCompletion})`
+        `  [의뢰→CAM] ${req.requestId} (ETA: ${req.timeline.estimatedCompletion})`,
       );
     }
 
-    // 2. CAM → 생산: CAM 승인 완료된 건
+    // 2. CAM → 가공: CAM 승인 완료된 건
     const camToProduction = await Request.find({
       status: "CAM",
       "caseInfos.reviewByStage.cam.status": "APPROVED",
     });
 
     for (const req of camToProduction) {
-      applyStatusMapping(req, "생산");
+      applyStatusMapping(req, "가공");
       await req.save();
       updatedCount++;
-      console.log(`  [CAM→생산] ${req.requestId} (CAM 승인 완료)`);
+      console.log(`  [CAM→가공] ${req.requestId} (CAM 승인 완료)`);
     }
 
-    // 3. 생산 → 발송: 도착예정일 - 1영업일 도달
     const productionToShipping = await Request.find({
-      status: "생산",
+      status: { $in: ["가공", "세척.포장"] },
       "timeline.estimatedCompletion": { $exists: true, $lte: oneDayFromNow },
     });
 
@@ -83,7 +82,7 @@ async function progressStages() {
       await req.save();
       updatedCount++;
       console.log(
-        `  [생산→발송] ${req.requestId} (ETA: ${req.timeline.estimatedCompletion})`
+        `  [가공→발송] ${req.requestId} (ETA: ${req.timeline.estimatedCompletion})`,
       );
     }
 
@@ -91,7 +90,7 @@ async function progressStages() {
     // (이 부분은 배송 완료 API에서 처리하는 것이 더 적절하므로 워커에서는 생략)
 
     console.log(
-      `[${new Date().toISOString()}] Stage progression completed. Updated ${updatedCount} requests.`
+      `[${new Date().toISOString()}] Stage progression completed. Updated ${updatedCount} requests.`,
     );
 
     await mongoose.disconnect();

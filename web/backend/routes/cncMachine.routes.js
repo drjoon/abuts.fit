@@ -161,6 +161,13 @@ router.get(
   cncMachineController.getProductionQueues,
 );
 
+// 생산 큐 배치 변경 (순서/수량/삭제)
+router.post(
+  "/:machineId/production-queue/batch",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.applyProductionQueueBatchForMachine,
+);
+
 // 소재 세팅 변경 (제조사, 관리자)
 router.patch(
   "/:machineId/material",

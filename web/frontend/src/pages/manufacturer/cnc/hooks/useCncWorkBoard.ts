@@ -71,20 +71,20 @@ export const useCncWorkBoard = (
 
     try {
       const fetchActiveProgram = async (uid: string) => {
-        const res = await apiFetch({
-          path: `/api/cnc/machines/${encodeURIComponent(uid)}/programs/active`,
-          method: "GET",
-          token,
-        });
-        const body = res.data ?? {};
-        if (!res.ok || (body as any)?.success === false) {
-          const msg =
-            (body as any)?.message ||
-            (body as any)?.error ||
-            `programs/active 호출 실패 (HTTP ${res.status})`;
-          throw new Error(msg);
+        try {
+          const res = await apiFetch({
+            path: `/api/cnc/machines/${encodeURIComponent(uid)}/programs/active`,
+            method: "GET",
+            token,
+          });
+          const body = res.data ?? {};
+          if (!res.ok || (body as any)?.success === false) {
+            return null;
+          }
+          return (body as any)?.data ?? body;
+        } catch {
+          return null;
         }
-        return (body as any)?.data ?? body;
       };
 
       const [opRes, listRes, actRes] = await Promise.all([
@@ -97,7 +97,9 @@ export const useCncWorkBoard = (
 
       const pl = (listRes && (listRes.data ?? listRes)) as any;
       const progList = pl?.machineProgramListInfo?.programArray ?? [];
-      const act = (actRes && (actRes.data ?? actRes)) as any;
+      const act = (
+        actRes && (actRes as any)?.data != null ? (actRes as any).data : actRes
+      ) as any;
       const current = act?.machineCurrentProgInfo ?? act ?? null;
       setProgramSummary({
         current,

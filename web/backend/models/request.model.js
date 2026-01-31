@@ -305,7 +305,7 @@ const requestSchema = new mongoose.Schema(
     // 제조사용 스테이지 (UI 표기용)
     manufacturerStage: {
       type: String,
-      enum: ["의뢰", "CAM", "생산", "발송", "추적관리"],
+      enum: ["의뢰", "CAM", "생산", "가공", "세척.포장", "발송", "추적관리"],
       default: "의뢰",
     },
     // 레거시: 배송 모드 (프론트/백엔드 일부 로직에서 사용)
@@ -365,6 +365,10 @@ const requestSchema = new mongoose.Schema(
         ref: "CncMachine",
       },
       queuePosition: Number, // 해당 장비 큐에서의 위치
+      machiningQty: {
+        type: Number,
+        default: 1,
+      },
 
       // 직경 정보
       diameter: Number, // 실제 직경 (mm)

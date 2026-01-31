@@ -109,6 +109,19 @@ export const WorksheetCardGrid = ({
       const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
 
+      const maxDiameter =
+        typeof caseInfos.maxDiameter === "number" &&
+        Number.isFinite(caseInfos.maxDiameter) &&
+        caseInfos.maxDiameter > 0
+          ? caseInfos.maxDiameter
+          : null;
+      const camDiameter =
+        typeof camMaterialDiameter === "number" &&
+        Number.isFinite(camMaterialDiameter) &&
+        camMaterialDiameter > 0
+          ? camMaterialDiameter
+          : null;
+
       const sp = request.shippingPriority;
       const urgency = String(sp?.level || "").trim();
       const urgencyClass = (() => {
@@ -256,6 +269,17 @@ export const WorksheetCardGrid = ({
                   </>
                 )}
               </div>
+              {isCamStage && (maxDiameter != null || camDiameter != null) && (
+                <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
+                  {maxDiameter != null && (
+                    <span>최대 직경 {maxDiameter.toFixed(3)}</span>
+                  )}
+                  {maxDiameter != null && camDiameter != null && <span>•</span>}
+                  {camDiameter != null && (
+                    <span>CAM 직경 {camDiameter.toFixed(3)}</span>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-1 text-[12px] text-slate-500">
                 <div className="flex items-center gap-1">
                   {(caseInfos.implantManufacturer ||

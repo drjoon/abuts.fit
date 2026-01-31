@@ -88,8 +88,12 @@ export function normalizeRequestStage(requestLike) {
     return "shipping";
   }
 
-  if (["machining", "packaging", "production", "생산"].includes(stage)) {
-    return "production";
+  if (["machining", "가공", "production", "생산"].includes(stage)) {
+    return "machining";
+  }
+
+  if (["packaging", "세척.포장"].includes(stage)) {
+    return "packaging";
   }
 
   if (["cam", "CAM", "가공전"].includes(stage)) {
@@ -107,7 +111,8 @@ export function normalizeRequestStageLabel(requestLike) {
   const s = normalizeRequestStage(requestLike);
   if (s === "request") return "의뢰";
   if (s === "cam") return "CAM";
-  if (s === "production") return "생산";
+  if (s === "machining") return "가공";
+  if (s === "packaging") return "세척.포장";
   if (s === "shipping") return "발송";
   if (s === "completed") return "완료";
   if (s === "cancel") return "취소";
@@ -511,10 +516,14 @@ export function applyStatusMapping(request, status) {
       request.status = "CAM";
       request.manufacturerStage = "CAM";
       break;
-    case "생산":
+    case "가공":
     case "가공후":
-      request.status = "생산";
-      request.manufacturerStage = "생산";
+      request.status = "가공";
+      request.manufacturerStage = "가공";
+      break;
+    case "세척.포장":
+      request.status = "세척.포장";
+      request.manufacturerStage = "세척.포장";
       break;
     case "발송":
     case "배송대기":
@@ -522,6 +531,10 @@ export function applyStatusMapping(request, status) {
     case "완료":
       request.status = "발송";
       request.manufacturerStage = "발송";
+      break;
+    case "추적관리":
+      request.status = "추적관리";
+      request.manufacturerStage = "추적관리";
       break;
     case "취소":
       request.status = "취소";

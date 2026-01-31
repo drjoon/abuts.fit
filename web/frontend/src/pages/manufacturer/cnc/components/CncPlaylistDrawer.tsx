@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   X,
   GripVertical,
+  ArrowLeft,
   ArrowUp,
   ArrowDown,
-  Trash2,
   Minus,
   Plus,
 } from "lucide-react";
@@ -21,6 +21,8 @@ interface CncPlaylistDrawerProps {
   title: string;
   jobs: PlaylistJobItem[];
   readOnly?: boolean;
+  readOnlyMessage?: string;
+  headerExtras?: React.ReactNode;
   onClose: () => void;
   onOpenCode: (jobId: string) => void;
   onDelete: (jobId: string) => void;
@@ -33,6 +35,8 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   title,
   jobs,
   readOnly,
+  readOnlyMessage,
+  headerExtras,
   onClose,
   onOpenCode,
   onDelete,
@@ -82,6 +86,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
               {title}
             </div>
           </div>
+          {headerExtras ? <div className="relative">{headerExtras}</div> : null}
           <button
             type="button"
             onClick={onClose}
@@ -94,8 +99,8 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
         <div className="max-h-[70vh] overflow-y-auto px-4 py-4">
           {readOnly && (
             <div className="mb-3 app-surface app-surface--panel border-2 border-amber-500 bg-white px-4 py-3 text-xs text-amber-800">
-              브리지 서버가 오프라인이라 예약목록을 DB에서 조회했습니다. 현재는
-              읽기 전용입니다.
+              {readOnlyMessage ||
+                "브리지 서버가 오프라인이라 예약목록을 DB에서 조회했습니다. 현재는 읽기 전용입니다."}
             </div>
           )}
           {localJobs.length === 0 ? (
@@ -230,7 +235,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                       </button>
                       <button
                         type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-200 bg-white text-red-600 hover:bg-red-50"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                         onClick={() => {
                           if (readOnly) return;
                           setLocalJobs((prev) =>
@@ -239,9 +244,9 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                           onDelete(job.id);
                         }}
                         disabled={!!readOnly}
-                        title="삭제"
+                        title="CAM으로 되돌리기"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <ArrowLeft className="h-4 w-4" />
                       </button>
                     </div>
                   </div>

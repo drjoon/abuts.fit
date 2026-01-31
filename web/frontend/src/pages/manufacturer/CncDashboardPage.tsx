@@ -1546,6 +1546,12 @@ export const CncDashboardPage = () => {
                   uploadProgress={uploadProgress}
                   reservationSummaryMap={reservationSummaryMap}
                   reservationTotalQtyMap={reservationTotalQtyMap}
+                  onToggleAllowJobStart={(machine, next) => {
+                    updateMachineFlags(machine, { allowJobStart: next });
+                  }}
+                  onToggleAllowAutoMachining={(machine, next) => {
+                    updateMachineFlags(machine, { allowAutoMachining: next });
+                  }}
                   onUploadFiles={(machine, files) => {
                     void (async () => {
                       try {
