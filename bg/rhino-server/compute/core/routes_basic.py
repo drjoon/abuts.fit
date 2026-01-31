@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pathlib import Path
 
 from . import settings
@@ -40,6 +40,15 @@ def root():
         "storeInDir": str(settings.STORE_IN_DIR),
         "storeOutDir": str(settings.STORE_OUT_DIR),
     }
+
+
+@router.get("/favicon.ico")
+@router.get("/.well-known/security.txt")
+@router.get("/security.txt")
+@router.get("/robots.txt")
+@router.get("/sitemap.xml")
+def ignore_scanner_requests():
+    return Response(status_code=204)
 
 
 @router.get("/files/{name}")
