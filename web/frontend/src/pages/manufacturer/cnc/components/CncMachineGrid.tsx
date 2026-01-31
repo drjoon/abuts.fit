@@ -23,9 +23,7 @@ interface CncMachineGridProps {
   onSendControl: (uid: string, action: "reset" | "stop") => void;
   onOpenAddModal: () => void;
   onOpenJobConfig: (machine: Machine) => void;
-  onOpenEventLog?: (machine: Machine) => void;
   onUploadFiles?: (machine: Machine, files: FileList | File[]) => void;
-  onManualPlay?: (machine: Machine) => void;
   uploadProgress?: {
     machineId: string;
     fileName: string;
@@ -37,7 +35,7 @@ interface CncMachineGridProps {
   onOpenReservationList?: (machine: Machine) => void;
   onTogglePause?: (machine: Machine, jobId: string) => void;
   onToggleAllowJobStart?: (machine: Machine, next: boolean) => void;
-  onToggleAllowAutoMachining?: (machine: Machine, next: boolean) => void;
+  onToggleDummyMachining?: (machine: Machine, next: boolean) => void;
 }
 
 export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
@@ -59,9 +57,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onSendControl,
   onOpenAddModal,
   onOpenJobConfig,
-  onOpenEventLog,
   onUploadFiles,
-  onManualPlay,
   uploadProgress,
   reservationSummaryMap,
   reservationTotalQtyMap,
@@ -69,7 +65,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onOpenReservationList,
   onTogglePause,
   onToggleAllowJobStart,
-  onToggleAllowAutoMachining,
+  onToggleDummyMachining,
 }) => {
   return (
     <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
@@ -183,26 +179,10 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
               e.stopPropagation();
               onOpenJobConfig(m);
             }}
-            onOpenEventLog={
-              onOpenEventLog
-                ? (e) => {
-                    e.stopPropagation();
-                    onOpenEventLog(m);
-                  }
-                : undefined
-            }
             onUploadFiles={
               onUploadFiles
                 ? (files) => {
                     onUploadFiles(m, files);
-                  }
-                : undefined
-            }
-            onManualPlay={
-              onManualPlay
-                ? (e) => {
-                    e.stopPropagation();
-                    onManualPlay(m);
                   }
                 : undefined
             }
@@ -239,11 +219,11 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                   }
                 : undefined
             }
-            onToggleAllowAutoMachining={
-              onToggleAllowAutoMachining
+            onToggleDummyMachining={
+              onToggleDummyMachining
                 ? (next, e) => {
                     e.stopPropagation();
-                    onToggleAllowAutoMachining(m, next);
+                    onToggleDummyMachining(m, next);
                   }
                 : undefined
             }

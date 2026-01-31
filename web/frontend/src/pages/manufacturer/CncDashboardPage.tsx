@@ -1072,11 +1072,6 @@ export const CncDashboardPage = () => {
     [scheduleDebounced, setMachines, toast, token],
   );
 
-  const globalAutoEnabled = useMemo(() => {
-    if (!Array.isArray(machines) || machines.length === 0) return false;
-    return machines.every((m) => m.allowAutoMachining === true);
-  }, [machines]);
-
   const globalRemoteEnabled = useMemo(() => {
     if (!Array.isArray(machines) || machines.length === 0) return false;
     return machines.every((m) => m.allowJobStart !== false);
@@ -1089,64 +1084,6 @@ export const CncDashboardPage = () => {
       (m) => cncMachineMetaMap[m.uid]?.dummySettings?.enabled !== false,
     );
   }, [cncMachineMetaMap, machines]);
-
-  const setGlobalAutoEnabled = useCallback(
-    (enabled: boolean) => {
-      if (!token) return;
-
-      const list = Array.isArray(machines) ? machines : [];
-      if (list.length === 0) return;
-
-      const prevMap = new Map(
-        list.map((m) => [m.uid, m.allowAutoMachining === true]),
-      );
-      const baselineEnabled = globalAutoEnabled;
-
-      setMachines((prev) =>
-        prev.map((m) => ({ ...m, allowAutoMachining: enabled })),
-      );
-
-      scheduleDebounced("global:auto", enabled, baselineEnabled, () => {
-        void (async () => {
-          try {
-            for (const m of list) {
-              const res = await apiFetch({
-                path: "/api/machines",
-                method: "POST",
-                token,
-                jsonBody: {
-                  uid: m.uid,
-                  name: m.name,
-                  ip: m.ip,
-                  port: m.port,
-                  allowAutoMachining: enabled,
-                },
-              });
-              const body: any = res.data ?? {};
-              if (!res.ok || body?.success === false) {
-                throw new Error(
-                  body?.message || "전체 자동 가공 설정 저장 실패",
-                );
-              }
-            }
-          } catch (e: any) {
-            setMachines((prev) =>
-              prev.map((m) => ({
-                ...m,
-                allowAutoMachining: prevMap.get(m.uid) === true,
-              })),
-            );
-            toast({
-              title: "전체 자동 가공 설정 실패",
-              description: e?.message || "잠시 후 다시 시도해주세요.",
-              variant: "destructive",
-            });
-          }
-        })();
-      });
-    },
-    [globalAutoEnabled, machines, scheduleDebounced, setMachines, toast, token],
-  );
 
   const setGlobalRemoteEnabled = useCallback(
     (enabled: boolean) => {
@@ -1296,6 +1233,83 @@ export const CncDashboardPage = () => {
       machines,
       refreshCncMachineMeta,
       scheduleDebounced,
+      toast,
+      token,
+    ],
+  );
+
+  const updateMachineDummyEnabled = useCallback(
+    (machineId: string, enabled: boolean) => {
+      const uid = String(machineId || "").trim();
+      if (!uid || !token) return;
+
+      const prevEnabled =
+        cncMachineMetaMap[uid]?.dummySettings?.enabled !== false;
+
+      setCncMachineMetaMap((prev) => {
+        const next = { ...prev };
+        const existing = next[uid] || {};
+        next[uid] = {
+          ...existing,
+          dummySettings: {
+            ...(existing as any).dummySettings,
+            enabled,
+          },
+        } as any;
+        return next;
+      });
+
+      scheduleDebounced(
+        `machine:${uid}:dummyEnabled`,
+        enabled,
+        prevEnabled,
+        () => {
+          void (async () => {
+            try {
+              const res = await fetch(
+                `/api/cnc-machines/${encodeURIComponent(uid)}/dummy-settings`,
+                {
+                  method: "PATCH",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ enabled }),
+                },
+              );
+              const body: any = await res.json().catch(() => ({}));
+              if (!res.ok || body?.success === false) {
+                throw new Error(body?.message || "더미 가공 설정 저장 실패");
+              }
+              await refreshCncMachineMeta();
+            } catch (e: any) {
+              setCncMachineMetaMap((prev) => {
+                const next = { ...prev };
+                const existing = next[uid] || {};
+                next[uid] = {
+                  ...existing,
+                  dummySettings: {
+                    ...(existing as any).dummySettings,
+                    enabled: prevEnabled,
+                  },
+                } as any;
+                return next;
+              });
+              toast({
+                title: "설정 저장 실패",
+                description: e?.message || "잠시 후 다시 시도해주세요.",
+                variant: "destructive",
+              });
+            }
+          })();
+        },
+      );
+    },
+    [
+      cncMachineMetaMap,
+      refreshCncMachineMeta,
+      scheduleDebounced,
+      setCncMachineMetaMap,
       toast,
       token,
     ],
@@ -1520,32 +1534,6 @@ export const CncDashboardPage = () => {
               />
             </button>
           </div>
-
-          <div
-            className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3"
-            title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
-          >
-            <div className="text-[12px] font-extrabold text-slate-700">
-              전체 자동 가공 허용
-            </div>
-            <button
-              type="button"
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                globalAutoEnabled ? "bg-emerald-500" : "bg-gray-300"
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                void setGlobalAutoEnabled(!globalAutoEnabled);
-              }}
-              disabled={loading}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  globalAutoEnabled ? "translate-x-5" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
         </div>
         <div className="flex flex-col sm:flex-row">
           <div className="flex-1 min-w-0">
@@ -1582,8 +1570,8 @@ export const CncDashboardPage = () => {
                   onToggleAllowJobStart={(machine, next) => {
                     updateMachineFlags(machine, { allowJobStart: next });
                   }}
-                  onToggleAllowAutoMachining={(machine, next) => {
-                    updateMachineFlags(machine, { allowAutoMachining: next });
+                  onToggleDummyMachining={(machine, next) => {
+                    updateMachineDummyEnabled(machine.uid, next);
                   }}
                   onUploadFiles={(machine, files) => {
                     void (async () => {
@@ -1596,21 +1584,6 @@ export const CncDashboardPage = () => {
                         setError(msg);
                         toast({
                           title: "업로드 실패",
-                          description: msg,
-                          variant: "destructive",
-                        });
-                      }
-                    })();
-                  }}
-                  onManualPlay={(machine) => {
-                    void (async () => {
-                      try {
-                        await handleManualCardPlay(machine.uid);
-                      } catch (e: any) {
-                        const msg = e?.message || "가공 시작 요청 중 오류";
-                        setError(msg);
-                        toast({
-                          title: "가공 시작 오류",
                           description: msg,
                           variant: "destructive",
                         });

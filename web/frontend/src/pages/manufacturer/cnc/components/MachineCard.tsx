@@ -63,7 +63,7 @@ interface MachineCardProps {
   onOpenReservationList?: (e: React.MouseEvent) => void;
   onTogglePause?: (jobId: string | undefined, e: React.MouseEvent) => void;
   onToggleAllowJobStart?: (next: boolean, e: React.MouseEvent) => void;
-  onToggleAllowAutoMachining?: (next: boolean, e: React.MouseEvent) => void;
+  onToggleDummyMachining?: (next: boolean, e: React.MouseEvent) => void;
 }
 
 const getMachineStatusChip = (status: string) => {
@@ -141,7 +141,7 @@ export const MachineCard = (props: MachineCardProps) => {
     onOpenReservationList,
     onTogglePause,
     onToggleAllowJobStart,
-    onToggleAllowAutoMachining,
+    onToggleDummyMachining,
   } = props;
 
   const { token } = useAuthStore();
@@ -278,6 +278,35 @@ export const MachineCard = (props: MachineCardProps) => {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
             <div className="text-[11px] font-extrabold text-slate-700">
+              더미 가공
+            </div>
+            <button
+              type="button"
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                machine.dummySettings?.enabled !== false
+                  ? "bg-blue-500"
+                  : "bg-gray-300"
+              } ${!onToggleDummyMachining ? "opacity-50" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!onToggleDummyMachining) return;
+                const next = machine.dummySettings?.enabled === false;
+                onToggleDummyMachining(next, e);
+              }}
+              disabled={loading || !onToggleDummyMachining}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  machine.dummySettings?.enabled !== false
+                    ? "translate-x-5"
+                    : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="text-[11px] font-extrabold text-slate-700">
               원격 가공
             </div>
             <button
@@ -296,35 +325,6 @@ export const MachineCard = (props: MachineCardProps) => {
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                   machine.allowJobStart !== false
-                    ? "translate-x-5"
-                    : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="text-[11px] font-extrabold text-slate-700">
-              자동 가공
-            </div>
-            <button
-              type="button"
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                machine.allowAutoMachining === true
-                  ? "bg-emerald-500"
-                  : "bg-gray-300"
-              } ${!onToggleAllowAutoMachining ? "opacity-50" : ""}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!onToggleAllowAutoMachining) return;
-                const next = machine.allowAutoMachining !== true;
-                onToggleAllowAutoMachining(next, e);
-              }}
-              disabled={loading || !onToggleAllowAutoMachining}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  machine.allowAutoMachining === true
                     ? "translate-x-5"
                     : "translate-x-1"
                 }`}
@@ -491,64 +491,28 @@ export const MachineCard = (props: MachineCardProps) => {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (!onStopClick) {
-                      toast({
-                        title: "정지 불가",
-                        description: "정지 기능이 연결되어 있지 않습니다.",
-                      });
+                    const hasNow = !!currentProg && !!currentProg.name;
+                    if (!hasNow || !isActive) return;
+
+                    if (isRunning) {
+                      if (!onStopClick) return;
+                      onStopClick(e);
                       return;
                     }
-                    if (!isActive) {
-                      toast({
-                        title: "정지 불가",
-                        description: "비활성 장비입니다.",
-                      });
-                      return;
-                    }
-                    if (!isRunning) {
-                      toast({
-                        title: "정지 불가",
-                        description: "현재 가공 중이 아닙니다.",
-                      });
-                      return;
-                    }
-                    onStopClick(e);
+
+                    onOpenCurrentProg(e);
                   }}
-                  disabled={loading}
+                  disabled={
+                    loading || !isActive || !currentProg || !currentProg.name
+                  }
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
-                  title={isRunning ? "정지(Stop)" : "중단 상태"}
+                  title={isRunning ? "정지(Stop)" : "프로그램 열기"}
                 >
                   {isRunning ? (
                     <Pause className="h-4 w-4" />
                   ) : (
                     <Play className="h-4 w-4" />
                   )}
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!isActive) {
-                      toast({
-                        title: "리셋 불가",
-                        description: "비활성 장비입니다.",
-                      });
-                      return;
-                    }
-                    if (!isRunning) {
-                      toast({
-                        title: "리셋 불가",
-                        description: "현재 가공 중이 아닙니다.",
-                      });
-                      return;
-                    }
-                    onResetClick(e);
-                  }}
-                  disabled={loading}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
-                  title="리셋(Reset)"
-                >
-                  <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
