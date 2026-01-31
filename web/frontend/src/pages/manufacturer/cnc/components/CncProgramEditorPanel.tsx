@@ -1,5 +1,6 @@
 import React from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
+import { RotateCcw, Save, X } from "lucide-react";
 import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
 import { MultiActionDialog } from "@/components/MultiActionDialog";
 
@@ -34,6 +35,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
 }) => {
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
   const editorRef = React.useRef<any | null>(null);
+  const diffOriginalRef = React.useRef<any | null>(null);
   const [code, setCode] = React.useState("");
   const [originalCode, setOriginalCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -89,7 +91,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   }, [visible, workUid, selectedProgram, onLoadProgram, isMobile]);
 
   React.useEffect(() => {
-    // Diff 모드에서 일반 모드로 돌아올 때, 수정된 내용을 code 상태에 반영
+    // 단일 편집기 모드에서 포커스 아웃 시 최신 내용을 state에 반영
     if (!showDiff && editorRef.current) {
       try {
         const value = editorRef.current.getValue?.();
@@ -102,6 +104,12 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     }
   }, [showDiff]);
 
+  React.useEffect(() => {
+    if (!showDiff) return;
+    editorRef.current?.updateOptions?.({ readOnly });
+    diffOriginalRef.current?.updateOptions?.({ readOnly: true });
+  }, [readOnly, showDiff]);
+
   if (!visible) return <>{PinModal}</>;
 
   const maybeSave = async () => {
@@ -110,6 +118,18 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     if (loading) return;
     if (code === originalCode) return;
     await handleSave();
+  };
+
+  const handleRevertToOriginal = () => {
+    if (loading) return;
+    setError(null);
+    setSaveStatus("idle");
+    setCode(originalCode);
+    try {
+      editorRef.current?.setValue?.(originalCode ?? "");
+    } catch {
+      // no-op
+    }
   };
 
   const handleSave = async () => {
@@ -244,11 +264,25 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   return (
     <>
       {!isBridgeSource && PinModal}
-      <div className="fixed inset-0 z-[60] bg-black/60">
-        <div className="absolute inset-x-0 top-12 bottom-0 bg-white flex flex-col">
-          <header className="relative h-12 px-4 flex items-center justify-between border-b border-gray-200 bg-slate-900 text-slate-50 text-sm">
-            <div className="flex items-center gap-4 min-w-0">
-              <span className="font-semibold truncate max-w-xs">{name}</span>
+      <div
+        className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 sm:p-8"
+        role="dialog"
+        aria-modal="true"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <div
+          className="w-full max-w-6xl h-[75vh] min-h-[360px] bg-white flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <header className="relative px-4 py-3 flex items-center justify-between border-b border-slate-800 bg-slate-900 text-slate-50">
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-sm leading-5 break-all">
+                  {name}
+                </div>
+              </div>
               {saveStatus === "saved" && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-200 border border-emerald-400/40 text-[11px]">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
@@ -256,33 +290,35 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-slate-100">
-              {!isBridgeSource && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setSaveAsMode(true)}
-                    disabled={readOnly}
-                    className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs font-medium disabled:opacity-50"
-                  >
-                    이름변경 생성
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveIncrement}
-                    disabled={loading || readOnly}
-                    className="px-2 py-1 rounded bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-xs font-medium text-white"
-                  >
-                    번호증가 생성
-                  </button>
-                </>
-              )}
+            <div className="flex items-center gap-2 text-slate-100">
+              <button
+                type="button"
+                onClick={handleRevertToOriginal}
+                disabled={code === originalCode || loading}
+                className="h-8 px-2 flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40"
+                aria-label="원본으로 되돌리기"
+                title="원본으로"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={loading || readOnly}
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
+                aria-label="저장"
+                title={readOnly ? "읽기 전용" : "저장"}
+              >
+                <Save className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="h-7 w-7 flex items-center justify-center rounded-full bg-slate-800 hover:bg-slate-700 text-xs font-semibold"
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700"
+                aria-label="닫기"
+                title="닫기"
               >
-                ×
+                <X className="h-4 w-4" />
               </button>
             </div>
           </header>
@@ -291,63 +327,74 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
               {error}
             </div>
           )}
-          <div className="flex-1 min-h-0 p-3 sm:p-4 flex flex-col gap-3">
-            <div className="flex-1 min-h-0 border border-gray-200 rounded-lg overflow-hidden">
-              {showDiff ? (
-                <DiffEditor
-                  height="100%"
-                  original={originalCode}
-                  modified={code}
-                  options={{
-                    fontSize: 12,
-                    renderSideBySide: true,
-                    readOnly,
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    wordWrap: wordWrap ? "on" : "off",
-                  }}
-                  language="plaintext"
-                  theme="vs-dark"
-                  onMount={(editor) => {
-                    const modified = editor.getModifiedEditor();
-                    editorRef.current = modified;
-                    modified.onDidChangeModelContent(() => {
-                      const value = modified.getValue();
-                      if (typeof value === "string") {
-                        setCode(value);
-                      }
-                    });
-
-                    // 편집 완료(포커스 아웃) 시 자동 저장
-                    try {
-                      modified.onDidBlurEditorText(() => {
-                        void maybeSave();
-                      });
-                    } catch {
-                      // no-op
-                    }
-                  }}
-                />
-              ) : (
-                <Editor
-                  height="100%"
-                  defaultLanguage="plaintext"
-                  theme="vs-dark"
-                  value={code}
-                  onChange={(value) => {
-                    if (readOnly) return;
-                    setCode(value ?? "");
-                  }}
-                  onMount={handleEditorMount}
-                  options={{
-                    fontSize: 12,
-                    minimap: { enabled: false },
-                    scrollBeyondLastLine: false,
-                    wordWrap: wordWrap ? "on" : "off",
-                    readOnly,
-                  }}
-                />
+          <div className="flex-1 min-h-0 p-3 sm:p-4 flex flex-col gap-3 bg-gradient-to-b from-slate-50 via-white to-white">
+            <div className="relative flex-1 min-h-0 rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-950">
+              {showDiff && (
+                <div className="pointer-events-none absolute inset-0 grid grid-cols-2">
+                  <div className="bg-slate-950/90" />
+                  <div className="bg-slate-800/80" />
+                </div>
               )}
+              <div className="relative h-full">
+                {showDiff ? (
+                  <DiffEditor
+                    height="100%"
+                    original={originalCode}
+                    modified={code}
+                    options={{
+                      fontSize: 12,
+                      renderSideBySide: true,
+                      readOnly,
+                      originalEditable: false,
+                      minimap: { enabled: false },
+                      scrollBeyondLastLine: false,
+                      wordWrap: wordWrap ? "on" : "off",
+                      automaticLayout: true,
+                    }}
+                    language="plaintext"
+                    theme="vs-dark"
+                    onMount={(editor) => {
+                      const modified = editor.getModifiedEditor();
+                      const original = editor.getOriginalEditor();
+                      editorRef.current = modified;
+                      diffOriginalRef.current = original;
+                      modified.onDidChangeModelContent(() => {
+                        const value = modified.getValue();
+                        if (typeof value === "string") {
+                          setCode(value);
+                        }
+                      });
+
+                      try {
+                        modified.onDidBlurEditorText(() => {
+                          void maybeSave();
+                        });
+                      } catch {
+                        // no-op
+                      }
+                    }}
+                  />
+                ) : (
+                  <Editor
+                    height="100%"
+                    defaultLanguage="plaintext"
+                    theme="vs-dark"
+                    value={code}
+                    onChange={(value) => {
+                      if (readOnly) return;
+                      setCode(value ?? "");
+                    }}
+                    onMount={handleEditorMount}
+                    options={{
+                      fontSize: 12,
+                      minimap: { enabled: false },
+                      scrollBeyondLastLine: false,
+                      wordWrap: wordWrap ? "on" : "off",
+                      readOnly,
+                    }}
+                  />
+                )}
+              </div>
             </div>
             {/* Save As 모달은 MultiActionDialog 로 분리 */}
           </div>

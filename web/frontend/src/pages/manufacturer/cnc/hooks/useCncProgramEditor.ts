@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { Machine } from "@/pages/manufacturer/cnc/types";
 import { applyProgramNoToContent } from "../lib/programNaming";
@@ -29,6 +29,20 @@ export const useCncProgramEditor = ({
     null,
   );
   const [isReadOnly, setIsReadOnly] = useState(false);
+  const programOverridesRef = useRef<Record<string, string>>({});
+
+  const getProgramOverrideKey = (prog: any) => {
+    if (!prog) return null;
+    const jobId = prog?.jobId ?? prog?.id;
+    if (jobId) return `job:${jobId}`;
+    const s3Key = String(prog?.s3Key || "").trim();
+    if (s3Key) return `s3:${s3Key}`;
+    const programId = prog?.programId ?? prog?._id ?? prog?.id;
+    if (programId) return `id:${programId}`;
+    const programNo = prog?.programNo ?? prog?.no;
+    if (programNo != null) return `no:${programNo}`;
+    return null;
+  };
 
   const openProgramDetail = async (prog: any) => {
     if (!workUid || !prog) return;
@@ -46,9 +60,6 @@ export const useCncProgramEditor = ({
       status.includes(k),
     );
     let readOnly = false;
-    if (prog?.source === "db" || prog?.source === "upload") {
-      readOnly = true;
-    }
     if (isRunning) {
       const current = programSummary?.current ?? null;
       const curNo = current?.programNo ?? current?.no;
@@ -71,6 +82,14 @@ export const useCncProgramEditor = ({
 
   const loadProgramCode = async (prog: any): Promise<string> => {
     if (!workUid || !prog) return "";
+
+    const overrideKey = getProgramOverrideKey(prog);
+    if (overrideKey) {
+      const cached = programOverridesRef.current[overrideKey];
+      if (typeof cached === "string") {
+        return cached;
+      }
+    }
 
     const s3Key = String(prog?.s3Key || "").trim();
     if (s3Key && token) {
@@ -194,8 +213,6 @@ export const useCncProgramEditor = ({
       programNo = cand;
     }
 
-    if (programNo == null) return;
-
     let headType = prog.headType ?? null;
     if (headType == null && Array.isArray(programSummary?.list)) {
       const found = programSummary!.list!.find((p: any) => {
@@ -212,23 +229,91 @@ export const useCncProgramEditor = ({
 
     if (headType == null) headType = 0;
 
-    const normalizedCode = applyProgramNoToContent(programNo, code);
+    const s3Key = String(prog?.s3Key || "").trim();
+    const normalizedCode =
+      programNo == null
+        ? String(code ?? "")
+        : applyProgramNoToContent(programNo, code);
+    const overrideKey = getProgramOverrideKey(prog);
 
-    const payload = {
-      headType,
-      programNo,
-      programData: normalizedCode,
-      isNew: options?.isNew ?? false,
-    };
+    if (s3Key && token) {
+      const fileName = s3Key.split("/").pop() || "";
+      if (!fileName) {
+        throw new Error("S3 키에서 파일명을 추출할 수 없습니다.");
+      }
 
-    const res = await callRaw(workUid, "UpdateProgram", payload);
-    const ok = res && res.success !== false;
-    if (!ok) {
-      const msg =
-        res?.message ||
-        res?.error ||
-        "프로그램 저장 실패 (Hi-Link UpdateProgram 응답 확인 필요)";
-      throw new Error(msg);
+      const presignRes = await apiFetch({
+        path: `/api/cnc-machines/${encodeURIComponent(workUid)}/direct/presign`,
+        method: "POST",
+        token,
+        jsonBody: {
+          fileName,
+          contentType: "text/plain",
+          fileSize: normalizedCode.length,
+        },
+      });
+      const presignBody: any = presignRes.data ?? {};
+      const presignData = presignBody?.data ?? presignBody;
+      if (!presignRes.ok || presignBody?.success === false) {
+        throw new Error(
+          presignBody?.message || presignBody?.error || "presign 발급 실패",
+        );
+      }
+
+      const uploadUrl = String(presignData?.uploadUrl || "").trim();
+      const presignedKey = String(presignData?.s3Key || "").trim();
+      if (!uploadUrl || !presignedKey) {
+        throw new Error("presign 정보가 올바르지 않습니다.");
+      }
+      if (presignedKey !== s3Key) {
+        throw new Error("저장 대상 S3 키가 일치하지 않습니다. (덮어쓰기 불가)");
+      }
+
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "text/plain",
+        },
+        body: normalizedCode,
+      });
+      if (!putRes.ok) {
+        throw new Error(`S3 업로드 실패 (HTTP ${putRes.status})`);
+      }
+    }
+
+    if (programNo != null) {
+      const payload = {
+        headType,
+        programNo,
+        programData: normalizedCode,
+        isNew: options?.isNew ?? false,
+      };
+
+      const res = await callRaw(workUid, "UpdateProgram", payload);
+      const ok = res && res.success !== false;
+      if (!ok) {
+        const msg =
+          res?.message ||
+          res?.error ||
+          "프로그램 저장 실패 (Hi-Link UpdateProgram 응답 확인 필요)";
+        throw new Error(msg);
+      }
+    }
+
+    if (overrideKey) {
+      programOverridesRef.current[overrideKey] = normalizedCode;
+    }
+
+    if (s3Key) {
+      const cacheKey = `cnc:s3:${s3Key}`;
+      try {
+        await setFileBlob(
+          cacheKey,
+          new Blob([normalizedCode], { type: "text/plain" }),
+        );
+      } catch {
+        // no-op
+      }
     }
 
     // 저장 후 프로그램 리스트/워크보드를 재조회하여 상태를 최신으로 유지
