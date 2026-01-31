@@ -12,7 +12,7 @@ namespace HiLinkBridgeWebApi48
     /// - CNC는 완료 콜백이 없으므로 Busy(IO) 기반으로 RUN->IDLE 전환을 감지한다.
     /// - 완료 감지 시 백엔드(SSOT)로 통보하여 큐 head pop + 다음 2개 preload + (auto on이면) 다음 시작까지 수행한다.
     /// </summary>
-    public static class ManualCardMachiningWatcher
+    public static class ManualFileMachiningWatcher
     {
         private static Timer _timer;
         private static int _tickRunning = 0;
@@ -24,7 +24,11 @@ namespace HiLinkBridgeWebApi48
 
         private static int GetTimeoutMs()
         {
-            var raw = (Environment.GetEnvironmentVariable("MANUAL_CARD_WATCHER_TIMEOUT_MS") ?? "500").Trim();
+            var raw = (Environment.GetEnvironmentVariable("MANUAL_FILE_WATCHER_TIMEOUT_MS") ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(raw))
+            {
+                raw = (Environment.GetEnvironmentVariable("MANUAL_CARD_WATCHER_TIMEOUT_MS") ?? "500").Trim();
+            }
             if (int.TryParse(raw, out var ms) && ms >= 50 && ms <= 10000)
             {
                 return ms;
@@ -40,10 +44,14 @@ namespace HiLinkBridgeWebApi48
 
             Interlocked.Exchange(ref _stopping, 0);
 
-            var enabled = (Environment.GetEnvironmentVariable("MANUAL_CARD_WATCHER_ENABLED") ?? "true").Trim();
+            var enabled = (Environment.GetEnvironmentVariable("MANUAL_FILE_WATCHER_ENABLED") ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(enabled))
+            {
+                enabled = (Environment.GetEnvironmentVariable("MANUAL_CARD_WATCHER_ENABLED") ?? "true").Trim();
+            }
             if (string.Equals(enabled, "false", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("[ManualCardWatcher] disabled by MANUAL_CARD_WATCHER_ENABLED=false");
+                Console.WriteLine("[ManualFileWatcher] disabled by allowlist env");
                 return;
             }
 
@@ -57,7 +65,7 @@ namespace HiLinkBridgeWebApi48
                 TimeSpan.FromSeconds(3),
                 TimeSpan.FromSeconds(3)
             );
-            Console.WriteLine("[ManualCardWatcher] started (3s interval)");
+            Console.WriteLine("[ManualFileWatcher] started (3s interval)");
         }
 
         public static void Stop()
@@ -127,7 +135,7 @@ namespace HiLinkBridgeWebApi48
                     var completed = await Task.WhenAny(busyTask, Task.Delay(timeoutMs));
                     if (completed != busyTask)
                     {
-                        Console.WriteLine("[ManualCardWatcher] busy check timeout machine={0} timeoutMs={1}", uid, timeoutMs);
+                        Console.WriteLine("[ManualFileWatcher] busy check timeout machine={0} timeoutMs={1}", uid, timeoutMs);
                         // timeout 이후에도 busyTask는 계속 실행될 수 있으므로 in-flight를 해제하지 않는다.
                         continue;
                     }
@@ -178,12 +186,10 @@ namespace HiLinkBridgeWebApi48
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[ManualCardWatcher] tick error: {0}", ex.Message);
+                Console.WriteLine("[ManualFileWatcher] tick error: {0}", ex.Message);
             }
             finally
             {
-                var ms = (DateTime.UtcNow - startedAt).TotalMilliseconds;
-                Console.WriteLine("[ManualCardWatcher] tick done ms={0:0}", ms);
                 Interlocked.Exchange(ref _tickRunning, 0);
             }
         }
@@ -216,12 +222,12 @@ namespace HiLinkBridgeWebApi48
 
                 if (!resp.IsSuccessStatusCode)
                 {
-                    Console.WriteLine("[ManualCardWatcher] backend notify failed machine={0} status={1}", machineId, (int)resp.StatusCode);
+                    Console.WriteLine("[ManualFileWatcher] backend notify failed machine={0} status={1}", machineId, (int)resp.StatusCode);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[ManualCardWatcher] notify error machine={0} err={1}", machineId, ex.Message);
+                Console.WriteLine("[ManualFileWatcher] notify error machine={0} err={1}", machineId, ex.Message);
             }
         }
     }

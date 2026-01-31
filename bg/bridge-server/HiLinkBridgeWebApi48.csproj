@@ -101,7 +101,7 @@
     <Compile Include="CncJobDispatcher.cs" />
     <Compile Include="CncMachineSignalUtils.cs" />
     <Compile Include="CncContinuousMachining.cs" />
-    <Compile Include="ManualCardMachiningWatcher.cs" />
+    <Compile Include="ManualFileMachiningWatcher.cs" />
     <Compile Include="Models\RawHiLinkRequest.cs" />
     <Compile Include="Models\AddMachineRequest.cs" />
     <Compile Include="Program.cs" />

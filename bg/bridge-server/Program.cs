@@ -50,7 +50,7 @@ namespace HiLinkBridgeWebApi48
                 MachinesInitializer.InitializeFromConfig();
 
                 DummyCncScheduler.Start();
-                ManualCardMachiningWatcher.Start();
+                ManualFileMachiningWatcher.Start();
                 var continuousEnabled = (Environment.GetEnvironmentVariable("CNC_CONTINUOUS_ENABLED") ?? "true").Trim();
                 if (!string.Equals(continuousEnabled, "false", StringComparison.OrdinalIgnoreCase))
                 {
@@ -68,7 +68,7 @@ namespace HiLinkBridgeWebApi48
                 DummyCncScheduler.Stop();
                 CncJobDispatcher.Stop();
                 CncContinuousMachining.Stop();
-                ManualCardMachiningWatcher.Stop();
+                ManualFileMachiningWatcher.Stop();
             }
         }
     }
