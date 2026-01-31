@@ -466,13 +466,12 @@ export const MachineCard = (props: MachineCardProps) => {
             role="button"
             tabIndex={0}
             className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
-              !currentProg || !currentProg.name || !isActive || isRunning
+              !currentProg || !currentProg.name
                 ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
                 : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
             }`}
             onClick={(e) => {
-              if (!currentProg || !currentProg.name || !isActive || isRunning)
-                return;
+              if (!currentProg || !currentProg.name) return;
               onOpenCurrentProg(e);
             }}
           >
@@ -522,12 +521,12 @@ export const MachineCard = (props: MachineCardProps) => {
             role="button"
             tabIndex={0}
             className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
-              !isActive || !nextProg
+              !nextProg
                 ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
                 : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
             }`}
             onClick={(e) => {
-              if (!nextProg || !isActive) return;
+              if (!nextProg) return;
               onOpenNextProg(nextProg, e);
             }}
           >

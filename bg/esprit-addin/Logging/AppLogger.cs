@@ -123,7 +123,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
         public static void Log(string message)
         {
             EnsureInitialized();
-            Trace.WriteLine(message);
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
+            Trace.WriteLine(line);
         }
     }
 }

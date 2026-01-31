@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Microsoft.Owin.Hosting;
 
 namespace HiLinkBridgeWebApi48
@@ -7,9 +8,41 @@ namespace HiLinkBridgeWebApi48
     {
         private const string BaseAddress = "http://+:8002";
 
+        private sealed class TimestampTextWriter : TextWriter
+        {
+            private readonly TextWriter _inner;
+
+            public TimestampTextWriter(TextWriter inner)
+            {
+                _inner = inner;
+            }
+
+            public override System.Text.Encoding Encoding => _inner.Encoding;
+
+            public override void WriteLine(string value)
+            {
+                var ts = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                _inner.WriteLine($"[{ts}] {value}");
+            }
+
+            public override void Write(char value)
+            {
+                _inner.Write(value);
+            }
+        }
+
         [STAThread]
         private static void Main(string[] args)
         {
+            try
+            {
+                Console.SetOut(new TimestampTextWriter(Console.Out));
+                Console.SetError(new TimestampTextWriter(Console.Error));
+            }
+            catch
+            {
+            }
+
             Console.WriteLine("Starting HiLinkBridgeWebApi48 on " + BaseAddress + "...");
             using (WebApp.Start<Startup>(BaseAddress))
             {

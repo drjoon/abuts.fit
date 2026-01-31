@@ -50,7 +50,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   const [wordWrap, setWordWrap] = React.useState(true);
   const [isMobile, setIsMobile] = React.useState(false);
 
-  const visible = open && !!workUid && !!selectedProgram;
+  const visible = open && !!selectedProgram;
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;

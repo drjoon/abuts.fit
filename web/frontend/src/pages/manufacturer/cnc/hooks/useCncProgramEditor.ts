@@ -49,14 +49,6 @@ export const useCncProgramEditor = ({
     const mid = String(machineId || "").trim() || workUid;
     if (!mid || !prog) return;
 
-    if (prog?.source === "db") {
-      const hasS3Key = String(prog?.s3Key || "").trim().length > 0;
-      const programNo = prog?.programNo ?? prog?.no ?? null;
-      if (!hasS3Key && programNo == null) {
-        return;
-      }
-    }
-
     // 에디터는 클릭된 장비 기준으로 동작한다.
     setEditorMachineId(mid);
 

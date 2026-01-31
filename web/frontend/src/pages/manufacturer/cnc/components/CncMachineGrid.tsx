@@ -153,13 +153,6 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             onOpenCurrentProg={(e) => {
               e.stopPropagation();
               if (!currentProg) return;
-              const statusUpper = (m.status || "").toUpperCase();
-              const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
-                statusUpper.includes(k),
-              );
-
-              // '생산중' 버튼은 비생산중 상태에서 현재 프로그램을 열어 편집할 때만 사용한다.
-              if (isRunning) return;
               onOpenProgramDetail(currentProg, m.uid);
             }}
             onOpenNextProg={(prog, e) => {
