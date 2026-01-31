@@ -19,7 +19,7 @@ interface CncMachineGridProps {
   onToolClick: (machine: Machine) => void;
   onOpenMachineInfo?: (uid: string) => void;
   onEditMachine: (machine: Machine) => void;
-  onOpenProgramDetail: (prog: any) => void;
+  onOpenProgramDetail: (prog: any, machineId?: string) => void;
   onSendControl: (uid: string, action: "reset" | "stop") => void;
   onOpenAddModal: () => void;
   onOpenJobConfig: (machine: Machine) => void;
@@ -152,7 +152,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             }}
             onOpenCurrentProg={(e) => {
               e.stopPropagation();
-              if (!currentProg || !isActive) return;
+              if (!currentProg) return;
               const statusUpper = (m.status || "").toUpperCase();
               const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
                 statusUpper.includes(k),
@@ -160,12 +160,12 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
 
               // '생산중' 버튼은 비생산중 상태에서 현재 프로그램을 열어 편집할 때만 사용한다.
               if (isRunning) return;
-              onOpenProgramDetail(currentProg);
+              onOpenProgramDetail(currentProg, m.uid);
             }}
             onOpenNextProg={(prog, e) => {
               e.stopPropagation();
-              if (!prog || !isActive) return;
-              onOpenProgramDetail(prog);
+              if (!prog) return;
+              onOpenProgramDetail(prog, m.uid);
             }}
             onResetClick={(e) => {
               e.stopPropagation();

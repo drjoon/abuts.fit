@@ -1671,8 +1671,8 @@ export const CncDashboardPage = () => {
                   onOpenMachineInfo={(uid) => {
                     void openMachineInfo(uid);
                   }}
-                  onOpenProgramDetail={(prog) => {
-                    void openProgramDetail(prog);
+                  onOpenProgramDetail={(prog, machineId) => {
+                    void openProgramDetail(prog, machineId);
                   }}
                   onSendControl={(uid, action) => {
                     if (action === "reset") {
@@ -2116,7 +2116,7 @@ export const CncDashboardPage = () => {
               s3Bucket: (job as any)?.s3Bucket ?? "",
               headType: 0,
             };
-            void openProgramDetail(prog);
+            void openProgramDetail(prog, m.uid);
           }}
           onDelete={(jobId) => {
             const m = playlistTarget;

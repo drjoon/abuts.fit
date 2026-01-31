@@ -29,6 +29,7 @@ export const useCncProgramEditor = ({
     null,
   );
   const [isReadOnly, setIsReadOnly] = useState(false);
+  const [editorMachineId, setEditorMachineId] = useState<string | null>(null);
   const programOverridesRef = useRef<Record<string, string>>({});
 
   const getProgramOverrideKey = (prog: any) => {
@@ -44,8 +45,9 @@ export const useCncProgramEditor = ({
     return null;
   };
 
-  const openProgramDetail = async (prog: any) => {
-    if (!workUid || !prog) return;
+  const openProgramDetail = async (prog: any, machineId?: string) => {
+    const mid = String(machineId || "").trim() || workUid;
+    if (!mid || !prog) return;
 
     if (prog?.source === "db") {
       const hasS3Key = String(prog?.s3Key || "").trim().length > 0;
@@ -54,6 +56,19 @@ export const useCncProgramEditor = ({
         return;
       }
     }
+
+    // 에디터는 클릭된 장비 기준으로 동작한다.
+    setEditorMachineId(mid);
+
+    // readOnly 판단은 기본적으로 '현재 선택(workUid) 장비' 기준으로만 정확하다.
+    // 다른 장비를 열 때는 안전하게 편집 허용(=readOnly=false)로 둔다.
+    if (mid !== workUid) {
+      setIsReadOnly(false);
+      setProgramEditorTarget(prog);
+      setProgramEditorOpen(true);
+      return;
+    }
+
     const activeMachine = machines.find((m) => m.uid === workUid) || null;
     const status = (activeMachine?.status || "").toUpperCase();
     const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
@@ -78,10 +93,12 @@ export const useCncProgramEditor = ({
   const closeProgramEditor = () => {
     setProgramEditorOpen(false);
     setProgramEditorTarget(null);
+    setEditorMachineId(null);
   };
 
   const loadProgramCode = async (prog: any): Promise<string> => {
-    if (!workUid || !prog) return "";
+    const mid = editorMachineId || workUid;
+    if (!mid || !prog) return "";
 
     const overrideKey = getProgramOverrideKey(prog);
     if (overrideKey) {
@@ -105,7 +122,7 @@ export const useCncProgramEditor = ({
       }
 
       const presignRes = await apiFetch({
-        path: `/api/cnc-machines/${encodeURIComponent(workUid)}/direct/presign-download?s3Key=${encodeURIComponent(
+        path: `/api/cnc-machines/${encodeURIComponent(mid)}/direct/presign-download?s3Key=${encodeURIComponent(
           s3Key,
         )}`,
         method: "GET",
@@ -163,7 +180,7 @@ export const useCncProgramEditor = ({
     if (headType == null) headType = 0;
 
     const payload = { machineProgramData: { headType, programNo } };
-    const res = await callRaw(workUid, "GetProgDataInfo", payload);
+    const res = await callRaw(mid, "GetProgDataInfo", payload);
     const data: any = res?.data ?? res;
     const body = data?.machineProgramData ?? data;
 
@@ -183,7 +200,8 @@ export const useCncProgramEditor = ({
       autoIncrementProgramNo?: boolean;
     },
   ): Promise<void> => {
-    if (!workUid || !prog) return;
+    const mid = editorMachineId || workUid;
+    if (!mid || !prog) return;
 
     const baseProgramNo = prog.programNo ?? prog.no;
     let programNo = options?.programNoOverride ?? baseProgramNo;
@@ -243,7 +261,7 @@ export const useCncProgramEditor = ({
       }
 
       const presignRes = await apiFetch({
-        path: `/api/cnc-machines/${encodeURIComponent(workUid)}/direct/presign`,
+        path: `/api/cnc-machines/${encodeURIComponent(mid)}/direct/presign`,
         method: "POST",
         token,
         jsonBody: {
@@ -289,7 +307,7 @@ export const useCncProgramEditor = ({
         isNew: options?.isNew ?? false,
       };
 
-      const res = await callRaw(workUid, "UpdateProgram", payload);
+      const res = await callRaw(mid, "UpdateProgram", payload);
       const ok = res && res.success !== false;
       if (!ok) {
         const msg =

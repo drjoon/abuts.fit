@@ -178,6 +178,13 @@ namespace HiLinkBridgeWebApi48
                     var dummy = m?["dummySettings"] as JObject;
                     if (dummy == null) continue;
 
+                    // 스위치 OFF면 더미 가공을 실행하지 않는다.
+                    var dummyEnabled = dummy.Value<bool?>("enabled") != false;
+                    if (!dummyEnabled)
+                    {
+                        continue;
+                    }
+
                     var programName = (dummy.Value<string>("programName") ?? "O0100").Trim();
                     var excludeHolidays = dummy.Value<bool?>("excludeHolidays") == true;
                     var lastRunKey = (dummy.Value<string>("lastRunKey") ?? string.Empty).Trim();
