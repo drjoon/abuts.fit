@@ -17,7 +17,7 @@ namespace HiLinkBridgeWebApi48
 public class CncMachining
 {
 private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-private static readonly HttpClient BackendClient = new HttpClient();
+private static readonly HttpClient BackendClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 private static readonly Dictionary<string, DateTime> LastBackendSyncUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 private class MachineFlags
 {

@@ -36,7 +36,7 @@ namespace HiLinkBridgeWebApi48
             return 500;
         }
 
-        private static readonly HttpClient Http = new HttpClient();
+        private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 
         public static void Start()
         {

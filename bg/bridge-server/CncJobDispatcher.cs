@@ -307,7 +307,7 @@ namespace HiLinkBridgeWebApi48
             return -1;
         }
 
-        private static readonly HttpClient Http = new HttpClient();
+        private static readonly HttpClient Http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         private static readonly string BridgeBase = Config.BridgeSelfBase;
 
         private static void AddSecretHeader(HttpRequestMessage req)

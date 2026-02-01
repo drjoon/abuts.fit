@@ -23,8 +23,8 @@ namespace HiLinkBridgeWebApi48
         private static Timer _timer;
         private static int _running = 0;
 
-        private static readonly HttpClient BackendClient = new HttpClient();
-        private static readonly HttpClient LocalClient = new HttpClient();
+        private static readonly HttpClient BackendClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        private static readonly HttpClient LocalClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 
         private static readonly Regex FanucRegex = new Regex(@"O(\d{4})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex DigitsRegex = new Regex(@"(\d{1,6})", RegexOptions.Compiled);
