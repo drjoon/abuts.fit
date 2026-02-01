@@ -1765,11 +1765,16 @@ export async function updateRequestStatus(req, res) {
       });
     }
 
-    // 취소는 의뢰 또는 CAM 상태에서만 가능 (가공 단계부터는 취소 불가)
+    // 취소는 의뢰/CAM 단계에서만 가능 (manufacturerStage도 허용 범위에 포함)
     if (status === "취소") {
       const currentStatus = String(request.status || "").trim();
+      const manufacturerStage = String(request.manufacturerStage || "").trim();
       const allowedCancelStatuses = ["의뢰", "의뢰접수", "CAM", "가공전"];
-      if (!allowedCancelStatuses.includes(currentStatus)) {
+      const allowedCancelStages = ["의뢰", "의뢰접수", "CAM", "가공전"];
+      const isStatusAllowed = allowedCancelStatuses.includes(currentStatus);
+      const isStageAllowed = allowedCancelStages.includes(manufacturerStage);
+
+      if (!isStatusAllowed && !isStageAllowed) {
         return res.status(400).json({
           success: false,
           message:

@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
-import { NewRequestPatientImplantFields } from "@/pages/requestor/new_request/components/NewRequestPatientImplantFields";
 
 const EDITABLE_STATUSES = new Set(["의뢰", "CAM", "의뢰접수", "가공전"]); // 의뢰, CAM 단계만 수정 가능
 
@@ -303,8 +302,23 @@ export const RequestorRecentRequestsCard = ({
   };
 
   const handleCancelFromDetail = async () => {
-    if (!selectedRequestId) return;
-    await handleCancelRequest(selectedRequestId);
+    const fallbackId =
+      selectedRequestId ||
+      detail?._id ||
+      detail?.id ||
+      selectedSummary?._id ||
+      selectedSummary?.id;
+
+    if (!fallbackId) {
+      toast({
+        title: "의뢰 ID를 찾을 수 없습니다",
+        variant: "destructive",
+        duration: 2500,
+      });
+      return;
+    }
+
+    await handleCancelRequest(fallbackId as string);
     setOpen(false);
     setSelectedRequestId("");
     setDetail(null);
@@ -541,166 +555,126 @@ export const RequestorRecentRequestsCard = ({
           }
         }}
       >
-        <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="w-full sm:w-[48%] max-w-[480px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {detail?.title || selectedSummary?.title || "의뢰 상세"}
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-3 pr-8">
+              <DialogTitle>
+                {detail?.title || selectedSummary?.title || "의뢰 상세"}
+              </DialogTitle>
+              <div className="self-start flex items-center gap-2">
+                {getStatusBadge(
+                  detail?.status || selectedSummary?.status || "-",
+                  detail?.manufacturerStage ||
+                    selectedSummary?.manufacturerStage,
+                )}
+              </div>
+            </div>
             <DialogDescription asChild>
               <div className="space-y-3 pt-2 text-sm text-muted-foreground">
-                {loadingDetail ? (
-                  <div>불러오는 중...</div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-4 border-b pb-4">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-700">
-                            의뢰번호:
-                          </span>
-                          <span>
-                            {detail?.requestId ||
-                              selectedSummary?.requestId ||
-                              "-"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-700">
-                            의뢰일:
-                          </span>
-                          <span>
-                            {detail?.createdAt
-                              ? new Date(detail.createdAt).toLocaleString()
-                              : selectedSummary?.createdAt
-                                ? new Date(
-                                    selectedSummary.createdAt,
-                                  ).toLocaleString()
-                                : "-"}
-                          </span>
-                        </div>
-                        {(detail?.timeline?.estimatedCompletion ||
-                          selectedSummary?.estimatedCompletion) && (
-                          <div className="flex items-center gap-2 text-blue-600 font-medium">
-                            <span>도착 예정일:</span>
-                            <span>
-                              {(() => {
-                                const raw =
-                                  detail?.timeline?.estimatedCompletion ||
-                                  selectedSummary?.estimatedCompletion;
-                                if (!raw) return "-";
-                                const d = new Date(raw);
-                                return d.toLocaleString();
-                              })()}
-                            </span>
-                          </div>
-                        )}
-                        {detail?.deliveryInfoRef?.deliveredAt && (
-                          <div className="flex items-center gap-2 text-green-600 font-medium">
-                            <span>배송 완료일:</span>
-                            <span>
-                              {new Date(
-                                detail.deliveryInfoRef.deliveredAt,
-                              ).toLocaleString()}
-                            </span>
-                          </div>
-                        )}
+                <div className="grid grid-cols-[80px_1fr] gap-3 items-center">
+                  <span className="text-gray-600">의뢰번호</span>
+                  <span className="text-gray-900 font-medium">
+                    {detail?.requestId || selectedSummary?.requestId || "-"}
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-700">의뢰일:</span>
+                    <span>
+                      {detail?.createdAt
+                        ? new Date(detail.createdAt).toLocaleString()
+                        : selectedSummary?.createdAt
+                          ? new Date(selectedSummary.createdAt).toLocaleString()
+                          : "-"}
+                    </span>
+                  </div>
+                  {(detail?.timeline?.estimatedCompletion ||
+                    selectedSummary?.estimatedCompletion) && (
+                    <div className="flex items-center gap-2 text-blue-600 font-medium">
+                      <span>도착 예정일:</span>
+                      <span>
+                        {(() => {
+                          const raw =
+                            detail?.timeline?.estimatedCompletion ||
+                            selectedSummary?.estimatedCompletion;
+                          if (!raw) return "-";
+                          const d = new Date(raw);
+                          return d.toLocaleString();
+                        })()}
+                      </span>
+                    </div>
+                  )}
+                  {detail?.deliveryInfoRef?.deliveredAt && (
+                    <div className="flex items-center gap-2 text-green-600 font-medium">
+                      <span>배송 완료일:</span>
+                      <span>
+                        {new Date(
+                          detail.deliveryInfoRef.deliveredAt,
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {(() => {
+                  const ci = resolveCurrentCaseInfos();
+                  const maxDiameter = ci?.maxDiameter;
+                  const connectionDiameter = ci?.connectionDiameter;
+                  const implantLabel =
+                    [
+                      ci?.implantManufacturer,
+                      ci?.implantSystem,
+                      ci?.implantType,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ") || "-";
+
+                  return (
+                    <div className="rounded-lg border px-3 py-3 space-y-2 text-sm text-gray-900">
+                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
+                        <span className="text-gray-600">치과명</span>
+                        <span className="text-right font-medium">
+                          {ci?.clinicName || "-"}
+                        </span>
                       </div>
-                      <div className="self-start">
-                        {getStatusBadge(
-                          detail?.status || selectedSummary?.status || "-",
-                          detail?.manufacturerStage ||
-                            selectedSummary?.manufacturerStage,
-                        )}
+                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
+                        <span className="text-gray-600">환자명</span>
+                        <span className="text-right font-medium">
+                          {ci?.patientName || "-"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
+                        <span className="text-gray-600">치아번호</span>
+                        <span className="text-right font-medium">
+                          {ci?.tooth || "-"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
+                        <span className="text-gray-600">임플란트</span>
+                        <span className="text-right font-medium whitespace-pre">
+                          {implantLabel}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
+                        <span className="text-gray-600">직경</span>
+                        <span className="text-right font-medium">
+                          {Number.isFinite(maxDiameter)
+                            ? `${Number(maxDiameter).toFixed(1)} mm`
+                            : "-"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
+                        <span className="text-gray-600">커넥션 직경</span>
+                        <span className="text-right font-medium">
+                          {Number.isFinite(connectionDiameter)
+                            ? `${Number(connectionDiameter).toFixed(1)} mm`
+                            : "-"}
+                        </span>
                       </div>
                     </div>
-
-                    {(() => {
-                      const ci = resolveCurrentCaseInfos();
-                      const maxDiameter = ci?.maxDiameter;
-                      const connectionDiameter = ci?.connectionDiameter;
-
-                      return (
-                        <div className="rounded-lg border px-3 py-2 space-y-2">
-                          <NewRequestPatientImplantFields
-                            caseInfos={editCaseInfos || ci || {}}
-                            setCaseInfos={(updates) => {
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                ...updates,
-                              }));
-                            }}
-                            showImplantSelect={true}
-                            readOnly={false}
-                            implantSelectSource="caseInfos"
-                            connections={connections as any}
-                            typeOptions={typeOptions}
-                            implantManufacturer={implantManufacturer}
-                            setImplantManufacturer={setImplantManufacturer}
-                            implantSystem={implantSystem}
-                            setImplantSystem={setImplantSystem}
-                            implantType={implantType}
-                            setImplantType={setImplantType}
-                            syncSelectedConnection={syncSelectedConnection}
-                            clinicNameOptions={clinicNameOptions}
-                            patientNameOptions={patientNameOptions}
-                            teethOptions={teethOptions}
-                            addClinicPreset={addClinicPreset}
-                            clearAllClinicPresets={clearAllClinicPresets}
-                            addPatientPreset={addPatientPreset}
-                            clearAllPatientPresets={clearAllPatientPresets}
-                            addTeethPreset={addTeethPreset}
-                            clearAllTeethPresets={clearAllTeethPresets}
-                            handleAddOrSelectClinic={(label) => {
-                              const next = (label || "").trim();
-                              if (!next) return;
-                              setEditCaseInfos((prev: any) => ({
-                                ...(prev || {}),
-                                clinicName: next,
-                              }));
-                              addClinicPreset(next);
-                            }}
-                          />
-
-                          {(maxDiameter != null ||
-                            connectionDiameter != null) && (
-                            <div className="text-xs text-muted-foreground">
-                              직경:
-                              {maxDiameter != null
-                                ? ` 최대 ${Number(maxDiameter).toFixed(1)}`
-                                : ""}
-                              {connectionDiameter != null
-                                ? ` / 커넥션 ${Number(
-                                    connectionDiameter,
-                                  ).toFixed(1)}`
-                                : ""}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    <div className="pt-2 flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleSaveEditFromDetail}
-                        disabled={savingEdit || loadingDetail}
-                      >
-                        의뢰 변경
-                      </Button>
-                      {isCancelableRequest(detail || selectedSummary) && (
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          onClick={openCancelConfirmFromDetail}
-                          disabled={loadingDetail}
-                        >
-                          의뢰 취소
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                )}
+                  );
+                })()}
               </div>
             </DialogDescription>
           </DialogHeader>
@@ -708,59 +682,10 @@ export const RequestorRecentRequestsCard = ({
       </Dialog>
 
       <ConfirmDialog
-        open={cancelConfirmOpen}
-        title="이 의뢰를 취소하시겠습니까?"
-        description={
-          <div className="text-md">
-            <div className="font-medium mb-1 truncate">
-              {detail?.title || selectedSummary?.title || selectedRequestId}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {(() => {
-                const ci = resolveCurrentCaseInfos();
-                return (
-                  <>
-                    {ci?.clinicName && <span>{ci.clinicName}</span>}
-                    {ci?.patientName && (
-                      <span className="ml-1">{ci.patientName}</span>
-                    )}
-                    {ci?.tooth && <span className="ml-1">{ci.tooth}</span>}
-                    {(ci?.implantManufacturer ||
-                      ci?.implantSystem ||
-                      ci?.implantType) && (
-                      <span className="ml-1">
-                        {[
-                          ci?.implantManufacturer,
-                          ci?.implantSystem,
-                          ci?.implantType,
-                        ]
-                          .filter(Boolean)
-                          .join(" / ")}
-                      </span>
-                    )}
-                    {ci?.maxDiameter != null && (
-                      <span className="ml-1">
-                        {Number(ci.maxDiameter).toFixed(1)}
-                      </span>
-                    )}
-                    {ci?.connectionDiameter != null && (
-                      <span className="ml-1">
-                        {Number(ci.connectionDiameter).toFixed(1)}
-                      </span>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-        }
-        confirmLabel="의뢰 취소"
-        cancelLabel="닫기"
-        onConfirm={async () => {
-          await handleCancelFromDetail();
-          setCancelConfirmOpen(false);
-        }}
-        onCancel={() => setCancelConfirmOpen(false)}
+        open={false}
+        title=""
+        onConfirm={() => {}}
+        onCancel={() => {}}
       />
     </Card>
   );
