@@ -974,14 +974,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                     kind = CncJobKind.File
                 };
 
-                var enqueued = CncContinuousMachining.EnqueueFileJob(
+                var enqueued = CncMachining.EnqueueFileJob(
                     machineId,
                     job.fileName,
                     job.requestId,
-                    bridgePath,
-                    s3Key,
-                    s3Bucket,
-                    enqueueFront
+                    job.originalFileName
                 );
                 if (enqueued == null)
                 {
@@ -1020,7 +1017,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
             }
 
-            var state = CncContinuousMachining.GetMachineState(machineId);
+            var state = CncMachining.GetMachineState(machineId);
             if (state == null)
             {
                 return Request.CreateResponse(HttpStatusCode.NotFound, new

@@ -34,6 +34,30 @@ router.post(
   requireBridgeSecret,
   cncMachineController.completeManualFileJobForBridge,
 );
+router.get(
+  "/bridge/machine-flags/:machineId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.getMachineFlagsForBridge,
+);
+router.post(
+  "/bridge/machining/tick/:machineId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.recordMachiningTickForBridge,
+);
+router.post(
+  "/bridge/machining/complete/:machineId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.recordMachiningCompleteForBridge,
+);
+router.post(
+  "/bridge/machining/fail/:machineId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.recordMachiningFailForBridge,
+);
 router.patch(
   "/bridge/dummy-settings/:machineId/last-run-key",
   requireBridgeIpAllowlist,

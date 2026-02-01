@@ -50,25 +50,14 @@ namespace HiLinkBridgeWebApi48
                 MachinesInitializer.InitializeFromConfig();
 
                 DummyCncScheduler.Start();
-                ManualFileMachiningWatcher.Start();
-                var continuousEnabled = (Environment.GetEnvironmentVariable("CNC_CONTINUOUS_ENABLED") ?? "true").Trim();
-                if (!string.Equals(continuousEnabled, "false", StringComparison.OrdinalIgnoreCase))
-                {
-                    CncContinuousMachining.Start();
-                }
-                else
-                {
-                    CncJobDispatcher.Start();
-                }
+                CncMachining.Start();
 
                 // NcFileWatcher 미사용: 이벤트 기반(백엔드 트리거)으로 처리
                 Console.WriteLine("Initialization done. Press Enter to exit.");
                 Console.ReadLine();
 
                 DummyCncScheduler.Stop();
-                CncJobDispatcher.Stop();
-                CncContinuousMachining.Stop();
-                ManualFileMachiningWatcher.Stop();
+                CncMachining.Stop();
             }
         }
     }

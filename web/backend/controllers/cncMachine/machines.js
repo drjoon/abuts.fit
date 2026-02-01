@@ -1,4 +1,9 @@
-import { BRIDGE_BASE, withBridgeHeaders, CncMachine } from "./shared.js";
+import {
+  BRIDGE_BASE,
+  withBridgeHeaders,
+  CncMachine,
+  Machine,
+} from "./shared.js";
 
 export async function getMachines(req, res) {
   try {
@@ -15,6 +20,45 @@ export async function getMachines(req, res) {
     res.status(500).json({
       success: false,
       message: "장비 목록 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getMachineFlagsForBridge(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const machine = await Machine.findOne({ uid: mid })
+      .select({
+        allowAutoMachining: 1,
+        allowJobStart: 1,
+        allowProgramDelete: 1,
+      })
+      .lean()
+      .catch(() => null);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        machineId: mid,
+        allowAutoMachining: machine?.allowAutoMachining === true,
+        allowJobStart: machine?.allowJobStart !== false,
+        allowProgramDelete: machine?.allowProgramDelete === true,
+      },
+    });
+  } catch (error) {
+    console.error("Error in getMachineFlagsForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 장비 플래그 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

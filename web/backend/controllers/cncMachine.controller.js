@@ -1,4 +1,8 @@
-import { completeManualFileJobForBridge, manualFilePlay, manualFileUploadAndPreload } from "./cncMachine/manualFile.js";
+import {
+  completeManualFileJobForBridge,
+  manualFilePlay,
+  manualFileUploadAndPreload,
+} from "./cncMachine/manualFile.js";
 import {
   applyBridgeQueueBatchForMachine,
   clearBridgeQueueForMachine,
@@ -9,7 +13,11 @@ import {
   updateBridgeQueueJobPause,
   updateBridgeQueueJobQty,
 } from "./cncMachine/bridgeQueue.js";
-import { getBridgeActiveProgram, getMachines } from "./cncMachine/machines.js";
+import {
+  getBridgeActiveProgram,
+  getMachineFlagsForBridge,
+  getMachines,
+} from "./cncMachine/machines.js";
 import {
   createCncDirectDownloadPresign,
   createCncDirectDownloadPresignForBridge,
@@ -38,15 +46,24 @@ import {
   updateDummySettings,
 } from "./cncMachine/dummy.js";
 import { initializeMachines } from "./cncMachine/dev.js";
+import {
+  recordMachiningCompleteForBridge,
+  recordMachiningFailForBridge,
+  recordMachiningTickForBridge,
+} from "./cncMachine/machiningBridge.js";
 
 export {
   completeManualFileJobForBridge,
   manualFileUploadAndPreload,
   manualFilePlay,
   getDummySettingsForBridge,
+  getMachineFlagsForBridge,
   getDbBridgeQueueSnapshotForBridge,
   createCncDirectDownloadPresignForBridge,
   updateDummyLastRunKeyForBridge,
+  recordMachiningTickForBridge,
+  recordMachiningCompleteForBridge,
+  recordMachiningFailForBridge,
   getMachines,
   getBridgeQueueForMachine,
   getBridgeActiveProgram,

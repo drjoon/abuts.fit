@@ -15,6 +15,8 @@ namespace HiLinkBridgeWebApi48
     {
         public string id { get; set; }
         public CncJobKind kind { get; set; }
+        // backend snapshot raw kind (e.g., "manual_file", "requested_file", "dummy")
+        public string kindRaw { get; set; }
         public string machineId { get; set; }
 
         public int qty { get; set; }
@@ -65,6 +67,7 @@ namespace HiLinkBridgeWebApi48
             {
                 id = Guid.NewGuid().ToString("N"),
                 kind = CncJobKind.File,
+                kindRaw = "file",
                 machineId = (machineId ?? string.Empty).Trim(),
                 qty = 1,
                 fileName = fileName,
@@ -91,6 +94,7 @@ namespace HiLinkBridgeWebApi48
             {
                 id = Guid.NewGuid().ToString("N"),
                 kind = CncJobKind.File,
+                kindRaw = "file",
                 machineId = (machineId ?? string.Empty).Trim(),
                 qty = 1,
                 fileName = fileName,
@@ -133,6 +137,7 @@ namespace HiLinkBridgeWebApi48
             {
                 id = Guid.NewGuid().ToString("N"),
                 kind = CncJobKind.Dummy,
+                kindRaw = "dummy",
                 machineId = (machineId ?? string.Empty).Trim(),
                 qty = 1,
                 programNo = programNo,

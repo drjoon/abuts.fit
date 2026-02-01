@@ -14,11 +14,120 @@ namespace HiLinkBridgeWebApi48
 /// <summary>
 /// O3000↔O3001 토글 방식의 연속 가공 관리
 /// </summary>
-public class CncContinuousMachining
+public class CncMachining
 {
 private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 private static readonly HttpClient BackendClient = new HttpClient();
 private static readonly Dictionary<string, DateTime> LastBackendSyncUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+private class MachineFlags
+{
+public bool AllowAutoMachining;
+public bool AllowJobStart;
+public DateTime FetchedAtUtc;
+}
+
+private static int GetManualWatcherTimeoutMs()
+{
+var raw = (Environment.GetEnvironmentVariable("MANUAL_FILE_WATCHER_TIMEOUT_MS") ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(raw))
+{
+raw = (Environment.GetEnvironmentVariable("MANUAL_CARD_WATCHER_TIMEOUT_MS") ?? "500").Trim();
+}
+if (int.TryParse(raw, out var ms) && ms >= 50 && ms <= 10000)
+{
+return ms;
+}
+return 500;
+}
+
+private static async Task DetectAndNotifyManualFileCompleted(string machineId, MachineState state)
+{
+if (state == null) return;
+var mid = (machineId ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(mid)) return;
+
+// 큐 헤드가 manual_file일 때만 watcher 동작
+var head = CncJobQueue.Peek(mid);
+if (head == null) return;
+if (!string.Equals((head.kindRaw ?? string.Empty).Trim(), "manual_file", StringComparison.OrdinalIgnoreCase)) return;
+
+// busy 체크는 timeout으로 감싼다(네이티브 hang 방지)
+var timeoutMs = GetManualWatcherTimeoutMs();
+var busyTask = Task.Run(() =>
+{
+try
+{
+if (TryGetMachineBusy(mid, out var b))
+{
+return (ok: true, busy: b);
+}
+return (ok: false, busy: false);
+}
+catch
+{
+return (ok: false, busy: false);
+}
+});
+
+var completed = await Task.WhenAny(busyTask, Task.Delay(timeoutMs));
+if (completed != busyTask)
+{
+Console.WriteLine("[CncMachining] manual busy check timeout machine={0} timeoutMs={1}", mid, timeoutMs);
+return;
+}
+
+(bool ok, bool busy) busyResult;
+try
+{
+busyResult = await busyTask;
+}
+catch
+{
+return;
+}
+if (!busyResult.ok) return;
+
+var busy = busyResult.busy;
+var prevBusy = state.LastBusy;
+state.LastBusy = busy;
+
+if (prevBusy && !busy)
+{
+var nowUtc = DateTime.UtcNow;
+if ((nowUtc - state.LastManualNotifyUtc).TotalSeconds < 2) return;
+state.LastManualNotifyUtc = nowUtc;
+
+_ = Task.Run(() => NotifyBackendManualFileComplete(mid));
+}
+}
+
+private static async Task NotifyBackendManualFileComplete(string machineId)
+{
+try
+{
+var backendBase = Config.BackendBase;
+if (string.IsNullOrEmpty(backendBase)) return;
+var mid = (machineId ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(mid)) return;
+
+var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/manual-file/complete/" + Uri.EscapeDataString(mid);
+var req = new HttpRequestMessage(HttpMethod.Post, url);
+AddSecretHeader(req);
+req.Content = new StringContent("{}", Encoding.UTF8, "application/json");
+var resp = await BackendClient.SendAsync(req);
+_ = await resp.Content.ReadAsStringAsync();
+if (!resp.IsSuccessStatusCode)
+{
+Console.WriteLine("[CncMachining] backend manual-file complete failed machine={0} status={1}", mid, (int)resp.StatusCode);
+}
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] NotifyBackendManualFileComplete error machine={0} err={1}", machineId, ex.Message);
+}
+}
+private static readonly Dictionary<string, MachineFlags> MachineFlagsCache = new Dictionary<string, MachineFlags>(StringComparer.OrdinalIgnoreCase);
+private const int MACHINE_FLAGS_CACHE_SEC = 5;
 private const int BACKEND_SYNC_INTERVAL_SEC = 10;
 // 고정 슬롯 번호
 private const int SLOT_A = 4000;
@@ -44,6 +153,10 @@ public bool IsRunning;
 public bool AwaitingStart;
 public int ProductCountBefore; // 가공 시작 전 생산 수량
 public bool SawBusy;
+public bool LastBusy;
+public DateTime LastManualNotifyUtc;
+public string LastMachiningFailJobId;
+public string LastMachiningCompleteJobId;
 public string LastStartFailJobId;
 public int StartFailCount;
 public DateTime NextStartAttemptUtc;
@@ -59,12 +172,6 @@ private static int _tickRunning = 0;
 public static void Start()
 {
 if (_timer != null) return;
-var enabled = (Environment.GetEnvironmentVariable("CNC_CONTINUOUS_ENABLED") ?? "true").Trim();
-if (string.Equals(enabled, "false", StringComparison.OrdinalIgnoreCase))
-{
-Console.WriteLine("[CncContinuous] disabled by CNC_CONTINUOUS_ENABLED=false");
-return;
-}
 
 // 부팅 시 1회: DB(SSOT) 큐 스냅샷을 받아 메모리 큐를 복구한다.
 // 주기적 폴링은 금지하며, 이후 동기화는 백엔드 push(/api/bridge/queue/{machineId}/replace)로만 수행한다.
@@ -74,7 +181,7 @@ await InitialSyncFromBackendOnce();
 });
 
 _timer = new Timer(async _ => await Tick(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
-Console.WriteLine("[CncContinuous] started (3s interval)");
+Console.WriteLine("[CncMachining] started (3s interval)");
 }
 
 private static async Task InitialSyncFromBackendOnce()
@@ -84,18 +191,18 @@ try
 var backendBase = Config.BackendBase;
 if (string.IsNullOrEmpty(backendBase))
 {
-Console.WriteLine("[CncContinuous] initial sync skipped: BACKEND_URL is empty");
+Console.WriteLine("[CncMachining] initial sync skipped: BACKEND_URL is empty");
 return;
 }
 
 var list = MachinesConfigStore.Load() ?? new List<Models.MachineConfigItem>();
 if (list.Count == 0)
 {
-Console.WriteLine("[CncContinuous] initial sync skipped: machines.json is empty");
+Console.WriteLine("[CncMachining] initial sync skipped: machines.json is empty");
 return;
 }
 
-Console.WriteLine("[CncContinuous] initial queue sync started machines={0}", list.Count);
+Console.WriteLine("[CncMachining] initial queue sync started machines={0}", list.Count);
 
 foreach (var m in list)
 {
@@ -107,15 +214,15 @@ await SyncQueueFromBackend(uid);
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] initial sync failed uid={0} err={1}", m?.uid, ex.Message);
+Console.WriteLine("[CncMachining] initial sync failed uid={0} err={1}", m?.uid, ex.Message);
 }
 }
 
-Console.WriteLine("[CncContinuous] initial queue sync done");
+Console.WriteLine("[CncMachining] initial queue sync done");
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] initial queue sync error: {0}", ex.Message);
+Console.WriteLine("[CncMachining] initial queue sync error: {0}", ex.Message);
 }
 }
 public static void Stop()
@@ -153,7 +260,7 @@ job.s3Bucket = sb;
 }
 }
 catch { }
-Console.WriteLine("[CncContinuous] job enqueued machine={0} jobId={1} file={2}", mid, job?.id, job?.fileName);
+Console.WriteLine("[CncMachining] job enqueued machine={0} jobId={1} file={2}", mid, job?.id, job?.fileName);
 return job;
 }
 private static async Task Tick()
@@ -182,7 +289,7 @@ await ProcessMachine(machineId);
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] tick error: {0}", ex);
+Console.WriteLine("[CncMachining] tick error: {0}", ex);
 }
 finally
 {
@@ -204,6 +311,10 @@ NextSlot = SLOT_B,
 IsRunning = false,
 AwaitingStart = false,
 SawBusy = false,
+LastBusy = false,
+LastManualNotifyUtc = DateTime.MinValue,
+LastMachiningFailJobId = null,
+LastMachiningCompleteJobId = null,
 StartFailCount = 0,
 PreloadFailCount = 0,
 NextStartAttemptUtc = DateTime.MinValue,
@@ -215,15 +326,89 @@ MachineStates[machineId] = state;
 // 장비의 현재 활성 프로그램을 읽어 슬롯 기준을 맞춘다.
 // (선업로드가 이미 된 경우에는 nextSlot을 바꾸지 않는다.)
 RefreshSlotsFromMachine(machineId, state);
+
+// manual_file 전용 완료 감지: busy 1->0 전환 시 백엔드에 complete 통보
+try
+{
+await DetectAndNotifyManualFileCompleted(machineId, state);
+}
+catch { }
+
 // 1. 현재 가공 중인지 확인
 if (state.IsRunning)
 {
+// Alarm(Mode1) 기반 실패 감지 (알람이 1개 이상이면 실패로 간주)
+if (state.CurrentJob != null)
+{
+if (TryGetMachineAlarms(machineId, out var alarmList, out var alarmErr))
+{
+if (alarmList != null && alarmList.Count > 0)
+{
+var jobId = state.CurrentJob?.id;
+var shouldSend = true;
+lock (StateLock)
+{
+if (!string.IsNullOrEmpty(jobId) && string.Equals(state.LastMachiningFailJobId, jobId, StringComparison.OrdinalIgnoreCase))
+{
+shouldSend = false;
+}
+}
+if (shouldSend)
+{
+lock (StateLock)
+{
+state.LastMachiningFailJobId = jobId;
+}
+_ = Task.Run(() => NotifyMachiningFailed(state.CurrentJob, machineId, "alarm", alarmList));
+}
+
+Console.WriteLine("[CncMachining] machining failed by alarm machine={0} alarms={1}", machineId, alarmList.Count);
+lock (StateLock)
+{
+state.IsRunning = false;
+state.AwaitingStart = false;
+state.CurrentJob = null;
+state.SawBusy = false;
+}
+return;
+}
+}
+else
+{
+Console.WriteLine("[CncMachining] alarm read failed machine={0} err={1}", machineId, alarmErr);
+}
+}
+
 // 가공 완료 체크
 var done = await CheckJobCompleted(machineId, state);
 if (done)
 {
-Console.WriteLine("[CncContinuous] job completed machine={0} slot=O{1}",
+Console.WriteLine("[CncMachining] job completed machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
+
+// COMPLETED 통보 (jobId 기준 1회)
+try
+{
+var jobId = state.CurrentJob?.id;
+var shouldSend = true;
+lock (StateLock)
+{
+if (!string.IsNullOrEmpty(jobId) && string.Equals(state.LastMachiningCompleteJobId, jobId, StringComparison.OrdinalIgnoreCase))
+{
+shouldSend = false;
+}
+}
+if (shouldSend)
+{
+lock (StateLock)
+{
+state.LastMachiningCompleteJobId = jobId;
+}
+_ = Task.Run(() => NotifyMachiningCompleted(state.CurrentJob, machineId));
+}
+}
+catch { }
+
 lock (StateLock)
 {
 state.IsRunning = false;
@@ -259,7 +444,7 @@ state.StartedAtUtc = DateTime.UtcNow;
 state.ProductCountBefore = prodCountBefore;
 state.SawBusy = true;
 }
-Console.WriteLine("[CncContinuous] detected start machine={0} slot=O{1}",
+Console.WriteLine("[CncMachining] detected start machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
 _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
 }
@@ -272,6 +457,11 @@ var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
 {
 nextJob = CncJobQueue.Peek(machineId);
+}
+// manual_file은 브리지에서 자동 Start/Upload를 하지 않는다. (백엔드가 preload/play를 관리)
+if (nextJob != null && string.Equals((nextJob.kindRaw ?? string.Empty).Trim(), "manual_file", StringComparison.OrdinalIgnoreCase))
+{
+return;
 }
 if (nextJob != null && nextJob.paused)
 {
@@ -302,8 +492,7 @@ else
 {
 // 재시도하지 않고 큐에서 제거 (관리자가 확인 후 재등록)
 CncJobQueue.Pop(machineId);
-Console.WriteLine(
-"[CncContinuous] start dropped machine={0} jobId={1} file={2}",
+Console.WriteLine("[CncMachining] start dropped machine={0} jobId={1} file={2}",
 machineId,
 nextJob.id,
 nextJob.fileName
@@ -333,7 +522,7 @@ if (TryGetProductCount(machineId, out var currentCount))
 {
 if (currentCount > state.ProductCountBefore)
 {
-Console.WriteLine("[CncContinuous] production count increased machine={0} before={1} after={2}",
+Console.WriteLine("[CncMachining] production count increased machine={0} before={1} after={2}",
 machineId, state.ProductCountBefore, currentCount);
 return true;
 }
@@ -350,7 +539,7 @@ return false;
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] CheckJobCompleted error machine={0} err={1}", machineId, ex.Message);
+Console.WriteLine("[CncMachining] CheckJobCompleted error machine={0} err={1}", machineId, ex.Message);
 return false;
 }
 }
@@ -370,7 +559,7 @@ if (queuedPri > nextPri)
 {
 try
 {
-Console.WriteLine("[CncContinuous] higher priority job arrived; requeue preloaded nextJob machine={0} queued={1} nextJob={2}",
+Console.WriteLine("[CncMachining] higher priority job arrived; requeue preloaded nextJob machine={0} queued={1} nextJob={2}",
 machineId, queued?.source, state.NextJob?.source);
 
 // 기존 NextJob을 큐로 되돌리고(queued 다음 순서), NextJob을 비워서 다음 Tick에서 queued를 선업로드한다.
@@ -392,7 +581,7 @@ CncJobQueue.ReplaceQueue(machineId, rebuilt);
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] priority override failed machine={0} err={1}", machineId, ex.Message);
+Console.WriteLine("[CncMachining] priority override failed machine={0} err={1}", machineId, ex.Message);
 }
 
 lock (StateLock)
@@ -418,7 +607,7 @@ return;
 }
 try
 {
-Console.WriteLine("[CncContinuous] preloading next job machine={0} file={1} to slot=O{2}",
+Console.WriteLine("[CncMachining] preloading next job machine={0} file={1} to slot=O{2}",
 machineId, nextJob.fileName, state.NextSlot);
 var (uploaded, uploadErr) = await UploadProgramToSlot(machineId, nextJob, state.NextSlot);
 if (uploaded)
@@ -431,7 +620,7 @@ state.PreloadFailCount = 0;
 state.NextPreloadAttemptUtc = DateTime.MinValue;
 }
 CncJobQueue.Pop(machineId);
-Console.WriteLine("[CncContinuous] preload success machine={0} slot=O{1}",
+Console.WriteLine("[CncMachining] preload success machine={0} slot=O{1}",
 machineId, state.NextSlot);
 _ = Task.Run(() => NotifyNcPreloadStatus(nextJob, machineId, "READY", null));
 }
@@ -450,7 +639,7 @@ state.NextPreloadAttemptUtc = DateTime.MinValue;
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] preload error machine={0} err={1}", machineId, ex.Message);
+Console.WriteLine("[CncMachining] preload error machine={0} err={1}", machineId, ex.Message);
 _ = Task.Run(() => NotifyNcPreloadStatus(nextJob, machineId, "FAILED", "exception: " + ex.Message));
 CncJobQueue.Pop(machineId);
 }
@@ -459,12 +648,12 @@ private static async Task SwitchToNextJob(string machineId, MachineState state)
 {
 try
 {
-Console.WriteLine("[CncContinuous] switching to next job machine={0} from O{1} to O{2}",
+Console.WriteLine("[CncMachining] switching to next job machine={0} from O{1} to O{2}",
 machineId, state.CurrentSlot, state.NextSlot);
 // 1. Edit 모드 전환 (Idle에서만)
 if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
 {
-Console.WriteLine("[CncContinuous] edit mode failed machine={0} err={1}", machineId, modeErr);
+Console.WriteLine("[CncMachining] edit mode failed machine={0} err={1}", machineId, modeErr);
 return;
 }
 // 2. (옵션) 이전 슬롯 프로그램 삭제
@@ -475,11 +664,11 @@ if (string.Equals(delEnabled, "true", StringComparison.OrdinalIgnoreCase))
 {
 if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, 0, (short)state.CurrentSlot, out var actNo, out var delErr))
 {
-Console.WriteLine("[CncContinuous] delete prev failed machine={0} slot=O{1} err={2}", machineId, state.CurrentSlot, delErr);
+Console.WriteLine("[CncMachining] delete prev failed machine={0} slot=O{1} err={2}", machineId, state.CurrentSlot, delErr);
 }
 else
 {
-Console.WriteLine("[CncContinuous] delete prev ok machine={0} slot=O{1} activateProgNum={2}", machineId, state.CurrentSlot, actNo);
+Console.WriteLine("[CncMachining] delete prev ok machine={0} slot=O{1} activateProgNum={2}", machineId, state.CurrentSlot, actNo);
 }
 }
 }
@@ -493,14 +682,14 @@ programNo = (short)state.NextSlot
 var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
 if (res != 0)
 {
-Console.WriteLine("[CncContinuous] activate failed machine={0} res={1} err={2}",
+Console.WriteLine("[CncMachining] activate failed machine={0} res={1} err={2}",
 machineId, res, err);
 return;
 }
 // 4. Auto 모드 전환
 if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
 {
-Console.WriteLine("[CncContinuous] auto mode failed machine={0} err={1}", machineId, modeErr2);
+Console.WriteLine("[CncMachining] auto mode failed machine={0} err={1}", machineId, modeErr2);
 return;
 }
 // Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
@@ -517,24 +706,24 @@ state.StartedAtUtc = DateTime.MinValue;
 state.ProductCountBefore = 0;
 state.SawBusy = false;
 }
-Console.WriteLine("[CncContinuous] switch success machine={0} now ready O{1}",
+Console.WriteLine("[CncMachining] switch success machine={0} now ready O{1}",
 machineId, state.CurrentSlot);
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] switch error machine={0} err={1}", machineId, ex.Message);
+Console.WriteLine("[CncMachining] switch error machine={0} err={1}", machineId, ex.Message);
 }
 }
 private static async Task<bool> StartNewJob(string machineId, MachineState state, CncJobItem job)
 {
 try
 {
-Console.WriteLine("[CncContinuous] starting new job machine={0} file={1} slot=O{2}",
+Console.WriteLine("[CncMachining] starting new job machine={0} file={1} slot=O{2}",
 machineId, job.fileName, state.CurrentSlot);
 // 1. Edit 모드 전환 (Idle에서만)
 if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
 {
-Console.WriteLine("[CncContinuous] edit mode failed machine={0} err={1}", machineId, modeErr);
+Console.WriteLine("[CncMachining] edit mode failed machine={0} err={1}", machineId, modeErr);
 return false;
 }
 // 2. CurrentSlot에 업로드
@@ -554,14 +743,14 @@ programNo = (short)state.CurrentSlot
 var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
 if (res != 0)
 {
-Console.WriteLine("[CncContinuous] activate failed machine={0} res={1} err={2}",
+Console.WriteLine("[CncMachining] activate failed machine={0} res={1} err={2}",
 machineId, res, err);
 return false;
 }
 // 4. Auto 모드 전환
 if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
 {
-Console.WriteLine("[CncContinuous] auto mode failed machine={0} err={1}", machineId, modeErr2);
+Console.WriteLine("[CncMachining] auto mode failed machine={0} err={1}", machineId, modeErr2);
 return false;
 }
 // Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
@@ -575,15 +764,177 @@ state.StartedAtUtc = DateTime.MinValue;
 state.ProductCountBefore = 0;
 state.SawBusy = false;
 }
-Console.WriteLine("[CncContinuous] start ready machine={0} slot=O{1}",
+
+// 백엔드 DB 플래그(allowAutoMachining && allowJobStart)가 true일 때만 자동 Start 신호를 보낸다.
+var allowAutoStart = await ShouldAutoStartByBackendFlags(machineId);
+if (allowAutoStart)
+{
+if (!TryStartSignal(machineId, out var startErr))
+{
+Console.WriteLine("[CncMachining] start signal failed machine={0} err={1}", machineId, startErr);
+_ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", "start signal failed: " + (startErr ?? string.Empty)));
+return false;
+}
+Console.WriteLine("[CncMachining] start signal sent machine={0}", machineId);
+}
+
+Console.WriteLine("[CncMachining] start ready machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
 return true;
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] start error machine={0} err={1}", machineId, ex.Message);
+Console.WriteLine("[CncMachining] start error machine={0} err={1}", machineId, ex.Message);
 _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", "exception: " + ex.Message));
 return false;
+}
+}
+
+private static async Task<bool> ShouldAutoStartByBackendFlags(string machineId)
+{
+try
+{
+var backendBase = Config.BackendBase;
+if (string.IsNullOrEmpty(backendBase)) return false;
+var mid = (machineId ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(mid)) return false;
+
+MachineFlags cached;
+lock (StateLock)
+{
+MachineFlagsCache.TryGetValue(mid, out cached);
+}
+
+if (cached != null)
+{
+var age = DateTime.UtcNow - cached.FetchedAtUtc;
+if (age.TotalSeconds <= MACHINE_FLAGS_CACHE_SEC)
+{
+return cached.AllowAutoMachining && cached.AllowJobStart;
+}
+}
+
+var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/machine-flags/" + Uri.EscapeDataString(mid);
+var req = new HttpRequestMessage(HttpMethod.Get, url);
+AddSecretHeader(req);
+var resp = await BackendClient.SendAsync(req);
+var body = await resp.Content.ReadAsStringAsync();
+if (!resp.IsSuccessStatusCode)
+{
+Console.WriteLine("[CncMachining] machine-flags failed machine={0} status={1} body={2}", mid, (int)resp.StatusCode, body);
+return false;
+}
+
+var json = JObject.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+var data = json["data"] as JObject;
+var allowAuto = data != null && data["allowAutoMachining"] != null && data["allowAutoMachining"].Type == JTokenType.Boolean
+? data["allowAutoMachining"].Value<bool>()
+: false;
+var allowJobStart = data != null && data["allowJobStart"] != null && data["allowJobStart"].Type == JTokenType.Boolean
+? data["allowJobStart"].Value<bool>()
+: false;
+
+lock (StateLock)
+{
+MachineFlagsCache[mid] = new MachineFlags
+{
+AllowAutoMachining = allowAuto,
+AllowJobStart = allowJobStart,
+FetchedAtUtc = DateTime.UtcNow
+};
+}
+
+return allowAuto && allowJobStart;
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] ShouldAutoStartByBackendFlags error machine={0} err={1}", machineId, ex.Message);
+return false;
+}
+}
+
+private static bool TryGetMachineAlarms(string machineId, out List<object> alarms, out string error)
+{
+alarms = new List<object>();
+error = null;
+try
+{
+if (!Mode1Api.TryGetMachineAlarmInfo(machineId, 0, out var info, out var err))
+{
+error = err;
+return false;
+}
+if (info.alarmArray != null)
+{
+foreach (var a in info.alarmArray)
+{
+alarms.Add(new { type = a.type, no = a.no });
+}
+}
+return true;
+}
+catch (Exception ex)
+{
+error = ex.Message;
+return false;
+}
+}
+
+private static async Task NotifyMachiningCompleted(CncJobItem job, string machineId)
+{
+try
+{
+var backendBase = Config.BackendBase;
+if (string.IsNullOrEmpty(backendBase)) return;
+var mid = (machineId ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(mid)) return;
+
+var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/machining/complete/" + Uri.EscapeDataString(mid);
+var payload = new JObject
+{
+["requestId"] = string.IsNullOrEmpty(job?.requestId) ? null : job.requestId,
+["jobId"] = string.IsNullOrEmpty(job?.id) ? null : job.id
+};
+
+var req = new HttpRequestMessage(HttpMethod.Post, url);
+AddSecretHeader(req);
+req.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+var resp = await BackendClient.SendAsync(req);
+_ = await resp.Content.ReadAsStringAsync();
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] NotifyMachiningCompleted error: {0}", ex.Message);
+}
+}
+
+private static async Task NotifyMachiningFailed(CncJobItem job, string machineId, string reason, List<object> alarms)
+{
+try
+{
+var backendBase = Config.BackendBase;
+if (string.IsNullOrEmpty(backendBase)) return;
+var mid = (machineId ?? string.Empty).Trim();
+if (string.IsNullOrEmpty(mid)) return;
+
+var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/machining/fail/" + Uri.EscapeDataString(mid);
+var payload = new JObject
+{
+["requestId"] = string.IsNullOrEmpty(job?.requestId) ? null : job.requestId,
+["jobId"] = string.IsNullOrEmpty(job?.id) ? null : job.id,
+["reason"] = reason ?? "FAILED",
+["alarms"] = JArray.FromObject(alarms ?? new List<object>())
+};
+
+var req = new HttpRequestMessage(HttpMethod.Post, url);
+AddSecretHeader(req);
+req.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+var resp = await BackendClient.SendAsync(req);
+_ = await resp.Content.ReadAsStringAsync();
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] NotifyMachiningFailed error: {0}", ex.Message);
 }
 }
 private static async Task<(bool Success, string Error)> UploadProgramToSlot(string machineId, CncJobItem job, int slotNo)
@@ -594,7 +945,7 @@ try
 if (job == null) return (false, null);
 if (!TryResolveJobFilePath(job, out var fullPath, out var resolveErr))
 {
-Console.WriteLine("[CncContinuous] file resolve failed: {0}", resolveErr);
+Console.WriteLine("[CncMachining] file resolve failed: {0}", resolveErr);
 error = resolveErr;
 return (false, error);
 }
@@ -604,7 +955,7 @@ try
 {
 var dir0 = Path.GetDirectoryName(fullPath);
 Console.WriteLine(
-"[CncContinuous] file missing. machine={0} jobId={1} user={2} root={3} fullPath={4} dirExists={5}",
+"[CncMachining] file missing. machine={0} jobId={1} user={2} root={3} fullPath={4} dirExists={5}",
 machineId,
 job?.id,
 Environment.UserName,
@@ -631,7 +982,7 @@ using (var fs = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileSha
 catch (Exception openErr)
 {
 Console.WriteLine(
-"[CncContinuous] file open failed: machine={0} jobId={1} path={2} err={3}",
+"[CncMachining] file open failed: machine={0} jobId={1} path={2} err={3}",
 machineId,
 job?.id,
 fullPath,
@@ -642,7 +993,7 @@ openErr.Message
 var downloaded = await TryDownloadAndCacheFromS3(machineId, job, fullPath);
 if (!downloaded || !File.Exists(fullPath))
 {
-Console.WriteLine("[CncContinuous] file not found: {0}", fullPath);
+Console.WriteLine("[CncMachining] file not found: {0}", fullPath);
 error = "file not found: " + fullPath;
 return (false, error);
 }
@@ -665,25 +1016,25 @@ if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, 0, (short)slotNo, out var _
 {
 if (!string.IsNullOrEmpty(delErr))
 {
-Console.WriteLine("[CncContinuous] delete before upload ignored machine={0} slot=O{1} err={2}", machineId, slotNo, delErr);
+Console.WriteLine("[CncMachining] delete before upload ignored machine={0} slot=O{1} err={2}", machineId, slotNo, delErr);
 }
 }
 else
 {
-Console.WriteLine("[CncContinuous] delete before upload ok machine={0} slot=O{1}", machineId, slotNo);
+Console.WriteLine("[CncMachining] delete before upload ok machine={0} slot=O{1}", machineId, slotNo);
 }
 }
 catch { }
 if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
 {
-Console.WriteLine("[CncContinuous] handle error machine={0} err={1}", machineId, errUp);
+Console.WriteLine("[CncMachining] handle error machine={0} err={1}", machineId, errUp);
 error = "handle error: " + errUp;
 return (false, error);
 }
 var upRc = HiLink.SetMachineProgramInfo(handle, info);
 if (upRc != 0)
 {
-Console.WriteLine("[CncContinuous] upload failed machine={0} rc={1}", machineId, upRc);
+Console.WriteLine("[CncMachining] upload failed machine={0} rc={1}", machineId, upRc);
 error = "upload failed rc=" + upRc;
 return (false, error);
 }
@@ -691,7 +1042,7 @@ return (true, null);
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] upload error machine={0} err={1}", machineId, ex.Message);
+Console.WriteLine("[CncMachining] upload error machine={0} err={1}", machineId, ex.Message);
 error = "exception: " + ex.Message;
 return (false, error);
 }
@@ -713,7 +1064,7 @@ files = Directory.EnumerateFiles(dir);
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] enumerate failed dir={0} err={1}", dir, ex.Message);
+Console.WriteLine("[CncMachining] enumerate failed dir={0} err={1}", dir, ex.Message);
 return false;
 }
 foreach (var p in files)
@@ -774,13 +1125,13 @@ var resp = await BackendClient.SendAsync(req);
 var text = await resp.Content.ReadAsStringAsync();
 if (!resp.IsSuccessStatusCode)
 {
-Console.WriteLine("[CncContinuous] backend queue snapshot failed: status={0}", (int)resp.StatusCode);
+Console.WriteLine("[CncMachining] backend queue snapshot failed: status={0}", (int)resp.StatusCode);
 return;
 }
 var root = JObject.Parse(text);
 if (root.Value<bool?>("success") != true)
 {
-Console.WriteLine("[CncContinuous] backend queue snapshot success=false");
+Console.WriteLine("[CncMachining] backend queue snapshot success=false");
 return;
 }
 var data = root["data"] as JArray;
@@ -790,6 +1141,7 @@ foreach (var j in data)
 {
 var id = (j?["id"]?.ToString() ?? string.Empty).Trim();
 var kind = (j?["kind"]?.ToString() ?? "file").Trim();
+var source = (j?["source"]?.ToString() ?? string.Empty).Trim();
 var fileName = (j?["fileName"]?.ToString() ?? string.Empty).Trim();
 var bridgePath = (j?["bridgePath"]?.ToString() ?? string.Empty).Trim();
 var s3Key = (j?["s3Key"]?.ToString() ?? string.Empty).Trim();
@@ -812,6 +1164,7 @@ jobs.Add(new CncJobItem
 {
 id = string.IsNullOrEmpty(id) ? Guid.NewGuid().ToString("N") : id,
 kind = string.Equals(kind, "dummy", StringComparison.OrdinalIgnoreCase) ? CncJobKind.Dummy : CncJobKind.File,
+kindRaw = string.IsNullOrEmpty(kind) ? "file" : kind,
 machineId = mid,
 qty = qty,
 fileName = fileName,
@@ -820,7 +1173,7 @@ s3Key = s3Key,
 s3Bucket = s3Bucket,
 requestId = requestId,
 createdAtUtc = DateTime.UtcNow,
-source = "backend_db",
+source = string.IsNullOrEmpty(source) ? "backend_db" : source,
 paused = paused
 });
 }
@@ -828,7 +1181,7 @@ CncJobQueue.ReplaceQueue(mid, jobs);
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] SyncQueueFromBackend error: {0}", ex.Message);
+Console.WriteLine("[CncMachining] SyncQueueFromBackend error: {0}", ex.Message);
 }
 }
 private static async Task<bool> TryDownloadAndCacheFromS3(string machineId, CncJobItem job, string fullPath)
@@ -849,7 +1202,7 @@ var resp = await BackendClient.SendAsync(req);
 var text = await resp.Content.ReadAsStringAsync();
 if (!resp.IsSuccessStatusCode)
 {
-Console.WriteLine("[CncContinuous] download presign failed: status={0}", (int)resp.StatusCode);
+Console.WriteLine("[CncMachining] download presign failed: status={0}", (int)resp.StatusCode);
 return false;
 }
 var root = JObject.Parse(text);
@@ -868,12 +1221,12 @@ if (!dl.IsSuccessStatusCode) return false;
 var bytes = await dl.Content.ReadAsByteArrayAsync();
 File.WriteAllBytes(fullPath, bytes);
 }
-Console.WriteLine("[CncContinuous] cached from S3: {0}", fullPath);
+Console.WriteLine("[CncMachining] cached from S3: {0}", fullPath);
 return true;
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] TryDownloadAndCacheFromS3 error: {0}", ex.Message);
+Console.WriteLine("[CncMachining] TryDownloadAndCacheFromS3 error: {0}", ex.Message);
 return false;
 }
 }
@@ -1025,7 +1378,7 @@ private static bool TryGetProductCount(string machineId, out int count)
     {
         return true;
     }
-    Console.WriteLine("[CncContinuous] productCount read failed machine={0}", machineId);
+    Console.WriteLine("[CncMachining] productCount read failed machine={0}", machineId);
     return false;
 }
 private static void RefreshSlotsFromMachine(string machineId, MachineState state)
@@ -1110,7 +1463,7 @@ _ = await resp.Content.ReadAsStringAsync();
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] NotifyMachiningStarted error: {0}", ex.Message);
+Console.WriteLine("[CncMachining] NotifyMachiningStarted error: {0}", ex.Message);
 }
 }
 private static async Task NotifyNcPreloadStatus(CncJobItem job, string machineId, string status, string error)
@@ -1138,7 +1491,7 @@ _ = await resp.Content.ReadAsStringAsync();
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncContinuous] NotifyNcPreloadStatus error: {0}", ex.Message);
+Console.WriteLine("[CncMachining] NotifyNcPreloadStatus error: {0}", ex.Message);
 }
 }
 /// <summary>
