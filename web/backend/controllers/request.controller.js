@@ -27,6 +27,7 @@ export const {
   saveStageFile,
   deleteStageFile,
   getNcFileUrl,
+  getRequestSummaryByRequestId,
   ensureNcFileOnBridgeStoreByRequestId,
   saveNcFileAndMoveToMachining,
   deleteNcFileAndRollbackCam,

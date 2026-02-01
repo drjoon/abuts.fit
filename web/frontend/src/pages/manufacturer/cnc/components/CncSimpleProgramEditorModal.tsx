@@ -1,5 +1,6 @@
 import React from "react";
 import Editor from "@monaco-editor/react";
+import { useAuthStore } from "@/store/useAuthStore";
 
 interface CncSimpleProgramEditorModalProps {
   open: boolean;
@@ -22,14 +23,20 @@ export const CncSimpleProgramEditorModal: React.FC<
   onSaveProgram,
   readOnly = false,
 }) => {
+  const { token } = useAuthStore();
   const editorRef = React.useRef<any | null>(null);
   const loadedProgramIdRef = React.useRef<string | null>(null);
+  const loadedSummaryKeyRef = React.useRef<string | null>(null);
 
   const [code, setCode] = React.useState("");
   const [originalCode, setOriginalCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [implantInfo, setImplantInfo] = React.useState<{
+    tooth: string | null;
+    maxDiameter: number | null;
+  }>({ tooth: null, maxDiameter: null });
 
   const visible = open && !!selectedProgram;
 
@@ -43,11 +50,13 @@ export const CncSimpleProgramEditorModal: React.FC<
     if (loadedProgramIdRef.current === programId) return;
 
     loadedProgramIdRef.current = programId;
+    loadedSummaryKeyRef.current = null;
     setError(null);
     setLoading(true);
     setSaving(false);
     setCode("");
     setOriginalCode("");
+    setImplantInfo({ tooth: null, maxDiameter: null });
 
     onLoadProgram(selectedProgram)
       .then((text) => {
@@ -63,6 +72,48 @@ export const CncSimpleProgramEditorModal: React.FC<
         setLoading(false);
       });
   }, [visible, selectedProgram?.id || selectedProgram?._id, onLoadProgram]);
+
+  React.useEffect(() => {
+    if (!visible) return;
+    const requestId = String(selectedProgram?.requestId || "").trim();
+    if (!requestId) return;
+    if (!token) return;
+
+    const key = `requestId:${requestId}`;
+    if (loadedSummaryKeyRef.current === key) return;
+    loadedSummaryKeyRef.current = key;
+    setImplantInfo({ tooth: null, maxDiameter: null });
+
+    fetch(`/api/requests/by-request/${encodeURIComponent(requestId)}/summary`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    })
+      .then((res) =>
+        res
+          .json()
+          .catch(() => ({}))
+          .then((body) => ({ res, body })),
+      )
+      .then(({ res, body }) => {
+        if (!res.ok || body?.success === false) return;
+        const data = body?.data ?? {};
+        const tooth =
+          typeof data?.tooth === "string" ? String(data.tooth).trim() : null;
+        const maxDiameter =
+          typeof data?.maxDiameter === "number" &&
+          Number.isFinite(data.maxDiameter) &&
+          data.maxDiameter > 0
+            ? data.maxDiameter
+            : null;
+        setImplantInfo({ tooth: tooth || null, maxDiameter });
+      })
+      .catch(() => {
+        // no-op
+      });
+  }, [visible, selectedProgram?.requestId, token]);
 
   const commitSave = React.useCallback(() => {
     if (!selectedProgram) return;
@@ -97,7 +148,17 @@ export const CncSimpleProgramEditorModal: React.FC<
     if (visible) return;
     // Reset loaded program ID when modal closes
     loadedProgramIdRef.current = null;
+    loadedSummaryKeyRef.current = null;
   }, [visible]);
+
+  const infoText = (() => {
+    const parts: string[] = [];
+    if (implantInfo.tooth) parts.push(`치아번호 ${implantInfo.tooth}`);
+    if (implantInfo.maxDiameter != null) {
+      parts.push(`최대직경 ${implantInfo.maxDiameter.toFixed(3)}`);
+    }
+    return parts.join(" • ");
+  })();
 
   if (!visible) return null;
 
@@ -117,6 +178,11 @@ export const CncSimpleProgramEditorModal: React.FC<
               <div className="truncate text-[15px] font-extrabold text-slate-900">
                 {title || ""}
               </div>
+              {!!infoText && (
+                <div className="mt-0.5 text-[11px] font-semibold text-slate-600 truncate">
+                  {infoText}
+                </div>
+              )}
               {!readOnly && saving && (
                 <div className="mt-0.5 text-[11px] font-semibold text-slate-500">
                   저장 중...

@@ -3,6 +3,7 @@ import Editor, { DiffEditor } from "@monaco-editor/react";
 import { RotateCcw, Save, X } from "lucide-react";
 import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
 import { MultiActionDialog } from "@/components/MultiActionDialog";
+import { useAuthStore } from "@/store/useAuthStore";
 
 interface CncProgramEditorPanelProps {
   open: boolean;
@@ -34,9 +35,11 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   readOnly = false,
 }) => {
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
+  const { token } = useAuthStore();
   const editorRef = React.useRef<any | null>(null);
   const diffOriginalRef = React.useRef<any | null>(null);
   const loadedProgramKeyRef = React.useRef<string | null>(null);
+  const loadedSummaryKeyRef = React.useRef<string | null>(null);
   const [code, setCode] = React.useState("");
   const [originalCode, setOriginalCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -50,6 +53,10 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   const [saveAsNumber, setSaveAsNumber] = React.useState<string>("");
   const [wordWrap, setWordWrap] = React.useState(true);
   const [isMobile, setIsMobile] = React.useState(false);
+  const [implantInfo, setImplantInfo] = React.useState<{
+    tooth: string | null;
+    maxDiameter: number | null;
+  }>({ tooth: null, maxDiameter: null });
 
   const visible = open && !!selectedProgram;
 
@@ -86,6 +93,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     setSaveStatus("idle");
     setShowDiff(!isMobile);
     setSaveAsMode(false);
+    setImplantInfo({ tooth: null, maxDiameter: null });
     // 새 프로그램을 열기 전에 기존 내용을 초기화하여, 로드 실패 시 이전 코드가 남지 않도록 한다.
     setCode("");
     setOriginalCode("");
@@ -109,8 +117,51 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   }, [visible, workUid, selectedProgram, onLoadProgram, isMobile]);
 
   React.useEffect(() => {
+    if (!visible) return;
+    const requestId = String(selectedProgram?.requestId || "").trim();
+    if (!requestId) return;
+    if (!token) return;
+
+    const key = `requestId:${requestId}`;
+    if (loadedSummaryKeyRef.current === key) return;
+    loadedSummaryKeyRef.current = key;
+    setImplantInfo({ tooth: null, maxDiameter: null });
+
+    fetch(`/api/requests/by-request/${encodeURIComponent(requestId)}/summary`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    })
+      .then((res) =>
+        res
+          .json()
+          .catch(() => ({}))
+          .then((body) => ({ res, body })),
+      )
+      .then(({ res, body }) => {
+        if (!res.ok || body?.success === false) return;
+        const data = body?.data ?? {};
+        const tooth =
+          typeof data?.tooth === "string" ? String(data.tooth).trim() : null;
+        const maxDiameter =
+          typeof data?.maxDiameter === "number" &&
+          Number.isFinite(data.maxDiameter) &&
+          data.maxDiameter > 0
+            ? data.maxDiameter
+            : null;
+        setImplantInfo({ tooth: tooth || null, maxDiameter });
+      })
+      .catch(() => {
+        // no-op
+      });
+  }, [visible, selectedProgram?.requestId, token]);
+
+  React.useEffect(() => {
     if (visible) return;
     loadedProgramKeyRef.current = null;
+    loadedSummaryKeyRef.current = null;
   }, [visible]);
 
   React.useEffect(() => {
@@ -265,6 +316,15 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     selectedProgram?.name ??
     `#${selectedProgram?.programNo ?? selectedProgram?.no ?? "-"}`;
 
+  const infoText = (() => {
+    const parts: string[] = [];
+    if (implantInfo.tooth) parts.push(`치아번호 ${implantInfo.tooth}`);
+    if (implantInfo.maxDiameter != null) {
+      parts.push(`최대직경 ${implantInfo.maxDiameter.toFixed(3)}`);
+    }
+    return parts.join(" • ");
+  })();
+
   const handleEditorMount = (editor: any, monaco: any) => {
     if (!editor || !monaco) return;
     editorRef.current = editor;
@@ -298,6 +358,11 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
                 <div className="font-semibold text-sm leading-5 break-all">
                   {name}
                 </div>
+                {!!infoText && (
+                  <div className="mt-1 text-[11px] font-semibold text-slate-300 truncate">
+                    {infoText}
+                  </div>
+                )}
               </div>
               {saveStatus === "saved" && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-200 border border-emerald-400/40 text-[11px]">

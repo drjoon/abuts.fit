@@ -153,6 +153,13 @@ router.post(
   requestController.ensureNcFileOnBridgeStoreByRequestId,
 );
 
+// 제조사/관리자: requestId로 케이스 요약 조회 (치아번호/최대직경 등)
+router.get(
+  "/by-request/:requestId/summary",
+  authorize(["manufacturer", "admin"]),
+  requestController.getRequestSummaryByRequestId,
+);
+
 // 제조사/관리자: 원본 STL 다운로드 URL
 router.get(
   "/:id/original-file-url",

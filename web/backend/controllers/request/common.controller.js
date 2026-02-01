@@ -50,6 +50,49 @@ function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
+export async function getRequestSummaryByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const request = await Request.findOne({ requestId }).select({
+      requestId: 1,
+      caseInfos: 1,
+    });
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const tooth = request?.caseInfos?.tooth ?? null;
+    const maxDiameter =
+      typeof request?.caseInfos?.maxDiameter === "number"
+        ? request.caseInfos.maxDiameter
+        : null;
+
+    return res.json({
+      success: true,
+      data: {
+        requestId: request.requestId,
+        tooth,
+        maxDiameter,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: "요약 조회 실패" });
+  }
+}
+
 function extractProgramNoFromNcText(text) {
   const s = String(text || "");
   const m = s.toUpperCase().match(/\bO(\d{1,5})\b/m);
