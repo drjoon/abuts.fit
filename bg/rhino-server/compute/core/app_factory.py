@@ -34,12 +34,21 @@ def create_app():
         if not is_protected:
             return await call_next(request)
 
-        if allow_ips:
+        # IP 화이트리스트 검증 (매 요청마다 동적으로 로드)
+        allow_ips_raw = settings.os.getenv("RHINO_ALLOW_IPS", "").strip()
+        allow_ips_set = {
+            ip.strip()
+            for ip in allow_ips_raw.split(",")
+            if ip and ip.strip()
+        }
+
+        if allow_ips_set:
             xff = request.headers.get("x-forwarded-for")
             ip = (xff.split(",", 1)[0].strip() if xff else "") or (
                 request.client.host if request.client else ""
             )
-            if ip not in allow_ips:
+            if ip not in allow_ips_set:
+                log(f"[Auth] Forbidden by allowlist: ip={ip}")
                 return JSONResponse(
                     status_code=403,
                     content={"ok": False, "error": "forbidden"},

@@ -145,7 +145,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             var allowRaw = (AppConfig.GetEspritAllowIpsRaw() ?? string.Empty).Trim();
             if (!string.IsNullOrEmpty(allowRaw))
             {
-                var ip = request.RemoteEndPoint?.Address?.ToString() ?? string.Empty;
+                string ip = string.Empty;
+                try
+                {
+                    var xff = request.Headers["X-Forwarded-For"];
+                    if (!string.IsNullOrWhiteSpace(xff))
+                    {
+                        ip = xff.Split(',')[0].Trim();
+                    }
+                    else
+                    {
+                        ip = request.RemoteEndPoint?.Address?.ToString() ?? string.Empty;
+                    }
+                }
+                catch
+                {
+                    ip = string.Empty;
+                }
+
                 var allow = allowRaw
                     .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                     .Select(s => (s ?? string.Empty).Trim())
@@ -154,6 +171,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 if (string.IsNullOrWhiteSpace(ip) || !allow.Contains(ip))
                 {
+                    AppLogger.Log($"[HTTP Server] Forbidden by allowlist: ip={ip}");
                     response.StatusCode = (int)HttpStatusCode.Forbidden;
                     byte[] buffer = Encoding.UTF8.GetBytes("{\"ok\": false, \"message\": \"forbidden\"}");
                     response.OutputStream.Write(buffer, 0, buffer.Length);

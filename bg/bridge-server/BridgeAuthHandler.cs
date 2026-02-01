@@ -18,19 +18,21 @@ namespace HiLinkBridgeWebApi48
     public class BridgeAuthHandler : DelegatingHandler
     {
         private static readonly string SharedSecret = Config.BridgeSharedSecret;
-        private static readonly HashSet<string> AllowIps = new HashSet<string>(
-            (Config.BridgeAllowIpsRaw ?? string.Empty)
-                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => s.Trim())
-                .Where(s => !string.IsNullOrEmpty(s)),
-            StringComparer.OrdinalIgnoreCase
-        );
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Console.WriteLine("[BridgeAuth] {0} {1}", request.Method, request.RequestUri);
 
-            if (AllowIps.Count > 0)
+            // IP 화이트리스트 검증 (매 요청마다 동적으로 로드)
+            var allowIpsRaw = Config.BridgeAllowIpsRaw ?? string.Empty;
+            var allowIps = new HashSet<string>(
+                allowIpsRaw.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim())
+                    .Where(s => !string.IsNullOrEmpty(s)),
+                StringComparer.OrdinalIgnoreCase
+            );
+
+            if (allowIps.Count > 0)
             {
                 string ip = string.Empty;
                 try
@@ -53,7 +55,7 @@ namespace HiLinkBridgeWebApi48
                     ip = string.Empty;
                 }
 
-                if (string.IsNullOrWhiteSpace(ip) || !AllowIps.Contains(ip))
+                if (string.IsNullOrWhiteSpace(ip) || !allowIps.Contains(ip))
                 {
                     Console.WriteLine("[BridgeAuth] Forbidden by allowlist: ip={0}", ip);
                     var forbidden = request.CreateResponse(HttpStatusCode.Forbidden, new
