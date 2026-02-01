@@ -267,11 +267,29 @@ export const useCncProgramEditor = ({
     if (headType == null) headType = 0;
 
     const s3Key = String(prog?.s3Key || "").trim();
+    const bridgePath = String(
+      prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
+    ).trim();
     const normalizedCode =
       programNo == null
         ? String(code ?? "")
         : applyProgramNoToContent(programNo, code);
     const overrideKey = getProgramOverrideKey(prog);
+
+    // 브리지 서버 저장 (bridgePath가 있으면)
+    if (bridgePath) {
+      const res = await fetch("/api/bridge-store/file", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ path: bridgePath, content: normalizedCode }),
+      });
+      if (!res.ok) {
+        throw new Error("브리지 서버 저장 실패");
+      }
+    }
 
     if (s3Key && token) {
       const fileName = s3Key.split("/").pop() || "";
