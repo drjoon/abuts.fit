@@ -606,6 +606,21 @@ export const RequestPage = ({
         client: req.requestor?.organization || req.requestor?.name || "",
         patient: caseInfos.patientName || "",
         tooth: caseInfos.tooth || "",
+        connectionDiameter:
+          typeof caseInfos.connectionDiameter === "number" &&
+          Number.isFinite(caseInfos.connectionDiameter)
+            ? caseInfos.connectionDiameter
+            : null,
+        maxDiameter:
+          typeof caseInfos.maxDiameter === "number" &&
+          Number.isFinite(caseInfos.maxDiameter)
+            ? caseInfos.maxDiameter
+            : null,
+        camDiameter:
+          typeof req.productionSchedule?.diameter === "number" &&
+          Number.isFinite(req.productionSchedule.diameter)
+            ? req.productionSchedule.diameter
+            : null,
         programText: req.description,
         qty: 1, // 기본 1개로 가정
       };

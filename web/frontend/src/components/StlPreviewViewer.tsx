@@ -40,7 +40,7 @@ export function StlPreviewViewer({
     setMaxDiameterState(null);
     setConnectionDiameterState(null);
 
-    const height = 300;
+    const height = containerRef.current.clientHeight || 300;
     let width = containerRef.current.clientWidth || 300;
 
     const scene = new THREE.Scene();
@@ -265,7 +265,7 @@ export function StlPreviewViewer({
     const updateSize = () => {
       if (!containerRef.current) return;
       const newWidth = containerRef.current.clientWidth || width;
-      const newHeight = height;
+      const newHeight = containerRef.current.clientHeight || height;
       width = newWidth;
       camera.aspect = newWidth / newHeight;
       camera.updateProjectionMatrix();
@@ -334,7 +334,7 @@ export function StlPreviewViewer({
   }, [file, showOverlay, finishLinePoints]);
 
   return (
-    <div className="relative w-full max-w-full h-[300px]">
+    <div className="relative w-full max-w-full h-full min-h-[300px]">
       <div ref={containerRef} className="w-full h-full" />
       {error && (
         <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70 text-sm text-destructive">

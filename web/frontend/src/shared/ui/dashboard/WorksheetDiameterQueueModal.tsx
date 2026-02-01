@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useAuthStore } from "@/store/useAuthStore";
+import { StlPreviewViewer } from "@/components/StlPreviewViewer";
+import { getFileBlob, setFileBlob } from "@/utils/stlIndexedDb";
+import { useToast } from "@/hooks/use-toast";
 import type { DiameterBucketKey } from "./WorksheetDiameterQueueBar";
 
 export type WorksheetQueueItem = {
@@ -12,6 +11,9 @@ export type WorksheetQueueItem = {
   client: string;
   patient: string;
   tooth: string;
+  connectionDiameter?: number | null;
+  maxDiameter?: number | null;
+  camDiameter?: number | null;
   programText: string;
   qty: number;
 };
@@ -33,6 +35,8 @@ export const WorksheetDiameterQueueModal = ({
   selectedBucket,
   onSelectBucket,
 }: WorksheetDiameterQueueModalProps) => {
+  const { token } = useAuthStore();
+  const { toast } = useToast();
   const labels: DiameterBucketKey[] = useMemo(
     () => ["6", "8", "10", "10+"],
     [],
@@ -60,19 +64,128 @@ export const WorksheetDiameterQueueModal = ({
 
   const bucketCount = (queues[effectiveBucket] ?? []).length;
 
+  const [stlFile, setStlFile] = useState<File | null>(null);
+  const [stlLoading, setStlLoading] = useState(false);
+  const [stlError, setStlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!open) {
+      setStlFile(null);
+      setStlLoading(false);
+      setStlError(null);
+      return;
+    }
+    if (!activeItem?.id) {
+      setStlFile(null);
+      setStlLoading(false);
+      setStlError(null);
+      return;
+    }
+    if (!token) {
+      setStlFile(null);
+      setStlLoading(false);
+      setStlError(null);
+      return;
+    }
+
+    setStlFile(null);
+    setStlError(null);
+    setStlLoading(true);
+
+    const stageText = String(processLabel || "").toLowerCase();
+    const isRequestStage =
+      stageText.includes("의뢰") || stageText.includes("request");
+    const endpoint = isRequestStage ? "original-file-url" : "cam-file-url";
+    const cacheKey = `stl:${activeItem.id}:${endpoint}`;
+    const filename = isRequestStage
+      ? `${activeItem.id}-original.stl`
+      : `${activeItem.id}-cam.stl`;
+
+    const blobToFile = (blob: Blob) =>
+      new File([blob], filename, { type: blob.type || "model/stl" });
+
+    const load = async () => {
+      try {
+        const cached = await getFileBlob(cacheKey);
+        if (cached) {
+          if (cancelled) return;
+          setStlFile(blobToFile(cached));
+          setStlLoading(false);
+          toast({
+            title: "STL 캐시 사용",
+            description: "IndexedDB 캐시 데이터로 로드했습니다.",
+            duration: 2000,
+          });
+          return;
+        }
+
+        const res = await fetch(
+          `/api/requests/${encodeURIComponent(activeItem.id)}/${endpoint}`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          },
+        );
+        const body: any = await res.json().catch(() => ({}));
+        const url = body?.data?.url;
+        if (!res.ok || !url) {
+          if (cancelled) return;
+          setStlLoading(false);
+          setStlError(
+            isRequestStage
+              ? "원본 STL 파일이 없습니다"
+              : "CAM STL 파일이 없습니다",
+          );
+          return;
+        }
+
+        const r = await fetch(url, { method: "GET" });
+        if (!r.ok) {
+          if (cancelled) return;
+          setStlLoading(false);
+          setStlError("STL 파일을 불러오지 못했습니다");
+          return;
+        }
+        const blob = await r.blob();
+        if (cancelled) return;
+
+        try {
+          await setFileBlob(cacheKey, blob);
+        } catch {
+          // ignore cache errors
+        }
+
+        setStlFile(blobToFile(blob));
+        setStlLoading(false);
+        toast({
+          title: "STL 다운로드",
+          description: "S3에서 다운로드 후 캐시에 저장했습니다.",
+          duration: 2000,
+        });
+      } catch {
+        if (cancelled) return;
+        setStlLoading(false);
+        setStlError("STL 파일을 불러오지 못했습니다");
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, activeItem?.id, processLabel, token, toast]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[80vw] max-w-3xl max-h-[80vh] px-6 pt-3 pb-4 overflow-y-auto
+        className="w-[90vw] max-w-5xl h-[82vh] px-6 pt-3 pb-4 overflow-hidden
                    [&>[aria-label='Close']]:h-12 [&>[aria-label='Close']]:w-12
                    [&>[aria-label='Close']>svg]:h-12 [&>[aria-label='Close']>svg]:w-12"
       >
         <div className="flex flex-wrap items-center gap-6 mb-4">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-semibold text-slate-800">
-              M{effectiveBucket}
-            </span>
-            <span className="w-3 h-3 rounded-full bg-blue-500" />
             <span className="text-lg font-semibold text-slate-800">
               {bucketCount}건
             </span>
@@ -97,19 +210,45 @@ export const WorksheetDiameterQueueModal = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-base text-slate-700">
-          {/* STL 뷰어 자리 (모크) */}
-          <div className="md:col-span-1 flex flex-col">
-            <div className="app-surface app-surface--panel flex-1 min-h-[350px] border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-base text-slate-400">
-              STL 뷰어 연동 예정
-            </div>
-          </div>
-
-          {/* 대기 리스트 */}
-          <div className="md:col-span-1 flex flex-col min-h-[220px] max-h-[420px]">
-            <div className="flex-1 space-y-3 overflow-auto pr-1">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-base text-slate-700 h-full">
+          <div className="flex flex-col min-h-0">
+            <div className="flex-1 min-h-0 space-y-3 overflow-auto pr-1">
               {items.map((item) => {
                 const active = item.id === selectedItemId;
+
+                const line1 = (() => {
+                  const parts: string[] = [];
+                  if (item.client) parts.push(item.client);
+                  if (item.patient) parts.push(item.patient);
+                  if (item.tooth) parts.push(`치아번호 ${item.tooth}`);
+                  return parts.join(" • ");
+                })();
+
+                const line2 = (() => {
+                  const parts: string[] = [];
+                  if (
+                    typeof item.connectionDiameter === "number" &&
+                    Number.isFinite(item.connectionDiameter)
+                  ) {
+                    parts.push(
+                      `커넥션 직경 ${item.connectionDiameter.toFixed(2)}`,
+                    );
+                  }
+                  if (
+                    typeof item.maxDiameter === "number" &&
+                    Number.isFinite(item.maxDiameter)
+                  ) {
+                    parts.push(`최대 직경 ${item.maxDiameter.toFixed(3)}`);
+                  }
+                  if (
+                    typeof item.camDiameter === "number" &&
+                    Number.isFinite(item.camDiameter)
+                  ) {
+                    parts.push(`CAM 직경 ${item.camDiameter.toFixed(3)}`);
+                  }
+                  return parts.join(" • ");
+                })();
+
                 return (
                   <button
                     key={item.id}
@@ -121,83 +260,44 @@ export const WorksheetDiameterQueueModal = ({
                         : "bg-slate-50 hover:border-blue-300 hover:bg-blue-50/60"
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-slate-900">
-                        {item.client}
-                      </span>
-                      <span className="text-[10px] text-slate-500">
-                        ID {item.id}
-                      </span>
+                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                      {line1}
                     </div>
-                    <div className="flex flex-wrap items-center gap-1 text-slate-700">
-                      <span>환자 {item.patient}</span>
-                      <span>•</span>
-                      <span>치아번호 {item.tooth}</span>
+                    <div className="mt-1 text-[13px] text-slate-600">
+                      {line2}
                     </div>
                   </button>
                 );
               })}
               {items.length === 0 && (
-                <p className="text-base text-slate-500">
+                <div className="app-surface app-surface--panel h-full min-h-[180px] flex items-center justify-center text-base text-slate-500">
                   해당 직경의 대기 의뢰가 없습니다.
-                </p>
+                </div>
               )}
             </div>
           </div>
 
-          {/* 선택된 항목 상세 */}
-          <div className="md:col-span-1 flex flex-col min-h-[330px]">
-            <div className="app-surface app-surface--panel flex-1 px-6 py-5 text-lg text-slate-700">
-              {activeItem ? (
-                <div className="space-y-2">
-                  <div>
-                    <div className="text-[10px] text-slate-500 mb-0.5">
-                      기공소
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      {activeItem.client}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <div className="text-[10px] text-slate-500 mb-0.5">
-                        환자
-                      </div>
-                      <div>{activeItem.patient}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-slate-500 mb-0.5">
-                        치아번호
-                      </div>
-                      <div>{activeItem.tooth}</div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-slate-500 mb-0.5">
-                      프로그램
-                    </div>
-                    <div className="text-base text-slate-700">
-                      {activeItem.programText}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] text-slate-500 mb-0.5">
-                        수량
-                      </div>
-                      <div className="font-semibold">{activeItem.qty}ea</div>
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      (모든 데이터는 mock 예시입니다)
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-base text-slate-500">
-                  왼쪽 목록에서 항목을 선택하면 상세 정보가 표시됩니다.
-                </p>
-              )}
-            </div>
+          <div className="app-surface app-surface--panel flex flex-col min-h-0 p-4">
+            {stlLoading && (
+              <div className="flex-1 flex items-center justify-center text-slate-500">
+                STL 불러오는 중...
+              </div>
+            )}
+            {!stlLoading && stlError && (
+              <div className="flex-1 flex items-center justify-center text-slate-500">
+                {stlError}
+              </div>
+            )}
+            {!stlLoading && !stlError && stlFile && (
+              <div className="flex-1 min-h-0">
+                <StlPreviewViewer file={stlFile} showOverlay={false} />
+              </div>
+            )}
+            {!stlLoading && !stlError && !stlFile && (
+              <div className="flex-1 flex items-center justify-center text-slate-400">
+                CAM STL 없음
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>
