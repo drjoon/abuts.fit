@@ -23,7 +23,7 @@ export const CncSimpleProgramEditorModal: React.FC<
   readOnly = false,
 }) => {
   const editorRef = React.useRef<any | null>(null);
-  const saveTimerRef = React.useRef<any | null>(null);
+  const loadedProgramIdRef = React.useRef<string | null>(null);
 
   const [code, setCode] = React.useState("");
   const [originalCode, setOriginalCode] = React.useState("");
@@ -35,6 +35,14 @@ export const CncSimpleProgramEditorModal: React.FC<
 
   React.useEffect(() => {
     if (!visible) return;
+
+    const programId = selectedProgram?.id || selectedProgram?._id;
+    if (!programId) return;
+
+    // Skip if already loaded this program
+    if (loadedProgramIdRef.current === programId) return;
+
+    loadedProgramIdRef.current = programId;
     setError(null);
     setLoading(true);
     setSaving(false);
@@ -54,16 +62,7 @@ export const CncSimpleProgramEditorModal: React.FC<
       .finally(() => {
         setLoading(false);
       });
-  }, [visible, selectedProgram, onLoadProgram]);
-
-  React.useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
-  }, []);
+  }, [visible, selectedProgram?.id || selectedProgram?._id, onLoadProgram]);
 
   const commitSave = React.useCallback(() => {
     if (!selectedProgram) return;
@@ -94,17 +93,11 @@ export const CncSimpleProgramEditorModal: React.FC<
     onSaveProgram,
   ]);
 
-  const scheduleSave = React.useCallback(() => {
-    if (readOnly) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      commitSave();
-    }, 900);
-  }, [commitSave, readOnly]);
+  React.useEffect(() => {
+    if (visible) return;
+    // Reset loaded program ID when modal closes
+    loadedProgramIdRef.current = null;
+  }, [visible]);
 
   if (!visible) return null;
 
@@ -124,13 +117,9 @@ export const CncSimpleProgramEditorModal: React.FC<
               <div className="truncate text-[15px] font-extrabold text-slate-900">
                 {title || ""}
               </div>
-              {!readOnly && (
+              {!readOnly && saving && (
                 <div className="mt-0.5 text-[11px] font-semibold text-slate-500">
-                  {saving
-                    ? "저장 중..."
-                    : code !== originalCode
-                      ? "자동 저장 대기"
-                      : ""}
+                  저장 중...
                 </div>
               )}
             </div>
@@ -162,7 +151,6 @@ export const CncSimpleProgramEditorModal: React.FC<
               onChange={(value) => {
                 if (readOnly) return;
                 setCode(value ?? "");
-                scheduleSave();
               }}
               onMount={(editor, monaco) => {
                 editorRef.current = editor;
@@ -176,13 +164,7 @@ export const CncSimpleProgramEditorModal: React.FC<
                 } catch {
                   // no-op
                 }
-                try {
-                  editor.onDidBlurEditorText(() => {
-                    commitSave();
-                  });
-                } catch {
-                  // no-op
-                }
+                // Auto-save on blur removed - only save on explicit SAVE button click or Ctrl+S
               }}
               loading={
                 <div className="h-full w-full flex items-center justify-center text-sm text-slate-500">

@@ -36,6 +36,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
   const editorRef = React.useRef<any | null>(null);
   const diffOriginalRef = React.useRef<any | null>(null);
+  const loadedProgramKeyRef = React.useRef<string | null>(null);
   const [code, setCode] = React.useState("");
   const [originalCode, setOriginalCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -64,6 +65,23 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
 
   React.useEffect(() => {
     if (!visible) return;
+
+    const programKey = String(
+      selectedProgram?.id ||
+        selectedProgram?._id ||
+        selectedProgram?.bridgePath ||
+        selectedProgram?.bridge_store_path ||
+        selectedProgram?.path ||
+        selectedProgram?.name ||
+        selectedProgram?.programNo ||
+        selectedProgram?.no ||
+        "",
+    ).trim();
+
+    if (!programKey) return;
+    if (loadedProgramKeyRef.current === programKey) return;
+    loadedProgramKeyRef.current = programKey;
+
     setError(null);
     setSaveStatus("idle");
     setShowDiff(!isMobile);
@@ -89,6 +107,11 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
         setLoading(false);
       });
   }, [visible, workUid, selectedProgram, onLoadProgram, isMobile]);
+
+  React.useEffect(() => {
+    if (visible) return;
+    loadedProgramKeyRef.current = null;
+  }, [visible]);
 
   React.useEffect(() => {
     // 단일 편집기 모드에서 포커스 아웃 시 최신 내용을 state에 반영
@@ -249,14 +272,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
       void handleSave();
     });
 
-    // 편집 완료(포커스 아웃) 시 자동 저장
-    try {
-      editor.onDidBlurEditorText(() => {
-        void maybeSave();
-      });
-    } catch {
-      // no-op
-    }
+    // Auto-save on blur removed - only save on explicit SAVE button click or Ctrl+S
   };
 
   const isBridgeSource = selectedProgram?.source === "bridge";
@@ -365,13 +381,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
                         }
                       });
 
-                      try {
-                        modified.onDidBlurEditorText(() => {
-                          void maybeSave();
-                        });
-                      } catch {
-                        // no-op
-                      }
+                      // Auto-save on blur removed - only save on explicit SAVE button click or Ctrl+S
                     }}
                   />
                 ) : (
