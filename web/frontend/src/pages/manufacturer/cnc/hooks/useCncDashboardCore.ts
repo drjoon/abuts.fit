@@ -145,7 +145,7 @@ export const useCncDashboardCore = ({
     void (async () => {
       try {
         const res = await apiFetch({
-          path: "/api/machines/status",
+          path: "/api/machines/status?includeAlarms=1",
           method: "GET",
           token,
         });
@@ -178,6 +178,18 @@ export const useCncDashboardCore = ({
         if (!shouldSilenceBridgeDownError(message)) {
           setError(message);
         }
+
+        // 상태 조회가 실패하면 기존 OK 상태를 유지하지 않고, 즉시 ERROR로 반영하여
+        // UI에서 stale green을 피한다.
+        setMachines((prev) =>
+          prev.map((m) => ({
+            ...m,
+            status: "ERROR",
+            lastUpdated: new Date().toLocaleTimeString(),
+            lastCommand: "status",
+            lastError: message,
+          })),
+        );
       }
     })();
   }, [

@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";
 import { CncEventLogModal } from "@/components/CncEventLogModal";
 import { CncProgramEditorPanel } from "@/pages/manufacturer/cnc/components/CncProgramEditorPanel";
+import { getMachineStatusDotClass } from "@/pages/manufacturer/cnc/lib/machineStatus";
+import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 import {
   CncPlaylistDrawer,
   type PlaylistJobItem,
@@ -60,25 +62,7 @@ type MachineQueueCardProps = {
   onOpenProgramCode?: (prog: any, machineId: string) => void;
 };
 
-const getStatusDotColor = (status?: string) => {
-  const s = String(status || "")
-    .trim()
-    .toUpperCase();
-  if (!s) return "bg-slate-300";
-  if (["ALARM", "ERROR", "FAULT"].some((k) => s.includes(k))) {
-    return "bg-rose-500";
-  }
-  if (["WARN", "WARNING"].some((k) => s.includes(k))) {
-    return "bg-amber-500";
-  }
-  if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
-    return "bg-emerald-500";
-  }
-  if (["STOP", "IDLE", "READY"].some((k) => s.includes(k))) {
-    return "bg-emerald-500";
-  }
-  return "bg-blue-500";
-};
+const getStatusDotColor = (status?: string) => getMachineStatusDotClass(status);
 
 const isMachiningStatus = (status?: string) => {
   // /api/cnc-machines/queues(getProductionQueues)에서 내려오는 status는 Request.status이며
@@ -341,6 +325,8 @@ export const MachiningMachineQueueBoard = ({
   const { toast } = useToast();
   const { machines, setMachines } = useCncMachines();
   const { callRaw } = useCncRaw();
+  const statusByUid = useMachineStatusStore((s) => s.statusByUid);
+  const refreshStatuses = useMachineStatusStore((s) => s.refresh);
 
   const [queueMap, setQueueMap] = useState<QueueMap>({});
   const [loading, setLoading] = useState(false);
@@ -555,91 +541,18 @@ export const MachiningMachineQueueBoard = ({
     setStatusRefreshError(null);
     setStatusRefreshErroredAt(null);
     try {
-      const res = await apiFetch({
-        path: "/api/machines/status",
-        method: "GET",
-        token,
-      });
-      const body: any = res.data ?? {};
-      if (!res.ok || body?.success === false) {
-        const msg = String(body?.message || body?.error || "상태 조회 실패");
-        setStatusRefreshError(msg);
-        setStatusRefreshErroredAt(new Date().toLocaleTimeString());
-
-        setMachineStatusMap((prev) => {
-          const next = { ...prev };
-          const list = Array.isArray(machines) ? machines : [];
-          for (const m of list) {
-            const uid = String(m?.uid || "").trim();
-            if (!uid) continue;
-            next[uid] = {
-              ...(next[uid] || { uid }),
-              uid,
-              status: "ERROR",
-            };
-          }
-          return next;
-        });
-        return;
-      }
-
-      const list: any[] = Array.isArray(body?.data)
-        ? body.data
-        : Array.isArray(body?.machines)
-          ? body.machines
-          : Array.isArray(body?.data?.machines)
-            ? body.data.machines
-            : Array.isArray(body?.data?.data)
-              ? body.data.data
-              : [];
-
-      setMachineStatusMap((prev) => {
-        const next = { ...prev };
-        for (const it of list) {
-          const uid = String(it?.uid || it?.machineId || it?.id || "").trim();
-          if (!uid) continue;
-          next[uid] = {
-            ...(next[uid] || { uid }),
-            uid,
-            status: String(
-              it?.status || it?.state || it?.opStatus || "",
-            ).trim(),
-            currentProgram: next[uid]?.currentProgram,
-            nextProgram: next[uid]?.nextProgram,
-          };
-        }
-        return next;
-      });
-
+      const uids = (Array.isArray(machines) ? machines : [])
+        .map((m) => String(m?.uid || "").trim())
+        .filter(Boolean);
+      await refreshStatuses({ token, uids });
       setStatusRefreshedAt(new Date().toLocaleTimeString());
-    } catch {
-      // 브리지/백엔드 오류 시에도 UI에서 즉시 확인할 수 있도록 ERROR 상태를 반영한다.
-      setMachineStatusMap((prev) => {
-        const next = { ...prev };
-        const list = Array.isArray(machines) ? machines : [];
-        for (const m of list) {
-          const uid = String(m?.uid || "").trim();
-          if (!uid) continue;
-          next[uid] = {
-            ...(next[uid] || { uid }),
-            uid,
-            status: "ERROR",
-          };
-        }
-        return next;
-      });
-
-      setStatusRefreshError("status proxy failed");
+    } catch (e: any) {
+      setStatusRefreshError(e?.message || "status proxy failed");
       setStatusRefreshErroredAt(new Date().toLocaleTimeString());
     } finally {
       setStatusRefreshing(false);
     }
-  }, [machines, token]);
-
-  useEffect(() => {
-    if (!token) return;
-    void refreshMachineStatuses();
-  }, [token, refreshMachineStatuses]);
+  }, [machines, refreshStatuses, token]);
 
   const lastRefreshAtRef = useRef(0);
   const handleBoardClickCapture = useCallback(() => {
@@ -881,26 +794,48 @@ export const MachiningMachineQueueBoard = ({
         </div>
       </div>
       <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-        {filteredMachines.map((m) => (
-          <MachineQueueCard
-            key={m.uid}
-            machineId={m.uid}
-            machineName={m.name}
-            queue={Array.isArray(queueMap?.[m.uid]) ? queueMap[m.uid] : []}
-            onOpenRequestLog={(requestId) => setEventLogRequestId(requestId)}
-            autoEnabled={m.allowAutoMachining === true}
-            onToggleAuto={(next) => {
-              requestToggleMachineAuto(m.uid, next);
-            }}
-            machineStatus={machineStatusMap?.[m.uid] ?? null}
-            statusRefreshing={statusRefreshing}
-            onOpenReservation={() => openReservationForMachine(m.uid)}
-            onOpenProgramCode={(prog, machineId) => {
-              setWorkUid(machineId);
-              openProgramDetail(prog, machineId);
-            }}
-          />
-        ))}
+        {filteredMachines.map((m) =>
+          (() => {
+            const statusFromStore = statusByUid?.[m.uid];
+            const local = machineStatusMap?.[m.uid] ?? null;
+            const mergedStatus: MachineStatus | null = local
+              ? {
+                  ...local,
+                  status: String(
+                    statusFromStore != null ? statusFromStore : local.status,
+                  ).trim(),
+                }
+              : statusFromStore != null
+                ? {
+                    uid: m.uid,
+                    status: String(statusFromStore).trim(),
+                  }
+                : null;
+
+            return (
+              <MachineQueueCard
+                key={m.uid}
+                machineId={m.uid}
+                machineName={m.name}
+                queue={Array.isArray(queueMap?.[m.uid]) ? queueMap[m.uid] : []}
+                onOpenRequestLog={(requestId) =>
+                  setEventLogRequestId(requestId)
+                }
+                autoEnabled={m.allowAutoMachining === true}
+                onToggleAuto={(next) => {
+                  requestToggleMachineAuto(m.uid, next);
+                }}
+                machineStatus={mergedStatus}
+                statusRefreshing={statusRefreshing}
+                onOpenReservation={() => openReservationForMachine(m.uid)}
+                onOpenProgramCode={(prog, machineId) => {
+                  setWorkUid(machineId);
+                  openProgramDetail(prog, machineId);
+                }}
+              />
+            );
+          })(),
+        )}
       </div>
 
       {eventLogRequestId ? (

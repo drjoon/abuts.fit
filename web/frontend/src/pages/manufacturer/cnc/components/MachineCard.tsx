@@ -19,9 +19,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 import { useToast } from "@/hooks/use-toast";
 import { parseProgramNoFromName } from "../lib/programNaming";
 import { Machine } from "@/pages/manufacturer/cnc/types";
+import {
+  getMachineStatusDotClass,
+  getMachineStatusLabel,
+} from "@/pages/manufacturer/cnc/lib/machineStatus";
 import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
@@ -68,47 +73,12 @@ interface MachineCardProps {
 }
 
 const getMachineStatusChip = (status: string) => {
-  const s = (status || "").toUpperCase();
-
-  let color = "bg-gray-400";
-  let label = "대기";
-
-  if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
-    color = "bg-emerald-500";
-    label = "생산 중";
-  } else if (["WARN", "WARNING"].some((k) => s.includes(k))) {
-    color = "bg-amber-400";
-    label = "주의";
-  } else if (["ALARM", "ERROR", "FAULT"].some((k) => s.includes(k))) {
-    color = "bg-red-500";
-    label = "알람";
-  } else if (["STOP", "IDLE"].some((k) => s.includes(k))) {
-    color = "bg-slate-400";
-    label = "정지";
-  }
-
+  const color = getMachineStatusDotClass(status);
   return (
     <div className="flex items-center">
       <div className={`w-3.5 h-3.5 rounded-full ${color} shadow-inner`} />
     </div>
   );
-};
-
-const getMachineStatusLabel = (status: string) => {
-  const s = (status || "").toUpperCase();
-  if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
-    return "가공중";
-  }
-  if (["ALARM", "ERROR", "FAULT"].some((k) => s.includes(k))) {
-    return "알람";
-  }
-  if (["STOP", "IDLE"].some((k) => s.includes(k))) {
-    return "중단중";
-  }
-  if (["WARN", "WARNING"].some((k) => s.includes(k))) {
-    return "주의";
-  }
-  return "대기";
 };
 
 export const MachineCard = (props: MachineCardProps) => {
@@ -148,6 +118,8 @@ export const MachineCard = (props: MachineCardProps) => {
 
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const statusByUid = useMachineStatusStore((s) => s.statusByUid);
+  const effectiveStatus = statusByUid[machine.uid] ?? machine.status ?? "";
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dropping, setDropping] = useState(false);
   const [dummyOpen, setDummyOpen] = useState(false);
@@ -223,7 +195,7 @@ export const MachineCard = (props: MachineCardProps) => {
 
   const showReservationCounter =
     hasNextProgs && totalReservedCount > 0 && currentIndex > 0;
-  const statusUpper = (machine.status || "").toUpperCase();
+  const statusUpper = String(effectiveStatus || "").toUpperCase();
   const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
     statusUpper.includes(k),
   );
@@ -232,7 +204,7 @@ export const MachineCard = (props: MachineCardProps) => {
     typeof worksheetQueueCount === "number" && worksheetQueueCount > 0
       ? worksheetQueueCount
       : 0;
-  const statusLabel = getMachineStatusLabel(machine.status || "");
+  const statusLabel = getMachineStatusLabel(effectiveStatus);
 
   const showContinuousInfo =
     continuousState && (continuousState.isRunning || continuousState.nextJob);
@@ -273,7 +245,7 @@ export const MachineCard = (props: MachineCardProps) => {
             <div className="text-[16px] font-extrabold text-slate-900">
               {machine.name}
             </div>
-            {getMachineStatusChip(machine.status)}
+            {getMachineStatusChip(String(effectiveStatus || ""))}
           </div>
         </div>
 

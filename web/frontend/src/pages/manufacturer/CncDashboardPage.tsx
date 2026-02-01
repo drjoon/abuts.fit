@@ -27,9 +27,11 @@ import { CncDashboardPageView } from "./cncDashboard/CncDashboardPageView";
 import { useCncDashboardQueues } from "./cncDashboard/hooks/useCncDashboardQueues";
 import { useCncDashboardMachineInfo } from "./cncDashboard/hooks/useCncDashboardMachineInfo";
 import { useCncDashboardMaterials } from "./cncDashboard/hooks/useCncDashboardMaterials";
+import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 
 export const CncDashboardPage = () => {
   const { user, token } = useAuthStore();
+  const refreshMachineStatuses = useMachineStatusStore((s) => s.refresh);
   const {
     machines,
     setMachines,
@@ -553,8 +555,23 @@ export const CncDashboardPage = () => {
 
   const handleBackgroundRefresh = useCallback(() => {
     void queues.refreshDbQueuesForAllMachines();
+
+    const uids = (Array.isArray(machines) ? machines : [])
+      .map((m) => String(m?.uid || "").trim())
+      .filter(Boolean);
+    if (token && uids.length > 0) {
+      void refreshMachineStatuses({ token, uids });
+    }
+
+    // 기존 로컬 상태 갱신도 유지(상태 텍스트/lastUpdated 등을 위해)
     coreHandleBackgroundRefresh();
-  }, [coreHandleBackgroundRefresh, queues]);
+  }, [
+    coreHandleBackgroundRefresh,
+    machines,
+    queues,
+    refreshMachineStatuses,
+    token,
+  ]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;

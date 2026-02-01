@@ -56,11 +56,77 @@ export async function getMachines(req, res) {
 export async function getAllMachineStatusProxy(req, res) {
   try {
     if (!ensureBridgeConfigured(res)) return;
+    const includeAlarms = String(req.query?.includeAlarms || "").trim() === "1";
     const response = await fetch(`${BRIDGE_BASE}/api/cnc/machines/status`, {
       headers: withBridgeHeaders(),
     });
     const data = await response.json().catch(() => ({}));
-    res.status(response.status).json(data);
+
+    if (!includeAlarms || !response.ok || data?.success === false) {
+      res.status(response.status).json(data);
+      return;
+    }
+
+    const list = Array.isArray(data?.machines) ? data.machines : [];
+
+    const fetchAlarms = async (uid) => {
+      try {
+        const callAlarm = async (headType) => {
+          const alarmResp = await fetch(`${BRIDGE_BASE}/api/cnc/raw`, {
+            method: "POST",
+            headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({
+              uid,
+              dataType: "GetMachineAlarmInfo",
+              payload: { headType },
+            }),
+          });
+          const alarmBody = await alarmResp.json().catch(() => ({}));
+          const unwrap = (x) => (x && x.data != null ? x.data : x);
+          const l1 = unwrap(alarmBody);
+          const l2 = unwrap(l1);
+          const alarms =
+            (Array.isArray(l2?.alarms) ? l2.alarms : null) ||
+            (Array.isArray(l1?.alarms) ? l1.alarms : null) ||
+            (Array.isArray(alarmBody?.alarms) ? alarmBody.alarms : null) ||
+            [];
+          return alarms;
+        };
+
+        const [a0, a1] = await Promise.all([callAlarm(0), callAlarm(1)]);
+        const merged = [];
+        for (const a of [...a0, ...a1]) {
+          if (!a) continue;
+          const key = `${a.type ?? "?"}-${a.no ?? "?"}`;
+          if (merged.some((x) => `${x.type ?? "?"}-${x.no ?? "?"}` === key)) {
+            continue;
+          }
+          merged.push(a);
+        }
+        return merged;
+      } catch {
+        return [];
+      }
+    };
+
+    const enriched = await Promise.all(
+      list.map(async (m) => {
+        const uid = String(m?.uid || "").trim();
+        if (!uid) return m;
+        const alarms = await fetchAlarms(uid);
+        const hasAlarm = Array.isArray(alarms) && alarms.length > 0;
+        return {
+          ...m,
+          status: hasAlarm ? "ALARM" : m?.status,
+          alarms,
+        };
+      }),
+    );
+
+    res.status(response.status).json({
+      ...data,
+      machines: enriched,
+    });
   } catch (error) {
     console.error("getAllMachineStatusProxy error", error);
     res.status(500).json({

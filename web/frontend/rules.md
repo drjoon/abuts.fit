@@ -65,6 +65,12 @@
 - `src/lib/apiClient.ts`의 `apiFetch`를 사용하여 호출합니다.
 - 직접적인 `fetch` 호출은 지양합니다.
 
+## 5.1 전역 상태 관리 규칙 (Zustand)
+
+- **전역 공유 상태**(여러 페이지/기능에서 공통으로 사용하는 UI 상태, 선택 상태, 머신 상태 map 등)는 `src/store`의 **Zustand store**로 관리합니다.
+- 컴포넌트 간 공유가 필요한 값을 파일 스코프 전역 변수로 두거나, 과도한 props drilling로 전달하지 않습니다.
+- **서버 상태**(API 데이터 캐시/동기화)는 기본적으로 TanStack Query로 처리하고, 클라이언트 전역 상태와 역할을 분리합니다.
+
 ## 6. 대시보드/워크시트 카드 UI 규칙
 
 - **기준 컴포넌트**: `features/manufacturer/cnc/components/WorksheetCncMachineSection.tsx` 의 `WorksheetCncMachineCard` 스타일을 기본 카드 스타일로 사용합니다.
