@@ -136,6 +136,14 @@
 - 브리지 서버/로컬에 저장되는 프로그램 파일명은 `O####.nc` 형식을 사용합니다.
 - CNC 장비로 전송할 때는 확장자를 사용하지 않고, 숫자 프로그램 번호만 사용합니다.
 
+### 6.4 CNC Bridge Storage(3-nc) SSOT 정책
+
+- `storage/3-nc`(브리지 서버 파일 시스템)을 **NC 프로그램의 단일 진실 소스(SSOT)** 로 사용합니다.
+- **로드**: `bridgePath`가 존재하면 `/api/bridge-store/file`로 즉시 읽고, 없으면 `POST /api/requests/by-request/:requestId/nc-file/ensure-bridge`로 S3 → bridge-store 복구 후 다시 `/api/bridge-store/file`로만 읽습니다. 반복 폴링/중복 요청을 금지하고, 동일 프로그램은 모달이 열린 동안 1회만 로드합니다.
+- **저장**: NC 편집기는 항상 `POST /api/bridge-store/file`을 통해 저장하며, S3 presign/PUT 경로를 사용하지 않습니다. S3는 오직 bridge-store 복구용 소스로만 사용합니다.
+- **Hi-Link 직접 프로그램**(의뢰와 무관): 기존과 같이 장비 `UpdateProgram` 명령을 사용할 수 있지만, 의뢰/작업 단위 프로그램에는 적용하지 않습니다.
+- **자동 저장 금지**: CNC 프로그램 편집 모달/패널은 blur/focus 이벤트로 저장을 트리거하지 않고, 명시적인 `SAVE` 버튼 또는 `Ctrl/Cmd + S` 단축키로만 저장합니다.
+
 ### 6.4 로트넘버(생산번호)
 
 - 로트번호는 원소재부터 출고된 제품까지 전 과정에서 추적 관리한다.

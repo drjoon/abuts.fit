@@ -290,6 +290,7 @@ export const useCncProgramEditor = ({
     if (headType == null) headType = 0;
 
     const s3Key = String(prog?.s3Key || "").trim();
+    const requestId = String(prog?.requestId || "").trim();
     const bridgePath = String(
       prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
     ).trim();
@@ -299,67 +300,60 @@ export const useCncProgramEditor = ({
         : applyProgramNoToContent(programNo, code);
     const overrideKey = getProgramOverrideKey(prog);
 
-    // 브리지 서버 저장 (bridgePath가 있으면)
-    if (bridgePath) {
+    const isJobProgram = !!(requestId || bridgePath || s3Key);
+
+    // storage/3-nc (bridge-store) 를 SSOT으로 사용한다 (의뢰/작업 프로그램만).
+    // - bridgePath가 있으면: bridge-store에만 저장
+    // - bridgePath가 없으면: S3 → bridge-store 복구(ensure-bridge) 후 bridge-store에 저장
+    // NOTE: SSOT 모드에서는 UpdateProgram(Hi-Link)로 장비에 직접 쓰지 않는다.
+    if (isJobProgram) {
+      let resolvedBridgePath = bridgePath;
+      if (!resolvedBridgePath && requestId && s3Key && token) {
+        const ensureRes = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ bridgePath: "" }),
+          },
+        );
+        const ensureBody: any = await ensureRes.json().catch(() => ({}));
+        if (!ensureRes.ok || ensureBody?.success === false) {
+          throw new Error(
+            ensureBody?.message || ensureBody?.error || "NC 파일 복구 실패",
+          );
+        }
+        resolvedBridgePath = String(
+          ensureBody?.data?.bridgePath || ensureBody?.data?.filePath || "",
+        ).trim();
+      }
+
+      if (!resolvedBridgePath) {
+        throw new Error(
+          "브리지 저장 경로를 찾을 수 없습니다. (storage/3-nc 복구 필요)",
+        );
+      }
+
       const res = await fetch("/api/bridge-store/file", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ path: bridgePath, content: normalizedCode }),
+        body: JSON.stringify({
+          path: resolvedBridgePath,
+          content: normalizedCode,
+        }),
       });
       if (!res.ok) {
         throw new Error("브리지 서버 저장 실패");
       }
     }
 
-    if (s3Key && token) {
-      const fileName = s3Key.split("/").pop() || "";
-      if (!fileName) {
-        throw new Error("S3 키에서 파일명을 추출할 수 없습니다.");
-      }
-
-      const presignRes = await apiFetch({
-        path: `/api/cnc-machines/${encodeURIComponent(mid)}/direct/presign`,
-        method: "POST",
-        token,
-        jsonBody: {
-          fileName,
-          contentType: "text/plain",
-          fileSize: normalizedCode.length,
-        },
-      });
-      const presignBody: any = presignRes.data ?? {};
-      const presignData = presignBody?.data ?? presignBody;
-      if (!presignRes.ok || presignBody?.success === false) {
-        throw new Error(
-          presignBody?.message || presignBody?.error || "presign 발급 실패",
-        );
-      }
-
-      const uploadUrl = String(presignData?.uploadUrl || "").trim();
-      const presignedKey = String(presignData?.s3Key || "").trim();
-      if (!uploadUrl || !presignedKey) {
-        throw new Error("presign 정보가 올바르지 않습니다.");
-      }
-      if (presignedKey !== s3Key) {
-        throw new Error("저장 대상 S3 키가 일치하지 않습니다. (덮어쓰기 불가)");
-      }
-
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "text/plain",
-        },
-        body: normalizedCode,
-      });
-      if (!putRes.ok) {
-        throw new Error(`S3 업로드 실패 (HTTP ${putRes.status})`);
-      }
-    }
-
-    if (programNo != null) {
+    if (!isJobProgram && programNo != null) {
       const payload = {
         headType,
         programNo,
