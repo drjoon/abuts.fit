@@ -66,6 +66,29 @@ export function proxyToBridge(basePath) {
       }
 
       const text = await response.text();
+
+      // /api/bridge-store/file GET은 항상 JSON으로 응답
+      if (req.method === "GET" && basePath.includes("/api/bridge-store/file")) {
+        let data;
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          data = text;
+        }
+        return res.status(response.status).json(data);
+      }
+
+      // 텍스트 응답 처리 (NC 파일 등)
+      if (
+        contentType.includes("text") ||
+        contentType.includes("json") ||
+        contentType.includes("javascript")
+      ) {
+        res.status(response.status);
+        res.setHeader("Content-Type", contentType);
+        return res.send(text);
+      }
+
       let data;
       try {
         data = text ? JSON.parse(text) : {};
