@@ -273,11 +273,15 @@ export function CncDashboardPageView(props: any) {
                       selected?.ip && Number(selected?.port || 0) > 0
                     );
                     if (workUid !== uid) {
+                      // workUid 변경 시 작업 보드(useCncWorkBoard)가 자동으로 상태/프로그램 정보를 로드한다.
                       setWorkUid(uid);
+                      return;
                     }
+
+                    // 같은 장비 카드를 다시 클릭한 경우(workUid 변화 없음)에도
+                    // 상태 갱신은 1회 수행되어야 한다.
                     if (isConfigured) {
                       void refreshStatusFor(uid);
-                      void fetchProgramList();
                     }
                   }}
                   onTempClick={(machine) => {
@@ -541,7 +545,7 @@ export function CncDashboardPageView(props: any) {
               s3Key: (job as any)?.s3Key ?? "",
               s3Bucket: (job as any)?.s3Bucket ?? "",
               bridgePath: (job as any)?.bridgePath ?? "",
-              headType: 0,
+              headType: 1,
             };
             void openProgramDetail(prog, m.uid);
           }}

@@ -501,7 +501,8 @@ export function useCncDashboardQueues({
       const kind = String((targetJob as any)?.kind || "").trim();
       const source = String((targetJob as any)?.source || "").trim();
       if (kind === "manual_file" || source === "manual_insert") {
-        await handleManualCardPlay(uid, jobId);
+        // await handleManualCardPlay(uid, jobId);
+        await handleManualCardPlay(uid);
         return;
       }
 
@@ -572,7 +573,7 @@ export function useCncDashboardQueues({
               path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
               method: "POST",
               token,
-              jsonBody: { headType: 0 },
+              jsonBody: { headType: 1 },
             }),
           ]);
 

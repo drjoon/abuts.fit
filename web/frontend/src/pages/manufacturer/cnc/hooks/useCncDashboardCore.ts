@@ -38,26 +38,28 @@ export const useCncDashboardCore = ({
   const refreshStatusFor = useCallback(
     async (uid: string) => {
       try {
-        const res = await callRaw(uid, "GetOPStatus");
-        const data: any = res?.data ?? res;
-        const resultCode =
-          typeof data?.result === "number"
-            ? data.result
-            : typeof res?.result === "number"
-              ? res.result
-              : null;
-
-        let status = "Unknown";
-        if (typeof resultCode === "number") {
-          status = resultCode === 0 ? "OK" : "Error";
+        const res = await apiFetch({
+          path: `/api/machines/${encodeURIComponent(uid)}/status`,
+          method: "GET",
+          token,
+        });
+        const body: any = res.data ?? {};
+        if (!res.ok || body?.success === false) {
+          throw new Error(
+            String(body?.message || body?.error || "상태 조회 실패"),
+          );
         }
+
+        const statusRaw = String(
+          body?.status || body?.data?.status || body?.machine?.status || "",
+        ).trim();
 
         setMachines((prev) => {
           return prev.map((m) =>
             m.uid === uid
               ? {
                   ...m,
-                  status,
+                  status: statusRaw || "Unknown",
                   lastUpdated: new Date().toLocaleTimeString(),
                   lastCommand: "status",
                   lastError: null,
@@ -65,6 +67,12 @@ export const useCncDashboardCore = ({
               : m,
           );
         });
+
+        if (statusRaw.toUpperCase().includes("ALARM")) {
+          setMachines((prev) =>
+            prev.map((m) => (m.uid === uid ? { ...m, status: "ALARM" } : m)),
+          );
+        }
       } catch (e: any) {
         const message = e?.message ?? "알 수 없는 오류";
         if (!shouldSilenceBridgeDownError(message)) {
@@ -79,7 +87,7 @@ export const useCncDashboardCore = ({
         );
       }
     },
-    [callRaw, setMachines, setError],
+    [setMachines, setError, token],
   );
 
   const sendControlCommand = useCallback(

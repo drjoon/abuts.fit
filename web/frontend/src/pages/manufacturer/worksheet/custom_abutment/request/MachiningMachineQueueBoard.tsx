@@ -874,7 +874,7 @@ export const MachiningMachineQueueBoard = ({
             s3Bucket: job.s3Bucket || "",
             bridgePath: job.bridgePath || "",
             requestId: job.requestId || "",
-            headType: 0,
+            headType: 1,
           };
           void openProgramDetail(prog, mid);
         }}

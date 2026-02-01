@@ -219,7 +219,7 @@ export const useCncProgramEditor = ({
       }
     }
 
-    if (headType == null) headType = 0;
+    if (headType == null) headType = 1;
 
     const payload = { machineProgramData: { headType, programNo } };
     const res = await callRaw(mid, "GetProgDataInfo", payload);
@@ -287,7 +287,7 @@ export const useCncProgramEditor = ({
       }
     }
 
-    if (headType == null) headType = 0;
+    if (headType == null) headType = 1;
 
     const s3Key = String(prog?.s3Key || "").trim();
     const requestId = String(prog?.requestId || "").trim();

@@ -71,39 +71,25 @@ export async function getAllMachineStatusProxy(req, res) {
 
     const fetchAlarms = async (uid) => {
       try {
-        const callAlarm = async (headType) => {
-          const alarmResp = await fetch(`${BRIDGE_BASE}/api/cnc/raw`, {
-            method: "POST",
-            headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({
-              uid,
-              dataType: "GetMachineAlarmInfo",
-              payload: { headType },
-            }),
-          });
-          const alarmBody = await alarmResp.json().catch(() => ({}));
-          const unwrap = (x) => (x && x.data != null ? x.data : x);
-          const l1 = unwrap(alarmBody);
-          const l2 = unwrap(l1);
-          const alarms =
-            (Array.isArray(l2?.alarms) ? l2.alarms : null) ||
-            (Array.isArray(l1?.alarms) ? l1.alarms : null) ||
-            (Array.isArray(alarmBody?.alarms) ? alarmBody.alarms : null) ||
-            [];
-          return alarms;
-        };
-
-        const [a0, a1] = await Promise.all([callAlarm(0), callAlarm(1)]);
-        const merged = [];
-        for (const a of [...a0, ...a1]) {
-          if (!a) continue;
-          const key = `${a.type ?? "?"}-${a.no ?? "?"}`;
-          if (merged.some((x) => `${x.type ?? "?"}-${x.no ?? "?"}` === key)) {
-            continue;
-          }
-          merged.push(a);
-        }
-        return merged;
+        const alarmResp = await fetch(`${BRIDGE_BASE}/api/cnc/raw`, {
+          method: "POST",
+          headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            uid,
+            dataType: "GetMachineAlarmInfo",
+            payload: { headType: 1 },
+          }),
+        });
+        const alarmBody = await alarmResp.json().catch(() => ({}));
+        const unwrap = (x) => (x && x.data != null ? x.data : x);
+        const l1 = unwrap(alarmBody);
+        const l2 = unwrap(l1);
+        const alarms =
+          (Array.isArray(l2?.alarms) ? l2.alarms : null) ||
+          (Array.isArray(l1?.alarms) ? l1.alarms : null) ||
+          (Array.isArray(alarmBody?.alarms) ? alarmBody.alarms : null) ||
+          [];
+        return alarms;
       } catch {
         return [];
       }
@@ -193,7 +179,21 @@ export async function getMachineStatusProxy(req, res) {
   const { uid } = req.params;
   try {
     if (!ensureBridgeConfigured(res)) return;
-    const response = await fetch(
+
+    const fetchWithTimeout = async (url, options, timeoutMs = 15000) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, {
+          ...(options || {}),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(id);
+      }
+    };
+
+    const response = await fetchWithTimeout(
       `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/status`,
       { headers: withBridgeHeaders() },
     );
@@ -213,15 +213,27 @@ export async function getMachineAlarmProxy(req, res) {
   const { uid } = req.params;
   try {
     if (!ensureBridgeConfigured(res)) return;
-    // 브리지에 /machines/:uid/alarm 엔드포인트가 없을 수 있으므로
-    // 공통 raw 엔드포인트를 통해 GetMachineAlarmInfo를 호출한다.
-    const response = await fetch(`${BRIDGE_BASE}/api/cnc/raw`, {
+
+    const fetchWithTimeout = async (url, options, timeoutMs = 15000) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, {
+          ...(options || {}),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(id);
+      }
+    };
+
+    const response = await fetchWithTimeout(`${BRIDGE_BASE}/api/cnc/raw`, {
       method: "POST",
       headers: withBridgeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         uid,
         dataType: "GetMachineAlarmInfo",
-        payload: req.body?.payload ?? { headType: req.body?.headType ?? 0 },
+        payload: req.body?.payload ?? { headType: req.body?.headType ?? 1 },
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -384,11 +396,24 @@ export async function callRawProxy(req, res) {
       lastRawReadCall.set(key, now);
     }
 
+    const fetchWithTimeout = async (url, options, timeoutMs = 15000) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, {
+          ...(options || {}),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(id);
+      }
+    };
+
     const payload = {
       ...(req.body || {}),
       uid: req.body?.uid ?? uid,
     };
-    const response = await fetch(`${BRIDGE_BASE}/api/cnc/raw`, {
+    const response = await fetchWithTimeout(`${BRIDGE_BASE}/api/cnc/raw`, {
       method: "POST",
       headers: withBridgeHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(payload),
@@ -397,9 +422,14 @@ export async function callRawProxy(req, res) {
     res.status(response.status).json(data);
   } catch (error) {
     console.error("callRawProxy error", error);
-    res.status(500).json({
+    const statusCode = error?.code === "ECONNRESET" ? 503 : 500;
+    const message =
+      error?.code === "ECONNRESET"
+        ? "브리지 연결이 끊어졌습니다. 브리지 상태를 확인하세요."
+        : "raw proxy failed";
+    res.status(statusCode).json({
       success: false,
-      message: "raw proxy failed",
+      message,
     });
   }
 }
