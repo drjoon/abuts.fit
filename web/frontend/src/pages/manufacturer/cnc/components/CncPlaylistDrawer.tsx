@@ -15,6 +15,12 @@ export interface PlaylistJobItem {
   name: string;
   qty: number;
   paused?: boolean;
+  bridgePath?: string;
+  s3Key?: string;
+  s3Bucket?: string;
+  requestId?: string;
+  programNo?: number | null;
+  source?: string;
 }
 
 interface CncPlaylistDrawerProps {

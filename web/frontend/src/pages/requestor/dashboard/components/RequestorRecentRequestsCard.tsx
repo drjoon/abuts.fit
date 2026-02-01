@@ -757,8 +757,8 @@ export const RequestorRecentRequestsCard = ({
         confirmLabel="의뢰 취소"
         cancelLabel="닫기"
         onConfirm={async () => {
-          setCancelConfirmOpen(false);
           await handleCancelFromDetail();
+          setCancelConfirmOpen(false);
         }}
         onCancel={() => setCancelConfirmOpen(false)}
       />

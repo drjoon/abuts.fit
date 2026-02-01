@@ -146,6 +146,13 @@ router.get(
   cncEventController.getCncEventsByRequestId,
 );
 
+// 제조사/관리자: NC 파일을 브리지 스토리지로 동기화 (가공카드 코드 보기용)
+router.post(
+  "/by-request/:requestId/nc-file/ensure-bridge",
+  authorize(["manufacturer", "admin"]),
+  requestController.ensureNcFileOnBridgeStoreByRequestId,
+);
+
 // 제조사/관리자: 원본 STL 다운로드 URL
 router.get(
   "/:id/original-file-url",
@@ -153,11 +160,11 @@ router.get(
   requestController.getOriginalFileUrl,
 );
 
-// 제조사/관리자: CAM STL 다운로드 URL
+// 제조사/관리자: 원본 STL 다운로드 URL
 router.get(
-  "/:id/cam-file-url",
+  "/:id/stl-file-url",
   authorize(["manufacturer", "admin"]),
-  requestController.getCamFileUrl,
+  requestController.getStlFileUrl,
 );
 
 // 제조사/관리자: CAM 결과 업로드 메타 저장 및 상태 전환

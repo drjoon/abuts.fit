@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
+import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
+import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
 import { apiFetch } from "@/lib/apiClient";
 import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";
 import { CncEventLogModal } from "@/components/CncEventLogModal";
+import { CncProgramEditorPanel } from "@/pages/manufacturer/cnc/components/CncProgramEditorPanel";
 import {
   CncPlaylistDrawer,
   type PlaylistJobItem,
@@ -19,6 +22,12 @@ type QueueItem = {
   estimatedDelivery?: string | Date;
   diameter?: number;
   diameterGroup?: string;
+  ncFile?: {
+    fileName?: string;
+    filePath?: string;
+    s3Key?: string;
+    s3Bucket?: string;
+  } | null;
   ncPreload?: {
     status?: "NONE" | "UPLOADING" | "READY" | "FAILED" | string;
     machineId?: string;
@@ -48,6 +57,7 @@ type MachineQueueCardProps = {
   machineStatus?: MachineStatus | null;
   statusRefreshing?: boolean;
   onOpenReservation: () => void;
+  onOpenProgramCode?: (prog: any, machineId: string) => void;
 };
 
 const getStatusDotColor = (status?: string) => {
@@ -144,6 +154,7 @@ const MachineQueueCard = ({
   machineStatus,
   statusRefreshing,
   onOpenReservation,
+  onOpenProgramCode,
 }: MachineQueueCardProps) => {
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q?.status),
@@ -168,6 +179,13 @@ const MachineQueueCard = ({
     : machiningQueueAll[0]
       ? formatLabel(machiningQueueAll[0])
       : "없음";
+
+  // 가공 중 상태 판단
+  const isMachining = machineStatus?.status
+    ? ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
+        String(machineStatus.status).toUpperCase().includes(k),
+      )
+    : false;
 
   return (
     <div className="app-glass-card app-glass-card--xl flex flex-col">
@@ -263,9 +281,33 @@ const MachineQueueCard = ({
                 <div className="text-[11px] font-semibold text-slate-500">
                   Next Up
                 </div>
-                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!machiningQueueAll[0]) return;
+                    const nc = machiningQueueAll[0]?.ncFile ?? null;
+                    const bridgePath = String(nc?.filePath || "").trim();
+                    const s3Key = String(nc?.s3Key || "").trim();
+                    const prog = {
+                      programNo: null,
+                      name: formatLabel(machiningQueueAll[0]),
+                      source: bridgePath ? "bridge_store" : "s3",
+                      bridgePath,
+                      s3Key,
+                      requestId: machiningQueueAll[0]?.requestId || "",
+                    };
+                    onOpenProgramCode?.(prog, machineId);
+                  }}
+                  className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900 text-left"
+                  title={
+                    isMachining
+                      ? "가공 중에는 코드를 수정할 수 없습니다."
+                      : "클릭하여 코드 보기"
+                  }
+                >
                   {nextUpLabel}
-                </div>
+                </button>
               </div>
             </div>
           </div>
@@ -298,6 +340,7 @@ export const MachiningMachineQueueBoard = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const { machines, setMachines } = useCncMachines();
+  const { callRaw } = useCncRaw();
 
   const [queueMap, setQueueMap] = useState<QueueMap>({});
   const [loading, setLoading] = useState(false);
@@ -325,6 +368,115 @@ export const MachiningMachineQueueBoard = ({
   const [playlistTitle, setPlaylistTitle] = useState<string>("");
   const [playlistJobs, setPlaylistJobs] = useState<PlaylistJobItem[]>([]);
 
+  const [programEditorError, setProgramEditorError] = useState<string | null>(
+    null,
+  );
+  const [workUid, setWorkUid] = useState<string>("");
+
+  const {
+    programEditorOpen,
+    programEditorTarget,
+    isReadOnly,
+    openProgramDetail,
+    closeProgramEditor,
+    loadProgramCode,
+    saveProgramCode,
+  } = useCncProgramEditor({
+    workUid,
+    machines,
+    programSummary: null,
+    callRaw,
+    setError: setProgramEditorError,
+    fetchProgramList: async () => {
+      // 가공카드에서는 프로그램 리스트 재조회 불필요
+    },
+  });
+
+  const loadProgramCodeForMachining = useCallback(
+    async (prog: any) => {
+      const bridgePath = String(
+        prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
+      ).trim();
+      const requestId = String(prog?.requestId || "").trim();
+      const s3Key = String(prog?.s3Key || "").trim();
+
+      // 1) 브리지 스토리지(storage/3-nc 포함)에서 우선 로드
+      if (bridgePath && token) {
+        const url = `/api/bridge-store/file?path=${encodeURIComponent(bridgePath)}&_ts=${Date.now()}`;
+        const res = await fetch(url, {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
+          },
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (
+          res.ok &&
+          body?.success !== false &&
+          typeof body?.content === "string"
+        ) {
+          return body.content;
+        }
+
+        // 2) 없으면(DB 메타데이터 기반) S3 → 브리지 storage 로 동기화 후 재시도
+        if (requestId && s3Key) {
+          const ensureRes = await fetch(
+            `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ bridgePath }),
+            },
+          );
+          const ensureBody: any = await ensureRes.json().catch(() => ({}));
+          if (!ensureRes.ok || ensureBody?.success === false) {
+            throw new Error(
+              ensureBody?.message || ensureBody?.error || "NC 파일 동기화 실패",
+            );
+          }
+
+          const nextPath = String(
+            ensureBody?.data?.bridgePath ||
+              ensureBody?.data?.filePath ||
+              bridgePath,
+          ).trim();
+          if (nextPath) {
+            const retry = await fetch(
+              `/api/bridge-store/file?path=${encodeURIComponent(nextPath)}&_ts=${Date.now()}`,
+              {
+                method: "GET",
+                cache: "no-store",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Cache-Control": "no-cache",
+                  Pragma: "no-cache",
+                },
+              },
+            );
+            const retryBody: any = await retry.json().catch(() => ({}));
+            if (
+              retry.ok &&
+              retryBody?.success !== false &&
+              typeof retryBody?.content === "string"
+            ) {
+              return retryBody.content;
+            }
+          }
+        }
+      }
+
+      // 3) fallback: 기존 CNC 에디터 로더(Hi-link 등)
+      return loadProgramCode(prog);
+    },
+    [loadProgramCode, token],
+  );
+
   const buildPlaylistJobsFromQueue = useCallback((raw: QueueItem[]) => {
     const jobs = (Array.isArray(raw) ? raw : [])
       .filter((q) => isMachiningStatus(q?.status))
@@ -332,10 +484,19 @@ export const MachiningMachineQueueBoard = ({
         const rid = String(q.requestId || "").trim();
         if (!rid) return null;
         const qty = Math.max(1, Number(q?.machiningQty ?? 1) || 1);
+        const nc = q?.ncFile ?? null;
+        const bridgePath = String(nc?.filePath || "").trim();
+        const s3Key = String(nc?.s3Key || "").trim();
+        const s3Bucket = String(nc?.s3Bucket || "").trim();
         return {
           id: rid,
           name: formatLabel(q),
           qty,
+          bridgePath,
+          s3Key,
+          s3Bucket,
+          requestId: rid,
+          source: bridgePath ? "bridge_store" : s3Key ? "s3" : "db",
         } satisfies PlaylistJobItem;
       })
       .filter(Boolean) as PlaylistJobItem[];
@@ -734,6 +895,10 @@ export const MachiningMachineQueueBoard = ({
             machineStatus={machineStatusMap?.[m.uid] ?? null}
             statusRefreshing={statusRefreshing}
             onOpenReservation={() => openReservationForMachine(m.uid)}
+            onOpenProgramCode={(prog, machineId) => {
+              setWorkUid(machineId);
+              openProgramDetail(prog, machineId);
+            }}
           />
         ))}
       </div>
@@ -757,11 +922,26 @@ export const MachiningMachineQueueBoard = ({
         onClose={() => {
           setPlaylistOpen(false);
         }}
-        onOpenCode={() => {
-          toast({
-            title: "코드 보기",
-            description: "코드 보기는 CNC 페이지에서 확인할 수 있습니다.",
-          });
+        onOpenCode={(jobId) => {
+          const mid = String(playlistMachineId || "").trim();
+          if (!mid) return;
+          const job = (Array.isArray(playlistJobs) ? playlistJobs : []).find(
+            (j) => j.id === jobId,
+          );
+          if (!job) return;
+          setWorkUid(mid);
+          const prog: any = {
+            programNo: job.programNo ?? null,
+            no: job.programNo ?? null,
+            name: job.name,
+            source: job.source || "db",
+            s3Key: job.s3Key || "",
+            s3Bucket: job.s3Bucket || "",
+            bridgePath: job.bridgePath || "",
+            requestId: job.requestId || "",
+            headType: 0,
+          };
+          void openProgramDetail(prog, mid);
         }}
         onDelete={(jobId) => {
           void (async () => {
@@ -913,6 +1093,16 @@ export const MachiningMachineQueueBoard = ({
             }
           })();
         }}
+      />
+
+      <CncProgramEditorPanel
+        open={programEditorOpen}
+        onClose={closeProgramEditor}
+        workUid={workUid}
+        selectedProgram={programEditorTarget}
+        onLoadProgram={loadProgramCodeForMachining}
+        onSaveProgram={saveProgramCode}
+        readOnly={isReadOnly}
       />
     </div>
   );

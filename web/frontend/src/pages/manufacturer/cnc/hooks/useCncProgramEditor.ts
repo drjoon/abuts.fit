@@ -68,14 +68,7 @@ export const useCncProgramEditor = ({
     );
     let readOnly = false;
     if (isRunning) {
-      const current = programSummary?.current ?? null;
-      const curNo = current?.programNo ?? current?.no;
-      const progNo = prog?.programNo ?? prog?.no;
-      // 생산 중일 때는 현재 생산중인 프로그램만 read-only로 열고,
-      // 다음 생산(번호가 다른 프로그램)은 편집을 허용한다.
-      if (curNo != null && progNo != null && curNo === progNo) {
-        readOnly = true;
-      }
+      readOnly = true;
     }
     setIsReadOnly(readOnly);
     setProgramEditorTarget(prog);
@@ -150,27 +143,57 @@ export const useCncProgramEditor = ({
       prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
     ).trim();
     if (bridgePath) {
-      const url = `/api/bridge-store/file?path=${encodeURIComponent(
-        bridgePath,
-      )}&_ts=${Date.now()}`;
-      const res = await fetch(url, {
-        method: "GET",
-        cache: "no-store",
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-        },
-      });
-      const body: any = await res.json().catch(() => ({}));
-      if (!res.ok || body?.success === false) {
+      const loadBridgeOnce = async (): Promise<{
+        ok: boolean;
+        status: number;
+        body: any;
+      }> => {
+        const url = `/api/bridge-store/file?path=${encodeURIComponent(
+          bridgePath,
+        )}&_ts=${Date.now()}`;
+        const res = await fetch(url, {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
+          },
+        });
+        const body: any = await res.json().catch(() => ({}));
+        return { ok: res.ok, status: res.status, body };
+      };
+
+      const first = await loadBridgeOnce();
+      const firstText = first?.body?.content;
+      if (first.ok && typeof firstText === "string") return firstText;
+
+      const requestId = String(prog?.requestId || "").trim();
+      if (requestId && token) {
+        await apiFetch({
+          path: `/api/requests/by-request/${encodeURIComponent(
+            requestId,
+          )}/nc-file/ensure-bridge`,
+          method: "POST",
+          token,
+        });
+
+        const second = await loadBridgeOnce();
+        const secondText = second?.body?.content;
+        if (second.ok && typeof secondText === "string") return secondText;
+
         throw new Error(
-          body?.message || body?.error || "브리지 파일 로드 실패",
+          second?.body?.message ||
+            second?.body?.error ||
+            first?.body?.message ||
+            first?.body?.error ||
+            "브리지 파일 로드 실패",
         );
       }
-      const text = body?.content;
-      if (typeof text === "string") return text;
-      return "";
+
+      throw new Error(
+        first?.body?.message || first?.body?.error || "브리지 파일 로드 실패",
+      );
     }
 
     // 브리지 서버에서 온 프로그램(source === "bridge")이고 programData가 이미 포함된 경우,

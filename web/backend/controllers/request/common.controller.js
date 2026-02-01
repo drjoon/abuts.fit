@@ -120,6 +120,104 @@ async function fetchBridgeMachineStatusMap() {
   }
 }
 
+// 하위 호환: 기존 라우트(/:id/stl-file-url)가 CAM STL 다운로드를 의미한다.
+export async function getStlFileUrl(req, res) {
+  return getCamFileUrl(req, res);
+}
+
+export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
+  try {
+    const requestId = String(req.params?.requestId || "").trim();
+    if (!requestId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "requestId is required" });
+    }
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const request = await Request.findOne({ requestId });
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const nc = request?.caseInfos?.ncFile || null;
+    const s3Key = String(nc?.s3Key || "").trim();
+    const fileName = String(nc?.fileName || nc?.originalName || "").trim();
+    const existingPath = String(nc?.filePath || "").trim();
+    if (!s3Key) {
+      return res.status(404).json({
+        success: false,
+        message: "NC 파일이 없습니다.",
+      });
+    }
+
+    // caller 가 특정 bridgePath 를 전달하면 그 경로를 우선 사용한다.
+    const requestedBridgePath = String(req.body?.bridgePath || "").trim();
+
+    let bridgePath = existingPath || requestedBridgePath;
+
+    // filePath 가 없는 경우에는 기존 로직과 동일하게 nc/<requestId>/O####.nc 로 저장한다.
+    // (브리지 서버가 storage/3-nc 를 사용하더라도, bridge-store 내부에서 해당 path 를 resolve 한다.)
+    if (!bridgePath) {
+      const pushed = await uploadNcToBridgeStore({
+        requestId,
+        s3Key,
+        fileName,
+      });
+      if (!pushed.ok || !pushed.path) {
+        return res.status(500).json({
+          success: false,
+          message: pushed.reason || "bridge-store upload failed",
+        });
+      }
+      bridgePath = String(pushed.path);
+    }
+
+    // bridgePath 는 있는데 브리지에 실제 파일이 없을 수도 있으므로,
+    // 업로드(덮어쓰기)를 한 번 수행해서 확실히 동기화한다.
+    const pushed2 = await uploadNcToBridgeStore({
+      requestId,
+      s3Key,
+      fileName: fileName || "program.nc",
+    });
+    if (pushed2.ok && pushed2.path) {
+      bridgePath = String(pushed2.path);
+    }
+
+    try {
+      request.caseInfos = request.caseInfos || {};
+      request.caseInfos.ncFile = request.caseInfos.ncFile || {};
+      if (!request.caseInfos.ncFile.filePath) {
+        request.caseInfos.ncFile.filePath = bridgePath;
+        await request.save();
+      }
+    } catch {
+      // no-op
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        requestId,
+        bridgePath,
+        filePath: bridgePath,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "NC 파일 동기화 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 async function screenCamMachineForRequest({ request }) {
   const maxDiameter = Number(request?.caseInfos?.maxDiameter);
   if (!Number.isFinite(maxDiameter) || maxDiameter <= 0) {
@@ -1709,48 +1807,6 @@ export async function updateRequestStatus(req, res) {
 
     await request.save();
 
-    // 취소 시 크레딧 환불(차감 SPEND가 있는 경우에만)
-    if (status === "취소") {
-      const organizationId =
-        request.requestorOrganizationId || request.requestor?.organizationId;
-
-      if (organizationId) {
-        const spendRows = await CreditLedger.find({
-          organizationId,
-          type: "SPEND",
-          refType: "REQUEST",
-          refId: request._id,
-        })
-          .select({ amount: 1 })
-          .lean();
-
-        const totalSpend = (spendRows || []).reduce((acc, r) => {
-          const n = Number(r?.amount || 0);
-          return acc + (Number.isFinite(n) ? n : 0);
-        }, 0);
-
-        const refundAmount = Math.abs(totalSpend);
-        if (refundAmount > 0) {
-          const uniqueKey = `request:${String(request._id)}:cancel_refund`;
-          await CreditLedger.updateOne(
-            { uniqueKey },
-            {
-              $setOnInsert: {
-                organizationId,
-                userId: req.user?._id || null,
-                type: "REFUND",
-                amount: refundAmount,
-                refType: "REQUEST",
-                refId: request._id,
-                uniqueKey,
-              },
-            },
-            { upsert: true },
-          );
-        }
-      }
-    }
-
     res.status(200).json({
       success: true,
       message: "의뢰 상태가 성공적으로 변경되었습니다.",
@@ -2330,6 +2386,44 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       request.status = "CAM";
       request.status2 = "없음";
       request.manufacturerStage = "CAM";
+
+      const organizationId =
+        request.requestorOrganizationId || request.requestor?.organizationId;
+      if (organizationId) {
+        const spendRows = await CreditLedger.find({
+          organizationId,
+          type: "SPEND",
+          refType: "REQUEST",
+          refId: request._id,
+        })
+          .select({ amount: 1 })
+          .lean();
+
+        const totalSpend = (spendRows || []).reduce((acc, r) => {
+          const n = Number(r?.amount || 0);
+          return acc + (Number.isFinite(n) ? n : 0);
+        }, 0);
+
+        const refundAmount = Math.abs(totalSpend);
+        if (refundAmount > 0) {
+          const uniqueKey = `request:${String(request._id)}:rollback_cam_refund`;
+          await CreditLedger.updateOne(
+            { uniqueKey },
+            {
+              $setOnInsert: {
+                organizationId,
+                userId: req.user?._id || null,
+                type: "REFUND",
+                amount: refundAmount,
+                refType: "REQUEST",
+                refId: request._id,
+                uniqueKey,
+              },
+            },
+            { upsert: true },
+          );
+        }
+      }
     }
 
     await request.save();

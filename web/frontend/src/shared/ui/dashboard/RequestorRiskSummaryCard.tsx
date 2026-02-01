@@ -125,14 +125,14 @@ export const RequestorRiskSummaryCard = ({
                     {item.riskLevel === "danger" ? (
                       <Badge
                         variant="destructive"
-                        className="text-[10px] h-4 px-1.5"
+                        className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
                       >
                         지연확정
                       </Badge>
                     ) : (
                       <Badge
                         variant="outline"
-                        className="text-[10px] h-4 px-1.5"
+                        className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
                       >
                         지연가능
                       </Badge>
