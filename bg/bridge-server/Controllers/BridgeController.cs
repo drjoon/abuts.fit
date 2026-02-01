@@ -7,6 +7,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Net;
 using System.Net.Http;
@@ -35,6 +36,105 @@ namespace HiLinkBridgeWebApi48.Controllers
             public int? LastPreloadedSlot;
             public string LastPreloadedPath;
             public DateTime LastPreloadedAtUtc;
+        }
+
+        // POST /machines/{machineId}/manual/preload-mode2
+        // Mode2 DLL을 사용하여 프로그램 업로드(UpdateProgram)
+        [HttpPost]
+        [Route("machines/{machineId}/manual/preload-mode2")]
+        public async Task<HttpResponseMessage> ManualPreloadMode2(string machineId, [FromBody] ManualPreloadRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var cooldownKey = $"manualPreloadMode2:{machineId}";
+            if (IsControlOnCooldown(cooldownKey))
+            {
+                return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
+            }
+
+            try
+            {
+                var st = GetOrCreateManualState(machineId);
+                var desired = req?.slotNo;
+                if (desired.HasValue && desired.Value != MANUAL_SLOT_A && desired.Value != MANUAL_SLOT_B)
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "invalid slotNo" });
+                }
+
+                var relPath = (req?.path ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(relPath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
+                }
+
+                int slotNo = desired ?? MANUAL_SLOT_A;
+                var fullPath = GetSafeBridgeStorePath(relPath);
+                if (!File.Exists(fullPath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = "file not found", path = relPath });
+                }
+
+                var content = File.ReadAllText(fullPath);
+                var processed = SanitizeProgramTextForCnc(EnsureProgramHeader(content, slotNo));
+
+                short headType = req?.headType ?? 1; // 기본 Main
+
+                var dto = new UpdateMachineProgramInfo
+                {
+                    headType = headType,
+                    programNo = (short)slotNo,
+                    programData = processed,
+                    isNew = true,
+                };
+
+                var client = new HiLinkMode2Client();
+                var resp = await client.RequestRawAsync(machineId, CollectDataType.UpdateProgram, dto, 20000);
+
+                // Mode2 DLL은 응답 형식이 short result 또는 객체일 수 있음
+                short rc = 0;
+                if (resp is short s)
+                {
+                    rc = s;
+                }
+                else if (resp != null)
+                {
+                    // JSON 직렬화된 객체 형태일 때 result 필드를 우선 시도
+                    try
+                    {
+                        var token = Newtonsoft.Json.Linq.JObject.FromObject(resp);
+                        rc = (short)(token.Value<int?>("result") ?? 0);
+                    }
+                    catch { }
+                }
+
+                Console.WriteLine("[ManualPreloadMode2] machine={0} slot=O{1} headType={2} rc={3} respType={4}",
+                    machineId, slotNo, headType, rc, resp?.GetType()?.Name ?? "null");
+
+                if (rc != 0)
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = $"UpdateProgram failed (rc={rc})" });
+                }
+
+                st.LastPreloadedSlot = slotNo;
+                st.LastPreloadedPath = relPath;
+                st.LastPreloadedAtUtc = DateTime.UtcNow;
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    message = "Manual preload (Mode2) ok",
+                    slotNo,
+                    nextSlotNo = (slotNo == MANUAL_SLOT_A) ? MANUAL_SLOT_B : MANUAL_SLOT_A,
+                    path = relPath
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
         }
 
         private static readonly ConcurrentDictionary<string, ManualMachineState> ManualStates =
@@ -134,11 +234,34 @@ namespace HiLinkBridgeWebApi48.Controllers
         {
             public string path { get; set; }
             public int? slotNo { get; set; }
+            public short? headType { get; set; }
         }
 
         public class ManualPlayRequest
         {
             public int? slotNo { get; set; }
+            public string path { get; set; }
+        }
+
+        private static int ParseProgramNoFromName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return 0;
+            var m = Regex.Match(name.ToUpperInvariant(), @"O(\d{1,5})");
+            if (m.Success && int.TryParse(m.Groups[1].Value, out var n) && n > 0) return n;
+            var d = Regex.Match(name, @"(\d{1,5})");
+            if (d.Success && int.TryParse(d.Groups[1].Value, out var n2) && n2 > 0) return n2;
+            return 0;
+        }
+
+        private static int GetCurrentActiveSlotOrDefault(string machineId)
+        {
+            if (Mode1Api.TryGetActivateProgInfo(machineId, out var info, out var _))
+            {
+                var n = ParseProgramNoFromName(info.MainProgramName);
+                if (n <= 0) n = ParseProgramNoFromName(info.SubProgramName);
+                return n;
+            }
+            return 0;
         }
 
         // POST /machines/{machineId}/manual/preload
@@ -185,9 +308,10 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var content = File.ReadAllText(fullPath);
                 var processed = SanitizeProgramTextForCnc(EnsureProgramHeader(content, slotNo));
 
-                // CNC 메모리 제약 대응: 대상 슬롯은 삭제 후 업로드
+                // CNC 메모리 제약 대응: 대상 슬롯은 삭제 후 업로드 (메인 headType=1)
                 try
                 {
+                    // 선택 슬롯의 기존 프로그램은 삭제 후 업로드 (메인 headType=1)
                     Mode1Api.TryDeleteMachineProgramInfo(machineId, 0, (short)slotNo, out var _, out var _);
                 }
                 catch { }
@@ -199,7 +323,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 var info = new UpdateMachineProgramInfo
                 {
-                    headType = 0,
+                    headType = 1, // Main
                     programNo = (short)slotNo,
                     programData = processed,
                     isNew = true,
@@ -242,7 +366,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         // POST /machines/{machineId}/manual/play
         [HttpPost]
         [Route("machines/{machineId}/manual/play")]
-        public HttpResponseMessage ManualPlay(string machineId, [FromBody] ManualPlayRequest req)
+        public async Task<HttpResponseMessage> ManualPlay(string machineId, [FromBody] ManualPlayRequest req)
         {
             if (string.IsNullOrWhiteSpace(machineId))
             {
@@ -264,32 +388,241 @@ namespace HiLinkBridgeWebApi48.Controllers
                     return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "invalid slotNo" });
                 }
 
-                var slotNo = desired.HasValue ? desired.Value : (st.LastPreloadedSlot ?? 0);
-                if (slotNo <= 0)
+                // path는 필수
+                var relPath = (req?.path ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(relPath))
                 {
-                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "no preloaded slot" });
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
                 }
 
+                if (Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
+                {
+                    if (status == MachineStatusType.Alarm)
+                    {
+                        var alarms = new List<object>();
+                        try
+                        {
+                            if (Mode1Api.TryGetMachineAlarmInfo(machineId, 0, out var alarmInfo0, out var alarmErr0))
+                            {
+                                if (alarmInfo0.alarmArray != null)
+                                {
+                                    foreach (var a in alarmInfo0.alarmArray)
+                                    {
+                                        alarms.Add(new { type = a.type, no = a.no });
+                                    }
+                                }
+                            }
+                            else if (Mode1Api.TryGetMachineAlarmInfo(machineId, 1, out var alarmInfo1, out var alarmErr1))
+                            {
+                                if (alarmInfo1.alarmArray != null)
+                                {
+                                    foreach (var a in alarmInfo1.alarmArray)
+                                    {
+                                        alarms.Add(new { type = a.type, no = a.no });
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+
+                        // 일부 환경에서 MachineStatus가 Alarm로 나오지만 실제 알람 배열이 비어있는 케이스가 있어,
+                        // 알람 배열이 있을 때만 실행을 차단한다.
+                        if (alarms.Count > 0)
+                        {
+                            Console.WriteLine("[ManualPlay] blocked by ALARM machine={0}", machineId);
+                            return Request.CreateResponse((HttpStatusCode)409, new
+                            {
+                                success = false,
+                                message = "machine is in ALARM state; clear alarm before manual play",
+                                status = status.ToString(),
+                                alarms = alarms
+                            });
+                        }
+
+                        Console.WriteLine("[ManualPlay] MachineStatus=Alarm but alarm list is empty; continue machine={0}", machineId);
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("[ManualPlay] TryGetMachineStatus failed machine={0} err={1}", machineId, statusErr);
+                }
+
+                // 슬롯 결정: 요청 slotNo 우선, 없으면 현재 활성 슬롯을 피해서 4000/4001 중 선택
+                int slotNo;
+                if (desired.HasValue)
+                {
+                    slotNo = desired.Value;
+                }
+                else
+                {
+                    var active = GetCurrentActiveSlotOrDefault(machineId);
+                    if (active == MANUAL_SLOT_A) slotNo = MANUAL_SLOT_B;
+                    else if (active == MANUAL_SLOT_B) slotNo = MANUAL_SLOT_A;
+                    else slotNo = MANUAL_SLOT_A; // 기본 4000
+                }
+
+                // 선택된 슬롯이 현재 활성 슬롯과 같으면 반대 슬롯 사용 (활성 슬롯 모를 경우 그대로)
+                var currentActive = GetCurrentActiveSlotOrDefault(machineId);
+                if (currentActive > 0 && slotNo == currentActive)
+                {
+                    slotNo = (slotNo == MANUAL_SLOT_A) ? MANUAL_SLOT_B : MANUAL_SLOT_A;
+                }
+
+                var fullPath = GetSafeBridgeStorePath(relPath);
+                if (!File.Exists(fullPath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new
+                    {
+                        success = false,
+                        message = "file not found",
+                        path = relPath
+                    });
+                }
+
+                // 파일을 즉시 업로드 (headType=1 메인)
+                var content = File.ReadAllText(fullPath);
+                Console.WriteLine("[ManualPlay] file read machine={0} path={1} contentLen={2}", machineId, relPath, content?.Length ?? 0);
+                
+                var processed = SanitizeProgramTextForCnc(EnsureProgramHeader(content, slotNo));
+                Console.WriteLine("[ManualPlay] file processed machine={0} processedLen={1}", machineId, processed?.Length ?? 0);
+
+                try
+                {
+                    // Main(headType=1)
+                    Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)slotNo, out var _, out var _);
+                }
+                catch { }
+
+                if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = "handle error: " + errUp });
+                }
+
+                // O4000/O4001 슬롯에 업로드할 때는 programNo를 4000/4001로 설정
+                short programNo = (short)slotNo;
+
+                var info = new UpdateMachineProgramInfo
+                {
+                    headType = 0, // Main (Hi-Link 샘플 기준)
+                    programNo = programNo,
+                    programData = processed,
+                    isNew = true,  // 새 프로그램으로 생성 (기존 프로그램이 없을 수 있으므로)
+                };
+                
+                Console.WriteLine("[ManualPlay] uploading machine={0} slot=O{1} programNo={2} dataLen={3}", 
+                    machineId, slotNo, programNo, processed?.Length ?? 0);
+                
+                var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                if (upRc != 0)
+                {
+                    Console.WriteLine("[ManualPlay] upload failed machine={0} slot=O{1} programNo={2} rc={3}", 
+                        machineId, slotNo, programNo, upRc);
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = "upload failed rc=" + upRc,
+                        slotNo,
+                        programNo
+                    });
+                }
+
+                Console.WriteLine("[ManualPlay] upload ok machine={0} slot=O{1} programNo={2}", machineId, slotNo, programNo);
+
+                // 업로드 기록 갱신
+                st.LastPreloadedSlot = slotNo;
+                st.LastPreloadedPath = relPath;
+                st.LastPreloadedAtUtc = DateTime.UtcNow;
+
+                // 업로드 완료 폴링 (최대 20초 대기)
+                bool programExists = false;
+                int maxRetries = 80;  // 40초 (500ms * 80)
+                int retryCount = 0;
+                while (retryCount < maxRetries)
+                {
+                    await Task.Delay(500);
+                    retryCount++;
+
+                    if (!Mode1Api.TryGetProgListInfo(machineId, 0, out var progList, out var progErr))
+                    {
+                        Console.WriteLine("[ManualPlay] TryGetProgListInfo retry={0} failed machine={1} err={2}", retryCount, machineId, progErr);
+                        continue;
+                    }
+
+                    var found = progList.programArray?.FirstOrDefault(p => p.no == programNo);
+                    if (found != null)
+                    {
+                        programExists = true;
+                        Console.WriteLine("[ManualPlay] program verified machine={0} programNo={1} after {2}ms", 
+                            machineId, programNo, retryCount * 500);
+                        break;
+                    }
+                }
+
+                // 프로그램이 없으면 업로드 실패로 처리
+                if (!programExists)
+                {
+                    Console.WriteLine("[ManualPlay] program NOT found after polling machine={0} programNo={1} maxRetries={2}", 
+                        machineId, programNo, maxRetries);
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = "program not found after upload (timeout)",
+                        programNo,
+                        slotNo
+                    });
+                }
+
+                // EDIT 모드로 변경 (프로그램 활성화를 위해 필요)
                 if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
                 {
+                    Console.WriteLine("[ManualPlay] SetMachineMode(EDIT) failed machine={0} err={1}", machineId, modeErr);
                     return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = modeErr ?? "SetMachineMode(EDIT) failed" });
                 }
 
+                // 모드 변경 후 약간의 지연
+                await Task.Delay(300);
+
+                // 모드 변경 후 핸들이 무효화될 수 있으므로 핸들 갱신
+                Mode1HandleStore.Invalidate(machineId);
+
+                // Hi-Link 장비/컨트롤러별 headType 매핑 차이 대응:
+                // - 어떤 장비는 Main=0, 어떤 장비는 Main=1로 동작하는 케이스가 있어 폴백을 둔다.
                 var dto = new PayloadUpdateActivateProg
                 {
                     headType = 0,
-                    programNo = (short)slotNo,
+                    programNo = programNo,
                 };
+
                 var act = Mode1HandleStore.SetActivateProgram(machineId, dto, out var actErr);
                 if (act != 0)
                 {
+                    Console.WriteLine("[ManualPlay] SetActivateProgram failed (try headType=0) machine={0} programNo={1} result={2} err={3}",
+                        machineId, programNo, act, actErr);
+
+                    // fallback: 기존 구현값(1) 재시도
+                    dto.headType = 1;
+                    Mode1HandleStore.Invalidate(machineId);
+                    act = Mode1HandleStore.SetActivateProgram(machineId, dto, out actErr);
+                }
+
+                if (act != 0)
+                {
+                    Console.WriteLine("[ManualPlay] SetActivateProgram failed machine={0} programNo={1} headType={2} result={3} err={4}",
+                        machineId, programNo, dto.headType, act, actErr);
                     return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = actErr ?? ("SetActivateProgram failed (result=" + act + ")") });
                 }
 
-                if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
+                Console.WriteLine("[ManualPlay] activate ok machine={0} programNo={1} headType={2}", machineId, programNo, dto.headType);
+
+                // AUTO 모드로 변경 (가공 모드)
+                if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var autoModeErr))
                 {
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = modeErr2 ?? "SetMachineMode(AUTO) failed" });
+                    Console.WriteLine("[ManualPlay] SetMachineMode(AUTO) failed machine={0} err={1}", machineId, autoModeErr);
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = autoModeErr ?? "SetMachineMode(AUTO) failed" });
                 }
+
+                // 모드 변경 후 약간의 지연
+                await Task.Delay(300);
 
                 // Start
                 short ioUid = 61;
@@ -298,6 +631,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                 {
                     return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = startErr ?? "SetMachinePanelIO failed" });
                 }
+
+                Console.WriteLine("[ManualPlay] start signal sent machine={0} slot=O{1}", machineId, slotNo);
+
+                // 주의: 다음 파일 preload는 CncContinuousMachining.PreloadNextJob에서 통합 관리됨
+                // Manual play와 continuous machining이 동일한 preload 로직을 공유함
 
                 return Request.CreateResponse(HttpStatusCode.OK, new
                 {
@@ -329,7 +667,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             // Alarm은 Mode1 API로 처리 (안정성)
             if (isAlarm)
             {
-                short headType = 0;
+                short headType = 1;
                 var headTypeToken = raw.payload?["headType"];
                 if (headTypeToken != null && headTypeToken.Type == JTokenType.Integer)
                 {
@@ -767,7 +1105,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         // GET /machines/{machineId}/programs (Mode1)
         [HttpGet]
         [Route("machines/{machineId}/programs")]
-        public HttpResponseMessage GetProgramList(string machineId, short headType = 0)
+        public HttpResponseMessage GetProgramList(string machineId, short headType = 1)
         {
             if (string.IsNullOrWhiteSpace(machineId))
             {

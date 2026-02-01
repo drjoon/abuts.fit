@@ -18,6 +18,7 @@ namespace HiLinkBridgeWebApi48
         {
             info = default(MachineInfo);
             error = null;
+            // 최초 시도
             if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
             {
                 error = err;
@@ -34,10 +35,37 @@ namespace HiLinkBridgeWebApi48
             {
                 return true;
             }
+
+            // -8(무효 핸들) → Invalidate 후 1회 재시도
             if (result == -8)
             {
                 Mode1HandleStore.Invalidate(uid);
+                if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
+                {
+                    info = new MachineInfo();
+                    short result2;
+                    lock (DllLock)
+                    {
+                        result2 = HiLink.GetMachineInfo(handle2, ref info);
+                    }
+                    if (result2 == 0)
+                    {
+                        return true;
+                    }
+                    if (result2 == -8)
+                    {
+                        Mode1HandleStore.Invalidate(uid);
+                    }
+                    error = $"GetMachineInfo failed (result={result2})";
+                    info = default(MachineInfo);
+                    return false;
+                }
+
+                error = err2;
+                info = default(MachineInfo);
+                return false;
             }
+
             error = $"GetMachineInfo failed (result={result})";
             info = default(MachineInfo);
             return false;
@@ -173,6 +201,7 @@ namespace HiLinkBridgeWebApi48
         {
             info = default(MachineProgramListInfo);
             error = null;
+            // 최초 시도
             if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
             {
                 error = err;
@@ -186,10 +215,34 @@ namespace HiLinkBridgeWebApi48
                 result = HiLink.GetMachineProgramListInfo(handle, ref info);
             }
             if (result == 0) return true;
+
+            // -8(무효 핸들) → Invalidate 후 1회 재시도
             if (result == -8)
             {
                 Mode1HandleStore.Invalidate(uid);
+                if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
+                {
+                    info = new MachineProgramListInfo { headType = headType };
+                    short result2;
+                    lock (DllLock)
+                    {
+                        result2 = HiLink.GetMachineProgramListInfo(handle2, ref info);
+                    }
+                    if (result2 == 0) return true;
+                    if (result2 == -8)
+                    {
+                        Mode1HandleStore.Invalidate(uid);
+                    }
+                    error = $"GetMachineProgramListInfo failed (result={result2})";
+                    info = default(MachineProgramListInfo);
+                    return false;
+                }
+
+                error = err2;
+                info = default(MachineProgramListInfo);
+                return false;
             }
+
             error = $"GetMachineProgramListInfo failed (result={result})";
             info = default(MachineProgramListInfo);
             return false;
@@ -314,6 +367,7 @@ namespace HiLinkBridgeWebApi48
         {
             status = MachineStatusType.None;
             error = null;
+            // 최초 시도
             if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
             {
                 error = err;
@@ -325,10 +379,32 @@ namespace HiLinkBridgeWebApi48
             {
                 return true;
             }
+
+            // -8(잘못된 핸들)이면 핸들을 폐기 후 1회 재시도
             if (result == -8)
             {
                 Mode1HandleStore.Invalidate(uid);
+                if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
+                {
+                    status = MachineStatusType.None;
+                    var result2 = HiLink.GetMachineStatus(handle2, ref status);
+                    if (result2 == 0)
+                    {
+                        return true;
+                    }
+                    if (result2 == -8)
+                    {
+                        Mode1HandleStore.Invalidate(uid);
+                    }
+                    error = $"GetMachineStatus failed (result={result2})";
+                    return false;
+                }
+
+                // 핸들 재생성 실패 시
+                error = err2;
+                return false;
             }
+
             error = $"GetMachineStatus failed (result={result})";
             return false;
         }

@@ -20,13 +20,17 @@ async function loadManualCardQueue(machineId) {
 
   const snap = await getDbBridgeQueueSnapshot(mid);
   const jobs = Array.isArray(snap.jobs) ? snap.jobs : [];
-  const manualJobs = jobs.filter((j) => String(j?.kind || "") === "manual_file");
+  const manualJobs = jobs.filter(
+    (j) => String(j?.kind || "") === "manual_file",
+  );
   const items = manualJobs
     .map((j) => {
       const id = String(j?.id || "").trim();
       if (!id) return null;
       const bridgePath = String(j?.bridgePath || "").trim();
-      const originalFilename = String(j?.fileName || j?.programName || "").trim();
+      const originalFilename = String(
+        j?.fileName || j?.programName || "",
+      ).trim();
       const filePath = String(j?.requestId || "").trim();
       return {
         id,
@@ -61,7 +65,9 @@ async function setManualCardQueue(machineId, items) {
             filePath,
             originalFilename,
             bridgePath,
-            createdAtUtc: it.createdAtUtc ? new Date(it.createdAtUtc) : new Date(),
+            createdAtUtc: it.createdAtUtc
+              ? new Date(it.createdAtUtc)
+              : new Date(),
           };
         })
         .filter(Boolean)
@@ -71,7 +77,9 @@ async function setManualCardQueue(machineId, items) {
   const jobs0 = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
   const rest = jobs0.filter((j) => String(j?.kind || "") !== "manual_file");
   const manualJobs = safeItems.map((it) => {
-    const originalFilename = String(it?.originalFilename || it?.fileName || "").trim();
+    const originalFilename = String(
+      it?.originalFilename || it?.fileName || "",
+    ).trim();
     const filePath = String(it?.filePath || "").trim();
     return {
       id: String(it.id),
@@ -114,7 +122,9 @@ async function preloadManualCardTop2(machineId) {
     });
     if (!resp.ok || json?.success === false) {
       throw new Error(
-        json?.message || json?.error || `manual preload(O${MANUAL_SLOT_NOW}) failed`,
+        json?.message ||
+          json?.error ||
+          `manual preload(O${MANUAL_SLOT_NOW}) failed`,
       );
     }
   }
@@ -128,7 +138,9 @@ async function preloadManualCardTop2(machineId) {
     });
     if (!resp.ok || json?.success === false) {
       throw new Error(
-        json?.message || json?.error || `manual preload(O${MANUAL_SLOT_NEXT}) failed`,
+        json?.message ||
+          json?.error ||
+          `manual preload(O${MANUAL_SLOT_NEXT}) failed`,
       );
     }
   }
@@ -148,6 +160,60 @@ async function preloadManualCardTop2(machineId) {
     );
   } catch {
     // ignore
+  }
+}
+
+export async function startManualFileJobForBridge(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const jobId = req.body?.jobId ? String(req.body.jobId).trim() : "";
+
+    // 수동 카드 큐에서 현재 가공 중인 파일 조회
+    const { items } = await loadManualCardQueue(mid);
+    const startedItem = items.find((it) => String(it?.id || "") === jobId);
+
+    if (startedItem) {
+      // 현재 가공 중인 파일을 "Now Playing"으로 저장
+      await saveManualCardStatus(mid, {
+        lastPlay: {
+          fileName: startedItem.fileName,
+          bridgePath: startedItem.bridgePath,
+          slotNo: null,
+          startedAt: new Date(),
+          error: null,
+        },
+      });
+
+      // 다음 파일을 "Next Up"으로 preload
+      try {
+        await preloadManualCardTop2(mid);
+      } catch (e) {
+        // preload 실패는 무시
+        console.warn("preloadManualCardTop2 failed:", e?.message);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        jobId: jobId || null,
+      },
+    });
+  } catch (error) {
+    console.error("Error in startManualFileJobForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "manual-file 시작 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
   }
 }
 
@@ -217,19 +283,25 @@ export async function manualFileUploadAndPreload(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     await runMulter(manualCardUploadMulter.single("file"), req, res);
 
     const file = req.file;
     if (!file) {
-      return res.status(400).json({ success: false, message: "file is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "file is required" });
     }
 
     const originalFilename = normalizeOriginalFilename(file.originalname);
     if (!originalFilename) {
-      return res.status(400).json({ success: false, message: "invalid file name" });
+      return res
+        .status(400)
+        .json({ success: false, message: "invalid file name" });
     }
 
     const content = Buffer.isBuffer(file.buffer)
@@ -268,7 +340,9 @@ export async function manualFileUploadAndPreload(req, res) {
           error: msg,
         },
       });
-      return res.status(storeResp.status).json({ success: false, message: msg });
+      return res
+        .status(storeResp.status)
+        .json({ success: false, message: msg });
     }
 
     const savedPath = String(storeBody?.path || bridgePath);
@@ -342,7 +416,26 @@ export async function manualFilePlay(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    // 요청 body에서 itemId 추출 (선택된 파일 식별)
+    const itemId = String(req.body?.itemId || "").trim();
+    if (!itemId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "itemId is required" });
+    }
+
+    // 수동 카드 큐에서 선택된 파일의 bridgePath 조회
+    const { items } = await loadManualCardQueue(mid);
+    const selectedItem = items.find((it) => String(it?.id || "") === itemId);
+    if (!selectedItem || !selectedItem.bridgePath) {
+      return res
+        .status(404)
+        .json({ success: false, message: "selected file not found in queue" });
     }
 
     const playUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
@@ -352,7 +445,7 @@ export async function manualFilePlay(req, res) {
     const { resp, json } = await callBridgeJson({
       url: playUrl,
       method: "POST",
-      body: { slotNo: MANUAL_SLOT_NOW },
+      body: { path: selectedItem.bridgePath },
     });
     if (!resp.ok || json?.success === false) {
       const msg = String(json?.message || json?.error || "manual play failed");

@@ -171,7 +171,7 @@ namespace HiLinkBridgeWebApi48
                 {
                     if (job.programNo == null || job.programNo.Value <= 0) return false;
 
-                    var dto = new UpdateMachineActivateProgNo { headType = 0, programNo = (short)job.programNo.Value };
+                    var dto = new UpdateMachineActivateProgNo { headType = 1, programNo = (short)job.programNo.Value };
                     var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
                     if (res != 0)
                     {
@@ -211,7 +211,7 @@ namespace HiLinkBridgeWebApi48
                 // 1) 업로드(UpdateProgram) - Mode1 API 사용
                 var info = new UpdateMachineProgramInfo
                 {
-                    headType = 0,
+                    headType = 1,
                     programNo = (short)progNo,
                     programData = processedContent,
                     isNew = true,
@@ -233,7 +233,7 @@ namespace HiLinkBridgeWebApi48
                 }
 
                 // 2) 활성화(UpdateActivateProg)
-                var dto2 = new UpdateMachineActivateProgNo { headType = 0, programNo = (short)progNo };
+                var dto2 = new UpdateMachineActivateProgNo { headType = 1, programNo = (short)progNo };
                 var act = Mode1HandleStore.SetActivateProgram(machineId, dto2, out var err2);
                 if (act != 0)
                 {

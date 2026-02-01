@@ -1,5 +1,6 @@
 import {
   completeManualFileJobForBridge,
+  startManualFileJobForBridge,
   manualFilePlay,
   manualFileUploadAndPreload,
 } from "./cncMachine/manualFile.js";
@@ -54,6 +55,7 @@ import {
 
 export {
   completeManualFileJobForBridge,
+  startManualFileJobForBridge,
   manualFileUploadAndPreload,
   manualFilePlay,
   getDummySettingsForBridge,

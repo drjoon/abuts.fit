@@ -140,7 +140,7 @@ export const CncDashboardPage = () => {
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
 
   const handleManualCardPlay = useCallback(
-    async (machineId: string) => {
+    async (machineId: string, itemId?: string) => {
       const mid = String(machineId || "").trim();
       if (!mid) return;
       if (!token) {
@@ -162,24 +162,50 @@ export const CncDashboardPage = () => {
         return;
       }
 
-      const res = await apiFetch({
-        path: `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/play`,
-        method: "POST",
-        token,
-      });
-      const body: any = res.data ?? {};
-      if (!res.ok || body?.success === false) {
-        throw new Error(body?.message || body?.error || "가공 시작 실패");
-      }
+      try {
+        const body: any = {};
+        if (itemId) {
+          body.itemId = String(itemId).trim();
+        }
 
-      const data = body?.data ?? body;
-      const slotNo = data?.slotNo;
-      toast({
-        title: "가공 시작",
-        description: slotNo
-          ? `O${slotNo} 가공을 시작했습니다.`
-          : "가공을 시작했습니다.",
-      });
+        const res = await apiFetch({
+          path: `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/play`,
+          method: "POST",
+          token,
+          jsonBody: body,
+        });
+        const resBody: any = res.data ?? {};
+        if (!res.ok || resBody?.success === false) {
+          const errMsg =
+            resBody?.message ||
+            resBody?.error ||
+            (res.status === 429
+              ? "요청이 너무 빠릅니다. 잠시 후 다시 시도해 주세요."
+              : "가공 시작 실패");
+          toast({
+            title: "가공 시작 실패",
+            description: errMsg,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const data = resBody?.data ?? resBody;
+        const slotNo = data?.slotNo;
+        toast({
+          title: "가공 시작",
+          description: slotNo
+            ? `O${slotNo} 가공을 시작했습니다.`
+            : "가공을 시작했습니다.",
+        });
+      } catch (e: any) {
+        const errMsg = e?.message || "가공 시작 실패";
+        toast({
+          title: "가공 시작 실패",
+          description: errMsg,
+          variant: "destructive",
+        });
+      }
     },
     [ensureCncWriteAllowed, toast, token],
   );

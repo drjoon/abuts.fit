@@ -132,6 +132,11 @@ router.post(
   authorizeRoles("manufacturer", "admin"),
   cncMachineController.manualFilePlay,
 );
+router.post(
+  "/:machineId/manual-file/start",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.startManualFileJobForBridge,
+);
 
 router.get(
   "/:machineId/direct/presign-download",

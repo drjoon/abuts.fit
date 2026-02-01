@@ -501,7 +501,7 @@ export function useCncDashboardQueues({
       const kind = String((targetJob as any)?.kind || "").trim();
       const source = String((targetJob as any)?.source || "").trim();
       if (kind === "manual_file" || source === "manual_insert") {
-        await handleManualCardPlay(uid);
+        await handleManualCardPlay(uid, jobId);
         return;
       }
 

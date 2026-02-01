@@ -22,7 +22,7 @@ curl -X GET "http://1.217.31.227:8002/api/cnc/machines/M5/status" \
 curl -X POST "http://1.217.31.227:8002/api/cnc/raw" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"uid":"M5","dataType":"GetMachineAlarmInfo","payload":{"headType":0}}'
+ -d '{"uid":"M5","dataType":"GetMachineAlarmInfo","payload":{"headType": 0}}'
 
 # Reset
 
@@ -45,7 +45,7 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=0" \
 
 # 프로그램 목록 (서브)
 
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1" \
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=2" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 
 # 활성 프로그램 확인
@@ -72,14 +72,21 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/activate-sub
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":0,"programNo":3000}'
+ -d '{"headType":1,"programNo":3000}'
 
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":0,"programNo":4000}'
+ -d '{"headType":1,"programNo":4000}'
 
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":0,"programNo":4001}'
+ -d '{"headType":1,"programNo":4001}'
+
+# O4000에 업로드 (메인 headType=1)
+
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/manual/preload" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{"slotNo":4000,"path":"M5_20260128-MMSESKHM-27_isql6a3i.nc"}'

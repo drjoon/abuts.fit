@@ -52,6 +52,7 @@ interface MachineCardProps {
   onEditClick: (e: React.MouseEvent) => void;
   onOpenCurrentProg: (e: React.MouseEvent) => void;
   onOpenNextProg: (prog: any, e: React.MouseEvent) => void;
+  onPlayManualCard?: (itemId: string) => void;
   onResetClick: (e: React.MouseEvent) => void;
   onStopClick?: (e: React.MouseEvent) => void;
   onOpenJobConfig: (e: React.MouseEvent) => void;
@@ -133,6 +134,7 @@ export const MachineCard = (props: MachineCardProps) => {
     onEditClick,
     onOpenCurrentProg,
     onOpenNextProg,
+    onPlayManualCard,
     onResetClick,
     onStopClick,
     onOpenJobConfig,
@@ -527,7 +529,12 @@ export const MachineCard = (props: MachineCardProps) => {
             }`}
             onClick={(e) => {
               if (!nextProg) return;
-              onOpenNextProg(nextProg, e);
+              const itemId = (nextProg as any)?.jobId;
+              if (itemId && onPlayManualCard) {
+                onPlayManualCard(itemId);
+              } else {
+                onOpenNextProg(nextProg, e);
+              }
             }}
           >
             <div className="flex items-center justify-between gap-3">

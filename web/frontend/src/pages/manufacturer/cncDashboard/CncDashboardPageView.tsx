@@ -41,6 +41,7 @@ export function CncDashboardPageView(props: any) {
     updateMachineFlags,
     updateMachineDummyEnabled,
     uploadManualCardFiles,
+    refreshDbQueuesForAllMachines,
     setWorkUid,
     refreshStatusFor,
     fetchProgramList,
@@ -227,10 +228,19 @@ export function CncDashboardPageView(props: any) {
                   onToggleDummyMachining={(machine, next) => {
                     updateMachineDummyEnabled(machine.uid, next);
                   }}
+                  onPlayManualCard={handleManualCardPlay}
                   onUploadFiles={(machine, files) => {
                     void (async () => {
                       try {
                         await uploadManualCardFiles(machine.uid, files);
+                        // 업로드 후 수동 카드 큐 다시 로드 (완료 대기)
+                        if (refreshDbQueuesForAllMachines) {
+                          await refreshDbQueuesForAllMachines();
+                        }
+                        toast({
+                          title: "업로드 완료",
+                          description: "파일이 업로드되었습니다.",
+                        });
                       } catch (e: any) {
                         const msg =
                           e?.message || "업로드 중 오류가 발생했습니다.";

@@ -36,6 +36,7 @@ interface CncMachineGridProps {
   onTogglePause?: (machine: Machine, jobId: string) => void;
   onToggleAllowJobStart?: (machine: Machine, next: boolean) => void;
   onToggleDummyMachining?: (machine: Machine, next: boolean) => void;
+  onPlayManualCard?: (machineId: string, itemId: string) => void;
 }
 
 export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
@@ -66,6 +67,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onTogglePause,
   onToggleAllowJobStart,
   onToggleDummyMachining,
+  onPlayManualCard,
 }) => {
   return (
     <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
@@ -221,6 +223,13 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                 ? (next, e) => {
                     e.stopPropagation();
                     onToggleDummyMachining(m, next);
+                  }
+                : undefined
+            }
+            onPlayManualCard={
+              onPlayManualCard
+                ? (itemId) => {
+                    onPlayManualCard(m.uid, itemId);
                   }
                 : undefined
             }
