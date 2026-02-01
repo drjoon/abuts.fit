@@ -161,7 +161,7 @@ export function useStageDropHandlers({
           const matchingReq = requests.find((r) => {
             const rBase = normalize(
               getBase(
-                r.caseInfos?.camFile?.fileName ||
+                r.caseInfos?.camFile?.filePath ||
                   r.caseInfos?.camFile?.originalName ||
                   r.caseInfos?.file?.filePath ||
                   r.caseInfos?.file?.originalName ||
@@ -229,7 +229,8 @@ export function useStageDropHandlers({
           const matchingReq = requests.find((r) => {
             const rBase = normalize(
               getBase(
-                r.caseInfos?.camFile?.fileName ||
+                r.caseInfos?.camFile?.filePath ||
+                  r.caseInfos?.camFile?.fileName ||
                   r.caseInfos?.camFile?.originalName ||
                   r.caseInfos?.file?.filePath ||
                   r.caseInfos?.file?.originalName ||

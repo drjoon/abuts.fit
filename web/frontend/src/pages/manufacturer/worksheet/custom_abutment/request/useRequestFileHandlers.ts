@@ -420,6 +420,7 @@ export const useRequestFileHandlers = ({
           },
           body: JSON.stringify({
             fileName: finalFileName,
+            filePath: finalFileName,
             fileType: first.mimetype,
             fileSize: first.size,
             s3Key: first.key,
@@ -648,6 +649,7 @@ export const useRequestFileHandlers = ({
           body: JSON.stringify({
             stage: params.stage,
             fileName: first.originalName,
+            filePath: first.originalName,
             fileType: first.mimetype,
             fileSize: first.size,
             s3Key: first.key,

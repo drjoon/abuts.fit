@@ -383,7 +383,8 @@ export const RequestPage = ({
 
         const fileName =
           isMachiningStage || isCamStage
-            ? req.caseInfos?.camFile?.fileName ||
+            ? req.caseInfos?.camFile?.filePath ||
+              req.caseInfos?.camFile?.fileName ||
               req.caseInfos?.camFile?.originalName ||
               req.caseInfos?.file?.filePath ||
               req.caseInfos?.file?.originalName ||

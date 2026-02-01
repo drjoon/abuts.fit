@@ -192,6 +192,7 @@ def backend_should_process_source_step(source_step: str, file_name: str) -> bool
             url,
             params={"sourceStep": source_step, "filePath": file_name, "force": "true"},
             timeout=5,
+            headers=settings.bridge_headers(),
         )
         if res.status_code != 200:
             return False
@@ -370,7 +371,8 @@ async def recover_unprocessed_files() -> None:
             log(f"Pending STL from backend: {len(pending)}")
             for item in pending:
                 if download_original_to_input(item):
-                    safe_name = settings.sanitize_filename(item.get("fileName") or "")
+                    file_path = item.get("filePath") or ""
+                    safe_name = settings.sanitize_filename(Path(file_path).name) if file_path else ""
                     if safe_name:
                         pending_names.add(safe_name)
 

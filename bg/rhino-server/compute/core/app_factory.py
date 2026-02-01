@@ -27,6 +27,8 @@ def create_app():
     @app.middleware("http")
     async def auth_middleware(request: Request, call_next):
         path = request.url.path
+        if path == "/api/rhino/internal/job-callback":
+            return await call_next(request)
         is_protected = path.startswith("/api/rhino/") or path.startswith(
             "/control/"
         ) or path.startswith("/history/")
@@ -57,6 +59,10 @@ def create_app():
         if shared_secret:
             got = request.headers.get("X-Bridge-Secret", "").strip()
             if got != shared_secret:
+                if not got:
+                    log(f"[Auth] Unauthorized: missing X-Bridge-Secret path={path}")
+                else:
+                    log(f"[Auth] Unauthorized: X-Bridge-Secret mismatch path={path}")
                 return JSONResponse(
                     status_code=401,
                     content={"ok": False, "error": "unauthorized"},

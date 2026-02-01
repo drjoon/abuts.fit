@@ -1276,7 +1276,9 @@ export async function saveStageFile(req, res) {
         message: "유효하지 않은 stage 입니다.",
       });
     }
-    if (!fileName || !s3Key || !s3Url) {
+    const resolvedFileName = String(fileName || filePath || "").trim();
+    const resolvedFilePath = String(filePath || resolvedFileName || "").trim();
+    if (!resolvedFileName || !s3Key || !s3Url) {
       return res
         .status(400)
         .json({ success: false, message: "필수 파일 정보가 없습니다." });
@@ -1303,10 +1305,10 @@ export async function saveStageFile(req, res) {
     ensureReviewByStageDefaults(request);
 
     request.caseInfos.stageFiles[normalizedStage] = {
-      fileName,
+      fileName: resolvedFileName,
       fileType,
       fileSize,
-      filePath: filePath || "",
+      filePath: resolvedFilePath,
       s3Key: s3Key || "",
       s3Url: s3Url || "",
       source: normalizedSource,
@@ -1917,6 +1919,7 @@ export async function getCamFileUrl(req, res) {
 
     const s3Key = request?.caseInfos?.camFile?.s3Key;
     const fileName =
+      request?.caseInfos?.camFile?.filePath ||
       request?.caseInfos?.camFile?.fileName ||
       request?.caseInfos?.camFile?.originalName ||
       "cam-output.stl";
@@ -1958,7 +1961,9 @@ export async function saveCamFileAndCompleteCam(req, res) {
     const { id } = req.params;
     const { fileName, fileType, fileSize, s3Key, s3Url, filePath } = req.body;
 
-    if (!fileName || !s3Key || !s3Url) {
+    const resolvedFileName = String(fileName || filePath || "").trim();
+    const resolvedFilePath = String(filePath || resolvedFileName || "").trim();
+    if (!resolvedFileName || !s3Key || !s3Url) {
       throw new ApiError(400, "필수 파일 정보가 없습니다.");
     }
 
@@ -1976,10 +1981,10 @@ export async function saveCamFileAndCompleteCam(req, res) {
       reason: "",
     };
     request.caseInfos.camFile = {
-      fileName,
+      fileName: resolvedFileName,
       fileType,
       fileSize,
-      filePath: filePath || "",
+      filePath: resolvedFilePath,
       s3Key: s3Key || "",
       s3Url: s3Url || "",
       uploadedAt: new Date(),
@@ -2101,6 +2106,7 @@ export async function getNcFileUrl(req, res) {
 
     const s3Key = request?.caseInfos?.ncFile?.s3Key;
     const fileName =
+      request?.caseInfos?.ncFile?.filePath ||
       request?.caseInfos?.ncFile?.fileName ||
       request?.caseInfos?.ncFile?.originalName ||
       "program.nc";
@@ -2144,12 +2150,13 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       filePath,
       materialDiameter,
     } = req.body;
+    const resolvedFileName = String(fileName || filePath || "").trim();
     if (!Types.ObjectId.isValid(id)) {
       return res
         .status(400)
         .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
     }
-    if (!fileName || !s3Key || !s3Url) {
+    if (!resolvedFileName || !s3Key || !s3Url) {
       return res
         .status(400)
         .json({ success: false, message: "필수 파일 정보가 없습니다." });
@@ -2175,7 +2182,7 @@ export async function saveNcFileAndMoveToMachining(req, res) {
         const pushed = await uploadNcToBridgeStore({
           requestId: request.requestId,
           s3Key,
-          fileName,
+          fileName: resolvedFileName,
         });
         if (pushed.ok && pushed.path) {
           resolvedBridgePath = String(pushed.path);
@@ -2230,22 +2237,26 @@ export async function saveNcFileAndMoveToMachining(req, res) {
     };
 
     const originalBase = getBaseName(
-      request.caseInfos?.file?.fileName ||
+      request.caseInfos?.file?.filePath ||
+        request.caseInfos?.file?.fileName ||
         request.caseInfos?.file?.originalName,
     );
     const camBase = getBaseName(
-      request.caseInfos?.camFile?.fileName ||
+      request.caseInfos?.camFile?.filePath ||
+        request.caseInfos?.camFile?.fileName ||
         request.caseInfos?.camFile?.originalName,
     );
 
     const originalName =
+      request.caseInfos?.camFile?.filePath ||
       request.caseInfos?.camFile?.fileName ||
       request.caseInfos?.camFile?.originalName ||
+      request.caseInfos?.file?.filePath ||
       request.caseInfos?.file?.fileName ||
       request.caseInfos?.file?.originalName ||
       "";
 
-    const lowerName = normalize(fileName);
+    const lowerName = normalize(resolvedFileName);
     const uploadedBase = getBaseName(lowerName);
 
     if (!lowerName.endsWith(".nc")) {
@@ -2279,7 +2290,7 @@ export async function saveNcFileAndMoveToMachining(req, res) {
     };
     request.caseInfos.ncFile = {
       fileName: finalNcName,
-      originalName: originalName || fileName,
+      originalName: originalName || resolvedFileName,
       fileType,
       fileSize,
       filePath: resolvedBridgePath || "",
