@@ -241,6 +241,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         {
             public int? slotNo { get; set; }
             public string path { get; set; }
+            public bool? skipAlarmCheck { get; set; }
         }
 
         private static int ParseProgramNoFromName(string name)
@@ -311,8 +312,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                 // CNC 메모리 제약 대응: 대상 슬롯은 삭제 후 업로드 (메인 headType=1)
                 try
                 {
-                    // 선택 슬롯의 기존 프로그램은 삭제 후 업로드 (메인 headType=1)
-                    Mode1Api.TryDeleteMachineProgramInfo(machineId, 0, (short)slotNo, out var _, out var _);
+                    // 선택 슬롯의 기존 프로그램은 삭제 후 업로드 (Main=1)
+                    Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)slotNo, out var _, out var _);
                 }
                 catch { }
 
@@ -395,7 +396,10 @@ namespace HiLinkBridgeWebApi48.Controllers
                     return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
                 }
 
-                if (Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
+                // skipAlarmCheck=true이면 Alarm 체크를 건너뛴다 (에디터 로드용, 기본값)
+                // skipAlarmCheck=false이면 Alarm 체크를 수행한다 (가공 시작 시)
+                bool skipAlarmCheck = req?.skipAlarmCheck != false;
+                if (!skipAlarmCheck && Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
                 {
                     if (status == MachineStatusType.Alarm)
                     {
@@ -425,8 +429,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                         }
                         catch { }
 
-                        // 일부 환경에서 MachineStatus가 Alarm로 나오지만 실제 알람 배열이 비어있는 케이스가 있어,
-                        // 알람 배열이 있을 때만 실행을 차단한다.
                         if (alarms.Count > 0)
                         {
                             Console.WriteLine("[ManualPlay] blocked by ALARM machine={0}", machineId);
@@ -438,13 +440,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                                 alarms = alarms
                             });
                         }
-
-                        Console.WriteLine("[ManualPlay] MachineStatus=Alarm but alarm list is empty; continue machine={0}", machineId);
                     }
-                }
-                else
-                {
-                    Console.WriteLine("[ManualPlay] TryGetMachineStatus failed machine={0} err={1}", machineId, statusErr);
                 }
 
                 // 슬롯 결정: 요청 slotNo 우선, 없으면 현재 활성 슬롯을 피해서 4000/4001 중 선택
@@ -503,7 +499,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 var info = new UpdateMachineProgramInfo
                 {
-                    headType = 0, // Main (Hi-Link 샘플 기준)
+                    headType = 1, // Main (사용자 확인: 1=Main, 2=Sub)
                     programNo = programNo,
                     programData = processed,
                     isNew = true,  // 새 프로그램으로 생성 (기존 프로그램이 없을 수 있으므로)
@@ -586,21 +582,21 @@ namespace HiLinkBridgeWebApi48.Controllers
                 Mode1HandleStore.Invalidate(machineId);
 
                 // Hi-Link 장비/컨트롤러별 headType 매핑 차이 대응:
-                // - 어떤 장비는 Main=0, 어떤 장비는 Main=1로 동작하는 케이스가 있어 폴백을 둔다.
+                // 활성화 시도 (사용자 확인: Main=1, Sub=2)
                 var dto = new PayloadUpdateActivateProg
                 {
-                    headType = 0,
+                    headType = 1,
                     programNo = programNo,
                 };
 
                 var act = Mode1HandleStore.SetActivateProgram(machineId, dto, out var actErr);
                 if (act != 0)
                 {
-                    Console.WriteLine("[ManualPlay] SetActivateProgram failed (try headType=0) machine={0} programNo={1} result={2} err={3}",
+                    Console.WriteLine("[ManualPlay] SetActivateProgram failed (try headType=1) machine={0} programNo={1} result={2} err={3}",
                         machineId, programNo, act, actErr);
 
-                    // fallback: 기존 구현값(1) 재시도
-                    dto.headType = 1;
+                    // fallback: 0 재시도 (혹시 모를 구버전 대응)
+                    dto.headType = 0;
                     Mode1HandleStore.Invalidate(machineId);
                     act = Mode1HandleStore.SetActivateProgram(machineId, dto, out actErr);
                 }

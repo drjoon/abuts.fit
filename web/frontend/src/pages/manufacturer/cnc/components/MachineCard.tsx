@@ -501,6 +501,8 @@ export const MachineCard = (props: MachineCardProps) => {
                       return;
                     }
 
+                    // play 버튼: 가공 시작 (Alarm 체크 필수)
+                    // 현재는 에디터를 열도록 구현되어 있으나, 향후 가공 시작으로 변경 필요
                     onOpenCurrentProg(e);
                   }}
                   disabled={
@@ -529,12 +531,7 @@ export const MachineCard = (props: MachineCardProps) => {
             }`}
             onClick={(e) => {
               if (!nextProg) return;
-              const itemId = (nextProg as any)?.jobId;
-              if (itemId && onPlayManualCard) {
-                onPlayManualCard(itemId);
-              } else {
-                onOpenNextProg(nextProg, e);
-              }
+              onOpenNextProg(nextProg, e);
             }}
           >
             <div className="flex items-center justify-between gap-3">
