@@ -75,6 +75,8 @@ export function proxyToBridge(basePath) {
         } catch {
           data = text;
         }
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Pragma", "no-cache");
         return res.status(response.status).json(data);
       }
 

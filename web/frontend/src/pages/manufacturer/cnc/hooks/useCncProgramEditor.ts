@@ -150,16 +150,18 @@ export const useCncProgramEditor = ({
       prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
     ).trim();
     if (bridgePath) {
-      const res = await fetch(
-        `/api/bridge-store/file?path=${encodeURIComponent(bridgePath)}`,
-        token
-          ? {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          : undefined,
-      );
+      const url = `/api/bridge-store/file?path=${encodeURIComponent(
+        bridgePath,
+      )}&_ts=${Date.now()}`;
+      const res = await fetch(url, {
+        method: "GET",
+        cache: "no-store",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
       const body: any = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) {
         throw new Error(

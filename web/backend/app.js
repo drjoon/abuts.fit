@@ -35,27 +35,27 @@ const mongoUri =
       process.env.MONGO_URI_TEST ||
       "mongodb://localhost:27017/abutsFitTest"
     : process.env.NODE_ENV === "production"
-    ? process.env.MONGODB_URI ||
-      process.env.MONGO_URI ||
-      "mongodb://localhost:27017/abutsFit"
-    : process.env.MONGODB_URI_TEST ||
-      process.env.MONGO_URI_TEST ||
-      process.env.MONGODB_URI ||
-      process.env.MONGO_URI ||
-      "mongodb://localhost:27017/abutsFit";
+      ? process.env.MONGODB_URI ||
+        process.env.MONGO_URI ||
+        "mongodb://localhost:27017/abutsFit"
+      : process.env.MONGODB_URI_TEST ||
+        process.env.MONGO_URI_TEST ||
+        process.env.MONGODB_URI ||
+        process.env.MONGO_URI ||
+        "mongodb://localhost:27017/abutsFit";
 
 const mongoSource =
   process.env.NODE_ENV === "test"
     ? "TEST DB"
     : process.env.NODE_ENV === "production"
-    ? process.env.MONGODB_URI || process.env.MONGO_URI
-      ? "PROD DB"
-      : "LOCAL DB"
-    : process.env.MONGODB_URI_TEST || process.env.MONGO_URI_TEST
-    ? "TEST DB"
-    : process.env.MONGODB_URI || process.env.MONGO_URI
-    ? "PROD DB"
-    : "LOCAL DB";
+      ? process.env.MONGODB_URI || process.env.MONGO_URI
+        ? "PROD DB"
+        : "LOCAL DB"
+      : process.env.MONGODB_URI_TEST || process.env.MONGO_URI_TEST
+        ? "TEST DB"
+        : process.env.MONGODB_URI || process.env.MONGO_URI
+          ? "PROD DB"
+          : "LOCAL DB";
 
 const dbReady = connect(mongoUri)
   .then(async () => {
@@ -75,7 +75,7 @@ const dbReady = connect(mongoUri)
     const isDev = process.env.NODE_ENV !== "production";
     if (shouldSync && isDev) {
       console.warn(
-        "[syncIndexes] dev 환경에서는 기본적으로 스킵합니다. 필요 시 ENABLE_SYNC_INDEXES_DEV=true 설정"
+        "[syncIndexes] dev 환경에서는 기본적으로 스킵합니다. 필요 시 ENABLE_SYNC_INDEXES_DEV=true 설정",
       );
     }
 
@@ -87,7 +87,7 @@ const dbReady = connect(mongoUri)
     ) {
       if (readyState !== 1) {
         console.warn(
-          `[syncIndexes] skipped because connection not ready (readyState=${readyState})`
+          `[syncIndexes] skipped because connection not ready (readyState=${readyState})`,
         );
         return;
       }
@@ -126,6 +126,15 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        // Monaco Editor(web worker) 실행을 위해 blob worker 허용
+        "worker-src": ["'self'", "blob:"],
+        // Monaco Editor 로더/번들에서 eval 기반 코드를 사용하는 경우가 있어 허용
+        "script-src": ["'self'", "'unsafe-eval'", "https://cdn.jsdelivr.net"],
+        "script-src-elem": [
+          "'self'",
+          "'unsafe-eval'",
+          "https://cdn.jsdelivr.net",
+        ],
         // S3 업로드/다운로드 허용
         "default-src": [
           "'self'",
@@ -149,7 +158,7 @@ app.use(
         ],
       },
     },
-  })
+  }),
 );
 app.use(morgan("dev"));
 
