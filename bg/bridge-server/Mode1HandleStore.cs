@@ -95,7 +95,11 @@ namespace HiLinkBridgeWebApi48
                 return -1;
             }
 
-            var res = HiLink.SetActivateProgram(handle, dto);
+            short res;
+            lock (Mode1Api.DllLock)
+            {
+                res = HiLink.SetActivateProgram(handle, dto);
+            }
             if (res == -8)
             {
                 Invalidate(uid);

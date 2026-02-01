@@ -12,6 +12,8 @@ namespace HiLinkBridgeWebApi48
     /// </summary>
     public static class Mode1Api
     {
+        internal static readonly object DllLock = new object();
+
         public static bool TryGetMachineInfo(string uid, out MachineInfo info, out string error)
         {
             info = default(MachineInfo);
@@ -23,7 +25,11 @@ namespace HiLinkBridgeWebApi48
             }
 
             info = new MachineInfo();
-            var result = HiLink.GetMachineInfo(handle, ref info);
+            short result;
+            lock (DllLock)
+            {
+                result = HiLink.GetMachineInfo(handle, ref info);
+            }
             if (result == 0)
             {
                 return true;
@@ -48,7 +54,11 @@ namespace HiLinkBridgeWebApi48
             }
 
             list = new List<IOInfo>();
-            var result = HiLink.GetMachineAllOPInfo(handle, panelType, ref list);
+            short result;
+            lock (DllLock)
+            {
+                result = HiLink.GetMachineAllOPInfo(handle, panelType, ref list);
+            }
             if (result == 0)
             {
                 return true;
@@ -71,7 +81,11 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            var result = HiLink.SetMachineReset(handle);
+            short result;
+            lock (DllLock)
+            {
+                result = HiLink.SetMachineReset(handle);
+            }
             if (result == 0)
             {
                 return true;
@@ -106,7 +120,11 @@ namespace HiLinkBridgeWebApi48
                 programNo = programNo,
             };
 
-            var result = HiLink.DeleteMachineProgramInfo(handle, dto, out activateProgNum);
+            short result;
+            lock (DllLock)
+            {
+                result = HiLink.DeleteMachineProgramInfo(handle, dto, out activateProgNum);
+            }
             if (result == 0)
             {
                 return true;
@@ -162,7 +180,11 @@ namespace HiLinkBridgeWebApi48
             }
 
             info = new MachineProgramListInfo { headType = headType };
-            var result = HiLink.GetMachineProgramListInfo(handle, ref info);
+            short result;
+            lock (DllLock)
+            {
+                result = HiLink.GetMachineProgramListInfo(handle, ref info);
+            }
             if (result == 0) return true;
             if (result == -8)
             {
@@ -184,7 +206,11 @@ namespace HiLinkBridgeWebApi48
             }
 
             info = new MachineProgramInfo();
-            var result = HiLink.GetMachineActivateProgInfo(handle, ref info);
+            short result;
+            lock (DllLock)
+            {
+                result = HiLink.GetMachineActivateProgInfo(handle, ref info);
+            }
             if (result == 0)
             {
                 return true;
@@ -213,7 +239,11 @@ namespace HiLinkBridgeWebApi48
                 headType = headType,
                 programNo = programNo,
             };
-            var result = HiLink.GetMachineProgramData(handle, ref info);
+            short result;
+            lock (DllLock)
+            {
+                result = HiLink.GetMachineProgramData(handle, ref info);
+            }
             if (result != 0)
             {
                 error = $"GetMachineProgramData failed (result={result})";

@@ -774,9 +774,29 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
             }
 
-            if (!Mode1Api.TryGetProgListInfo(machineId, headType, out var info, out var error))
+            var timeoutMs = 2500;
+            var task = System.Threading.Tasks.Task.Run(() =>
             {
-                var msg = (error ?? "GetMachineProgramListInfo failed") as string;
+                MachineProgramListInfo info;
+                string error;
+                var ok = Mode1Api.TryGetProgListInfo(machineId, headType, out info, out error);
+                return (ok: ok, info: info, error: error);
+            });
+            var completed = System.Threading.Tasks.Task.WhenAny(task, System.Threading.Tasks.Task.Delay(timeoutMs)).Result;
+            if (completed != task)
+            {
+                Mode1HandleStore.Invalidate(machineId);
+                return Request.CreateResponse((HttpStatusCode)504, new
+                {
+                    success = false,
+                    message = $"GetMachineProgramListInfo timeout (>{timeoutMs}ms)"
+                });
+            }
+
+            var result = task.Result;
+            if (!result.ok)
+            {
+                var msg = (result.error ?? "GetMachineProgramListInfo failed") as string;
                 if (!string.IsNullOrEmpty(msg) && msg.Contains("result=-8"))
                 {
                     msg = msg + " (무효 핸들러: 다시 시도하세요)";
@@ -791,7 +811,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             return Request.CreateResponse(HttpStatusCode.OK, new
             {
                 success = true,
-                data = info
+                data = result.info
             });
         }
 

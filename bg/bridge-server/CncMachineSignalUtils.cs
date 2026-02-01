@@ -14,14 +14,12 @@ namespace HiLinkBridgeWebApi48
             {
                 var busyIoUid = Config.CncBusyIoUid;
                 if (busyIoUid < 0) return false;
-                if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var err))
+
+                if (!Mode1Api.TryGetMachineAllOPInfo(machineId, 0, out var panelList, out var error))
                 {
                     return false;
                 }
-
-                var panelList = new List<IOInfo>();
-                var rc = HiLink.GetMachineAllOPInfo(handle, 0, ref panelList);
-                if (rc != 0 || panelList == null) return false;
+                if (panelList == null) return false;
                 foreach (var io in panelList)
                 {
                     if (io != null && io.IOUID == (short)busyIoUid)
@@ -48,7 +46,12 @@ namespace HiLinkBridgeWebApi48
                     return false;
                 }
                 var prodInfo = new MachineProductInfo();
-                var rc = HiLink.GetMachineProductInfo(handle, ref prodInfo);
+
+                short rc;
+                lock (Mode1Api.DllLock)
+                {
+                    rc = HiLink.GetMachineProductInfo(handle, ref prodInfo);
+                }
                 if (rc != 0) return false;
                 var prodCount = prodInfo.currentProdCount;
                 if (prodCount < int.MinValue) prodCount = int.MinValue;
