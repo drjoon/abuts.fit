@@ -160,6 +160,13 @@ router.get(
   requestController.getOriginalFileUrl,
 );
 
+// 제조사/관리자: CAM STL 다운로드 URL
+router.get(
+  "/:id/cam-file-url",
+  authorize(["manufacturer", "admin"]),
+  requestController.getCamFileUrl,
+);
+
 // 제조사/관리자: 원본 STL 다운로드 URL
 router.get(
   "/:id/stl-file-url",

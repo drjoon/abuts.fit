@@ -1917,13 +1917,52 @@ export async function getCamFileUrl(req, res) {
         .json({ success: false, message: "다운로드 권한이 없습니다." });
     }
 
-    const s3Key = request?.caseInfos?.camFile?.s3Key;
+    const parseS3KeyFromUrl = (u) => {
+      try {
+        if (!u || typeof u !== "string") return "";
+        const url = new URL(u);
+        const key = String(url.pathname || "").replace(/^\//, "");
+        return key;
+      } catch (e) {
+        return "";
+      }
+    };
+
+    const camFile = request?.caseInfos?.camFile || null;
+    const s3Key = String(
+      camFile?.s3Key ||
+        parseS3KeyFromUrl(camFile?.s3Url) ||
+        parseS3KeyFromUrl(camFile?.url) ||
+        "",
+    ).trim();
+
+    console.log("[getCamFileUrl] hit", {
+      id,
+      requestId: request?.requestId,
+      hasCamFile: !!camFile,
+      camFileKeys: camFile ? Object.keys(camFile) : [],
+      s3KeyLen: s3Key ? s3Key.length : 0,
+    });
     const fileName =
       request?.caseInfos?.camFile?.filePath ||
       request?.caseInfos?.camFile?.fileName ||
       request?.caseInfos?.camFile?.originalName ||
       "cam-output.stl";
     if (!s3Key) {
+      if (camFile) {
+        console.warn(
+          "[getCamFileUrl] camFile exists but s3Key missing:",
+          JSON.stringify(
+            {
+              requestId: request?.requestId,
+              id: request?._id,
+              camFile,
+            },
+            null,
+            2,
+          ),
+        );
+      }
       return res.status(404).json({
         success: false,
         message: "CAM STL 파일 정보가 없습니다.",
