@@ -73,7 +73,7 @@ export const useCncWorkBoard = (
       const fetchActiveProgram = async (uid: string) => {
         try {
           const res = await apiFetch({
-            path: `/api/cnc/machines/${encodeURIComponent(uid)}/programs/active`,
+            path: `/api/cnc-machines/${encodeURIComponent(uid)}/programs/active`,
             method: "GET",
             token,
           });
@@ -199,7 +199,7 @@ export const useCncWorkBoard = (
       const [listRes, actRes] = await Promise.all([
         callRaw(workUid, "GetProgListInfo", 1), // 1=메인
         apiFetch({
-          path: `/api/cnc/machines/${encodeURIComponent(
+          path: `/api/cnc-machines/${encodeURIComponent(
             workUid,
           )}/programs/active`,
           method: "GET",

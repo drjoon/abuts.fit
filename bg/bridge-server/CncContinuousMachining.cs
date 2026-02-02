@@ -45,11 +45,15 @@ status = "success",
 metadata = new { machineId = machineId }
 };
 var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+{
 AddAuthHeader(req);
 req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-var resp = await Http.SendAsync(req);
+using (var resp = await Http.SendAsync(req))
+{
 _ = await resp.Content.ReadAsStringAsync();
+}
+}
 }
 catch (Exception ex)
 {
@@ -76,11 +80,15 @@ status = "failed",
 metadata = new { machineId = machineId, error = error, alarms = alarms }
 };
 var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+{
 AddAuthHeader(req);
 req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-var resp = await Http.SendAsync(req);
+using (var resp = await Http.SendAsync(req))
+{
 _ = await resp.Content.ReadAsStringAsync();
+}
+}
 }
 catch (Exception ex)
 {
@@ -1123,14 +1131,19 @@ LastBackendSyncUtc[mid] = now;
 var backendBase = Config.BackendBase;
 if (string.IsNullOrEmpty(backendBase)) return;
 var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/queue-snapshot/" + Uri.EscapeDataString(mid);
-var req = new HttpRequestMessage(HttpMethod.Get, url);
+string text;
+using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+{
 AddSecretHeader(req);
-var resp = await BackendClient.SendAsync(req);
-var text = await resp.Content.ReadAsStringAsync();
+using (var resp = await BackendClient.SendAsync(req))
+{
+text = await resp.Content.ReadAsStringAsync();
 if (!resp.IsSuccessStatusCode)
 {
 Console.WriteLine("[CncMachining] backend queue snapshot failed: status={0}", (int)resp.StatusCode);
 return;
+}
+}
 }
 var root = JObject.Parse(text);
 if (root.Value<bool?>("success") != true)
@@ -1200,14 +1213,19 @@ if (string.IsNullOrEmpty(backendBase)) return false;
 var mid = (machineId ?? string.Empty).Trim();
 if (string.IsNullOrEmpty(mid)) return false;
 var presignUrl = backendBase.TrimEnd('/') + "/cnc-machines/bridge/cnc-direct/presign-download/" + Uri.EscapeDataString(mid) + "?s3Key=" + Uri.EscapeDataString(s3Key);
-var req = new HttpRequestMessage(HttpMethod.Get, presignUrl);
+string text;
+using (var req = new HttpRequestMessage(HttpMethod.Get, presignUrl))
+{
 AddSecretHeader(req);
-var resp = await BackendClient.SendAsync(req);
-var text = await resp.Content.ReadAsStringAsync();
+using (var resp = await BackendClient.SendAsync(req))
+{
+text = await resp.Content.ReadAsStringAsync();
 if (!resp.IsSuccessStatusCode)
 {
 Console.WriteLine("[CncMachining] download presign failed: status={0}", (int)resp.StatusCode);
 return false;
+}
+}
 }
 var root = JObject.Parse(text);
 if (root.Value<bool?>("success") != true) return false;
@@ -1442,7 +1460,7 @@ req.Headers.Remove("Authorization");
 req.Headers.Add("Authorization", "Bearer " + jwt);
 }
 }
-private static readonly System.Net.Http.HttpClient Http = new System.Net.Http.HttpClient();
+private static readonly System.Net.Http.HttpClient Http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 private static async Task NotifyMachiningStarted(CncJobItem job, string machineId)
 {
 try
@@ -1459,11 +1477,15 @@ status = "success",
 metadata = new { machineId = machineId }
 };
 var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+{
 AddAuthHeader(req);
 req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-var resp = await Http.SendAsync(req);
+using (var resp = await Http.SendAsync(req))
+{
 _ = await resp.Content.ReadAsStringAsync();
+}
+}
 // 수동 카드 시작 알림 (manual_file 종류인 경우)
 if (!string.IsNullOrEmpty(job?.kindRaw) && job.kindRaw == "manual_file")
 {
@@ -1472,11 +1494,15 @@ if (!string.IsNullOrEmpty(job?.kindRaw) && job.kindRaw == "manual_file")
 		var manualStartUrl = backend + "/cnc-machines/" + Uri.EscapeDataString(machineId) + "/manual-file/start";
 		var manualPayload = new { jobId = job.id };
 		var manualJson = Newtonsoft.Json.JsonConvert.SerializeObject(manualPayload);
-		var manualReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, manualStartUrl);
-		AddAuthHeader(manualReq);
-		manualReq.Content = new System.Net.Http.StringContent(manualJson, System.Text.Encoding.UTF8, "application/json");
-		var manualResp = await Http.SendAsync(manualReq);
-		_ = await manualResp.Content.ReadAsStringAsync();
+		using (var manualReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, manualStartUrl))
+		{
+			AddAuthHeader(manualReq);
+			manualReq.Content = new System.Net.Http.StringContent(manualJson, System.Text.Encoding.UTF8, "application/json");
+			using (var manualResp = await Http.SendAsync(manualReq))
+			{
+				_ = await manualResp.Content.ReadAsStringAsync();
+			}
+		}
 	}
 	catch (Exception manualEx)
 	{
@@ -1506,11 +1532,15 @@ status = string.Equals(status, "READY", StringComparison.OrdinalIgnoreCase) ? "s
 metadata = new { machineId = machineId, error = error }
 };
 var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url);
+using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+{
 AddAuthHeader(req);
 req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-var resp = await Http.SendAsync(req);
+using (var resp = await Http.SendAsync(req))
+{
 _ = await resp.Content.ReadAsStringAsync();
+}
+}
 }
 catch (Exception ex)
 {

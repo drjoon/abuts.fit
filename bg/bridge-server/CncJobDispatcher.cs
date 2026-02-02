@@ -333,20 +333,25 @@ namespace HiLinkBridgeWebApi48
         private static async Task<bool> CallStartApi(string machineId, bool startOn)
         {
             var payload = new { status = startOn ? 1 : 0, ioUid = StartIoUid };
-            var req = new HttpRequestMessage(
+            using (var req = new HttpRequestMessage(
                 HttpMethod.Post,
                 BridgeBase + "/api/cnc/machines/" + Uri.EscapeDataString(machineId) + "/start"
-            );
-            AddSecretHeader(req);
-            req.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-            var resp = await Http.SendAsync(req);
-            var body = await resp.Content.ReadAsStringAsync();
-            if (!resp.IsSuccessStatusCode)
+            ))
             {
-                Console.WriteLine("[CncJobDispatcher] start api failed uid={0} status={1} body={2}", machineId, (int)resp.StatusCode, body);
-                return false;
+                AddSecretHeader(req);
+                req.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+
+                using (var resp = await Http.SendAsync(req))
+                {
+                    var body = await resp.Content.ReadAsStringAsync();
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine("[CncJobDispatcher] start api failed uid={0} status={1} body={2}", machineId, (int)resp.StatusCode, body);
+                        return false;
+                    }
+                    return true;
+                }
             }
-            return true;
         }
 
 
@@ -434,12 +439,16 @@ namespace HiLinkBridgeWebApi48
                 };
 
                 var json = JsonConvert.SerializeObject(payload);
-                var req = new HttpRequestMessage(HttpMethod.Post, url);
-                AddAuthHeader(req);
-                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                using (var req = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    AddAuthHeader(req);
+                    req.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                var resp = await Http.SendAsync(req);
-                _ = await resp.Content.ReadAsStringAsync();
+                    using (var resp = await Http.SendAsync(req))
+                    {
+                        _ = await resp.Content.ReadAsStringAsync();
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -469,12 +478,16 @@ namespace HiLinkBridgeWebApi48
                 };
 
                 var json = JsonConvert.SerializeObject(payload);
-                var req = new HttpRequestMessage(HttpMethod.Post, url);
-                AddAuthHeader(req);
-                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                using (var req = new HttpRequestMessage(HttpMethod.Post, url))
+                {
+                    AddAuthHeader(req);
+                    req.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                var resp = await Http.SendAsync(req);
-                _ = await resp.Content.ReadAsStringAsync();
+                    using (var resp = await Http.SendAsync(req))
+                    {
+                        _ = await resp.Content.ReadAsStringAsync();
+                    }
+                }
             }
             catch (Exception ex)
             {

@@ -143,17 +143,22 @@ namespace HiLinkBridgeWebApi48
                 var backendBase = GetBackendBase();
                 var url = backendBase + "/cnc-machines/bridge/dummy-settings?ymd=" + Uri.EscapeDataString(ymd);
 
-                var getReq = new HttpRequestMessage(HttpMethod.Get, url);
-                AddSecretHeader(getReq);
-                AddAuthHeader(getReq);
-
-                var getResp = await BackendClient.SendAsync(getReq);
-                var getText = await getResp.Content.ReadAsStringAsync();
-
-                if (!getResp.IsSuccessStatusCode)
+                string getText;
+                using (var getReq = new HttpRequestMessage(HttpMethod.Get, url))
                 {
-                    Console.WriteLine("[DummyCncScheduler] backend fetch failed: status={0} body={1}", (int)getResp.StatusCode, getText);
-                    return;
+                    AddSecretHeader(getReq);
+                    AddAuthHeader(getReq);
+
+                    using (var getResp = await BackendClient.SendAsync(getReq))
+                    {
+                        getText = await getResp.Content.ReadAsStringAsync();
+
+                        if (!getResp.IsSuccessStatusCode)
+                        {
+                            Console.WriteLine("[DummyCncScheduler] backend fetch failed: status={0} body={1}", (int)getResp.StatusCode, getText);
+                            return;
+                        }
+                    }
                 }
 
                 var root = JObject.Parse(getText);
@@ -242,18 +247,22 @@ namespace HiLinkBridgeWebApi48
                 var url = backendBase + "/cnc-machines/bridge/dummy-settings/" + Uri.EscapeDataString(machineId) + "/last-run-key";
 
                 var payload = new { lastRunKey = minuteKey };
-                var req = new HttpRequestMessage(new HttpMethod("PATCH"), url);
-                AddSecretHeader(req);
-                AddAuthHeader(req);
-                req.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-
-                var resp = await BackendClient.SendAsync(req);
-                var text = await resp.Content.ReadAsStringAsync();
-
-                if (!resp.IsSuccessStatusCode)
+                using (var req = new HttpRequestMessage(new HttpMethod("PATCH"), url))
                 {
-                    Console.WriteLine("[DummyCncScheduler] update lastRunKey failed: machineId={0} status={1} body={2}", machineId, (int)resp.StatusCode, text);
-                    return;
+                    AddSecretHeader(req);
+                    AddAuthHeader(req);
+                    req.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+
+                    using (var resp = await BackendClient.SendAsync(req))
+                    {
+                        var text = await resp.Content.ReadAsStringAsync();
+
+                        if (!resp.IsSuccessStatusCode)
+                        {
+                            Console.WriteLine("[DummyCncScheduler] update lastRunKey failed: machineId={0} status={1} body={2}", machineId, (int)resp.StatusCode, text);
+                            return;
+                        }
+                    }
                 }
             }
             catch (Exception ex)

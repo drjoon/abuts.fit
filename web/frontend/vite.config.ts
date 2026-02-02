@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
         "/api/cnc/": {
-          target: cncTarget,
+          target: apiTarget,
           changeOrigin: true,
         },
         "/api/core": {
