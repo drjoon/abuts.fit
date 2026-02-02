@@ -34,6 +34,7 @@ export const toNumberOrNull = (v) => {
 export function makeSafeFileStem(input) {
   const raw = String(input || "")
     .trim()
+    .normalize("NFC")
     .replace(/\.nc$/i, "")
     .replace(/\.[a-z0-9]{1,6}$/i, "");
   const safe = raw
@@ -59,7 +60,27 @@ export function normalizeOriginalFilename(name) {
   try {
     const fixed = Buffer.from(raw, "latin1").toString("utf8").trim();
     if (fixed && fixed !== raw) {
-      return fixed;
+      const hasHangul = /[\uAC00-\uD7AF]/.test(raw);
+      const fixedHasHangul = /[\uAC00-\uD7AF]/.test(fixed);
+
+      const hasReplacement = raw.includes("�");
+      const fixedHasReplacement = fixed.includes("�");
+
+      const looksMojibake = /Ã.|Â.|â€|ì|ë|ê|í|ï|ð|ñ|ò|ó|ô|õ|ö|ø|ù|ú|û|ü/i.test(
+        raw,
+      );
+
+      // 케이스:
+      // - raw가 깨져 보이고(fallback 문자/모지박), fixed가 한글을 복구했다면 fixed 사용
+      // - raw가 이미 한글이면(정상) fixed로 바꾸지 않는다
+      if (
+        !hasHangul &&
+        (fixedHasHangul ||
+          (hasReplacement && !fixedHasReplacement) ||
+          looksMojibake)
+      ) {
+        return fixed;
+      }
     }
   } catch {
     // ignore
@@ -91,14 +112,26 @@ export function runMulter(mw, req, res) {
   });
 }
 
-export async function callBridgeJson({ url, method = "POST", body }) {
-  const resp = await fetch(url, {
-    method,
-    headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-    body: body != null ? JSON.stringify(body) : undefined,
-  });
-  const json = await resp.json().catch(() => ({}));
-  return { resp, json };
+export async function callBridgeJson({
+  url,
+  method = "POST",
+  body,
+  timeoutMs = 30000,
+}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      method,
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: body != null ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    const json = await resp.json().catch(() => ({}));
+    return { resp, json };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function getOrCreateCncMachine(machineId, extraSet = {}) {
@@ -229,15 +262,41 @@ export async function getDbBridgeQueueSnapshot(machineId) {
   const mid = String(machineId || "").trim();
   if (!mid) return { jobs: [], updatedAt: null, syncedAt: null };
   const machine = await CncMachine.findOne({ machineId: mid })
-    .select("bridgeQueueSnapshot bridgeQueueSyncedAt")
+    .select("bridgeQueueSnapshot bridgeQueueSyncedAt manualCard.fileNameMap")
     .lean();
   const snapshot = machine?.bridgeQueueSnapshot || null;
   const jobs = Array.isArray(snapshot?.jobs) ? snapshot.jobs : [];
+  const fileNameMap = Array.isArray(machine?.manualCard?.fileNameMap)
+    ? machine.manualCard.fileNameMap
+    : [];
+
+  // 저장명 -> 원본명 매핑 생성
+  const storedNameToOriginal = new Map();
+  for (const entry of fileNameMap) {
+    if (entry?.storedName && entry?.originalName) {
+      storedNameToOriginal.set(
+        String(entry.storedName),
+        String(entry.originalName),
+      );
+    }
+  }
+
+  // 각 job에 originalFileName 추가 (저장명으로 매핑)
+  const jobsWithMeta = jobs.map((job) => {
+    const bridgePath = String(job?.bridgePath || "").trim();
+    const storedName = bridgePath.split("/").pop(); // 마지막 경로 부분 = 저장명
+    const originalName = storedNameToOriginal.get(storedName);
+    return {
+      ...job,
+      ...(originalName ? { originalFileName: originalName } : {}),
+    };
+  });
+
   const updatedAt = snapshot?.updatedAt ? new Date(snapshot.updatedAt) : null;
   const syncedAt = machine?.bridgeQueueSyncedAt
     ? new Date(machine.bridgeQueueSyncedAt)
     : null;
-  return { jobs, updatedAt, syncedAt };
+  return { jobs: jobsWithMeta, updatedAt, syncedAt };
 }
 
 export async function fetchBridgeQueueFromBridge(machineId) {

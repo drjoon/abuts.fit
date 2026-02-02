@@ -6,13 +6,15 @@ import {
   getDbBridgeQueueSnapshot,
   saveBridgeQueueSnapshot,
   saveManualCardStatus,
-  makeManualCardFilePath,
+  makeSafeFileStem,
   manualCardUploadMulter,
   normalizeOriginalFilename,
   runMulter,
   CncMachine,
   Machine,
 } from "./shared.js";
+
+import path from "path";
 
 async function loadManualCardQueue(machineId) {
   const mid = String(machineId || "").trim();
@@ -29,7 +31,7 @@ async function loadManualCardQueue(machineId) {
       if (!id) return null;
       const bridgePath = String(j?.bridgePath || "").trim();
       const originalFilename = String(
-        j?.fileName || j?.programName || "",
+        j?.originalFileName || j?.fileName || j?.programName || "",
       ).trim();
       const filePath = String(j?.requestId || "").trim();
       return {
@@ -297,7 +299,12 @@ export async function manualFileUploadAndPreload(req, res) {
         .json({ success: false, message: "file is required" });
     }
 
-    const originalFilename = normalizeOriginalFilename(file.originalname);
+    const originalFilenameFromClient = String(
+      req.body?.originalFileName || "",
+    ).trim();
+    const originalFilename =
+      originalFilenameFromClient ||
+      normalizeOriginalFilename(file.originalname);
     if (!originalFilename) {
       return res
         .status(400)
@@ -312,13 +319,20 @@ export async function manualFileUploadAndPreload(req, res) {
     }
 
     const requestedPath = String(req.body?.filePath || "").trim();
-    const filePath =
-      requestedPath ||
-      makeManualCardFilePath({
-        machineId: mid,
-        originalFilename,
-      });
-    const bridgePath = `${filePath}.nc`;
+
+    let bridgePath = requestedPath;
+    if (!bridgePath) {
+      const extMatch = path.basename(originalFilename).match(/\.(nc|txt)$/i);
+      const ext = extMatch ? String(extMatch[0]).toLowerCase() : ".nc";
+      const stem0 = makeSafeFileStem(originalFilename);
+      const rand = Math.random().toString(36).slice(2, 10);
+      const base = stem0
+        ? `${mid}_${stem0}_${rand}`
+        : `${mid}_${Date.now()}_${rand}`;
+      bridgePath = `${base}${ext}`;
+    }
+
+    const filePath = path.basename(bridgePath).replace(/\.(nc|txt)$/i, "");
 
     const storeUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/upload`;
     const { resp: storeResp, json: storeBody } = await callBridgeJson({
@@ -347,6 +361,28 @@ export async function manualFileUploadAndPreload(req, res) {
 
     const savedPath = String(storeBody?.path || bridgePath);
 
+    try {
+      await CncMachine.updateOne(
+        { machineId: mid },
+        {
+          $push: {
+            "manualCard.fileNameMap": {
+              originalName: originalFilename,
+              storedName: path.basename(savedPath),
+              storedPath: savedPath,
+              createdAt: new Date(),
+            },
+          },
+          $set: {
+            "manualCard.updatedAt": new Date(),
+          },
+        },
+        { upsert: false },
+      );
+    } catch {
+      // no-op
+    }
+
     const q0 = await loadManualCardQueue(mid);
     const items0 = Array.isArray(q0.items) ? q0.items.slice() : [];
     const itemId = `${mid}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
@@ -364,17 +400,8 @@ export async function manualFileUploadAndPreload(req, res) {
       await preloadManualCardTop2(mid);
     } catch (e) {
       const msg = String(e?.message || e);
-      await saveManualCardStatus(mid, {
-        lastUpload: {
-          fileName: originalFilename,
-          bridgePath: savedPath,
-          slotNo: null,
-          nextSlotNo: null,
-          uploadedAt: new Date(),
-          error: msg,
-        },
-      });
-      return res.status(500).json({ success: false, message: msg });
+      console.warn("preloadManualCardTop2 failed after upload:", msg);
+      // preload 실패는 로그만 하고 계속 진행 (업로드는 성공)
     }
 
     await saveManualCardStatus(mid, {

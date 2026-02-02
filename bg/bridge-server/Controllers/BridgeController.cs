@@ -222,50 +222,58 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var content = File.ReadAllText(fullPath);
                 var processed = SanitizeProgramTextForCnc(EnsureProgramHeader(content, slotNo));
 
-                // CNC 메모리 제약 대응: 대상 슬롯은 삭제 후 업로드 (메인 headType=1)
-                try
+                // 프로그램 업로드를 백그라운드에서 비동기로 처리 (응답 지연 방지)
+                Task.Run(() =>
                 {
-                    // 선택 슬롯의 기존 프로그램은 삭제 후 업로드 (Main=1)
-                    Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)slotNo, out var _, out var _);
-                }
-                catch { }
-
-                if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
-                {
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = "handle error: " + errUp });
-                }
-
-                var info = new UpdateMachineProgramInfo
-                {
-                    headType = 1, // Main
-                    programNo = (short)slotNo,
-                    programData = processed,
-                    isNew = true,
-                };
-                var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
-                if (upRc != 0)
-                {
-                    return Request.CreateResponse((HttpStatusCode)500, new
+                    try
                     {
-                        success = false,
-                        message = "upload failed rc=" + upRc,
-                        slotNo
-                    });
-                }
+                        // CNC 메모리 제약 대응: 대상 슬롯은 삭제 후 업로드 (메인 headType=1)
+                        try
+                        {
+                            Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)slotNo, out var _, out var _);
+                        }
+                        catch { }
 
-                st.LastPreloadedSlot = slotNo;
-                st.LastPreloadedPath = relPath;
-                st.LastPreloadedAtUtc = DateTime.UtcNow;
-                // 사용자가 slotNo를 고정 지정하면 내부 토글 상태는 그대로 둔다.
-                if (!desired.HasValue)
-                {
-                    st.NextSlot = nextSlotNo;
-                }
+                        if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
+                        {
+                            Console.WriteLine("[ManualPreload] handle error: " + errUp);
+                            return;
+                        }
 
+                        var info = new UpdateMachineProgramInfo
+                        {
+                            headType = 1, // Main
+                            programNo = (short)slotNo,
+                            programData = processed,
+                            isNew = true,
+                        };
+                        var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                        if (upRc != 0)
+                        {
+                            Console.WriteLine("[ManualPreload] upload failed rc={0} for {1}", upRc, machineId);
+                            return;
+                        }
+
+                        st.LastPreloadedSlot = slotNo;
+                        st.LastPreloadedPath = relPath;
+                        st.LastPreloadedAtUtc = DateTime.UtcNow;
+                        if (!desired.HasValue)
+                        {
+                            st.NextSlot = nextSlotNo;
+                        }
+                        Console.WriteLine("[ManualPreload] success: {0} slot={1}", machineId, slotNo);
+                    }
+                    catch (Exception bgEx)
+                    {
+                        Console.WriteLine("[ManualPreload] background error: " + bgEx);
+                    }
+                });
+
+                // 즉시 응답 반환 (업로드는 백그라운드에서 진행)
                 return Request.CreateResponse(HttpStatusCode.OK, new
                 {
                     success = true,
-                    message = "Manual preload ok",
+                    message = "Manual preload queued",
                     slotNo,
                     nextSlotNo,
                     path = relPath,

@@ -64,6 +64,8 @@ export function useCncDashboardQueues({
     percent: number;
   } | null>(null);
 
+  const uploadSeqRef = useRef(0);
+
   const [playlistOpen, setPlaylistOpen] = useState(false);
   const [playlistTarget, setPlaylistTarget] = useState<Machine | null>(null);
   const [playlistReadOnly, setPlaylistReadOnly] = useState(false);
@@ -123,6 +125,7 @@ export function useCncDashboardQueues({
           const qtyRaw = job?.qty;
           const qty = Math.max(1, Number(qtyRaw ?? 1) || 1);
           const nameRaw =
+            job?.originalFileName ||
             job?.fileName ||
             job?.programName ||
             (programNo != null ? `#${programNo}` : "-");
@@ -146,6 +149,7 @@ export function useCncDashboardQueues({
             ...(job?.s3Key ? { s3Key: String(job.s3Key) } : {}),
             ...(job?.s3Bucket ? { s3Bucket: String(job.s3Bucket) } : {}),
             ...(bridgePath ? { bridgePath } : {}),
+            storeScope: "direct_root",
           };
         });
 
@@ -214,9 +218,18 @@ export function useCncDashboardQueues({
         return;
       }
 
+      const seq = (uploadSeqRef.current += 1);
+      const setProgressSafe = (
+        next: { machineId: string; fileName: string; percent: number } | null,
+      ) => {
+        if (uploadSeqRef.current !== seq) return;
+        setUploadProgress(next as any);
+      };
+
       const uploadOne = async (file: File) => {
         return await new Promise<any>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
+          xhr.timeout = 10 * 60 * 1000;
           xhr.open(
             "POST",
             `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/upload`,
@@ -224,14 +237,14 @@ export function useCncDashboardQueues({
           xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
           const fileName = String(file?.name || "").trim() || "(unknown)";
-          setUploadProgress({ machineId: mid, fileName, percent: 0 });
+          setProgressSafe({ machineId: mid, fileName, percent: 0 });
           xhr.upload.onprogress = (evt) => {
             if (!evt.lengthComputable) return;
             const percent = Math.max(
               0,
               Math.min(100, Math.round((evt.loaded / evt.total) * 100)),
             );
-            setUploadProgress({ machineId: mid, fileName, percent });
+            setProgressSafe({ machineId: mid, fileName, percent });
           };
 
           xhr.onload = () => {
@@ -242,7 +255,7 @@ export function useCncDashboardQueues({
               parsed = {};
             }
             if (xhr.status >= 200 && xhr.status < 300) {
-              setUploadProgress({ machineId: mid, fileName, percent: 100 });
+              setProgressSafe({ machineId: mid, fileName, percent: 100 });
               resolve(parsed);
               return;
             }
@@ -254,9 +267,13 @@ export function useCncDashboardQueues({
           };
           xhr.onerror = () =>
             reject(new Error("장비카드 업로드에 실패했습니다."));
+          xhr.onabort = () => reject(new Error("업로드가 취소되었습니다."));
+          xhr.ontimeout = () =>
+            reject(new Error("업로드 시간이 초과되었습니다."));
 
           const form = new FormData();
           form.append("file", file);
+          form.append("originalFileName", fileName);
           xhr.send(form);
         });
       };
@@ -282,7 +299,7 @@ export function useCncDashboardQueues({
           }
         }
       } finally {
-        setTimeout(() => setUploadProgress(null), 800);
+        setTimeout(() => setProgressSafe(null), 800);
       }
 
       if (uploadedCount > 0) {

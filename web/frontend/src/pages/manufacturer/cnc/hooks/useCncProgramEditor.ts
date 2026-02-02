@@ -142,14 +142,18 @@ export const useCncProgramEditor = ({
     const bridgePath = String(
       prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
     ).trim();
+    const storeScope = String((prog as any)?.storeScope || "").trim();
     if (bridgePath) {
-      const loadBridgeOnce = async (): Promise<{
+      const loadBridgeOnce = async (
+        pathOverride?: string,
+      ): Promise<{
         ok: boolean;
         status: number;
         body: any;
       }> => {
+        const targetPath = String(pathOverride || bridgePath || "").trim();
         const url = `/api/bridge-store/file?path=${encodeURIComponent(
-          bridgePath,
+          targetPath,
         )}&_ts=${Date.now()}`;
         const res = await fetch(url, {
           method: "GET",
@@ -170,15 +174,24 @@ export const useCncProgramEditor = ({
 
       const requestId = String(prog?.requestId || "").trim();
       if (requestId && token) {
-        await apiFetch({
+        const ensured = await apiFetch({
           path: `/api/requests/by-request/${encodeURIComponent(
             requestId,
           )}/nc-file/ensure-bridge`,
           method: "POST",
           token,
+          jsonBody: {
+            bridgePath,
+            ...(storeScope ? { storeScope } : {}),
+          },
         });
 
-        const second = await loadBridgeOnce();
+        const ensuredBody: any = ensured.data ?? {};
+        const nextPath = String(
+          ensuredBody?.data?.bridgePath || ensuredBody?.data?.filePath || "",
+        ).trim();
+
+        const second = await loadBridgeOnce(nextPath || bridgePath);
         const secondText = second?.body?.content;
         if (second.ok && typeof secondText === "string") return secondText;
 
@@ -294,6 +307,7 @@ export const useCncProgramEditor = ({
     const bridgePath = String(
       prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
     ).trim();
+    const storeScope = String((prog as any)?.storeScope || "").trim();
     const normalizedCode =
       programNo == null
         ? String(code ?? "")
@@ -317,7 +331,10 @@ export const useCncProgramEditor = ({
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ bridgePath: "" }),
+            body: JSON.stringify({
+              bridgePath: "",
+              ...(storeScope ? { storeScope } : {}),
+            }),
           },
         );
         const ensureBody: any = await ensureRes.json().catch(() => ({}));

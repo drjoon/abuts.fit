@@ -11,9 +11,43 @@ export const parseProgramNoFromName = (name: string): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+export const fixMojibakeFilename = (name: string): string => {
+  const raw = String(name || "").trim();
+  if (!raw) return raw;
+
+  // 이미 한글이 포함된 정상 문자열은 그대로 둔다.
+  if (/[\uAC00-\uD7AF]/.test(raw)) return raw;
+
+  // 흔한 모지박 패턴 (UTF-8 바이트열을 Latin1로 잘못 해석한 경우)
+  const looksMojibake = /Ã.|Â.|â€|ì|ë|ê|í|ï|ð|ñ|ò|ó|ô|õ|ö|ø|ù|ú|û|ü/i.test(raw);
+  const hasReplacement = raw.includes("�");
+  if (!looksMojibake && !hasReplacement) return raw;
+
+  try {
+    const bytes = new Uint8Array(
+      Array.from(raw, (ch) => ch.charCodeAt(0) & 0xff),
+    );
+    const fixed = new TextDecoder("utf-8", { fatal: false })
+      .decode(bytes)
+      .trim();
+    if (!fixed) return raw;
+    if (fixed === raw) return raw;
+    // 복구 결과에 한글이 생기거나, replacement 문자가 줄어들면 복구 성공으로 간주
+    const fixedHasHangul = /[\uAC00-\uD7AF]/.test(fixed);
+    const fixedHasReplacement = fixed.includes("�");
+    if (fixedHasHangul || (hasReplacement && !fixedHasReplacement)) {
+      return fixed;
+    }
+  } catch {
+    // ignore
+  }
+
+  return raw;
+};
+
 export const normalizeProgramFileNameByContentFirst = (
   originalName: string,
-  content: string
+  content: string,
 ): string => {
   const trimmedName = String(originalName || "").trim();
   const upper = trimmedName.toUpperCase();
@@ -62,7 +96,7 @@ export const normalizeProgramFileNameByContentFirst = (
 
 export const applyProgramNoToContent = (
   programNo: number,
-  content: string
+  content: string,
 ): string => {
   if (!Number.isFinite(programNo) || programNo <= 0) {
     return content;

@@ -110,6 +110,20 @@ function extractCamDiameterFromNcText(text) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function makeDirectRootNcName({ requestId, fileName }) {
+  const rid = String(requestId || "").trim();
+  const raw = String(fileName || "").trim() || "program.nc";
+  const base = raw.replace(/\.[a-z0-9]{1,6}$/i, "");
+  const safe = base
+    .trim()
+    .replace(/[^a-zA-Z0-9-_가-힣]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .slice(0, 80);
+  const head = rid ? `${rid}-${safe || "program"}` : safe || "program";
+  return `${head}.nc`;
+}
+
 function toDiameterGroup(diameter) {
   const d = Number(diameter);
   if (!Number.isFinite(d) || d <= 0) return null;
@@ -203,7 +217,12 @@ export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
     // caller 가 특정 bridgePath 를 전달하면 그 경로를 우선 사용한다.
     const requestedBridgePath = String(req.body?.bridgePath || "").trim();
 
-    let bridgePath = existingPath || requestedBridgePath;
+    const storeScope = String(req.body?.storeScope || "").trim();
+
+    let bridgePath =
+      storeScope === "direct_root"
+        ? requestedBridgePath
+        : existingPath || requestedBridgePath;
 
     // filePath 가 없는 경우에는 기존 로직과 동일하게 nc/<requestId>/O####.nc 로 저장한다.
     // (브리지 서버가 storage/3-nc 를 사용하더라도, bridge-store 내부에서 해당 path 를 resolve 한다.)
@@ -212,6 +231,7 @@ export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
         requestId,
         s3Key,
         fileName,
+        storeScope,
       });
       if (!pushed.ok || !pushed.path) {
         return res.status(500).json({
@@ -228,6 +248,7 @@ export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
       requestId,
       s3Key,
       fileName: fileName || "program.nc",
+      storeScope,
     });
     if (pushed2.ok && pushed2.path) {
       bridgePath = String(pushed2.path);
@@ -832,7 +853,12 @@ async function triggerBridgeForCnc({ request }) {
   }
 }
 
-async function uploadNcToBridgeStore({ requestId, s3Key, fileName }) {
+async function uploadNcToBridgeStore({
+  requestId,
+  s3Key,
+  fileName,
+  storeScope,
+}) {
   if (!BRIDGE_BASE) {
     return { ok: false, reason: "BRIDGE_BASE is not configured" };
   }
@@ -851,7 +877,10 @@ async function uploadNcToBridgeStore({ requestId, s3Key, fileName }) {
     return { ok: false, reason: "missing fileName" };
   }
 
-  const relPath = `nc/${String(requestId || "").trim()}/${normalizedName}`;
+  const relPath =
+    String(storeScope || "") === "direct_root"
+      ? makeDirectRootNcName({ requestId, fileName: normalizedName })
+      : `nc/${String(requestId || "").trim()}/${normalizedName}`;
   const resp = await fetch(`${BRIDGE_BASE}/api/bridge-store/upload`, {
     method: "POST",
     headers: withBridgeHeaders({ "Content-Type": "application/json" }),

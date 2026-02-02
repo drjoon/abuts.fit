@@ -135,6 +135,17 @@ const cncMachineSchema = new mongoose.Schema(
         nextItemId: { type: String, trim: true, default: null },
         updatedAt: { type: Date, default: null },
       },
+      fileNameMap: {
+        type: [
+          {
+            originalName: { type: String, trim: true },
+            storedName: { type: String, trim: true },
+            storedPath: { type: String, trim: true },
+            createdAt: { type: Date, default: null },
+          },
+        ],
+        default: [],
+      },
       lastUpload: {
         fileName: { type: String, trim: true, default: null },
         bridgePath: { type: String, trim: true, default: null },

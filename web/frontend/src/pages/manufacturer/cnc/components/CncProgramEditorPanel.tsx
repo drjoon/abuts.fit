@@ -312,6 +312,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   };
 
   const name =
+    selectedProgram?.originalFileName ??
     selectedProgram?.programName ??
     selectedProgram?.name ??
     `#${selectedProgram?.programNo ?? selectedProgram?.no ?? "-"}`;
@@ -359,7 +360,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
                   {name}
                 </div>
                 {!!infoText && (
-                  <div className="mt-1 text-[11px] font-semibold text-slate-300 truncate">
+                  <div className="text-[12px] font-extrabold text-slate-200 truncate">
                     {infoText}
                   </div>
                 )}
