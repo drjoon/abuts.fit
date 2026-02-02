@@ -608,7 +608,12 @@ export const CncDashboardPage = () => {
       updateMachineFlags={updateMachineFlags}
       updateMachineDummyEnabled={materials.updateMachineDummyEnabled}
       uploadManualCardFiles={queues.uploadManualCardFiles}
-      setWorkUid={setWorkUid}
+      setWorkUid={(uid: string) => {
+        setWorkUid(uid);
+        if (token && uid) {
+          void refreshMachineStatuses({ token, uids: [uid] });
+        }
+      }}
       refreshStatusFor={refreshStatusFor}
       fetchProgramList={fetchProgramList}
       openTempDetail={openTempDetail}
