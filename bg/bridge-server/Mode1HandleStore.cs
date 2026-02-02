@@ -100,9 +100,37 @@ namespace HiLinkBridgeWebApi48
             {
                 res = HiLink.SetActivateProgram(handle, dto);
             }
+
+            // -8(무효 핸들) → Invalidate 후 1회 재시도
             if (res == -8)
             {
                 Invalidate(uid);
+
+                if (!TryGetHandle(uid, out var handle2, out var error2))
+                {
+                    error = error2;
+                    return -8;
+                }
+
+                short res2;
+                lock (Mode1Api.DllLock)
+                {
+                    res2 = HiLink.SetActivateProgram(handle2, dto);
+                }
+                if (res2 == -8)
+                {
+                    Invalidate(uid);
+                }
+                if (res2 != 0)
+                {
+                    error = $"SetActivateProgram failed (result={res2})";
+                }
+                return res2;
+            }
+
+            if (res != 0)
+            {
+                error = $"SetActivateProgram failed (result={res})";
             }
             return res;
         }

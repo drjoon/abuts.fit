@@ -70,22 +70,73 @@ namespace HiLinkBridgeWebApi48.Controllers
             var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
             if (lines.Length == 0) return content;
 
-            var firstLine = (lines[0] ?? string.Empty).Trim();
-            var m = FanucRegex.Match(firstLine);
             var header = $"O{programNo.ToString().PadLeft(4, '0')}";
-            if (m.Success)
+
+            // Fanuc 프로그램은 첫 줄이 '%'인 경우가 많다.
+            // 이때 O번호를 '%' 앞에 넣으면, CNC가 '%'에서 프로그램을 끝으로 해석해 본문이 날아갈 수 있다.
+            // 따라서 선행 '%' / 공백 라인을 건너뛴 뒤 첫 O라인을 교체(또는 없으면 적절히 삽입)한다.
+            int idx = 0;
+            while (idx < lines.Length)
             {
-                if (int.TryParse(m.Groups[1].Value, out var existing) && existing == programNo)
+                var t = (lines[idx] ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(t))
                 {
-                    return content;
+                    idx++;
+                    continue;
                 }
-                // 첫 줄이 이미 O번호라면 교체
-                lines[0] = header;
-                return string.Join("\r\n", lines);
+                if (t == "%")
+                {
+                    idx++;
+                    continue;
+                }
+                break;
             }
 
-            // 헤더 삽입
+            if (idx < lines.Length)
+            {
+                var cur = (lines[idx] ?? string.Empty).Trim();
+                var m = FanucRegex.Match(cur);
+                if (m.Success)
+                {
+                    if (int.TryParse(m.Groups[1].Value, out var existing) && existing == programNo)
+                    {
+                        return content;
+                    }
+                    lines[idx] = header;
+                    return string.Join("\r\n", lines);
+                }
+
+                // 첫 유효 라인이 O번호가 아니면, idx 위치에 헤더를 삽입
+                var list = lines.ToList();
+                list.Insert(idx, header);
+                return string.Join("\r\n", list);
+            }
+
+            // 전부 공백/% 뿐이면 맨 끝에라도 헤더 추가
             return header + "\r\n" + content;
+        }
+
+        private static string EnsureProgramEnvelope(string content)
+        {
+            if (string.IsNullOrEmpty(content)) return content;
+
+            // Hi-Link 예제 기준: programData는 % ... % 형태로 감싸진 경우가 많아, 없으면 보강한다.
+            var trimmed = content.Trim();
+            if (string.IsNullOrEmpty(trimmed)) return content;
+
+            var startsWithPercent = trimmed.StartsWith("%", StringComparison.Ordinal);
+            var endsWithPercent = trimmed.EndsWith("%", StringComparison.Ordinal);
+
+            var result = trimmed;
+            if (!startsWithPercent)
+            {
+                result = "%\r\n" + result;
+            }
+            if (!endsWithPercent)
+            {
+                result = result + "\r\n%";
+            }
+            return result;
         }
 
         private static string SanitizeProgramTextForCnc(string content)
@@ -220,7 +271,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
 
                 var content = File.ReadAllText(fullPath);
-                var processed = SanitizeProgramTextForCnc(EnsureProgramHeader(content, slotNo));
+                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(EnsureProgramHeader(content, slotNo)));
 
                 // 프로그램 업로드를 백그라운드에서 비동기로 처리 (응답 지연 방지)
                 Task.Run(() =>
@@ -248,6 +299,22 @@ namespace HiLinkBridgeWebApi48.Controllers
                             isNew = true,
                         };
                         var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                        if (upRc == -8)
+                        {
+                            Mode1HandleStore.Invalidate(machineId);
+                            if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
+                            {
+                                upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
+                                if (upRc == -8)
+                                {
+                                    Mode1HandleStore.Invalidate(machineId);
+                                }
+                            }
+                            else
+                            {
+                                Console.WriteLine("[ManualPreload] handle retry error: " + errUp2);
+                            }
+                        }
                         if (upRc != 0)
                         {
                             Console.WriteLine("[ManualPreload] upload failed rc={0} for {1}", upRc, machineId);
@@ -400,7 +467,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var content = File.ReadAllText(fullPath);
                 Console.WriteLine("[ManualPlay] file read machine={0} path={1} contentLen={2}", machineId, relPath, content?.Length ?? 0);
                 
-                var processed = SanitizeProgramTextForCnc(EnsureProgramHeader(content, slotNo));
+                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(EnsureProgramHeader(content, slotNo)));
                 Console.WriteLine("[ManualPlay] file processed machine={0} processedLen={1}", machineId, processed?.Length ?? 0);
 
                 try
@@ -430,6 +497,22 @@ namespace HiLinkBridgeWebApi48.Controllers
                     machineId, slotNo, programNo, processed?.Length ?? 0);
                 
                 var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                if (upRc == -8)
+                {
+                    Mode1HandleStore.Invalidate(machineId);
+                    if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
+                    {
+                        upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
+                        if (upRc == -8)
+                        {
+                            Mode1HandleStore.Invalidate(machineId);
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("[ManualPlay] handle retry error: " + errUp2);
+                    }
+                }
                 if (upRc != 0)
                 {
                     Console.WriteLine("[ManualPlay] upload failed machine={0} slot=O{1} programNo={2} rc={3}", 
@@ -1022,6 +1105,41 @@ namespace HiLinkBridgeWebApi48.Controllers
             });
         }
 
+        // GET /machines/{machineId}/alarms (Mode1)
+        [HttpGet]
+        [Route("machines/{machineId}/alarms")]
+        public HttpResponseMessage GetMachineAlarms(string machineId, short headType = 1)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            if (!Mode1Api.TryGetMachineAlarmInfo(machineId, headType, out var data, out var err))
+            {
+                return Request.CreateResponse((HttpStatusCode)500, new
+                {
+                    success = false,
+                    message = err ?? "GetMachineAlarmInfo failed",
+                });
+            }
+
+            var alarms = new List<object>();
+            if (data.alarmArray != null)
+            {
+                foreach (var a in data.alarmArray)
+                {
+                    alarms.Add(new { type = a.type, no = a.no });
+                }
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                data = new { headType = data.headType, alarms }
+            });
+        }
+
         public class StartStopRequest
         {
             public short? ioUid { get; set; }
@@ -1032,22 +1150,80 @@ namespace HiLinkBridgeWebApi48.Controllers
         // GET /machines/{machineId}/programs (Mode1)
         [HttpGet]
         [Route("machines/{machineId}/programs")]
-        public HttpResponseMessage GetProgramList(string machineId, short headType = 1)
+        public async Task<HttpResponseMessage> GetProgramList(string machineId, short headType = 1, short? slotNo = null, string path = null)
         {
             if (string.IsNullOrWhiteSpace(machineId))
             {
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
             }
 
+            // slotNo가 있으면: 프로그램 1개 다운로드(필요 시 파일 저장)
+            if (slotNo.HasValue && slotNo.Value > 0)
+            {
+                var programNo = slotNo.Value;
+                var relPath = (path ?? string.Empty).Trim();
+
+                var cooldownKey = $"downloadProgram:get:{machineId}:{headType}:{programNo}";
+                if (IsRawReadOnCooldown(cooldownKey))
+                {
+                    return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
+                }
+
+                if (!Mode1Api.TryGetProgDataInfo(machineId, headType, programNo, out var info, out var error))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = error ?? "GetMachineProgramData failed",
+                    });
+                }
+
+                try
+                {
+                    int length = (info.programData ?? string.Empty).Length;
+                    string savedPath = null;
+
+                    if (!string.IsNullOrWhiteSpace(relPath))
+                    {
+                        var fullPath = GetSafeBridgeStorePath(relPath);
+                        var dir = Path.GetDirectoryName(fullPath);
+                        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                        {
+                            Directory.CreateDirectory(dir);
+                        }
+                        File.WriteAllText(fullPath, info.programData ?? string.Empty);
+                        savedPath = relPath;
+                    }
+
+                    return Request.CreateResponse(HttpStatusCode.OK, new
+                    {
+                        success = true,
+                        headType,
+                        slotNo = programNo,
+                        path = savedPath,
+                        length,
+                    });
+                }
+                catch (Exception ex)
+                {
+                    return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                    {
+                        success = false,
+                        message = ex.Message,
+                    });
+                }
+            }
+
             var timeoutMs = 2500;
-            var task = System.Threading.Tasks.Task.Run(() =>
+            var task = System.Threading.Tasks.Task.Factory.StartNew(() =>
             {
                 MachineProgramListInfo info;
                 string error;
                 var ok = Mode1Api.TryGetProgListInfo(machineId, headType, out info, out error);
                 return (ok: ok, info: info, error: error);
-            });
-            var completed = System.Threading.Tasks.Task.WhenAny(task, System.Threading.Tasks.Task.Delay(timeoutMs)).Result;
+            }, System.Threading.Tasks.TaskCreationOptions.LongRunning);
+
+            var completed = await System.Threading.Tasks.Task.WhenAny(task, System.Threading.Tasks.Task.Delay(timeoutMs));
             if (completed != task)
             {
                 Mode1HandleStore.Invalidate(machineId);
@@ -1058,7 +1234,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 });
             }
 
-            var result = task.Result;
+            var result = await task;
             if (!result.ok)
             {
                 var msg = (result.error ?? "GetMachineProgramListInfo failed") as string;
@@ -1078,6 +1254,195 @@ namespace HiLinkBridgeWebApi48.Controllers
                 success = true,
                 data = result.info
             });
+        }
+
+        public class UploadProgramRequest
+        {
+            public short? headType { get; set; }
+            public int? slotNo { get; set; }
+            public string path { get; set; }
+            public bool? isNew { get; set; }
+        }
+
+        // POST /machines/{machineId}/programs (Mode1)
+        [HttpPost]
+        [Route("machines/{machineId}/programs")]
+        public HttpResponseMessage UploadProgram(string machineId, [FromBody] UploadProgramRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var headType = req?.headType ?? (short)1;
+            var slotNo = req?.slotNo ?? 0;
+            if (slotNo <= 0)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "slotNo is required" });
+            }
+
+            var relPath = (req?.path ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(relPath))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
+            }
+
+            try
+            {
+                var fullPath = GetSafeBridgeStorePath(relPath);
+                if (!File.Exists(fullPath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new
+                    {
+                        success = false,
+                        message = "file not found",
+                        path = relPath
+                    });
+                }
+
+                var content = File.ReadAllText(fullPath);
+                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(EnsureProgramHeader(content, slotNo)));
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        try
+                        {
+                            Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _);
+                        }
+                        catch { }
+
+                        if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
+                        {
+                            Console.WriteLine("[UploadProgram] handle error: " + errUp);
+                            return;
+                        }
+
+                        var info = new UpdateMachineProgramInfo
+                        {
+                            headType = headType,
+                            programNo = (short)slotNo,
+                            programData = processed,
+                            isNew = req?.isNew ?? true,
+                        };
+                        var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                        if (upRc == -8)
+                        {
+                            Mode1HandleStore.Invalidate(machineId);
+                            if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
+                            {
+                                upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
+                                if (upRc == -8)
+                                {
+                                    Mode1HandleStore.Invalidate(machineId);
+                                }
+                            }
+                            else
+                            {
+                                Console.WriteLine("[UploadProgram] handle retry error: " + errUp2);
+                            }
+                        }
+                        if (upRc != 0)
+                        {
+                            Console.WriteLine("[UploadProgram] upload failed rc={0} for {1}", upRc, machineId);
+                            return;
+                        }
+                        Console.WriteLine("[UploadProgram] success: {0} headType={1} slot={2}", machineId, headType, slotNo);
+                    }
+                    catch (Exception bgEx)
+                    {
+                        Console.WriteLine("[UploadProgram] background error: " + bgEx);
+                    }
+                });
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    message = "Program upload queued",
+                    headType,
+                    slotNo,
+                    path = relPath,
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
+        public class DownloadProgramRequest
+        {
+            public short? headType { get; set; }
+            public short? programNo { get; set; }
+            public string path { get; set; }
+        }
+
+        // POST /machines/{machineId}/programs/download (Mode1)
+        [HttpPost]
+        [Route("machines/{machineId}/programs/download")]
+        public HttpResponseMessage DownloadProgram(string machineId, [FromBody] DownloadProgramRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var headType = req?.headType ?? (short)1;
+            var programNo = req?.programNo ?? (short)0;
+            if (programNo <= 0)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "programNo is required" });
+            }
+
+            var relPath = (req?.path ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(relPath))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
+            }
+
+            var cooldownKey = $"downloadProgram:{machineId}:{headType}:{programNo}";
+            if (IsRawReadOnCooldown(cooldownKey))
+            {
+                return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
+            }
+
+            if (!Mode1Api.TryGetProgDataInfo(machineId, headType, programNo, out var info, out var error))
+            {
+                return Request.CreateResponse((HttpStatusCode)500, new
+                {
+                    success = false,
+                    message = error ?? "GetMachineProgramData failed",
+                });
+            }
+
+            try
+            {
+                var fullPath = GetSafeBridgeStorePath(relPath);
+                var dir = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                File.WriteAllText(fullPath, info.programData ?? string.Empty);
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    headType,
+                    programNo,
+                    path = relPath,
+                    length = (info.programData ?? string.Empty).Length,
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    message = ex.Message,
+                });
+            }
         }
 
         // GET /machines/{machineId}/programs/active (Mode1)
