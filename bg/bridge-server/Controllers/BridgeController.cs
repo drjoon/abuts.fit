@@ -13,6 +13,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web.Http;
+using Hi_Link_Advanced.LinkBridge;
+using Hi_Link_Advanced.EdgeBridge;
 using Mode1Api = HiLinkBridgeWebApi48.Mode1Api;
 using PayloadUpdateActivateProg = Hi_Link.Libraries.Model.UpdateMachineActivateProgNo;
 
@@ -21,10 +23,11 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/cnc")]
     public class BridgeController : ApiController
     {
+        private static readonly HiLinkMode2Client Mode2Client = new HiLinkMode2Client();
         private static readonly ConcurrentDictionary<string, DateTime> ControlCooldowns = new ConcurrentDictionary<string, DateTime>();
-        private static readonly TimeSpan ControlCooldownWindow = TimeSpan.FromSeconds(5);
         private static readonly ConcurrentDictionary<string, DateTime> RawReadCooldowns = new ConcurrentDictionary<string, DateTime>();
-        private static readonly TimeSpan RawReadCooldownWindow = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan ControlCooldownWindow = TimeSpan.FromMilliseconds(5000);
+        private static readonly TimeSpan RawReadCooldownWindow = TimeSpan.FromMilliseconds(2000);
 
         private const int MANUAL_SLOT_A = 4000;
         private const int MANUAL_SLOT_B = 4001;
@@ -194,14 +197,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 if (active <= 0) active = ParseProgramNoFromName(info.SubProgramName);
             }
 
-            // 가공 중이면 현재 실행 슬롯을 피한다.
-            if (CncMachineSignalUtils.TryGetMachineBusy(machineId, out var busy) && busy)
-            {
-                if (active == MANUAL_SLOT_A) return MANUAL_SLOT_B;
-                return MANUAL_SLOT_A;
-            }
-
-            // 가공 중이 아니더라도 현재 활성 슬롯을 덮어쓰지 않도록 반대 슬롯을 선택한다.
+            // 장비 상태(busy/가공중)와 무관하게, 현재 활성 슬롯(4000/4001)이면 덮어쓰지 않도록 반대 슬롯을 선택한다.
             if (active == MANUAL_SLOT_A) return MANUAL_SLOT_B;
             if (active == MANUAL_SLOT_B) return MANUAL_SLOT_A;
             return MANUAL_SLOT_A;
@@ -272,16 +268,21 @@ namespace HiLinkBridgeWebApi48.Controllers
             });
         }
 
-        private static bool UploadProgramDataBlocking(string machineId, short headType, int slotNo, string processed, bool isNew, out string error)
+        private static bool UploadProgramDataBlocking(string machineId, short headType, int slotNo, string processed, bool isNew, out string usedMode, out string error)
         {
+            usedMode = null;
             error = null;
             try
             {
-                try
+                // payload는 CNC/Hi-Link가 ASCII만 안정적인 경우가 있어 ASCII 기준 bytes로 계산한다.
+                var bytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
+
+                // 500KB 상한(요구사항). 장비 메모리 상황에 따라 실패할 수 있으므로, 이 값 초과는 요청 단계에서 차단.
+                if (bytes > 512000)
                 {
-                    Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _);
+                    error = $"program too large (bytes={bytes}, limit=512000)";
+                    return false;
                 }
-                catch { }
 
                 if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
                 {
@@ -297,10 +298,29 @@ namespace HiLinkBridgeWebApi48.Controllers
                     isNew = isNew,
                 };
 
-                short upRc;
-                lock (Mode1Api.DllLock)
+                // EW_BUSY(-1)면 CNC processing 중이므로 대기 후 재시도한다.
+                // 요구사항: 최대 20초, 1초 단위 체크
+                var busyWaitMaxMs2 = 20000;
+                var busyStarted2 = DateTime.UtcNow;
+                short upRc = -1;
+                for (var attempt = 0; ; attempt++)
                 {
-                    upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                    lock (Mode1Api.DllLock)
+                    {
+                        upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                    }
+                    if (upRc == 0) break;
+                    if (upRc == -1)
+                    {
+                        var elapsedMs = (int)(DateTime.UtcNow - busyStarted2).TotalMilliseconds;
+                        if (elapsedMs >= busyWaitMaxMs2)
+                        {
+                            break;
+                        }
+                        System.Threading.Thread.Sleep(1000);
+                        continue;
+                    }
+                    break;
                 }
 
                 if (upRc == -8)
@@ -323,20 +343,94 @@ namespace HiLinkBridgeWebApi48.Controllers
                         return false;
                     }
                 }
-
-                if (upRc != 0)
+                if (upRc == 0)
                 {
-                    error = "SetMachineProgramInfo failed (result=" + upRc + ")";
-                    return false;
+                    usedMode = "Mode1";
+                    return true;
                 }
 
-                return true;
+                // Mode1 실패 시 Mode2로 fallback 재시도(특히 대용량에서 필요)
+                var mode1Error = upRc == -1
+                    ? $"SetMachineProgramInfo failed (rc=-1, EW_BUSY, waitedMs={(int)(DateTime.UtcNow - busyStarted2).TotalMilliseconds})"
+                    : $"SetMachineProgramInfo failed (rc={upRc})";
+
+                // Mode2 headType: Main=0, Sub=1
+                var busyWaitMaxMs = 20000;
+                var busyStarted = DateTime.UtcNow;
+                var mode2HeadType = (short)Math.Max(0, (int)headType - 1);
+                var info2 = new UpdateMachineProgramInfo
+                {
+                    headType = mode2HeadType,
+                    programNo = (short)slotNo,
+                    programData = processed,
+                    isNew = isNew,
+                };
+
+                // EW_BUSY(-1)면 CNC processing 중이므로 2초 단위로 대기 후 재시도한다.
+                for (var attempt = 0; ; attempt++)
+                {
+                    object resp;
+                    try
+                    {
+                        resp = Mode2Client.RequestRawAsync(machineId, CollectDataType.UpdateProgram, info2, 15000)
+                            .GetAwaiter()
+                            .GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        error = $"Mode1 failed: {mode1Error}; Mode2 UpdateProgram exception: {ex.Message}";
+                        return false;
+                    }
+
+                    int rc;
+                    if (resp is short s) rc = s;
+                    else if (resp is int i) rc = i;
+                    else rc = -1;
+
+                    if (rc == 0)
+                    {
+                        usedMode = "Mode2";
+                        return true;
+                    }
+                    if (rc == -1)
+                    {
+                        var elapsedMs = (int)(DateTime.UtcNow - busyStarted).TotalMilliseconds;
+                        if (elapsedMs >= busyWaitMaxMs)
+                        {
+                            error = $"Mode1 failed: {mode1Error}; Mode2 UpdateProgram failed (result=-1, EW_BUSY, waitedMs={elapsedMs})";
+                            return false;
+                        }
+                        System.Threading.Thread.Sleep(1000);
+                        continue;
+                    }
+
+                    error = $"Mode1 failed: {mode1Error}; Mode2 UpdateProgram failed (result={rc})";
+                    return false;
+                }
             }
             catch (Exception ex)
             {
                 error = ex.Message;
                 return false;
             }
+        }
+
+        private static bool TryVerifyProgramExistsByList(string machineId, short headType, int slotNo, out string error)
+        {
+            error = null;
+            if (!Mode1Api.TryGetProgListInfo(machineId, headType, out var list, out var err))
+            {
+                error = err ?? "GetProgListInfo failed";
+                return false;
+            }
+
+            var arr = list.programArray;
+            if (arr == null) return false;
+            foreach (var p in arr)
+            {
+                if (p.no == slotNo) return true;
+            }
+            return false;
         }
 
         private static async Task<bool> VerifyProgramExists(string machineId, short headType, int slotNo, int timeoutSeconds)
@@ -361,8 +455,108 @@ namespace HiLinkBridgeWebApi48.Controllers
                     catch { }
                 }
 
-                await Task.Delay(500);
+                await Task.Delay(1000);
             }
+        }
+
+        private static bool TryGetProgramDataPreferMode1(string machineId, short headType, short programNo, out string programData, out string error)
+        {
+            programData = null;
+            error = null;
+
+            var gotAny = false;
+            var mode1Data = (string)null;
+            var mode2Data = (string)null;
+            var mode1Err = (string)null;
+            var mode2Err = (string)null;
+
+            try
+            {
+                if (Mode1Api.TryGetProgDataInfo(machineId, headType, programNo, out var info, out var err))
+                {
+                    gotAny = true;
+                    mode1Data = info.programData ?? string.Empty;
+                    Console.WriteLine($"[DownloadProgram] Mode1 programData length={mode1Data.Length} uid={machineId} headType={headType} programNo={programNo}");
+                }
+                else
+                {
+                    mode1Err = err;
+                    Console.WriteLine($"[DownloadProgram] Mode1 GetMachineProgramData failed uid={machineId} headType={headType} programNo={programNo} err={mode1Err}");
+                }
+            }
+            catch (Exception ex)
+            {
+                mode1Err = ex.Message;
+                Console.WriteLine($"[DownloadProgram] Mode1 exception uid={machineId} headType={headType} programNo={programNo} ex={mode1Err}");
+            }
+
+            try
+            {
+                var mode2HeadType = (short)Math.Max(0, (int)headType - 1);
+                var req = new GetProgramData();
+                req.machineProgramData = new Hi_Link.Libraries.Model.MachineProgramData
+                {
+                    headType = mode2HeadType,
+                    programNo = programNo,
+                };
+
+                var resp = Mode2Client.RequestRawAsync(machineId, CollectDataType.GetProgDataInfo, req, 15000)
+                    .GetAwaiter()
+                    .GetResult();
+
+                if (resp is GetProgramData gp)
+                {
+                    gotAny = true;
+                    var mp = gp.machineProgramData;
+                    mode2Data = mp.programData ?? string.Empty;
+                    Console.WriteLine($"[DownloadProgram] Mode2 programData length={mode2Data.Length} uid={machineId} headType={headType} programNo={programNo}");
+                }
+                else if (resp is Hi_Link.Libraries.Model.MachineProgramData mpd)
+                {
+                    gotAny = true;
+                    mode2Data = mpd.programData ?? string.Empty;
+                    Console.WriteLine($"[DownloadProgram] Mode2 programData length={mode2Data.Length} uid={machineId} headType={headType} programNo={programNo}");
+                }
+            }
+            catch (Exception ex)
+            {
+                mode2Err = ex.Message;
+                Console.WriteLine($"[DownloadProgram] Mode2 exception uid={machineId} headType={headType} programNo={programNo} ex={mode2Err}");
+            }
+
+            if (!gotAny)
+            {
+                error = mode1Err ?? mode2Err ?? "GetMachineProgramData failed";
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(mode2Data) && (mode1Data == null || mode2Data.Length > mode1Data.Length))
+            {
+                programData = mode2Data;
+                // Mode1/Mode2 모두 동일 길이면 Hi-Link API 제한으로 truncated
+                if (!string.IsNullOrEmpty(mode1Data) && mode1Data.Length == mode2Data.Length && mode2Data.Length > 90000)
+                {
+                    error = $"TRUNCATED: Hi-Link API readback limit (~103KB). Actual program may be larger. Downloaded {mode2Data.Length} bytes.";
+                    Console.WriteLine($"[DownloadProgram] Warning: programData truncated by Hi-Link readback limit (len={mode2Data.Length}) uid={machineId} headType={headType} programNo={programNo}");
+                }
+                return true;
+            }
+
+            programData = mode1Data ?? string.Empty;
+            if (programData.Length == 0 && !string.IsNullOrEmpty(mode1Err) && !string.IsNullOrEmpty(mode2Err))
+            {
+                error = $"Mode1 error: {mode1Err}; Mode2 error: {mode2Err}";
+            }
+            else
+            {
+                // Mode1/Mode2 모두 특정 상한(예: 102480)으로 동일하게 잘리는 경우가 있어, 진단 메시지를 남긴다.
+                if (!string.IsNullOrEmpty(mode1Data) && !string.IsNullOrEmpty(mode2Data) && mode1Data.Length == mode2Data.Length && mode1Data.Length > 90000)
+                {
+                    error = $"TRUNCATED: Hi-Link API readback limit (~103KB). Actual program may be larger. Downloaded {mode1Data.Length} bytes.";
+                    Console.WriteLine($"[DownloadProgram] Warning: programData truncated by Hi-Link readback limit (len={mode1Data.Length}) uid={machineId} headType={headType} programNo={programNo}");
+                }
+            }
+            return true;
         }
 
         private class HighLevelStartJob
@@ -542,7 +736,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var content = File.ReadAllText(full);
                 var enforced = EnsurePercentAndHeaderSecondLine(content, job.CurrentSlot);
                 var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
-                if (!UploadProgramDataBlocking(machineId, job.HeadType, job.CurrentSlot, processed, true, out var upErr0))
+                if (!UploadProgramDataBlocking(machineId, job.HeadType, job.CurrentSlot, processed, true, out var _, out var upErr0))
                 {
                     job.ErrorCode = "UPLOAD_FAILED";
                     job.ErrorMessage = upErr0;
@@ -640,7 +834,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     var enforcedNext = EnsurePercentAndHeaderSecondLine(nextContent, nextSlot);
                     var processedNext = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforcedNext));
 
-                    if (!UploadProgramDataBlocking(machineId, job.HeadType, nextSlot, processedNext, true, out var upErr1))
+                    if (!UploadProgramDataBlocking(machineId, job.HeadType, nextSlot, processedNext, true, out var _, out var upErr1))
                     {
                         job.ErrorCode = "UPLOAD_FAILED";
                         job.ErrorMessage = upErr1;
@@ -905,7 +1099,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         // POST /machines/{machineId}/smart/upload
         [HttpPost]
         [Route("machines/{machineId}/smart/upload")]
-        public HttpResponseMessage SmartUploadProgram(string machineId, [FromBody] HighLevelUploadProgramRequest req)
+        public async Task<HttpResponseMessage> SmartUploadProgram(string machineId, [FromBody] HighLevelUploadProgramRequest req)
         {
             if (string.IsNullOrWhiteSpace(machineId))
             {
@@ -923,6 +1117,8 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             try
             {
+                var responseLogs = new List<string>();
+
                 var fullPath = GetSafeBridgeStorePath(relPath);
                 if (!File.Exists(fullPath))
                 {
@@ -939,46 +1135,105 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
 
                 var processedLen = (processed ?? string.Empty).Length;
+                var processedBytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
 
-                // Hi-Link / CNC 컨트롤러가 programData 크기에 상한을 두는 경우가 있어, 너무 큰 프로그램은 업로드 전에 명시적으로 차단한다.
-                // (상한을 넘기면 장비에 잘려 저장되어 다운로드/가공 모두 위험)
-                if (processedLen > 90000)
+                // 활성 프로그램 슬롯(4000/4001)이면 삭제 금지.
+                // 가공중 여부와 무관하게 활성 슬롯은 보호한다(사용자 요구).
+                var activeSlot = 0;
+                if (Mode1Api.TryGetActivateProgInfo(machineId, out var activeInfo0, out var _))
+                {
+                    activeSlot = ParseProgramNoFromName(activeInfo0.MainProgramName);
+                    if (activeSlot <= 0) activeSlot = ParseProgramNoFromName(activeInfo0.SubProgramName);
+                }
+
+                var protectedSlot = (activeSlot == MANUAL_SLOT_A || activeSlot == MANUAL_SLOT_B) ? activeSlot : 0;
+
+                // 4000/4001 중 보호 슬롯이 아니면 무조건 삭제하여 메모리 확보 후 업로드
+                var deletedSlots = new List<int>();
+                foreach (var s in new[] { MANUAL_SLOT_A, MANUAL_SLOT_B })
+                {
+                    if (protectedSlot == s) continue;
+                    try
+                    {
+                        Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)s, out var _, out var _);
+                        deletedSlots.Add(s);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                // 보호 슬롯이 있으면 반대 슬롯으로 강제 업로드
+                if (protectedSlot == MANUAL_SLOT_A) slotNo = MANUAL_SLOT_B;
+                else if (protectedSlot == MANUAL_SLOT_B) slotNo = MANUAL_SLOT_A;
+
+                // 슬롯이 바뀌었으면 헤더도 다시 강제
+                enforced = EnsurePercentAndHeaderSecondLine(content, slotNo);
+                processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
+                processedLen = (processed ?? string.Empty).Length;
+                processedBytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
+
+                responseLogs.Add($"activeSlot={activeSlot}");
+                responseLogs.Add($"protectedSlot={protectedSlot}");
+                responseLogs.Add($"deletedSlots=[{string.Join(",", deletedSlots)}]");
+                responseLogs.Add($"uploadSlot={slotNo}");
+                responseLogs.Add($"fileBytes={processedBytes}");
+
+                Console.WriteLine($"[SmartUpload] activeSlot={activeSlot} protectedSlot={protectedSlot} deletedSlots=[{string.Join(",", deletedSlots)}] uploadSlot={slotNo} bytes={processedBytes} path={relPath}");
+
+                if (processedBytes > 512000)
                 {
                     return Request.CreateResponse((HttpStatusCode)413, new
                     {
                         success = false,
-                        message = "program is too large to upload safely (possible CNC/Hi-Link size limit)",
-                        length = processedLen,
-                        limit = 90000,
+                        message = "program is too large (max 500KB)",
+                        bytes = processedBytes,
+                        limitBytes = 512000,
                     });
                 }
 
-                if (!UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var upErr))
+                if (!UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var usedMode, out var upErr))
                 {
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = upErr ?? "upload failed" });
+                    responseLogs.Add($"uploadFailed usedMode={usedMode ?? "?"} err={upErr}");
+                    Console.WriteLine($"[SmartUpload] failed usedMode={usedMode ?? "?"} slot={slotNo} bytes={processedBytes} err={upErr}");
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = upErr ?? "upload failed", logs = responseLogs });
                 }
 
-                // 업로드 직후 재조회하여 트렁케이션(대용량 잘림) 여부 확인
-                if (Mode1Api.TryGetProgDataInfo(machineId, headType, (short)slotNo, out var verifyInfo, out var verifyErr))
+                // 업로드 검증:
+                // - 소형: GetMachineProgramData로 길이 비교
+                // - 대형: GetMachineProgramData가 잘릴 수 있어 ProgramList에 존재하는지만 확인
+                if (processedBytes <= 90000)
                 {
-                    var gotLen = (verifyInfo.programData ?? string.Empty).Length;
-                    if (gotLen < processedLen)
+                    if (Mode1Api.TryGetProgDataInfo(machineId, headType, (short)slotNo, out var verifyInfo, out var verifyErr))
                     {
-                        try { Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _); } catch { }
-                        return Request.CreateResponse((HttpStatusCode)500, new
+                        var gotLen = (verifyInfo.programData ?? string.Empty).Length;
+                        if (gotLen < processedLen)
                         {
-                            success = false,
-                            message = "uploaded program appears truncated on machine",
-                            expectedLength = processedLen,
-                            actualLength = gotLen,
-                            slotNo,
-                        });
+                            try { Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _); } catch { }
+                            return Request.CreateResponse((HttpStatusCode)500, new
+                            {
+                                success = false,
+                                message = "uploaded program appears truncated on machine",
+                                expectedLength = processedLen,
+                                actualLength = gotLen,
+                                slotNo,
+                            });
+                        }
+                    }
+                    else
+                    {
+                        return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = verifyErr ?? "upload verify failed" });
                     }
                 }
                 else
                 {
-                    // 재조회 실패 시에도 업로드 자체는 성공했을 수 있으나, 사용자는 완전성 검증이 필요하므로 실패 처리
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = verifyErr ?? "upload verify failed" });
+                    // 대용량은 readback이 잘릴 수 있어, 1초 단위로 리스트 존재 여부만 폴링한다.
+                    var ok = await VerifyProgramExists(machineId, headType, slotNo, 20);
+                    if (!ok)
+                    {
+                        responseLogs.Add("verifyFailed: program not found in list (timeout=20s)");
+                        return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = "upload verify failed", slotNo, logs = responseLogs });
+                    }
                 }
 
                 return Request.CreateResponse(HttpStatusCode.OK, new
@@ -990,6 +1245,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                     programName = $"O{slotNo.ToString().PadLeft(4, '0')}",
                     path = relPath,
                     length = processedLen,
+                    bytes = processedBytes,
+                    logs = responseLogs,
                 });
             }
             catch (Exception ex)
@@ -1997,7 +2254,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
                 }
 
-                if (!Mode1Api.TryGetProgDataInfo(machineId, headType, programNo, out var info, out var error))
+                if (!TryGetProgramDataPreferMode1(machineId, headType, programNo, out var programData, out var error))
                 {
                     return Request.CreateResponse((HttpStatusCode)500, new
                     {
@@ -2008,7 +2265,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 try
                 {
-                    int length = (info.programData ?? string.Empty).Length;
+                    int length = (programData ?? string.Empty).Length;
                     string savedPath = null;
 
                     if (!string.IsNullOrWhiteSpace(relPath))
@@ -2019,8 +2276,31 @@ namespace HiLinkBridgeWebApi48.Controllers
                         {
                             Directory.CreateDirectory(dir);
                         }
-                        File.WriteAllText(fullPath, info.programData ?? string.Empty, Encoding.ASCII);
+                        File.WriteAllText(fullPath, programData ?? string.Empty, Encoding.ASCII);
                         savedPath = relPath;
+                    }
+
+                    var resp = new
+                    {
+                        success = true,
+                        headType,
+                        slotNo = programNo,
+                        path = savedPath,
+                        length,
+                        warning = (string)null,
+                    };
+
+                    if (!string.IsNullOrEmpty(error) && error.StartsWith("TRUNCATED:"))
+                    {
+                        return Request.CreateResponse(HttpStatusCode.OK, new
+                        {
+                            success = true,
+                            headType,
+                            slotNo = programNo,
+                            path = savedPath,
+                            length,
+                            warning = error,
+                        });
                     }
 
                     return Request.CreateResponse(HttpStatusCode.OK, new
@@ -2242,7 +2522,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
             }
 
-            if (!Mode1Api.TryGetProgDataInfo(machineId, headType, programNo, out var info, out var error))
+            if (!TryGetProgramDataPreferMode1(machineId, headType, programNo, out var programData, out var error))
             {
                 return Request.CreateResponse((HttpStatusCode)500, new
                 {
@@ -2259,7 +2539,20 @@ namespace HiLinkBridgeWebApi48.Controllers
                 {
                     Directory.CreateDirectory(dir);
                 }
-                File.WriteAllText(fullPath, info.programData ?? string.Empty, Encoding.ASCII);
+                File.WriteAllText(fullPath, programData ?? string.Empty, Encoding.ASCII);
+
+                if (!string.IsNullOrEmpty(error) && error.StartsWith("TRUNCATED:"))
+                {
+                    return Request.CreateResponse(HttpStatusCode.OK, new
+                    {
+                        success = true,
+                        headType,
+                        programNo,
+                        path = relPath,
+                        length = (programData ?? string.Empty).Length,
+                        warning = error,
+                    });
+                }
 
                 return Request.CreateResponse(HttpStatusCode.OK, new
                 {
@@ -2267,7 +2560,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     headType,
                     programNo,
                     path = relPath,
-                    length = (info.programData ?? string.Empty).Length,
+                    length = (programData ?? string.Empty).Length,
                 });
             }
             catch (Exception ex)

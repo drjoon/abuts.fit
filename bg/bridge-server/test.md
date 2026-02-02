@@ -53,7 +53,7 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/activate" \
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"programNo":101}'
+ -d '{"headType":1,"programNo":4000}'
 
 # 업로드 (메인 headType=1)
 
@@ -64,8 +64,28 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs" \
 
 # 다운로드 (메인 headType=1)
 
+**주의**: Hi-Link DLL API는 프로그램 다운로드 시 **약 103KB 크기 제한**이 있습니다. 대용량 프로그램(>103KB)은 뒷부분이 잘린 채로 반환되며, 응답에 `warning` 필드가 포함됩니다.
+
 curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=4000&path=downloads/M5_4000.nc" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
+
+# 대용량 파일 다운로드 시 응답 예시 (truncated):
+
+# {
+
+# "success": true,
+
+# "headType": 1,
+
+# "slotNo": 4000,
+
+# "path": "downloads/M5_4000.nc",
+
+# "length": 103761,
+
+# "warning": "TRUNCATED: Hi-Link API readback limit (~103KB). Actual program may be larger. Downloaded 103761 bytes."
+
+# }
 
 curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=100&path=downloads/M5_100.nc" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
@@ -80,15 +100,15 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=10
 
 동작:
 
-- 가공중(busy)이면 현재 활성 프로그램(`/programs/active`)을 보고 그 슬롯(4000/4001)을 피해서 선택
-- 가공중이 아니어도 활성 슬롯을 덮어쓰지 않도록 반대 슬롯 선택
+- 활성 프로그램(`/programs/active`) 슬롯이 4000/4001이면 그 슬롯은 보호(삭제/덮어쓰기 금지)하고, 반대 슬롯을 선택
+- 활성 슬롯이 4000/4001이 아니면 기본적으로 4000을 선택
 - NC 본문을 `%`로 감싸고, 2행 `O####`를 선택된 슬롯(`O4000`/`O4001`)로 강제
 
 ```bash
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"path":"M5_any.nc","isNew":true}'
+ -d '{"headType":1,"path":"M5_20260129-KBDSGYQH-47_s7le4pzf.nc","isNew":true}'
 ```
 
 ### 2) 스마트 enqueue
