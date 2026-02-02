@@ -1,5 +1,4 @@
 using Hi_Link.Libraries.Model;
-using Hi_Link_Advanced.LinkBridge;
 using HiLinkBridgeWebApi48.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -44,97 +43,11 @@ namespace HiLinkBridgeWebApi48.Controllers
         [Route("machines/{machineId}/manual/preload-mode2")]
         public async Task<HttpResponseMessage> ManualPreloadMode2(string machineId, [FromBody] ManualPreloadRequest req)
         {
-            if (string.IsNullOrWhiteSpace(machineId))
+            return Request.CreateResponse(HttpStatusCode.Gone, new
             {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
-            }
-
-            var cooldownKey = $"manualPreloadMode2:{machineId}";
-            if (IsControlOnCooldown(cooldownKey))
-            {
-                return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
-            }
-
-            try
-            {
-                var st = GetOrCreateManualState(machineId);
-                var desired = req?.slotNo;
-                if (desired.HasValue && desired.Value != MANUAL_SLOT_A && desired.Value != MANUAL_SLOT_B)
-                {
-                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "invalid slotNo" });
-                }
-
-                var relPath = (req?.path ?? string.Empty).Trim();
-                if (string.IsNullOrWhiteSpace(relPath))
-                {
-                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
-                }
-
-                int slotNo = desired ?? MANUAL_SLOT_A;
-                var fullPath = GetSafeBridgeStorePath(relPath);
-                if (!File.Exists(fullPath))
-                {
-                    return Request.CreateResponse(HttpStatusCode.NotFound, new { success = false, message = "file not found", path = relPath });
-                }
-
-                var content = File.ReadAllText(fullPath);
-                var processed = SanitizeProgramTextForCnc(EnsureProgramHeader(content, slotNo));
-
-                short headType = req?.headType ?? 1; // 기본 Main
-
-                var dto = new UpdateMachineProgramInfo
-                {
-                    headType = headType,
-                    programNo = (short)slotNo,
-                    programData = processed,
-                    isNew = true,
-                };
-
-                var client = new HiLinkMode2Client();
-                var resp = await client.RequestRawAsync(machineId, CollectDataType.UpdateProgram, dto, 20000);
-
-                // Mode2 DLL은 응답 형식이 short result 또는 객체일 수 있음
-                short rc = 0;
-                if (resp is short s)
-                {
-                    rc = s;
-                }
-                else if (resp != null)
-                {
-                    // JSON 직렬화된 객체 형태일 때 result 필드를 우선 시도
-                    try
-                    {
-                        var token = Newtonsoft.Json.Linq.JObject.FromObject(resp);
-                        rc = (short)(token.Value<int?>("result") ?? 0);
-                    }
-                    catch { }
-                }
-
-                Console.WriteLine("[ManualPreloadMode2] machine={0} slot=O{1} headType={2} rc={3} respType={4}",
-                    machineId, slotNo, headType, rc, resp?.GetType()?.Name ?? "null");
-
-                if (rc != 0)
-                {
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = $"UpdateProgram failed (rc={rc})" });
-                }
-
-                st.LastPreloadedSlot = slotNo;
-                st.LastPreloadedPath = relPath;
-                st.LastPreloadedAtUtc = DateTime.UtcNow;
-
-                return Request.CreateResponse(HttpStatusCode.OK, new
-                {
-                    success = true,
-                    message = "Manual preload (Mode2) ok",
-                    slotNo,
-                    nextSlotNo = (slotNo == MANUAL_SLOT_A) ? MANUAL_SLOT_B : MANUAL_SLOT_A,
-                    path = relPath
-                });
-            }
-            catch (Exception ex)
-            {
-                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
-            }
+                success = false,
+                message = "Mode2 is disabled. Use /manual/preload (Mode1)."
+            });
         }
 
         private static readonly ConcurrentDictionary<string, ManualMachineState> ManualStates =
@@ -646,7 +559,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
-        // POST /raw (Mode1 + Mode2 지원: Alarm은 Mode1, 그 외 CollectDataType은 Mode2)
+        // POST /raw (Mode1 only)
         [HttpPost]
         [Route("raw")]
         public async Task<HttpResponseMessage> Raw(RawHiLinkRequest raw)
@@ -659,6 +572,12 @@ namespace HiLinkBridgeWebApi48.Controllers
             var dataType = raw.dataType.Trim();
             var isAlarm = string.Equals(dataType, "GetMachineAlarmInfo", StringComparison.OrdinalIgnoreCase);
             var isActivateProgram = string.Equals(dataType, "SetActivateProgram", StringComparison.OrdinalIgnoreCase);
+            var isGetProgList = string.Equals(dataType, "GetProgListInfo", StringComparison.OrdinalIgnoreCase);
+            var isGetActivateProg = string.Equals(dataType, "GetActivateProgInfo", StringComparison.OrdinalIgnoreCase);
+            var isGetProgData = string.Equals(dataType, "GetProgDataInfo", StringComparison.OrdinalIgnoreCase);
+            var isGetMachineList = string.Equals(dataType, "GetMachineList", StringComparison.OrdinalIgnoreCase);
+            var isGetMachineStatus = string.Equals(dataType, "GetMachineStatus", StringComparison.OrdinalIgnoreCase);
+            var isGetOpStatus = string.Equals(dataType, "GetOPStatus", StringComparison.OrdinalIgnoreCase);
 
             // Alarm은 Mode1 API로 처리 (안정성)
             if (isAlarm)
@@ -693,6 +612,91 @@ namespace HiLinkBridgeWebApi48.Controllers
                     success = true,
                     data = new { headType = data.headType, alarms }
                 });
+            }
+
+            // Machine list (Mode1, SSOT=machines.json)
+            if (isGetMachineList)
+            {
+                if (!Mode1Api.TryGetMachineList(out var list, out var err))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = err ?? "GetMachineList failed" });
+                }
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = list });
+            }
+
+            // Machine status (Mode1)
+            if (isGetMachineStatus || isGetOpStatus)
+            {
+                if (!Mode1Api.TryGetMachineStatus(raw.uid, out var status, out var err))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = err ?? "GetMachineStatus failed" });
+                }
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    data = new { status = status.ToString() }
+                });
+            }
+
+            // Program list (Mode1)
+            if (isGetProgList)
+            {
+                short headType = 1;
+                try
+                {
+                    if (raw.payload != null)
+                    {
+                        headType = (short)raw.payload.Value<int>();
+                    }
+                }
+                catch { }
+
+                // API headType: 1=메인, 2=서브. Mode1 API는 메인/서브를 0/1로 쓰는 케이스가 있어 0/1로 정규화한다.
+                short mapped = (short)Math.Max(0, headType - 1);
+                if (!Mode1Api.TryGetProgListInfo(raw.uid, mapped, out var info, out var err))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = err ?? "GetProgListInfo failed" });
+                }
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = info });
+            }
+
+            // Activate program info (Mode1)
+            if (isGetActivateProg)
+            {
+                if (!Mode1Api.TryGetActivateProgInfo(raw.uid, out var info, out var err))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = err ?? "GetActivateProgInfo failed" });
+                }
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = info });
+            }
+
+            // Program data info (Mode1)
+            if (isGetProgData)
+            {
+                short headType = 1;
+                short programNo = 0;
+                try
+                {
+                    if (raw.payload?[("headType")] != null)
+                    {
+                        headType = (short)raw.payload.Value<int>("headType");
+                    }
+                    if (raw.payload?[("programNo")] != null)
+                    {
+                        programNo = (short)raw.payload.Value<int>("programNo");
+                    }
+                }
+                catch { }
+                if (programNo <= 0)
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "programNo is required" });
+                }
+                // API headType: 1=메인, 2=서브. Mode1은 1/2를 그대로 쓰는 DTO가 많아 그대로 전달한다.
+                if (!Mode1Api.TryGetProgDataInfo(raw.uid, headType, programNo, out var info, out var err))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = err ?? "GetProgDataInfo failed" });
+                }
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, data = info });
             }
 
             // Program 활성화 (Mode1 control)
@@ -756,93 +760,12 @@ namespace HiLinkBridgeWebApi48.Controllers
                 });
             }
 
-            // Mode2 처리
-            if (!Enum.TryParse<CollectDataType>(dataType, ignoreCase: true, out var collectType))
+            return Request.CreateResponse(HttpStatusCode.BadRequest, new
             {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new
-                {
-                    success = false,
-                    message = $"unsupported dataType: {dataType}"
-                });
-            }
-
-            // 안전한 READ 타입만 허용 (payload 없이)
-            var safeReadTypes = new HashSet<CollectDataType>
-            {
-                CollectDataType.GetOPStatus,
-                CollectDataType.GetProgListInfo,
-                CollectDataType.GetActivateProgInfo,
-                CollectDataType.GetMotorTemperature,
-                CollectDataType.GetToolLifeInfo,
-                CollectDataType.GetProgDataInfo,
-                CollectDataType.GetMachineList,
-            };
-            if (!safeReadTypes.Contains(collectType))
-            {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new
-                {
-                    success = false,
-                    message = $"unsupported mode2 dataType for raw: {collectType}"
-                });
-            }
-
-            // READ 계열은 과도 호출 쿨다운 적용
-            var readKey = $"{raw.uid ?? string.Empty}:{collectType}";
-            if (!raw.bypassCooldown && IsRawReadOnCooldown(readKey))
-            {
-                return Request.CreateResponse((HttpStatusCode)429, new
-                {
-                    success = false,
-                    message = "Too many raw requests"
-                });
-            }
-
-            var client = new HiLinkMode2Client();
-            var timeout = raw.timeoutMilliseconds > 0 ? raw.timeoutMilliseconds : 3000;
-            object payloadForMode2 = null;
-
-            // CollectDataType별로 DLL이 기대하는 단순 스칼라 입력을 맞춰준다.
-            if (collectType == CollectDataType.GetProgListInfo || collectType == CollectDataType.GetActivateProgInfo)
-            {
-                // API headType(1=메인, 2=서브)을 Mode2 DLL 기대값(0=메인, 1=서브)으로 변환
-                short head = 0;
-                try
-                {
-                    if (raw.payload != null)
-                    {
-                        var apiHead = raw.payload.Value<int>();
-                        head = (short)Math.Max(0, apiHead - 1);
-                    }
-                }
-                catch { /* fallback 0 */ }
-                payloadForMode2 = head;
-            }
-
-            try
-            {
-                var resp = await client.RequestRawAsync(raw.uid, collectType, payloadForMode2, timeout);
-                return Request.CreateResponse(HttpStatusCode.OK, new
-                {
-                    success = true,
-                    data = resp
-                });
-            }
-            catch (InvalidCastException ice)
-            {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new
-                {
-                    success = false,
-                    message = $"raw request payload/type mismatch: {ice.Message}"
-                });
-            }
-            catch (Exception ex)
-            {
-                return Request.CreateResponse((HttpStatusCode)500, new
-                {
-                    success = false,
-                    message = ex.Message
-                });
-            }
+                success = false,
+                message = $"unsupported dataType (mode1-only): {dataType}" +
+                          " (Mode2 types like GetMotorTemperature/GetToolLifeInfo are disabled)"
+            });
         }
 
         // 프런트에서 /machines/{id}/raw로 호출하는 경로 호환

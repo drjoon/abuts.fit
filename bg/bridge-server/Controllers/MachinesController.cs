@@ -13,8 +13,6 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/cnc/machines")]
     public class MachinesController : ApiController
     {
-        private static readonly HiLinkMode2Client Client = new HiLinkMode2Client();
-
         // POST /machines
         [HttpPost]
         [Route("")]
@@ -35,20 +33,8 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             try
             {
-                var (success, resultCode) = await Client.AddMachineAsync(request.uid, request.ip, request.port);
-                Console.WriteLine("[/machines] AddMachine result: success={0}, code={1}", success, resultCode);
-
-                // 이미 등록된 UID(88)인 경우, 통신 설정(IP/Port)만 갱신하기 위해 UpdateMachine을 시도한다.
-                if (!success && resultCode.HasValue && resultCode.Value == 88
-                    && !string.IsNullOrWhiteSpace(request.ip) && request.port > 0)
-                {
-                    var (updSuccess, updCode) = await Client.UpdateMachineAsync(request.uid, request.ip, request.port);
-                    Console.WriteLine("[/machines] UpdateMachine result: success={0}, code={1}", updSuccess, updCode);
-                    success = updSuccess;
-                    resultCode = updCode;
-                }
-
-                // AddMachine 결과와 상관없이, 유효한 uid/ip/port 가 있으면 machines.json 설정도 함께 갱신한다.
+                // Mode1 기반 브리지에서는 AddMachine API가 없으므로, machines.json 설정을 SSOT로 관리한다.
+                // 유효한 uid/ip/port 가 있으면 machines.json 설정을 갱신하고, Mode1HandleStore.TryGetHandle로 통신 검증만 수행한다.
                 if (!string.IsNullOrWhiteSpace(request.uid) && !string.IsNullOrWhiteSpace(request.ip) && request.port > 0)
                 {
                     try
@@ -61,27 +47,14 @@ namespace HiLinkBridgeWebApi48.Controllers
                     }
                 }
 
-                string message = null;
-                if (resultCode.HasValue)
-                {
-                    switch (resultCode.Value)
-                    {
-                        case -16:
-                            message = "CNC 통신 에러입니다. 설비 전원, 통신 케이블, IP/포트 설정과 네트워크 상태를 확인해 주세요.";
-                            break;
-                        case 88:
-                            message = "이미 등록된 UID 입니다.";
-                            break;
-                        default:
-                            break;
-                    }
-                }
-
+                // 통신 검증
+                Mode1HandleStore.Invalidate(request.uid);
+                var ok = Mode1HandleStore.TryGetHandle(request.uid, out var _, out var err);
                 return Request.CreateResponse(HttpStatusCode.OK, new
                 {
-                    success,
-                    result = resultCode,
-                    message
+                    success = ok,
+                    result = ok ? 0 : -1,
+                    message = ok ? (string)null : (err ?? "OpenMachineHandle failed")
                 });
             }
             catch (Exception ex)
@@ -100,11 +73,10 @@ namespace HiLinkBridgeWebApi48.Controllers
         [Route("")]
         public async Task<HttpResponseMessage> Get()
         {
-            var list = await Client.GetMachineListAsync();
             return Request.CreateResponse(HttpStatusCode.OK, new
             {
                 success = true,
-                machines = list
+                machines = MachinesConfigStore.Load() ?? new List<MachineConfigItem>()
             });
         }
 

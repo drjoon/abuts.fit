@@ -18,8 +18,6 @@ namespace HiLinkBridgeWebApi48
                 }
 
                 Console.WriteLine("[init] machines.json 기반 장비 동기화 시작 (총 {0}개)", list.Count);
-
-                var client = new HiLinkMode2Client();
                 int ok = 0;
                 int fail = 0;
 
@@ -32,21 +30,21 @@ namespace HiLinkBridgeWebApi48
 
                     try
                     {
-                        var (success, resultCode) = await client.AddMachineAsync(m.uid, m.ip, m.port);
-                        if (success)
+                        Mode1HandleStore.Invalidate(m.uid);
+                        if (Mode1HandleStore.TryGetHandle(m.uid, out var _, out var err))
                         {
                             ok++;
                         }
                         else
                         {
                             fail++;
-                            Console.WriteLine("[init] AddMachine 실패 uid={0} code={1}", m.uid, resultCode);
+                            Console.WriteLine("[init] OpenMachineHandle 실패 uid={0} err={1}", m.uid, err);
                         }
                     }
                     catch (Exception ex)
                     {
                         fail++;
-                        Console.WriteLine("[init] AddMachine 예외 uid={0} error={1}", m.uid, ex.Message);
+                        Console.WriteLine("[init] OpenMachineHandle 예외 uid={0} error={1}", m.uid, ex.Message);
                     }
                 }
 
