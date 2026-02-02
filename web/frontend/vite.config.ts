@@ -7,10 +7,6 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiTarget = env.VITE_DEV_API_TARGET || "http://localhost:8080";
-  const cncTarget =
-    env.VITE_DEV_CNC_TARGET ||
-    env.VITE_DEV_BRIDGE_TARGET ||
-    "http://localhost:8002";
 
   return {
     server: {
