@@ -35,67 +35,98 @@ namespace HiLinkBridgeWebApi48
             Task.Factory.StartNew(ProcessQueue, Cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
+        private static void TrimPendingResponsesIfNeeded()
+        {
+            try
+            {
+                // mismatched 응답이 누적되면 PendingResponses가 무한 성장할 수 있다.
+                // 안전을 위해 상한을 두고 초과 시 전체를 비운다(요청-응답 매칭 실패 시에도 종료 지연/메모리 압박 방지).
+                if (PendingResponses.Count > 2000)
+                {
+                    PendingResponses.Clear();
+                }
+            }
+            catch
+            {
+            }
+        }
+
         private static void ProcessQueue()
         {
-            // 워커 스레드 내에서 단 한 번 MessageHandler를 생성하여 DLL 내부 스레드를 초기화한다.
-            _ = new MessageHandler();
-            Console.WriteLine("[HiLinkMode2Client] MessageHandler initialized in worker thread.");
-
-            // ResponseFIFO에 쌓일 수 있는 예상치 못한 응답을 미리 비운다.
-            while (MessageHandler.ResponseFIFO.Count > 0) MessageHandler.ResponseFIFO.Dequeue();
-
-            foreach (var item in RequestQueue.GetConsumingEnumerable(Cts.Token))
+            try
             {
-                try
+                // 워커 스레드 내에서 단 한 번 MessageHandler를 생성하여 DLL 내부 스레드를 초기화한다.
+                _ = new MessageHandler();
+                Console.WriteLine("[HiLinkMode2Client] MessageHandler initialized in worker thread.");
+
+                // ResponseFIFO에 쌓일 수 있는 예상치 못한 응답을 미리 비운다.
+                while (MessageHandler.ResponseFIFO.Count > 0) MessageHandler.ResponseFIFO.Dequeue();
+
+                foreach (var item in RequestQueue.GetConsumingEnumerable(Cts.Token))
                 {
-                    MessageHandler.RequestFIFO.Enqueue(item.Message);
-
-                    var sw = System.Diagnostics.Stopwatch.StartNew();
-                    object responseData = null;
-
-                    var expectedKey = string.Format("{0}:{1}", item.Message.UID ?? string.Empty, item.Message.DataType);
-                    if (PendingResponses.TryGetValue(expectedKey, out var pendingQueue))
+                    try
                     {
-                        if (pendingQueue != null && pendingQueue.TryDequeue(out var pendingResp))
-                        {
-                            responseData = pendingResp.Data;
-                        }
-                    }
+                        MessageHandler.RequestFIFO.Enqueue(item.Message);
 
-                    while (responseData == null && sw.ElapsedMilliseconds < item.TimeoutMs)
-                    {
-                        if (MessageHandler.ResponseFIFO.Count > 0)
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        object responseData = null;
+
+                        var expectedKey = string.Format("{0}:{1}", item.Message.UID ?? string.Empty, item.Message.DataType);
+                        if (PendingResponses.TryGetValue(expectedKey, out var pendingQueue))
                         {
-                            // FIFO이므로 들어온 순서대로 처리된다고 가정한다.
-                            // 불안정할 경우, 모든 응답을 별도 큐에 넣고 UID/DataType으로 매칭해야 한다.
-                            if (MessageHandler.ResponseFIFO.Dequeue() is ResponseDataMessage resp)
+                            if (pendingQueue != null && pendingQueue.TryDequeue(out var pendingResp))
                             {
-                                if (resp.UID == item.Message.UID && resp.DataType == item.Message.DataType)
-                                {
-                                    responseData = resp.Data;
-                                    break;
-                                }
-                                else
-                                {
-                                    // 내가 기다리던 응답이 아니면 로그만 남긴다. (이전 요청의 타임아웃된 응답일 수 있음)
-                                    Console.WriteLine($"[HiLinkMode2Client] Mismatched response. Expected: {item.Message.UID}/{item.Message.DataType}, Got: {resp.UID}/{resp.DataType}");
-
-                                    var key = string.Format("{0}:{1}", resp.UID ?? string.Empty, resp.DataType);
-                                    var q = PendingResponses.GetOrAdd(key, _ => new ConcurrentQueue<ResponseDataMessage>());
-                                    q.Enqueue(resp);
-                                }
+                                responseData = pendingResp.Data;
                             }
                         }
-                        Thread.Sleep(10); // CPU 사용량 감소
-                    }
 
-                    item.Tcs.TrySetResult(responseData);
+                        while (responseData == null && sw.ElapsedMilliseconds < item.TimeoutMs && !Cts.IsCancellationRequested)
+                        {
+                            if (MessageHandler.ResponseFIFO.Count > 0)
+                            {
+                                // FIFO이므로 들어온 순서대로 처리된다고 가정한다.
+                                // 불안정할 경우, 모든 응답을 별도 큐에 넣고 UID/DataType으로 매칭해야 한다.
+                                if (MessageHandler.ResponseFIFO.Dequeue() is ResponseDataMessage resp)
+                                {
+                                    if (resp.UID == item.Message.UID && resp.DataType == item.Message.DataType)
+                                    {
+                                        responseData = resp.Data;
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        // 내가 기다리던 응답이 아니면 로그만 남긴다. (이전 요청의 타임아웃된 응답일 수 있음)
+                                        Console.WriteLine($"[HiLinkMode2Client] Mismatched response. Expected: {item.Message.UID}/{item.Message.DataType}, Got: {resp.UID}/{resp.DataType}");
+
+                                        var key = string.Format("{0}:{1}", resp.UID ?? string.Empty, resp.DataType);
+                                        var q = PendingResponses.GetOrAdd(key, _ => new ConcurrentQueue<ResponseDataMessage>());
+                                        q.Enqueue(resp);
+                                        TrimPendingResponsesIfNeeded();
+                                    }
+                                }
+                            }
+
+                            Thread.Sleep(10); // CPU 사용량 감소
+                        }
+
+                        item.Tcs.TrySetResult(responseData);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine($"[HiLinkMode2Client] Worker thread exception for UID {item.Message.UID}: {ex}");
+                        item.Tcs.TrySetException(ex);
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"[HiLinkMode2Client] Worker thread exception for UID {item.Message.UID}: {ex}");
-                    item.Tcs.TrySetException(ex);
-                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[HiLinkMode2Client] worker fatal exception: {ex}");
             }
         }
 
@@ -198,7 +229,8 @@ namespace HiLinkBridgeWebApi48
 
         public static void Stop()
         {
-            Cts.Cancel();
+            try { RequestQueue.CompleteAdding(); } catch { }
+            try { Cts.Cancel(); } catch { }
         }
     }
 }
