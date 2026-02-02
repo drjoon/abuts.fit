@@ -268,10 +268,37 @@ namespace HiLinkBridgeWebApi48
             {
                 return true;
             }
+
+            // -8(무효 핸들) → Invalidate 후 1회 재시도
             if (result == -8)
             {
                 Mode1HandleStore.Invalidate(uid);
+                if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
+                {
+                    info = new MachineProgramInfo();
+                    short result2;
+                    lock (DllLock)
+                    {
+                        result2 = HiLink.GetMachineActivateProgInfo(handle2, ref info);
+                    }
+                    if (result2 == 0)
+                    {
+                        return true;
+                    }
+                    if (result2 == -8)
+                    {
+                        Mode1HandleStore.Invalidate(uid);
+                    }
+                    error = $"GetMachineActivateProgInfo failed (result={result2})";
+                    info = default(MachineProgramInfo);
+                    return false;
+                }
+
+                error = err2;
+                info = default(MachineProgramInfo);
+                return false;
             }
+
             error = $"GetMachineActivateProgInfo failed (result={result})";
             info = default(MachineProgramInfo);
             return false;
