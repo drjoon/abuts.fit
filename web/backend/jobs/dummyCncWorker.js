@@ -113,22 +113,22 @@ async function runDummySchedulesOnce() {
         }
 
         try {
-          const rawRes = await fetch(`${BRIDGE_BASE}/api/cnc/raw`, {
-            method: "POST",
-            headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({
-              uid,
-              dataType: "UpdateActivateProg",
-              payload: { headType: 0, programNo: progNo },
-              timeoutMilliseconds: 5000,
-            }),
-          });
-          const rawBody = await rawRes.json().catch(() => ({}));
-          if (!rawRes.ok || rawBody?.success === false) {
+          const actRes = await fetch(
+            `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(uid)}/programs/activate`,
+            {
+              method: "POST",
+              headers: withBridgeHeaders({
+                "Content-Type": "application/json",
+              }),
+              body: JSON.stringify({ headType: 1, programNo: progNo }),
+            },
+          );
+          const actBody = await actRes.json().catch(() => ({}));
+          if (!actRes.ok || actBody?.success === false) {
             console.error(
-              "dummyCncWorker: UpdateActivateProg failed",
+              "dummyCncWorker: activate program failed",
               uid,
-              rawBody,
+              actBody,
             );
             continue;
           }

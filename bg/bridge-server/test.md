@@ -60,11 +60,11 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"slotNo":101,"path":"M5_O101.nc","isNew":true}'
+ -d '{"headType":1,"slotNo":102,"path":"M5_O102.nc","isNew":true}'
 
 # 다운로드 (메인 headType=1)
 
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=101&path=downloads/M5_101.nc" \
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=102&path=downloads/M5_102.nc" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 
 # 프로그램 목록 (메인)

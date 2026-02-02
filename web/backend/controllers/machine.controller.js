@@ -71,22 +71,18 @@ export async function getAllMachineStatusProxy(req, res) {
 
     const fetchAlarms = async (uid) => {
       try {
-        const alarmResp = await fetch(`${BRIDGE_BASE}/api/cnc/raw`, {
-          method: "POST",
-          headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({
-            uid,
-            dataType: "GetMachineAlarmInfo",
-            payload: { headType: 1 },
-          }),
+        const alarmUrl = `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(
+          uid,
+        )}/alarms?headType=1`;
+        const alarmResp = await fetch(alarmUrl, {
+          method: "GET",
+          headers: withBridgeHeaders(),
         });
         const alarmBody = await alarmResp.json().catch(() => ({}));
-        const unwrap = (x) => (x && x.data != null ? x.data : x);
-        const l1 = unwrap(alarmBody);
-        const l2 = unwrap(l1);
         const alarms =
-          (Array.isArray(l2?.alarms) ? l2.alarms : null) ||
-          (Array.isArray(l1?.alarms) ? l1.alarms : null) ||
+          (Array.isArray(alarmBody?.data?.alarms)
+            ? alarmBody.data.alarms
+            : null) ||
           (Array.isArray(alarmBody?.alarms) ? alarmBody.alarms : null) ||
           [];
         return alarms;
@@ -227,14 +223,19 @@ export async function getMachineAlarmProxy(req, res) {
       }
     };
 
-    const response = await fetchWithTimeout(`${BRIDGE_BASE}/api/cnc/raw`, {
-      method: "POST",
-      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({
-        uid,
-        dataType: "GetMachineAlarmInfo",
-        payload: req.body?.payload ?? { headType: req.body?.headType ?? 1 },
-      }),
+    const headType =
+      typeof req.body?.headType === "number"
+        ? req.body.headType
+        : typeof req.body?.payload?.headType === "number"
+          ? req.body.payload.headType
+          : 1;
+
+    const url = `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(
+      uid,
+    )}/alarms?headType=${encodeURIComponent(headType)}`;
+    const response = await fetchWithTimeout(url, {
+      method: "GET",
+      headers: withBridgeHeaders(),
     });
     const data = await response.json().catch(() => ({}));
     res.status(response.status).json(data);
@@ -344,6 +345,24 @@ export async function callRawProxy(req, res) {
   try {
     if (!ensureBridgeConfigured(res)) return;
     const dataType = req.body?.dataType;
+
+    // 일관성: Alarm은 전용 엔드포인트로 처리
+    if (String(dataType || "") === "GetMachineAlarmInfo") {
+      const headType =
+        typeof req.body?.payload?.headType === "number"
+          ? req.body.payload.headType
+          : 1;
+      const url = `${BRIDGE_BASE}/api/cnc/machines/${encodeURIComponent(
+        uid,
+      )}/alarms?headType=${encodeURIComponent(headType)}`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: withBridgeHeaders(),
+      });
+      const data = await response.json().catch(() => ({}));
+      return res.status(response.status).json(data);
+    }
+
     const READ_TYPES = [
       "GetOPStatus",
       "GetProgListInfo",
