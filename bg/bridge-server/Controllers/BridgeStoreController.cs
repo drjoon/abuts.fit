@@ -14,40 +14,6 @@ namespace HiLinkBridgeWebApi48.Controllers
     {
         private static readonly string RootPath = Config.BridgeStoreRoot;
 
-        /// <summary>
-        /// 파일명 또는 프로그램 번호를 O#### 형식으로 정규화합니다.
-        /// </summary>
-        public static string NormalizeProgramName(string input)
-        {
-            if (string.IsNullOrWhiteSpace(input)) return "O0000";
-            
-            // 확장자 제거 및 경로 제거
-            var name = Path.GetFileNameWithoutExtension(input);
-            
-            // 숫자만 추출
-            var match = System.Text.RegularExpressions.Regex.Match(name, @"\d+");
-            if (match.Success)
-            {
-                int num = int.Parse(match.Value);
-                return string.Format("O{0:D4}", num);
-            }
-            
-            return "O0000";
-        }
-
-        /// <summary>
-        /// O#### 형식에서 숫자만 추출하여 int로 반환합니다.
-        /// </summary>
-        public static int ExtractProgramNo(string input)
-        {
-            var match = System.Text.RegularExpressions.Regex.Match(input ?? string.Empty, @"\d+");
-            if (match.Success)
-            {
-                return int.Parse(match.Value);
-            }
-            return 0;
-        }
-
         private string GetSafePath(string relativePath)
         {
             var rel = relativePath ?? string.Empty;
@@ -396,7 +362,6 @@ namespace HiLinkBridgeWebApi48.Controllers
         {
             public string path { get; set; }
             public string content { get; set; }
-            public bool normalizeName { get; set; } = true;
         }
 
         [HttpPost]
@@ -414,16 +379,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             try
             {
-                var fileName = Path.GetFileName(req.path);
                 var targetPath = req.path;
-
-                if (req.normalizeName && (fileName.ToLower().EndsWith(".nc") || fileName.ToLower().EndsWith(".txt")))
-                {
-                    var normalizedName = NormalizeProgramName(fileName) + Path.GetExtension(fileName).ToLower();
-                    var parentDir = Path.GetDirectoryName(req.path) ?? string.Empty;
-                    targetPath = Path.Combine(parentDir, normalizedName);
-                }
-
                 var full = GetSafePath(targetPath);
                 var dir = Path.GetDirectoryName(full) ?? RootPath;
                 if (!Directory.Exists(dir))
@@ -436,7 +392,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.OK, new { 
                     success = true, 
                     path = targetPath,
-                    normalized = req.normalizeName
+                    normalized = false
                 });
             }
             catch (Exception ex)

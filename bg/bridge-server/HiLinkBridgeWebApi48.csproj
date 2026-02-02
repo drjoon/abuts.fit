@@ -98,7 +98,6 @@
     <Compile Include="Config.cs" />
     <Compile Include="DummyCncScheduler.cs" />
     <Compile Include="CncJobQueue.cs" />
-    <Compile Include="CncJobDispatcher.cs" />
     <Compile Include="CncMachineSignalUtils.cs" />
     <Compile Include="CncContinuousMachining.cs" />
     <Compile Include="ManualFileMachiningWatcher.cs" />

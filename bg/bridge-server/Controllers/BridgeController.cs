@@ -7,9 +7,10 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Net;
 using System.Net.Http;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web.Http;
 using Mode1Api = HiLinkBridgeWebApi48.Mode1Api;
@@ -137,6 +138,555 @@ namespace HiLinkBridgeWebApi48.Controllers
                 result = result + "\r\n%";
             }
             return result;
+        }
+
+        private static string EnsurePercentAndHeaderSecondLine(string content, int programNo)
+        {
+            if (string.IsNullOrEmpty(content)) return content;
+
+            var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None)
+                .Select(x => x ?? string.Empty)
+                .ToList();
+
+            // 선행 공백 라인 제거
+            while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[0]))
+            {
+                lines.RemoveAt(0);
+            }
+
+            var header = $"O{programNo.ToString().PadLeft(4, '0')}";
+
+            if (lines.Count == 0)
+            {
+                return "%\r\n" + header + "\r\n%";
+            }
+
+            // 1행은 무조건 %
+            if ((lines[0] ?? string.Empty).Trim() != "%")
+            {
+                lines.Insert(0, "%");
+            }
+
+            // % 다음에 빈 줄이 있으면 제거하여 header가 항상 2행이 되도록
+            while (lines.Count > 1 && string.IsNullOrWhiteSpace(lines[1]))
+            {
+                lines.RemoveAt(1);
+            }
+
+            if (lines.Count == 1)
+            {
+                lines.Add(header);
+            }
+            else
+            {
+                lines[1] = header;
+            }
+
+            return string.Join("\r\n", lines);
+        }
+
+        private static int ChooseManualSlotForUpload(string machineId)
+        {
+            var active = 0;
+            if (Mode1Api.TryGetActivateProgInfo(machineId, out var info, out var _))
+            {
+                active = ParseProgramNoFromName(info.MainProgramName);
+                if (active <= 0) active = ParseProgramNoFromName(info.SubProgramName);
+            }
+
+            // 가공 중이면 현재 실행 슬롯을 피한다.
+            if (CncMachineSignalUtils.TryGetMachineBusy(machineId, out var busy) && busy)
+            {
+                if (active == MANUAL_SLOT_A) return MANUAL_SLOT_B;
+                return MANUAL_SLOT_A;
+            }
+
+            // 가공 중이 아니더라도 현재 활성 슬롯을 덮어쓰지 않도록 반대 슬롯을 선택한다.
+            if (active == MANUAL_SLOT_A) return MANUAL_SLOT_B;
+            if (active == MANUAL_SLOT_B) return MANUAL_SLOT_A;
+            return MANUAL_SLOT_A;
+        }
+
+        private static void QueueUploadProgramData(string machineId, short headType, int slotNo, string processed, bool isNew)
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    try
+                    {
+                        Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _);
+                    }
+                    catch { }
+
+                    if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
+                    {
+                        Console.WriteLine("[HighLevelUpload] handle error: " + errUp);
+                        return;
+                    }
+
+                    var info = new UpdateMachineProgramInfo
+                    {
+                        headType = headType,
+                        programNo = (short)slotNo,
+                        programData = processed,
+                        isNew = isNew,
+                    };
+
+                    short upRc;
+                    lock (Mode1Api.DllLock)
+                    {
+                        upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                    }
+
+                    if (upRc == -8)
+                    {
+                        Mode1HandleStore.Invalidate(machineId);
+                        if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
+                        {
+                            lock (Mode1Api.DllLock)
+                            {
+                                upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
+                            }
+                            if (upRc == -8)
+                            {
+                                Mode1HandleStore.Invalidate(machineId);
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("[HighLevelUpload] handle retry error: " + errUp2);
+                        }
+                    }
+                    if (upRc != 0)
+                    {
+                        Console.WriteLine("[HighLevelUpload] upload failed rc={0} for {1}", upRc, machineId);
+                        return;
+                    }
+                    Console.WriteLine("[HighLevelUpload] success: {0} headType={1} slot={2}", machineId, headType, slotNo);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("[HighLevelUpload] background error: " + ex);
+                }
+            });
+        }
+
+        private static bool UploadProgramDataBlocking(string machineId, short headType, int slotNo, string processed, bool isNew, out string error)
+        {
+            error = null;
+            try
+            {
+                try
+                {
+                    Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _);
+                }
+                catch { }
+
+                if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
+                {
+                    error = errUp;
+                    return false;
+                }
+
+                var info = new UpdateMachineProgramInfo
+                {
+                    headType = headType,
+                    programNo = (short)slotNo,
+                    programData = processed,
+                    isNew = isNew,
+                };
+
+                short upRc;
+                lock (Mode1Api.DllLock)
+                {
+                    upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                }
+
+                if (upRc == -8)
+                {
+                    Mode1HandleStore.Invalidate(machineId);
+                    if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
+                    {
+                        lock (Mode1Api.DllLock)
+                        {
+                            upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
+                        }
+                        if (upRc == -8)
+                        {
+                            Mode1HandleStore.Invalidate(machineId);
+                        }
+                    }
+                    else
+                    {
+                        error = errUp2;
+                        return false;
+                    }
+                }
+
+                if (upRc != 0)
+                {
+                    error = "SetMachineProgramInfo failed (result=" + upRc + ")";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static async Task<bool> VerifyProgramExists(string machineId, short headType, int slotNo, int timeoutSeconds)
+        {
+            var started = DateTime.UtcNow;
+            while (true)
+            {
+                if ((DateTime.UtcNow - started).TotalSeconds > timeoutSeconds) return false;
+
+                if (Mode1Api.TryGetProgListInfo(machineId, headType, out var progList, out var _))
+                {
+                    try
+                    {
+                        var list = progList.programArray;
+                        if (list == null) continue;
+
+                        foreach (var p in list)
+                        {
+                            if (p.no == slotNo) return true;
+                        }
+                    }
+                    catch { }
+                }
+
+                await Task.Delay(500);
+            }
+        }
+
+        private class HighLevelStartJob
+        {
+            public string JobId;
+            public short HeadType;
+            public List<string> Paths;
+            public int MaxWaitSeconds;
+
+            public int Index;
+            public int CurrentSlot;
+            public int PreviousSlot;
+            public int ProductCountBefore;
+
+            public DateTime StartedAtUtc;
+            public DateTime? FinishedAtUtc;
+            public string Status;
+            public string ErrorCode;
+            public string ErrorMessage;
+        }
+
+        private class HighLevelMachineQueue
+        {
+            public readonly object Sync = new object();
+            public readonly Queue<HighLevelStartJob> Jobs = new Queue<HighLevelStartJob>();
+            public bool WorkerRunning;
+            public HighLevelStartJob Current;
+        }
+
+        private static readonly ConcurrentDictionary<string, HighLevelMachineQueue> HighLevelStartQueues =
+            new ConcurrentDictionary<string, HighLevelMachineQueue>(StringComparer.OrdinalIgnoreCase);
+
+        private static HighLevelMachineQueue GetOrCreateHighLevelQueue(string machineId)
+        {
+            return HighLevelStartQueues.GetOrAdd(machineId, _ => new HighLevelMachineQueue());
+        }
+
+        private static async Task<bool> WaitUntilIdleOrTimeout(string machineId, int maxWaitSeconds)
+        {
+            var started = DateTime.UtcNow;
+            while (true)
+            {
+                if (CncMachineSignalUtils.TryGetMachineBusy(machineId, out var busy) && busy)
+                {
+                    if ((DateTime.UtcNow - started).TotalSeconds > maxWaitSeconds) return false;
+                    await Task.Delay(3000);
+                    continue;
+                }
+                return true;
+            }
+        }
+
+        private static async Task<bool> WaitUntilDoneOrTimeout(string machineId, int maxWaitSeconds)
+        {
+            var started = DateTime.UtcNow;
+            while (true)
+            {
+                if (CncMachineSignalUtils.TryGetMachineBusy(machineId, out var busy) && busy)
+                {
+                    if ((DateTime.UtcNow - started).TotalSeconds > maxWaitSeconds) return false;
+                    await Task.Delay(3000);
+                    continue;
+                }
+                return true;
+            }
+        }
+
+        private static async Task<bool> WaitForProductCountIncrease(string machineId, int before, int timeoutSeconds)
+        {
+            var started = DateTime.UtcNow;
+            while (true)
+            {
+                if ((DateTime.UtcNow - started).TotalSeconds > timeoutSeconds) return false;
+                if (CncMachineSignalUtils.TryGetProductCount(machineId, out var c) && c > before) return true;
+                await Task.Delay(2000);
+            }
+        }
+
+        private static bool IsAlarm(string machineId, out string error)
+        {
+            error = null;
+            if (Mode1Api.TryGetMachineStatus(machineId, out var st, out var stErr))
+            {
+                if (st == MachineStatusType.Alarm)
+                {
+                    error = stErr;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static void EnsureWorkerStarted(string machineId)
+        {
+            var q = GetOrCreateHighLevelQueue(machineId);
+            lock (q.Sync)
+            {
+                if (q.WorkerRunning) return;
+                q.WorkerRunning = true;
+            }
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    while (true)
+                    {
+                        HighLevelStartJob job = null;
+                        lock (q.Sync)
+                        {
+                            if (q.Jobs.Count == 0)
+                            {
+                                q.Current = null;
+                                q.WorkerRunning = false;
+                                return;
+                            }
+                            job = q.Jobs.Peek();
+                            q.Current = job;
+                        }
+
+                        try
+                        {
+                            job.Status = "RUNNING";
+                            await RunHighLevelStartJob(machineId, job);
+                            job.Status = "DONE";
+                            job.FinishedAtUtc = DateTime.UtcNow;
+                        }
+                        catch (Exception ex)
+                        {
+                            job.Status = "FAILED";
+                            job.ErrorCode = job.ErrorCode ?? "EXCEPTION";
+                            job.ErrorMessage = job.ErrorMessage ?? ex.Message;
+                            job.FinishedAtUtc = DateTime.UtcNow;
+                        }
+                        finally
+                        {
+                            lock (q.Sync)
+                            {
+                                if (q.Jobs.Count > 0 && ReferenceEquals(q.Jobs.Peek(), job))
+                                {
+                                    q.Jobs.Dequeue();
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("[HighLevelStartWorker] fatal: " + ex);
+                    lock (q.Sync)
+                    {
+                        q.WorkerRunning = false;
+                    }
+                }
+            });
+        }
+
+        private static async Task RunHighLevelStartJob(string machineId, HighLevelStartJob job)
+        {
+            if (job == null) throw new ArgumentNullException(nameof(job));
+            if (job.Paths == null || job.Paths.Count == 0) return;
+
+            // 시작 슬롯 결정(현재 활성/가공중 프로그램 피하기)
+            job.CurrentSlot = ChooseManualSlotForUpload(machineId);
+            job.PreviousSlot = 0;
+
+            // 첫 파일을 현재 슬롯에 업로드(가공 전)
+            {
+                var rel = job.Paths[0];
+                var full = GetSafeBridgeStorePath(rel);
+                if (!File.Exists(full))
+                {
+                    job.ErrorCode = "FILE_NOT_FOUND";
+                    job.ErrorMessage = "file not found";
+                    throw new FileNotFoundException("file not found", full);
+                }
+                var content = File.ReadAllText(full);
+                var enforced = EnsurePercentAndHeaderSecondLine(content, job.CurrentSlot);
+                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
+                if (!UploadProgramDataBlocking(machineId, job.HeadType, job.CurrentSlot, processed, true, out var upErr0))
+                {
+                    job.ErrorCode = "UPLOAD_FAILED";
+                    job.ErrorMessage = upErr0;
+                    throw new InvalidOperationException(job.ErrorMessage);
+                }
+                if (!await VerifyProgramExists(machineId, job.HeadType, job.CurrentSlot, 40))
+                {
+                    job.ErrorCode = "UPLOAD_VERIFY_FAILED";
+                    job.ErrorMessage = "program not found after upload";
+                    throw new TimeoutException(job.ErrorMessage);
+                }
+            }
+
+            for (job.Index = 0; job.Index < job.Paths.Count; job.Index++)
+            {
+                var thisSlot = job.CurrentSlot;
+                var nextSlot = thisSlot == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
+
+                // 다음 사이클에서 바로 활성화할 수 있도록, 현재 슬롯 프로그램이 존재하는지 확인
+                if (!await VerifyProgramExists(machineId, job.HeadType, thisSlot, 40))
+                {
+                    job.ErrorCode = "PROGRAM_MISSING";
+                    job.ErrorMessage = "program not found on machine (currentSlot)";
+                    throw new InvalidOperationException(job.ErrorMessage);
+                }
+
+                // 1) 장비 상태 확인 : 가공중이면 대기
+                if (!await WaitUntilIdleOrTimeout(machineId, job.MaxWaitSeconds))
+                {
+                    job.ErrorCode = "WAIT_IDLE_TIMEOUT";
+                    job.ErrorMessage = "wait for idle timeout";
+                    throw new TimeoutException(job.ErrorMessage);
+                }
+
+                // 3) 비정상 종료(Alarm)면 중단
+                if (IsAlarm(machineId, out var alarmErr0))
+                {
+                    job.ErrorCode = "ALARM";
+                    job.ErrorMessage = alarmErr0 ?? "machine is in ALARM state";
+                    throw new InvalidOperationException(job.ErrorMessage);
+                }
+
+                // 4) 생산 수량(시작 전) 기록
+                job.ProductCountBefore = 0;
+                CncMachineSignalUtils.TryGetProductCount(machineId, out job.ProductCountBefore);
+
+                // 5) Edit 모드 변경
+                if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var editErr))
+                {
+                    job.ErrorCode = "SET_MODE_EDIT_FAILED";
+                    job.ErrorMessage = editErr ?? "SetMachineMode(EDIT) failed";
+                    throw new InvalidOperationException(job.ErrorMessage);
+                }
+                await Task.Delay(500);
+
+                // 6) 활성화 프로그램 변경
+                var actDto = new PayloadUpdateActivateProg { headType = 1, programNo = (short)thisSlot };
+                var actRc = Mode1HandleStore.SetActivateProgram(machineId, actDto, out var actErr);
+                if (actRc != 0)
+                {
+                    job.ErrorCode = "ACTIVATE_FAILED";
+                    job.ErrorMessage = actErr ?? ("SetActivateProgram failed (result=" + actRc + ")");
+                    throw new InvalidOperationException(job.ErrorMessage);
+                }
+
+                // 7) Auto 모드 변경
+                if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var autoErr))
+                {
+                    job.ErrorCode = "SET_MODE_AUTO_FAILED";
+                    job.ErrorMessage = autoErr ?? "SetMachineMode(AUTO) failed";
+                    throw new InvalidOperationException(job.ErrorMessage);
+                }
+                await Task.Delay(500);
+
+                // 8) 가공 시작 명령
+                if (!Mode1Api.TrySetMachinePanelIO(machineId, 0, (short)Config.CncStartIoUid, true, out var startErr))
+                {
+                    job.ErrorCode = "START_FAILED";
+                    job.ErrorMessage = startErr ?? "Start signal failed";
+                    throw new InvalidOperationException(job.ErrorMessage);
+                }
+
+                // 10) 가공 중 다음 작업 선업로드 (사이클타임 절감)
+                if (job.Index + 1 < job.Paths.Count)
+                {
+                    var nextPath = job.Paths[job.Index + 1];
+                    var nextFull = GetSafeBridgeStorePath(nextPath);
+                    if (!File.Exists(nextFull))
+                    {
+                        job.ErrorCode = "FILE_NOT_FOUND";
+                        job.ErrorMessage = "file not found";
+                        throw new FileNotFoundException("file not found", nextFull);
+                    }
+                    var nextContent = File.ReadAllText(nextFull);
+                    var enforcedNext = EnsurePercentAndHeaderSecondLine(nextContent, nextSlot);
+                    var processedNext = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforcedNext));
+
+                    if (!UploadProgramDataBlocking(machineId, job.HeadType, nextSlot, processedNext, true, out var upErr1))
+                    {
+                        job.ErrorCode = "UPLOAD_FAILED";
+                        job.ErrorMessage = upErr1;
+                        throw new InvalidOperationException(job.ErrorMessage);
+                    }
+                    if (!await VerifyProgramExists(machineId, job.HeadType, nextSlot, 40))
+                    {
+                        job.ErrorCode = "UPLOAD_VERIFY_FAILED";
+                        job.ErrorMessage = "program not found after upload";
+                        throw new TimeoutException(job.ErrorMessage);
+                    }
+                }
+
+                // 2) 가공 종료 대기
+                if (!await WaitUntilDoneOrTimeout(machineId, job.MaxWaitSeconds))
+                {
+                    job.ErrorCode = "WAIT_DONE_TIMEOUT";
+                    job.ErrorMessage = "wait for machining end timeout";
+                    throw new TimeoutException(job.ErrorMessage);
+                }
+
+                // 3) 비정상 종료(Alarm)면 중단
+                if (IsAlarm(machineId, out var alarmErr1))
+                {
+                    job.ErrorCode = "ALARM";
+                    job.ErrorMessage = alarmErr1 ?? "machine is in ALARM state";
+                    throw new InvalidOperationException(job.ErrorMessage);
+                }
+
+                // 4) 생산 수량 +1 확인
+                if (!await WaitForProductCountIncrease(machineId, job.ProductCountBefore, 120))
+                {
+                    job.ErrorCode = "PRODUCT_COUNT_NOT_INCREASED";
+                    job.ErrorMessage = "product count did not increase";
+                    throw new TimeoutException(job.ErrorMessage);
+                }
+
+                // 9) 이전 가공프로그램 삭제
+                if (job.PreviousSlot > 0)
+                {
+                    Mode1Api.TryDeleteMachineProgramInfo(machineId, job.HeadType, (short)job.PreviousSlot, out var _, out var _);
+                }
+
+                job.PreviousSlot = thisSlot;
+                job.CurrentSlot = nextSlot;
+            }
         }
 
         private static string SanitizeProgramTextForCnc(string content)
@@ -349,6 +899,284 @@ namespace HiLinkBridgeWebApi48.Controllers
             catch (Exception ex)
             {
                 return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
+        // POST /machines/{machineId}/smart/upload
+        [HttpPost]
+        [Route("machines/{machineId}/smart/upload")]
+        public HttpResponseMessage SmartUploadProgram(string machineId, [FromBody] HighLevelUploadProgramRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var headType = req?.headType ?? (short)1;
+            var relPath = (req?.path ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(relPath))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
+            }
+
+            var slotNo = ChooseManualSlotForUpload(machineId);
+
+            try
+            {
+                var fullPath = GetSafeBridgeStorePath(relPath);
+                if (!File.Exists(fullPath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.NotFound, new
+                    {
+                        success = false,
+                        message = "file not found",
+                        path = relPath
+                    });
+                }
+
+                var content = File.ReadAllText(fullPath);
+                var enforced = EnsurePercentAndHeaderSecondLine(content, slotNo);
+                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
+
+                var processedLen = (processed ?? string.Empty).Length;
+
+                // Hi-Link / CNC 컨트롤러가 programData 크기에 상한을 두는 경우가 있어, 너무 큰 프로그램은 업로드 전에 명시적으로 차단한다.
+                // (상한을 넘기면 장비에 잘려 저장되어 다운로드/가공 모두 위험)
+                if (processedLen > 90000)
+                {
+                    return Request.CreateResponse((HttpStatusCode)413, new
+                    {
+                        success = false,
+                        message = "program is too large to upload safely (possible CNC/Hi-Link size limit)",
+                        length = processedLen,
+                        limit = 90000,
+                    });
+                }
+
+                if (!UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var upErr))
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = upErr ?? "upload failed" });
+                }
+
+                // 업로드 직후 재조회하여 트렁케이션(대용량 잘림) 여부 확인
+                if (Mode1Api.TryGetProgDataInfo(machineId, headType, (short)slotNo, out var verifyInfo, out var verifyErr))
+                {
+                    var gotLen = (verifyInfo.programData ?? string.Empty).Length;
+                    if (gotLen < processedLen)
+                    {
+                        try { Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _); } catch { }
+                        return Request.CreateResponse((HttpStatusCode)500, new
+                        {
+                            success = false,
+                            message = "uploaded program appears truncated on machine",
+                            expectedLength = processedLen,
+                            actualLength = gotLen,
+                            slotNo,
+                        });
+                    }
+                }
+                else
+                {
+                    // 재조회 실패 시에도 업로드 자체는 성공했을 수 있으나, 사용자는 완전성 검증이 필요하므로 실패 처리
+                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = verifyErr ?? "upload verify failed" });
+                }
+
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    message = "Smart program uploaded",
+                    headType,
+                    slotNo,
+                    programName = $"O{slotNo.ToString().PadLeft(4, '0')}",
+                    path = relPath,
+                    length = processedLen,
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+            }
+        }
+
+        public class HighLevelStartEnqueueRequest
+        {
+            public short? headType { get; set; }
+            public string[] paths { get; set; }
+            public int? maxWaitSeconds { get; set; }
+        }
+
+        // POST /machines/{machineId}/smart/enqueue
+        [HttpPost]
+        [Route("machines/{machineId}/smart/enqueue")]
+        public HttpResponseMessage SmartEnqueue(string machineId, [FromBody] HighLevelStartEnqueueRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var paths = (req?.paths ?? new string[0])
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToList();
+            if (paths.Count == 0)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "paths is required" });
+            }
+
+            var job = new HighLevelStartJob
+            {
+                JobId = Guid.NewGuid().ToString("N"),
+                HeadType = req?.headType ?? (short)1,
+                Paths = paths,
+                MaxWaitSeconds = Math.Max(30, req?.maxWaitSeconds ?? 1800),
+                Index = 0,
+                StartedAtUtc = DateTime.UtcNow,
+                Status = "QUEUED",
+            };
+
+            var q = GetOrCreateHighLevelQueue(machineId);
+            int queued;
+            lock (q.Sync)
+            {
+                q.Jobs.Enqueue(job);
+                queued = q.Jobs.Count;
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                jobId = job.JobId,
+                queued,
+            });
+        }
+
+        public class SmartDequeueRequest
+        {
+            public string jobId { get; set; }
+        }
+
+        // POST /machines/{machineId}/smart/dequeue
+        [HttpPost]
+        [Route("machines/{machineId}/smart/dequeue")]
+        public HttpResponseMessage SmartDequeue(string machineId, [FromBody] SmartDequeueRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var q = GetOrCreateHighLevelQueue(machineId);
+            lock (q.Sync)
+            {
+                if (q.Current != null)
+                {
+                    if (string.IsNullOrWhiteSpace(req?.jobId))
+                    {
+                        return Request.CreateResponse((HttpStatusCode)409, new { success = false, message = "cannot dequeue current running job" });
+                    }
+                    if (string.Equals(q.Current.JobId, req.jobId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Request.CreateResponse((HttpStatusCode)409, new { success = false, message = "cannot dequeue current running job" });
+                    }
+                }
+
+                if (q.Jobs.Count == 0)
+                {
+                    return Request.CreateResponse(HttpStatusCode.OK, new { success = true, removed = false, queued = 0 });
+                }
+
+                if (string.IsNullOrWhiteSpace(req?.jobId))
+                {
+                    var removedJob = q.Jobs.Dequeue();
+                    return Request.CreateResponse(HttpStatusCode.OK, new { success = true, removed = true, jobId = removedJob?.JobId, queued = q.Jobs.Count });
+                }
+
+                var target = req.jobId.Trim();
+                var newQ = new Queue<HighLevelStartJob>();
+                HighLevelStartJob removed = null;
+                while (q.Jobs.Count > 0)
+                {
+                    var j = q.Jobs.Dequeue();
+                    if (removed == null && j != null && string.Equals(j.JobId, target, StringComparison.OrdinalIgnoreCase))
+                    {
+                        removed = j;
+                        continue;
+                    }
+                    newQ.Enqueue(j);
+                }
+                while (newQ.Count > 0) q.Jobs.Enqueue(newQ.Dequeue());
+
+                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, removed = removed != null, jobId = removed?.JobId, queued = q.Jobs.Count });
+            }
+        }
+
+        // POST /machines/{machineId}/smart/start
+        [HttpPost]
+        [Route("machines/{machineId}/smart/start")]
+        public HttpResponseMessage SmartStart(string machineId)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var q = GetOrCreateHighLevelQueue(machineId);
+            lock (q.Sync)
+            {
+                if (q.WorkerRunning)
+                {
+                    return Request.CreateResponse(HttpStatusCode.OK, new { success = true, started = false, message = "worker already running", queued = q.Jobs.Count });
+                }
+                if (q.Jobs.Count == 0)
+                {
+                    return Request.CreateResponse((HttpStatusCode)409, new { success = false, message = "queue is empty" });
+                }
+            }
+
+            EnsureWorkerStarted(machineId);
+            return Request.CreateResponse(HttpStatusCode.OK, new { success = true, started = true });
+        }
+
+        // GET /machines/{machineId}/smart/status
+        [HttpGet]
+        [Route("machines/{machineId}/smart/status")]
+        public HttpResponseMessage SmartStatus(string machineId)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var q = GetOrCreateHighLevelQueue(machineId);
+            lock (q.Sync)
+            {
+                var cur = q.Current;
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    data = new
+                    {
+                        workerRunning = q.WorkerRunning,
+                        queued = q.Jobs.Count,
+                        current = cur == null
+                            ? null
+                            : new
+                            {
+                                jobId = cur.JobId,
+                                status = cur.Status,
+                                index = cur.Index,
+                                total = cur.Paths != null ? cur.Paths.Count : 0,
+                                currentSlot = cur.CurrentSlot,
+                                previousSlot = cur.PreviousSlot,
+                                startedAtUtc = cur.StartedAtUtc,
+                                finishedAtUtc = cur.FinishedAtUtc,
+                                elapsedSeconds = (int)Math.Max(0, ((cur.FinishedAtUtc ?? DateTime.UtcNow) - cur.StartedAtUtc).TotalSeconds),
+                                errorCode = cur.ErrorCode,
+                                errorMessage = cur.ErrorMessage,
+                            }
+                    }
+                });
             }
         }
 
@@ -1191,7 +2019,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                         {
                             Directory.CreateDirectory(dir);
                         }
-                        File.WriteAllText(fullPath, info.programData ?? string.Empty);
+                        File.WriteAllText(fullPath, info.programData ?? string.Empty, Encoding.ASCII);
                         savedPath = relPath;
                     }
 
@@ -1260,6 +2088,13 @@ namespace HiLinkBridgeWebApi48.Controllers
         {
             public short? headType { get; set; }
             public int? slotNo { get; set; }
+            public string path { get; set; }
+            public bool? isNew { get; set; }
+        }
+
+        public class HighLevelUploadProgramRequest
+        {
+            public short? headType { get; set; }
             public string path { get; set; }
             public bool? isNew { get; set; }
         }
@@ -1424,7 +2259,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 {
                     Directory.CreateDirectory(dir);
                 }
-                File.WriteAllText(fullPath, info.programData ?? string.Empty);
+                File.WriteAllText(fullPath, info.programData ?? string.Empty, Encoding.ASCII);
 
                 return Request.CreateResponse(HttpStatusCode.OK, new
                 {

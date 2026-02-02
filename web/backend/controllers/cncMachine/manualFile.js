@@ -338,7 +338,7 @@ export async function manualFileUploadAndPreload(req, res) {
     const { resp: storeResp, json: storeBody } = await callBridgeJson({
       url: storeUrl,
       method: "POST",
-      body: { path: bridgePath, content, normalizeName: false },
+      body: { path: bridgePath, content },
     });
     if (!storeResp.ok || storeBody?.success === false) {
       const msg = String(

@@ -884,7 +884,7 @@ async function uploadNcToBridgeStore({
   const resp = await fetch(`${BRIDGE_BASE}/api/bridge-store/upload`, {
     method: "POST",
     headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ path: relPath, content, normalizeName: false }),
+    body: JSON.stringify({ path: relPath, content }),
   });
   const body = await resp.json().catch(() => ({}));
   if (!resp.ok || body?.success === false) {

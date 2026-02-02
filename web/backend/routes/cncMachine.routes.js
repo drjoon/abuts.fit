@@ -89,6 +89,36 @@ router.get(
   cncMachineController.getBridgeActiveProgram,
 );
 
+router.post(
+  "/:machineId/smart/upload",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.smartUpload,
+);
+
+router.post(
+  "/:machineId/smart/enqueue",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.smartEnqueue,
+);
+
+router.post(
+  "/:machineId/smart/dequeue",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.smartDequeue,
+);
+
+router.post(
+  "/:machineId/smart/start",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.smartStart,
+);
+
+router.get(
+  "/:machineId/smart/status",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.smartStatus,
+);
+
 // 브리지 연속 가공 enqueue
 router.post(
   "/:machineId/continuous/enqueue",

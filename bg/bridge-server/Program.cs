@@ -32,7 +32,6 @@ namespace HiLinkBridgeWebApi48
 
             try { DummyCncScheduler.Stop(); } catch { }
             try { CncMachining.Stop(); } catch { }
-            try { CncJobDispatcher.Stop(); } catch { }
             try { ManualFileMachiningWatcher.Stop(); } catch { }
 
             try { ExitEvent.Set(); } catch { }

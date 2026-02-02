@@ -7,6 +7,164 @@ import {
   Request,
 } from "./shared.js";
 
+export async function smartUpload(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const payload = {
+      headType: typeof req.body?.headType === "number" ? req.body.headType : 1,
+      path: String(req.body?.path || "").trim(),
+      isNew: req.body?.isNew !== false,
+    };
+    if (!payload.path) {
+      return res
+        .status(400)
+        .json({ success: false, message: "path is required" });
+    }
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/upload`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    const body = await resp.json().catch(() => ({}));
+    return res.status(resp.status).json(body);
+  } catch (error) {
+    console.error("smartUpload error", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "smart upload failed" });
+  }
+}
+
+export async function smartEnqueue(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const payload = {
+      headType: typeof req.body?.headType === "number" ? req.body.headType : 1,
+      paths: Array.isArray(req.body?.paths) ? req.body.paths : [],
+      maxWaitSeconds:
+        typeof req.body?.maxWaitSeconds === "number"
+          ? req.body.maxWaitSeconds
+          : undefined,
+    };
+    if (!payload.paths || payload.paths.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "paths is required" });
+    }
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/enqueue`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    const body = await resp.json().catch(() => ({}));
+    return res.status(resp.status).json(body);
+  } catch (error) {
+    console.error("smartEnqueue error", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "smart enqueue failed" });
+  }
+}
+
+export async function smartDequeue(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const payload = {
+      jobId: String(req.body?.jobId || "").trim() || undefined,
+    };
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/dequeue`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    const body = await resp.json().catch(() => ({}));
+    return res.status(resp.status).json(body);
+  } catch (error) {
+    console.error("smartDequeue error", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "smart dequeue failed" });
+  }
+}
+
+export async function smartStart(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/start`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({}),
+    });
+    const body = await resp.json().catch(() => ({}));
+    return res.status(resp.status).json(body);
+  } catch (error) {
+    console.error("smartStart error", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "smart start failed" });
+  }
+}
+
+export async function smartStatus(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/status`;
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: withBridgeHeaders(),
+    });
+    const body = await resp.json().catch(() => ({}));
+    return res.status(resp.status).json(body);
+  } catch (error) {
+    console.error("smartStatus error", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "smart status failed" });
+  }
+}
+
 export async function enqueueBridgeContinuousJob(req, res) {
   try {
     const { machineId } = req.params;
@@ -22,7 +180,8 @@ export async function enqueueBridgeContinuousJob(req, res) {
     const requestIdRaw = req.body?.requestId;
     const requestId = requestIdRaw != null ? String(requestIdRaw).trim() : "";
     const bridgePathRaw = req.body?.bridgePath;
-    const bridgePath = bridgePathRaw != null ? String(bridgePathRaw).trim() : "";
+    const bridgePath =
+      bridgePathRaw != null ? String(bridgePathRaw).trim() : "";
     const enqueueFront = req.body?.enqueueFront === true;
 
     if (!fileName) {
@@ -110,14 +269,19 @@ export async function enqueueBridgeContinuousJobFromDb(req, res) {
     }
 
     const bridgePath = String(reqDoc?.caseInfos?.ncFile?.filePath || "").trim();
-    const rawFileName = String(reqDoc?.caseInfos?.ncFile?.fileName || "").trim();
-    const derivedFileName = bridgePath ? String(bridgePath).split(/[/\\]/).pop() : "";
+    const rawFileName = String(
+      reqDoc?.caseInfos?.ncFile?.fileName || "",
+    ).trim();
+    const derivedFileName = bridgePath
+      ? String(bridgePath).split(/[/\\]/).pop()
+      : "";
     const fileName = rawFileName || derivedFileName;
 
     if (!fileName || !bridgePath) {
       return res.status(400).json({
         success: false,
-        message: "NC 파일 정보(fileName/filePath)가 없어 enqueue 할 수 없습니다.",
+        message:
+          "NC 파일 정보(fileName/filePath)가 없어 enqueue 할 수 없습니다.",
       });
     }
 
@@ -262,7 +426,9 @@ export async function enqueueBridgeManualInsertJob(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     const fileName = String(req.body?.fileName || "").trim();
@@ -290,7 +456,9 @@ export async function enqueueBridgeManualInsertJob(req, res) {
 
     const snap = await getDbBridgeQueueSnapshot(mid);
     const jobs0 = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
-    const rest = jobs0.filter((j) => String(j?.source || "") !== "manual_insert");
+    const rest = jobs0.filter(
+      (j) => String(j?.source || "") !== "manual_insert",
+    );
     const jobId = `${mid}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
     const manualJob = {
       id: jobId,

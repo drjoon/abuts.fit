@@ -92,12 +92,31 @@
 
 ## 4. 운영 가이드라인
 
-### 4.1 프로그램 전송 프로세스
+### 4.1 스마트(Smart) 업로드/큐/가공 시작 엔드포인트
 
-1. 파일 업로드 시 파일명에서 O번호 추출.
-2. `O####.nc` 형식으로 정규화하여 저장.
-3. 장비 전송 시 `UpdateProgram` 등을 통해 숫자 번호만 전달.
-4. 전송 완료 후 `UpdateActivateProg`로 해당 번호 활성화.
+- 스마트 업로드:
+  - `POST /api/cnc/machines/{machineId}/smart/upload`
+  - 입력: `path` (bridge-store 상대 경로)
+  - 동작: 현재 상태/활성 프로그램을 확인 후 `O4000/O4001` 중 안전한 슬롯을 선택하고, 본문 2행의 `O####`를 해당 슬롯으로 강제한 뒤 업로드한다.
+
+- 스마트 enqueue:
+  - `POST /api/cnc/machines/{machineId}/smart/enqueue`
+  - 입력: `paths[]` (bridge-store 상대 경로 배열)
+  - 동작: 큐에 작업을 추가만 한다. (즉시 가공 시작하지 않음)
+
+- 스마트 dequeue:
+  - `POST /api/cnc/machines/{machineId}/smart/dequeue`
+  - 입력: `jobId`(선택) 없으면 큐의 첫 작업을 제거
+  - 동작: 큐에서 작업을 제거한다. (실행 중인 작업은 제거 불가)
+
+- 스마트 가공 시작:
+  - `POST /api/cnc/machines/{machineId}/smart/start`
+  - 동작: 큐에 작업이 있으면 워커를 시작하고 자동으로 연속 가공한다.
+  - 사이클타임 절감: 가공 중 다음 슬롯에 선업로드(Preload) + 업로드 완료 확인을 수행하여, 가공 종료 직후 즉시 활성화/Start 가능하도록 한다.
+
+- 스마트 상태 조회:
+  - `GET /api/cnc/machines/{machineId}/smart/status`
+  - 용도: 가공 진행/종료 상태, 경과 시간, 에러/알람 확인(진단용)
 
 ### 4.2 헬스체크
 
@@ -210,4 +229,3 @@
 - 가공 중에는 실행 슬롯(CurrentSlot)의 프로그램을 절대 삭제하거나 수정하지 않음
 - 모든 프로그램 교체는 Idle 상태에서만 수행
 - 프로그램 번호는 자동으로 슬롯 번호(3000/3001)로 변경됨
-- 기존 `CncJobDispatcher`와 독립적으로 동작
