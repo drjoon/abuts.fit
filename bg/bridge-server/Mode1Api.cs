@@ -477,19 +477,43 @@ namespace HiLinkBridgeWebApi48
         {
             status = MachineStatusType.None;
             error = null;
+            
+            try
+            {
+                var result = Mode1WorkerQueue.Run(() => GetMachineStatusInternal(uid), "GetMachineStatus", 5000);
+                if (result.success)
+                {
+                    status = result.status;
+                    return true;
+                }
+                error = result.error;
+                return false;
+            }
+            catch (TimeoutException ex)
+            {
+                error = $"GetMachineStatus timeout: {ex.Message}";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                error = $"GetMachineStatus exception: {ex.Message}";
+                return false;
+            }
+        }
+
+        private static (bool success, MachineStatusType status, string error) GetMachineStatusInternal(string uid)
+        {
             // 최초 시도
             if (!Mode1HandleStore.TryGetHandle(uid, out var handle, out var err))
             {
-                error = err;
-                return false;
+                return (false, MachineStatusType.None, err);
             }
 
             var machineStatus = MachineStatusType.None;
-            var result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineStatus(handle, ref machineStatus), "GetMachineStatus");
+            var result = HiLink.GetMachineStatus(handle, ref machineStatus);
             if (result == 0)
             {
-                status = machineStatus;
-                return true;
+                return (true, machineStatus, null);
             }
 
             // -8(잘못된 핸들)이면 핸들을 폐기 후 1회 재시도
@@ -499,27 +523,22 @@ namespace HiLinkBridgeWebApi48
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
                     machineStatus = MachineStatusType.None;
-                    var result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineStatus(handle2, ref machineStatus), "GetMachineStatus.retry");
+                    var result2 = HiLink.GetMachineStatus(handle2, ref machineStatus);
                     if (result2 == 0)
                     {
-                        status = machineStatus;
-                        return true;
+                        return (true, machineStatus, null);
                     }
                     if (result2 == -8)
                     {
                         Mode1HandleStore.Invalidate(uid);
                     }
-                    error = $"GetMachineStatus failed (result={result2})";
-                    return false;
+                    return (false, MachineStatusType.None, $"GetMachineStatus failed (result={result2})");
                 }
 
-                // 핸들 재생성 실패 시
-                error = err2;
-                return false;
+                return (false, MachineStatusType.None, err2);
             }
 
-            error = $"GetMachineStatus failed (result={result})";
-            return false;
+            return (false, MachineStatusType.None, $"GetMachineStatus failed (result={result})");
         }
 
         public static bool TrySetMachinePanelIO(string uid, short panelType, short ioUid, bool status, out string error)

@@ -8,6 +8,8 @@ namespace HiLinkBridgeWebApi48
         private static readonly object StateLock = new object();
         private static DateTime _heldSinceUtc = DateTime.MinValue;
         private static string _heldTag = null;
+        private static int _heldThreadId = 0;
+        private static DateTime _lastWarnUtc = DateTime.MinValue;
         private static Timer _watchdog;
 
         private static int EnterTimeoutMs
@@ -48,17 +50,32 @@ namespace HiLinkBridgeWebApi48
                 {
                     DateTime held;
                     string tag;
+                    int tid;
+                    DateTime last;
                     lock (StateLock)
                     {
                         held = _heldSinceUtc;
                         tag = _heldTag;
+                        tid = _heldThreadId;
+                        last = _lastWarnUtc;
                     }
 
                     if (held == DateTime.MinValue) return;
                     var elapsedMs = (int)Math.Max(0, (DateTime.UtcNow - held).TotalMilliseconds);
                     if (elapsedMs < HoldFatalMs) return;
 
-                    var msg = $"Hi-Link DLL lock held too long. elapsedMs={elapsedMs} fatalMs={HoldFatalMs} tag={tag}";
+                    // 로그 스팸 방지: 10초에 1번만 경고
+                    if (last != DateTime.MinValue && (DateTime.UtcNow - last).TotalSeconds < 10)
+                    {
+                        return;
+                    }
+
+                    lock (StateLock)
+                    {
+                        _lastWarnUtc = DateTime.UtcNow;
+                    }
+
+                    var msg = $"Hi-Link DLL lock held too long. elapsedMs={elapsedMs} fatalMs={HoldFatalMs} tag={tag} threadId={tid} heldSinceUtc={held:O}";
                     Console.Error.WriteLine("[HiLinkDllGate] " + msg);
                     if (FailFastOnHang)
                     {
@@ -88,6 +105,7 @@ namespace HiLinkBridgeWebApi48
                 {
                     _heldSinceUtc = DateTime.UtcNow;
                     _heldTag = tag;
+                    _heldThreadId = Thread.CurrentThread.ManagedThreadId;
                 }
 
                 return func();
@@ -100,6 +118,7 @@ namespace HiLinkBridgeWebApi48
                     {
                         _heldSinceUtc = DateTime.MinValue;
                         _heldTag = null;
+                        _heldThreadId = 0;
                     }
                     try { Monitor.Exit(dllLock); } catch { }
                 }
