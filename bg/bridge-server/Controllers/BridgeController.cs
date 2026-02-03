@@ -457,12 +457,12 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return false;
             }
 
-            // Hi-Link API 제한으로 인한 truncation 경고
-            if (mode1Data.Length > 90000)
-            {
-                error = $"TRUNCATED: Hi-Link API readback limit (~103KB). Actual program may be larger. Downloaded {mode1Data.Length} bytes.";
-                Console.WriteLine($"[DownloadProgram] Warning: programData truncated by Hi-Link readback limit (len={mode1Data.Length}) uid={machineId} headType={headType} programNo={programNo}");
-            }
+            // // Hi-Link API 제한으로 인한 truncation 경고
+            // if (mode1Data.Length > 90000)
+            // {
+            //     error = $"TRUNCATED: Hi-Link API readback limit (~103KB). Actual program may be larger. Downloaded {mode1Data.Length} bytes.";
+            //     Console.WriteLine($"[DownloadProgram] Warning: programData truncated by Hi-Link readback limit (len={mode1Data.Length}) uid={machineId} headType={headType} programNo={programNo}");
+            // }
             return true;
         }
 
@@ -1171,7 +1171,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             public int? maxWaitSeconds { get; set; }
         }
 
-        // POST /machines/{machineId}/smart/replace
+        // POST /machines/{machineId}/smart/replace (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/smart/replace")]
         public HttpResponseMessage SmartReplace(string machineId, [FromBody] HighLevelStartEnqueueRequest req)
@@ -1190,33 +1190,65 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "paths is required" });
             }
 
-            var job = new HighLevelStartJob
-            {
-                JobId = Guid.NewGuid().ToString("N"),
-                HeadType = req?.headType ?? (short)1,
-                Paths = paths,
-                MaxWaitSeconds = Math.Max(30, req?.maxWaitSeconds ?? 1800),
-                Index = 0,
-                StartedAtUtc = DateTime.UtcNow,
-                Status = "QUEUED",
-            };
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[SmartReplace] jobId={jobId} accepted. machineId={machineId} paths={paths.Count}");
 
-            var q = GetOrCreateHighLevelQueue(machineId);
-            lock (q.Sync)
-            {
-                q.Jobs.Clear();
-                q.Jobs.Enqueue(job);
-            }
-
-            return Request.CreateResponse(HttpStatusCode.OK, new
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
-                jobId = job.JobId,
-                queued = 1,
+                message = "Smart replace job accepted",
+                jobId = jobId,
+                machineId = machineId,
             });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var job = new HighLevelStartJob
+                    {
+                        JobId = jobId,
+                        HeadType = req?.headType ?? (short)1,
+                        Paths = paths,
+                        MaxWaitSeconds = Math.Max(30, req?.maxWaitSeconds ?? 1800),
+                        Index = 0,
+                        StartedAtUtc = DateTime.UtcNow,
+                        Status = "QUEUED",
+                    };
+
+                    var q = GetOrCreateHighLevelQueue(machineId);
+                    lock (q.Sync)
+                    {
+                        q.Jobs.Clear();
+                        q.Jobs.Enqueue(job);
+                    }
+
+                    Console.WriteLine($"[SmartReplace] jobId={jobId} completed");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, message = "Queue replaced", queued = 1 },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SmartReplace] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
-        // POST /machines/{machineId}/smart/enqueue
+        // POST /machines/{machineId}/smart/enqueue (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/smart/enqueue")]
         public HttpResponseMessage SmartEnqueue(string machineId, [FromBody] HighLevelStartEnqueueRequest req)
@@ -1235,31 +1267,63 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "paths is required" });
             }
 
-            var job = new HighLevelStartJob
-            {
-                JobId = Guid.NewGuid().ToString("N"),
-                HeadType = req?.headType ?? (short)1,
-                Paths = paths,
-                MaxWaitSeconds = Math.Max(30, req?.maxWaitSeconds ?? 1800),
-                Index = 0,
-                StartedAtUtc = DateTime.UtcNow,
-                Status = "QUEUED",
-            };
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[SmartEnqueue] jobId={jobId} accepted. machineId={machineId} paths={paths.Count}");
 
-            var q = GetOrCreateHighLevelQueue(machineId);
-            int queued;
-            lock (q.Sync)
-            {
-                q.Jobs.Enqueue(job);
-                queued = q.Jobs.Count;
-            }
-
-            return Request.CreateResponse(HttpStatusCode.OK, new
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
-                jobId = job.JobId,
-                queued,
+                message = "Smart enqueue job accepted",
+                jobId = jobId,
+                machineId = machineId,
             });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var job = new HighLevelStartJob
+                    {
+                        JobId = jobId,
+                        HeadType = req?.headType ?? (short)1,
+                        Paths = paths,
+                        MaxWaitSeconds = Math.Max(30, req?.maxWaitSeconds ?? 1800),
+                        Index = 0,
+                        StartedAtUtc = DateTime.UtcNow,
+                        Status = "QUEUED",
+                    };
+
+                    var q = GetOrCreateHighLevelQueue(machineId);
+                    int queued;
+                    lock (q.Sync)
+                    {
+                        q.Jobs.Enqueue(job);
+                        queued = q.Jobs.Count;
+                    }
+
+                    Console.WriteLine($"[SmartEnqueue] jobId={jobId} completed. queued={queued}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, message = "Job enqueued", queued },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SmartEnqueue] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
         public class SmartDequeueRequest
@@ -1267,7 +1331,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             public string jobId { get; set; }
         }
 
-        // POST /machines/{machineId}/smart/dequeue
+        // POST /machines/{machineId}/smart/dequeue (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/smart/dequeue")]
         public HttpResponseMessage SmartDequeue(string machineId, [FromBody] SmartDequeueRequest req)
@@ -1277,52 +1341,111 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
             }
 
-            var q = GetOrCreateHighLevelQueue(machineId);
-            lock (q.Sync)
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[SmartDequeue] jobId={jobId} accepted. machineId={machineId}");
+
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
-                if (q.Current != null)
+                success = true,
+                message = "Smart dequeue job accepted",
+                jobId = jobId,
+                machineId = machineId,
+            });
+
+            Task.Run(() =>
+            {
+                try
                 {
-                    if (string.IsNullOrWhiteSpace(req?.jobId))
+                    var q = GetOrCreateHighLevelQueue(machineId);
+                    lock (q.Sync)
                     {
-                        return Request.CreateResponse((HttpStatusCode)409, new { success = false, message = "cannot dequeue current running job" });
+                        if (q.Current != null)
+                        {
+                            if (string.IsNullOrWhiteSpace(req?.jobId))
+                            {
+                                JobResults[jobId] = new JobResult
+                                {
+                                    JobId = jobId,
+                                    Status = "FAILED",
+                                    Result = new { success = false, message = "cannot dequeue current running job" },
+                                    CreatedAtUtc = DateTime.UtcNow
+                                };
+                                return;
+                            }
+                            if (string.Equals(q.Current.JobId, req.jobId, StringComparison.OrdinalIgnoreCase))
+                            {
+                                JobResults[jobId] = new JobResult
+                                {
+                                    JobId = jobId,
+                                    Status = "FAILED",
+                                    Result = new { success = false, message = "cannot dequeue current running job" },
+                                    CreatedAtUtc = DateTime.UtcNow
+                                };
+                                return;
+                            }
+                        }
+
+                        if (q.Jobs.Count == 0)
+                        {
+                            JobResults[jobId] = new JobResult
+                            {
+                                JobId = jobId,
+                                Status = "COMPLETED",
+                                Result = new { success = true, removed = false, queued = 0 },
+                                CreatedAtUtc = DateTime.UtcNow
+                            };
+                            return;
+                        }
+
+                        HighLevelStartJob removedJob = null;
+                        if (string.IsNullOrWhiteSpace(req?.jobId))
+                        {
+                            removedJob = q.Jobs.Dequeue();
+                        }
+                        else
+                        {
+                            var target = req.jobId.Trim();
+                            var newQ = new Queue<HighLevelStartJob>();
+                            while (q.Jobs.Count > 0)
+                            {
+                                var j = q.Jobs.Dequeue();
+                                if (removedJob == null && j != null && string.Equals(j.JobId, target, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    removedJob = j;
+                                    continue;
+                                }
+                                newQ.Enqueue(j);
+                            }
+                            while (newQ.Count > 0) q.Jobs.Enqueue(newQ.Dequeue());
+                        }
+
+                        Console.WriteLine($"[SmartDequeue] jobId={jobId} completed. removed={removedJob != null}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "COMPLETED",
+                            Result = new { success = true, removed = removedJob != null, removedJobId = removedJob?.JobId, queued = q.Jobs.Count },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
                     }
-                    if (string.Equals(q.Current.JobId, req.jobId, StringComparison.OrdinalIgnoreCase))
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SmartDequeue] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
                     {
-                        return Request.CreateResponse((HttpStatusCode)409, new { success = false, message = "cannot dequeue current running job" });
-                    }
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
                 }
+            });
 
-                if (q.Jobs.Count == 0)
-                {
-                    return Request.CreateResponse(HttpStatusCode.OK, new { success = true, removed = false, queued = 0 });
-                }
-
-                if (string.IsNullOrWhiteSpace(req?.jobId))
-                {
-                    var removedJob = q.Jobs.Dequeue();
-                    return Request.CreateResponse(HttpStatusCode.OK, new { success = true, removed = true, jobId = removedJob?.JobId, queued = q.Jobs.Count });
-                }
-
-                var target = req.jobId.Trim();
-                var newQ = new Queue<HighLevelStartJob>();
-                HighLevelStartJob removed = null;
-                while (q.Jobs.Count > 0)
-                {
-                    var j = q.Jobs.Dequeue();
-                    if (removed == null && j != null && string.Equals(j.JobId, target, StringComparison.OrdinalIgnoreCase))
-                    {
-                        removed = j;
-                        continue;
-                    }
-                    newQ.Enqueue(j);
-                }
-                while (newQ.Count > 0) q.Jobs.Enqueue(newQ.Dequeue());
-
-                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, removed = removed != null, jobId = removed?.JobId, queued = q.Jobs.Count });
-            }
+            return immediateResponse;
         }
 
-        // POST /machines/{machineId}/smart/start
+        // POST /machines/{machineId}/smart/start (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/smart/start")]
         public HttpResponseMessage SmartStart(string machineId)
@@ -1332,21 +1455,72 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
             }
 
-            var q = GetOrCreateHighLevelQueue(machineId);
-            lock (q.Sync)
-            {
-                if (q.WorkerRunning)
-                {
-                    return Request.CreateResponse(HttpStatusCode.OK, new { success = true, started = false, message = "worker already running", queued = q.Jobs.Count });
-                }
-                if (q.Jobs.Count == 0)
-                {
-                    return Request.CreateResponse((HttpStatusCode)409, new { success = false, message = "queue is empty" });
-                }
-            }
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[SmartStart] jobId={jobId} accepted. machineId={machineId}");
 
-            EnsureWorkerStarted(machineId);
-            return Request.CreateResponse(HttpStatusCode.OK, new { success = true, started = true });
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
+            {
+                success = true,
+                message = "Smart start job accepted",
+                jobId = jobId,
+                machineId = machineId,
+            });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var q = GetOrCreateHighLevelQueue(machineId);
+                    lock (q.Sync)
+                    {
+                        if (q.WorkerRunning)
+                        {
+                            JobResults[jobId] = new JobResult
+                            {
+                                JobId = jobId,
+                                Status = "COMPLETED",
+                                Result = new { success = true, started = false, message = "worker already running", queued = q.Jobs.Count },
+                                CreatedAtUtc = DateTime.UtcNow
+                            };
+                            return;
+                        }
+                        if (q.Jobs.Count == 0)
+                        {
+                            JobResults[jobId] = new JobResult
+                            {
+                                JobId = jobId,
+                                Status = "FAILED",
+                                Result = new { success = false, message = "queue is empty" },
+                                CreatedAtUtc = DateTime.UtcNow
+                            };
+                            return;
+                        }
+                    }
+
+                    EnsureWorkerStarted(machineId);
+                    Console.WriteLine($"[SmartStart] jobId={jobId} completed");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, started = true },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SmartStart] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
         // GET /machines/{machineId}/smart/status
@@ -1918,7 +2092,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             return Raw(raw);
         }
 
-        // POST /machines/{machineId}/start
+        // POST /machines/{machineId}/start (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/start")]
         public HttpResponseMessage MachineStart(string machineId, [FromBody] StartStopRequest req)
@@ -1938,25 +2112,60 @@ namespace HiLinkBridgeWebApi48.Controllers
             short panelType = req?.panelType ?? 0;
             bool status = req?.status == null || req?.status == 1;
 
-            if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, status, out var error))
-            {
-                return Request.CreateResponse((HttpStatusCode)500, new
-                {
-                    success = false,
-                    message = error ?? "SetMachinePanelIO failed"
-                });
-            }
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[MachineStart] jobId={jobId} accepted. machineId={machineId} ioUid={ioUid}");
 
-            return Request.CreateResponse(HttpStatusCode.OK, new
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
-                message = "Start signal sent",
-                ioUid,
-                status
+                message = "Start signal job accepted",
+                jobId = jobId,
+                machineId = machineId,
             });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, status, out var error))
+                    {
+                        Console.WriteLine($"[MachineStart] jobId={jobId} failed: {error}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = error ?? "SetMachinePanelIO failed" },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    Console.WriteLine($"[MachineStart] jobId={jobId} completed");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, message = "Start signal sent", ioUid, status },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MachineStart] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
-        // POST /machines/{machineId}/reset
+        // POST /machines/{machineId}/reset (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/reset")]
         public HttpResponseMessage MachineReset(string machineId)
@@ -1972,28 +2181,64 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
             }
 
-            // Reset은 항상 새 핸들로 수행한다.
-            Mode1HandleStore.Invalidate(machineId);
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[MachineReset] jobId={jobId} accepted. machineId={machineId}");
 
-            if (!Mode1Api.TrySetMachineReset(machineId, out var error))
-            {
-                var msg = (error ?? "SetMachineReset failed") as string;
-                if (!string.IsNullOrEmpty(msg) && msg.Contains("result=-8"))
-                {
-                    msg = msg + " (무효 핸들러: 다시 시도하세요)";
-                }
-                return Request.CreateResponse((HttpStatusCode)500, new
-                {
-                    success = false,
-                    message = msg
-                });
-            }
-
-            return Request.CreateResponse(HttpStatusCode.OK, new
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
-                message = "Machine reset requested"
+                message = "Reset job accepted",
+                jobId = jobId,
+                machineId = machineId,
             });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    Mode1HandleStore.Invalidate(machineId);
+
+                    if (!Mode1Api.TrySetMachineReset(machineId, out var error))
+                    {
+                        var msg = (error ?? "SetMachineReset failed") as string;
+                        if (!string.IsNullOrEmpty(msg) && msg.Contains("result=-8"))
+                        {
+                            msg = msg + " (무효 핸들러: 다시 시도하세요)";
+                        }
+                        Console.WriteLine($"[MachineReset] jobId={jobId} failed: {msg}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = msg },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    Console.WriteLine($"[MachineReset] jobId={jobId} completed");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, message = "Machine reset completed" },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MachineReset] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
         public class MachineModeRequest
@@ -2001,7 +2246,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             public string mode { get; set; }
         }
 
-        // POST /machines/{machineId}/mode
+        // POST /machines/{machineId}/mode (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/mode")]
         public HttpResponseMessage MachineMode(string machineId, [FromBody] MachineModeRequest req)
@@ -2023,21 +2268,57 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
             }
 
-            if (!Mode1Api.TrySetMachineMode(machineId, mode, out var error))
-            {
-                return Request.CreateResponse((HttpStatusCode)500, new
-                {
-                    success = false,
-                    message = error ?? "SetMachineMode failed"
-                });
-            }
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[MachineMode] jobId={jobId} accepted. machineId={machineId} mode={mode}");
 
-            return Request.CreateResponse(HttpStatusCode.OK, new
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
-                message = "Mode switched",
-                mode = mode.ToUpperInvariant()
+                message = "Mode change job accepted",
+                jobId = jobId,
+                machineId = machineId,
             });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (!Mode1Api.TrySetMachineMode(machineId, mode, out var error))
+                    {
+                        Console.WriteLine($"[MachineMode] jobId={jobId} failed: {error}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = error ?? "SetMachineMode failed" },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    Console.WriteLine($"[MachineMode] jobId={jobId} completed");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, message = "Mode switched", mode = mode.ToUpperInvariant() },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MachineMode] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
         // POST /machines/{machineId}/programs/activate-sub (Mode1, headType 기본 1)
@@ -2084,7 +2365,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             });
         }
 
-        // POST /machines/{machineId}/stop
+        // POST /machines/{machineId}/stop (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/stop")]
         public HttpResponseMessage MachineStop(string machineId, [FromBody] StartStopRequest req)
@@ -2104,22 +2385,57 @@ namespace HiLinkBridgeWebApi48.Controllers
             short panelType = req?.panelType ?? 0;
             bool status = req?.status == null || req?.status == 1;
 
-            if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, status, out var error))
-            {
-                return Request.CreateResponse((HttpStatusCode)500, new
-                {
-                    success = false,
-                    message = error ?? "SetMachinePanelIO failed"
-                });
-            }
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[MachineStop] jobId={jobId} accepted. machineId={machineId} ioUid={ioUid}");
 
-            return Request.CreateResponse(HttpStatusCode.OK, new
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
-                message = "Stop signal sent",
-                ioUid,
-                status
+                message = "Stop signal job accepted",
+                jobId = jobId,
+                machineId = machineId,
             });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, status, out var error))
+                    {
+                        Console.WriteLine($"[MachineStop] jobId={jobId} failed: {error}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = error ?? "SetMachinePanelIO failed" },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    Console.WriteLine($"[MachineStop] jobId={jobId} completed");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, message = "Stop signal sent", ioUid, status },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[MachineStop] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
         // GET /machines/{machineId}/status
@@ -2190,7 +2506,142 @@ namespace HiLinkBridgeWebApi48.Controllers
             public int? status { get; set; }
         }
 
-        // GET /machines/{machineId}/programs (Mode1)
+        // POST /machines/{machineId}/smart/download (이중 응답 방식)
+        [HttpPost]
+        [Route("machines/{machineId}/smart/download")]
+        public HttpResponseMessage SmartDownloadProgram(string machineId, [FromBody] DownloadProgramRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var headType = req?.headType ?? (short)1;
+            var programNo = req?.programNo ?? (short)0;
+            var relPath = (req?.path ?? string.Empty).Trim();
+
+            if (programNo <= 0)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "programNo is required" });
+            }
+
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[SmartDownload] jobId={jobId} accepted. machineId={machineId} headType={headType} programNo={programNo} path={relPath}");
+
+            // 즉시 응답: 작업 수락됨
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
+            {
+                success = true,
+                message = "Smart download job accepted",
+                jobId = jobId,
+                machineId = machineId,
+                headType,
+                programNo,
+            });
+
+            // 백그라운드에서 작업 처리
+            Task.Run(() =>
+            {
+                try
+                {
+                    var cooldownKey = $"downloadProgram:{machineId}:{headType}:{programNo}";
+                    if (IsRawReadOnCooldown(cooldownKey))
+                    {
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = "Too many requests" },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    if (!TryGetProgramDataPreferMode1(machineId, headType, programNo, out var programData, out var error))
+                    {
+                        Console.WriteLine($"[SmartDownload] jobId={jobId} failed: {error}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = error ?? "GetMachineProgramData failed" },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    int length = (programData ?? string.Empty).Length;
+                    string savedPath = null;
+
+                    if (!string.IsNullOrWhiteSpace(relPath))
+                    {
+                        try
+                        {
+                            var fullPath = GetSafeBridgeStorePath(relPath);
+                            var dir = Path.GetDirectoryName(fullPath);
+                            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                            {
+                                Directory.CreateDirectory(dir);
+                            }
+                            File.WriteAllText(fullPath, programData ?? string.Empty, Encoding.ASCII);
+                            savedPath = relPath;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[SmartDownload] jobId={jobId} file write failed: {ex.Message}");
+                        }
+                    }
+
+                    Console.WriteLine($"[SmartDownload] jobId={jobId} completed. length={length} path={savedPath}");
+
+                    var resultObj = new
+                    {
+                        success = true,
+                        headType,
+                        slotNo = programNo,
+                        path = savedPath,
+                        length,
+                        warning = (string)null,
+                    };
+
+                    if (!string.IsNullOrEmpty(error) && error.StartsWith("TRUNCATED:"))
+                    {
+                        resultObj = new
+                        {
+                            success = true,
+                            headType,
+                            slotNo = programNo,
+                            path = savedPath,
+                            length,
+                            warning = error,
+                        };
+                    }
+
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = resultObj,
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SmartDownload] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
+        }
+
+        // GET /machines/{machineId}/programs (Mode1) - 레거시 호환
         [HttpGet]
         [Route("machines/{machineId}/programs")]
         public async Task<HttpResponseMessage> GetProgramList(string machineId, short headType = 1, short? slotNo = null, string path = null)
@@ -2200,7 +2651,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
             }
 
-            // slotNo가 있으면: 프로그램 1개 다운로드(필요 시 파일 저장)
+            // slotNo가 있으면: 프로그램 1개 다운로드(필요 시 파일 저장) - 레거시 호환
             if (slotNo.HasValue && slotNo.Value > 0)
             {
                 var programNo = slotNo.Value;
@@ -2569,7 +3020,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             public short? programNo { get; set; }
         }
 
-        // POST /machines/{machineId}/programs/delete (Mode1)
+        // POST /machines/{machineId}/programs/delete (Mode1) (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/programs/delete")]
         public HttpResponseMessage DeleteProgram(string machineId, [FromBody] DeleteProgramRequest req)
@@ -2592,26 +3043,60 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
             }
 
-            if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, programNo, out var activateProgNum, out var error))
-            {
-                return Request.CreateResponse((HttpStatusCode)500, new
-                {
-                    success = false,
-                    message = error ?? "DeleteMachineProgramInfo failed"
-                });
-            }
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[DeleteProgram] jobId={jobId} accepted. machineId={machineId} programNo={programNo}");
 
-            return Request.CreateResponse(HttpStatusCode.OK, new
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
-                message = "Program deleted",
-                headType,
-                programNo,
-                activateProgNum
+                message = "Delete program job accepted",
+                jobId = jobId,
+                machineId = machineId,
             });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, programNo, out var activateProgNum, out var error))
+                    {
+                        Console.WriteLine($"[DeleteProgram] jobId={jobId} failed: {error}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = error ?? "DeleteMachineProgramInfo failed" },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    Console.WriteLine($"[DeleteProgram] jobId={jobId} completed");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, message = "Program deleted", headType, programNo, activateProgNum },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[DeleteProgram] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
-        // POST /machines/{machineId}/programs/activate (Mode1)
+        // POST /machines/{machineId}/programs/activate (Mode1) (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/programs/activate")]
         public HttpResponseMessage ActivateProgram(string machineId, [FromBody] ActivateProgramRequest req)
@@ -2628,28 +3113,62 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             var dto = new PayloadUpdateActivateProg
             {
-                // 실측: headType 1=메인, 2=서브
                 headType = req.headType ?? 1,
                 programNo = req.programNo.Value
             };
 
-            var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var error);
-            if (res != 0)
-            {
-                return Request.CreateResponse((HttpStatusCode)500, new
-                {
-                    success = false,
-                    message = error ?? $"SetActivateProgram failed (result={res})"
-                });
-            }
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[ActivateProgram] jobId={jobId} accepted. machineId={machineId} programNo={dto.programNo}");
 
-            return Request.CreateResponse(HttpStatusCode.OK, new
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
-                message = "Program activated",
-                programNo = dto.programNo,
-                headType = dto.headType
+                message = "Activate program job accepted",
+                jobId = jobId,
+                machineId = machineId,
             });
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var error);
+                    if (res != 0)
+                    {
+                        Console.WriteLine($"[ActivateProgram] jobId={jobId} failed: {error}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = error ?? $"SetActivateProgram failed (result={res})" },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    Console.WriteLine($"[ActivateProgram] jobId={jobId} completed");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new { success = true, message = "Program activated", programNo = dto.programNo, headType = dto.headType },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ActivateProgram] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
         }
 
         // POST /machines/{machineId}/continuous/enqueue
