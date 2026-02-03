@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 using Hi_Link;
 using Hi_Link.Libraries.Model;
 using PayloadUpdateActivateProg = Hi_Link.Libraries.Model.UpdateMachineActivateProgNo;
@@ -86,13 +87,31 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            bool enable;
-            var result = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.OpenMachineHandle(serial, mp.Value.ip, (ushort)mp.Value.port, 3, out handle, out enable), "OpenMachineHandle");
-            if (result != 0 || handle == 0)
+            ushort openedHandle = 0;
+            bool enable = false;
+
+            var ip = mp.Value.ip;
+            var portU = (ushort)mp.Value.port;
+            var result = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.OpenMachineHandle(serial, ip, portU, 3, out openedHandle, out enable), "OpenMachineHandle");
+
+            // 일부 환경에서 result=0이지만 handle=0이 반환되는 케이스가 있어 1회 재시도한다.
+            if (result == 0 && openedHandle == 0)
             {
+                Console.WriteLine($"[Mode1HandleStore] OpenMachineHandle returned handle=0 with result=0. retrying once. uid={uid} ip={ip} port={portU}");
+                Thread.Sleep(100);
+                openedHandle = 0;
+                enable = false;
+                result = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.OpenMachineHandle(serial, ip, portU, 3, out openedHandle, out enable), "OpenMachineHandle.retry0");
+            }
+
+            if (result != 0 || openedHandle == 0)
+            {
+                Console.WriteLine($"[Mode1HandleStore] OpenMachineHandle failed. uid={uid} serial={serial} ip={ip} port={portU} result={result} handle={openedHandle} enable={enable}");
                 error = $"OpenMachineHandle failed (result={result})";
                 return false;
             }
+
+            handle = openedHandle;
 
             Handles[uid] = handle;
             Enabled[uid] = enable;
