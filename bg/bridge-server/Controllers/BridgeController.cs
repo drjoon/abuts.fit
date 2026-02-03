@@ -40,6 +40,17 @@ namespace HiLinkBridgeWebApi48.Controllers
             public DateTime LastPreloadedAtUtc;
         }
 
+        private class JobResult
+        {
+            public string JobId { get; set; }
+            public string Status { get; set; }
+            public object Result { get; set; }
+            public DateTime CreatedAtUtc { get; set; }
+        }
+
+        private static readonly ConcurrentDictionary<string, JobResult> JobResults = 
+            new ConcurrentDictionary<string, JobResult>();
+
         // POST /machines/{machineId}/manual/preload-mode2
         // Mode2 DLL을 사용하여 프로그램 업로드(UpdateProgram)
         [HttpPost]
@@ -989,7 +1000,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         // POST /machines/{machineId}/smart/upload
         [HttpPost]
         [Route("machines/{machineId}/smart/upload")]
-        public async Task<HttpResponseMessage> SmartUploadProgram(string machineId, [FromBody] HighLevelUploadProgramRequest req)
+        public HttpResponseMessage SmartUploadProgram(string machineId, [FromBody] HighLevelUploadProgramRequest req)
         {
             if (string.IsNullOrWhiteSpace(machineId))
             {
@@ -1003,111 +1014,154 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
             }
 
-            var slotNo = ChooseManualSlotForUpload(machineId);
-
-            try
+            var fullPath = GetSafeBridgeStorePath(relPath);
+            if (!File.Exists(fullPath))
             {
-                var responseLogs = new List<string>();
-
-                var fullPath = GetSafeBridgeStorePath(relPath);
-                if (!File.Exists(fullPath))
+                return Request.CreateResponse(HttpStatusCode.NotFound, new
                 {
-                    return Request.CreateResponse(HttpStatusCode.NotFound, new
-                    {
-                        success = false,
-                        message = "file not found",
-                        path = relPath
-                    });
-                }
-
-                var content = File.ReadAllText(fullPath);
-                var enforced = EnsurePercentAndHeaderSecondLine(content, slotNo);
-                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
-
-                var processedLen = (processed ?? string.Empty).Length;
-                var processedBytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
-
-                // 활성 프로그램 슬롯(4000/4001)이면 삭제 금지.
-                // 가공중 여부와 무관하게 활성 슬롯은 보호한다(사용자 요구).
-                var activeSlot = 0;
-                if (Mode1Api.TryGetActivateProgInfo(machineId, out var activeInfo0, out var _))
-                {
-                    activeSlot = ParseProgramNoFromName(activeInfo0.MainProgramName);
-                    if (activeSlot <= 0) activeSlot = ParseProgramNoFromName(activeInfo0.SubProgramName);
-                }
-
-                var protectedSlot = (activeSlot == MANUAL_SLOT_A || activeSlot == MANUAL_SLOT_B) ? activeSlot : 0;
-
-                // 4000/4001 중 보호 슬롯이 아니면 무조건 삭제하여 메모리 확보 후 업로드
-                var deletedSlots = new List<int>();
-                foreach (var s in new[] { MANUAL_SLOT_A, MANUAL_SLOT_B })
-                {
-                    if (protectedSlot == s) continue;
-                    try
-                    {
-                        Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)s, out var _, out var _);
-                        deletedSlots.Add(s);
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                // 보호 슬롯이 있으면 반대 슬롯으로 강제 업로드
-                if (protectedSlot == MANUAL_SLOT_A) slotNo = MANUAL_SLOT_B;
-                else if (protectedSlot == MANUAL_SLOT_B) slotNo = MANUAL_SLOT_A;
-
-                // 슬롯이 바뀌었으면 헤더도 다시 강제
-                enforced = EnsurePercentAndHeaderSecondLine(content, slotNo);
-                processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
-                processedLen = (processed ?? string.Empty).Length;
-                processedBytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
-
-                responseLogs.Add($"activeSlot={activeSlot}");
-                responseLogs.Add($"protectedSlot={protectedSlot}");
-                responseLogs.Add($"deletedSlots=[{string.Join(",", deletedSlots)}]");
-                responseLogs.Add($"uploadSlot={slotNo}");
-                responseLogs.Add($"fileBytes={processedBytes}");
-
-                Console.WriteLine($"[SmartUpload] activeSlot={activeSlot} protectedSlot={protectedSlot} deletedSlots=[{string.Join(",", deletedSlots)}] uploadSlot={slotNo} bytes={processedBytes} path={relPath}");
-
-                if (processedBytes > 512000)
-                {
-                    return Request.CreateResponse((HttpStatusCode)413, new
-                    {
-                        success = false,
-                        message = "program is too large (max 500KB)",
-                        bytes = processedBytes,
-                        limitBytes = 512000,
-                    });
-                }
-
-                if (!UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var usedMode, out var upErr))
-                {
-                    responseLogs.Add($"uploadFailed usedMode={usedMode ?? "?"} err={upErr}");
-                    Console.WriteLine($"[SmartUpload] failed usedMode={usedMode ?? "?"} slot={slotNo} bytes={processedBytes} err={upErr}");
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = upErr ?? "upload failed", logs = responseLogs });
-                }
-
-                // 폴링 없이 업로드 결과를 바로 반환
-                
-                return Request.CreateResponse(HttpStatusCode.OK, new
-                {
-                    success = true,
-                    message = "Smart program uploaded",
-                    headType,
-                    slotNo,
-                    programName = $"O{slotNo.ToString().PadLeft(4, '0')}",
-                    path = relPath,
-                    length = processedLen,
-                    bytes = processedBytes,
-                    logs = responseLogs,
+                    success = false,
+                    message = "file not found",
+                    path = relPath
                 });
             }
-            catch (Exception ex)
+
+            var jobId = Guid.NewGuid().ToString("N");
+            Console.WriteLine($"[SmartUpload] jobId={jobId} accepted. machineId={machineId} path={relPath}");
+
+            // 즉시 응답: 작업 수락됨
+            var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
-                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
+                success = true,
+                message = "Smart upload job accepted",
+                jobId = jobId,
+                machineId = machineId,
+                path = relPath,
+            });
+
+            // 백그라운드에서 작업 처리
+            Task.Run(async () =>
+            {
+                try
+                {
+                    var slotNo = ChooseManualSlotForUpload(machineId);
+                    var content = File.ReadAllText(fullPath);
+                    var enforced = EnsurePercentAndHeaderSecondLine(content, slotNo);
+                    var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
+
+                    var processedLen = (processed ?? string.Empty).Length;
+                    var processedBytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
+
+                    var activeSlot = 0;
+                    if (Mode1Api.TryGetActivateProgInfo(machineId, out var activeInfo0, out var _))
+                    {
+                        activeSlot = ParseProgramNoFromName(activeInfo0.MainProgramName);
+                        if (activeSlot <= 0) activeSlot = ParseProgramNoFromName(activeInfo0.SubProgramName);
+                    }
+
+                    var protectedSlot = (activeSlot == MANUAL_SLOT_A || activeSlot == MANUAL_SLOT_B) ? activeSlot : 0;
+
+                    var deletedSlots = new List<int>();
+                    foreach (var s in new[] { MANUAL_SLOT_A, MANUAL_SLOT_B })
+                    {
+                        if (protectedSlot == s) continue;
+                        try
+                        {
+                            Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)s, out var _, out var _);
+                            deletedSlots.Add(s);
+                        }
+                        catch { }
+                    }
+
+                    if (protectedSlot == MANUAL_SLOT_A) slotNo = MANUAL_SLOT_B;
+                    else if (protectedSlot == MANUAL_SLOT_B) slotNo = MANUAL_SLOT_A;
+
+                    enforced = EnsurePercentAndHeaderSecondLine(content, slotNo);
+                    processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
+                    processedLen = (processed ?? string.Empty).Length;
+                    processedBytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
+
+                    if (processedBytes > 512000)
+                    {
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = "program is too large (max 500KB)", bytes = processedBytes },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    if (!UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var usedMode, out var upErr))
+                    {
+                        Console.WriteLine($"[SmartUpload] jobId={jobId} failed: {upErr}");
+                        JobResults[jobId] = new JobResult
+                        {
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = upErr ?? "upload failed", usedMode },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
+                    }
+
+                    Console.WriteLine($"[SmartUpload] jobId={jobId} completed. slotNo={slotNo} bytes={processedBytes}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "COMPLETED",
+                        Result = new
+                        {
+                            success = true,
+                            message = "Smart program uploaded",
+                            headType,
+                            slotNo,
+                            programName = $"O{slotNo.ToString().PadLeft(4, '0')}",
+                            path = relPath,
+                            length = processedLen,
+                            bytes = processedBytes,
+                        },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SmartUpload] jobId={jobId} exception: {ex.Message}");
+                    JobResults[jobId] = new JobResult
+                    {
+                        JobId = jobId,
+                        Status = "FAILED",
+                        Result = new { success = false, message = ex.Message },
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+                }
+            });
+
+            return immediateResponse;
+        }
+
+        // GET /machines/{machineId}/jobs/{jobId}
+        [HttpGet]
+        [Route("machines/{machineId}/jobs/{jobId}")]
+        public HttpResponseMessage GetJobResult(string machineId, string jobId)
+        {
+            if (!JobResults.TryGetValue(jobId, out var result))
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound, new
+                {
+                    success = false,
+                    message = "job not found",
+                    jobId
+                });
             }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                jobId = result.JobId,
+                status = result.Status,
+                result = result.Result,
+                createdAtUtc = result.CreatedAtUtc
+            });
         }
 
         public class HighLevelStartEnqueueRequest

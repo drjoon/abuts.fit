@@ -92,11 +92,89 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=10
 
 ## 스마트(Smart) 연속가공 API
 
-### 1) 스마트 업로드
+### 1) 스마트 업로드 (이중 응답 방식)
 
 `POST /api/cnc/machines/{machineId}/smart/upload`
 
 목적: 현재 장비 상태를 보고 `O4000/O4001` 중 안전한 슬롯을 자동 선택한 뒤 업로드한다.
+
+**이중 응답 방식:**
+
+1. **즉시 응답 (202 Accepted)**: jobId를 반환하고 작업 수락 확인
+2. **완료 응답**: GET `/api/cnc/machines/{machineId}/jobs/{jobId}`로 작업 결과 조회
+
+#### 1-1) 업로드 요청 (즉시 응답)
+
+```bash
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{"headType":1,"path":"M5_20260128-MMSESKHM-27_v0tvldch.nc","isNew":true}'
+```
+
+**응답 (202 Accepted):**
+
+```json
+{
+  "success": true,
+  "message": "Smart upload job accepted",
+  "jobId": "a1b2c3d4e5f6g7h8",
+  "machineId": "M5",
+  "path": "M5_20260128-MMSESKHM-27_v0tvldch.nc"
+}
+```
+
+#### 1-2) 작업 결과 조회
+
+```bash
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/a1b2c3d4e5f6g7h8" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
+```
+
+**응답 (작업 진행 중):**
+
+```json
+{
+  "jobId": "a1b2c3d4e5f6g7h8",
+  "status": "PROCESSING",
+  "result": null,
+  "createdAtUtc": "2026-02-04T06:30:00Z"
+}
+```
+
+**응답 (작업 완료):**
+
+```json
+{
+  "jobId": "a1b2c3d4e5f6g7h8",
+  "status": "COMPLETED",
+  "result": {
+    "success": true,
+    "message": "Smart program uploaded",
+    "headType": 1,
+    "slotNo": 4000,
+    "programName": "O4000",
+    "path": "M5_20260128-MMSESKHM-27_v0tvldch.nc",
+    "length": 179148,
+    "bytes": 179148
+  },
+  "createdAtUtc": "2026-02-04T06:30:00Z"
+}
+```
+
+**응답 (작업 실패):**
+
+````json
+{
+  "jobId": "a1b2c3d4e5f6g7h8",
+  "status": "FAILED",
+  "result": {
+    "success": false,
+    "message": "upload failed",
+    "usedMode": "Mode1"
+  },
+  "createdAtUtc": "2026-02-04T06:30:00Z"
+}
 
 동작:
 
@@ -109,7 +187,7 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
  -d '{"headType":1,"path":"M5_20260128-MMSESKHM-27_v0tvldch.nc","isNew":true}'
-```
+````
 
 ### 2-1) 스마트 replace (대기 큐 교체)
 
