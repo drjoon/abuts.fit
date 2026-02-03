@@ -638,12 +638,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                     job.ErrorMessage = upErr0;
                     throw new InvalidOperationException(job.ErrorMessage);
                 }
-                if (!await VerifyProgramExists(machineId, job.HeadType, job.CurrentSlot, 40))
-                {
-                    job.ErrorCode = "UPLOAD_VERIFY_FAILED";
-                    job.ErrorMessage = "program not found after upload";
-                    throw new TimeoutException(job.ErrorMessage);
-                }
             }
 
             for (job.Index = 0; job.Index < job.Paths.Count; job.Index++)
@@ -652,10 +646,10 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var nextSlot = thisSlot == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
 
                 // 다음 사이클에서 바로 활성화할 수 있도록, 현재 슬롯 프로그램이 존재하는지 확인
-                if (!await VerifyProgramExists(machineId, job.HeadType, thisSlot, 40))
+                if (!Mode1Api.TryGetProgListInfo(machineId, job.HeadType, out var progListCheck, out var progErr))
                 {
-                    job.ErrorCode = "PROGRAM_MISSING";
-                    job.ErrorMessage = "program not found on machine (currentSlot)";
+                    job.ErrorCode = "PROGRAM_CHECK_FAILED";
+                    job.ErrorMessage = progErr ?? "Unable to read program list";
                     throw new InvalidOperationException(job.ErrorMessage);
                 }
 
@@ -736,11 +730,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                         job.ErrorMessage = upErr1;
                         throw new InvalidOperationException(job.ErrorMessage);
                     }
-                    if (!await VerifyProgramExists(machineId, job.HeadType, nextSlot, 40))
+                    if (!Mode1Api.TryGetProgListInfo(machineId, job.HeadType, out var progListNext, out var progErrNext))
                     {
-                        job.ErrorCode = "UPLOAD_VERIFY_FAILED";
-                        job.ErrorMessage = "program not found after upload";
-                        throw new TimeoutException(job.ErrorMessage);
+                        job.ErrorCode = "PROGRAM_CHECK_FAILED";
+                        job.ErrorMessage = progErrNext ?? "Unable to read program list";
+                        throw new InvalidOperationException(job.ErrorMessage);
                     }
                 }
 
