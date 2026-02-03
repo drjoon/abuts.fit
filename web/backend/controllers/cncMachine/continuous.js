@@ -35,6 +35,17 @@ export async function smartUpload(req, res) {
       body: JSON.stringify(payload),
     });
     const body = await resp.json().catch(() => ({}));
+
+    // 이중 응답 방식: 202 Accepted면 jobId 반환
+    if (resp.status === 202 && body?.jobId) {
+      return res.status(202).json({
+        success: true,
+        message: "Smart upload job accepted",
+        jobId: body.jobId,
+        machineId: mid,
+      });
+    }
+
     return res.status(resp.status).json(body);
   } catch (error) {
     console.error("smartUpload error", error);
@@ -75,6 +86,17 @@ export async function smartEnqueue(req, res) {
       body: JSON.stringify(payload),
     });
     const body = await resp.json().catch(() => ({}));
+
+    // 이중 응답 방식: 202 Accepted면 jobId 반환
+    if (resp.status === 202 && body?.jobId) {
+      return res.status(202).json({
+        success: true,
+        message: "Smart enqueue job accepted",
+        jobId: body.jobId,
+        machineId: mid,
+      });
+    }
+
     return res.status(resp.status).json(body);
   } catch (error) {
     console.error("smartEnqueue error", error);
@@ -105,6 +127,17 @@ export async function smartDequeue(req, res) {
       body: JSON.stringify(payload),
     });
     const body = await resp.json().catch(() => ({}));
+
+    // 이중 응답 방식: 202 Accepted면 jobId 반환
+    if (resp.status === 202 && body?.jobId) {
+      return res.status(202).json({
+        success: true,
+        message: "Smart dequeue job accepted",
+        jobId: body.jobId,
+        machineId: mid,
+      });
+    }
+
     return res.status(resp.status).json(body);
   } catch (error) {
     console.error("smartDequeue error", error);
@@ -131,6 +164,17 @@ export async function smartStart(req, res) {
       body: JSON.stringify({}),
     });
     const body = await resp.json().catch(() => ({}));
+
+    // 이중 응답 방식: 202 Accepted면 jobId 반환
+    if (resp.status === 202 && body?.jobId) {
+      return res.status(202).json({
+        success: true,
+        message: "Smart start job accepted",
+        jobId: body.jobId,
+        machineId: mid,
+      });
+    }
+
     return res.status(resp.status).json(body);
   } catch (error) {
     console.error("smartStart error", error);
@@ -162,6 +206,32 @@ export async function smartStatus(req, res) {
     return res
       .status(500)
       .json({ success: false, message: "smart status failed" });
+  }
+}
+
+export async function getJobResult(req, res) {
+  try {
+    const { machineId, jobId } = req.params;
+    const mid = String(machineId || "").trim();
+    const jid = String(jobId || "").trim();
+    if (!mid || !jid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId and jobId are required" });
+    }
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/jobs/${encodeURIComponent(jid)}`;
+    const resp = await fetch(url, {
+      method: "GET",
+      headers: withBridgeHeaders(),
+    });
+    const body = await resp.json().catch(() => ({}));
+    return res.status(resp.status).json(body);
+  } catch (error) {
+    console.error("getJobResult error", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "get job result failed" });
   }
 }
 

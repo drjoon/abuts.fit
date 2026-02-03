@@ -119,6 +119,13 @@ router.get(
   cncMachineController.smartStatus,
 );
 
+// 작업 결과 조회 (이중 응답 방식)
+router.get(
+  "/:machineId/jobs/:jobId",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getJobResult,
+);
+
 // 브리지 연속 가공 enqueue
 router.post(
   "/:machineId/continuous/enqueue",
