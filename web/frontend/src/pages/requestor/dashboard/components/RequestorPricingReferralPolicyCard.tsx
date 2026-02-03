@@ -162,7 +162,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   return (
     <>
       <Card className="app-glass-card app-glass-card--lg">
-        <CardHeader className="pt-6 pb-2">
+        <CardHeader className="pt-4 pb-2">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base font-semibold">
               가격 & 리퍼럴 정책
@@ -175,7 +175,7 @@ export const RequestorPricingReferralPolicyCard = () => {
                 className={
                   shouldHighlightReferral
                     ? "text-xs px-2 py-1 h-7 shadow-sm ring-1 ring-primary/40"
-                    : "border-gray-300 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
+                    : "border-gray-300 text-xs text-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
                 }
                 onClick={handleCopyReferralLink}
                 disabled={!referralLink}
@@ -186,34 +186,34 @@ export const RequestorPricingReferralPolicyCard = () => {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="border-gray-300 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
+                className="border-gray-300 text-xs text-foreground hover:bg-muted/60 hover:text-foreground px-2 py-1 h-7"
                 onClick={() => setOpen(true)}
               >
                 정책
               </Button>
             </div>
           </div>
-          <CardDescription className="space-y-1 text-xs text-muted-foreground">
+          <CardDescription className="space-y-1 text-xs text-slate-600">
             최근 30일 집계는 <b>완료</b> 주문 기준입니다.
           </CardDescription>
         </CardHeader>
-        <CardContent className="pt-0 pb-6 gap-3 text-xs text-foreground">
+        <CardContent className="pt-2 pb-4 gap-3 text-xs text-foreground">
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-md text-muted-foreground">
+                  <span className="text-md text-slate-600">
                     내 주문 (지난 30일)
                   </span>
-                  <span className="text-lg font-semibold">
+                  <span className="text-lg font-semibold text-foreground">
                     {myLast30DaysOrders.toLocaleString()}건
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-md text-muted-foreground">
+                  <span className="text-md text-slate-600">
                     리퍼럴 주문 (지난 30일)
                   </span>
-                  <span className="text-lg font-semibold">
+                  <span className="text-lg font-semibold text-foreground">
                     {referralLast30DaysOrders.toLocaleString()}건
                   </span>
                 </div>
@@ -222,8 +222,8 @@ export const RequestorPricingReferralPolicyCard = () => {
 
             <div className="mt-2 space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-md text-muted-foreground">주문 합계</span>
-                <span className="text-lg font-semibold">
+                <span className="text-md text-slate-600">주문 합계</span>
+                <span className="text-lg font-semibold text-foreground">
                   {totalOrders.toLocaleString()}건
                 </span>
               </div>
@@ -232,11 +232,9 @@ export const RequestorPricingReferralPolicyCard = () => {
 
             <div className="mt-2 pt-2 space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-md text-muted-foreground">
-                  오늘 주문 단가
-                </span>
+                <span className="text-md text-slate-600">오늘 주문 단가</span>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-sm text-muted-foreground line-through">
+                  <span className="text-sm text-slate-500 line-through">
                     {baseUnitPrice.toLocaleString()}원
                   </span>
                   <span className="text-2xl font-bold text-primary">
@@ -244,11 +242,11 @@ export const RequestorPricingReferralPolicyCard = () => {
                   </span>
                 </div>
               </div>
-              <p className="text-md text-muted-foreground text-right">
+              <p className="text-md text-slate-600 text-right">
                 <b>부가세·배송비 별도</b>
               </p>
             </div>
-            <div className="mt-1 text-[11px] text-muted-foreground text-right">
+            <div className="mt-1 text-[11px] text-slate-600 text-right">
               이벤트 기간 동안 가입한 기공소는 90일간 10,000원으로 고정됩니다.
             </div>
           </div>

@@ -102,22 +102,22 @@ export const RequestorShippingSummaryCard = () => {
     <>
       <Card className="app-glass-card app-glass-card--lg">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold">
+          <CardTitle className="text-base font-semibold text-foreground">
             오늘 발송 박스 요약
           </CardTitle>
         </CardHeader>
-        <CardContent className="pt-1 pb-4 text-sm text-foreground space-y-2">
+        <CardContent className="pt-2 pb-4 text-sm text-foreground space-y-2">
           {isLoading ? (
-            <div className="text-xs text-muted-foreground">불러오는 중...</div>
+            <div className="text-xs text-slate-600">불러오는 중...</div>
           ) : (
             <>
               <div className="flex items-baseline justify-between">
-                <span className="text-muted-foreground">박스 내용</span>
+                <span className="text-slate-600">박스 내용</span>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-auto px-2 py-1 text-sm font-semibold"
+                  className="h-auto px-2 py-1 text-sm font-semibold text-foreground"
                   disabled={
                     memo.todayCount === 0 || memo.todayRequests.length === 0
                   }
@@ -127,31 +127,27 @@ export const RequestorShippingSummaryCard = () => {
                 </Button>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-muted-foreground">
-                  배송비 합계 (공급가)
-                </span>
-                <span className="text-lg font-semibold">
+                <span className="text-slate-600">배송비 합계 (공급가)</span>
+                <span className="text-lg font-semibold text-foreground">
                   {memo.todayFee.toLocaleString()}원
                 </span>
               </div>
               <div className="flex items-baseline justify-between pt-1 border-t border-dashed border-gray-200 mt-2">
-                <span className="text-muted-foreground">
-                  지난 30일 배송비 합계
-                </span>
-                <span className="text-sm font-semibold">
+                <span className="text-slate-600">지난 30일 배송비 합계</span>
+                <span className="text-sm font-semibold text-foreground">
                   {memo.last30Fee.toLocaleString()}원
                 </span>
               </div>
               <div className="mt-2 space-y-1 max-h-32 overflow-auto pr-1">
                 {memo.items.length === 0 ? (
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="text-[11px] text-slate-600">
                     최근 30일 이내 발송된 박스가 없습니다.
                   </div>
                 ) : (
                   memo.items.slice(0, 30).map((it) => (
                     <div
                       key={it.id}
-                      className="flex items-center justify-between text-[11px] text-muted-foreground"
+                      className="flex items-center justify-between text-[11px] text-slate-600"
                     >
                       <span>
                         {it.shipDateYmd} ({it.requestCount.toLocaleString()}건)

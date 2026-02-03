@@ -26,17 +26,17 @@ export const SettingsScaffold = ({
   const totalTabs = tabs.length;
 
   return (
-    <div className="min-h-screen bg-gradient-subtle p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gradient-subtle p-4">
+      <div className="max-w-4xl mx-auto space-y-4">
         <Tabs
           value={activeTab}
           onValueChange={onTabChange}
-          className="space-y-6"
+          className="space-y-4"
         >
           <TabsList
             className={cn(
-              "flex w-full flex-nowrap gap-2 overflow-x-auto",
-              "py-1"
+              "flex w-full flex-nowrap gap-1.5 overflow-x-auto",
+              "py-1",
             )}
           >
             {tabs.map((t) => (
@@ -46,7 +46,7 @@ export const SettingsScaffold = ({
                 className={cn(
                   "flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2",
                   highlightTabKey === t.key &&
-                    "ring-2 ring-primary/60 shadow-[0_10px_40px_rgba(14,92,228,0.18)]"
+                    "ring-2 ring-primary/60 shadow-[0_10px_40px_rgba(14,92,228,0.18)]",
                 )}
               >
                 <t.icon className="h-4 w-4" />

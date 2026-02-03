@@ -405,10 +405,10 @@ export const RequestorRecentRequestsCard = ({
       className="app-glass-card app-glass-card--lg cursor-pointer"
       onClick={onRefresh}
     >
-      <CardHeader className="pb-3 flex flex-row items-center justify-between gap-3">
+      <CardHeader className="pb-2 flex flex-row items-center justify-between gap-3">
         <CardTitle className="text-base font-semibold">최근 의뢰</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col justify-between pt-0">
+      <CardContent className="flex-1 flex flex-col justify-between pt-2">
         <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {items.map((item: any) => {
             const rawRequestId = String(item.requestId || "").trim();
@@ -482,12 +482,12 @@ export const RequestorRecentRequestsCard = ({
               >
                 <div className="flex-1 min-w-0 mr-2">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="text-sm font-medium truncate">
+                    <div className="text-sm font-medium truncate text-foreground">
                       {item.title || displayId}
                     </div>
                     {getStatusBadge(item.status, item.manufacturerStage)}
                   </div>
-                  <div className="text-[11px] text-muted-foreground truncate">
+                  <div className="text-[11px] text-slate-600 truncate">
                     {item.caseInfos?.clinicName && (
                       <span>{item.caseInfos.clinicName}</span>
                     )}
@@ -507,7 +507,7 @@ export const RequestorRecentRequestsCard = ({
                       })()}
                     </span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
+                  <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-2">
                     <span>
                       의뢰:{" "}
                       {item.createdAt &&
@@ -570,10 +570,10 @@ export const RequestorRecentRequestsCard = ({
               </div>
             </div>
             <DialogDescription asChild>
-              <div className="space-y-3 pt-2 text-sm text-muted-foreground">
+              <div className="space-y-3 pt-2 text-sm text-foreground">
                 <div className="grid grid-cols-[80px_1fr] gap-3 items-center">
-                  <span className="text-gray-600">의뢰번호</span>
-                  <span className="text-gray-900 font-medium">
+                  <span className="text-slate-600">의뢰번호</span>
+                  <span className="text-foreground font-medium">
                     {detail?.requestId || selectedSummary?.requestId || "-"}
                   </span>
                 </div>
@@ -581,7 +581,7 @@ export const RequestorRecentRequestsCard = ({
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-slate-700">의뢰일:</span>
-                    <span>
+                    <span className="text-foreground">
                       {detail?.createdAt
                         ? new Date(detail.createdAt).toLocaleString()
                         : selectedSummary?.createdAt
@@ -591,7 +591,7 @@ export const RequestorRecentRequestsCard = ({
                   </div>
                   {(detail?.timeline?.estimatedCompletion ||
                     selectedSummary?.estimatedCompletion) && (
-                    <div className="flex items-center gap-2 text-blue-600 font-medium">
+                    <div className="flex items-center gap-2 text-blue-700 font-medium">
                       <span>도착 예정일:</span>
                       <span>
                         {(() => {
@@ -606,7 +606,7 @@ export const RequestorRecentRequestsCard = ({
                     </div>
                   )}
                   {detail?.deliveryInfoRef?.deliveredAt && (
-                    <div className="flex items-center gap-2 text-green-600 font-medium">
+                    <div className="flex items-center gap-2 text-green-700 font-medium">
                       <span>배송 완료일:</span>
                       <span>
                         {new Date(
@@ -631,42 +631,42 @@ export const RequestorRecentRequestsCard = ({
                       .join(" / ") || "-";
 
                   return (
-                    <div className="rounded-lg border px-3 py-3 space-y-2 text-sm text-gray-900">
+                    <div className="rounded-lg border px-3 py-3 space-y-2 text-sm text-foreground">
                       <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-gray-600">치과명</span>
-                        <span className="text-right font-medium">
+                        <span className="text-slate-600">치과명</span>
+                        <span className="text-right font-medium text-foreground">
                           {ci?.clinicName || "-"}
                         </span>
                       </div>
                       <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-gray-600">환자명</span>
-                        <span className="text-right font-medium">
+                        <span className="text-slate-600">환자명</span>
+                        <span className="text-right font-medium text-foreground">
                           {ci?.patientName || "-"}
                         </span>
                       </div>
                       <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-gray-600">치아번호</span>
-                        <span className="text-right font-medium">
+                        <span className="text-slate-600">치아번호</span>
+                        <span className="text-right font-medium text-foreground">
                           {ci?.tooth || "-"}
                         </span>
                       </div>
                       <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-gray-600">임플란트</span>
-                        <span className="text-right font-medium whitespace-pre">
+                        <span className="text-slate-600">임플란트</span>
+                        <span className="text-right font-medium whitespace-pre text-foreground">
                           {implantLabel}
                         </span>
                       </div>
                       <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-gray-600">직경</span>
-                        <span className="text-right font-medium">
+                        <span className="text-slate-600">직경</span>
+                        <span className="text-right font-medium text-foreground">
                           {Number.isFinite(maxDiameter)
                             ? `${Number(maxDiameter).toFixed(1)} mm`
                             : "-"}
                         </span>
                       </div>
                       <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-gray-600">커넥션 직경</span>
-                        <span className="text-right font-medium">
+                        <span className="text-slate-600">커넥션 직경</span>
+                        <span className="text-right font-medium text-foreground">
                           {Number.isFinite(connectionDiameter)
                             ? `${Number(connectionDiameter).toFixed(1)} mm`
                             : "-"}

@@ -527,29 +527,31 @@ export const RequestorBulkShippingBannerCard = ({
   return (
     <>
       <Card className="app-glass-card app-glass-card--lg flex-none">
-        <CardHeader className="pb-0 space-y-2">
+        <CardHeader className="pb-2 space-y-2">
           <div className="flex items-center justify-between gap-4">
-            <CardTitle className="text-base font-semibold">
+            <CardTitle className="text-base font-semibold text-foreground">
               다음 배송 안내
             </CardTitle>
             {(() => {
               const { modeLabel, countLabel, dateLabel } = getNextSummary();
               return (
-                <div className="flex flex-col items-end text-xs text-muted-foreground">
-                  <span className="font-semibold">{modeLabel}</span>
-                  <span>{countLabel}</span>
-                  <span className="text-[11px] text-muted-foreground">
+                <div className="flex flex-col items-end text-xs text-slate-600">
+                  <span className="font-semibold text-foreground">
+                    {modeLabel}
+                  </span>
+                  <span className="text-foreground">{countLabel}</span>
+                  <span className="text-[11px] text-slate-600">
                     {dateLabel}
                   </span>
                 </div>
               );
             })()}
           </div>
-          <CardDescription className="text-md leading-relaxed text-muted-foreground">
+          <CardDescription className="text-md leading-relaxed text-slate-600">
             {getCardMessage()}
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-right pt-4">
+        <CardContent className="text-right pt-2">
           <Button
             variant="default"
             className="whitespace-nowrap"
@@ -566,7 +568,7 @@ export const RequestorBulkShippingBannerCard = ({
             <DialogTitle className="text-2xl font-bold">
               배송 대기 내역
             </DialogTitle>
-            <p className="mt-1 text-mg text-gray-600">
+            <p className="mt-1 text-mg text-slate-700">
               신속 배송시 묶음 배송 제품도 동봉합니다.
             </p>
           </DialogHeader>
@@ -601,14 +603,14 @@ export const RequestorBulkShippingBannerCard = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="h-1 w-1 rounded-full bg-blue-600"></div>
-                    <h3 className="font-bold text-lg text-gray-900">
+                    <h3 className="font-bold text-lg text-foreground">
                       묶음 배송
                     </h3>
                   </div>
                 </div>
                 <div className="app-glass-card app-glass-card--lg p-6 space-y-3 max-h-96 overflow-y-auto">
                   {bulkItems.length === 0 ? (
-                    <div className="text-sm text-gray-500 text-center py-8">
+                    <div className="text-sm text-slate-600 text-center py-8">
                       묶음 배송 대기 중인 제품이 없습니다.
                     </div>
                   ) : (
@@ -618,14 +620,14 @@ export const RequestorBulkShippingBannerCard = ({
                         className="app-surface app-surface--panel"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <div className="text-xs text-gray-600">
+                          <div className="text-xs text-slate-700">
                             <span className="font-medium">도착 예정일:</span>{" "}
-                            <span className="text-gray-900">
+                            <span className="text-foreground font-medium">
                               {group.etaKey === "-"
                                 ? "-"
                                 : formatEta(group.etaKey)}
                             </span>
-                            <span className="ml-2 text-gray-500">
+                            <span className="ml-2 text-slate-600">
                               ({group.items.length}개)
                             </span>
                           </div>
@@ -638,10 +640,10 @@ export const RequestorBulkShippingBannerCard = ({
                               className="app-surface app-surface--item flex items-center justify-between p-2"
                             >
                               <div className="flex-1 text-left">
-                                <p className="text-sm font-medium text-gray-900">
+                                <p className="text-sm font-medium text-foreground">
                                   {item.title || item.id}
                                 </p>
-                                <p className="text-xs text-gray-500">
+                                <p className="text-xs text-slate-600">
                                   {item.clinic || ""}
                                   {(item.patient ||
                                     item.tooth ||
@@ -677,7 +679,7 @@ export const RequestorBulkShippingBannerCard = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="h-1 w-1 rounded-full bg-red-600"></div>
-                    <h3 className="font-bold text-lg text-gray-900">
+                    <h3 className="font-bold text-lg text-foreground">
                       신속 배송
                     </h3>
                   </div>
@@ -692,7 +694,7 @@ export const RequestorBulkShippingBannerCard = ({
                 </div>
                 <div className="app-glass-card app-glass-card--lg p-6 space-y-2 max-h-96 overflow-y-auto">
                   {expressItems.length === 0 ? (
-                    <div className="text-sm text-gray-500 text-center py-8">
+                    <div className="text-sm text-slate-600 text-center py-8">
                       신속 배송 제품이 없습니다.
                     </div>
                   ) : (
@@ -702,10 +704,10 @@ export const RequestorBulkShippingBannerCard = ({
                         className="app-surface app-surface--item flex items-center justify-between p-3"
                       >
                         <div className="flex-1 text-right">
-                          <p className="text-sm font-medium text-gray-900">
+                          <p className="text-sm font-medium text-foreground">
                             {item.title || item.id}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-slate-600">
                             {item.clinic || ""}
                             {(item.patient || item.tooth || item.diameter) &&
                               ` • ${item.patient || "-"} / ${

@@ -31,7 +31,7 @@ All colors MUST be HSL.
     --secondary-foreground: 215 25% 15%;
 
     --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted-foreground: 215 20% 30%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
@@ -99,7 +99,7 @@ All colors MUST be HSL.
     --secondary-foreground: 210 40% 98%;
 
     --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted-foreground: 215 18% 78%;
 
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
@@ -150,14 +150,14 @@ All colors MUST be HSL.
 
 @layer components {
   .app-glass-card {
-    @apply relative overflow-hidden border border-white/40 bg-white/60 shadow-[0_12px_30px_rgba(15,23,42,0.15)] transition-all hover:shadow-[0_16px_40px_rgba(15,23,42,0.2)];
+    @apply relative overflow-hidden border border-white/70 bg-white/85 shadow-[0_12px_30px_rgba(15,23,42,0.15)] transition-all hover:shadow-[0_16px_40px_rgba(15,23,42,0.2)];
     backdrop-filter: blur(20px) saturate(150%);
     background: linear-gradient(
       135deg,
-      hsl(var(--background) / 0.6),
-      hsl(var(--background) / 0.15)
+      hsl(var(--background) / 0.92),
+      hsl(var(--background) / 0.45)
     );
-    border: 1px solid hsl(var(--foreground) / 0.08);
+    border: 1px solid hsl(var(--foreground) / 0.16);
   }
 
   .app-glass-card::before {
@@ -183,7 +183,7 @@ All colors MUST be HSL.
   }
 
   .app-glass-card--lg {
-    @apply rounded-2xl p-4 sm:p-5;
+    @apply rounded-2xl p-2.5 sm:p-3;
   }
 
   .app-glass-card-content {

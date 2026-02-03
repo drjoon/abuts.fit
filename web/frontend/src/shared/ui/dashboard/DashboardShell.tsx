@@ -20,14 +20,14 @@ export const DashboardShell = ({
   headerRight,
 }: DashboardShellProps) => {
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 space-y-3">
       {/* <div>
         <h1 className="text-3xl font-bold">{title}</h1>
         <p className="text-muted-foreground">{subtitle}</p>
       </div> */}
       <div className="space-y-3">
         {headerRight && <div className="flex justify-start">{headerRight}</div>}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
           {stats}
         </div>
       </div>
@@ -35,7 +35,7 @@ export const DashboardShell = ({
       {topSection && <div>{topSection}</div>}
 
       {(mainLeft || mainRight) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {mainLeft && <div>{mainLeft}</div>}
           {mainRight && <div>{mainRight}</div>}
         </div>
