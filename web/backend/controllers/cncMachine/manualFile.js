@@ -465,37 +465,107 @@ export async function manualFilePlay(req, res) {
         .json({ success: false, message: "selected file not found in queue" });
     }
 
-    const playUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
-      mid,
-    )}/manual/play`;
+    const base = BRIDGE_BASE.replace(/\/$/, "");
 
-    const { resp, json } = await callBridgeJson({
-      url: playUrl,
+    const uploadUrl = `${base}/api/cnc/machines/${encodeURIComponent(mid)}/smart/upload`;
+    const { resp: uploadResp, json: uploadJson } = await callBridgeJson({
+      url: uploadUrl,
       method: "POST",
-      body: { path: selectedItem.bridgePath },
+      body: { headType: 1, path: selectedItem.bridgePath, isNew: true },
     });
-    if (!resp.ok || json?.success === false) {
-      const msg = String(json?.message || json?.error || "manual play failed");
+    if (!uploadResp.ok || uploadJson?.success === false) {
+      const msg = String(
+        uploadJson?.message || uploadJson?.error || "smart upload failed",
+      );
       await saveManualCardStatus(mid, {
         lastPlay: {
+          fileName: selectedItem.fileName,
+          bridgePath: selectedItem.bridgePath,
           slotNo: null,
           startedAt: new Date(),
           error: msg,
         },
       });
-      return res.status(resp.status).json({ success: false, message: msg });
+      return res
+        .status(uploadResp.status)
+        .json({ success: false, message: msg });
     }
 
-    const slotNo = Number(json?.slotNo ?? json?.data?.slotNo ?? null);
+    const replaceUrl = `${base}/api/cnc/machines/${encodeURIComponent(mid)}/smart/replace`;
+    const { resp: replaceResp, json: replaceJson } = await callBridgeJson({
+      url: replaceUrl,
+      method: "POST",
+      body: { headType: 1, paths: [selectedItem.bridgePath] },
+    });
+    if (!replaceResp.ok || replaceJson?.success === false) {
+      const msg = String(
+        replaceJson?.message ||
+          replaceJson?.error ||
+          "smart queue replace failed",
+      );
+      await saveManualCardStatus(mid, {
+        lastPlay: {
+          fileName: selectedItem.fileName,
+          bridgePath: selectedItem.bridgePath,
+          slotNo: null,
+          startedAt: new Date(),
+          error: msg,
+        },
+      });
+      return res
+        .status(replaceResp.status)
+        .json({ success: false, message: msg });
+    }
+
+    const startUrl = `${base}/api/cnc/machines/${encodeURIComponent(mid)}/smart/start`;
+    const { resp: startResp, json: startJson } = await callBridgeJson({
+      url: startUrl,
+      method: "POST",
+      body: {},
+    });
+    if (!startResp.ok || startJson?.success === false) {
+      const msg = String(
+        startJson?.message || startJson?.error || "smart start failed",
+      );
+      await saveManualCardStatus(mid, {
+        lastPlay: {
+          fileName: selectedItem.fileName,
+          bridgePath: selectedItem.bridgePath,
+          slotNo:
+            Number(uploadJson?.slotNo ?? uploadJson?.data?.slotNo ?? null) ||
+            null,
+          startedAt: new Date(),
+          error: msg,
+        },
+      });
+      return res
+        .status(startResp.status)
+        .json({ success: false, message: msg });
+    }
+
+    const slotNo = Number(
+      uploadJson?.slotNo ?? uploadJson?.data?.slotNo ?? null,
+    );
     await saveManualCardStatus(mid, {
       lastPlay: {
+        fileName: selectedItem.fileName,
+        bridgePath: selectedItem.bridgePath,
         slotNo: Number.isFinite(slotNo) ? slotNo : null,
         startedAt: new Date(),
         error: null,
       },
     });
 
-    return res.status(200).json({ success: true, data: json?.data ?? json });
+    return res.status(200).json({
+      success: true,
+      data: {
+        itemId,
+        bridgePath: selectedItem.bridgePath,
+        slotNo: Number.isFinite(slotNo) ? slotNo : null,
+        upload: uploadJson,
+        start: startJson,
+      },
+    });
   } catch (error) {
     console.error("Error in manualFilePlay:", error);
     return res.status(500).json({

@@ -15,7 +15,7 @@ interface Params {
   callRaw: (uid: string, method: string, payload?: any) => Promise<any>;
   refreshStatusFor: (uid: string) => Promise<void>;
   fetchProgramList: () => Promise<void>;
-  handleManualCardPlay: (machineId: string) => Promise<void>;
+  handleManualCardPlay: (machineId: string, itemId?: string) => Promise<void>;
 }
 
 export function useCncDashboardQueues({
@@ -519,7 +519,7 @@ export function useCncDashboardQueues({
       const source = String((targetJob as any)?.source || "").trim();
       if (kind === "manual_file" || source === "manual_insert") {
         // await handleManualCardPlay(uid, jobId);
-        await handleManualCardPlay(uid);
+        await handleManualCardPlay(uid, jobId);
         return;
       }
 

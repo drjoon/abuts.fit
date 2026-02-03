@@ -1262,6 +1262,51 @@ namespace HiLinkBridgeWebApi48.Controllers
             public int? maxWaitSeconds { get; set; }
         }
 
+        // POST /machines/{machineId}/smart/replace
+        [HttpPost]
+        [Route("machines/{machineId}/smart/replace")]
+        public HttpResponseMessage SmartReplace(string machineId, [FromBody] HighLevelStartEnqueueRequest req)
+        {
+            if (string.IsNullOrWhiteSpace(machineId))
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            var paths = (req?.paths ?? new string[0])
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToList();
+            if (paths.Count == 0)
+            {
+                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "paths is required" });
+            }
+
+            var job = new HighLevelStartJob
+            {
+                JobId = Guid.NewGuid().ToString("N"),
+                HeadType = req?.headType ?? (short)1,
+                Paths = paths,
+                MaxWaitSeconds = Math.Max(30, req?.maxWaitSeconds ?? 1800),
+                Index = 0,
+                StartedAtUtc = DateTime.UtcNow,
+                Status = "QUEUED",
+            };
+
+            var q = GetOrCreateHighLevelQueue(machineId);
+            lock (q.Sync)
+            {
+                q.Jobs.Clear();
+                q.Jobs.Enqueue(job);
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                jobId = job.JobId,
+                queued = 1,
+            });
+        }
+
         // POST /machines/{machineId}/smart/enqueue
         [HttpPost]
         [Route("machines/{machineId}/smart/enqueue")]

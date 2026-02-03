@@ -111,6 +111,19 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
  -d '{"headType":1,"path":"M5_20260129-KBDSGYQH-47_s7le4pzf.nc","isNew":true}'
 ```
 
+### 2-1) 스마트 replace (대기 큐 교체)
+
+`POST /api/cnc/machines/{machineId}/smart/replace`
+
+목적: 현재 실행 중인 작업은 유지하고, **대기 큐를 지정된 paths로 교체**한다.
+
+```bash
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/replace" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{"headType":1,"paths":["M5_20260129-KBDSGYQH-47_s7le4pzf.nc"]}'
+```
+
 ### 2) 스마트 enqueue
 
 `POST /api/cnc/machines/{machineId}/smart/enqueue`

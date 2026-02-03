@@ -166,6 +166,12 @@
   - 입력: `paths[]` (bridge-store 상대 경로 배열)
   - 동작: 큐에 작업을 추가만 한다. (즉시 가공 시작하지 않음)
 
+- 스마트 replace:
+  - `POST /api/cnc/machines/{machineId}/smart/replace`
+  - 입력: `paths[]` (bridge-store 상대 경로 배열)
+  - 동작: 현재 실행 중인 작업(`current`)은 유지하고, **대기 큐를 지정된 paths로 교체**한다.
+  - 용도: 제조사 UI에서 `Next Up` 클릭 시, 선택된 1개 파일로 큐를 교체한 뒤 `/smart/start`로 즉시 시작하기 위한 용도.
+
 - 스마트 dequeue:
   - `POST /api/cnc/machines/{machineId}/smart/dequeue`
   - 입력: `jobId`(선택) 없으면 큐의 첫 작업을 제거
