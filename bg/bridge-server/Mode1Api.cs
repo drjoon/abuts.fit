@@ -25,14 +25,12 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            info = new MachineInfo();
+            var machineInfo = new MachineInfo();
             short result;
-            lock (DllLock)
-            {
-                result = HiLink.GetMachineInfo(handle, ref info);
-            }
+            result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineInfo(handle, ref machineInfo), "GetMachineInfo");
             if (result == 0)
             {
+                info = machineInfo;
                 return true;
             }
 
@@ -42,14 +40,12 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
-                    info = new MachineInfo();
+                    var retryInfo = new MachineInfo();
                     short result2;
-                    lock (DllLock)
-                    {
-                        result2 = HiLink.GetMachineInfo(handle2, ref info);
-                    }
+                    result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineInfo(handle2, ref retryInfo), "GetMachineInfo.retry");
                     if (result2 == 0)
                     {
+                        info = retryInfo;
                         return true;
                     }
                     if (result2 == -8)
@@ -81,14 +77,12 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            list = new List<IOInfo>();
+            var ioList = new List<IOInfo>();
             short result;
-            lock (DllLock)
-            {
-                result = HiLink.GetMachineAllOPInfo(handle, panelType, ref list);
-            }
+            result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineAllOPInfo(handle, panelType, ref ioList), "GetMachineAllOPInfo");
             if (result == 0)
             {
+                list = ioList;
                 return true;
             }
 
@@ -98,14 +92,12 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
-                    list = new List<IOInfo>();
+                    var retryList = new List<IOInfo>();
                     short result2;
-                    lock (DllLock)
-                    {
-                        result2 = HiLink.GetMachineAllOPInfo(handle2, panelType, ref list);
-                    }
+                    result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineAllOPInfo(handle2, panelType, ref retryList), "GetMachineAllOPInfo.retry");
                     if (result2 == 0)
                     {
+                        list = retryList;
                         return true;
                     }
                     if (result2 == -8)
@@ -137,10 +129,7 @@ namespace HiLinkBridgeWebApi48
             }
 
             short result;
-            lock (DllLock)
-            {
-                result = HiLink.SetMachineReset(handle);
-            }
+            result = HiLinkDllGate.Run(DllLock, () => HiLink.SetMachineReset(handle), "SetMachineReset");
             if (result == 0)
             {
                 return true;
@@ -153,10 +142,7 @@ namespace HiLinkBridgeWebApi48
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
                     short result2;
-                    lock (DllLock)
-                    {
-                        result2 = HiLink.SetMachineReset(handle2);
-                    }
+                    result2 = HiLinkDllGate.Run(DllLock, () => HiLink.SetMachineReset(handle2), "SetMachineReset.retry");
                     if (result2 == 0)
                     {
                         return true;
@@ -199,13 +185,12 @@ namespace HiLinkBridgeWebApi48
                 programNo = programNo,
             };
 
+            int localActivateProgNum = 0;
             short result;
-            lock (DllLock)
-            {
-                result = HiLink.DeleteMachineProgramInfo(handle, dto, out activateProgNum);
-            }
+            result = HiLinkDllGate.Run(DllLock, () => HiLink.DeleteMachineProgramInfo(handle, dto, out localActivateProgNum), "DeleteMachineProgramInfo");
             if (result == 0)
             {
+                activateProgNum = localActivateProgNum;
                 return true;
             }
 
@@ -215,13 +200,12 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
+                    localActivateProgNum = 0;
                     short result2;
-                    lock (DllLock)
-                    {
-                        result2 = HiLink.DeleteMachineProgramInfo(handle2, dto, out activateProgNum);
-                    }
+                    result2 = HiLinkDllGate.Run(DllLock, () => HiLink.DeleteMachineProgramInfo(handle2, dto, out localActivateProgNum), "DeleteMachineProgramInfo.retry");
                     if (result2 == 0)
                     {
+                        activateProgNum = localActivateProgNum;
                         return true;
                     }
                     if (result2 == -8)
@@ -283,12 +267,9 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            info = new MachineProgramListInfo { headType = headType };
+            var listInfo = new MachineProgramListInfo { headType = headType };
             short result;
-            lock (DllLock)
-            {
-                result = HiLink.GetMachineProgramListInfo(handle, ref info);
-            }
+            result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineProgramListInfo(handle, ref listInfo), "GetMachineProgramListInfo");
             if (result == 0) return true;
 
             // -8(무효 핸들) → Invalidate 후 1회 재시도
@@ -297,12 +278,9 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
-                    info = new MachineProgramListInfo { headType = headType };
+                    var retryInfo = new MachineProgramListInfo { headType = headType };
                     short result2;
-                    lock (DllLock)
-                    {
-                        result2 = HiLink.GetMachineProgramListInfo(handle2, ref info);
-                    }
+                    result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineProgramListInfo(handle2, ref retryInfo), "GetMachineProgramListInfo.retry");
                     if (result2 == 0) return true;
                     if (result2 == -8)
                     {
@@ -333,14 +311,12 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            info = new MachineProgramInfo();
+            var activateProgInfo = new MachineProgramInfo();
             short result;
-            lock (DllLock)
-            {
-                result = HiLink.GetMachineActivateProgInfo(handle, ref info);
-            }
+            result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineActivateProgInfo(handle, ref activateProgInfo), "GetMachineActivateProgInfo");
             if (result == 0)
             {
+                info = activateProgInfo;
                 return true;
             }
 
@@ -350,14 +326,12 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
-                    info = new MachineProgramInfo();
+                    var retryInfo = new MachineProgramInfo();
                     short result2;
-                    lock (DllLock)
-                    {
-                        result2 = HiLink.GetMachineActivateProgInfo(handle2, ref info);
-                    }
+                    result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineActivateProgInfo(handle2, ref retryInfo), "GetMachineActivateProgInfo.retry");
                     if (result2 == 0)
                     {
+                        info = retryInfo;
                         return true;
                     }
                     if (result2 == -8)
@@ -389,19 +363,17 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            info = new MachineProgramData
+            var programData = new MachineProgramData
             {
                 headType = headType,
                 programNo = programNo,
             };
             short result;
-            lock (DllLock)
-            {
-                result = HiLink.GetMachineProgramData(handle, ref info);
-            }
+            result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineProgramData(handle, ref programData), "GetMachineProgramData");
 
             if (result == 0)
             {
+                info = programData;
                 return true;
             }
 
@@ -411,18 +383,16 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
-                    info = new MachineProgramData
+                    var retryInfo = new MachineProgramData
                     {
                         headType = headType,
                         programNo = programNo,
                     };
                     short result2;
-                    lock (DllLock)
-                    {
-                        result2 = HiLink.GetMachineProgramData(handle2, ref info);
-                    }
+                    result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineProgramData(handle2, ref retryInfo), "GetMachineProgramData.retry");
                     if (result2 == 0)
                     {
+                        info = retryInfo;
                         return true;
                     }
                     if (result2 == -8)
@@ -463,10 +433,11 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            info = new MachineAlarmInfo { headType = headType };
-            var result = HiLink.GetMachineAlarmInfo(handle, ref info);
+            var alarmInfo = new MachineAlarmInfo { headType = headType };
+            var result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineAlarmInfo(handle, ref alarmInfo), "GetMachineAlarmInfo");
             if (result == 0)
             {
+                info = alarmInfo;
                 return true;
             }
 
@@ -476,10 +447,11 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
-                    info = new MachineAlarmInfo { headType = headType };
-                    var result2 = HiLink.GetMachineAlarmInfo(handle2, ref info);
+                    var retryInfo = new MachineAlarmInfo { headType = headType };
+                    var result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineAlarmInfo(handle2, ref retryInfo), "GetMachineAlarmInfo.retry");
                     if (result2 == 0)
                     {
+                        info = retryInfo;
                         return true;
                     }
                     if (result2 == -8)
@@ -512,9 +484,11 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            var result = HiLink.GetMachineStatus(handle, ref status);
+            var machineStatus = MachineStatusType.None;
+            var result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineStatus(handle, ref machineStatus), "GetMachineStatus");
             if (result == 0)
             {
+                status = machineStatus;
                 return true;
             }
 
@@ -524,10 +498,11 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
-                    status = MachineStatusType.None;
-                    var result2 = HiLink.GetMachineStatus(handle2, ref status);
+                    machineStatus = MachineStatusType.None;
+                    var result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineStatus(handle2, ref machineStatus), "GetMachineStatus.retry");
                     if (result2 == 0)
                     {
+                        status = machineStatus;
                         return true;
                     }
                     if (result2 == -8)
@@ -556,7 +531,7 @@ namespace HiLinkBridgeWebApi48
                 return false;
             }
 
-            var result = HiLink.SetMachinePanelIO(handle, panelType, ioUid, status);
+            var result = HiLinkDllGate.Run(DllLock, () => HiLink.SetMachinePanelIO(handle, panelType, ioUid, status), "SetMachinePanelIO");
             if (result == 0)
             {
                 return true;
@@ -568,7 +543,7 @@ namespace HiLinkBridgeWebApi48
                 Mode1HandleStore.Invalidate(uid);
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
-                    var result2 = HiLink.SetMachinePanelIO(handle2, panelType, ioUid, status);
+                    var result2 = HiLinkDllGate.Run(DllLock, () => HiLink.SetMachinePanelIO(handle2, panelType, ioUid, status), "SetMachinePanelIO.retry");
                     if (result2 == 0)
                     {
                         return true;

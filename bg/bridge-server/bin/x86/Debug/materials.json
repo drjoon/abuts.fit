@@ -5,7 +5,16 @@
     "heatNo": "",
     "diameter": 8.0,
     "diameterGroup": "8",
+    "remainingLength": 1.0,
+    "setAtUtc": "2026-01-29T23:33:16.308962Z"
+  },
+  {
+    "machineId": "M4",
+    "materialType": "Ti. Alloy",
+    "heatNo": "",
+    "diameter": 8.0,
+    "diameterGroup": "8",
     "remainingLength": 0.0,
-    "setAtUtc": "2026-01-28T00:01:00.6626187Z"
+    "setAtUtc": "2026-01-29T23:20:58.4391183Z"
   }
 ]

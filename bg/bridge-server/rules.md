@@ -42,59 +42,10 @@
 - **인증**: `BridgeAuthHandler`를 통한 기본 토큰 기반 인증을 수행할 수 있습니다.
 - **장비 설정**: `MachinesConfigStore`를 통해 장비 목록(UID, IP, Port)을 관리합니다.
 
-### 2.4 동기화 방식 (이벤트 드리븐 우선)
-
-- **대전제**: 폴링은 최대한 자제하고, 가능한 모든 동기화는 **이벤트 드리븐(push)** 으로 구현한다.
-- **폴링 도입 금지**: 주기적 폴링이 꼭 필요하다고 판단되면, 반드시 사전에 사용자 승인 후 도입한다.
-- **큐 동기화**:
-  - 백엔드(DB SSOT)가 큐 스냅샷을 갱신하면 브리지로 즉시 push한다.
-  - Endpoint: `POST /api/bridge/queue/{machineId}/replace` (jobs 전체 replace)
-
 ### 2.3 예외 처리 및 로깅
 
 - DLL 호출 실패나 타임아웃 발생 시 적절한 에러 코드를 반환합니다.
 - 모든 주요 작업 및 통신 내용은 콘솔/로그에 기록하여 추적 가능하게 합니다.
-- **재시도 금지(중요)**: CNC 제어(Start/Stop/Reset/Pause) 및 Hi-Link DLL 호출은 **1회만 시도**합니다. 실패 시 재시도하지 않고, 실패 원인(`result`/`message`)을 API 응답으로 그대로 반환하여 백엔드→프론트에서 토스트로 노출합니다.
-- **예외(EW_BUSY)**: 프로그램 업로드(`SetMachineProgramInfo`/`UpdateProgram`)에 한해서만 `EW_BUSY(-1)`이면 CNC processing 완료까지 **짧게 대기 후 backoff 재시도**를 허용합니다. (기타 에러코드는 재시도하지 않음)
-
-#### 2.3.1 Hi-Link 공통 에러 코드 (Mode1/Mode2)
-
-아래 코드는 Hi-Link 스펙의 **General Error List** 기준입니다.
-
-| result | 의미                                                      |
-| -----: | --------------------------------------------------------- |
-|    -17 | EW_PROTOCOL (Protocol error)                              |
-|    -16 | EW_SOCKET (Socket error)                                  |
-|    -15 | EW_NODLL (DLL file error)                                 |
-|    -11 | EW_BUS (Bus error)                                        |
-|    -10 | EW_SYSTEM2 (System error 2)                               |
-|     -9 | EW_HSSB (Communication error of HSSB)                     |
-|     -8 | EW_HANDLE (Handle number error)                           |
-|     -7 | EW_VERSION (Version mismatch between CNC/PMC and library) |
-|     -6 | EW_UNEXP (Abnormal library state)                         |
-|     -5 | EW_SYSTEM (System error)                                  |
-|     -4 | EW_PARITY (Shared RAM parity error)                       |
-|     -3 | EW_MMCSYS (FANUC drivers installation error)              |
-|     -2 | EW_RESET (Reset or stop request)                          |
-|     -1 | EW_BUSY (Busy)                                            |
-|      0 | EW_OK (Normal termination)                                |
-|      1 | EW_FUNC (Function not executed / not available)           |
-|      2 | EW_LENGTH (Data block length/number of data error)        |
-|      3 | EW_NUMBER (Data number error)                             |
-|      4 | EW_ATTRIB (Data attribute error)                          |
-|      5 | EW_DATA (Data error)                                      |
-|      6 | EW_NOOPT (No option)                                      |
-|      7 | EW_PROT (Write protection)                                |
-|      8 | EW_OVERFLOW (Memory overflow)                             |
-|      9 | EW_PARAM (CNC parameter error)                            |
-|     10 | EW_BUFFER (Buffer empty/full)                             |
-|     11 | EW_PATH (Path number error)                               |
-|     12 | EW_MODE (CNC mode error)                                  |
-|     13 | EW_REJECT (CNC execution rejection)                       |
-|     14 | EW_DTSRVR (Data server error)                             |
-|     15 | EW_ALARM (Alarm)                                          |
-|     16 | EW_STOP (Stop / Emergency)                                |
-|     17 | EW_PASSWD (State of data protection)                      |
 
 ## 3. 웹 인터페이스 및 통신 규칙
 
@@ -132,59 +83,12 @@
 
 ## 4. 운영 가이드라인
 
-### 4.1 스마트(Smart) 업로드/큐/가공 시작 엔드포인트
+### 4.1 프로그램 전송 프로세스
 
-- 스마트 업로드:
-  - `POST /api/cnc/machines/{machineId}/smart/upload`
-  - 입력: `path` (bridge-store 상대 경로)
-  - 동작: **활성 프로그램 슬롯(`/programs/active`)만 확인** 후 `O4000/O4001` 중 안전한 슬롯을 선택하고, 본문 2행의 `O####`를 해당 슬롯으로 강제한 뒤 업로드한다.
-  - **업로드 크기 제한**: 최대 500KB까지 업로드 가능
-  - 업로드 재시도(EW_BUSY):
-    - `SetMachineProgramInfo`/`UpdateProgram`에서 `EW_BUSY(-1)`이면 **최대 20초까지 1초 간격**으로 재시도한다.
-  - 슬롯 정리(메모리 확보):
-    - 슬롯 `4000/4001` 중 **활성 프로그램 슬롯은 보호(삭제 금지)** 한다.
-    - 보호 슬롯이 아닌 쪽은 **업로드 전에 무조건 삭제**하여 대용량 업로드 실패(`EW_DATA(5)`/`EW_BUSY(-1)`) 확률을 낮춘다.
-    - 보호 슬롯이 `4000`이면 업로드는 `4001`, 보호 슬롯이 `4001`이면 업로드는 `4000`으로 강제한다.
-  - 업로드 완료 확인:
-    - 소형(<=90KB): `GetMachineProgramData`로 길이 비교
-    - 대형(>90KB): `GetMachineProgramData` readback이 잘릴 수 있어 ProgramList 존재 여부만 확인
-      - **최대 20초 / 1초 간격 폴링**
-  - 로깅/응답:
-    - 브리지 콘솔 로그와 API 응답(`logs`)에 아래 정보를 포함한다.
-      - `activeSlot`, `protectedSlot`, `deletedSlots`, `uploadSlot`, `fileBytes`
-      - 업로드 실패 시 `uploadFailed usedMode=... err=...`
-
-- **프로그램 다운로드 제한사항**:
-  - Hi-Link DLL의 `GetMachineProgramData`/`GetProgDataInfo` API는 **내부 버퍼 크기 제한(약 103KB)**이 있습니다.
-  - 대용량 프로그램(>103KB)을 다운로드하면 **뒷부분이 잘린 채로(truncated)** 반환됩니다.
-  - 업로드는 500KB까지 가능하지만, 다운로드는 103KB 이상 프로그램의 경우 전체 내용을 읽을 수 없습니다.
-  - 다운로드 API 응답에 `warning` 필드가 있으면 truncated 상태이므로 주의가 필요합니다.
-  - **권장**: 대용량 프로그램은 원본 파일을 별도로 보관하고, CNC에서 다운로드하지 않습니다.
-
-- 스마트 enqueue:
-  - `POST /api/cnc/machines/{machineId}/smart/enqueue`
-  - 입력: `paths[]` (bridge-store 상대 경로 배열)
-  - 동작: 큐에 작업을 추가만 한다. (즉시 가공 시작하지 않음)
-
-- 스마트 replace:
-  - `POST /api/cnc/machines/{machineId}/smart/replace`
-  - 입력: `paths[]` (bridge-store 상대 경로 배열)
-  - 동작: 현재 실행 중인 작업(`current`)은 유지하고, **대기 큐를 지정된 paths로 교체**한다.
-  - 용도: 제조사 UI에서 `Next Up` 클릭 시, 선택된 1개 파일로 큐를 교체한 뒤 `/smart/start`로 즉시 시작하기 위한 용도.
-
-- 스마트 dequeue:
-  - `POST /api/cnc/machines/{machineId}/smart/dequeue`
-  - 입력: `jobId`(선택) 없으면 큐의 첫 작업을 제거
-  - 동작: 큐에서 작업을 제거한다. (실행 중인 작업은 제거 불가)
-
-- 스마트 가공 시작:
-  - `POST /api/cnc/machines/{machineId}/smart/start`
-  - 동작: 큐에 작업이 있으면 워커를 시작하고 자동으로 연속 가공한다.
-  - 사이클타임 절감: 가공 중 다음 슬롯에 선업로드(Preload) + 업로드 완료 확인을 수행하여, 가공 종료 직후 즉시 활성화/Start 가능하도록 한다.
-
-- 스마트 상태 조회:
-  - `GET /api/cnc/machines/{machineId}/smart/status`
-  - 용도: 가공 진행/종료 상태, 경과 시간, 에러/알람 확인(진단용)
+1. 파일 업로드 시 파일명에서 O번호 추출.
+2. `O####.nc` 형식으로 정규화하여 저장.
+3. 장비 전송 시 `UpdateProgram` 등을 통해 숫자 번호만 전달.
+4. 전송 완료 후 `UpdateActivateProg`로 해당 번호 활성화.
 
 ### 4.2 헬스체크
 
@@ -297,3 +201,4 @@
 - 가공 중에는 실행 슬롯(CurrentSlot)의 프로그램을 절대 삭제하거나 수정하지 않음
 - 모든 프로그램 교체는 Idle 상태에서만 수행
 - 프로그램 번호는 자동으로 슬롯 번호(3000/3001)로 변경됨
+- 기존 `CncJobDispatcher`와 독립적으로 동작

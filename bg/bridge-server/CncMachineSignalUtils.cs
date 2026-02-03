@@ -48,10 +48,8 @@ namespace HiLinkBridgeWebApi48
                 var prodInfo = new MachineProductInfo();
 
                 short rc;
-                lock (Mode1Api.DllLock)
-                {
-                    rc = HiLink.GetMachineProductInfo(handle, ref prodInfo);
-                }
+                rc = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.GetMachineProductInfo(handle, ref prodInfo), "GetMachineProductInfo");
+
                 if (rc != 0) return false;
                 var prodCount = prodInfo.currentProdCount;
                 if (prodCount < int.MinValue) prodCount = int.MinValue;

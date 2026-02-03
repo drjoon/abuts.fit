@@ -3,7 +3,11 @@
   "WorkspaceRootPath": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\controllers\\bridgequeuecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|c:\\users\\user\\abuts.fit\\bg\\bridge-server\\controllers\\bridgequeuecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:controllers\\bridgequeuecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
@@ -11,11 +15,11 @@
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:cnccontinuousmachining.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|c:\\users\\user\\abuts.fit\\bg\\bridge-server\\controllers\\bridgeprocesscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\controllers\\bridgeprocesscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:controllers\\bridgeprocesscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|c:\\users\\user\\abuts.fit\\bg\\bridge-server\\cncjobdispatcher.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\cncjobdispatcher.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:cncjobdispatcher.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
@@ -23,7 +27,7 @@
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:cncjobqueue.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|c:\\users\\user\\abuts.fit\\bg\\bridge-server\\config.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\config.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:config.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
@@ -33,10 +37,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\hilinkmode2client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:hilinkmode2client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -46,7 +46,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 8,
+          "SelectedChildIndex": 11,
           "Children": [
             {
               "$type": "Bookmark",
@@ -62,72 +62,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "BridgeProcessController.cs",
-              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeProcessController.cs",
-              "RelativeDocumentMoniker": "Controllers\\BridgeProcessController.cs",
-              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeProcessController.cs",
-              "RelativeToolTip": "Controllers\\BridgeProcessController.cs",
-              "ViewState": "AgIAACYAAAAAAAAAAAAQwEsAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-25T12:07:36.865Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "CncJobDispatcher.cs",
-              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobDispatcher.cs",
-              "RelativeDocumentMoniker": "CncJobDispatcher.cs",
-              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobDispatcher.cs",
-              "RelativeToolTip": "CncJobDispatcher.cs",
-              "ViewState": "AgIAAHsBAAAAAAAAAAAQwKABAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-25T12:07:22.727Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "Config.cs",
-              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Config.cs",
-              "RelativeDocumentMoniker": "Config.cs",
-              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Config.cs",
-              "RelativeToolTip": "Config.cs",
-              "ViewState": "AgIAACAAAAAAAAAAAAAUwC0AAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-24T02:06:07.582Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
               "DocumentIndex": 1,
-              "Title": "CncContinuousMachining.cs",
-              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncContinuousMachining.cs",
-              "RelativeDocumentMoniker": "CncContinuousMachining.cs",
-              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncContinuousMachining.cs",
-              "RelativeToolTip": "CncContinuousMachining.cs",
-              "ViewState": "AgIAAN4DAAAAAAAAAAAQwAMEAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-24T02:06:27.676Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 4,
-              "Title": "CncJobQueue.cs",
-              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobQueue.cs",
-              "RelativeDocumentMoniker": "CncJobQueue.cs",
-              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobQueue.cs",
-              "RelativeToolTip": "CncJobQueue.cs",
-              "ViewState": "AgIAAOoAAAAAAAAAAAAQwA8BAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-24T00:40:32.492Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 0,
               "Title": "BridgeQueueController.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeQueueController.cs",
               "RelativeDocumentMoniker": "Controllers\\BridgeQueueController.cs",
@@ -140,7 +75,67 @@
             },
             {
               "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "BridgeProcessController.cs",
+              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeProcessController.cs",
+              "RelativeDocumentMoniker": "Controllers\\BridgeProcessController.cs",
+              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeProcessController.cs",
+              "RelativeToolTip": "Controllers\\BridgeProcessController.cs",
+              "ViewState": "AgIAACYAAAAAAAAAAAAQwEsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-25T12:07:36.865Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "CncJobDispatcher.cs",
+              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobDispatcher.cs",
+              "RelativeDocumentMoniker": "CncJobDispatcher.cs",
+              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobDispatcher.cs",
+              "RelativeToolTip": "CncJobDispatcher.cs",
+              "ViewState": "AgIAAHsBAAAAAAAAAAAQwKABAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-25T12:07:22.727Z"
+            },
+            {
+              "$type": "Document",
               "DocumentIndex": 6,
+              "Title": "Config.cs",
+              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Config.cs",
+              "RelativeDocumentMoniker": "Config.cs",
+              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Config.cs",
+              "RelativeToolTip": "Config.cs",
+              "ViewState": "AgIAACAAAAAAAAAAAAAUwC0AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-24T02:06:07.582Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "CncContinuousMachining.cs",
+              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncContinuousMachining.cs",
+              "RelativeDocumentMoniker": "CncContinuousMachining.cs",
+              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncContinuousMachining.cs",
+              "RelativeToolTip": "CncContinuousMachining.cs",
+              "ViewState": "AgIAAN4DAAAAAAAAAAAQwAMEAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-24T02:06:27.676Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "CncJobQueue.cs",
+              "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobQueue.cs",
+              "RelativeDocumentMoniker": "CncJobQueue.cs",
+              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobQueue.cs",
+              "RelativeToolTip": "CncJobQueue.cs",
+              "ViewState": "AgIAAOoAAAAAAAAAAAAQwA8BAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-24T00:40:32.492Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
               "Title": "BridgeController.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeController.cs",
               "RelativeDocumentMoniker": "Controllers\\BridgeController.cs",
@@ -156,19 +151,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 0,
               "Title": "Program.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Program.cs",
               "RelativeDocumentMoniker": "Program.cs",
-              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Program.cs",
-              "RelativeToolTip": "Program.cs",
-              "ViewState": "AgIAAAMAAAAAAAAAAAAAAAsAAAAJAAAAAAAAAA==",
+              "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Program.cs*",
+              "RelativeToolTip": "Program.cs*",
+              "ViewState": "AgIAACcAAAAAAAAAAAAUwEwAAABFAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-11-25T13:27:26.809Z"
+              "WhenOpened": "2025-11-25T13:27:26.809Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 8,
               "Title": "HiLinkMode2Client.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\HiLinkMode2Client.cs",
               "RelativeDocumentMoniker": "HiLinkMode2Client.cs",

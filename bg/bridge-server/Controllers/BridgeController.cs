@@ -230,20 +230,14 @@ namespace HiLinkBridgeWebApi48.Controllers
                     };
 
                     short upRc;
-                    lock (Mode1Api.DllLock)
-                    {
-                        upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
-                    }
+                    upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.Async");
 
                     if (upRc == -8)
                     {
                         Mode1HandleStore.Invalidate(machineId);
                         if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
                         {
-                            lock (Mode1Api.DllLock)
-                            {
-                                upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
-                            }
+                            upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.Async.retry");
                             if (upRc == -8)
                             {
                                 Mode1HandleStore.Invalidate(machineId);
@@ -305,10 +299,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 short upRc = -1;
                 for (var attempt = 0; ; attempt++)
                 {
-                    lock (Mode1Api.DllLock)
-                    {
-                        upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
-                    }
+                    upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.Blocking");
                     if (upRc == 0) break;
                     if (upRc == -1)
                     {
@@ -328,10 +319,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     Mode1HandleStore.Invalidate(machineId);
                     if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
                     {
-                        lock (Mode1Api.DllLock)
-                        {
-                            upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
-                        }
+                        upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.Blocking.retry");
                         if (upRc == -8)
                         {
                             Mode1HandleStore.Invalidate(machineId);

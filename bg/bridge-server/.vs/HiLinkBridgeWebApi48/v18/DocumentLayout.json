@@ -3,6 +3,10 @@
   "WorkspaceRootPath": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|c:\\users\\user\\abuts.fit\\bg\\bridge-server\\controllers\\bridgequeuecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:controllers\\bridgequeuecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
@@ -33,10 +37,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\hilinkmode2client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:hilinkmode2client.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A8F7F2F4-5A8D-4B5F-9F4C-ABCD1234EF48}|HiLinkBridgeWebApi48.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -46,7 +46,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 3,
+          "SelectedChildIndex": 11,
           "Children": [
             {
               "$type": "Bookmark",
@@ -62,7 +62,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 1,
               "Title": "BridgeQueueController.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeQueueController.cs",
               "RelativeDocumentMoniker": "Controllers\\BridgeQueueController.cs",
@@ -75,7 +75,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 3,
               "Title": "BridgeProcessController.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeProcessController.cs",
               "RelativeDocumentMoniker": "Controllers\\BridgeProcessController.cs",
@@ -87,7 +87,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 4,
               "Title": "CncJobDispatcher.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobDispatcher.cs",
               "RelativeDocumentMoniker": "CncJobDispatcher.cs",
@@ -99,7 +99,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 6,
               "Title": "Config.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Config.cs",
               "RelativeDocumentMoniker": "Config.cs",
@@ -111,7 +111,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 2,
               "Title": "CncContinuousMachining.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncContinuousMachining.cs",
               "RelativeDocumentMoniker": "CncContinuousMachining.cs",
@@ -123,7 +123,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 5,
               "Title": "CncJobQueue.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\CncJobQueue.cs",
               "RelativeDocumentMoniker": "CncJobQueue.cs",
@@ -135,7 +135,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 7,
               "Title": "BridgeController.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Controllers\\BridgeController.cs",
               "RelativeDocumentMoniker": "Controllers\\BridgeController.cs",
@@ -151,19 +151,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 0,
               "Title": "Program.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Program.cs",
               "RelativeDocumentMoniker": "Program.cs",
               "ToolTip": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\Program.cs",
               "RelativeToolTip": "Program.cs",
-              "ViewState": "AgIAAAMAAAAAAAAAAAAAAAsAAAAJAAAAAAAAAA==",
+              "ViewState": "AgIAACcAAAAAAAAAAAAUwEwAAABFAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-11-25T13:27:26.809Z"
+              "WhenOpened": "2025-11-25T13:27:26.809Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 8,
               "Title": "HiLinkMode2Client.cs",
               "DocumentMoniker": "C:\\Users\\user\\abuts.fit\\bg\\bridge-server\\HiLinkMode2Client.cs",
               "RelativeDocumentMoniker": "HiLinkMode2Client.cs",

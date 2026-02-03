@@ -31,6 +31,24 @@ namespace HiLinkBridgeWebApi48
             Enabled.TryRemove(uid, out _);
         }
 
+        public static void InvalidateAll()
+        {
+            try
+            {
+                foreach (var kv in Handles)
+                {
+                    var uid = kv.Key;
+                    if (!string.IsNullOrWhiteSpace(uid))
+                    {
+                        Invalidate(uid);
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
         private static (string ip, int port)? FindMachine(string uid)
         {
             var list = MachinesConfigStore.Load();
@@ -96,10 +114,7 @@ namespace HiLinkBridgeWebApi48
             }
 
             short res;
-            lock (Mode1Api.DllLock)
-            {
-                res = HiLink.SetActivateProgram(handle, dto);
-            }
+            res = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetActivateProgram(handle, dto), "SetActivateProgram");
 
             // -8(무효 핸들) → Invalidate 후 1회 재시도
             if (res == -8)
@@ -113,10 +128,7 @@ namespace HiLinkBridgeWebApi48
                 }
 
                 short res2;
-                lock (Mode1Api.DllLock)
-                {
-                    res2 = HiLink.SetActivateProgram(handle2, dto);
-                }
+                res2 = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.SetActivateProgram(handle2, dto), "SetActivateProgram.retry");
                 if (res2 == -8)
                 {
                     Invalidate(uid);
