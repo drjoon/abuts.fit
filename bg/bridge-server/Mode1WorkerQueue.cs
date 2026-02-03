@@ -15,9 +15,10 @@ namespace HiLinkBridgeWebApi48
             public string Tag { get; set; }
         }
 
-        private static readonly BlockingCollection<WorkItem> Queue = new BlockingCollection<WorkItem>();
-        private static readonly CancellationTokenSource Cts = new CancellationTokenSource();
+        private static BlockingCollection<WorkItem> _queue = new BlockingCollection<WorkItem>();
+        private static CancellationTokenSource _cts = new CancellationTokenSource();
         private static int _workerStarted = 0;
+        private static readonly object _restartLock = new object();
 
         static Mode1WorkerQueue()
         {
@@ -28,7 +29,7 @@ namespace HiLinkBridgeWebApi48
         {
             if (Interlocked.Exchange(ref _workerStarted, 1) == 1) return;
             Console.WriteLine("[Mode1WorkerQueue] Starting worker thread...");
-            Task.Factory.StartNew(ProcessQueue, Cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            Task.Factory.StartNew(ProcessQueue, _cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         private static void ProcessQueue()
@@ -36,12 +37,12 @@ namespace HiLinkBridgeWebApi48
             try
             {
                 Console.WriteLine("[Mode1WorkerQueue] Worker thread started.");
-                foreach (var item in Queue.GetConsumingEnumerable(Cts.Token))
+                foreach (var item in _queue.GetConsumingEnumerable(_cts.Token))
                 {
                     try
                     {
                         var sw = System.Diagnostics.Stopwatch.StartNew();
-                        Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} queued. queueSize={Queue.Count}");
+                        Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} queued. queueSize={_queue.Count}");
 
                         object result = null;
                         try
@@ -87,13 +88,14 @@ namespace HiLinkBridgeWebApi48
                 Tag = tag
             };
 
-            Queue.Add(item);
+            _queue.Add(item);
 
             try
             {
                 if (!item.Tcs.Task.Wait(timeoutMs))
                 {
                     Console.WriteLine($"[Mode1WorkerQueue] {tag} timeout. waitMs={timeoutMs}");
+                    RestartWorker();
                     throw new TimeoutException($"Mode1 operation timeout: {tag} ({timeoutMs}ms)");
                 }
                 var result = item.Tcs.Task.Result;
@@ -105,10 +107,38 @@ namespace HiLinkBridgeWebApi48
             }
         }
 
+        private static void RestartWorker()
+        {
+            lock (_restartLock)
+            {
+                try
+                {
+                    _cts.Cancel();
+                    _cts.Dispose();
+                }
+                catch { }
+
+                try
+                {
+                    _queue.CompleteAdding();
+                    _queue.Dispose();
+                }
+                catch { }
+
+                _cts = new CancellationTokenSource();
+                _queue = new BlockingCollection<WorkItem>();
+                Interlocked.Exchange(ref _workerStarted, 0);
+                EnsureWorkerStarted();
+            }
+        }
+
         public static void Stop()
         {
-            try { Queue.CompleteAdding(); } catch { }
-            try { Cts.Cancel(); } catch { }
+            lock (_restartLock)
+            {
+                try { _queue.CompleteAdding(); } catch { }
+                try { _cts.Cancel(); } catch { }
+            }
         }
     }
 }

@@ -70,37 +70,24 @@ export const useCncWorkBoard = (
     setError(null);
 
     try {
-      const fetchActiveProgram = async (uid: string) => {
-        try {
-          const res = await apiFetch({
-            path: `/api/cnc-machines/${encodeURIComponent(uid)}/programs/active`,
-            method: "GET",
-            token,
-          });
-          const body = res.data ?? {};
-          if (!res.ok || (body as any)?.success === false) {
-            return null;
-          }
-          return (body as any)?.data ?? body;
-        } catch {
-          return null;
-        }
-      };
-
-      const [opRes, listRes, actRes] = await Promise.all([
+      // GetOPStatus와 GetProgListInfo만 병렬 처리 (필수 정보)
+      const [opRes, listRes] = await Promise.all([
         callRaw(targetUid, "GetOPStatus"),
         callRaw(targetUid, "GetProgListInfo", 1), // 1=메인
-        fetchActiveProgram(targetUid),
       ]);
 
       setOpStatus(opRes?.data ?? opRes);
 
       const pl = (listRes && (listRes.data ?? listRes)) as any;
       const progList = pl?.machineProgramListInfo?.programArray ?? [];
-      const act = (
-        actRes && (actRes as any)?.data != null ? (actRes as any).data : actRes
-      ) as any;
-      const current = act?.machineCurrentProgInfo ?? act ?? null;
+
+      // 현재 프로그램은 progList에서 active 상태인 것을 찾기 (API 호출 제거)
+      const current = Array.isArray(progList)
+        ? progList.find(
+            (p: any) => p?.active === true || p?.status === "ACTIVE",
+          )
+        : null;
+
       setProgramSummary({
         current,
         list: Array.isArray(progList) ? progList : [],

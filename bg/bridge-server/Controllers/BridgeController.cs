@@ -23,7 +23,6 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/cnc")]
     public class BridgeController : ApiController
     {
-        private static readonly HiLinkMode2Client Mode2Client = new HiLinkMode2Client();
         private static readonly ConcurrentDictionary<string, DateTime> ControlCooldowns = new ConcurrentDictionary<string, DateTime>();
         private static readonly ConcurrentDictionary<string, DateTime> RawReadCooldowns = new ConcurrentDictionary<string, DateTime>();
         private static readonly TimeSpan ControlCooldownWindow = TimeSpan.FromMilliseconds(5000);
@@ -342,59 +341,9 @@ namespace HiLinkBridgeWebApi48.Controllers
                     ? $"SetMachineProgramInfo failed (rc=-1, EW_BUSY, waitedMs={(int)(DateTime.UtcNow - busyStarted2).TotalMilliseconds})"
                     : $"SetMachineProgramInfo failed (rc={upRc})";
 
-                // Mode2 headType: Main=0, Sub=1
-                var busyWaitMaxMs = 20000;
-                var busyStarted = DateTime.UtcNow;
-                var mode2HeadType = (short)Math.Max(0, (int)headType - 1);
-                var info2 = new UpdateMachineProgramInfo
-                {
-                    headType = mode2HeadType,
-                    programNo = (short)slotNo,
-                    programData = processed,
-                    isNew = isNew,
-                };
-
-                // EW_BUSY(-1)면 CNC processing 중이므로 2초 단위로 대기 후 재시도한다.
-                for (var attempt = 0; ; attempt++)
-                {
-                    object resp;
-                    try
-                    {
-                        resp = Mode2Client.RequestRawAsync(machineId, CollectDataType.UpdateProgram, info2, 15000)
-                            .GetAwaiter()
-                            .GetResult();
-                    }
-                    catch (Exception ex)
-                    {
-                        error = $"Mode1 failed: {mode1Error}; Mode2 UpdateProgram exception: {ex.Message}";
-                        return false;
-                    }
-
-                    int rc;
-                    if (resp is short s) rc = s;
-                    else if (resp is int i) rc = i;
-                    else rc = -1;
-
-                    if (rc == 0)
-                    {
-                        usedMode = "Mode2";
-                        return true;
-                    }
-                    if (rc == -1)
-                    {
-                        var elapsedMs = (int)(DateTime.UtcNow - busyStarted).TotalMilliseconds;
-                        if (elapsedMs >= busyWaitMaxMs)
-                        {
-                            error = $"Mode1 failed: {mode1Error}; Mode2 UpdateProgram failed (result=-1, EW_BUSY, waitedMs={elapsedMs})";
-                            return false;
-                        }
-                        System.Threading.Thread.Sleep(1000);
-                        continue;
-                    }
-
-                    error = $"Mode1 failed: {mode1Error}; Mode2 UpdateProgram failed (result={rc})";
-                    return false;
-                }
+                // Mode2 제거: Mode1만 사용하므로 실패 시 바로 반환
+                error = mode1Error;
+                return false;
             }
             catch (Exception ex)
             {
@@ -454,9 +403,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             var gotAny = false;
             var mode1Data = (string)null;
-            var mode2Data = (string)null;
             var mode1Err = (string)null;
-            var mode2Err = (string)null;
 
             try
             {
@@ -478,71 +425,25 @@ namespace HiLinkBridgeWebApi48.Controllers
                 Console.WriteLine($"[DownloadProgram] Mode1 exception uid={machineId} headType={headType} programNo={programNo} ex={mode1Err}");
             }
 
-            try
-            {
-                var mode2HeadType = (short)Math.Max(0, (int)headType - 1);
-                var req = new GetProgramData();
-                req.machineProgramData = new Hi_Link.Libraries.Model.MachineProgramData
-                {
-                    headType = mode2HeadType,
-                    programNo = programNo,
-                };
-
-                var resp = Mode2Client.RequestRawAsync(machineId, CollectDataType.GetProgDataInfo, req, 15000)
-                    .GetAwaiter()
-                    .GetResult();
-
-                if (resp is GetProgramData gp)
-                {
-                    gotAny = true;
-                    var mp = gp.machineProgramData;
-                    mode2Data = mp.programData ?? string.Empty;
-                    Console.WriteLine($"[DownloadProgram] Mode2 programData length={mode2Data.Length} uid={machineId} headType={headType} programNo={programNo}");
-                }
-                else if (resp is Hi_Link.Libraries.Model.MachineProgramData mpd)
-                {
-                    gotAny = true;
-                    mode2Data = mpd.programData ?? string.Empty;
-                    Console.WriteLine($"[DownloadProgram] Mode2 programData length={mode2Data.Length} uid={machineId} headType={headType} programNo={programNo}");
-                }
-            }
-            catch (Exception ex)
-            {
-                mode2Err = ex.Message;
-                Console.WriteLine($"[DownloadProgram] Mode2 exception uid={machineId} headType={headType} programNo={programNo} ex={mode2Err}");
-            }
-
+            // Mode2 제거: Mode1만 사용
             if (!gotAny)
             {
-                error = mode1Err ?? mode2Err ?? "GetMachineProgramData failed";
+                error = mode1Err ?? "GetMachineProgramData failed";
                 return false;
             }
 
-            if (!string.IsNullOrEmpty(mode2Data) && (mode1Data == null || mode2Data.Length > mode1Data.Length))
+            programData = mode1Data ?? string.Empty;
+            if (programData.Length == 0)
             {
-                programData = mode2Data;
-                // Mode1/Mode2 모두 동일 길이면 Hi-Link API 제한으로 truncated
-                if (!string.IsNullOrEmpty(mode1Data) && mode1Data.Length == mode2Data.Length && mode2Data.Length > 90000)
-                {
-                    error = $"TRUNCATED: Hi-Link API readback limit (~103KB). Actual program may be larger. Downloaded {mode2Data.Length} bytes.";
-                    Console.WriteLine($"[DownloadProgram] Warning: programData truncated by Hi-Link readback limit (len={mode2Data.Length}) uid={machineId} headType={headType} programNo={programNo}");
-                }
-                return true;
+                error = mode1Err ?? "GetMachineProgramData failed";
+                return false;
             }
 
-            programData = mode1Data ?? string.Empty;
-            if (programData.Length == 0 && !string.IsNullOrEmpty(mode1Err) && !string.IsNullOrEmpty(mode2Err))
+            // Hi-Link API 제한으로 인한 truncation 경고
+            if (mode1Data.Length > 90000)
             {
-                error = $"Mode1 error: {mode1Err}; Mode2 error: {mode2Err}";
-            }
-            else
-            {
-                // Mode1/Mode2 모두 특정 상한(예: 102480)으로 동일하게 잘리는 경우가 있어, 진단 메시지를 남긴다.
-                if (!string.IsNullOrEmpty(mode1Data) && !string.IsNullOrEmpty(mode2Data) && mode1Data.Length == mode2Data.Length && mode1Data.Length > 90000)
-                {
-                    error = $"TRUNCATED: Hi-Link API readback limit (~103KB). Actual program may be larger. Downloaded {mode1Data.Length} bytes.";
-                    Console.WriteLine($"[DownloadProgram] Warning: programData truncated by Hi-Link readback limit (len={mode1Data.Length}) uid={machineId} headType={headType} programNo={programNo}");
-                }
+                error = $"TRUNCATED: Hi-Link API readback limit (~103KB). Actual program may be larger. Downloaded {mode1Data.Length} bytes.";
+                Console.WriteLine($"[DownloadProgram] Warning: programData truncated by Hi-Link readback limit (len={mode1Data.Length}) uid={machineId} headType={headType} programNo={programNo}");
             }
             return true;
         }
