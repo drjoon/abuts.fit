@@ -17,8 +17,9 @@ namespace HiLinkBridgeWebApi48
 
         private static BlockingCollection<WorkItem> _queue = new BlockingCollection<WorkItem>();
         private static CancellationTokenSource _cts = new CancellationTokenSource();
-        private static int _workerStarted = 0;
-        private static readonly object _restartLock = new object();
+        private static Thread _workerThread = null;
+        private static readonly object _lock = new object();
+        private static volatile bool _isRestarting = false;
 
         static Mode1WorkerQueue()
         {
@@ -27,9 +28,18 @@ namespace HiLinkBridgeWebApi48
 
         private static void EnsureWorkerStarted()
         {
-            if (Interlocked.Exchange(ref _workerStarted, 1) == 1) return;
-            Console.WriteLine("[Mode1WorkerQueue] Starting worker thread...");
-            Task.Factory.StartNew(ProcessQueue, _cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            lock (_lock)
+            {
+                if (_workerThread != null && _workerThread.IsAlive) return;
+                
+                Console.WriteLine("[Mode1WorkerQueue] Starting worker thread...");
+                _workerThread = new Thread(ProcessQueue)
+                {
+                    IsBackground = true,
+                    Name = "Mode1WorkerQueue"
+                };
+                _workerThread.Start();
+            }
         }
 
         private static void ProcessQueue()
@@ -37,47 +47,66 @@ namespace HiLinkBridgeWebApi48
             try
             {
                 Console.WriteLine("[Mode1WorkerQueue] Worker thread started.");
-                foreach (var item in _queue.GetConsumingEnumerable(_cts.Token))
+                while (!_cts.Token.IsCancellationRequested)
                 {
                     try
                     {
-                        var sw = System.Diagnostics.Stopwatch.StartNew();
-                        Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} queued. queueSize={_queue.Count}");
-
-                        object result = null;
-                        try
+                        if (!_queue.TryTake(out var item, 100, _cts.Token))
                         {
-                            result = item.Func();
-                        }
-                        catch (Exception ex)
-                        {
-                            sw.Stop();
-                            Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} exception. elapsedMs={sw.ElapsedMilliseconds} error={ex.Message}");
-                            item.Tcs.TrySetException(ex);
                             continue;
                         }
 
-                        sw.Stop();
-                        Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} completed. elapsedMs={sw.ElapsedMilliseconds}");
-                        item.Tcs.TrySetResult(result);
+                        try
+                        {
+                            var sw = System.Diagnostics.Stopwatch.StartNew();
+                            Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} processing. queueSize={_queue.Count}");
+
+                            object result = null;
+                            try
+                            {
+                                result = item.Func();
+                            }
+                            catch (Exception ex)
+                            {
+                                sw.Stop();
+                                Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} exception. elapsedMs={sw.ElapsedMilliseconds} error={ex.Message}");
+                                item.Tcs.TrySetException(ex);
+                                continue;
+                            }
+
+                            sw.Stop();
+                            Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} completed. elapsedMs={sw.ElapsedMilliseconds}");
+                            item.Tcs.TrySetResult(result);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine($"[Mode1WorkerQueue] Worker exception: {ex}");
+                        }
                     }
-                    catch (Exception ex)
+                    catch (OperationCanceledException)
                     {
-                        Console.Error.WriteLine($"[Mode1WorkerQueue] Worker exception: {ex}");
+                        break;
                     }
                 }
-            }
-            catch (OperationCanceledException)
-            {
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[Mode1WorkerQueue] Worker fatal exception: {ex}");
             }
+            finally
+            {
+                Console.WriteLine("[Mode1WorkerQueue] Worker thread exited.");
+            }
         }
 
         public static T Run<T>(Func<T> func, string tag, int timeoutMs = 5000)
         {
+            // 재시작 중이면 대기
+            while (_isRestarting)
+            {
+                Thread.Sleep(10);
+            }
+
             EnsureWorkerStarted();
 
             var item = new WorkItem
@@ -88,7 +117,16 @@ namespace HiLinkBridgeWebApi48
                 Tag = tag
             };
 
-            _queue.Add(item);
+            try
+            {
+                _queue.Add(item);
+            }
+            catch (InvalidOperationException)
+            {
+                // 큐가 닫혀있으면 재시작 후 재시도
+                RestartWorker();
+                _queue.Add(item);
+            }
 
             try
             {
@@ -109,35 +147,62 @@ namespace HiLinkBridgeWebApi48
 
         private static void RestartWorker()
         {
-            lock (_restartLock)
+            lock (_lock)
             {
-                try
-                {
-                    _cts.Cancel();
-                    _cts.Dispose();
-                }
-                catch { }
+                if (_isRestarting) return;
+                _isRestarting = true;
 
                 try
                 {
-                    _queue.CompleteAdding();
-                    _queue.Dispose();
-                }
-                catch { }
+                    try
+                    {
+                        _cts.Cancel();
+                        _cts.Dispose();
+                    }
+                    catch { }
 
-                _cts = new CancellationTokenSource();
-                _queue = new BlockingCollection<WorkItem>();
-                Interlocked.Exchange(ref _workerStarted, 0);
-                EnsureWorkerStarted();
+                    try
+                    {
+                        _queue.CompleteAdding();
+                        _queue.Dispose();
+                    }
+                    catch { }
+
+                    // 워커 스레드 종료 대기 (최대 1초)
+                    if (_workerThread != null && _workerThread.IsAlive)
+                    {
+                        _workerThread.Join(1000);
+                    }
+
+                    _cts = new CancellationTokenSource();
+                    _queue = new BlockingCollection<WorkItem>();
+                    _workerThread = null;
+                    
+                    Console.WriteLine("[Mode1WorkerQueue] Starting worker thread...");
+                    _workerThread = new Thread(ProcessQueue)
+                    {
+                        IsBackground = true,
+                        Name = "Mode1WorkerQueue"
+                    };
+                    _workerThread.Start();
+                }
+                finally
+                {
+                    _isRestarting = false;
+                }
             }
         }
 
         public static void Stop()
         {
-            lock (_restartLock)
+            lock (_lock)
             {
                 try { _queue.CompleteAdding(); } catch { }
                 try { _cts.Cancel(); } catch { }
+                if (_workerThread != null && _workerThread.IsAlive)
+                {
+                    _workerThread.Join(2000);
+                }
             }
         }
     }
