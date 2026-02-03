@@ -22,6 +22,16 @@ namespace HiLinkBridgeWebApi48
             }
         }
 
+        private static int WorkerTimeoutMs
+        {
+            get
+            {
+                var raw = (Environment.GetEnvironmentVariable("HILINK_WORKER_TIMEOUT_MS") ?? string.Empty).Trim();
+                if (int.TryParse(raw, out var ms) && ms >= 500 && ms <= 300000) return ms;
+                return 30000;
+            }
+        }
+
         private static int HoldFatalMs
         {
             get
@@ -92,37 +102,40 @@ namespace HiLinkBridgeWebApi48
         {
             EnsureWatchdog();
 
-            var entered = false;
-            try
+            return Mode1WorkerQueue.Run(() =>
             {
-                entered = Monitor.TryEnter(dllLock, EnterTimeoutMs);
-                if (!entered)
+                var entered = false;
+                try
                 {
-                    throw new TimeoutException($"Hi-Link DLL lock enter timeout ({EnterTimeoutMs}ms). tag={tag}");
-                }
+                    entered = Monitor.TryEnter(dllLock, EnterTimeoutMs);
+                    if (!entered)
+                    {
+                        throw new TimeoutException($"Hi-Link DLL lock enter timeout ({EnterTimeoutMs}ms). tag={tag}");
+                    }
 
-                lock (StateLock)
-                {
-                    _heldSinceUtc = DateTime.UtcNow;
-                    _heldTag = tag;
-                    _heldThreadId = Thread.CurrentThread.ManagedThreadId;
-                }
-
-                return func();
-            }
-            finally
-            {
-                if (entered)
-                {
                     lock (StateLock)
                     {
-                        _heldSinceUtc = DateTime.MinValue;
-                        _heldTag = null;
-                        _heldThreadId = 0;
+                        _heldSinceUtc = DateTime.UtcNow;
+                        _heldTag = tag;
+                        _heldThreadId = Thread.CurrentThread.ManagedThreadId;
                     }
-                    try { Monitor.Exit(dllLock); } catch { }
+
+                    return func();
                 }
-            }
+                finally
+                {
+                    if (entered)
+                    {
+                        lock (StateLock)
+                        {
+                            _heldSinceUtc = DateTime.MinValue;
+                            _heldTag = null;
+                            _heldThreadId = 0;
+                        }
+                        try { Monitor.Exit(dllLock); } catch { }
+                    }
+                }
+            }, "HiLinkDllGate." + tag, WorkerTimeoutMs);
         }
 
         public static void Run(object dllLock, Action action, string tag)

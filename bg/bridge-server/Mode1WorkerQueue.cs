@@ -20,6 +20,7 @@ namespace HiLinkBridgeWebApi48
         private static Thread _workerThread = null;
         private static readonly object _lock = new object();
         private static volatile bool _isRestarting = false;
+        private static int _workerThreadId = 0;
 
         static Mode1WorkerQueue()
         {
@@ -47,6 +48,7 @@ namespace HiLinkBridgeWebApi48
             try
             {
                 Console.WriteLine("[Mode1WorkerQueue] Worker thread started.");
+                Interlocked.Exchange(ref _workerThreadId, Thread.CurrentThread.ManagedThreadId);
                 while (!_cts.Token.IsCancellationRequested)
                 {
                     try
@@ -95,12 +97,26 @@ namespace HiLinkBridgeWebApi48
             }
             finally
             {
+                Interlocked.Exchange(ref _workerThreadId, 0);
                 Console.WriteLine("[Mode1WorkerQueue] Worker thread exited.");
             }
         }
 
+        private static bool IsWorkerThread()
+        {
+            var tid = Interlocked.CompareExchange(ref _workerThreadId, 0, 0);
+            return tid != 0 && tid == Thread.CurrentThread.ManagedThreadId;
+        }
+
         public static T Run<T>(Func<T> func, string tag, int timeoutMs = 5000)
         {
+            // 워커 스레드 내부에서 재진입 호출이 발생하면 큐에 넣지 않고 즉시 실행한다.
+            // (큐에 다시 넣으면 자기 자신이 소비해야 하므로 데드락)
+            if (IsWorkerThread())
+            {
+                return func();
+            }
+
             // 재시작 중이면 대기
             while (_isRestarting)
             {

@@ -510,7 +510,7 @@ namespace HiLinkBridgeWebApi48
             }
 
             var machineStatus = MachineStatusType.None;
-            var result = HiLink.GetMachineStatus(handle, ref machineStatus);
+            var result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineStatus(handle, ref machineStatus), "GetMachineStatus");
             if (result == 0)
             {
                 return (true, machineStatus, null);
@@ -523,7 +523,7 @@ namespace HiLinkBridgeWebApi48
                 if (Mode1HandleStore.TryGetHandle(uid, out var handle2, out var err2))
                 {
                     machineStatus = MachineStatusType.None;
-                    var result2 = HiLink.GetMachineStatus(handle2, ref machineStatus);
+                    var result2 = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineStatus(handle2, ref machineStatus), "GetMachineStatus.retry");
                     if (result2 == 0)
                     {
                         return (true, machineStatus, null);

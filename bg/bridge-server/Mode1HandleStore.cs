@@ -21,7 +21,7 @@ namespace HiLinkBridgeWebApi48
             {
                 try
                 {
-                    HiLink.FreeMachineHandle(handle);
+                    HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.FreeMachineHandle(handle), "FreeMachineHandle");
                 }
                 catch
                 {
@@ -87,7 +87,7 @@ namespace HiLinkBridgeWebApi48
             }
 
             bool enable;
-            var result = HiLink.OpenMachineHandle(serial, mp.Value.ip, (ushort)mp.Value.port, 3, out handle, out enable);
+            var result = HiLinkDllGate.Run(Mode1Api.DllLock, () => HiLink.OpenMachineHandle(serial, mp.Value.ip, (ushort)mp.Value.port, 3, out handle, out enable), "OpenMachineHandle");
             if (result != 0 || handle == 0)
             {
                 error = $"OpenMachineHandle failed (result={result})";

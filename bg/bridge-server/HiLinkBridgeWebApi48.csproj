@@ -204,8 +204,6 @@
 
     <Compile Include="CncContinuousMachining.cs" />
 
-    <Compile Include="ManualFileMachiningWatcher.cs" />
-
     <Compile Include="Models\RawHiLinkRequest.cs" />
 
     <Compile Include="Models\AddMachineRequest.cs" />

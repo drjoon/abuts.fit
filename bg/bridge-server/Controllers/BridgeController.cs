@@ -931,13 +931,13 @@ namespace HiLinkBridgeWebApi48.Controllers
                             programData = processed,
                             isNew = true,
                         };
-                        var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                        var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.ManualPreload");
                         if (upRc == -8)
                         {
                             Mode1HandleStore.Invalidate(machineId);
                             if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
                             {
-                                upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
+                                upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.ManualPreload.retry");
                                 if (upRc == -8)
                                 {
                                     Mode1HandleStore.Invalidate(machineId);
@@ -1515,13 +1515,13 @@ namespace HiLinkBridgeWebApi48.Controllers
                 Console.WriteLine("[ManualPlay] uploading machine={0} slot=O{1} programNo={2} dataLen={3}", 
                     machineId, slotNo, programNo, processed?.Length ?? 0);
                 
-                var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.ManualPlay");
                 if (upRc == -8)
                 {
                     Mode1HandleStore.Invalidate(machineId);
                     if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
                     {
-                        upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
+                        upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.ManualPlay.retry");
                         if (upRc == -8)
                         {
                             Mode1HandleStore.Invalidate(machineId);
@@ -1648,7 +1648,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                 short panelType = 0;
                 if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, true, out var startErr))
                 {
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = startErr ?? "SetMachinePanelIO failed" });
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = startErr ?? "SetMachinePanelIO failed"
+                    });
                 }
 
                 Console.WriteLine("[ManualPlay] start signal sent machine={0} slot=O{1}", machineId, slotNo);
@@ -2375,13 +2379,13 @@ namespace HiLinkBridgeWebApi48.Controllers
                             programData = processed,
                             isNew = req?.isNew ?? true,
                         };
-                        var upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle, info);
+                        var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.UploadProgram");
                         if (upRc == -8)
                         {
                             Mode1HandleStore.Invalidate(machineId);
                             if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
                             {
-                                upRc = Hi_Link.HiLink.SetMachineProgramInfo(handle2, info);
+                                upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.UploadProgram.retry");
                                 if (upRc == -8)
                                 {
                                     Mode1HandleStore.Invalidate(machineId);

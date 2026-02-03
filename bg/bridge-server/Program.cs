@@ -32,7 +32,6 @@ namespace HiLinkBridgeWebApi48
 
             try { DummyCncScheduler.Stop(); } catch { }
             try { CncMachining.Stop(); } catch { }
-            try { ManualFileMachiningWatcher.Stop(); } catch { }
             try { Mode1WorkerQueue.Stop(); } catch { }
             try { Mode1HandleStore.InvalidateAll(); } catch { }
 
@@ -94,8 +93,8 @@ namespace HiLinkBridgeWebApi48
                 Console.WriteLine("Hi-Link Bridge WebAPI (net48) is running. Initializing machines from machines.json...");
                 MachinesInitializer.InitializeFromConfig();
 
-                DummyCncScheduler.Start();
-                CncMachining.Start();
+                // DummyCncScheduler.Start();
+                // CncMachining.Start();
 
                 // NcFileWatcher 미사용: 이벤트 기반(백엔드 트리거)으로 처리
                 Console.WriteLine("Initialization done. Press Enter to exit.");
