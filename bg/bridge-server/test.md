@@ -108,7 +108,7 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=10
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"path":"M5_20260129-KBDSGYQH-47_s7le4pzf.nc","isNew":true}'
+ -d '{"headType":1,"path":"M5_20260128-MMSESKHM-27_v0tvldch.nc","isNew":true}'
 ```
 
 ### 2-1) 스마트 replace (대기 큐 교체)

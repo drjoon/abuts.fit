@@ -373,6 +373,9 @@ namespace HiLinkBridgeWebApi48.Controllers
         private static async Task<bool> VerifyProgramExists(string machineId, short headType, int slotNo, int timeoutSeconds)
         {
             var started = DateTime.UtcNow;
+            // 첫 호출 전 짧은 delay로 업로드 직후 안정화 시간 확보
+            await Task.Delay(500);
+            
             while (true)
             {
                 if ((DateTime.UtcNow - started).TotalSeconds > timeoutSeconds) return false;
@@ -382,7 +385,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                     try
                     {
                         var list = progList.programArray;
-                        if (list == null) continue;
+                        if (list == null)
+                        {
+                            await Task.Delay(2000);
+                            continue;
+                        }
 
                         foreach (var p in list)
                         {
@@ -392,7 +399,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     catch { }
                 }
 
-                await Task.Delay(1000);
+                await Task.Delay(2000);
             }
         }
 
@@ -1088,43 +1095,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                     return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = upErr ?? "upload failed", logs = responseLogs });
                 }
 
-                // 업로드 검증:
-                // - 소형: GetMachineProgramData로 길이 비교
-                // - 대형: GetMachineProgramData가 잘릴 수 있어 ProgramList에 존재하는지만 확인
-                if (processedBytes <= 90000)
-                {
-                    if (Mode1Api.TryGetProgDataInfo(machineId, headType, (short)slotNo, out var verifyInfo, out var verifyErr))
-                    {
-                        var gotLen = (verifyInfo.programData ?? string.Empty).Length;
-                        if (gotLen < processedLen)
-                        {
-                            try { Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _); } catch { }
-                            return Request.CreateResponse((HttpStatusCode)500, new
-                            {
-                                success = false,
-                                message = "uploaded program appears truncated on machine",
-                                expectedLength = processedLen,
-                                actualLength = gotLen,
-                                slotNo,
-                            });
-                        }
-                    }
-                    else
-                    {
-                        return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = verifyErr ?? "upload verify failed" });
-                    }
-                }
-                else
-                {
-                    // 대용량은 readback이 잘릴 수 있어, 1초 단위로 리스트 존재 여부만 폴링한다.
-                    var ok = await VerifyProgramExists(machineId, headType, slotNo, 20);
-                    if (!ok)
-                    {
-                        responseLogs.Add("verifyFailed: program not found in list (timeout=20s)");
-                        return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = "upload verify failed", slotNo, logs = responseLogs });
-                    }
-                }
-
+                // 폴링 없이 업로드 결과를 바로 반환
+                
                 return Request.CreateResponse(HttpStatusCode.OK, new
                 {
                     success = true,

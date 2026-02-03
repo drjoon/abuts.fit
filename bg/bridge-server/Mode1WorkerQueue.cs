@@ -45,15 +45,27 @@ namespace HiLinkBridgeWebApi48
 
         private static void ProcessQueue()
         {
+            var tokenSource = _cts;
+            CancellationToken cancellationToken;
+            try
+            {
+                cancellationToken = tokenSource.Token;
+            }
+            catch (ObjectDisposedException)
+            {
+                Console.WriteLine("[Mode1WorkerQueue] Worker thread detected disposed CancellationTokenSource, exiting.");
+                return;
+            }
+
             try
             {
                 Console.WriteLine("[Mode1WorkerQueue] Worker thread started.");
                 Interlocked.Exchange(ref _workerThreadId, Thread.CurrentThread.ManagedThreadId);
-                while (!_cts.Token.IsCancellationRequested)
+                while (!cancellationToken.IsCancellationRequested)
                 {
                     try
                     {
-                        if (!_queue.TryTake(out var item, 100, _cts.Token))
+                        if (!_queue.TryTake(out var item, 100, cancellationToken))
                         {
                             continue;
                         }
@@ -87,6 +99,11 @@ namespace HiLinkBridgeWebApi48
                     }
                     catch (OperationCanceledException)
                     {
+                        break;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        Console.WriteLine("[Mode1WorkerQueue] Worker thread detected disposed queue, exiting.");
                         break;
                     }
                 }
@@ -173,6 +190,17 @@ namespace HiLinkBridgeWebApi48
                     try
                     {
                         _cts.Cancel();
+                    }
+                    catch { }
+
+                    // 워커 스레드 종료 대기 (최대 2초)
+                    if (_workerThread != null && _workerThread.IsAlive)
+                    {
+                        _workerThread.Join(2000);
+                    }
+
+                    try
+                    {
                         _cts.Dispose();
                     }
                     catch { }
@@ -183,12 +211,6 @@ namespace HiLinkBridgeWebApi48
                         _queue.Dispose();
                     }
                     catch { }
-
-                    // 워커 스레드 종료 대기 (최대 1초)
-                    if (_workerThread != null && _workerThread.IsAlive)
-                    {
-                        _workerThread.Join(1000);
-                    }
 
                     _cts = new CancellationTokenSource();
                     _queue = new BlockingCollection<WorkItem>();
