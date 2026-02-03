@@ -632,7 +632,7 @@ export function useCncDashboardQueues({
         }
 
         const res = await apiFetch({
-          path: `/api/machines/${encodeURIComponent(uid)}/start`,
+          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/start`,
           method: "POST",
           token,
         });
@@ -644,43 +644,33 @@ export function useCncDashboardQueues({
           );
         }
 
-        let verified = false;
-        let lastVerifyError: string | null = null;
-        for (let i = 0; i < 6; i += 1) {
-          try {
-            const activeRes = await apiFetch({
-              path: `/api/cnc-machines/${encodeURIComponent(uid)}/programs/active`,
-              method: "GET",
-              token,
-            });
-            const activeBody: any = activeRes.data ?? {};
-            const activeData =
-              activeBody?.data != null ? activeBody.data : activeBody;
-            if (
-              activeRes.ok &&
-              activeBody?.success !== false &&
-              (activeData?.programNo != null ||
-                activeData?.no != null ||
-                String(activeData?.name || "").trim().length > 0)
-            ) {
-              verified = true;
-              break;
+        // 이중 응답: 202 Accepted면 jobId로 결과 폴링
+        const jobId = startBody?.jobId;
+        if (res.status === 202 && jobId) {
+          let jobCompleted = false;
+          for (let i = 0; i < 30; i += 1) {
+            try {
+              const jobRes = await apiFetch({
+                path: `/api/cnc-machines/${encodeURIComponent(uid)}/jobs/${encodeURIComponent(jobId)}`,
+                method: "GET",
+                token,
+              });
+              const jobBody: any = jobRes.data ?? {};
+              if (jobRes.ok && jobBody?.status === "COMPLETED") {
+                jobCompleted = true;
+                break;
+              }
+              if (jobRes.ok && jobBody?.status === "FAILED") {
+                throw new Error(jobBody?.result?.message || "가공 시작 실패");
+              }
+            } catch (e: any) {
+              if (i === 29) throw e;
             }
-            if (activeBody?.message) {
-              lastVerifyError = String(activeBody.message);
-            }
-          } catch (e: any) {
-            lastVerifyError = e?.message || null;
+            await new Promise((r) => setTimeout(r, 500));
           }
-
-          await new Promise((r) => setTimeout(r, 500));
-        }
-
-        if (!verified) {
-          throw new Error(
-            lastVerifyError ||
-              "가공이 시작되지 않았습니다. (Now Playing 확인 실패)",
-          );
+          if (!jobCompleted) {
+            throw new Error("가공 시작 결과 확인 타임아웃");
+          }
         }
 
         setReservationJobsMap((prev) => {

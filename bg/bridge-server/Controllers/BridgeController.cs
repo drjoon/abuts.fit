@@ -2766,10 +2766,14 @@ namespace HiLinkBridgeWebApi48.Controllers
                 });
             }
 
+            // headType을 명시적으로 설정
+            var responseInfo = result.info;
+            responseInfo.headType = headType;
+            
             return Request.CreateResponse(HttpStatusCode.OK, new
             {
                 success = true,
-                data = result.info
+                data = responseInfo
             });
         }
 

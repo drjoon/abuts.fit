@@ -270,7 +270,12 @@ namespace HiLinkBridgeWebApi48
             var listInfo = new MachineProgramListInfo { headType = headType };
             short result;
             result = HiLinkDllGate.Run(DllLock, () => HiLink.GetMachineProgramListInfo(handle, ref listInfo), "GetMachineProgramListInfo");
-            if (result == 0) return true;
+            if (result == 0)
+            {
+                Console.WriteLine($"[Mode1Api] GetMachineProgramListInfo success. uid={uid} headType={headType} arrayLength={listInfo.programArray?.Length ?? 0}");
+                info = listInfo;
+                return true;
+            }
 
             // -8(무효 핸들) → Invalidate 후 1회 재시도
             if (result == -8)

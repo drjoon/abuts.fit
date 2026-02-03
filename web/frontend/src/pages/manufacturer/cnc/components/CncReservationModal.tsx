@@ -14,8 +14,6 @@ export interface CncJobItem {
   name: string;
   qty: number;
   paused?: boolean;
-  s3Key?: string;
-  s3Bucket?: string;
 }
 
 export interface CncReservationConfig {
@@ -129,62 +127,56 @@ export const CncReservationModal = ({
             throw new Error("파일명이 올바르지 않습니다.");
           }
 
-          const contentType = file.type || "application/octet-stream";
-          const fileSize = file.size;
-
-          const presignRes = await apiFetch({
+          // smartUpload 이중 응답: 즉시 jobId 반환 후 백그라운드 처리
+          const uploadRes = await apiFetch({
             path: `/api/cnc-machines/${encodeURIComponent(
               machine.uid,
-            )}/direct/presign`,
+            )}/smart/upload`,
             method: "POST",
             token,
             jsonBody: {
-              fileName,
-              contentType,
-              fileSize,
-            },
-          });
-          const presignBody: any = presignRes.data ?? {};
-          const presignData = presignBody?.data ?? presignBody;
-          if (!presignRes.ok || presignBody?.success === false) {
-            throw new Error(
-              presignBody?.message || presignBody?.error || "presign 발급 실패",
-            );
-          }
-
-          const uploadUrl = String(presignData?.uploadUrl || "").trim();
-          const s3Key = String(presignData?.s3Key || "").trim();
-          const s3Bucket = String(presignData?.s3Bucket || "").trim();
-          if (!uploadUrl || !s3Key) {
-            throw new Error("presign 정보가 올바르지 않습니다.");
-          }
-
-          await uploadToPresignedUrl(uploadUrl, file);
-
-          const enqueueRes = await apiFetch({
-            path: `/api/cnc-machines/${encodeURIComponent(
-              machine.uid,
-            )}/direct/enqueue`,
-            method: "POST",
-            token,
-            jsonBody: {
-              fileName,
-              s3Key,
-              s3Bucket,
-              contentType,
-              fileSize,
-              qty: 1,
-              requestId: null,
+              headType: 1,
+              path: fileName,
+              isNew: true,
             },
           });
 
-          const enqueueBody: any = enqueueRes.data ?? {};
-          if (!enqueueRes.ok || enqueueBody?.success === false) {
+          const uploadBody: any = uploadRes.data ?? {};
+          if (!uploadRes.ok || uploadBody?.success === false) {
             throw new Error(
-              enqueueBody?.message ||
-                enqueueBody?.error ||
-                "DB 예약목록 등록 실패",
+              uploadBody?.message || uploadBody?.error || "스마트 업로드 실패",
             );
+          }
+
+          // 202 Accepted면 jobId로 결과 폴링
+          const jobId = uploadBody?.jobId;
+          if (uploadRes.status === 202 && jobId) {
+            let uploadCompleted = false;
+            for (let i = 0; i < 60; i += 1) {
+              try {
+                const jobRes = await apiFetch({
+                  path: `/api/cnc-machines/${encodeURIComponent(
+                    machine.uid,
+                  )}/jobs/${encodeURIComponent(jobId)}`,
+                  method: "GET",
+                  token,
+                });
+                const jobBody: any = jobRes.data ?? {};
+                if (jobRes.ok && jobBody?.status === "COMPLETED") {
+                  uploadCompleted = true;
+                  break;
+                }
+                if (jobRes.ok && jobBody?.status === "FAILED") {
+                  throw new Error(jobBody?.result?.message || "업로드 실패");
+                }
+              } catch (e: any) {
+                if (i === 59) throw e;
+              }
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+            if (!uploadCompleted) {
+              throw new Error("업로드 결과 확인 타임아웃");
+            }
           }
 
           uploadedJobs.push({
