@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const pricingReferralStatsSnapshotSchema = new mongoose.Schema(
   {
+    ownerUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     groupLeaderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -33,7 +39,15 @@ const pricingReferralStatsSnapshotSchema = new mongoose.Schema(
 
 pricingReferralStatsSnapshotSchema.index(
   { groupLeaderId: 1, ymd: 1 },
-  { unique: true },
+  { unique: true, partialFilterExpression: { ownerUserId: null } },
+);
+
+pricingReferralStatsSnapshotSchema.index(
+  { ownerUserId: 1, ymd: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { ownerUserId: { $type: "objectId" } },
+  },
 );
 
 const PricingReferralStatsSnapshot = mongoose.model(

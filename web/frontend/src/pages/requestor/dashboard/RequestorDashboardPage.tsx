@@ -368,7 +368,9 @@ export const RequestorDashboardPage = () => {
         console.error("의뢰 취소 실패", await res.raw.text().catch(() => ""));
         toast({
           title: "의뢰 취소 실패",
-          description: serverMsg || "의뢰 단계에서만 취소할 수 있습니다.",
+          description:
+            serverMsg ||
+            "의뢰 또는 CAM 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
           variant: "destructive",
           duration: 3000,
         });

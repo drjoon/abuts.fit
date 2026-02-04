@@ -94,51 +94,55 @@ router.get("/credits/b-plan/bank-transactions", adminListBankTransactions);
 router.post(
   "/credits/b-plan/bank-transactions/upsert",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminUpsertBankTransaction
+  adminUpsertBankTransaction,
 );
 router.post(
   "/credits/b-plan/match",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminManualMatch
+  adminManualMatch,
 );
 router.post(
   "/credits/b-plan/bank-transactions/request",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminRequestBankTransactions
+  adminRequestBankTransactions,
 );
 router.get(
   "/credits/b-plan/bank-transactions/search",
-  adminGetBankTransactions
+  adminGetBankTransactions,
 );
 router.post(
   "/credits/b-plan/charge-orders/verify",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminVerifyChargeOrder
+  adminVerifyChargeOrder,
 );
 router.post(
   "/credits/b-plan/charge-orders/lock",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminLockChargeOrder
+  adminLockChargeOrder,
 );
 router.post(
   "/credits/b-plan/charge-orders/unlock",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminUnlockChargeOrder
+  adminUnlockChargeOrder,
 );
 router.post(
   "/credits/b-plan/charge-orders/:id/approve",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminApproveChargeOrder
+  adminApproveChargeOrder,
 );
 router.post(
   "/credits/b-plan/charge-orders/:id/reject",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminRejectChargeOrder
+  adminRejectChargeOrder,
 );
 
 // 가격/리퍼럴 정책 통계
 router.get("/pricing-stats", adminController.getPricingStats);
 router.get("/pricing-stats/users", adminController.getPricingStatsByUser);
+
+// 리퍼럴 그룹
+router.get("/referral-groups", adminController.getReferralGroups);
+router.get("/referral-groups/:leaderId", adminController.getReferralGroupTree);
 
 // 시스템 로그
 router.get("/logs", adminController.getSystemLogs);
@@ -147,45 +151,45 @@ router.get("/logs", adminController.getSystemLogs);
 router.get(
   "/activity-logs",
   authorize(["admin"]),
-  adminController.getActivityLogs
+  adminController.getActivityLogs,
 );
 
 // 시스템 설정
 router.get(
   "/settings",
   authorize(["admin"]),
-  adminController.getSystemSettings
+  adminController.getSystemSettings,
 );
 router.put(
   "/settings",
   authorize(["admin"]),
-  adminController.updateSystemSettings
+  adminController.updateSystemSettings,
 );
 
 // 보안 설정
 router.get(
   "/security-settings",
   authorize(["admin"]),
-  adminController.getSecuritySettings
+  adminController.getSecuritySettings,
 );
 router.put(
   "/security-settings",
   authorize(["admin"]),
-  adminController.updateSecuritySettings
+  adminController.updateSecuritySettings,
 );
 
 // 보안 통계
 router.get(
   "/security-stats",
   authorize(["admin"]),
-  adminController.getSecurityStats
+  adminController.getSecurityStats,
 );
 
 // 보안 로그
 router.get(
   "/security-logs",
   authorize(["admin"]),
-  adminController.getSecurityLogs
+  adminController.getSecurityLogs,
 );
 
 // 메일 관리
@@ -208,7 +212,7 @@ router.get("/bonus-grants", adminListBonusGrants);
 router.post(
   "/bonus-grants/welcome-bonus/override",
   authorize(["admin"], { adminRoles: ["owner"] }),
-  adminOverrideWelcomeBonus
+  adminOverrideWelcomeBonus,
 );
 
 // 세금계산서(드래프트) 관리
@@ -225,7 +229,7 @@ router.post("/tax-invoices/cancel", adminCancelIssuedTaxInvoice);
 // 사업자 검증 수동 처리
 router.post(
   "/organizations/:id/verification/override",
-  adminOverrideOrganizationVerification
+  adminOverrideOrganizationVerification,
 );
 
 // 문자(SMS) 발송/이력

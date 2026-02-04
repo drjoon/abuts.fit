@@ -221,7 +221,9 @@ export const RequestorPricingReferralPolicyCard = () => {
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-md text-slate-600">그룹 멤버 수</span>
+                  <span className="text-md text-slate-600">
+                    직계 멤버 수(나 포함)
+                  </span>
                   <span className="text-lg font-semibold text-foreground">
                     {groupMemberCount}명
                   </span>
@@ -231,7 +233,9 @@ export const RequestorPricingReferralPolicyCard = () => {
 
             <div className="mt-2 space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-md text-slate-600">주문 합계</span>
+                <span className="text-md text-slate-600">
+                  주문 합계(나+직계)
+                </span>
                 <span className="text-lg font-semibold text-foreground">
                   {totalOrders.toLocaleString()}건
                 </span>
@@ -314,12 +318,13 @@ export const RequestorPricingReferralPolicyCard = () => {
                   </h3>
                   <ul className="list-disc pl-4 space-y-0.5">
                     <li>
-                      그룹 내 모든 멤버의 주문량을 합산하여 할인 단가를
-                      계산합니다. 모든 멤버가 할인 단가를 적용받습니다.
+                      본인과 본인이 직접 추천한 기공소(직계 1단계)의 주문량을
+                      합산하여 할인 단가를 계산합니다.
                     </li>
                     <li>
                       예) A 기공소 → B 기공소(A의 리퍼럴) → C 기공소(B의
-                      리퍼럴)인 경우, A, B, C 모두 동일한 그룹이며 세 기공소의
+                      리퍼럴)인 경우,
+                      <b>A는 A+B</b>의 주문량을 합산하고, <b>B는 B+C</b>의
                       주문량을 합산합니다.
                     </li>
                   </ul>
@@ -359,8 +364,8 @@ export const RequestorPricingReferralPolicyCard = () => {
                     6. 의뢰 취소
                   </h3>
                   <p>
-                    의뢰 취소는 <b>의뢰</b> 단계에서만 가능합니다.{" "}
-                    <b>CAM 단계부터는</b>
+                    의뢰 취소는 <b>의뢰, CAM</b> 단계에서만 가능합니다.{" "}
+                    <b>가공 단계부터는</b>
                     취소할 수 없습니다.
                   </p>
                 </section>

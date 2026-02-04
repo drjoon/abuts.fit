@@ -393,10 +393,12 @@ export const RequestorRecentRequestsCard = ({
     return (
       status === "의뢰" ||
       status === "의뢰접수" ||
+      status === "CAM" ||
       status === "가공전" ||
       stage === "의뢰" ||
       stage === "의뢰접수" ||
-      stage === "CAM"
+      stage === "CAM" ||
+      stage === "가공전"
     );
   };
 

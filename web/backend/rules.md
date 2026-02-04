@@ -69,13 +69,12 @@
 
 ### 5.1 크레딧 관리 정책
 
-- **크레딧 단위**: `organizationId` (RequestorOrganization) 기준으로 관리
 - **충전**: 조직 단위로 크레딧 충전 (공급가 기준 적립, 결제는 공급가+VAT)
 - **차감**: 의뢰 생성 시 조직의 크레딧에서 차감 (누가 의뢰하든 동일한 조직 크레딧 사용)
 - **환불**: 의뢰 취소 시 조직 크레딧으로 복원
 - **조회**: 조직 내 모든 멤버가 동일한 잔액 조회 (`GET /api/credits/balance`)
 
-### 5.1.1 리퍼럴 그룹 기반 주문량 합산 정책
+#### 5.1.1 리퍼럴 그룹 기반 주문량 합산 정책
 
 **그룹 구조**:
 
@@ -85,11 +84,13 @@
   - B가 가입할 때: `referrer(A).referralGroupLeaderId = null` → B의 리더 = A
   - C가 가입할 때: `referrer(B).referralGroupLeaderId = A` → C의 리더 = A (상속)
 
-**주문량 합산**:
+**주문량 합산(다단계)**:
 
-- **조회 대상**: 그룹 내 모든 멤버(리더 포함)의 지난 30일 완료 주문량
-- **할인 계산**: 그룹 전체 주문량 기준으로 단가 할인 적용
-- **동등성**: 그룹 내 모든 멤버가 동일한 할인 혜택 받음
+- **조회 대상**: 내 계정 + 내 직계 1단계(내 추천으로 가입한 계정들)의 지난 30일 완료 주문량
+- **할인 계산**: 위 합산 주문량 기준으로 단가 할인 적용
+- **예시**:
+  - A(리더)는 A + (A가 직접 추천한 계정들)의 주문량만 합산
+  - B(2단계)는 B + (B가 직접 추천한 계정들)의 주문량만 합산
 
 **리더 변경 처리**:
 
@@ -100,12 +101,30 @@
 **API 응답**:
 
 - `GET /api/requests/my/pricing-referral-stats`
-  - `myLast30DaysOrders`: 본인 주문량 (참고용)
-  - `groupTotalOrders`: 그룹 전체 주문량 (할인 계산 기준)
-  - `groupMemberCount`: 그룹 멤버 수
-  - `totalOrders`: 그룹 전체 주문량 (= groupTotalOrders)
-  - `discountAmount`: 그룹 기준 할인액
-  - `effectiveUnitPrice`: 적용 단가
+- `myLast30DaysOrders`: 본인 주문량 (참고용)
+- `groupTotalOrders`: 본인+직계(1단계) 주문량 합산 (할인 계산 기준)
+- `groupMemberCount`: 본인+직계 멤버 수
+- `totalOrders`: 본인+직계 주문량 (= groupTotalOrders)
+- `discountAmount`: 그룹 기준 할인액
+- `effectiveUnitPrice`: 적용 단가
+
+### 5.1.2 관리자용 리퍼럴 그룹 계층도 및 스냅샷
+
+- **목표**: 리더 기준 계층도를 확인하되, 단가/주문 합산은 "리더 본인+직계 1단계" 기준으로 계산하고 당일 첫 조회 시 스냅샷을 생성함.
+- **스냅샷 키**: `(ownerUserId, yyyy-MM-dd)`
+- **스냅샷 생성 시점**
+  - 요청자 API(`GET /api/requests/my/pricing-referral-stats`)는 본인+직계 기준 스냅샷을 조회/생성.
+  - 관리자 API(`GET /api/admin/referral-groups/:leaderId`)에서 **스냅샷이 없으면** 리더 본인+직계 기준 주문량으로 `PricingReferralStatsSnapshot`을 upsert.
+  - 목록 API(`/api/admin/referral-groups`)은 snapshot이 없으면 `groupTotalOrders=0`으로 둔 채 `미생성` 배지를 보여줌.
+- **관리자 대시보드 설명**
+  - `/dashboard/referral-groups` 페이지
+    - 상단 overview 카드: 전체 그룹 수/계정 수/최근30일 주문 합산(리더+직계)/평균 단가
+    - 그룹 리스트: 각 그룹 recent30일 주문(리더+직계), 단가, snapshot 생성 여부(“미생성” 배지)
+    - 계층도 트리: 멤버별 최근30일 주문, 클릭 시 기본 정보 다이얼로그, 트리 상단에 그룹 주문·단가
+  - 트리 조회 시 snapshot이 없는 그룹이면 처음 조회에서 snapshot 생성 → 다음 목록 새로고침부터 값 반영
+  - Dialog shows account status, recent 30-day orders, email, ID, parent referral ID, creation date
+
+문서화한 정책과 실제 UI/모델이 일치하는지 확인 후 배포 바랍니다.
 
 ### 5.2 생산 프로세스 및 스케줄 관리 정책 (시각 단위)
 

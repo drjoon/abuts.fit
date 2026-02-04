@@ -470,7 +470,11 @@ export async function getMyDashboardSummary(req, res) {
     const activeRequests = await Request.find({
       ...requestFilter,
       status: { $in: ["의뢰", "CAM", "가공", "세척.포장"] },
-    }).select("requestId title status manufacturerStage productionSchedule");
+    })
+      .select(
+        "requestId title status status2 manufacturerStage productionSchedule caseInfos createdAt timeline estimatedCompletion",
+      )
+      .lean();
 
     const riskSummary = calculateRiskSummary(activeRequests);
 
@@ -979,36 +983,34 @@ export async function getMyPricingReferralStats(req, res) {
     const groupLeaderId = await getReferralGroupLeaderId(requestorId);
 
     const cachedSnapshot = await PricingReferralStatsSnapshot.findOne({
-      groupLeaderId,
-      ymd,
+      $or: [
+        { ownerUserId: requestorId, ymd },
+        { groupLeaderId: requestorId, ymd, ownerUserId: null },
+      ],
     })
-      .select({ groupMemberCount: 1, groupTotalOrders: 1, computedAt: 1 })
+      .select({
+        ownerUserId: 1,
+        groupMemberCount: 1,
+        groupTotalOrders: 1,
+        computedAt: 1,
+      })
       .lean();
 
     const cachedGroupMemberCount = cachedSnapshot?.groupMemberCount;
     const cachedGroupTotalOrders = cachedSnapshot?.groupTotalOrders;
 
-    // 그룹 내 모든 멤버 ID 조회
-    let groupMemberIds = [];
-    try {
-      const { getReferralGroupMembers } = await import("./utils.js");
-      groupMemberIds = await getReferralGroupMembers(requestorId);
-      if (!groupMemberIds || groupMemberIds.length === 0) {
-        // 그룹 멤버 조회 실패 시 본인만 포함
-        groupMemberIds = [requestorId];
-      }
-    } catch (groupError) {
-      console.error(
-        "[getMyPricingReferralStats] getReferralGroupMembers error:",
-        {
-          requestorId: String(requestorId),
-          error: groupError.message,
-          stack: groupError.stack,
-        },
-      );
-      // fallback: 본인만 포함
-      groupMemberIds = [requestorId];
-    }
+    // 다단계 구조: 본인 + 직계 1단계(내가 추천한 계정)만 합산
+    const directChildren = await User.find({
+      referredByUserId: requestorId,
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const groupMemberIds = [
+      requestorId,
+      ...(directChildren || []).map((c) => c._id).filter(Boolean),
+    ];
 
     const shouldComputeGroupTotals =
       !Number.isFinite(cachedGroupTotalOrders) ||
@@ -1045,9 +1047,11 @@ export async function getMyPricingReferralStats(req, res) {
 
     if (shouldComputeGroupTotals) {
       await PricingReferralStatsSnapshot.findOneAndUpdate(
-        { groupLeaderId, ymd },
+        { groupLeaderId: requestorId, ymd },
         {
           $set: {
+            ownerUserId: requestorId,
+            groupLeaderId: requestorId,
             groupMemberCount,
             groupTotalOrders: totalLast30DaysOrders,
             computedAt: now,

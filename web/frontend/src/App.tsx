@@ -13,43 +13,43 @@ import { GuideTourProvider } from "@/features/guidetour/GuideTourProvider";
 
 const Index = lazy(() => import("./pages/Index"));
 const LoginPage = lazy(() =>
-  import("./pages/LoginPage").then((m) => ({ default: m.LoginPage }))
+  import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })),
 );
 const SignupPage = lazy(() =>
-  import("./pages/SignupPage").then((m) => ({ default: m.SignupPage }))
+  import("./pages/SignupPage").then((m) => ({ default: m.SignupPage })),
 );
 const ForgotPasswordPage = lazy(() =>
   import("./pages/ForgotPasswordPage").then((m) => ({
     default: m.ForgotPasswordPage,
-  }))
+  })),
 );
 const ResetPasswordPage = lazy(() =>
   import("./pages/ResetPasswordPage").then((m) => ({
     default: m.ResetPasswordPage,
-  }))
+  })),
 );
 const DashboardLayout = lazy(() =>
   import("./components/DashboardLayout").then((m) => ({
     default: m.DashboardLayout,
-  }))
+  })),
 );
 const DashboardHome = lazy(() =>
-  import("./pages/DashboardHome").then((m) => ({ default: m.DashboardHome }))
+  import("./pages/DashboardHome").then((m) => ({ default: m.DashboardHome })),
 );
 const NewRequestPage = lazy(() =>
   import("./pages/requestor/new_request/NewRequestPage").then((m) => ({
     default: m.NewRequestPage,
-  }))
+  })),
 );
 const ManufacturerWorksheetPage = lazy(() =>
   import("./pages/manufacturer/WorkSheet").then((m) => ({
     default: m.ManufacturerWorksheetPage,
-  }))
+  })),
 );
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((m) => ({
     default: m.SettingsPage,
-  }))
+  })),
 );
 import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
 import { AdminRequestMonitoring } from "@/pages/admin/monitoring/AdminRequestMonitoring";
@@ -61,47 +61,48 @@ import AdminPopbillQueue from "@/pages/admin/system/AdminPopbillQueue";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
+import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/CncDashboardPage").then((m) => ({
     default: m.CncDashboardPage,
-  }))
+  })),
 );
 const HelpPage = lazy(() =>
-  import("./pages/HelpPage").then((m) => ({ default: m.HelpPage }))
+  import("./pages/HelpPage").then((m) => ({ default: m.HelpPage })),
 );
 const ContactPage = lazy(() =>
-  import("./pages/ContactPage").then((m) => ({ default: m.ContactPage }))
+  import("./pages/ContactPage").then((m) => ({ default: m.ContactPage })),
 );
 const OAuthCallbackPage = lazy(() =>
   import("./pages/OAuthCallbackPage").then((m) => ({
     default: m.OAuthCallbackPage,
-  }))
+  })),
 );
 const TermsPage = lazy(() =>
-  import("./pages/TermsPage").then((m) => ({ default: m.TermsPage }))
+  import("./pages/TermsPage").then((m) => ({ default: m.TermsPage })),
 );
 const PrivacyPage = lazy(() =>
-  import("./pages/PrivacyPage").then((m) => ({ default: m.PrivacyPage }))
+  import("./pages/PrivacyPage").then((m) => ({ default: m.PrivacyPage })),
 );
 const SecurityPage = lazy(() =>
-  import("./pages/SecurityPage").then((m) => ({ default: m.SecurityPage }))
+  import("./pages/SecurityPage").then((m) => ({ default: m.SecurityPage })),
 );
 const CookiesPage = lazy(() =>
-  import("./pages/CookiesPage").then((m) => ({ default: m.CookiesPage }))
+  import("./pages/CookiesPage").then((m) => ({ default: m.CookiesPage })),
 );
 const ServicePage = lazy(() =>
-  import("./pages/ServicePage").then((m) => ({ default: m.ServicePage }))
+  import("./pages/ServicePage").then((m) => ({ default: m.ServicePage })),
 );
 const BusinessPage = lazy(() =>
-  import("./pages/BusinessPage").then((m) => ({ default: m.BusinessPage }))
+  import("./pages/BusinessPage").then((m) => ({ default: m.BusinessPage })),
 );
 const CreditsPage = lazy(() =>
-  import("./pages/CreditsPage").then((m) => ({ default: m.CreditsPage }))
+  import("./pages/CreditsPage").then((m) => ({ default: m.CreditsPage })),
 );
 const RefundPolicyPage = lazy(() =>
   import("./pages/RefundPolicyPage").then((m) => ({
     default: m.RefundPolicyPage,
-  }))
+  })),
 );
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -277,6 +278,14 @@ const App = () => {
                       element={
                         <RoleProtectedRoute roles={["admin"]}>
                           <AdminCreditPage />
+                        </RoleProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="referral-groups"
+                      element={
+                        <RoleProtectedRoute roles={["admin"]}>
+                          <AdminReferralGroupsPage />
                         </RoleProtectedRoute>
                       }
                     />

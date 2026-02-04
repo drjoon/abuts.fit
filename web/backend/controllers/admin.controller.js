@@ -5,6 +5,7 @@ import File from "../models/file.model.js";
 import ActivityLog from "../models/activityLog.model.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
 import SystemSettings from "../models/systemSettings.model.js";
+import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
 import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -17,6 +18,19 @@ const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d10: 5,
   d10plus: 5,
 };
+
+const BASE_UNIT_PRICE = 15000;
+const DISCOUNT_PER_ORDER = 10;
+const MAX_DISCOUNT_PER_UNIT = 5000;
+
+function computeVolumeEffectiveUnitPrice(groupTotalOrders) {
+  const totalOrders = Number(groupTotalOrders || 0);
+  const discountAmount = Math.min(
+    totalOrders * DISCOUNT_PER_ORDER,
+    MAX_DISCOUNT_PER_UNIT,
+  );
+  return Math.max(0, BASE_UNIT_PRICE - discountAmount);
+}
 
 async function getMongoHealth() {
   const start = performance.now();
@@ -50,6 +64,342 @@ async function getMongoHealth() {
     };
   } catch (error) {
     return { ok: false, message: error.message, status: "critical" };
+  }
+}
+
+async function getReferralGroups(req, res) {
+  try {
+    const leaders = await User.find({
+      $or: [
+        { referralGroupLeaderId: null },
+        { referralGroupLeaderId: { $exists: false } },
+      ],
+    })
+      .select({
+        _id: 1,
+        name: 1,
+        email: 1,
+        organization: 1,
+        active: 1,
+        createdAt: 1,
+        approvedAt: 1,
+        updatedAt: 1,
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const leaderIds = leaders.map((l) => l._id).filter(Boolean);
+    if (leaderIds.length === 0) {
+      return res.status(200).json({ success: true, data: { groups: [] } });
+    }
+
+    const ymd = getTodayYmdInKst();
+
+    const [directCounts, snapshots] = await Promise.all([
+      User.aggregate([
+        { $match: { referredByUserId: { $in: leaderIds }, active: true } },
+        { $group: { _id: "$referredByUserId", count: { $sum: 1 } } },
+      ]),
+      PricingReferralStatsSnapshot.find({
+        ownerUserId: { $in: leaderIds },
+        ymd,
+      })
+        .select({
+          ownerUserId: 1,
+          groupMemberCount: 1,
+          groupTotalOrders: 1,
+          computedAt: 1,
+        })
+        .lean(),
+    ]);
+
+    const directCountByLeaderId = new Map();
+    for (const r of directCounts || []) {
+      directCountByLeaderId.set(String(r._id), Number(r.count || 0));
+    }
+
+    const groups = leaders.map((leader) => {
+      const directCount = directCountByLeaderId.get(String(leader._id)) || 0;
+
+      const snapshot = (snapshots || []).find(
+        (s) => String(s.ownerUserId) === String(leader._id),
+      );
+      const groupTotalOrders = Number(snapshot?.groupTotalOrders || 0);
+      const groupMemberCount = Number(snapshot?.groupMemberCount || 0);
+      const effectiveUnitPrice =
+        computeVolumeEffectiveUnitPrice(groupTotalOrders);
+
+      return {
+        leader,
+        memberCount: directCount + 1,
+        groupMemberCount: groupMemberCount || directCount + 1,
+        groupTotalOrders,
+        effectiveUnitPrice,
+        snapshotComputedAt: snapshot?.computedAt || null,
+      };
+    });
+
+    const totalGroups = groups.length;
+    const totalAccounts = groups.reduce(
+      (acc, g) => acc + Number(g.memberCount || 0),
+      0,
+    );
+    const totalGroupOrders = groups.reduce(
+      (acc, g) => acc + Number(g.groupTotalOrders || 0),
+      0,
+    );
+    const avgEffectiveUnitPrice =
+      groups.length > 0
+        ? Math.round(
+            groups.reduce(
+              (acc, g) => acc + Number(g.effectiveUnitPrice || 0),
+              0,
+            ) / groups.length,
+          )
+        : BASE_UNIT_PRICE;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        overview: {
+          ymd,
+          totalGroups,
+          totalAccounts,
+          totalGroupOrders,
+          avgEffectiveUnitPrice,
+        },
+        groups,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "리퍼럴 그룹 목록 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function getReferralGroupTree(req, res) {
+  try {
+    const { leaderId } = req.params;
+
+    if (!Types.ObjectId.isValid(leaderId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 리더 ID입니다.",
+      });
+    }
+
+    const leader = await User.findById(leaderId)
+      .select({
+        _id: 1,
+        name: 1,
+        email: 1,
+        organization: 1,
+        active: 1,
+        createdAt: 1,
+        approvedAt: 1,
+        updatedAt: 1,
+        referredByUserId: 1,
+        referralGroupLeaderId: 1,
+      })
+      .lean();
+
+    if (!leader) {
+      return res.status(404).json({
+        success: false,
+        message: "리더를 찾을 수 없습니다.",
+      });
+    }
+
+    const members = await User.find({
+      $or: [
+        { _id: leader._id },
+        { referralGroupLeaderId: leader._id },
+        {
+          referredByUserId: leader._id,
+          referralGroupLeaderId: { $exists: false },
+        },
+      ],
+    })
+      .select({
+        _id: 1,
+        name: 1,
+        email: 1,
+        organization: 1,
+        active: 1,
+        createdAt: 1,
+        approvedAt: 1,
+        updatedAt: 1,
+        referredByUserId: 1,
+        referralGroupLeaderId: 1,
+      })
+      .lean();
+
+    const now = new Date();
+    const last30Cutoff = new Date(now);
+    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+
+    const memberIds = (members || []).map((m) => m._id).filter(Boolean);
+    const orderRows = memberIds.length
+      ? await Request.aggregate([
+          {
+            $match: {
+              requestor: { $in: memberIds },
+              status: "완료",
+              createdAt: { $gte: last30Cutoff },
+            },
+          },
+          { $group: { _id: "$requestor", count: { $sum: 1 } } },
+        ])
+      : [];
+    const ordersByUserId = new Map(
+      (orderRows || []).map((r) => [String(r._id), Number(r.count || 0)]),
+    );
+
+    const ymd = getTodayYmdInKst();
+    const snapshot = await PricingReferralStatsSnapshot.findOne({
+      $or: [
+        { ownerUserId: leader._id, ymd },
+        { groupLeaderId: leader._id, ymd, ownerUserId: null },
+      ],
+    })
+      .select({
+        ownerUserId: 1,
+        groupMemberCount: 1,
+        groupTotalOrders: 1,
+        computedAt: 1,
+      })
+      .lean();
+    const snapshotGroupTotalOrders = Number(snapshot?.groupTotalOrders || 0);
+    const snapshotGroupMemberCount = Number(snapshot?.groupMemberCount || 0);
+
+    const nodes = (members || []).map((u) => ({
+      _id: u._id,
+      name: u.name,
+      email: u.email,
+      organization: u.organization,
+      active: u.active,
+      createdAt: u.createdAt,
+      approvedAt: u.approvedAt,
+      updatedAt: u.updatedAt,
+      referredByUserId: u.referredByUserId || null,
+      last30DaysOrders: ordersByUserId.get(String(u._id)) || 0,
+    }));
+
+    const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
+    const childrenByParentId = new Map();
+
+    for (const n of nodes) {
+      const parentId = n.referredByUserId ? String(n.referredByUserId) : null;
+      if (!parentId) continue;
+      if (!nodeById.has(parentId)) continue;
+      const arr = childrenByParentId.get(parentId) || [];
+      arr.push(String(n._id));
+      childrenByParentId.set(parentId, arr);
+    }
+
+    const buildTree = (id, visited) => {
+      if (visited.has(id)) return null;
+      visited.add(id);
+
+      const base = nodeById.get(id);
+      if (!base) return null;
+
+      const childIds = childrenByParentId.get(id) || [];
+      const children = childIds
+        .map((cid) => buildTree(cid, visited))
+        .filter(Boolean);
+
+      return {
+        ...base,
+        children,
+      };
+    };
+
+    const rootId = String(leader._id);
+    const tree = buildTree(rootId, new Set()) || {
+      ...nodeById.get(rootId),
+      children: [],
+    };
+
+    const attached = new Set();
+    const walk = (t) => {
+      if (!t) return;
+      attached.add(String(t._id));
+      for (const c of t.children || []) walk(c);
+    };
+    walk(tree);
+
+    const orphans = nodes
+      .filter((n) => !attached.has(String(n._id)))
+      .map((n) => ({ ...n, children: [] }));
+
+    if (orphans.length) {
+      tree.children = [...(tree.children || []), ...orphans];
+    }
+
+    const directChildIdSet = new Set(
+      nodes
+        .filter((n) => String(n.referredByUserId || "") === String(leader._id))
+        .map((n) => String(n._id)),
+    );
+    const computedTierTotalOrders = nodes.reduce((acc, n) => {
+      const idStr = String(n._id);
+      const isOwner = idStr === String(leader._id);
+      const isDirectChild = directChildIdSet.has(idStr);
+      if (!isOwner && !isDirectChild) return acc;
+      return acc + Number(n.last30DaysOrders || 0);
+    }, 0);
+    const computedTierMemberCount = 1 + directChildIdSet.size;
+
+    if (!snapshot) {
+      await PricingReferralStatsSnapshot.findOneAndUpdate(
+        { groupLeaderId: leader._id, ymd },
+        {
+          $set: {
+            ownerUserId: leader._id,
+            groupLeaderId: leader._id,
+            groupMemberCount: computedTierMemberCount,
+            groupTotalOrders: computedTierTotalOrders,
+            computedAt: now,
+          },
+        },
+        { upsert: true, new: false },
+      );
+    }
+
+    const groupTotalOrders = snapshot
+      ? snapshotGroupTotalOrders
+      : computedTierTotalOrders;
+    const effectiveUnitPrice =
+      computeVolumeEffectiveUnitPrice(groupTotalOrders);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        leader,
+        memberCount: computedTierMemberCount,
+        groupTotalOrders,
+        effectiveUnitPrice,
+        snapshot: snapshot
+          ? {
+              ymd,
+              groupMemberCount: snapshotGroupMemberCount,
+              groupTotalOrders: snapshotGroupTotalOrders,
+              computedAt: snapshot?.computedAt || null,
+            }
+          : null,
+        tree,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "리퍼럴 그룹 계층도 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
   }
 }
 
@@ -1910,6 +2260,8 @@ export default {
   getDashboardStats,
   getPricingStats,
   getPricingStatsByUser,
+  getReferralGroups,
+  getReferralGroupTree,
   getAllRequests,
   getRequestById,
   updateRequestStatus,
