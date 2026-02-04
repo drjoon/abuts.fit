@@ -49,7 +49,17 @@ export const RequestorPricingReferralPolicyCard = () => {
           : undefined,
       });
       if (!res.ok || !res.data?.success) {
-        throw new Error("가격/리퍼럴 통계 조회에 실패했습니다.");
+        const errorMsg =
+          res.data?.message ||
+          res.data?.error ||
+          "가격/리퍼럴 통계 조회에 실패했습니다.";
+        console.error("[RequestorPricingReferralPolicyCard] API Error:", {
+          ok: res.ok,
+          status: res.status,
+          message: errorMsg,
+          data: res.data,
+        });
+        throw new Error(errorMsg);
       }
       return res.data.data;
     },
@@ -96,9 +106,10 @@ export const RequestorPricingReferralPolicyCard = () => {
   }
 
   const myLast30DaysOrders = data.myLast30DaysOrders ?? 0;
-  const referralLast30DaysOrders = data.referralLast30DaysOrders ?? 0;
+  const groupTotalOrders = data.groupTotalOrders ?? 0;
+  const groupMemberCount = data.groupMemberCount ?? 0;
 
-  const totalOrders = myLast30DaysOrders + referralLast30DaysOrders;
+  const totalOrders = groupTotalOrders;
   const targetOrdersForMaxDiscount = 500;
   const progressValue = targetOrdersForMaxDiscount
     ? Math.min(100, (totalOrders / targetOrdersForMaxDiscount) * 100)
@@ -210,11 +221,9 @@ export const RequestorPricingReferralPolicyCard = () => {
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-md text-slate-600">
-                    리퍼럴 주문 (지난 30일)
-                  </span>
+                  <span className="text-md text-slate-600">그룹 멤버 수</span>
                   <span className="text-lg font-semibold text-foreground">
-                    {referralLast30DaysOrders.toLocaleString()}건
+                    {groupMemberCount}명
                   </span>
                 </div>
               </div>
@@ -301,16 +310,17 @@ export const RequestorPricingReferralPolicyCard = () => {
 
                 <section className="space-y-1">
                   <h3 className="font-semibold text-foreground text-md">
-                    3. 리퍼럴 합산 기준
+                    3. 리퍼럴 그룹 기반 주문량 합산
                   </h3>
                   <ul className="list-disc pl-4 space-y-0.5">
                     <li>
-                      귀 기공소의 주문량에 더해, 귀사 리퍼럴 코드로 가입한
-                      기공소들의 주문량을 합산해 할인 단가를 계산합니다.
+                      그룹 내 모든 멤버의 주문량을 합산하여 할인 단가를
+                      계산합니다. 모든 멤버가 할인 단가를 적용받습니다.
                     </li>
                     <li>
-                      피소개 기공소(리퍼럴로 가입한 기공소)는 본인 주문량에
-                      소개한 기공소의 주문량을 합산하지 않습니다.
+                      예) A 기공소 → B 기공소(A의 리퍼럴) → C 기공소(B의
+                      리퍼럴)인 경우, A, B, C 모두 동일한 그룹이며 세 기공소의
+                      주문량을 합산합니다.
                     </li>
                   </ul>
                 </section>

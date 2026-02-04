@@ -401,6 +401,16 @@ async function register(req, res) {
 
     const effectiveOrganization = "";
 
+    // 그룹 리더 결정: 리퍼럴로 가입하면 추천인의 그룹 리더를 상속
+    let referralGroupLeaderId = null;
+    if (referredByObjectId) {
+      const referrer = await User.findById(referredByObjectId)
+        .select({ referralGroupLeaderId: 1 })
+        .lean();
+      referralGroupLeaderId =
+        referrer?.referralGroupLeaderId || referredByObjectId;
+    }
+
     // 사용자 생성
     const userDoc = {
       name,
@@ -413,6 +423,7 @@ async function register(req, res) {
       organization: effectiveOrganization,
       referralCode,
       referredByUserId: referredByObjectId,
+      referralGroupLeaderId,
       approvedAt: new Date(),
       ...(normalizedRole === "requestor" && !socialProvider
         ? { isVerified: true }
@@ -496,7 +507,7 @@ async function login(req, res) {
 
     // 이메일로 사용자 찾기
     const user = await User.findOne({ email: normalizedEmail }).select(
-      "+password"
+      "+password",
     );
     if (!user) {
       await logSecurityEvent({
@@ -515,7 +526,7 @@ async function login(req, res) {
     // 비밀번호 확인
     try {
       console.log(
-        `로그인 시도: ${normalizedEmail}, 비밀번호 길이: ${password?.length}`
+        `로그인 시도: ${normalizedEmail}, 비밀번호 길이: ${password?.length}`,
       );
 
       // 비밀번호가 있는지 확인
@@ -634,7 +645,7 @@ async function refreshToken(req, res) {
     // 리프레시 토큰 검증 (실제로는 DB에서 토큰 확인 등의 추가 검증 필요)
     const decoded = require("jsonwebtoken").verify(
       refreshToken,
-      process.env.REFRESH_TOKEN_SECRET || "your_refresh_token_secret"
+      process.env.REFRESH_TOKEN_SECRET || "your_refresh_token_secret",
     );
 
     // 사용자 조회
@@ -968,9 +979,8 @@ async function withdraw(req, res) {
     }
 
     if (user.role === "requestor" && isRequestorOwner && organizationId) {
-      const { paidBalance } = await getOrganizationCreditBalanceBreakdown(
-        organizationId
-      );
+      const { paidBalance } =
+        await getOrganizationCreditBalanceBreakdown(organizationId);
       if (paidBalance > 0) {
         return res.status(400).json({
           success: false,
@@ -995,7 +1005,7 @@ async function withdraw(req, res) {
           originalEmail: originalEmail || null,
           email: tombstoneEmail,
         },
-      }
+      },
     );
 
     return res.json({

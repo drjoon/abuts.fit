@@ -624,3 +624,117 @@ export async function computeDiameterStats(requests, leadDays) {
 
   return { total, buckets };
 }
+
+/**
+ * 리퍼럴 그룹 내 모든 멤버 ID 조회
+ * 그룹 리더 또는 멤버의 ID를 받으면, 그룹 리더 기준으로 모든 멤버를 반환
+ * 레거시 계정(referralGroupLeaderId 없음)도 지원
+ * @param {ObjectId|string} userId - 조회 대상 사용자 ID
+ * @returns {Promise<ObjectId[]>} 그룹 내 모든 멤버 ID (본인 포함)
+ */
+export async function getReferralGroupMembers(userId) {
+  if (!userId) return [];
+
+  const userIdStr = String(userId);
+  if (!Types.ObjectId.isValid(userIdStr)) return [];
+  const userIdObj = new Types.ObjectId(userIdStr);
+
+  // 1) 현재 사용자 조회
+  const user = await User.findById(userIdObj)
+    .select({ referralGroupLeaderId: 1, referredByUserId: 1, createdAt: 1 })
+    .lean();
+
+  if (!user) return [];
+
+  const groupLeaderId = await getReferralGroupLeaderId(userIdObj, user);
+
+  // 3) 그룹 리더 기준으로 모든 멤버 조회
+  // 레거시 호환: referralGroupLeaderId가 있는 멤버 + referredByUserId로 직접 연결된 멤버
+  const groupMembers = await User.find({
+    $or: [
+      { _id: groupLeaderId },
+      { referralGroupLeaderId: { $eq: groupLeaderId } },
+      {
+        referredByUserId: groupLeaderId,
+        referralGroupLeaderId: { $exists: false },
+      }, // 레거시: 직접 추천
+    ],
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return groupMembers.map((m) => m._id);
+}
+
+export async function getReferralGroupLeaderId(userIdObj, userLean) {
+  if (!userIdObj) return null;
+
+  const userId =
+    typeof userIdObj === "string" ? new Types.ObjectId(userIdObj) : userIdObj;
+
+  const user = userLean
+    ? userLean
+    : await User.findById(userId)
+        .select({ referralGroupLeaderId: 1, referredByUserId: 1 })
+        .lean();
+
+  if (!user) return userId;
+
+  let groupLeaderId = user.referralGroupLeaderId;
+
+  if (!groupLeaderId && user.referredByUserId) {
+    const referrer = await User.findById(user.referredByUserId)
+      .select({ referralGroupLeaderId: 1 })
+      .lean();
+
+    groupLeaderId = referrer?.referralGroupLeaderId || user.referredByUserId;
+  }
+
+  groupLeaderId = groupLeaderId || userId;
+
+  const groupLeaderIdStr = String(groupLeaderId);
+  if (!Types.ObjectId.isValid(groupLeaderIdStr)) {
+    return userId;
+  }
+  return new Types.ObjectId(groupLeaderIdStr);
+}
+
+/**
+ * 사용자 삭제/비활성화 시 그룹 리더 변경 처리
+ * 삭제되는 리더의 직접 추천인(referredByUserId가 이 리더인 사람) 중
+ * 가장 오래된 멤버를 새로운 리더로 승격
+ * @param {ObjectId|string} deletedUserId - 삭제되는 사용자 ID
+ */
+export async function handleReferralGroupLeaderChange(deletedUserId) {
+  if (!deletedUserId) return;
+
+  const deletedUserIdObj = new Types.ObjectId(String(deletedUserId));
+
+  // 1) 삭제되는 사용자가 누군가의 리더인지 확인
+  const groupMembers = await User.find({
+    referralGroupLeaderId: deletedUserIdObj,
+    active: true,
+  })
+    .select({ _id: 1, createdAt: 1 })
+    .sort({ createdAt: 1 })
+    .lean();
+
+  if (groupMembers.length === 0) {
+    // 그룹 멤버가 없으면 처리할 것 없음
+    return;
+  }
+
+  // 2) 가장 오래된 멤버를 새로운 리더로 지정
+  const newLeaderId = groupMembers[0]._id;
+
+  // 3) 모든 그룹 멤버의 리더를 새로운 리더로 변경
+  await User.updateMany(
+    { referralGroupLeaderId: deletedUserIdObj },
+    { referralGroupLeaderId: newLeaderId },
+  );
+
+  console.log(
+    `[Referral Group] Leader changed: ${deletedUserIdObj} -> ${newLeaderId}`,
+  );
+}

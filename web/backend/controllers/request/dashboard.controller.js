@@ -1,6 +1,7 @@
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
 import {
   buildRequestorOrgScopeFilter,
   buildRequestorOrgFilter,
@@ -11,6 +12,7 @@ import {
   getTodayYmdInKst,
   normalizeKoreanBusinessDay,
   ymdToMmDd,
+  getReferralGroupLeaderId,
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 
@@ -948,42 +950,114 @@ export async function getDashboardRiskSummary(req, res) {
 
 /**
  * 가격/리퍼럴 통계 (의뢰자용)
+ * 그룹 기반 주문량 합산: 리더 또는 멤버 모두 그룹 내 전체 주문량 조회
  * @route GET /api/requests/my/pricing-referral-stats
  */
 export async function getMyPricingReferralStats(req, res) {
   try {
     const requestorId = req.user._id;
 
+    if (!requestorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사용자 ID가 없습니다.",
+      });
+    }
+
     const now = new Date();
     const last30Cutoff = new Date(now);
     last30Cutoff.setDate(last30Cutoff.getDate() - 30);
 
-    // 병렬로 조회하여 성능 개선
-    const [myLast30DaysOrders, referredUsers] = await Promise.all([
-      Request.countDocuments({
-        requestor: requestorId,
-        status: "완료",
-        createdAt: { $gte: last30Cutoff },
-      }),
-      User.find({
-        referredByUserId: requestorId,
-        active: true,
-      })
-        .select({ _id: 1 })
-        .lean(),
-    ]);
+    const ymd = toKstYmd(now);
+    if (!ymd) {
+      return res.status(500).json({
+        success: false,
+        message: "날짜 계산에 실패했습니다.",
+      });
+    }
 
-    const referredUserIds = referredUsers.map((u) => u._id).filter(Boolean);
+    const groupLeaderId = await getReferralGroupLeaderId(requestorId);
 
-    const referralLast30DaysOrders = referredUserIds.length
-      ? await Request.countDocuments({
-          requestor: { $in: referredUserIds },
+    const cachedSnapshot = await PricingReferralStatsSnapshot.findOne({
+      groupLeaderId,
+      ymd,
+    })
+      .select({ groupMemberCount: 1, groupTotalOrders: 1, computedAt: 1 })
+      .lean();
+
+    const cachedGroupMemberCount = cachedSnapshot?.groupMemberCount;
+    const cachedGroupTotalOrders = cachedSnapshot?.groupTotalOrders;
+
+    // 그룹 내 모든 멤버 ID 조회
+    let groupMemberIds = [];
+    try {
+      const { getReferralGroupMembers } = await import("./utils.js");
+      groupMemberIds = await getReferralGroupMembers(requestorId);
+      if (!groupMemberIds || groupMemberIds.length === 0) {
+        // 그룹 멤버 조회 실패 시 본인만 포함
+        groupMemberIds = [requestorId];
+      }
+    } catch (groupError) {
+      console.error(
+        "[getMyPricingReferralStats] getReferralGroupMembers error:",
+        {
+          requestorId: String(requestorId),
+          error: groupError.message,
+          stack: groupError.stack,
+        },
+      );
+      // fallback: 본인만 포함
+      groupMemberIds = [requestorId];
+    }
+
+    const shouldComputeGroupTotals =
+      !Number.isFinite(cachedGroupTotalOrders) ||
+      !Number.isFinite(cachedGroupMemberCount);
+
+    const groupMemberCount = shouldComputeGroupTotals
+      ? groupMemberIds.length
+      : cachedGroupMemberCount;
+
+    // 그룹 내 모든 멤버의 지난 30일 주문량 합산
+    const [freshGroupTotalOrders, myLast30DaysOrders, user] = await Promise.all(
+      [
+        shouldComputeGroupTotals
+          ? groupMemberIds.length
+            ? Request.countDocuments({
+                requestor: { $in: groupMemberIds },
+                status: "완료",
+                createdAt: { $gte: last30Cutoff },
+              })
+            : Promise.resolve(0)
+          : Promise.resolve(cachedGroupTotalOrders),
+        Request.countDocuments({
+          requestor: requestorId,
           status: "완료",
           createdAt: { $gte: last30Cutoff },
-        })
-      : 0;
+        }),
+        User.findById(requestorId)
+          .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
+          .lean(),
+      ],
+    );
 
-    const totalOrders = myLast30DaysOrders + referralLast30DaysOrders;
+    const totalLast30DaysOrders = freshGroupTotalOrders;
+
+    if (shouldComputeGroupTotals) {
+      await PricingReferralStatsSnapshot.findOneAndUpdate(
+        { groupLeaderId, ymd },
+        {
+          $set: {
+            groupMemberCount,
+            groupTotalOrders: totalLast30DaysOrders,
+            computedAt: now,
+          },
+        },
+        { upsert: true, new: true },
+      );
+    }
+
+    const totalOrders = totalLast30DaysOrders;
 
     const baseUnitPrice = 15000;
     const discountPerOrder = 10;
@@ -992,10 +1066,6 @@ export async function getMyPricingReferralStats(req, res) {
       totalOrders * discountPerOrder,
       maxDiscountPerUnit,
     );
-
-    const user = await User.findById(requestorId)
-      .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
-      .lean();
 
     let rule = "volume_discount_last30days";
     let effectiveUnitPrice = Math.max(0, baseUnitPrice - discountAmount);
@@ -1039,7 +1109,6 @@ export async function getMyPricingReferralStats(req, res) {
             }
           : null,
         myLast30DaysOrders,
-        referralLast30DaysOrders,
         totalOrders,
         discountAmount,
         effectiveUnitPrice,
@@ -1050,7 +1119,7 @@ export async function getMyPricingReferralStats(req, res) {
     const responseData = {
       last30Cutoff,
       myLast30DaysOrders,
-      referralLast30DaysOrders,
+      groupTotalOrders: totalLast30DaysOrders,
       totalOrders,
       baseUnitPrice,
       discountPerOrder,
@@ -1058,6 +1127,7 @@ export async function getMyPricingReferralStats(req, res) {
       discountAmount,
       effectiveUnitPrice,
       rule,
+      groupMemberCount,
       ...(process.env.NODE_ENV !== "production"
         ? {
             debug: {
@@ -1074,6 +1144,15 @@ export async function getMyPricingReferralStats(req, res) {
                     active: user.active,
                   }
                 : null,
+              groupMemberIds: groupMemberIds.map(String),
+              ymd,
+              snapshot: cachedSnapshot
+                ? {
+                    groupMemberCount: cachedSnapshot.groupMemberCount,
+                    groupTotalOrders: cachedSnapshot.groupTotalOrders,
+                    computedAt: cachedSnapshot.computedAt,
+                  }
+                : null,
             },
           }
         : {}),
@@ -1086,9 +1165,13 @@ export async function getMyPricingReferralStats(req, res) {
     });
   } catch (error) {
     console.error("Error in getMyPricingReferralStats:", error);
+    const devMessage =
+      process.env.NODE_ENV !== "production"
+        ? `${error?.message || "unknown error"}`
+        : "가격/리퍼럴 통계 조회 중 오류가 발생했습니다.";
     return res.status(500).json({
       success: false,
-      message: "가격/리퍼럴 통계 조회 중 오류가 발생했습니다.",
+      message: devMessage,
       error: error.message,
     });
   }

@@ -109,7 +109,7 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=10
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"path":"M5_20260128-MMSESKHM-27_v0tvldch.nc","isNew":true}'
+ -d '{"headType":1,"path":"M5_20260128-MMSESKHM-27_52ggwysf.nc","isNew":true}'
 ```
 
 **응답 (202 Accepted):**
@@ -120,14 +120,14 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
   "message": "Smart upload job accepted",
   "jobId": "a1b2c3d4e5f6g7h8",
   "machineId": "M5",
-  "path": "M5_20260128-MMSESKHM-27_v0tvldch.nc"
+  "path": "M5_20260128-MMSESKHM-27_52ggwysf.nc"
 }
 ```
 
 #### 1-2) 작업 결과 조회
 
 ```bash
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/02394e2da5364c39af986b451911604d" \
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/30ecfb73762f4e85b2e0174b0fcbe10e" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 ```
 
@@ -198,7 +198,7 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/02394e2da5364c39af986b45
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/download" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"programNo":4001,"path":"downloads/M5_4001.nc"}'
+ -d '{"headType":1,"programNo":4000,"path":"downloads/M5_4000.nc"}'
 ```
 
 **응답 (202 Accepted):**

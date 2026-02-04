@@ -57,6 +57,12 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    referralGroupLeaderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
     phoneNumber: {
       type: String,
       trim: true,
@@ -176,7 +182,7 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true, // createdAt, updatedAt 자동 생성
-  }
+  },
 );
 
 // 역할별 서브역할 필수 검사
@@ -214,7 +220,7 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   try {
     if (!this.password) {
       console.error(
-        '비밀번호 필드가 없습니다. select("+password")가 제대로 작동하는지 확인하세요.'
+        '비밀번호 필드가 없습니다. select("+password")가 제대로 작동하는지 확인하세요.',
       );
       return false;
     }

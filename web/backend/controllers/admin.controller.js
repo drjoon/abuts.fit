@@ -80,8 +80,8 @@ async function getNetworkHealth() {
     tls.status === "critical" || waf.status === "critical"
       ? "critical"
       : tls.status === "warning" || waf.status === "warning"
-      ? "warning"
-      : "ok";
+        ? "warning"
+        : "ok";
   const message = `TLS: ${tls.message || "-"}, WAF: ${waf.message || "-"}`;
   return { status, message };
 }
@@ -102,14 +102,14 @@ async function getBackupHealth(sec) {
     backupUrl,
     sec.backupFrequency
       ? `백업 주기: ${sec.backupFrequency}`
-      : "백업 주기가 설정되지 않았습니다"
+      : "백업 주기가 설정되지 않았습니다",
   );
   const status =
     backup.status && backup.status !== "unknown"
       ? backup.status
       : sec.backupFrequency
-      ? "ok"
-      : "warning";
+        ? "ok"
+        : "warning";
   return { status, message: backup.message };
 }
 
@@ -184,7 +184,7 @@ async function getDeliveryEtaLeadDays() {
     const doc = await SystemSettings.findOneAndUpdate(
       { key: "global" },
       { $setOnInsert: { key: "global" } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
     return {
@@ -271,7 +271,7 @@ async function getPricingStats(req, res) {
 
     const totalReferralOrders = referralRows.reduce(
       (acc, r) => acc + (r.referralOrders || 0),
-      0
+      0,
     );
 
     res.status(200).json({
@@ -392,7 +392,7 @@ async function getPricingStatsByUser(req, res) {
       { $match: { _id: { $ne: null } } },
     ]);
     const referralMap = new Map(
-      referralRows.map((r) => [String(r._id), r.referralOrders || 0])
+      referralRows.map((r) => [String(r._id), r.referralOrders || 0]),
     );
 
     const userIds = rows
@@ -592,7 +592,7 @@ async function updateUser(req, res) {
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: updateData },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select("-password");
 
     if (!updatedUser) {
@@ -844,7 +844,7 @@ async function computeAdminDiameterStats(requests, leadDays) {
     counts.d6,
     counts.d8,
     counts.d10,
-    counts.d10plus
+    counts.d10plus,
   );
 
   const buckets = bucketDefs.map((def) => ({
@@ -952,7 +952,7 @@ async function getDashboardStats(req, res) {
       .lean();
     const diameterStats = await computeAdminDiameterStats(
       requestsForDiameter,
-      leadDays
+      leadDays,
     );
 
     // 응답 데이터 구성
@@ -1095,7 +1095,7 @@ async function deleteUser(req, res) {
     const deletedUser = await User.findByIdAndUpdate(
       userId,
       { active: false, deletedAt: new Date() },
-      { new: true }
+      { new: true },
     );
 
     if (!deletedUser) {
@@ -1104,6 +1104,11 @@ async function deleteUser(req, res) {
         message: "사용자를 찾을 수 없습니다.",
       });
     }
+
+    // 그룹 리더 변경 처리 (삭제되는 사용자가 리더인 경우)
+    const { handleReferralGroupLeaderChange } =
+      await import("../request/utils.js");
+    await handleReferralGroupLeaderChange(userId);
 
     // 실제 DB에서 삭제 (테스트에서는 이 방식을 사용)
     await User.findByIdAndDelete(userId);
@@ -1288,7 +1293,7 @@ async function updateRequestStatus(req, res) {
         status,
         $push: { statusHistory },
       },
-      { new: true }
+      { new: true },
     )
       .populate("requestor", "name email organization")
       .populate("manufacturer", "name email organization");
@@ -1356,7 +1361,7 @@ async function assignManufacturer(req, res) {
         manufacturer: manufacturerId,
         assignedAt: new Date(),
       },
-      { new: true }
+      { new: true },
     )
       .populate("requestor", "name email organization")
       .populate("manufacturer", "name email organization");
@@ -1510,7 +1515,7 @@ async function updateSystemSettings(req, res) {
           ? { $set: { deliveryEtaLeadDays: mergedLeadDays } }
           : {}),
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
     const updatedSettings = {
@@ -1597,7 +1602,7 @@ async function getSecuritySettings(req, res) {
     const doc = await SystemSettings.findOneAndUpdate(
       { key: "global" },
       { $setOnInsert: { key: "global" } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
     res.status(200).json({
@@ -1664,7 +1669,7 @@ async function updateSecuritySettings(req, res) {
           ? { $set: { securitySettings: sanitized } }
           : {}),
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
     res.status(200).json({
@@ -1754,7 +1759,7 @@ async function getSecurityStats(req, res) {
     const baseScore = 100;
     const securityScore = Math.max(
       50,
-      baseScore - incidentPenalty - blockedPenalty
+      baseScore - incidentPenalty - blockedPenalty,
     );
 
     const sec = systemSettings?.securitySettings || {};

@@ -75,6 +75,38 @@
 - **환불**: 의뢰 취소 시 조직 크레딧으로 복원
 - **조회**: 조직 내 모든 멤버가 동일한 잔액 조회 (`GET /api/credits/balance`)
 
+### 5.1.1 리퍼럴 그룹 기반 주문량 합산 정책
+
+**그룹 구조**:
+
+- **1차 리더**: 소개 없이 가입한 기공소 (`referralGroupLeaderId = null`)
+- **n차 멤버**: 리더의 리퍼럴 코드로 가입한 모든 기공소 (`referralGroupLeaderId = 리더 ID`)
+- **체인 구조**: A(리더) → B(A의 리퍼럴) → C(B의 리퍼럴) → ... 모두 동일 그룹
+  - B가 가입할 때: `referrer(A).referralGroupLeaderId = null` → B의 리더 = A
+  - C가 가입할 때: `referrer(B).referralGroupLeaderId = A` → C의 리더 = A (상속)
+
+**주문량 합산**:
+
+- **조회 대상**: 그룹 내 모든 멤버(리더 포함)의 지난 30일 완료 주문량
+- **할인 계산**: 그룹 전체 주문량 기준으로 단가 할인 적용
+- **동등성**: 그룹 내 모든 멤버가 동일한 할인 혜택 받음
+
+**리더 변경 처리**:
+
+- **리더 삭제 시**: 그룹 내 가장 오래된 멤버가 새로운 리더로 자동 승격
+- **멤버 업데이트**: 모든 그룹 멤버의 `referralGroupLeaderId`를 새 리더로 변경
+- **구현**: `handleReferralGroupLeaderChange(deletedUserId)` 함수 (utils.js)
+
+**API 응답**:
+
+- `GET /api/requests/my/pricing-referral-stats`
+  - `myLast30DaysOrders`: 본인 주문량 (참고용)
+  - `groupTotalOrders`: 그룹 전체 주문량 (할인 계산 기준)
+  - `groupMemberCount`: 그룹 멤버 수
+  - `totalOrders`: 그룹 전체 주문량 (= groupTotalOrders)
+  - `discountAmount`: 그룹 기준 할인액
+  - `effectiveUnitPrice`: 적용 단가
+
 ### 5.2 생산 프로세스 및 스케줄 관리 정책 (시각 단위)
 
 **생산 프로세스 타임라인**:
