@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 
-type RiskSummary = {
+export type RiskSummary = {
   delayedCount?: number;
   warningCount?: number;
   onTimeRate?: number;
@@ -22,10 +22,12 @@ type RiskSummary = {
   }[];
 };
 
+export type RiskSummaryItem = NonNullable<RiskSummary["items"]>[number];
+
 type Props = {
   riskSummary?: RiskSummary | null;
   loading?: boolean;
-  onItemClick?: (requestId: string) => void;
+  onItemClick?: (item: RiskSummaryItem) => void;
 };
 
 export const RequestorRiskSummaryCard = ({
@@ -56,17 +58,68 @@ export const RequestorRiskSummaryCard = ({
     if (manufacturerStage) {
       switch (manufacturerStage) {
         case "의뢰":
-          return <Badge variant="outline">의뢰</Badge>;
+          return (
+            <Badge
+              variant="outline"
+              className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+            >
+              의뢰
+            </Badge>
+          );
         case "의뢰접수":
-          return <Badge variant="outline">의뢰접수</Badge>;
+          return (
+            <Badge
+              variant="outline"
+              className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+            >
+              의뢰접수
+            </Badge>
+          );
         case "CAM":
-          return <Badge variant="default">CAM</Badge>;
+          return (
+            <Badge
+              variant="default"
+              className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+            >
+              CAM
+            </Badge>
+          );
+        case "가공":
+          return (
+            <Badge
+              variant="default"
+              className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+            >
+              가공
+            </Badge>
+          );
         case "생산":
-          return <Badge variant="default">생산</Badge>;
+          return (
+            <Badge
+              variant="default"
+              className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+            >
+              생산
+            </Badge>
+          );
         case "발송":
-          return <Badge variant="default">발송</Badge>;
+          return (
+            <Badge
+              variant="default"
+              className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+            >
+              발송
+            </Badge>
+          );
         case "추적관리":
-          return <Badge variant="secondary">추적관리</Badge>;
+          return (
+            <Badge
+              variant="secondary"
+              className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+            >
+              추적관리
+            </Badge>
+          );
         default:
           break;
       }
@@ -74,21 +127,77 @@ export const RequestorRiskSummaryCard = ({
 
     switch (status) {
       case "의뢰":
-        return <Badge variant="outline">의뢰</Badge>;
+        return (
+          <Badge
+            variant="outline"
+            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+          >
+            의뢰
+          </Badge>
+        );
       case "의뢰접수":
-        return <Badge variant="outline">의뢰접수</Badge>;
+        return (
+          <Badge
+            variant="outline"
+            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+          >
+            의뢰접수
+          </Badge>
+        );
       case "가공전":
-        return <Badge variant="default">CAM</Badge>;
+        return (
+          <Badge
+            variant="default"
+            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+          >
+            CAM
+          </Badge>
+        );
       case "가공후":
-        return <Badge variant="default">생산</Badge>;
+        return (
+          <Badge
+            variant="default"
+            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+          >
+            생산
+          </Badge>
+        );
       case "배송중":
-        return <Badge variant="default">발송</Badge>;
+        return (
+          <Badge
+            variant="default"
+            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+          >
+            발송
+          </Badge>
+        );
       case "완료":
-        return <Badge variant="secondary">완료</Badge>;
+        return (
+          <Badge
+            variant="secondary"
+            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+          >
+            완료
+          </Badge>
+        );
       case "취소":
-        return <Badge variant="destructive">취소</Badge>;
+        return (
+          <Badge
+            variant="destructive"
+            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+          >
+            취소
+          </Badge>
+        );
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return (
+          <Badge
+            variant="outline"
+            className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+          >
+            {status}
+          </Badge>
+        );
     }
   };
 
@@ -111,9 +220,12 @@ export const RequestorRiskSummaryCard = ({
               <FunctionalItemCard
                 key={item.id}
                 className="flex items-center justify-between p-3 border border-border rounded-lg"
+                disabled
                 onClick={(e) => {
+                  if (!onItemClick) return;
+                  e.preventDefault();
                   e.stopPropagation();
-                  if (item.id) onItemClick?.(item.id);
+                  onItemClick(item);
                 }}
               >
                 <div className="flex-1 min-w-0 mr-2">

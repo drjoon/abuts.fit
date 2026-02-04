@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { DashboardShellSkeleton } from "@/shared/ui/dashboard/DashboardShellSkeleton";
 import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   RequestorEditRequestDialog,
@@ -19,7 +20,10 @@ import {
 } from "./components/RequestorEditRequestDialog";
 import { RequestorDashboardStatsCards } from "./components/RequestorDashboardStatsCards";
 import { RequestorPricingReferralPolicyCard } from "./components/RequestorPricingReferralPolicyCard";
-import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
+import {
+  RequestorRiskSummaryCard,
+  type RiskSummaryItem,
+} from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
 import { RequestorShippingSummaryCard } from "./components/RequestorShippingSummaryCard";
@@ -41,7 +45,12 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  RequestDetailDialog,
+  type RequestDetailDialogRequest,
+} from "@/components/RequestDetailDialog";
 
 type DashboardOutletContext = {
   creditBalance: number | null;
@@ -69,6 +78,12 @@ export const RequestorDashboardPage = () => {
     useState("");
   const [editingImplantSystem, setEditingImplantSystem] = useState("");
   const [editingImplantType, setEditingImplantType] = useState("");
+  const [selectedRiskSummaryItem, setSelectedRiskSummaryItem] =
+    useState<RiskSummaryItem | null>(null);
+  const [riskSummaryDetail, setRiskSummaryDetail] =
+    useState<RequestDetailDialogRequest | null>(null);
+  const [riskSummaryDetailLoading, setRiskSummaryDetailLoading] =
+    useState(false);
 
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
@@ -561,23 +576,35 @@ export const RequestorDashboardPage = () => {
                 <RequestorPricingReferralPolicyCard />
                 <RequestorRiskSummaryCard
                   riskSummary={riskSummary}
-                  onItemClick={(requestId) => {
-                    const found = recentRequests.find(
-                      (r) => r.requestId === requestId,
-                    );
-                    if (found) {
-                      openEditDialogFromRequest(found);
-                    } else {
-                      const foundInRisk = riskSummary?.items?.find(
-                        (it) => it.id === requestId,
-                      );
-                      if (foundInRisk) {
-                        openEditDialogFromRequest({
-                          ...foundInRisk,
-                          _id: foundInRisk.id,
-                        });
-                      }
-                    }
+                  onItemClick={(item) => {
+                    setSelectedRiskSummaryItem(item);
+                    setRiskSummaryDetailLoading(true);
+                    apiFetch<any>({
+                      path: `/api/requests/${item.id}`,
+                      method: "GET",
+                      token,
+                      headers: token
+                        ? {
+                            "x-mock-role": "requestor",
+                          }
+                        : undefined,
+                    })
+                      .then((res) => {
+                        if (!res.ok) {
+                          throw new Error("의뢰 상세 조회에 실패했습니다.");
+                        }
+                        if (!res.data?.success) {
+                          throw new Error("의뢰 상세 데이터가 없습니다.");
+                        }
+                        setRiskSummaryDetail(res.data.data || null);
+                      })
+                      .catch((error) => {
+                        console.error("의뢰 상세 조회 실패", error);
+                        setRiskSummaryDetail(null);
+                      })
+                      .finally(() => {
+                        setRiskSummaryDetailLoading(false);
+                      });
                   }}
                 />
               </div>
@@ -695,6 +722,39 @@ export const RequestorDashboardPage = () => {
       <CreditLedgerModal
         open={creditLedgerOpen}
         onOpenChange={setCreditLedgerOpen}
+      />
+
+      <RequestDetailDialog
+        open={Boolean(selectedRiskSummaryItem)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedRiskSummaryItem(null);
+            setRiskSummaryDetail(null);
+          }
+        }}
+        request={riskSummaryDetail || selectedRiskSummaryItem || null}
+        description={
+          riskSummaryDetailLoading
+            ? "불러오는 중..."
+            : selectedRiskSummaryItem?.message ||
+              "지연 가능 의뢰의 정보를 확인하세요."
+        }
+        extraBadge={
+          selectedRiskSummaryItem ? (
+            <Badge
+              variant={
+                selectedRiskSummaryItem.riskLevel === "danger"
+                  ? "destructive"
+                  : "outline"
+              }
+              className="text-[11px]"
+            >
+              {selectedRiskSummaryItem.riskLevel === "danger"
+                ? "지연확정"
+                : "지연가능"}
+            </Badge>
+          ) : null
+        }
       />
 
       <Dialog open={statsModalOpen} onOpenChange={setStatsModalOpen}>

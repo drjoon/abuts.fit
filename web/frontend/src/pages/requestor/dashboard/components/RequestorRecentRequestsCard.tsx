@@ -2,13 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -16,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
+import { RequestDetailDialog } from "@/components/RequestDetailDialog";
 
 const EDITABLE_STATUSES = new Set(["의뢰", "CAM", "의뢰접수", "가공전"]); // 의뢰, CAM 단계만 수정 가능
 
@@ -546,7 +540,7 @@ export const RequestorRecentRequestsCard = ({
         </div>
       </CardContent>
 
-      <Dialog
+      <RequestDetailDialog
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
@@ -556,138 +550,7 @@ export const RequestorRecentRequestsCard = ({
             setCancelConfirmOpen(false);
           }
         }}
-      >
-        <DialogContent className="w-full sm:w-[48%] max-w-[480px] max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center justify-between gap-3 pr-8">
-              <DialogTitle>
-                {detail?.title || selectedSummary?.title || "의뢰 상세"}
-              </DialogTitle>
-              <div className="self-start flex items-center gap-2">
-                {getStatusBadge(
-                  detail?.status || selectedSummary?.status || "-",
-                  detail?.manufacturerStage ||
-                    selectedSummary?.manufacturerStage,
-                )}
-              </div>
-            </div>
-            <DialogDescription asChild>
-              <div className="space-y-3 pt-2 text-sm text-foreground">
-                <div className="grid grid-cols-[80px_1fr] gap-3 items-center">
-                  <span className="text-slate-600">의뢰번호</span>
-                  <span className="text-foreground font-medium">
-                    {detail?.requestId || selectedSummary?.requestId || "-"}
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-700">의뢰일:</span>
-                    <span className="text-foreground">
-                      {detail?.createdAt
-                        ? new Date(detail.createdAt).toLocaleString()
-                        : selectedSummary?.createdAt
-                          ? new Date(selectedSummary.createdAt).toLocaleString()
-                          : "-"}
-                    </span>
-                  </div>
-                  {(detail?.timeline?.estimatedCompletion ||
-                    selectedSummary?.estimatedCompletion) && (
-                    <div className="flex items-center gap-2 text-blue-700 font-medium">
-                      <span>도착 예정일:</span>
-                      <span>
-                        {(() => {
-                          const raw =
-                            detail?.timeline?.estimatedCompletion ||
-                            selectedSummary?.estimatedCompletion;
-                          if (!raw) return "-";
-                          const d = new Date(raw);
-                          return d.toLocaleString();
-                        })()}
-                      </span>
-                    </div>
-                  )}
-                  {detail?.deliveryInfoRef?.deliveredAt && (
-                    <div className="flex items-center gap-2 text-green-700 font-medium">
-                      <span>배송 완료일:</span>
-                      <span>
-                        {new Date(
-                          detail.deliveryInfoRef.deliveredAt,
-                        ).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {(() => {
-                  const ci = resolveCurrentCaseInfos();
-                  const maxDiameter = ci?.maxDiameter;
-                  const connectionDiameter = ci?.connectionDiameter;
-                  const implantLabel =
-                    [
-                      ci?.implantManufacturer,
-                      ci?.implantSystem,
-                      ci?.implantType,
-                    ]
-                      .filter(Boolean)
-                      .join(" / ") || "-";
-
-                  return (
-                    <div className="rounded-lg border px-3 py-3 space-y-2 text-sm text-foreground">
-                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-slate-600">치과명</span>
-                        <span className="text-right font-medium text-foreground">
-                          {ci?.clinicName || "-"}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-slate-600">환자명</span>
-                        <span className="text-right font-medium text-foreground">
-                          {ci?.patientName || "-"}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-slate-600">치아번호</span>
-                        <span className="text-right font-medium text-foreground">
-                          {ci?.tooth || "-"}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-slate-600">임플란트</span>
-                        <span className="text-right font-medium whitespace-pre text-foreground">
-                          {implantLabel}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-slate-600">직경</span>
-                        <span className="text-right font-medium text-foreground">
-                          {Number.isFinite(maxDiameter)
-                            ? `${Number(maxDiameter).toFixed(1)} mm`
-                            : "-"}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-[110px_1fr] gap-1 sm:gap-2 items-center">
-                        <span className="text-slate-600">커넥션 직경</span>
-                        <span className="text-right font-medium text-foreground">
-                          {Number.isFinite(connectionDiameter)
-                            ? `${Number(connectionDiameter).toFixed(1)} mm`
-                            : "-"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
-
-      <ConfirmDialog
-        open={false}
-        title=""
-        onConfirm={() => {}}
-        onCancel={() => {}}
+        request={detail || selectedSummary}
       />
     </Card>
   );

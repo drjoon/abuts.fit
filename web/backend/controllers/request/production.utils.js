@@ -397,6 +397,7 @@ export function calculateRiskSummary(requests) {
         dueDate: schedule.estimatedDelivery
           ? new Date(schedule.estimatedDelivery).toLocaleDateString()
           : null,
+        caseInfos: req.caseInfos || null,
         scheduledCamStart: schedule.scheduledCamStart,
         estimatedDelivery: schedule.estimatedDelivery,
       });
@@ -419,6 +420,7 @@ export function calculateRiskSummary(requests) {
         dueDate: schedule.estimatedDelivery
           ? new Date(schedule.estimatedDelivery).toLocaleDateString()
           : null,
+        caseInfos: req.caseInfos || null,
         scheduledCamStart: schedule.scheduledCamStart,
         estimatedDelivery: schedule.estimatedDelivery,
       });
