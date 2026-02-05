@@ -56,6 +56,10 @@ const sidebarItems = {
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
+  salesman: [
+    { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
   manufacturer: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
@@ -97,6 +101,8 @@ const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
       return "의뢰자";
+    case "salesman":
+      return "영업자";
     case "manufacturer":
       return "제조사";
     case "admin":
@@ -110,6 +116,8 @@ const getRoleBadgeVariant = (role: string) => {
   switch (role) {
     case "requestor":
       return "default";
+    case "salesman":
+      return "secondary";
     case "manufacturer":
       return "secondary";
     case "admin":

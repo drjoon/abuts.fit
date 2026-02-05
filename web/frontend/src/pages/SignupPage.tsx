@@ -21,8 +21,15 @@ export const SignupPage = () => {
     password: "",
     confirmPassword: "",
   });
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [signupRole, setSignupRole] = useState<"requestor" | "salesman">(
+    "requestor",
+  );
+  const [refInput, setRefInput] = useState<string>("");
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedMethod, setSelectedMethod] = useState<"email" | null>(null);
+  const [pendingSocialProvider, setPendingSocialProvider] = useState<
+    "google" | "kakao" | null
+  >(null);
   const [emailVerifiedAt, setEmailVerifiedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [emailVerificationSent, setEmailVerificationSent] = useState(false);
@@ -46,11 +53,86 @@ export const SignupPage = () => {
     return ref && ref.trim().length > 0 ? ref.trim() : undefined;
   }, [searchParams]);
 
+  const resolvedRefForSignup = useMemo(() => {
+    const v = String(refInput || "").trim();
+    if (v) return v;
+    return referredByReferralCode;
+  }, [refInput, referredByReferralCode]);
+
+  const oauthStartUrl = useCallback(
+    (provider: "google" | "kakao") => {
+      const qs = new URLSearchParams({
+        intent: "signup",
+        role: signupRole,
+        ...(resolvedRefForSignup ? { ref: resolvedRefForSignup } : {}),
+      });
+      return `/api/auth/oauth/${provider}/start?${qs.toString()}`;
+    },
+    [resolvedRefForSignup, signupRole],
+  );
+
+  const goSocialSignup = useCallback(
+    (provider: "google" | "kakao") => {
+      sessionStorage.setItem("oauthIntent", "signup");
+      sessionStorage.setItem("oauthReturnTo", "/signup");
+      sessionStorage.setItem("oauthSignupRole", signupRole);
+      if (resolvedRefForSignup) {
+        sessionStorage.setItem("oauthSignupRef", resolvedRefForSignup);
+      } else {
+        sessionStorage.removeItem("oauthSignupRef");
+      }
+      window.location.href = oauthStartUrl(provider);
+    },
+    [oauthStartUrl, resolvedRefForSignup, signupRole],
+  );
+
+  useEffect(() => {
+    if (signupRole === "salesman") {
+      setPendingSocialProvider(null);
+      if (wizardStep === 2) setWizardStep(1);
+    }
+  }, [signupRole, wizardStep]);
+
+  useEffect(() => {
+    if (!isSocialNewMode) return;
+    const role = String(searchParams.get("role") || "").trim();
+    if (role === "salesman" || role === "requestor") {
+      setSignupRole(role);
+    }
+  }, [isSocialNewMode, searchParams]);
+
+  const shouldAskReferralInput =
+    signupRole === "requestor" && !referredByReferralCode;
+
+  const shouldShowReferralStepForSocial = signupRole === "requestor";
+
+  useEffect(() => {
+    if (!isWizardMode) return;
+    if (wizardStep !== 2) return;
+    if (pendingSocialProvider) return;
+    if (shouldAskReferralInput) return;
+    setWizardStep(3);
+  }, [isWizardMode, pendingSocialProvider, shouldAskReferralInput, wizardStep]);
+
+  useEffect(() => {
+    if (typeof referredByReferralCode !== "string") return;
+    if (refInput.trim().length > 0) return;
+    setRefInput(referredByReferralCode);
+  }, [referredByReferralCode, refInput]);
+
   const referredByUserId = useMemo(() => {
-    if (!referredByReferralCode) return undefined;
-    const isObjectId = /^[0-9a-fA-F]{24}$/.test(referredByReferralCode);
-    return isObjectId ? referredByReferralCode : undefined;
-  }, [referredByReferralCode]);
+    const v = String(refInput || "").trim();
+    if (!v) return undefined;
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(v);
+    return isObjectId ? v : undefined;
+  }, [refInput]);
+
+  const referredByCode = useMemo(() => {
+    const v = String(refInput || "").trim();
+    if (!v) return undefined;
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(v);
+    return isObjectId ? undefined : v;
+  }, [refInput]);
 
   // LocalStorage에서 폼 데이터 및 이메일 인증 정보 복구
   useEffect(() => {
@@ -227,7 +309,7 @@ export const SignupPage = () => {
         setEmailVerifiedAt(verifiedAt);
         localStorage.setItem(
           "signupEmailVerified",
-          JSON.stringify({ email, verifiedAt })
+          JSON.stringify({ email, verifiedAt }),
         );
         toast({
           title: "이메일 인증 완료",
@@ -243,7 +325,7 @@ export const SignupPage = () => {
         setIsLoading(false);
       }
     },
-    [formData.email, toast]
+    [formData.email, toast],
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -284,8 +366,13 @@ export const SignupPage = () => {
             name: formData.name,
             email: formData.email,
             password: Math.random().toString(36).slice(-12),
+            role: signupRole,
             socialProvider: socialInfo.provider,
             socialProviderUserId: socialInfo.providerUserId,
+            ...(referredByUserId ? { referredByUserId } : {}),
+            ...(referredByCode
+              ? { referredByReferralCode: referredByCode }
+              : {}),
           },
         });
 
@@ -349,12 +436,13 @@ export const SignupPage = () => {
         name: formData.name,
         email: formData.email,
         password: formData.password,
+        role: signupRole,
       };
 
       if (referredByUserId) {
         payload.referredByUserId = referredByUserId;
-      } else if (referredByReferralCode) {
-        payload.referredByReferralCode = referredByReferralCode;
+      } else if (referredByCode) {
+        payload.referredByReferralCode = referredByCode;
       }
 
       const res = await request<any>({
@@ -411,22 +499,119 @@ export const SignupPage = () => {
               {isWizardMode ? (
                 <>
                   {wizardStep === 1 && (
-                    <SignupWizardStep1
-                      onEmailClick={() => {
-                        setSelectedMethod("email");
-                        setWizardStep(2);
-                      }}
-                    />
+                    <div className="space-y-6">
+                      <div className="space-y-3">
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">가입 유형</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSignupRole("requestor")}
+                              className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                                signupRole === "requestor"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background hover:bg-muted"
+                              }`}
+                            >
+                              의뢰자
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSignupRole("salesman")}
+                              className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                                signupRole === "salesman"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background hover:bg-muted"
+                              }`}
+                            >
+                              영업자
+                            </button>
+                          </div>
+                          {signupRole === "requestor" && (
+                            <p className="text-xs text-muted-foreground">
+                              의뢰자 : 치과기공소 혹은 치과내 기공실
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <SignupWizardStep1
+                        googleUrl={oauthStartUrl("google")}
+                        kakaoUrl={oauthStartUrl("kakao")}
+                        onGoogleClick={() => {
+                          setSelectedMethod(null);
+                          if (shouldShowReferralStepForSocial) {
+                            setPendingSocialProvider("google");
+                            setWizardStep(2);
+                            return;
+                          }
+                          goSocialSignup("google");
+                        }}
+                        onKakaoClick={() => {
+                          setSelectedMethod(null);
+                          if (shouldShowReferralStepForSocial) {
+                            setPendingSocialProvider("kakao");
+                            setWizardStep(2);
+                            return;
+                          }
+                          goSocialSignup("kakao");
+                        }}
+                        onEmailClick={() => {
+                          setSelectedMethod("email");
+                          setPendingSocialProvider(null);
+                          if (shouldAskReferralInput) {
+                            setWizardStep(2);
+                            return;
+                          }
+                          setWizardStep(3);
+                        }}
+                      />
+                    </div>
                   )}
 
                   {wizardStep === 2 && (
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">
+                          추천인 코드/ID (선택)
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          영업자 소개로 가입하는 경우 입력하면 소개 가입
+                          크레딧이 지급될 수 있어요.
+                        </p>
+                      </div>
+
+                      <input
+                        value={refInput}
+                        onChange={(e) => setRefInput(e.target.value)}
+                        placeholder="추천인 코드 또는 사용자 ID"
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      />
+
+                      {pendingSocialProvider && (
+                        <button
+                          type="button"
+                          className="h-10 w-full rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+                          onClick={() => goSocialSignup(pendingSocialProvider)}
+                        >
+                          {pendingSocialProvider === "google"
+                            ? "Google로 계속"
+                            : "카카오로 계속"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {wizardStep === 3 && (
                     <SignupWizardStep2
                       formData={formData}
                       isLoading={isLoading}
                       emailVerifiedAt={emailVerifiedAt}
                       emailVerificationSent={emailVerificationSent}
                       onFormChange={handleChange}
-                      onPrevious={() => setWizardStep(1)}
+                      onPrevious={() =>
+                        setWizardStep(shouldAskReferralInput ? 2 : 1)
+                      }
                       onSendEmailVerification={sendEmailVerification}
                       onVerifyEmailVerification={verifyEmailVerification}
                       onNext={() =>
@@ -437,7 +622,7 @@ export const SignupPage = () => {
                     />
                   )}
 
-                  {wizardStep === 3 && (
+                  {wizardStep === 4 && (
                     <SignupWizardStep4
                       onNavigate={() =>
                         navigate("/dashboard", { replace: true })
@@ -447,19 +632,66 @@ export const SignupPage = () => {
                 </>
               ) : (
                 <>
-                  {wizardStep === 1 && (
+                  {isSocialNewMode &&
+                    wizardStep === 1 &&
+                    signupRole === "requestor" && (
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">
+                            추천인 코드/ID (선택)
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            영업자 소개로 가입하는 경우 입력하면 소개 가입
+                            크레딧이 지급될 수 있어요.
+                          </p>
+                        </div>
+
+                        <input
+                          value={refInput}
+                          onChange={(e) => setRefInput(e.target.value)}
+                          placeholder="추천인 코드 또는 사용자 ID"
+                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        />
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            className="h-10 flex-1 rounded-md border bg-background text-sm font-medium hover:bg-muted"
+                            onClick={() => navigate("/login")}
+                          >
+                            취소
+                          </button>
+                          <button
+                            type="button"
+                            className="h-10 flex-1 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+                            onClick={() => setWizardStep(2)}
+                          >
+                            다음
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                  {wizardStep ===
+                    (isSocialNewMode && signupRole === "requestor" ? 2 : 1) && (
                     <SignupSocialWizardStep1
                       formData={formData}
                       socialInfo={socialInfo}
                       isLoading={isLoading}
                       onFormChange={handleChange}
-                      onPrevious={() => navigate("/login")}
-                      onNext={() => setWizardStep(2)}
+                      onPrevious={() => {
+                        if (isSocialNewMode && signupRole === "requestor") {
+                          setWizardStep(1);
+                          return;
+                        }
+                        navigate("/login");
+                      }}
+                      onNext={() => setWizardStep(3)}
                       toast={toast}
                     />
                   )}
 
-                  {wizardStep === 2 && (
+                  {wizardStep === 3 && (
                     <SignupSocialWizardStep2
                       formData={formData}
                       socialInfo={socialInfo}
@@ -469,14 +701,18 @@ export const SignupPage = () => {
                       onFormChange={handleChange}
                       onSendEmailVerification={sendEmailVerification}
                       onVerifyEmailVerification={verifyEmailVerification}
-                      onPrevious={() => setWizardStep(1)}
+                      onPrevious={() =>
+                        setWizardStep(
+                          isSocialNewMode && signupRole === "requestor" ? 2 : 1,
+                        )
+                      }
                       onSubmit={() => {
                         handleSubmit({ preventDefault: () => {} } as any);
                       }}
                     />
                   )}
 
-                  {wizardStep === 3 && (
+                  {wizardStep === 4 && (
                     <SignupSocialWizardStep4
                       onNavigate={() => {
                         navigate("/dashboard", { replace: true });

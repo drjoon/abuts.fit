@@ -119,7 +119,7 @@ const RoleProtectedRoute = ({
   roles,
   children,
 }: {
-  roles: ("requestor" | "manufacturer" | "admin")[];
+  roles: ("requestor" | "manufacturer" | "admin" | "salesman")[];
   children: React.ReactNode;
 }) => {
   const { isAuthenticated, user } = useAuthStore();

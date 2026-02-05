@@ -5,7 +5,7 @@ import RequestorOrganization from "../models/requestorOrganization.model.js";
 
 function getFrontendBaseUrl(req) {
   const configured = String(
-    process.env.OAUTH_FRONTEND_URL || process.env.FRONTEND_PUBLIC_URL || ""
+    process.env.OAUTH_FRONTEND_URL || process.env.FRONTEND_PUBLIC_URL || "",
   ).trim();
   if (configured) return configured;
 
@@ -47,6 +47,26 @@ function redirectToFrontend(req, res, params) {
 
 function createReferralCode() {
   return crypto.randomBytes(9).toString("base64url");
+}
+
+function encodeOAuthState(input) {
+  try {
+    const json = JSON.stringify(input || {});
+    return Buffer.from(json, "utf8").toString("base64url");
+  } catch {
+    return "";
+  }
+}
+
+function decodeOAuthState(raw) {
+  try {
+    const s = String(raw || "").trim();
+    if (!s) return null;
+    const json = Buffer.from(s, "base64url").toString("utf8");
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
 }
 
 async function ensureUniqueReferralCode() {
@@ -137,7 +157,7 @@ async function findOrCreateUserFromSocial({
   if (user) return user;
 
   user = await User.findOne({ email: normalizedEmail, active: true }).select(
-    "-password"
+    "-password",
   );
   if (user) return user;
 
@@ -166,7 +186,7 @@ async function findOrCreateUserFromSocial({
         .toLowerCase() === normalizedEmail
     ) {
       const tombstoneEmail = `deleted+${String(
-        inactive._id
+        inactive._id,
       )}.${Date.now()}@abuts.fit`;
       await User.updateOne(
         { _id: inactive._id, email: inactive.email },
@@ -175,7 +195,7 @@ async function findOrCreateUserFromSocial({
             email: tombstoneEmail,
             originalEmail: prevOriginalEmail || null,
           },
-        }
+        },
       );
     }
 
@@ -202,7 +222,7 @@ async function findOrCreateUserFromSocial({
     await newUser.save();
     await User.updateOne(
       { _id: inactive._id },
-      { $set: { replacedByUserId: newUser._id } }
+      { $set: { replacedByUserId: newUser._id } },
     );
 
     user = await User.findById(newUser._id).select("-password");
@@ -242,6 +262,14 @@ async function googleStart(req, res) {
     });
   }
 
+  const intent = String(req.query.intent || "").trim();
+  const role = String(req.query.role || "").trim();
+  const ref = String(req.query.ref || "").trim();
+  const state =
+    intent === "signup"
+      ? encodeOAuthState({ intent: "signup", role, ref })
+      : "";
+
   const backendBase = getBackendBaseUrl(req);
   const redirectUri = `${backendBase}/api/auth/oauth/google/callback`;
 
@@ -250,6 +278,10 @@ async function googleStart(req, res) {
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
+  if (state) url.searchParams.set("state", state);
+  if (intent === "signup") {
+    url.searchParams.set("prompt", "select_account");
+  }
 
   return res.redirect(url.toString());
 }
@@ -273,6 +305,11 @@ async function googleCallback(req, res) {
         provider: "google",
       });
     }
+
+    const oauthState = decodeOAuthState(req.query.state);
+    const isSignupIntent = oauthState?.intent === "signup";
+    const intentRole = String(oauthState?.role || "").trim();
+    const intentRef = String(oauthState?.ref || "").trim();
 
     const backendBase = getBackendBaseUrl(req);
     const redirectUri = `${backendBase}/api/auth/oauth/google/callback`;
@@ -304,7 +341,7 @@ async function googleCallback(req, res) {
       {
         method: "GET",
         headers: { Authorization: `Bearer ${accessToken}` },
-      }
+      },
     );
 
     const profile = await profileRes.json().catch(() => null);
@@ -334,6 +371,13 @@ async function googleCallback(req, res) {
 
     // 기존 계정이 있으면 로그인
     if (existingUser) {
+      if (isSignupIntent) {
+        return redirectToFrontend(req, res, {
+          error: "이미 가입된 소셜 계정입니다. 로그인해주세요.",
+          provider: "google",
+        });
+      }
+
       const token = generateToken({
         userId: existingUser._id,
         role: existingUser.role,
@@ -362,6 +406,8 @@ async function googleCallback(req, res) {
       socialToken: socialInfoToken,
       provider: "google",
       needsSignup: "1",
+      ...(intentRole ? { role: intentRole } : {}),
+      ...(intentRef ? { ref: intentRef } : {}),
     });
   } catch (error) {
     return redirectToFrontend(req, res, {
@@ -380,6 +426,14 @@ async function kakaoStart(req, res) {
     });
   }
 
+  const intent = String(req.query.intent || "").trim();
+  const role = String(req.query.role || "").trim();
+  const ref = String(req.query.ref || "").trim();
+  const state =
+    intent === "signup"
+      ? encodeOAuthState({ intent: "signup", role, ref })
+      : "";
+
   const backendBase = getBackendBaseUrl(req);
   const redirectUri = `${backendBase}/api/auth/oauth/kakao/callback`;
 
@@ -388,6 +442,10 @@ async function kakaoStart(req, res) {
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "account_email profile_nickname");
+  if (state) url.searchParams.set("state", state);
+  if (intent === "signup") {
+    url.searchParams.set("prompt", "login");
+  }
 
   return res.redirect(url.toString());
 }
@@ -411,6 +469,11 @@ async function kakaoCallback(req, res) {
         provider: "kakao",
       });
     }
+
+    const oauthState = decodeOAuthState(req.query.state);
+    const isSignupIntent = oauthState?.intent === "signup";
+    const intentRole = String(oauthState?.role || "").trim();
+    const intentRef = String(oauthState?.ref || "").trim();
 
     const backendBase = getBackendBaseUrl(req);
     const redirectUri = `${backendBase}/api/auth/oauth/kakao/callback`;
@@ -480,6 +543,13 @@ async function kakaoCallback(req, res) {
 
     // 기존 계정이 있으면 로그인
     if (existingUser) {
+      if (isSignupIntent) {
+        return redirectToFrontend(req, res, {
+          error: "이미 가입된 소셜 계정입니다. 로그인해주세요.",
+          provider: "kakao",
+        });
+      }
+
       const token = generateToken({
         userId: existingUser._id,
         role: existingUser.role,
@@ -508,6 +578,8 @@ async function kakaoCallback(req, res) {
       socialToken: socialInfoToken,
       provider: "kakao",
       needsSignup: "1",
+      ...(intentRole ? { role: intentRole } : {}),
+      ...(intentRef ? { ref: intentRef } : {}),
     });
   } catch (error) {
     return redirectToFrontend(req, res, {

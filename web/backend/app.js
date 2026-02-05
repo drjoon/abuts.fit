@@ -221,6 +221,7 @@ import chatRoutes from "./routes/chat.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import manufacturerRoutes from "./routes/manufacturer.routes.js";
 import cncMachineRoutes from "./routes/cncMachine.routes.js";
+import salesmanRoutes from "./routes/salesman.routes.js";
 
 // 라우트 설정
 app.use("/api/auth", authRoutes);
@@ -247,6 +248,7 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/manufacturer", manufacturerRoutes);
 app.use("/api/cnc-machines", cncMachineRoutes);
+app.use("/api/salesman", salesmanRoutes);
 // 호환: 프런트에서 /api/cnc/machines/... 로 호출하는 경우도 지원
 app.use("/api/cnc/machines", cncMachineRoutes);
 

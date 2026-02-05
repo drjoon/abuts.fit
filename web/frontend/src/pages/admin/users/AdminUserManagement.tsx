@@ -45,6 +45,8 @@ const getRoleLabel = (role: string) => {
       return "제조사";
     case "admin":
       return "어벗츠.핏";
+    case "salesman":
+      return "영업자";
     default:
       return "사용자";
   }
@@ -54,6 +56,8 @@ const getRoleBadgeVariant = (role: string) => {
   switch (role) {
     case "requestor":
       return "default";
+    case "salesman":
+      return "secondary";
     case "manufacturer":
       return "secondary";
     case "admin":
@@ -111,8 +115,8 @@ const toUiUser = (u: ApiUser): UiUserRow => {
   const status: UiUserStatus = !active
     ? "inactive"
     : !approved
-    ? "pending"
-    : "active";
+      ? "pending"
+      : "active";
   const email = String(u.email || "");
   const originalEmail = String(u.originalEmail || "");
   return {
@@ -217,7 +221,7 @@ export const AdminUserManagement = () => {
         setLoadingDetail(false);
       }
     },
-    [token]
+    [token],
   );
 
   useEffect(() => {
@@ -248,7 +252,7 @@ export const AdminUserManagement = () => {
   const handleUserAction = (
     action: string,
     userId: string,
-    userName: string
+    userName: string,
   ) => {
     if (action === "상세보기") {
       void fetchUserDetail(userId);
@@ -262,10 +266,11 @@ export const AdminUserManagement = () => {
 
   const totalUsers = sourceUsers.length;
   const totalRequestor = sourceUsers.filter(
-    (u) => u.role === "requestor"
+    (u) => u.role === "requestor",
   ).length;
+  const totalSalesman = sourceUsers.filter((u) => u.role === "salesman").length;
   const totalManufacturer = sourceUsers.filter(
-    (u) => u.role === "manufacturer"
+    (u) => u.role === "manufacturer",
   ).length;
   const totalPending = sourceUsers.filter((u) => u.status === "pending").length;
 
@@ -299,6 +304,13 @@ export const AdminUserManagement = () => {
                 size="sm"
               >
                 의뢰자
+              </Button>
+              <Button
+                variant={selectedRole === "salesman" ? "default" : "outline"}
+                onClick={() => setSelectedRole("salesman")}
+                size="sm"
+              >
+                영업자
               </Button>
               <Button
                 variant={

@@ -5,7 +5,7 @@ const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
 const AUTH_USER_KEY = "abuts_auth_user";
 
-export type UserRole = "requestor" | "manufacturer" | "admin";
+export type UserRole = "requestor" | "manufacturer" | "admin" | "salesman";
 
 export interface User {
   id: string;
@@ -128,7 +128,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<boolean>;
   loginWithToken: (
     token: string,
-    refreshToken?: string | null
+    refreshToken?: string | null,
   ) => Promise<boolean>;
   logout: () => void;
 }
@@ -171,12 +171,12 @@ export const useAuthStore = create<AuthState>((set, get) => {
           sessionStorage.setItem("abuts_mock_name", mockUser.name);
           sessionStorage.setItem(
             "abuts_mock_organization",
-            mockUser.companyName || ""
+            mockUser.companyName || "",
           );
           sessionStorage.setItem("abuts_mock_phone", "");
           sessionStorage.setItem(
             "abuts_mock_user_id",
-            mockUser.mockUserId || ""
+            mockUser.mockUserId || "",
           );
         } catch {
           // ignore

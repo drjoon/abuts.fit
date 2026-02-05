@@ -7,6 +7,7 @@ import BonusGrant from "../../models/bonusGrant.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
 
 const WELCOME_BONUS_AMOUNT = 30000;
+const SALESMAN_REFERRAL_BONUS_AMOUNT = 50000;
 
 function normalizeBusinessNumberDigits(input) {
   const digits = String(input || "").replace(/\D/g, "");
@@ -34,7 +35,7 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
   if (!org) return null;
 
   const businessNumber = normalizeBusinessNumberDigits(
-    org?.extracted?.businessNumber
+    org?.extracted?.businessNumber,
   );
   if (!businessNumber) return null;
 
@@ -91,7 +92,7 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
         uniqueKey,
       },
     },
-    { upsert: true }
+    { upsert: true },
   );
 
   if (!result?.upsertedCount) return null;
@@ -102,10 +103,50 @@ async function grantWelcomeBonusIfEligible({ organizationId, userId }) {
 
   await BonusGrant.updateOne(
     { _id: grant._id },
-    { $set: { creditLedgerId: ledgerDoc?._id || null } }
+    { $set: { creditLedgerId: ledgerDoc?._id || null } },
   );
 
   return WELCOME_BONUS_AMOUNT;
+}
+
+async function grantSalesmanReferralBonusIfEligible({
+  organizationId,
+  userId,
+}) {
+  if (!organizationId) return null;
+  if (!userId) return null;
+
+  const user = await User.findById(userId)
+    .select({ referredByUserId: 1 })
+    .lean();
+  const referrerId = user?.referredByUserId;
+  if (!referrerId) return null;
+
+  const referrer = await User.findById(referrerId)
+    .select({ role: 1, active: 1 })
+    .lean();
+  if (!referrer || referrer.active === false) return null;
+  if (referrer.role !== "salesman") return null;
+
+  const uniqueKey = `salesman_referral_bonus:org:${String(organizationId)}`;
+  const result = await CreditLedger.updateOne(
+    { uniqueKey },
+    {
+      $setOnInsert: {
+        organizationId,
+        userId,
+        type: "BONUS",
+        amount: SALESMAN_REFERRAL_BONUS_AMOUNT,
+        refType: "SALESMAN_REFERRAL_BONUS",
+        refId: organizationId,
+        uniqueKey,
+      },
+    },
+    { upsert: true },
+  );
+
+  if (!result?.upsertedCount) return null;
+  return SALESMAN_REFERRAL_BONUS_AMOUNT;
 }
 
 export async function getMyOrganization(req, res) {
@@ -298,7 +339,7 @@ export async function getMyOrganization(req, res) {
     } else if (
       Array.isArray(org.joinRequests) &&
       org.joinRequests.some(
-        (r) => String(r?.user) === meId && String(r?.status) === "pending"
+        (r) => String(r?.user) === meId && String(r?.status) === "pending",
       )
     ) {
       membership = "pending";
@@ -498,7 +539,7 @@ export async function updateMyOrganization(req, res) {
     const startDateProvided = hasOwn(req.body, "startDate");
 
     const representativeName = String(
-      req.body?.representativeName || ""
+      req.body?.representativeName || "",
     ).trim();
     const businessItem = String(req.body?.businessItem || "").trim();
     const phoneNumberRaw = String(req.body?.phoneNumber || "").trim();
@@ -683,10 +724,15 @@ export async function updateMyOrganization(req, res) {
               organization: created.name,
             },
           },
-          { new: true }
+          { new: true },
         );
 
         const granted = await grantWelcomeBonusIfEligible({
+          organizationId: created._id,
+          userId: req.user._id,
+        });
+
+        const salesmanGranted = await grantSalesmanReferralBonusIfEligible({
           organizationId: created._id,
           userId: req.user._id,
         });
@@ -698,6 +744,8 @@ export async function updateMyOrganization(req, res) {
             organizationId: created._id,
             welcomeBonusGranted: Boolean(granted),
             welcomeBonusAmount: granted || 0,
+            salesmanReferralBonusGranted: Boolean(salesmanGranted),
+            salesmanReferralBonusAmount: salesmanGranted || 0,
             verification: verificationResult
               ? {
                   verified: !!verificationResult.verified,
@@ -767,7 +815,7 @@ export async function updateMyOrganization(req, res) {
     if (nextName && String(req.user.organization || "") !== nextName) {
       await User.updateMany(
         { organizationId: org._id },
-        { $set: { organization: nextName } }
+        { $set: { organization: nextName } },
       );
     }
 
@@ -867,7 +915,7 @@ export async function clearMyBusinessLicense(req, res) {
 
     await User.updateMany(
       { organizationId: org._id },
-      { $set: { organizationId: null, organization: "" } }
+      { $set: { organizationId: null, organization: "" } },
     );
     await RequestorOrganization.findByIdAndDelete(org._id);
 
@@ -883,7 +931,7 @@ export async function clearMyBusinessLicense(req, res) {
         organizationId: req.user?.organizationId,
         message: error?.message,
       },
-      error
+      error,
     );
     return res.status(500).json({
       success: false,

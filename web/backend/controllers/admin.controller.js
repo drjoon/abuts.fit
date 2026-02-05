@@ -1049,7 +1049,7 @@ async function changeUserRole(req, res) {
     }
 
     // 역할 유효성 검사
-    const validRoles = ["requestor", "manufacturer", "admin"];
+    const validRoles = ["requestor", "manufacturer", "admin", "salesman"];
     if (!validRoles.includes(role)) {
       return res.status(400).json({
         success: false,

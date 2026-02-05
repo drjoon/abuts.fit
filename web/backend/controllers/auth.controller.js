@@ -343,10 +343,10 @@ async function register(req, res) {
         });
       }
 
-      if (refUser.role !== "requestor") {
+      if (refUser.role !== "requestor" && refUser.role !== "salesman") {
         return res.status(400).json({
           success: false,
-          message: "추천인은 의뢰자 계정만 가능합니다.",
+          message: "추천인은 의뢰자 또는 영업자 계정만 가능합니다.",
         });
       }
 
@@ -371,10 +371,10 @@ async function register(req, res) {
         });
       }
 
-      if (refUser.role !== "requestor") {
+      if (refUser.role !== "requestor" && refUser.role !== "salesman") {
         return res.status(400).json({
           success: false,
-          message: "추천인은 의뢰자 계정만 가능합니다.",
+          message: "추천인은 의뢰자 또는 영업자 계정만 가능합니다.",
         });
       }
 
@@ -384,6 +384,18 @@ async function register(req, res) {
     const referralCode = await ensureUniqueReferralCode();
 
     const normalizedRole = role || "requestor";
+
+    if (
+      normalizedRole !== "requestor" &&
+      normalizedRole !== "manufacturer" &&
+      normalizedRole !== "admin" &&
+      normalizedRole !== "salesman"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 역할입니다.",
+      });
+    }
 
     if (normalizedRole === "requestor") {
       if (!socialProvider) {

@@ -18,6 +18,13 @@ export const OAuthCallbackPage = () => {
       const refreshToken = searchParams.get("refreshToken");
       const socialToken = searchParams.get("socialToken");
       const needsSignup = searchParams.get("needsSignup");
+      const signupRole = searchParams.get("role");
+      const ref = searchParams.get("ref");
+
+      const oauthIntent = sessionStorage.getItem("oauthIntent");
+      const oauthReturnTo = sessionStorage.getItem("oauthReturnTo");
+      const oauthSignupRole = sessionStorage.getItem("oauthSignupRole");
+      const oauthSignupRef = sessionStorage.getItem("oauthSignupRef");
 
       if (error) {
         toast({
@@ -25,6 +32,20 @@ export const OAuthCallbackPage = () => {
           description: error,
           variant: "destructive",
         });
+
+        if (oauthIntent === "signup") {
+          const qs = new URLSearchParams();
+          if (oauthSignupRole) qs.set("role", oauthSignupRole);
+          if (oauthSignupRef) qs.set("ref", oauthSignupRef);
+          const target = oauthReturnTo || "/signup";
+          sessionStorage.removeItem("oauthIntent");
+          sessionStorage.removeItem("oauthReturnTo");
+          sessionStorage.removeItem("oauthSignupRole");
+          sessionStorage.removeItem("oauthSignupRef");
+          navigate(`${target}?${qs.toString()}`, { replace: true });
+          return;
+        }
+
         navigate("/login", { replace: true });
         return;
       }
@@ -32,7 +53,11 @@ export const OAuthCallbackPage = () => {
       // 신규 소셜 사용자: socialToken만 있고 token이 없음
       if (socialToken && !token) {
         sessionStorage.setItem("socialToken", socialToken);
-        navigate("/signup?mode=social_new", { replace: true });
+        const qs = new URLSearchParams();
+        qs.set("mode", "social_new");
+        if (signupRole) qs.set("role", signupRole);
+        if (ref) qs.set("ref", ref);
+        navigate(`/signup?${qs.toString()}`, { replace: true });
         return;
       }
 

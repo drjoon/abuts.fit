@@ -61,6 +61,7 @@ export const authenticate = async (req, res, next) => {
         requestor: "000000000000000000000001",
         manufacturer: "000000000000000000000002",
         admin: "000000000000000000000003",
+        salesman: "000000000000000000000004",
       };
 
       const headerId = String(mockUserIdRaw || "").trim();

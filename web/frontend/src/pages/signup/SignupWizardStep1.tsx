@@ -3,9 +3,19 @@ import { useNavigate } from "react-router-dom";
 
 interface SignupWizardStep1Props {
   onEmailClick: () => void;
+  googleUrl?: string;
+  kakaoUrl?: string;
+  onGoogleClick?: () => void;
+  onKakaoClick?: () => void;
 }
 
-export const SignupWizardStep1 = ({ onEmailClick }: SignupWizardStep1Props) => {
+export const SignupWizardStep1 = ({
+  onEmailClick,
+  googleUrl = "/api/auth/oauth/google/start",
+  kakaoUrl = "/api/auth/oauth/kakao/start",
+  onGoogleClick,
+  onKakaoClick,
+}: SignupWizardStep1Props) => {
   const navigate = useNavigate();
 
   return (
@@ -22,7 +32,8 @@ export const SignupWizardStep1 = ({ onEmailClick }: SignupWizardStep1Props) => {
           type="button"
           className="h-14 flex flex-col items-center justify-center gap-2 px-2"
           onClick={() => {
-            window.location.href = "/api/auth/oauth/google/start";
+            if (onGoogleClick) return onGoogleClick();
+            window.location.href = googleUrl;
           }}
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">
@@ -51,7 +62,8 @@ export const SignupWizardStep1 = ({ onEmailClick }: SignupWizardStep1Props) => {
           type="button"
           className="h-14 flex flex-col items-center justify-center gap-2 px-2"
           onClick={() => {
-            window.location.href = "/api/auth/oauth/kakao/start";
+            if (onKakaoClick) return onKakaoClick();
+            window.location.href = kakaoUrl;
           }}
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">
