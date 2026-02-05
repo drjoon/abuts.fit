@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import SignupVerification from "../models/signupVerification.model.js";
 import User from "../models/user.model.js";
+import { sendEmail } from "../utils/email.util.js";
 
 const normalizeEmail = (email) =>
   String(email || "")
@@ -14,8 +14,6 @@ const nowMs = () => Date.now();
 
 const sha256 = (value) =>
   crypto.createHash("sha256").update(value).digest("hex");
-
-let sesClient = null;
 
 const ensureVerificationDoc = async ({ channel, target }) => {
   try {
@@ -40,13 +38,13 @@ const ensureVerificationDoc = async ({ channel, target }) => {
     });
     console.log(
       "[ensureVerificationDoc] updateOps:",
-      JSON.stringify(updateOps)
+      JSON.stringify(updateOps),
     );
 
     const doc = await SignupVerification.findOneAndUpdate(
       { purpose: "signup", channel, target },
       updateOps,
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, new: true, setDefaultsOnInsert: true },
     ).lean();
 
     console.log("[ensureVerificationDoc] result:", doc);
@@ -57,6 +55,7 @@ const ensureVerificationDoc = async ({ channel, target }) => {
   }
 };
 
+const MAX_DAILY_VERIFICATION_EMAILS = 3;
 const canSend = ({ existing, now, channel }) => {
   const todayKey = new Date(now).toISOString().slice(0, 10);
   const prevDailyKey = String(existing?.dailySendDate || "");
@@ -67,6 +66,14 @@ const canSend = ({ existing, now, channel }) => {
       : 0;
 
   const nextDailyCount = prevDailyKey === todayKey ? prevDailyCount : 0;
+
+  if (nextDailyCount >= MAX_DAILY_VERIFICATION_EMAILS) {
+    return {
+      ok: false,
+      status: 429,
+      message: `하루 ${MAX_DAILY_VERIFICATION_EMAILS}회까지만 인증 메일을 받을 수 있습니다.`,
+    };
+  }
 
   const lastSentAt = existing?.sentAt ? new Date(existing.sentAt).getTime() : 0;
   if (lastSentAt && now - lastSentAt < 30_000) {
@@ -83,13 +90,13 @@ const getSesClient = () => {
     String(process.env.AWS_REGION || "").trim() || "ap-northeast-2";
   const accessKeyId = String(process.env.AWS_ACCESS_KEY_ID || "").trim();
   const secretAccessKey = String(
-    process.env.AWS_SECRET_ACCESS_KEY || ""
+    process.env.AWS_SECRET_ACCESS_KEY || "",
   ).trim();
   const sessionToken = String(process.env.AWS_SESSION_TOKEN || "").trim();
 
   if ((accessKeyId && !secretAccessKey) || (!accessKeyId && secretAccessKey)) {
     throw new Error(
-      "SES 설정이 불완전합니다. AWS_ACCESS_KEY_ID와 AWS_SECRET_ACCESS_KEY를 모두 설정하거나 모두 비워주세요."
+      "SES 설정이 불완전합니다. AWS_ACCESS_KEY_ID와 AWS_SECRET_ACCESS_KEY를 모두 설정하거나 모두 비워주세요.",
     );
   }
 
@@ -132,7 +139,7 @@ const updateSendState = async ({
         consumedAt: null,
         consumedByUserId: null,
       },
-    }
+    },
   );
 };
 
@@ -168,7 +175,7 @@ export async function sendSignupEmailVerification(req, res) {
 
     const verificationCode = String(Math.floor(Math.random() * 10000)).padStart(
       4,
-      "0"
+      "0",
     );
     const expiresAt = new Date(now + 10 * 60 * 1000);
     const sentAt = new Date(now);
@@ -193,42 +200,18 @@ export async function sendSignupEmailVerification(req, res) {
     `;
 
     try {
-      const fromAddress = String(
-        process.env.SES_FROM_EMAIL || process.env.SES_FROM || ""
-      ).trim();
-      if (!fromAddress) {
-        return res.status(500).json({
-          success: false,
-          message:
-            "SES 발신자(SER_FROM_EMAIL 또는 SES_FROM)가 설정되지 않았습니다.",
-        });
-      }
-
-      const client = getSesClient();
-      const command = new SendEmailCommand({
-        FromEmailAddress: fromAddress,
-        Destination: { ToAddresses: [email] },
-        Content: {
-          Simple: {
-            Subject: { Data: subject, Charset: "UTF-8" },
-            Body: {
-              Html: { Data: html, Charset: "UTF-8" },
-              Text: {
-                Data: `인증 코드: ${verificationCode}\n10분 안에 입력해주세요.`,
-                Charset: "UTF-8",
-              },
-            },
-          },
-        },
+      await sendEmail({
+        to: email,
+        subject,
+        html,
+        text: `인증 코드: ${verificationCode}\n10분 안에 입력해주세요.`,
       });
-
-      await client.send(command);
       console.log("[email-sent] signup verification", {
         email,
         verificationCode,
       });
     } catch (error) {
-      console.error("[sendSignupEmailVerification] SES send failed", error);
+      console.error("[sendSignupEmailVerification] send failed", error);
       return res.status(500).json({
         success: false,
         message: "이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.",
@@ -307,7 +290,7 @@ export async function verifySignupEmailVerification(req, res) {
     if (codeHash !== doc.codeHash) {
       await SignupVerification.updateOne(
         { _id: doc._id },
-        { $set: { attempts: attempts + 1 } }
+        { $set: { attempts: attempts + 1 } },
       );
 
       const remainingAttempts = 5 - (attempts + 1);
@@ -330,7 +313,7 @@ export async function verifySignupEmailVerification(req, res) {
           consumedAt: null,
           consumedByUserId: null,
         },
-      }
+      },
     );
 
     return res.status(200).json({ success: true, data: { verifiedAt } });
@@ -358,7 +341,7 @@ export async function consumeSignupVerifications({ email, userId }) {
         consumedAt: now,
         consumedByUserId: userId,
       },
-    }
+    },
   );
 }
 
