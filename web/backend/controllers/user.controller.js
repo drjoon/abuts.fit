@@ -121,7 +121,7 @@ async function sendPhoneVerification(req, res) {
           },
         },
       },
-      { new: false }
+      { new: false },
     );
 
     if (isProd) {
@@ -167,7 +167,7 @@ async function sendPhoneVerification(req, res) {
               },
             },
           },
-          { new: false }
+          { new: false },
         );
 
         return res.status(500).json({
@@ -253,7 +253,7 @@ async function verifyPhoneVerification(req, res) {
       await User.findByIdAndUpdate(
         userId,
         { $set: { "phoneVerification.attempts": attempts + 1 } },
-        { new: false }
+        { new: false },
       );
       return res.status(400).json({
         success: false,
@@ -263,7 +263,7 @@ async function verifyPhoneVerification(req, res) {
 
     const verifiedAt = new Date(now);
     const nextPhone = String(
-      pv.pendingPhoneNumber || user.phoneNumber || ""
+      pv.pendingPhoneNumber || user.phoneNumber || "",
     ).trim();
 
     await User.findByIdAndUpdate(
@@ -287,7 +287,7 @@ async function verifyPhoneVerification(req, res) {
           },
         },
       },
-      { new: false }
+      { new: false },
     );
 
     return res.status(200).json({
@@ -317,6 +317,45 @@ async function updateProfile(req, res) {
     delete updateData.createdAt;
     delete updateData.updatedAt;
     delete updateData.organizationId;
+
+    if (
+      Object.prototype.hasOwnProperty.call(updateData, "salesmanPayoutAccount")
+    ) {
+      const role = String(req.user?.role || "");
+      if (role !== "salesman") {
+        delete updateData.salesmanPayoutAccount;
+      } else {
+        const raw = updateData.salesmanPayoutAccount;
+        const bankName = String(raw?.bankName || "").trim();
+        const holderName = String(raw?.holderName || "").trim();
+        const accountNumberRaw = String(raw?.accountNumber || "").trim();
+        const accountNumber = accountNumberRaw.replace(/\s/g, "");
+
+        const allEmpty = !bankName && !holderName && !accountNumber;
+        if (allEmpty) {
+          updateData.salesmanPayoutAccount = {
+            bankName: "",
+            accountNumber: "",
+            holderName: "",
+            updatedAt: null,
+          };
+        } else {
+          if (!bankName || !holderName || !accountNumber) {
+            return res.status(400).json({
+              success: false,
+              message: "계좌 정보(은행/계좌번호/예금주)를 모두 입력해주세요.",
+            });
+          }
+
+          updateData.salesmanPayoutAccount = {
+            bankName,
+            accountNumber,
+            holderName,
+            updatedAt: new Date(),
+          };
+        }
+      }
+    }
 
     if (Object.prototype.hasOwnProperty.call(updateData, "phoneNumber")) {
       const nextPhone = String(updateData.phoneNumber || "").trim();
@@ -384,7 +423,7 @@ async function updateProfile(req, res) {
 
           await User.updateMany(
             { organizationId: org._id },
-            { $set: { organization: nextName } }
+            { $set: { organization: nextName } },
           );
         }
 
@@ -395,7 +434,7 @@ async function updateProfile(req, res) {
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
       { $set: updateData },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select("-password");
 
     if (!updatedUser) {
@@ -426,7 +465,7 @@ async function updateProfile(req, res) {
 async function getNotificationSettings(req, res) {
   try {
     const user = await User.findById(req.user._id).select(
-      "preferences.notifications"
+      "preferences.notifications",
     );
     if (!user) {
       return res.status(404).json({
@@ -523,7 +562,7 @@ async function updateNotificationSettings(req, res) {
           "preferences.notifications.types": nextTypes,
         },
       },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select("preferences.notifications");
     if (!updatedUser) {
       return res.status(404).json({
@@ -536,7 +575,7 @@ async function updateNotificationSettings(req, res) {
       message: "알림 설정이 성공적으로 수정되었습니다.",
       data: {
         methods: fillMethods(
-          updatedUser.preferences.notifications.methods || {}
+          updatedUser.preferences.notifications.methods || {},
         ),
         types: fillTypes(updatedUser.preferences.notifications.types || {}),
       },

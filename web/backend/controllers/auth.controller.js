@@ -16,11 +16,15 @@ import { sendEmail } from "../utils/email.util.js";
 import { getFrontendBaseUrl } from "../utils/url.util.js";
 
 const createReferralCode = () => {
-  return crypto.randomBytes(9).toString("base64url");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const a = alphabet[crypto.randomInt(0, alphabet.length)];
+  const b = alphabet[crypto.randomInt(0, alphabet.length)];
+  const c = alphabet[crypto.randomInt(0, alphabet.length)];
+  return `${a}${b}${c}`;
 };
 
 const ensureUniqueReferralCode = async () => {
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 200; i += 1) {
     const code = createReferralCode();
     const exists = await User.exists({ referralCode: code });
     if (!exists) return code;

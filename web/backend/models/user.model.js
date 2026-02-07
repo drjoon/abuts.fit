@@ -94,6 +94,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    salesmanPayoutAccount: {
+      bankName: { type: String, default: "" },
+      accountNumber: { type: String, default: "" },
+      holderName: { type: String, default: "" },
+      updatedAt: { type: Date, default: null },
+    },
     address: {
       street: String,
       city: String,

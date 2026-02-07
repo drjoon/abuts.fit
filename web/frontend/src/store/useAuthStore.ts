@@ -18,12 +18,19 @@ export interface User {
   mockUserId?: string;
   approvedAt?: string | null;
   organizationId?: string | null;
+  salesmanPayoutAccount?: {
+    bankName: string;
+    accountNumber: string;
+    holderName: string;
+    updatedAt?: string | null;
+  };
 }
 
 const normalizeApiUser = (u: any): User | null => {
   if (!u || typeof u !== "object" || Array.isArray(u)) return null;
   const id = String(u._id || u.id || "");
   if (!id) return null;
+  const pa = u.salesmanPayoutAccount || {};
   return {
     id,
     name: String(u.name || ""),
@@ -33,6 +40,15 @@ const normalizeApiUser = (u: any): User | null => {
     referralCode: String(u.referralCode || ""),
     approvedAt: u.approvedAt ? String(u.approvedAt) : null,
     organizationId: u.organizationId ? String(u.organizationId) : null,
+    salesmanPayoutAccount:
+      u.role === "salesman"
+        ? {
+            bankName: String(pa?.bankName || ""),
+            accountNumber: String(pa?.accountNumber || ""),
+            holderName: String(pa?.holderName || ""),
+            updatedAt: pa?.updatedAt ? String(pa.updatedAt) : null,
+          }
+        : undefined,
   };
 };
 

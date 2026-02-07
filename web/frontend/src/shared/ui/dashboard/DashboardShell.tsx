@@ -8,6 +8,7 @@ type DashboardShellProps = {
   mainLeft?: ReactNode;
   mainRight?: ReactNode;
   headerRight?: ReactNode;
+  statsGridClassName?: string;
 };
 
 export const DashboardShell = ({
@@ -18,7 +19,17 @@ export const DashboardShell = ({
   mainLeft,
   mainRight,
   headerRight,
+  statsGridClassName,
 }: DashboardShellProps) => {
+  const hasBothMain = Boolean(mainLeft && mainRight);
+  const mainGridClassName = hasBothMain
+    ? "grid grid-cols-1 lg:grid-cols-2 gap-3"
+    : "grid grid-cols-1 gap-3";
+
+  const effectiveStatsGridClassName =
+    statsGridClassName ||
+    "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5";
+
   return (
     <div className="p-3 space-y-3">
       {/* <div>
@@ -27,17 +38,19 @@ export const DashboardShell = ({
       </div> */}
       <div className="space-y-3">
         {headerRight && <div className="flex justify-start">{headerRight}</div>}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
-          {stats}
-        </div>
+        <div className={effectiveStatsGridClassName}>{stats}</div>
       </div>
 
       {topSection && <div>{topSection}</div>}
 
       {(mainLeft || mainRight) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {mainLeft && <div>{mainLeft}</div>}
-          {mainRight && <div>{mainRight}</div>}
+        <div className={mainGridClassName}>
+          {mainLeft && (
+            <div className={hasBothMain ? "" : "w-full"}>{mainLeft}</div>
+          )}
+          {mainRight && (
+            <div className={hasBothMain ? "" : "w-full"}>{mainRight}</div>
+          )}
         </div>
       )}
     </div>
