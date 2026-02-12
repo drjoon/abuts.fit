@@ -1,6 +1,6 @@
 # Start 신호 테스트:
 
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/start" \
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/start" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
  -d '{"ioUid": 61, "panelType": 0, "status": 1}'
@@ -31,15 +31,15 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/reset" \
 
 # 활성 프로그램 확인
 
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs/active" \
+curl "http://1.217.31.227:8002/api/cnc/machines/M4/programs/active" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 
 # 메인 활성화 (SetActivateProgram via /programs/activate, headType=1)
 
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/activate" \
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/programs/activate" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"programNo":100}'
+ -d '{"headType":1,"programNo":4001}'
 
 # 서브 활성화 (SetActivateProgram via /programs/activate, headType=2)
 
@@ -50,17 +50,17 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/activate" \
 
 # 프로그램 삭제 (대용량 NC 정리)
 
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/delete" \
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/programs/delete" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"programNo":4000}'
+ -d '{"headType":1,"programNo":3000}'
 
 # 업로드 (메인 headType=1)
 
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs" \
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/programs" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"slotNo":4000,"path":"M5_20260129-KBDSGYQH-47_s7le4pzf.nc","isNew":true}'
+ -d '{"headType":1,"slotNo":4000,"path":"M4_20260129-KBDSGYQH-47_w7bjjwjd.nc","isNew":true}'
 
 # 다운로드 (메인 headType=1)
 
@@ -106,10 +106,10 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=10
 #### 1-1) 업로드 요청 (즉시 응답)
 
 ```bash
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/smart/upload" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"path":"M5_20260128-MMSESKHM-27_52ggwysf.nc","isNew":true}'
+ -d '{"headType":1,"path":"M4_20260212-MEYSHAXP-47_jd7u1i3u.nc","isNew":true}'
 ```
 
 **응답 (202 Accepted):**
@@ -127,7 +127,7 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/upload" \
 #### 1-2) 작업 결과 조회
 
 ```bash
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/30ecfb73762f4e85b2e0174b0fcbe10e" \
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/4ce318bc92f24bf3935f943006d1b2db" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 ```
 
@@ -292,8 +292,9 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/enqueue" \
 - 사이클타임 절감: 가공 중 다음 슬롯에 선업로드(Preload) + 업로드 완료 확인을 수행한다.
 
 ```bash
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/start" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/smart/start" \
+  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+  -H "Content-Length: 0"
 ```
 
 ### 4) 스마트 dequeue
@@ -327,7 +328,7 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/smart/status" \
 
 # 프로그램 목록 (메인)
 
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1" \
+curl "http://1.217.31.227:8002/api/cnc/machines/M4/programs?headType=1" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 
 # 메인과 서브

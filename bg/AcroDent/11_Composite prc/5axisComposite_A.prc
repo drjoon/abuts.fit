@@ -194,7 +194,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    CuttingStrategy; 1390; 0;  HIDDEN; CAPTION; 절삭 단계 설정; SOURCE; 1; TECHCODETYPE; 185;
    TiltReferenceAxis; 3413; 1;  HIDDEN; CAPTION; 참조축; SOURCE; 1; TECHCODETYPE; 417;
    UseApproachPoint; 3260; 0;  LOCKED; HIDDEN; CAPTION; 접근 포인트 사용; SOURCE; 0; TECHCODETYPE; 67;
-   StepIncrement; 217; 0.20;  CAPTION; 스텝 간격; SOURCE; 2; TECHCODETYPE; 2;
+   StepIncrement; 217; 0.10;  CAPTION; 스텝 간격; SOURCE; 2; TECHCODETYPE; 2;
    SpineEndPointX; 3243; 0;  LOCKED; HIDDEN; CAPTION; 끝 포인트 X|끝 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    LoopAroundCorners; 3209; 0;  LOCKED; HIDDEN; CAPTION; 코너 주변으로 루프; SOURCE; 1; TECHCODETYPE; 67;
    4430; 4430; 5;  SOURCE; 0; TECHCODETYPE; 2;

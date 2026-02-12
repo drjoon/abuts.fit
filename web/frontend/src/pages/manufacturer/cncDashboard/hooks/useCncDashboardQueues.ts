@@ -69,6 +69,9 @@ export function useCncDashboardQueues({
   const [playlistOpen, setPlaylistOpen] = useState(false);
   const [playlistTarget, setPlaylistTarget] = useState<Machine | null>(null);
   const [playlistReadOnly, setPlaylistReadOnly] = useState(false);
+  const [playingNextMap, setPlayingNextMap] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const playlistJobs: PlaylistJobItem[] = useMemo(() => {
     const m = playlistTarget;
@@ -93,8 +96,12 @@ export function useCncDashboardQueues({
         const res = await fetch(
           `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue`,
           {
+            // 항상 최신 큐를 조회하기 위해 캐시를 우회한다.
+            cache: "no-store",
             headers: {
               Authorization: `Bearer ${token}`,
+              "Cache-Control": "no-cache",
+              Pragma: "no-cache",
             },
           },
         );
@@ -644,14 +651,14 @@ export function useCncDashboardQueues({
           );
         }
 
-        // 이중 응답: 202 Accepted면 jobId로 결과 폴링
-        const jobId = startBody?.jobId;
-        if (res.status === 202 && jobId) {
+        // 이중 응답: 202 Accepted면 startJobId로 결과 폴링
+        const startJobId = startBody?.jobId;
+        if (res.status === 202 && startJobId) {
           let jobCompleted = false;
           for (let i = 0; i < 30; i += 1) {
             try {
               const jobRes = await apiFetch({
-                path: `/api/cnc-machines/${encodeURIComponent(uid)}/jobs/${encodeURIComponent(jobId)}`,
+                path: `/api/cnc-machines/${encodeURIComponent(uid)}/jobs/${encodeURIComponent(startJobId)}`,
                 method: "GET",
                 token,
               });
@@ -732,6 +739,198 @@ export function useCncDashboardQueues({
     ],
   );
 
+  const handlePlayNextUp = useCallback(
+    async (machineId: string) => {
+      const uid = String(machineId || "").trim();
+      if (!uid) return;
+
+      const jobs = reservationJobsMap[uid] || [];
+      const nextJob = jobs[0];
+      if (!nextJob) {
+        toast({
+          title: "가공 시작 불가",
+          description: "Next Up 작업이 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const path =
+        (nextJob as any)?.bridgePath || (nextJob as any)?.path || nextJob.name;
+      if (!path) {
+        toast({
+          title: "가공 시작 불가",
+          description: "업로드 경로를 찾을 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const ok = await ensureCncWriteAllowed();
+      if (!ok) return;
+
+      // 알람 상태 확인
+      try {
+        const [statusRes, alarmRes] = await Promise.all([
+          apiFetch({
+            path: `/api/machines/${encodeURIComponent(uid)}/status`,
+            method: "GET",
+            token,
+          }),
+          apiFetch({
+            path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
+            method: "POST",
+            token,
+            jsonBody: { headType: 1 },
+          }),
+        ]);
+
+        const statusBody: any = statusRes.data ?? {};
+        const machineStatus = String(
+          statusBody?.status ?? statusBody?.data?.status ?? "",
+        ).trim();
+        const isAlarm =
+          machineStatus.toLowerCase() === "alarm" ||
+          machineStatus.toLowerCase().includes("alarm");
+
+        const alarmBody: any = alarmRes.data ?? {};
+        const alarmData = alarmBody?.data != null ? alarmBody.data : alarmBody;
+        const alarms: any[] = Array.isArray(alarmData?.alarms)
+          ? alarmData.alarms
+          : [];
+
+        if (isAlarm || alarms.length > 0) {
+          const alarmText =
+            alarms.length > 0
+              ? alarms
+                  .map((a) =>
+                    a ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}` : "-",
+                  )
+                  .join(", ")
+              : "-";
+          throw new Error(`장비가 Alarm 상태입니다. (${alarmText})`);
+        }
+      } catch (e: any) {
+        const msg =
+          e?.message || "장비 상태가 Alarm이라 가공을 시작할 수 없습니다.";
+        toast({
+          title: "가공 시작 불가 (알람)",
+          description: msg,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setPlayingNextMap((prev) => ({ ...prev, [uid]: true }));
+
+      try {
+        // 1) 큐 교체 (Next Up 단건)
+        const replaceRes = await apiFetch({
+          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/replace`,
+          method: "POST",
+          token,
+          jsonBody: { headType: 1, paths: [path] },
+        });
+        const replaceBody: any = replaceRes.data ?? {};
+        if (!replaceRes.ok || replaceBody?.success === false) {
+          throw new Error(
+            replaceBody?.message || replaceBody?.error || "큐 교체 실패",
+          );
+        }
+
+        // 2) 워커 시작
+        const startRes = await apiFetch({
+          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/start`,
+          method: "POST",
+          token,
+        });
+        const startBody: any = startRes.data ?? {};
+        if (startRes.status === 409) {
+          throw new Error("큐가 비어 있습니다.");
+        }
+        if (!startRes.ok || startBody?.success === false) {
+          throw new Error(
+            startBody?.message || startBody?.error || "가공 시작 실패",
+          );
+        }
+
+        // 이중 응답 처리
+        const playJobId = startBody?.jobId;
+        if (startRes.status === 202 && playJobId) {
+          let jobCompleted = false;
+          for (let i = 0; i < 30; i += 1) {
+            try {
+              const jobRes = await apiFetch({
+                path: `/api/cnc-machines/${encodeURIComponent(uid)}/jobs/${encodeURIComponent(playJobId)}`,
+                method: "GET",
+                token,
+              });
+              const jobBody: any = jobRes.data ?? {};
+              if (jobRes.ok && jobBody?.status === "COMPLETED") {
+                jobCompleted = true;
+                break;
+              }
+              if (jobRes.ok && jobBody?.status === "FAILED") {
+                throw new Error(jobBody?.result?.message || "가공 시작 실패");
+              }
+            } catch (e: any) {
+              if (i === 29) throw e;
+            }
+            await new Promise((r) => setTimeout(r, 500));
+          }
+          if (!jobCompleted) {
+            throw new Error("가공 시작 결과 확인 타임아웃");
+          }
+        }
+
+        // Next Up → Now Playing 반영: 첫 작업 제거 후 재조회
+        setReservationJobsMap((prev) => {
+          const current = prev[uid] || [];
+          const filtered = current.slice(1);
+          if (filtered.length === 0) {
+            const nextMap = { ...prev };
+            delete nextMap[uid];
+            return nextMap;
+          }
+          return { ...prev, [uid]: filtered };
+        });
+
+        // 상태/프로그램 목록/큐 다시 로드
+        void refreshStatusFor(uid);
+        void fetchProgramList();
+        const m = machines.find((x) => x.uid === uid);
+        if (m) {
+          void loadBridgeQueueForMachine(m, { silent: true });
+        }
+      } catch (e: any) {
+        const msg = e?.message ?? "가공 시작 요청 중 오류";
+        setError(msg);
+        toast({
+          title: "가공 시작 오류",
+          description: msg,
+          variant: "destructive",
+        });
+      } finally {
+        setPlayingNextMap((prev) => {
+          const next = { ...prev };
+          delete next[uid];
+          return next;
+        });
+      }
+    },
+    [
+      ensureCncWriteAllowed,
+      fetchProgramList,
+      loadBridgeQueueForMachine,
+      machines,
+      refreshStatusFor,
+      reservationJobsMap,
+      setError,
+      toast,
+      token,
+    ],
+  );
+
   return {
     queueBatchRef,
     scheduleQueueBatchCommit,
@@ -760,5 +959,7 @@ export function useCncDashboardQueues({
     setReservationTotalQtyMap,
 
     onTogglePause,
+    handlePlayNextUp,
+    playingNextMap,
   };
 }

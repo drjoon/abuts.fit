@@ -130,9 +130,21 @@ export function CncDashboardPageView(props: any) {
     materialModalTarget,
     handleReplaceMaterial,
     handleAddMaterial,
-    eventLogMachineId,
     setEventLogMachineId,
+    eventLogMachineId,
+    onSelectMachine,
   } = props;
+
+  const handleSelectMachine = (uid: string) => {
+    // workUid 업데이트 + 즉시 상태 조회
+    if (setWorkUid) {
+      setWorkUid(uid);
+    }
+    if (onSelectMachine) {
+      onSelectMachine(uid);
+    }
+    void refreshStatusFor(uid);
+  };
 
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-gray-50 to-blue-100 text-gray-800 p-4 sm:p-6 lg:p-8 flex items-stretch">
@@ -214,6 +226,7 @@ export function CncDashboardPageView(props: any) {
                   machines={mergedMachines}
                   workUid={workUid}
                   loading={loading}
+                  onSelectMachine={handleSelectMachine}
                   tempTooltipMap={tempTooltipMap}
                   toolTooltipMap={toolTooltipMap}
                   programSummary={programSummary}
@@ -262,27 +275,6 @@ export function CncDashboardPageView(props: any) {
                     void loadQueueForMachine(machine).finally(() => {
                       setPlaylistOpen(true);
                     });
-                  }}
-                  onOpenMaterial={(machine) => {
-                    setMaterialModalTarget(machine);
-                    setMaterialModalOpen(true);
-                  }}
-                  onSelectMachine={(uid) => {
-                    const selected = mergedMachines.find((m) => m.uid === uid);
-                    const isConfigured = !!(
-                      selected?.ip && Number(selected?.port || 0) > 0
-                    );
-                    if (workUid !== uid) {
-                      // workUid 변경 시 작업 보드(useCncWorkBoard)가 자동으로 상태/프로그램 정보를 로드한다.
-                      setWorkUid(uid);
-                      return;
-                    }
-
-                    // 같은 장비 카드를 다시 클릭한 경우(workUid 변화 없음)에도
-                    // 상태 갱신은 1회 수행되어야 한다.
-                    if (isConfigured) {
-                      void refreshStatusFor(uid);
-                    }
                   }}
                   onTempClick={(machine) => {
                     void openTempDetail(machine.uid);

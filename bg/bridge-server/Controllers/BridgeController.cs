@@ -1458,6 +1458,33 @@ namespace HiLinkBridgeWebApi48.Controllers
             var jobId = Guid.NewGuid().ToString("N");
             Console.WriteLine($"[SmartStart] jobId={jobId} accepted. machineId={machineId}");
 
+            var q = GetOrCreateHighLevelQueue(machineId);
+            lock (q.Sync)
+            {
+                // 워커가 이미 돌고 있으면 즉시 200으로 알려준다.
+                if (q.WorkerRunning)
+                {
+                    return Request.CreateResponse(HttpStatusCode.OK, new
+                    {
+                        success = true,
+                        started = false,
+                        message = "worker already running",
+                        queued = q.Jobs.Count,
+                    });
+                }
+
+                // 큐가 비어 있으면 409를 반환해 호출자가 즉시 알 수 있게 한다.
+                if (q.Jobs.Count == 0)
+                {
+                    return Request.CreateResponse(HttpStatusCode.Conflict, new
+                    {
+                        success = false,
+                        message = "queue is empty",
+                    });
+                }
+            }
+
+            // 큐가 존재하면 비동기로 워커를 시작하고 202를 반환한다.
             var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
@@ -1470,33 +1497,6 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 try
                 {
-                    var q = GetOrCreateHighLevelQueue(machineId);
-                    lock (q.Sync)
-                    {
-                        if (q.WorkerRunning)
-                        {
-                            JobResults[jobId] = new JobResult
-                            {
-                                JobId = jobId,
-                                Status = "COMPLETED",
-                                Result = new { success = true, started = false, message = "worker already running", queued = q.Jobs.Count },
-                                CreatedAtUtc = DateTime.UtcNow
-                            };
-                            return;
-                        }
-                        if (q.Jobs.Count == 0)
-                        {
-                            JobResults[jobId] = new JobResult
-                            {
-                                JobId = jobId,
-                                Status = "FAILED",
-                                Result = new { success = false, message = "queue is empty" },
-                                CreatedAtUtc = DateTime.UtcNow
-                            };
-                            return;
-                        }
-                    }
-
                     EnsureWorkerStarted(machineId);
                     Console.WriteLine($"[SmartStart] jobId={jobId} completed");
                     JobResults[jobId] = new JobResult

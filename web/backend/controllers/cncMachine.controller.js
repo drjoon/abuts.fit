@@ -34,6 +34,7 @@ import {
   smartUpload,
   smartEnqueue,
   smartDequeue,
+  smartReplace,
   smartStart,
   smartStatus,
 } from "./cncMachine/continuous.js";
@@ -85,6 +86,7 @@ export {
   smartUpload,
   smartEnqueue,
   smartDequeue,
+  smartReplace,
   smartStart,
   smartStatus,
   getJobResult,

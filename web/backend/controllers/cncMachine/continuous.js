@@ -147,6 +147,52 @@ export async function smartDequeue(req, res) {
   }
 }
 
+export async function smartReplace(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const payload = {
+      headType: typeof req.body?.headType === "number" ? req.body.headType : 1,
+      paths: Array.isArray(req.body?.paths) ? req.body.paths : [],
+    };
+    if (!payload.paths || payload.paths.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "paths is required" });
+    }
+
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/replace`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    const body = await resp.json().catch(() => ({}));
+
+    if (resp.status === 202 && body?.jobId) {
+      return res.status(202).json({
+        success: true,
+        message: "Smart replace job accepted",
+        jobId: body.jobId,
+        machineId: mid,
+      });
+    }
+
+    return res.status(resp.status).json(body);
+  } catch (error) {
+    console.error("smartReplace error", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "smart replace failed" });
+  }
+}
+
 export async function smartStart(req, res) {
   try {
     const { machineId } = req.params;

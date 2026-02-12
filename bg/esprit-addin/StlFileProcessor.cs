@@ -489,6 +489,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 "(Serial)",
                 "T0909 (CENTER MILL/D2.0*A90)",
+                "M50",
+                "G28H0.0",
                 "M23 S2000",
                 "G98 G0 X[#521+1.8]Z[#520+1.8]Y0.525C0.0",
                 "G4 U0.05",

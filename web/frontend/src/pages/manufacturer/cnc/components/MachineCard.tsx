@@ -72,11 +72,15 @@ interface MachineCardProps {
   onToggleDummyMachining?: (next: boolean, e: React.MouseEvent) => void;
 }
 
-const getMachineStatusChip = (status: string) => {
+const getMachineStatusChip = (status: string, isRunning: boolean) => {
   const color = getMachineStatusDotClass(status);
   return (
     <div className="flex items-center">
-      <div className={`w-3.5 h-3.5 rounded-full ${color} shadow-inner`} />
+      <div
+        className={`w-3.5 h-3.5 rounded-full ${color} shadow-inner ${
+          isRunning ? "animate-pulse" : ""
+        }`}
+      />
     </div>
   );
 };
@@ -245,7 +249,7 @@ export const MachineCard = (props: MachineCardProps) => {
             <div className="text-[16px] font-extrabold text-slate-900">
               {machine.name}
             </div>
-            {getMachineStatusChip(String(effectiveStatus || ""))}
+            {getMachineStatusChip(String(effectiveStatus || ""), isRunning)}
           </div>
         </div>
 

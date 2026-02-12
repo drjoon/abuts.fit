@@ -108,6 +108,12 @@ router.post(
 );
 
 router.post(
+  "/:machineId/smart/replace",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.smartReplace,
+);
+
+router.post(
   "/:machineId/smart/start",
   authorizeRoles("manufacturer", "admin"),
   cncMachineController.smartStart,
