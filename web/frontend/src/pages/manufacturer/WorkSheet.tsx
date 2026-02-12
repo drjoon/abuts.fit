@@ -46,11 +46,11 @@ export const ManufacturerWorksheetPage = () => {
             />
           );
         case "packaging":
-          return <PackagingPage />;
+          return <PackagingPage showQueueBar={true} />;
         case "shipping":
           return (
             <RequestPage
-              showQueueBar={true}
+              showQueueBar={false}
               filterRequests={(req) => {
                 const stage = String(req.manufacturerStage || "").trim();
                 const status = String(req.status || "").trim();

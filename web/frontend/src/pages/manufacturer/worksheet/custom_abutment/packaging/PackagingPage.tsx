@@ -3,6 +3,7 @@ import {
   useEffect,
   useCallback,
   useRef,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
@@ -13,11 +14,21 @@ import {
   type ManufacturerRequest,
   stageOrder,
   deriveStageForFilter,
+  getDiameterBucketIndex,
 } from "../request/utils";
+import {
+  WorksheetDiameterQueueBar,
+  type DiameterBucketKey,
+} from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
+import {
+  WorksheetDiameterQueueModal,
+  type WorksheetQueueItem,
+} from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { WorksheetCardGrid } from "../request/WorksheetCardGrid";
 import { PreviewModal } from "../request/PreviewModal";
 import { useRequestFileHandlers } from "../request/useRequestFileHandlers";
 import { usePreviewLoader } from "../request/usePreviewLoader";
+import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 
 type FilePreviewInfo = {
   originalName: string;
@@ -31,7 +42,11 @@ type PreviewFiles = {
   request?: ManufacturerRequest | null;
 };
 
-export const PackagingPage = () => {
+export const PackagingPage = ({
+  showQueueBar = true,
+}: {
+  showQueueBar?: boolean;
+}) => {
   const { user, token } = useAuthStore();
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
@@ -64,6 +79,9 @@ export const PackagingPage = () => {
   );
   const [visibleCount, setVisibleCount] = useState(9);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [queueModalOpen, setQueueModalOpen] = useState(false);
+  const [selectedBucket, setSelectedBucket] =
+    useState<DiameterBucketKey | null>(null);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -280,6 +298,62 @@ export const PackagingPage = () => {
 
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
+  const diameterQueueForPackaging = useMemo(() => {
+    const labels: DiameterBucketKey[] = ["6", "8", "10", "10+"];
+    const counts = labels.map(() => 0);
+    const buckets: Record<DiameterBucketKey, WorksheetQueueItem[]> = {
+      "6": [],
+      "8": [],
+      "10": [],
+      "10+": [],
+    };
+
+    for (const req of filteredAndSorted) {
+      const caseInfos = req.caseInfos || {};
+      const bucketIndex = getDiameterBucketIndex(caseInfos.maxDiameter);
+      const item: WorksheetQueueItem = {
+        id: req._id,
+        client: req.requestor?.organization || req.requestor?.name || "",
+        patient: caseInfos.patientName || "",
+        tooth: caseInfos.tooth || "",
+        connectionDiameter:
+          typeof caseInfos.connectionDiameter === "number" &&
+          Number.isFinite(caseInfos.connectionDiameter)
+            ? caseInfos.connectionDiameter
+            : null,
+        maxDiameter:
+          typeof caseInfos.maxDiameter === "number" &&
+          Number.isFinite(caseInfos.maxDiameter)
+            ? caseInfos.maxDiameter
+            : null,
+        camDiameter:
+          typeof req.productionSchedule?.diameter === "number" &&
+          Number.isFinite(req.productionSchedule.diameter)
+            ? req.productionSchedule.diameter
+            : null,
+        programText: req.description,
+        qty: 1,
+      };
+
+      if (bucketIndex === 0) {
+        counts[0]++;
+        buckets["6"].push(item);
+      } else if (bucketIndex === 1) {
+        counts[1]++;
+        buckets["8"].push(item);
+      } else if (bucketIndex === 2) {
+        counts[2]++;
+        buckets["10"].push(item);
+      } else {
+        counts[3]++;
+        buckets["10+"].push(item);
+      }
+    }
+
+    const total = counts.reduce((sum, c) => sum + c, 0);
+    return { labels, counts, total, buckets };
+  }, [filteredAndSorted]);
+
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -306,11 +380,27 @@ export const PackagingPage = () => {
 
   return (
     <div className="flex flex-col gap-4">
-      {isLoading && (
-        <div className="flex justify-center py-8">
-          <div className="text-gray-500">로딩 중...</div>
+      {showQueueBar && (
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+          <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
+            진행중인 의뢰 총 {diameterQueueForPackaging.total}건
+          </div>
+          <div className="flex-1">
+            <WorksheetDiameterQueueBar
+              title=""
+              labels={diameterQueueForPackaging.labels}
+              counts={diameterQueueForPackaging.counts}
+              total={diameterQueueForPackaging.total}
+              onBucketClick={(label) => {
+                setSelectedBucket(label);
+                setQueueModalOpen(true);
+              }}
+            />
+          </div>
         </div>
       )}
+
+      {isLoading && <WorksheetLoading />}
 
       {!isLoading && paginatedRequests.length === 0 && (
         <div className="flex justify-center py-8">
@@ -400,6 +490,15 @@ export const PackagingPage = () => {
           setConfirmOpen(false);
           setConfirmAction(null);
         }}
+      />
+
+      <WorksheetDiameterQueueModal
+        open={queueModalOpen}
+        onOpenChange={setQueueModalOpen}
+        processLabel="커스텀어벗 > 세척.포장"
+        queues={diameterQueueForPackaging.buckets}
+        selectedBucket={selectedBucket}
+        onSelectBucket={(bucket) => setSelectedBucket(bucket)}
       />
     </div>
   );

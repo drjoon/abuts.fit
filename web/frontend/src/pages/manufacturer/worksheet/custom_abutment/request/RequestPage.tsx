@@ -49,6 +49,7 @@ import { PreviewModal } from "./PreviewModal";
 import { useRequestFileHandlers } from "./useRequestFileHandlers";
 import { usePreviewLoader } from "./usePreviewLoader";
 import { useStageDropHandlers } from "./useStageDropHandlers";
+import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 
 type FilePreviewInfo = {
   originalName: string;
@@ -645,7 +646,7 @@ export const RequestPage = ({
   }, [filteredAndSorted]);
 
   if (isLoading) {
-    return <div className="p-8 text-center">Loading...</div>;
+    return <WorksheetLoading />;
   }
 
   const isEmpty = filteredAndSorted.length === 0;
