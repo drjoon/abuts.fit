@@ -31,15 +31,15 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/reset" \
 
 # 활성 프로그램 확인
 
-curl "http://1.217.31.227:8002/api/cnc/machines/M4/programs/active" \
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs/active" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 
 # 메인 활성화 (SetActivateProgram via /programs/activate, headType=1)
 
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/programs/activate" \
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/programs/activate" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"programNo":4001}'
+ -d '{"headType":1,"programNo":4000}'
 
 # 서브 활성화 (SetActivateProgram via /programs/activate, headType=2)
 
@@ -109,7 +109,7 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=10
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/smart/upload" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"path":"M4_20260212-MEYSHAXP-47_jd7u1i3u.nc","isNew":true}'
+ -d '{"headType":1,"path":"M5_20260212-BZBJTWNY-27-1_6qqwvdra.nc","isNew":true}'
 ```
 
 **응답 (202 Accepted):**
@@ -127,7 +127,7 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/smart/upload" \
 #### 1-2) 작업 결과 조회
 
 ```bash
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/4ce318bc92f24bf3935f943006d1b2db" \
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/2285bef76c6b4d2da03ab53c1f5621be" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
 ```
 
@@ -277,7 +277,7 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/replace" \
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/enqueue" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"paths":["M5_job1.nc","M5_job2.nc","M5_job3.nc"],"maxWaitSeconds":1800}'
+ -d '{"headType":1,"paths":["M5_20260212-BZBJTWNY-27-1_6qqwvdra.nc"],"maxWaitSeconds":1800}'
 ```
 
 ### 3) 스마트 start
@@ -292,7 +292,7 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/enqueue" \
 - 사이클타임 절감: 가공 중 다음 슬롯에 선업로드(Preload) + 업로드 완료 확인을 수행한다.
 
 ```bash
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M4/smart/start" \
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/start" \
   -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
   -H "Content-Length: 0"
 ```

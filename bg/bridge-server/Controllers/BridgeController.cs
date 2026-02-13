@@ -506,12 +506,22 @@ namespace HiLinkBridgeWebApi48.Controllers
             var started = DateTime.UtcNow;
             while (true)
             {
-                if (CncMachineSignalUtils.TryGetMachineBusy(machineId, out var busy) && busy)
+                var hasBusy = CncMachineSignalUtils.TryGetMachineBusy(machineId, out var busy);
+                if (hasBusy && busy)
                 {
                     if ((DateTime.UtcNow - started).TotalSeconds > maxWaitSeconds) return false;
                     await Task.Delay(3000);
                     continue;
                 }
+
+                // 바쁜 상태를 읽지 못한 경우에도 안전하게 대기한다.
+                if (!hasBusy)
+                {
+                    if ((DateTime.UtcNow - started).TotalSeconds > maxWaitSeconds) return false;
+                    await Task.Delay(3000);
+                    continue;
+                }
+
                 return true;
             }
         }
@@ -521,12 +531,22 @@ namespace HiLinkBridgeWebApi48.Controllers
             var started = DateTime.UtcNow;
             while (true)
             {
-                if (CncMachineSignalUtils.TryGetMachineBusy(machineId, out var busy) && busy)
+                var hasBusy = CncMachineSignalUtils.TryGetMachineBusy(machineId, out var busy);
+                if (hasBusy && busy)
                 {
                     if ((DateTime.UtcNow - started).TotalSeconds > maxWaitSeconds) return false;
                     await Task.Delay(3000);
                     continue;
                 }
+
+                // 바쁜 상태를 읽지 못한 경우에도 안전하게 대기한다.
+                if (!hasBusy)
+                {
+                    if ((DateTime.UtcNow - started).TotalSeconds > maxWaitSeconds) return false;
+                    await Task.Delay(3000);
+                    continue;
+                }
+
                 return true;
             }
         }
