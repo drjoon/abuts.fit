@@ -1,4 +1,7 @@
 import { getIO } from "../../socket.js";
+import mongoose from "mongoose";
+import Request from "../../models/request.model.js";
+import { applyStatusMapping } from "../request/utils.js";
 
 /**
  * 브리지 서버에서 가공 완료 시 호출하는 콜백 엔드포인트
@@ -18,18 +21,42 @@ export async function machiningCompleted(req, res) {
     }
 
     console.log(
-      `[Machining Callback] machineId=${mid} jobId=${jobId} status=${status}`
+      `[Machining Callback] machineId=${mid} jobId=${jobId} status=${status}`,
     );
+
+    // 가공 완료(COMPLETED) 시 의뢰 stage를 세척.포장으로 자동 진행
+    try {
+      const normalizedStatus = String(status || "")
+        .trim()
+        .toUpperCase();
+      if (normalizedStatus === "COMPLETED") {
+        const jid = String(jobId || "").trim();
+        const isObjectId = mongoose.Types.ObjectId.isValid(jid);
+        const request = isObjectId
+          ? await Request.findById(jid)
+          : await Request.findOne({ requestId: jid });
+
+        if (request) {
+          applyStatusMapping(request, "세척.포장");
+          await request.save();
+        }
+      }
+    } catch (e) {
+      console.error("[Machining Callback] stage update failed:", e);
+    }
 
     // WebSocket으로 프론트에 완료 알림
     const io = getIO();
-    io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-completed", {
+    const payload = {
       machineId: mid,
       jobId,
       status,
       error,
       completedAt: new Date(),
-    });
+    };
+
+    io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-completed", payload);
+    io.emit("cnc-machining-completed", payload);
 
     return res.status(200).json({
       success: true,

@@ -149,8 +149,8 @@ export const PackagingPage = ({
           ? raw
           : [];
 
-      if (data.success && Array.isArray(raw?.requests)) {
-        setRequests(raw.requests);
+      if (data?.success && Array.isArray(list)) {
+        setRequests(list);
       }
     } catch (error) {
       console.error("Error fetching requests:", error);
@@ -211,9 +211,21 @@ export const PackagingPage = ({
   const handleUploadFromModal = useCallback(
     (req: ManufacturerRequest, file: File) => {
       if (!req?._id) return;
-      void handleUploadByStage(req, [file]);
+      void (async () => {
+        await handleUploadByStage(req, [file]);
+        await handleUpdateReviewStatus({
+          req,
+          status: "APPROVED",
+          stageOverride: "packaging",
+        });
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("stage", "shipping");
+          return next;
+        });
+      })();
     },
-    [handleUploadByStage],
+    [handleUpdateReviewStatus, handleUploadByStage, setSearchParams],
   );
 
   const handleCardRollback = useCallback(

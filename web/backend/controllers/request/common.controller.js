@@ -1091,7 +1091,12 @@ const advanceManufacturerStageByReviewStage = async ({
     return;
   }
 
-  if (stage === "machining" || stage === "packaging") {
+  if (stage === "machining") {
+    applyStatusMapping(request, "세척.포장");
+    return;
+  }
+
+  if (stage === "packaging") {
     await ensureShippingPackageAndChargeFee({ request, userId, session });
     applyStatusMapping(request, "발송");
     return;

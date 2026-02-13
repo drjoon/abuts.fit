@@ -219,12 +219,32 @@ export const PreviewModal = ({
         | "packaging"
         | "shipping"
         | "tracking";
-      void onUploadStageFile({
-        req,
-        stage: key,
-        file,
-        source: "manual",
-      });
+      void (async () => {
+        await onUploadStageFile({
+          req,
+          stage: key,
+          file,
+          source: "manual",
+        });
+
+        if (key === "packaging") {
+          try {
+            await onUpdateReviewStatus({
+              req,
+              status: "APPROVED",
+              stageOverride: "packaging",
+            });
+            setSearchParams((prev) => {
+              const next = new URLSearchParams(prev);
+              next.set("stage", "shipping");
+              return next;
+            });
+            onOpenChange(false);
+          } catch {
+            // ignore
+          }
+        }
+      })();
       return;
     }
     if (isCamStage) {

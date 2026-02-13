@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
+import { onCncMachiningCompleted } from "@/lib/socket";
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
 import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
 import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
@@ -396,6 +398,7 @@ export const MachiningQueueBoard = ({
 }: MachiningQueueBoardProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { machines, setMachines } = useCncMachines();
   const { callRaw } = useCncRaw();
   const statusByUid = useMachineStatusStore((s) => s.statusByUid);
@@ -417,7 +420,7 @@ export const MachiningQueueBoard = ({
   );
   const [statusRefreshErroredAt, setStatusRefreshErroredAt] = useState<
     string | null
-  >(null);
+  >("");
 
   const [eventLogRequestId, setEventLogRequestId] = useState<string | null>(
     null,
