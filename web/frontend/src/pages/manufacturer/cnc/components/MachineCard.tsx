@@ -496,9 +496,7 @@ export const MachineCard = (props: MachineCardProps) => {
 
                     if (onPlayNowPlaying) {
                       const jobId =
-                        (currentProg as any)?.jobId ||
-                        (currentProg as any)?.id ||
-                        (currentProg as any)?.name;
+                        (currentProg as any)?.jobId || (currentProg as any)?.id;
                       onPlayNowPlaying(jobId, e);
                     }
                   }}
@@ -561,10 +559,7 @@ export const MachineCard = (props: MachineCardProps) => {
                   const nextJobIdRaw = nextProg
                     ? ((nextProg as any).jobId as string | undefined)
                     : undefined;
-                  const nextJobId =
-                    nextJobIdRaw ||
-                    (nextProg as any)?.id ||
-                    (nextProg as any)?.name;
+                  const nextJobId = nextJobIdRaw || (nextProg as any)?.id;
                   const pausedRaw = (nextProg as any)?.paused;
                   const paused =
                     typeof pausedRaw === "boolean" ? pausedRaw : true;
@@ -573,16 +568,12 @@ export const MachineCard = (props: MachineCardProps) => {
                     <CncCirclePlayPauseButton
                       paused={paused}
                       disabled={!nextProg}
-                      title={!nextProg ? "-" : paused ? "재생" : "일시정지"}
+                      title={
+                        !nextProg ? "-" : paused ? "자동 시작" : "일시정지"
+                      }
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!nextProg) return;
-                        if (paused) {
-                          if (!onPlayNext) return;
-                          onPlayNext(nextJobId, e);
-                          return;
-                        }
-                        if (!onTogglePause) return;
+                        if (!nextProg || !onTogglePause) return;
                         onTogglePause(nextJobId, e);
                       }}
                     />

@@ -528,221 +528,65 @@ export function useCncDashboardQueues({
       const targetJob = currentJobs.find((j) => j.id === jobId);
       if (!targetJob) return;
 
-      const kind = String((targetJob as any)?.kind || "").trim();
-      const source = String((targetJob as any)?.source || "").trim();
-      if (kind === "manual_file" || source === "manual_insert") {
-        // await handleManualCardPlay(uid, jobId);
-        await handleManualCardPlay(uid, jobId);
-        return;
-      }
+      const currentPaused = !!targetJob.paused;
+      const newPaused = !currentPaused;
 
-      const wasPaused = !!targetJob.paused;
-      if (!wasPaused) {
-        setReservationJobsMap((prev) => {
-          const current = prev[uid] || [];
-          const nextJobs = current.map((j) =>
-            j.id === jobId ? { ...j, paused: true } : j,
-          );
-          return {
-            ...prev,
-            [uid]: nextJobs,
-          };
-        });
-
-        try {
-          const pauseRes = await apiFetch({
-            path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/${encodeURIComponent(
-              jobId,
-            )}/pause`,
-            method: "PATCH",
-            token,
-            jsonBody: { paused: true },
-          });
-          const pauseBody: any = pauseRes.data ?? {};
-          if (!pauseRes.ok || pauseBody?.success === false) {
-            throw new Error(
-              pauseBody?.message ||
-                pauseBody?.error ||
-                "일시정지 상태 저장 실패",
-            );
-          }
-        } catch (e: any) {
-          const msg = e?.message ?? "일시정지 변경 중 오류";
-          setError(msg);
-          toast({
-            title: "일시정지 변경 실패",
-            description: msg,
-            variant: "destructive",
-          });
-          setReservationJobsMap((prev) => {
-            const current = prev[uid] || [];
-            const nextJobs = current.map((j) =>
-              j.id === jobId ? { ...j, paused: wasPaused } : j,
-            );
-            return {
-              ...prev,
-              [uid]: nextJobs,
-            };
-          });
-        }
-        return;
-      }
-
-      const ok = await ensureCncWriteAllowed();
-      if (!ok) return;
+      // 로컬 상태 즉시 업데이트
+      setReservationJobsMap((prev) => {
+        const current = prev[uid] || [];
+        const nextJobs = current.map((j) =>
+          j.id === jobId ? { ...j, paused: newPaused } : j,
+        );
+        return {
+          ...prev,
+          [uid]: nextJobs,
+        };
+      });
 
       try {
-        try {
-          const [statusRes, alarmRes] = await Promise.all([
-            apiFetch({
-              path: `/api/machines/${encodeURIComponent(uid)}/status`,
-              method: "GET",
-              token,
-            }),
-            apiFetch({
-              path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
-              method: "POST",
-              token,
-              jsonBody: { headType: 1 },
-            }),
-          ]);
-
-          const statusBody: any = statusRes.data ?? {};
-          const machineStatus = String(
-            statusBody?.status ?? statusBody?.data?.status ?? "",
-          ).trim();
-          const isAlarm =
-            machineStatus.toLowerCase() === "alarm" ||
-            machineStatus.toLowerCase().includes("alarm");
-
-          const alarmBody: any = alarmRes.data ?? {};
-          const alarmData =
-            alarmBody?.data != null ? alarmBody.data : alarmBody;
-          const alarms: any[] = Array.isArray(alarmData?.alarms)
-            ? alarmData.alarms
-            : [];
-
-          if (isAlarm || alarms.length > 0) {
-            const alarmText =
-              alarms.length > 0
-                ? alarms
-                    .map((a) =>
-                      a ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}` : "-",
-                    )
-                    .join(", ")
-                : "-";
-            throw new Error(`장비가 Alarm 상태입니다. (${alarmText})`);
-          }
-        } catch (e: any) {
-          const msg =
-            e?.message || "장비 상태가 Alarm이라 가공을 시작할 수 없습니다.";
-          toast({
-            title: "가공 시작 불가 (알람)",
-            description: msg,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        const res = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/start`,
-          method: "POST",
+        const pauseRes = await apiFetch({
+          path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/${encodeURIComponent(
+            jobId,
+          )}/pause`,
+          method: "PATCH",
           token,
+          jsonBody: { paused: newPaused },
         });
-
-        const startBody: any = res.data ?? {};
-        if (!res.ok || startBody?.success === false) {
+        const pauseBody: any = pauseRes.data ?? {};
+        if (!pauseRes.ok || pauseBody?.success === false) {
           throw new Error(
-            startBody?.message || startBody?.error || "가공 시작 실패",
+            pauseBody?.message || pauseBody?.error || "pause 상태 변경 실패",
           );
         }
 
-        // 이중 응답: 202 Accepted면 startJobId로 결과 폴링
-        const startJobId = startBody?.jobId;
-        if (res.status === 202 && startJobId) {
-          let jobCompleted = false;
-          for (let i = 0; i < 30; i += 1) {
-            try {
-              const jobRes = await apiFetch({
-                path: `/api/cnc-machines/${encodeURIComponent(uid)}/jobs/${encodeURIComponent(startJobId)}`,
-                method: "GET",
-                token,
-              });
-              const jobBody: any = jobRes.data ?? {};
-              if (jobRes.ok && jobBody?.status === "COMPLETED") {
-                jobCompleted = true;
-                break;
-              }
-              if (jobRes.ok && jobBody?.status === "FAILED") {
-                throw new Error(jobBody?.result?.message || "가공 시작 실패");
-              }
-            } catch (e: any) {
-              if (i === 29) throw e;
-            }
-            await new Promise((r) => setTimeout(r, 500));
-          }
-          if (!jobCompleted) {
-            throw new Error("가공 시작 결과 확인 타임아웃");
-          }
-        }
-
-        setReservationJobsMap((prev) => {
-          const current = prev[uid] || [];
-          const filtered = current.filter((j) => j.id !== jobId);
-          if (filtered.length === 0) {
-            const nextMap = { ...prev };
-            delete nextMap[uid];
-            return nextMap;
-          }
-          return { ...prev, [uid]: filtered };
+        toast({
+          title: newPaused ? "일시정지" : "재개",
+          description: newPaused
+            ? "다음 파일이 일시정지 상태로 설정되었습니다."
+            : "다음 파일이 자동 시작 상태로 설정되었습니다.",
         });
-
-        void refreshStatusFor(uid);
-        void fetchProgramList();
       } catch (e: any) {
-        const msg = e?.message ?? "가공 시작 요청 중 오류";
+        const msg = e?.message ?? "pause 상태 변경 중 오류";
         setError(msg);
         toast({
-          title: "가공 시작 오류",
+          title: "상태 변경 실패",
           description: msg,
           variant: "destructive",
         });
-
+        // 에러 시 원래 상태로 복구
         setReservationJobsMap((prev) => {
           const current = prev[uid] || [];
           const nextJobs = current.map((j) =>
-            j.id === jobId ? { ...j, paused: wasPaused } : j,
+            j.id === jobId ? { ...j, paused: currentPaused } : j,
           );
           return {
             ...prev,
             [uid]: nextJobs,
           };
         });
-
-        try {
-          await apiFetch({
-            path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/${encodeURIComponent(
-              jobId,
-            )}/pause`,
-            method: "PATCH",
-            token,
-            jsonBody: { paused: true },
-          });
-        } catch {
-          // ignore
-        }
       }
     },
-    [
-      ensureCncWriteAllowed,
-      fetchProgramList,
-      handleManualCardPlay,
-      refreshStatusFor,
-      reservationJobsMap,
-      setError,
-      toast,
-      token,
-    ],
+    [reservationJobsMap, setError, toast, token],
   );
 
   const handlePlayNextUp = useCallback(
