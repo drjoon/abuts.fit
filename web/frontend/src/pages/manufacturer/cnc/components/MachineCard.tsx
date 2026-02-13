@@ -28,6 +28,8 @@ import {
   getMachineStatusLabel,
 } from "@/pages/manufacturer/cnc/lib/machineStatus";
 import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
+import { useQueueSlots } from "../hooks/useQueueSlots";
+import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
 
@@ -171,9 +173,9 @@ export const MachineCard = (props: MachineCardProps) => {
     }
   }, [machine?.dummySettings, machine?.uid]);
   const hasReservation = !!reservationSummary;
-  const hasNextProgs =
-    hasReservation && Array.isArray(nextProgs) && nextProgs.length > 0;
-  const nextProg = hasNextProgs ? nextProgs[0] : null;
+  const validNextProgs = Array.isArray(nextProgs) ? nextProgs : [];
+  const { currentSlot: nextProg } = useQueueSlots(validNextProgs);
+  const hasNextProgs = hasReservation && nextProg != null;
   const originalTotal =
     typeof reservedTotalQty === "number" && reservedTotalQty > 0
       ? reservedTotalQty
@@ -478,15 +480,16 @@ export const MachineCard = (props: MachineCardProps) => {
                     1/{(currentProg as any).qty}
                   </div>
                 )}
-                <button
-                  type="button"
+                <CncCirclePlayPauseButton
+                  paused={!isRunningUi}
+                  running={isRunningUi}
+                  disabled={!currentProg || !currentProg.name}
+                  title={isRunningUi ? "정지(Stop)" : "가공 시작"}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (!currentProg || !currentProg.name) return;
 
                     if (isRunningUi) {
-                      const ok = window.confirm("현재 가공을 정지할까요?");
-                      if (!ok) return;
                       if (onStopClick) onStopClick(e);
                       return;
                     }
@@ -499,31 +502,12 @@ export const MachineCard = (props: MachineCardProps) => {
                       onPlayNowPlaying(jobId, e);
                     }
                   }}
-                  disabled={!currentProg || !currentProg.name}
-                  className={`group inline-flex h-9 w-9 items-center justify-center rounded-full border text-slate-700 disabled:opacity-40 transition-colors ${
+                  className={
                     isRunningUi
-                      ? "bg-white border-slate-200 text-slate-700 animate-pulse"
-                      : "bg-white border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-                  }`}
-                  title={isRunningUi ? "정지(Stop)" : "가공 시작"}
-                >
-                  <span className="relative inline-flex h-4 w-4 items-center justify-center">
-                    <Play
-                      className={`absolute h-4 w-4 transition-opacity ${
-                        isRunningUi
-                          ? "opacity-0 group-hover:opacity-0"
-                          : "opacity-100"
-                      }`}
-                    />
-                    <Pause
-                      className={`absolute h-4 w-4 transition-opacity ${
-                        isRunningUi
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      }`}
-                    />
-                  </span>
-                </button>
+                      ? "bg-white border-slate-200 text-slate-700"
+                      : "bg-white border-slate-200 text-slate-700"
+                  }
+                />
                 <button
                   type="button"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-40"
@@ -586,30 +570,22 @@ export const MachineCard = (props: MachineCardProps) => {
                     typeof pausedRaw === "boolean" ? pausedRaw : true;
 
                   return (
-                    <button
-                      type="button"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-40"
+                    <CncCirclePlayPauseButton
+                      paused={paused}
+                      disabled={!nextProg}
+                      title={!nextProg ? "-" : paused ? "재생" : "일시정지"}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (!nextProg) return;
-                        // paused 상태면 play, 아니면 pause
                         if (paused) {
                           if (!onPlayNext) return;
                           onPlayNext(nextJobId, e);
-                        } else {
-                          if (!onTogglePause) return;
-                          onTogglePause(nextJobId, e);
+                          return;
                         }
+                        if (!onTogglePause) return;
+                        onTogglePause(nextJobId, e);
                       }}
-                      disabled={!nextProg}
-                      title={!nextProg ? "-" : paused ? "재생" : "일시정지"}
-                    >
-                      {paused ? (
-                        <Play className="h-4 w-4" />
-                      ) : (
-                        <Pause className="h-4 w-4" />
-                      )}
-                    </button>
+                    />
                   );
                 })()}
                 <button

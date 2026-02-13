@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Thermometer, Wrench } from "lucide-react";
+import { useMemo, useState, useCallback } from "react";
+import { Thermometer, Wrench, Play, Pause, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,8 @@ import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempD
 import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
 import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useAuthStore } from "@/store/useAuthStore";
+import { apiFetch } from "@/lib/apiClient";
 import { WorksheetDiameterQueueBar } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import {
   WorksheetDiameterQueueModal,
@@ -167,6 +169,8 @@ const WorksheetCncMachineCard = ({
   const { state: continuousState } = useCncContinuous(
     continuousEnabled ? machine.uid : null,
   );
+  const { token } = useAuthStore();
+  const { toast } = useToast();
   const statusForChip = statusOverride ?? (machine.status as string);
   const [diameterMenuOpen, setDiameterMenuOpen] = useState(false);
   const showContinuousInfo =
@@ -176,6 +180,63 @@ const WorksheetCncMachineCard = ({
   const continuousElapsedMin = continuousState?.isRunning
     ? Math.floor(continuousState.elapsedSeconds / 60)
     : 0;
+
+  const handlePlayPauseClick = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!continuousState?.currentJob || !token) return;
+
+      try {
+        if (continuousState.isRunning) {
+          // 정지 요청
+          const res = await apiFetch({
+            path: `/api/cnc-machines/${encodeURIComponent(machine.uid)}/continuous/stop`,
+            method: "POST",
+            token,
+            jsonBody: {},
+          });
+          const body: any = res.data ?? {};
+          if (!res.ok || body?.success === false) {
+            throw new Error(body?.message || "정지 요청 실패");
+          }
+          toast({
+            title: "가공 정지",
+            description: "가공을 정지했습니다.",
+          });
+        } else {
+          // 시작 요청
+          const res = await apiFetch({
+            path: `/api/cnc-machines/${encodeURIComponent(machine.uid)}/continuous/play`,
+            method: "POST",
+            token,
+            jsonBody: {},
+          });
+          const body: any = res.data ?? {};
+          if (!res.ok || body?.success === false) {
+            throw new Error(body?.message || "가공 시작 실패");
+          }
+          toast({
+            title: "가공 시작",
+            description: "가공을 시작했습니다.",
+          });
+        }
+      } catch (e: any) {
+        const msg = e?.message ?? "알 수 없는 오류";
+        toast({
+          title: continuousState.isRunning ? "정지 실패" : "시작 실패",
+          description: msg,
+          variant: "destructive",
+        });
+      }
+    },
+    [
+      continuousState?.currentJob,
+      continuousState?.isRunning,
+      machine.uid,
+      token,
+      toast,
+    ],
+  );
 
   return (
     <div
@@ -300,14 +361,55 @@ const WorksheetCncMachineCard = ({
         )}
       </div>
 
-      <div className="app-glass-card-content mt-auto pt-1 text-sm text-slate-800 space-y-1">
-        <div className="flex justify-between">
-          <span className="font-medium">생산중</span>
-          <span className="text-slate-900">-</span>
+      <div className="app-glass-card-content mt-auto pt-3 space-y-2">
+        {/* Now Playing */}
+        <div className="rounded-lg bg-white/60 px-3 py-2 border border-slate-200">
+          <div className="text-[11px] font-semibold text-slate-500 mb-1">
+            Now Playing
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-extrabold text-slate-900 truncate">
+                {continuousState?.currentJob ?? "없음"}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handlePlayPauseClick}
+              disabled={!continuousState?.currentJob}
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition-colors ${
+                continuousState?.isRunning
+                  ? "bg-blue-50 border-blue-300 text-blue-600 animate-pulse"
+                  : !continuousState?.currentJob
+                    ? "bg-slate-200 border-slate-500 text-slate-700 shadow-sm"
+                    : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm"
+              }`}
+              title={continuousState?.isRunning ? "정지(Stop)" : "가공 시작"}
+            >
+              <span className="relative inline-flex h-5 w-5 items-center justify-center">
+                <Play
+                  className={`absolute h-5 w-5 transition-opacity ${
+                    continuousState?.isRunning ? "opacity-0" : "opacity-100"
+                  } ${!continuousState?.currentJob ? "opacity-80" : ""}`}
+                />
+                <Pause
+                  className={`absolute h-5 w-5 transition-opacity ${
+                    continuousState?.isRunning ? "opacity-100" : "opacity-0"
+                  }`}
+                />
+              </span>
+            </button>
+          </div>
         </div>
-        <div className="flex justify-between">
-          <span className="font-medium">다음 생산</span>
-          <span className="text-slate-900">-</span>
+
+        {/* Next Up */}
+        <div className="rounded-lg bg-white/60 px-3 py-2 border border-slate-200">
+          <div className="text-[11px] font-semibold text-slate-500 mb-1">
+            Next Up
+          </div>
+          <div className="text-sm font-extrabold text-slate-900 truncate">
+            {continuousState?.nextJob ?? "없음"}
+          </div>
         </div>
       </div>
     </div>

@@ -63,10 +63,6 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
 
   useEffect(() => {
     void fetchState();
-    const interval = setInterval(() => {
-      void fetchState();
-    }, 5000);
-    return () => clearInterval(interval);
   }, [fetchState]);
 
   return {
