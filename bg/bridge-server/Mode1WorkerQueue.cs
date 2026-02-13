@@ -7,6 +7,9 @@ namespace HiLinkBridgeWebApi48
 {
     internal static class Mode1WorkerQueue
     {
+        private static readonly ConcurrentDictionary<string, DateTime> _lastLogTimes = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private static readonly TimeSpan LogInterval = TimeSpan.FromSeconds(30);
+
         private class WorkItem
         {
             public Func<object> Func { get; set; }
@@ -73,7 +76,10 @@ namespace HiLinkBridgeWebApi48
                         try
                         {
                             var sw = System.Diagnostics.Stopwatch.StartNew();
-                            Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} processing. queueSize={_queue.Count}");
+                            if (ShouldLog(item.Tag))
+                            {
+                                Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} processing. queueSize={_queue.Count}");
+                            }
 
                             object result = null;
                             try
@@ -89,7 +95,10 @@ namespace HiLinkBridgeWebApi48
                             }
 
                             sw.Stop();
-                            Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} completed. elapsedMs={sw.ElapsedMilliseconds}");
+                            if (ShouldLog(item.Tag))
+                            {
+                                Console.WriteLine($"[Mode1WorkerQueue] {item.Tag} completed. elapsedMs={sw.ElapsedMilliseconds}");
+                            }
                             item.Tcs.TrySetResult(result);
                         }
                         catch (Exception ex)
@@ -242,6 +251,18 @@ namespace HiLinkBridgeWebApi48
                     _workerThread.Join(2000);
                 }
             }
+        }
+
+        private static bool ShouldLog(string tag)
+        {
+            var now = DateTime.UtcNow;
+            var last = _lastLogTimes.GetOrAdd(tag ?? string.Empty, _ => DateTime.MinValue);
+            if ((now - last) >= LogInterval)
+            {
+                _lastLogTimes[tag ?? string.Empty] = now;
+                return true;
+            }
+            return false;
         }
     }
 }

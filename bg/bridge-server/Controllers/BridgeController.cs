@@ -478,6 +478,9 @@ namespace HiLinkBridgeWebApi48.Controllers
             public int PreviousSlot;
             public int ProductCountBefore;
 
+            public int? PreUploadedSlot;
+            public bool FirstFilePreUploaded;
+
             public DateTime StartedAtUtc;
             public DateTime? FinishedAtUtc;
             public string Status;
@@ -491,6 +494,15 @@ namespace HiLinkBridgeWebApi48.Controllers
             public readonly Queue<HighLevelStartJob> Jobs = new Queue<HighLevelStartJob>();
             public bool WorkerRunning;
             public HighLevelStartJob Current;
+        }
+
+        private class PreUploadResult
+        {
+            public int ActiveSlot { get; set; }
+            public int ProtectedSlot { get; set; }
+            public List<int> UploadSlots { get; set; }
+            public List<int> DeletedSlots { get; set; }
+            public List<object> Files { get; set; }
         }
 
         private static readonly ConcurrentDictionary<string, HighLevelMachineQueue> HighLevelStartQueues =
@@ -562,6 +574,94 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
+        // 옵션: 큐 삽입 전에 CNC로 미리 업로드(슬롯 A/B 두 개까지만 선업로드)
+        private static PreUploadResult PreUploadProgramsForQueue(string machineId, short headType, List<string> paths)
+        {
+            if (paths == null || paths.Count == 0) return null;
+            var activeSlot = GetCurrentActiveSlotOrDefault(machineId);
+            var protectedSlot = (activeSlot == MANUAL_SLOT_A || activeSlot == MANUAL_SLOT_B) ? activeSlot : 0;
+
+            // 활성 슬롯 보호: 반대 슬롯을 우선 사용. 보호 슬롯만 있는 경우 1개만 업로드.
+            var slotOrder = new List<int>();
+            if (protectedSlot == MANUAL_SLOT_A)
+            {
+                slotOrder.Add(MANUAL_SLOT_B);
+            }
+            else if (protectedSlot == MANUAL_SLOT_B)
+            {
+                slotOrder.Add(MANUAL_SLOT_A);
+            }
+            else
+            {
+                slotOrder.Add(MANUAL_SLOT_A);
+                slotOrder.Add(MANUAL_SLOT_B);
+            }
+
+            var uploadSlots = slotOrder.Take(paths.Count).ToList();
+            if (uploadSlots.Count < paths.Count)
+            {
+                throw new InvalidOperationException("Not enough uploadable slots (protected active slot)");
+            }
+
+            var deletedSlots = new List<int>();
+            var logInfo = new StringBuilder();
+            logInfo.Append($"[PreUpload] machine={machineId} headType={headType} active={activeSlot} protected={protectedSlot} uploadSlots=[{string.Join(",", uploadSlots)}]");
+            var fileInfos = new List<object>();
+
+            for (int i = 0; i < paths.Count; i++)
+            {
+                var rel = paths[i];
+                var full = GetSafeBridgeStorePath(rel);
+                if (!File.Exists(full))
+                {
+                    throw new FileNotFoundException("file not found", full);
+                }
+
+                var slot = uploadSlots[i];
+
+                // 보호되지 않은 슬롯은 업로드 전에 삭제하여 메모리 확보(EW_DATA/Busy 완화)
+                if (slot != protectedSlot)
+                {
+                    if (Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slot, out var _, out var delErr))
+                    {
+                        deletedSlots.Add(slot);
+                    }
+                    else
+                    {
+                        logInfo.Append($" delErr(slot={slot})={delErr}");
+                    }
+                }
+
+                var content = File.ReadAllText(full);
+                var enforced = EnsurePercentAndHeaderSecondLine(content, slot);
+                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
+                var bytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
+
+                if (!UploadProgramDataBlocking(machineId, headType, (short)slot, processed, true, out var _, out var upErr))
+                {
+                    throw new InvalidOperationException(upErr ?? "upload failed");
+                }
+
+                fileInfos.Add(new { slot, bytes, path = rel });
+                logInfo.Append($" [slot={slot} bytes={bytes} path={rel} uploaded]");
+            }
+
+            if (deletedSlots.Count > 0)
+            {
+                logInfo.Append($" deleted=[{string.Join(",", deletedSlots)}]");
+            }
+
+            Console.WriteLine(logInfo.ToString());
+            return new PreUploadResult
+            {
+                ActiveSlot = activeSlot,
+                ProtectedSlot = protectedSlot,
+                UploadSlots = uploadSlots,
+                DeletedSlots = deletedSlots,
+                Files = fileInfos,
+            };
+        }
+
         private static bool IsAlarm(string machineId, out string error)
         {
             error = null;
@@ -602,6 +702,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                             }
                             job = q.Jobs.Peek();
                             q.Current = job;
+                            Console.WriteLine($"[HighLevelStartJob] start jobId={job.JobId} machine={machineId} index={job.Index} total={job.Paths?.Count ?? 0} currentSlot={job.CurrentSlot} prevSlot={job.PreviousSlot}");
                         }
 
                         try
@@ -610,6 +711,22 @@ namespace HiLinkBridgeWebApi48.Controllers
                             await RunHighLevelStartJob(machineId, job);
                             job.Status = "DONE";
                             job.FinishedAtUtc = DateTime.UtcNow;
+                            JobResults[job.JobId] = new JobResult
+                            {
+                                JobId = job.JobId,
+                                Status = "COMPLETED",
+                                Result = new
+                                {
+                                    success = true,
+                                    message = "Job completed",
+                                    currentSlot = job.CurrentSlot,
+                                    previousSlot = job.PreviousSlot,
+                                    index = job.Index,
+                                    total = job.Paths?.Count ?? 0,
+                                },
+                                CreatedAtUtc = DateTime.UtcNow
+                            };
+                            Console.WriteLine($"[HighLevelStartJob] done jobId={job.JobId} machine={machineId} status=DONE");
                         }
                         catch (Exception ex)
                         {
@@ -617,6 +734,24 @@ namespace HiLinkBridgeWebApi48.Controllers
                             job.ErrorCode = job.ErrorCode ?? "EXCEPTION";
                             job.ErrorMessage = job.ErrorMessage ?? ex.Message;
                             job.FinishedAtUtc = DateTime.UtcNow;
+
+                            JobResults[job.JobId] = new JobResult
+                            {
+                                JobId = job.JobId,
+                                Status = "FAILED",
+                                Result = new
+                                {
+                                    success = false,
+                                    message = job.ErrorMessage,
+                                    errorCode = job.ErrorCode,
+                                    currentSlot = job.CurrentSlot,
+                                    previousSlot = job.PreviousSlot,
+                                    index = job.Index,
+                                    total = job.Paths?.Count ?? 0,
+                                },
+                                CreatedAtUtc = DateTime.UtcNow
+                            };
+                            Console.WriteLine($"[HighLevelStartJob] failed jobId={job.JobId} machine={machineId} errorCode={job.ErrorCode} errorMessage={job.ErrorMessage} exception={ex.Message}");
                         }
                         finally
                         {
@@ -647,10 +782,11 @@ namespace HiLinkBridgeWebApi48.Controllers
             if (job.Paths == null || job.Paths.Count == 0) return;
 
             // 시작 슬롯 결정(현재 활성/가공중 프로그램 피하기)
-            job.CurrentSlot = ChooseManualSlotForUpload(machineId);
+            job.CurrentSlot = job.PreUploadedSlot ?? ChooseManualSlotForUpload(machineId);
             job.PreviousSlot = 0;
 
             // 첫 파일을 현재 슬롯에 업로드(가공 전)
+            if (!(job.FirstFilePreUploaded && job.PreUploadedSlot.HasValue && job.PreUploadedSlot.Value == job.CurrentSlot))
             {
                 var rel = job.Paths[0];
                 var full = GetSafeBridgeStorePath(rel);
@@ -660,6 +796,10 @@ namespace HiLinkBridgeWebApi48.Controllers
                     job.ErrorMessage = "file not found";
                     throw new FileNotFoundException("file not found", full);
                 }
+
+                // 업로드 전에 대상 슬롯 삭제
+                Mode1Api.TryDeleteMachineProgramInfo(machineId, job.HeadType, (short)job.CurrentSlot, out var _, out var _);
+
                 var content = File.ReadAllText(full);
                 var enforced = EnsurePercentAndHeaderSecondLine(content, job.CurrentSlot);
                 var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
@@ -755,6 +895,9 @@ namespace HiLinkBridgeWebApi48.Controllers
                     var enforcedNext = EnsurePercentAndHeaderSecondLine(nextContent, nextSlot);
                     var processedNext = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforcedNext));
 
+                    // 업로드 전에 대상 슬롯 삭제
+                    Mode1Api.TryDeleteMachineProgramInfo(machineId, job.HeadType, (short)nextSlot, out var _, out var _);
+
                     if (!UploadProgramDataBlocking(machineId, job.HeadType, nextSlot, processedNext, true, out var _, out var upErr1))
                     {
                         job.ErrorCode = "UPLOAD_FAILED";
@@ -786,7 +929,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
 
                 // 4) 생산 수량 +1 확인
-                if (!await WaitForProductCountIncrease(machineId, job.ProductCountBefore, 120))
+                // 긴 가공(6~7분 이상) 대비: 제품 수량 증가 대기 시간 20분
+                if (!await WaitForProductCountIncrease(machineId, job.ProductCountBefore, 1200))
                 {
                     job.ErrorCode = "PRODUCT_COUNT_NOT_INCREASED";
                     job.ErrorMessage = "product count did not increase";
@@ -1189,6 +1333,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             public short? headType { get; set; }
             public string[] paths { get; set; }
             public int? maxWaitSeconds { get; set; }
+            public bool? uploadIfMissing { get; set; }
         }
 
         // POST /machines/{machineId}/smart/replace (이중 응답 방식)
@@ -1213,12 +1358,34 @@ namespace HiLinkBridgeWebApi48.Controllers
             var jobId = Guid.NewGuid().ToString("N");
             Console.WriteLine($"[SmartReplace] jobId={jobId} accepted. machineId={machineId} paths={paths.Count}");
 
+            PreUploadResult preUploadResult = null;
+            if (req?.uploadIfMissing == true)
+            {
+                try
+                {
+                    preUploadResult = PreUploadProgramsForQueue(machineId, req?.headType ?? (short)1, paths);
+                }
+                catch (Exception ex)
+                {
+                    return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                    {
+                        success = false,
+                        message = ex.Message,
+                        jobId,
+                        machineId,
+                        path = paths.FirstOrDefault(),
+                        preUpload = preUploadResult
+                    });
+                }
+            }
+
             var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
                 message = "Smart replace job accepted",
                 jobId = jobId,
                 machineId = machineId,
+                preUpload = preUploadResult
             });
 
             Task.Run(() =>
@@ -1234,6 +1401,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                         Index = 0,
                         StartedAtUtc = DateTime.UtcNow,
                         Status = "QUEUED",
+                        PreUploadedSlot = preUploadResult?.UploadSlots?.FirstOrDefault(),
+                        FirstFilePreUploaded = preUploadResult != null,
                     };
 
                     var q = GetOrCreateHighLevelQueue(machineId);
@@ -1290,12 +1459,34 @@ namespace HiLinkBridgeWebApi48.Controllers
             var jobId = Guid.NewGuid().ToString("N");
             Console.WriteLine($"[SmartEnqueue] jobId={jobId} accepted. machineId={machineId} paths={paths.Count}");
 
+            PreUploadResult preUploadResult = null;
+            if (req?.uploadIfMissing == true)
+            {
+                try
+                {
+                    preUploadResult = PreUploadProgramsForQueue(machineId, req?.headType ?? (short)1, paths);
+                }
+                catch (Exception ex)
+                {
+                    return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                    {
+                        success = false,
+                        message = ex.Message,
+                        jobId,
+                        machineId,
+                        path = paths.FirstOrDefault(),
+                        preUpload = preUploadResult
+                    });
+                }
+            }
+
             var immediateResponse = Request.CreateResponse(HttpStatusCode.Accepted, new
             {
                 success = true,
                 message = "Smart enqueue job accepted",
                 jobId = jobId,
                 machineId = machineId,
+                preUpload = preUploadResult
             });
 
             Task.Run(() =>
@@ -1311,6 +1502,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                         Index = 0,
                         StartedAtUtc = DateTime.UtcNow,
                         Status = "QUEUED",
+                        PreUploadedSlot = preUploadResult?.UploadSlots?.FirstOrDefault(),
+                        FirstFilePreUploaded = preUploadResult != null,
                     };
 
                     var q = GetOrCreateHighLevelQueue(machineId);

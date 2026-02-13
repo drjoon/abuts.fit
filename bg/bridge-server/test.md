@@ -261,10 +261,10 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/188fbce9b7224c1886a02370
 목적: 현재 실행 중인 작업은 유지하고, **대기 큐를 지정된 paths로 교체**한다.
 
 ```bash
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/replace" \
+ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/replace" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"paths":["M5_20260129-KBDSGYQH-47_s7le4pzf.nc"]}'
+ -d '{"headType":1,"paths":["M5_20260212-MEYSHAXP-47_rc28sni0.nc"],"uploadIfMissing":true}'
 ```
 
 ### 2) 스마트 enqueue
@@ -277,7 +277,9 @@ curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/replace" \
 curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/enqueue" \
  -H "Content-Type: application/json" \
  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"paths":["M5_20260212-BZBJTWNY-27-1_6qqwvdra.nc"],"maxWaitSeconds":1800}'
+ -d '{"headType":1,"paths":["M5_20260212-MEYSHAXP-47_rc28sni0.nc"],
+ "uploadIfMissing":true,
+ "maxWaitSeconds":1800}'
 ```
 
 ### 3) 스마트 start
@@ -336,3 +338,27 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M4/programs?headType=1" \
 메인: headType=1
 서브: headType=2
 ````
+
+## 테스트
+
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/enqueue" \
+ -H "Content-Type: application/json" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -d '{"headType":1,"paths":["M5_20260212-MEYSHAXP-47_rc28sni0.nc"],"uploadIfMissing":true,"maxWaitSeconds":1800}'
+
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/smart/status" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
+
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/4f2a9849adda4a348643ac99c59ceddf" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
+
+# queued가 1이어야 합니다.
+
+curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/start" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
+ -H "Content-Length: 0"
+
+curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/39c27d77cdef42a4a54eeae75084c693" \
+ -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
+
+ curl "http://1.217.31.227:8002/api/cnc/machines/M5/alarms?headType=1" -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
