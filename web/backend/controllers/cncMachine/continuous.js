@@ -212,6 +212,7 @@ export async function smartStart(req, res) {
     const body = await resp.json().catch(() => ({}));
 
     // 이중 응답 방식: 202 Accepted면 jobId 반환
+    // 브리지 서버에서 가공 완료 후 백엔드에 콜백하므로 폴링 불필요
     if (resp.status === 202 && body?.jobId) {
       return res.status(202).json({
         success: true,

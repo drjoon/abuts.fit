@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "@/lib/apiClient";
+import {
+  subscribeCncMachining,
+  unsubscribeCncMachining,
+  onCncMachiningCompleted,
+  onCncMachiningTimeout,
+} from "@/lib/socket";
 
 import type { Machine } from "../../cnc/types";
 import type { CncJobItem } from "../../cnc/components/CncReservationModal";
@@ -1056,103 +1062,40 @@ export function useCncDashboardQueues({
           description: `${nowJob.name || path} 가공을 시작합니다.`,
         });
 
-        // 3) 20분간 10초 폴링으로 가공 완료 확인
-        const maxPolls = 120; // 20분 = 120 * 10초
-        let machiningDone = false;
-        for (let i = 0; i < maxPolls; i++) {
-          await new Promise((r) => setTimeout(r, 10000));
+        // 3) WebSocket으로 가공 완료 알림 대기
+        const jobId = startBody?.jobId;
+        if (jobId) {
+          // 백엔드가 폴링하고 완료 시 WebSocket으로 알림
+          subscribeCncMachining(uid, jobId);
 
-          try {
-            const smartStatusRes = await apiFetch({
-              path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/status`,
-              method: "GET",
-              token,
-            });
-            const smartBody: any = smartStatusRes.data ?? {};
-            const workerRunning = !!smartBody?.workerRunning;
-            const current = smartBody?.current;
-
-            // 워커가 멈추고 current가 없으면 가공 완료
-            if (!workerRunning && !current) {
-              machiningDone = true;
-              break;
+          // 완료 이벤트 리스너
+          const unsubscribeCompleted = onCncMachiningCompleted((data) => {
+            if (data.machineId === uid && data.jobId === jobId) {
+              handleMachiningCompleted(uid);
+              unsubscribeCompleted();
+              unsubscribeTimeout();
+              unsubscribeCncMachining(uid, jobId);
             }
-          } catch {
-            // 폴링 에러는 무시하고 계속
-          }
-
-          // 상태 갱신
-          void refreshStatusFor(uid);
-        }
-
-        if (!machiningDone) {
-          toast({
-            title: "폴링 타임아웃",
-            description: "20분 내 가공 완료를 확인하지 못했습니다.",
-            variant: "destructive",
           });
-        }
 
-        // 4) 가공 완료 후 현재 작업 제거 및 Next Up 자동 승격
-        let nextJobToAutoStart: any = null;
-        if (machiningDone) {
-          const currentJobs = reservationJobsMap[uid] || [];
-          nextJobToAutoStart = currentJobs[1];
-        }
-
-        setReservationJobsMap((prev) => {
-          const jobs = prev[uid] || [];
-          const filtered = jobs.slice(1);
-          if (filtered.length === 0) {
-            const nextMap = { ...prev };
-            delete nextMap[uid];
-            return nextMap;
-          }
-          return { ...prev, [uid]: filtered };
-        });
-
-        setNowPlayingMap((prev) => {
-          const next = { ...prev };
-          delete next[uid];
-          return next;
-        });
-
-        void refreshStatusFor(uid);
-        void fetchProgramList();
-
-        // 자동 승격 실행
-        if (machiningDone && nextJobToAutoStart && !nextJobToAutoStart.paused) {
-          await new Promise((r) => setTimeout(r, 2000));
-          const nextPath =
-            nextJobToAutoStart.bridgePath ||
-            nextJobToAutoStart.path ||
-            nextJobToAutoStart.name;
-          if (nextPath) {
-            try {
-              const replaceRes = await apiFetch({
-                path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/replace`,
-                method: "POST",
-                token,
-                jsonBody: { headType: 1, paths: [nextPath] },
+          // 타임아웃 이벤트 리스너
+          const unsubscribeTimeout = onCncMachiningTimeout((data) => {
+            if (data.machineId === uid && data.jobId === jobId) {
+              toast({
+                title: "폴링 타임아웃",
+                description: "20분 내 가공 완료를 확인하지 못했습니다.",
+                variant: "destructive",
               });
-              if (!replaceRes.ok) {
-                throw new Error("smart/replace 실패");
-              }
-
-              const startRes = await apiFetch({
-                path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/start`,
-                method: "POST",
-                token,
+              setNowPlayingMap((prev) => {
+                const next = { ...prev };
+                delete next[uid];
+                return next;
               });
-              if (!startRes.ok) {
-                throw new Error("smart/start 실패");
-              }
-
-              setNowPlayingMap((prev) => ({ ...prev, [uid]: true }));
-            } catch (e: any) {
-              console.error("자동 승격 중 오류:", e);
+              unsubscribeCompleted();
+              unsubscribeTimeout();
+              unsubscribeCncMachining(uid, jobId);
             }
-          }
+          });
         }
       } catch (e: any) {
         const msg = e?.message ?? "가공 시작 요청 중 오류";
@@ -1178,6 +1121,37 @@ export function useCncDashboardQueues({
       toast,
       token,
     ],
+  );
+
+  // 가공 완료 처리 함수
+  // 브리지 서버에서 가공 완료 후 자동으로 다음 작업을 시작하므로,
+  // 프론트는 현재 작업만 제거하고 상태를 갱신한다.
+  const handleMachiningCompleted = useCallback(
+    (uid: string) => {
+      // 1) 현재 작업 제거
+      setReservationJobsMap((prev) => {
+        const jobs = prev[uid] || [];
+        const filtered = jobs.slice(1);
+        if (filtered.length === 0) {
+          const nextMap = { ...prev };
+          delete nextMap[uid];
+          return nextMap;
+        }
+        return { ...prev, [uid]: filtered };
+      });
+
+      // 2) Now Playing 상태 제거
+      setNowPlayingMap((prev) => {
+        const next = { ...prev };
+        delete next[uid];
+        return next;
+      });
+
+      // 3) 상태 갱신
+      void refreshStatusFor(uid);
+      void fetchProgramList();
+    },
+    [refreshStatusFor, fetchProgramList],
   );
 
   return {

@@ -1,6 +1,7 @@
 import express from "express";
 import * as cncMachineController from "../controllers/cncMachine.controller.js";
 import * as cncEventController from "../controllers/cncEvent.controller.js";
+import * as machiningCallbackController from "../controllers/cncMachine/machiningCallback.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { authorizeRoles } from "../middlewares/role.middleware.js";
 import { requireBridgeSecret } from "../middlewares/bridgeSecret.middleware.js";
@@ -9,6 +10,14 @@ import { requireBridgeIpAllowlist } from "../middlewares/bridgeIpAllowlist.middl
 const router = express.Router();
 
 // 브리지 서버 전용(시크릿 기반)
+// 가공 완료 콜백 (브리지 서버에서 호출)
+router.post(
+  "/:machineId/smart/machining-completed",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  machiningCallbackController.machiningCompleted,
+);
+
 router.get(
   "/bridge/dummy-settings",
   requireBridgeIpAllowlist,

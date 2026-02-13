@@ -119,7 +119,7 @@ export function onUserTyping(
     userId: string;
     userName: string;
     isTyping: boolean;
-  }) => void
+  }) => void,
 ) {
   socket?.on("user-typing", callback);
   return () => socket?.off("user-typing", callback);
@@ -130,7 +130,7 @@ export function onMessagesRead(
     userId: string;
     messageIds: string[];
     readAt: string;
-  }) => void
+  }) => void,
 ) {
   socket?.on("messages-read", callback);
   return () => socket?.off("messages-read", callback);
@@ -141,7 +141,7 @@ export function onUserJoined(
     userId: string;
     userName: string;
     timestamp: string;
-  }) => void
+  }) => void,
 ) {
   socket?.on("user-joined", callback);
   return () => socket?.off("user-joined", callback);
@@ -152,8 +152,44 @@ export function onUserLeft(
     userId: string;
     userName: string;
     timestamp: string;
-  }) => void
+  }) => void,
 ) {
   socket?.on("user-left", callback);
   return () => socket?.off("user-left", callback);
+}
+
+// CNC 가공 완료 구독
+export function subscribeCncMachining(machineId: string, jobId: string) {
+  socket?.emit("subscribe-cnc-machining", { machineId, jobId });
+}
+
+// CNC 가공 완료 구독 해제
+export function unsubscribeCncMachining(machineId: string, jobId: string) {
+  socket?.emit("unsubscribe-cnc-machining", { machineId, jobId });
+}
+
+// CNC 가공 완료 이벤트 리스너
+export function onCncMachiningCompleted(
+  callback: (data: {
+    machineId: string;
+    jobId: string;
+    status: "COMPLETED" | "FAILED";
+    result: any;
+    completedAt: string;
+  }) => void,
+) {
+  socket?.on("cnc-machining-completed", callback);
+  return () => socket?.off("cnc-machining-completed", callback);
+}
+
+// CNC 가공 타임아웃 이벤트 리스너
+export function onCncMachiningTimeout(
+  callback: (data: {
+    machineId: string;
+    jobId: string;
+    timedOutAt: string;
+  }) => void,
+) {
+  socket?.on("cnc-machining-timeout", callback);
+  return () => socket?.off("cnc-machining-timeout", callback);
 }

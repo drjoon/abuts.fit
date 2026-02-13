@@ -55,7 +55,7 @@ export function initializeSocket(server) {
         }
 
         const isParticipant = room.participants.some(
-          (p) => p.toString() === socket.userId
+          (p) => p.toString() === socket.userId,
         );
 
         if (!isParticipant && socket.userRole !== "admin") {
@@ -65,7 +65,7 @@ export function initializeSocket(server) {
 
         socket.join(`room:${roomId}`);
         console.log(
-          `${socket.userName}이(가) 채팅방 ${roomId}에 입장했습니다.`
+          `${socket.userName}이(가) 채팅방 ${roomId}에 입장했습니다.`,
         );
 
         // 입장 알림
@@ -103,7 +103,7 @@ export function initializeSocket(server) {
         }
 
         const isParticipant = room.participants.some(
-          (p) => p.toString() === socket.userId
+          (p) => p.toString() === socket.userId,
         );
 
         if (!isParticipant) {
@@ -176,7 +176,7 @@ export function initializeSocket(server) {
                 readAt: new Date(),
               },
             },
-          }
+          },
         );
 
         socket.to(`room:${roomId}`).emit("messages-read", {
@@ -186,6 +186,25 @@ export function initializeSocket(server) {
         });
       } catch (error) {
         console.error("읽음 처리 오류:", error);
+      }
+    });
+
+    // CNC 가공 완료 폴링 시작
+    socket.on("subscribe-cnc-machining", (data) => {
+      const { machineId, jobId } = data;
+      if (machineId && jobId) {
+        socket.join(`cnc:${machineId}:${jobId}`);
+        console.log(
+          `사용자 ${socket.userName}이(가) CNC 가공 ${machineId}/${jobId} 구독`,
+        );
+      }
+    });
+
+    // CNC 가공 완료 폴링 구독 해제
+    socket.on("unsubscribe-cnc-machining", (data) => {
+      const { machineId, jobId } = data;
+      if (machineId && jobId) {
+        socket.leave(`cnc:${machineId}:${jobId}`);
       }
     });
 

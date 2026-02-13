@@ -841,12 +841,14 @@ namespace HiLinkBridgeWebApi48.Controllers
                 job.CurrentSlot = finalSlot0;
             }
 
-            for (job.Index = 0; job.Index < job.Paths.Count; job.Index++)
+            // 단일 파일 처리 (연속 가공은 백엔드 DB에서 관리)
+            if (job.Paths.Count > 0)
             {
+                job.Index = 0;
                 var thisSlot = job.CurrentSlot;
                 var nextSlot = thisSlot == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
 
-                // 다음 사이클에서 바로 활성화할 수 있도록, 현재 슬롯 프로그램이 존재하는지 확인
+                // 현재 슬롯 프로그램이 존재하는지 확인
                 if (!Mode1Api.TryGetProgListInfo(machineId, job.HeadType, out var progListCheck, out var progErr))
                 {
                     job.ErrorCode = "PROGRAM_CHECK_FAILED";
@@ -862,7 +864,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     throw new TimeoutException(job.ErrorMessage);
                 }
 
-                // 3) 비정상 종료(Alarm)면 중단
+                // 2) 비정상 종료(Alarm)면 중단
                 if (IsAlarm(machineId, out var alarmErr0))
                 {
                     job.ErrorCode = "ALARM";
@@ -870,11 +872,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                     throw new InvalidOperationException(job.ErrorMessage);
                 }
 
-                // 4) 생산 수량(시작 전) 기록
+                // 3) 생산 수량(시작 전) 기록
                 job.ProductCountBefore = 0;
                 CncMachineSignalUtils.TryGetProductCount(machineId, out job.ProductCountBefore);
 
-                // 5) Edit 모드 변경
+                // 4) Edit 모드 변경
                 if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var editErr))
                 {
                     job.ErrorCode = "SET_MODE_EDIT_FAILED";
@@ -883,7 +885,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
                 await Task.Delay(500);
 
-                // 6) 활성화 프로그램 변경 (Busy(-1) 재시도)
+                // 5) 활성화 프로그램 변경 (Busy(-1) 재시도)
                 var actDto = new PayloadUpdateActivateProg { headType = 1, programNo = (short)thisSlot };
                 short actRc = -1;
                 string actErr = null;
@@ -907,7 +909,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     throw new InvalidOperationException(job.ErrorMessage);
                 }
 
-                // 7) Auto 모드 변경
+                // 6) Auto 모드 변경
                 if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var autoErr))
                 {
                     job.ErrorCode = "SET_MODE_AUTO_FAILED";
@@ -916,7 +918,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
                 await Task.Delay(500);
 
-                // 8) 가공 시작 명령
+                // 7) 가공 시작 명령
                 if (!Mode1Api.TrySetMachinePanelIO(machineId, 0, (short)Config.CncStartIoUid, true, out var startErr))
                 {
                     job.ErrorCode = "START_FAILED";
@@ -924,38 +926,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     throw new InvalidOperationException(job.ErrorMessage);
                 }
 
-                // 10) 가공 중 다음 작업 선업로드 (사이클타임 절감)
-                if (job.Index + 1 < job.Paths.Count)
-                {
-                    var nextPath = job.Paths[job.Index + 1];
-                    var nextFull = GetSafeBridgeStorePath(nextPath);
-                    if (!File.Exists(nextFull))
-                    {
-                        job.ErrorCode = "FILE_NOT_FOUND";
-                        job.ErrorMessage = "file not found";
-                        throw new FileNotFoundException("file not found", nextFull);
-                    }
-                    var nextContent = File.ReadAllText(nextFull);
-
-                    // 업로드 전에 대상 슬롯 삭제
-                    Mode1Api.TryDeleteMachineProgramInfo(machineId, job.HeadType, (short)nextSlot, out var _, out var _);
-
-                    if (!TryUploadWithFallback(machineId, job.HeadType, (short)nextSlot, nextContent, true, out var finalNextSlot, out var _, out var upErr1))
-                    {
-                        job.ErrorCode = "UPLOAD_FAILED";
-                        job.ErrorMessage = upErr1;
-                        throw new InvalidOperationException(job.ErrorMessage);
-                    }
-                    nextSlot = finalNextSlot;
-                    if (!Mode1Api.TryGetProgListInfo(machineId, job.HeadType, out var progListNext, out var progErrNext))
-                    {
-                        job.ErrorCode = "PROGRAM_CHECK_FAILED";
-                        job.ErrorMessage = progErrNext ?? "Unable to read program list";
-                        throw new InvalidOperationException(job.ErrorMessage);
-                    }
-                }
-
-                // 2) 가공 종료 대기
+                // 8) 가공 종료 대기
                 if (!await WaitUntilDoneOrTimeout(machineId, job.MaxWaitSeconds))
                 {
                     job.ErrorCode = "WAIT_DONE_TIMEOUT";
@@ -963,7 +934,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     throw new TimeoutException(job.ErrorMessage);
                 }
 
-                // 3) 비정상 종료(Alarm)면 중단
+                // 9) 비정상 종료(Alarm)면 중단
                 if (IsAlarm(machineId, out var alarmErr1))
                 {
                     job.ErrorCode = "ALARM";
@@ -971,7 +942,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     throw new InvalidOperationException(job.ErrorMessage);
                 }
 
-                // 4) 생산 수량 +1 확인
+                // 10) 생산 수량 +1 확인
                 // 긴 가공(6~7분 이상) 대비: 제품 수량 증가 대기 시간 20분
                 if (!await WaitForProductCountIncrease(machineId, job.ProductCountBefore, 1200))
                 {
@@ -980,13 +951,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     throw new TimeoutException(job.ErrorMessage);
                 }
 
-                // 4-1) 다음 큐 작업 전 약간의 여유 시간(기계 정지/버퍼) 부여
-                if (job.Index + 1 < job.Paths.Count)
-                {
-                    await Task.Delay(2000);
-                }
-
-                // 9) 이전 가공프로그램 삭제
+                // 11) 이전 가공프로그램 삭제
                 if (job.PreviousSlot > 0)
                 {
                     Mode1Api.TryDeleteMachineProgramInfo(machineId, job.HeadType, (short)job.PreviousSlot, out var _, out var _);
@@ -994,6 +959,133 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 job.PreviousSlot = thisSlot;
                 job.CurrentSlot = nextSlot;
+
+                // 12) 가공 완료 콜백 (백엔드에 통보)
+                await NotifyMachiningCompletedToBackend(machineId, job.JobId);
+
+                // 13) 다음 작업 자동 시작
+                await TryStartNextMachiningJob(machineId, job.HeadType);
+            }
+        }
+
+        private static async Task NotifyMachiningCompletedToBackend(string machineId, string jobId)
+        {
+            try
+            {
+                var backendUrl = Config.BackendBase?.TrimEnd('/');
+                if (string.IsNullOrEmpty(backendUrl))
+                {
+                    Console.WriteLine($"[NotifyMachiningCompleted] BackendUrl not configured");
+                    return;
+                }
+
+                var url = $"{backendUrl}/api/cnc-machines/{Uri.EscapeDataString(machineId)}/smart/machining-completed";
+                var payload = new { jobId, status = "COMPLETED" };
+                var json = JsonConvert.SerializeObject(payload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                // 브리지 시크릿 헤더 추가
+                var headers = new Dictionary<string, string>
+                {
+                    { "X-Bridge-Secret", Config.BridgeSharedSecret ?? string.Empty }
+                };
+
+                using (var client = new HttpClient())
+                {
+                    foreach (var header in headers)
+                    {
+                        client.DefaultRequestHeaders.Add(header.Key, header.Value);
+                    }
+
+                    var response = await client.PostAsync(url, content);
+                    Console.WriteLine($"[NotifyMachiningCompleted] machineId={machineId} jobId={jobId} status={response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[NotifyMachiningCompleted] Error: {ex.Message}");
+            }
+        }
+
+        private static async Task TryStartNextMachiningJob(string machineId, short headType)
+        {
+            try
+            {
+                var backendUrl = Config.BackendBase?.TrimEnd('/');
+                if (string.IsNullOrEmpty(backendUrl))
+                {
+                    Console.WriteLine($"[TryStartNextMachiningJob] BackendUrl not configured");
+                    return;
+                }
+
+                // 백엔드에서 다음 작업 조회
+                var url = $"{backendUrl}/api/cnc-machines/{Uri.EscapeDataString(machineId)}/bridge/queue-snapshot";
+                var headers = new Dictionary<string, string>
+                {
+                    { "X-Bridge-Secret", Config.BridgeSharedSecret ?? string.Empty }
+                };
+
+                using (var client = new HttpClient())
+                {
+                    foreach (var header in headers)
+                    {
+                        client.DefaultRequestHeaders.Add(header.Key, header.Value);
+                    }
+
+                    var response = await client.GetAsync(url);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine($"[TryStartNextMachiningJob] Failed to get queue snapshot: {response.StatusCode}");
+                        return;
+                    }
+
+                    var json = await response.Content.ReadAsStringAsync();
+                    var queueData = JsonConvert.DeserializeObject<JObject>(json);
+                    var jobs = queueData?["data"]?["jobs"] as JArray;
+
+                    if (jobs == null || jobs.Count == 0)
+                    {
+                        Console.WriteLine($"[TryStartNextMachiningJob] No more jobs in queue");
+                        return;
+                    }
+
+                    // 첫 번째 작업 경로 추출
+                    var firstJob = jobs[0] as JObject;
+                    var path = firstJob?["bridgePath"]?.ToString();
+                    if (string.IsNullOrEmpty(path))
+                    {
+                        path = firstJob?["path"]?.ToString();
+                    }
+
+                    if (string.IsNullOrEmpty(path))
+                    {
+                        Console.WriteLine($"[TryStartNextMachiningJob] No path found in first job");
+                        return;
+                    }
+
+                    // smart/replace로 큐 설정
+                    var replaceUrl = $"{backendUrl}/api/cnc-machines/{Uri.EscapeDataString(machineId)}/smart/replace";
+                    var replacePayload = new { headType, paths = new[] { path } };
+                    var replaceJson = JsonConvert.SerializeObject(replacePayload);
+                    var replaceContent = new StringContent(replaceJson, Encoding.UTF8, "application/json");
+
+                    var replaceResponse = await client.PostAsync(replaceUrl, replaceContent);
+                    if (!replaceResponse.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine($"[TryStartNextMachiningJob] smart/replace failed: {replaceResponse.StatusCode}");
+                        return;
+                    }
+
+                    // smart/start로 가공 시작
+                    var startUrl = $"{backendUrl}/api/cnc-machines/{Uri.EscapeDataString(machineId)}/smart/start";
+                    var startResponse = await client.PostAsync(startUrl, new StringContent("", Encoding.UTF8, "application/json"));
+
+                    Console.WriteLine($"[TryStartNextMachiningJob] machineId={machineId} path={path} status={startResponse.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TryStartNextMachiningJob] Error: {ex.Message}");
             }
         }
 
