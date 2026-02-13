@@ -212,6 +212,9 @@ export const PreviewModal = ({
       ? null
       : previewFiles.original;
 
+  const rightViewer =
+    !isCamStage && !isStageFileStage ? previewFiles.cam : null;
+
   const onUploadRight = (file: File) => {
     if (isStageFileStage) {
       const key = currentReviewStageKey as
@@ -314,7 +317,10 @@ export const PreviewModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent hideClose className="max-w-2xl">
+      <DialogContent
+        hideClose
+        className="w-[92vw] max-w-5xl h-[85vh] overflow-hidden"
+      >
         <DialogTitle className="sr-only">의뢰 미리보기</DialogTitle>
         <DialogDescription className="sr-only">
           의뢰 파일과 NC 내용을 확인하는 영역입니다.
@@ -414,7 +420,7 @@ export const PreviewModal = ({
           </DialogClose>
         </div>
 
-        <div className="space-y-4">
+        <div className="h-full flex flex-col gap-4 overflow-hidden">
           {/* 모달 제목 영역 */}
           <div className="flex items-center gap-2 pb-2 border-b">
             {req.referenceIds && req.referenceIds.length > 0 && (
@@ -445,8 +451,8 @@ export const PreviewModal = ({
               <div>STL 불러오는 중...</div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-10">
-              <div className="border rounded-lg p-3 space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
+              <div className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden">
                 <button
                   type="button"
                   className="text-sm font-semibold text-blue-700 hover:underline text-left"
@@ -466,16 +472,18 @@ export const PreviewModal = ({
                 </button>
                 {isStageFileStage ? (
                   <textarea
-                    className="w-full h-[300px] rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700"
+                    className="w-full flex-1 min-h-0 rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700 resize-none overflow-auto"
                     value={previewNcText}
                     readOnly
                   />
                 ) : leftViewer ? (
-                  <StlPreviewViewer
-                    file={leftViewer}
-                    showOverlay={false}
-                    finishLinePoints={finishLinePoints}
-                  />
+                  <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
+                    <StlPreviewViewer
+                      file={leftViewer}
+                      showOverlay={false}
+                      finishLinePoints={finishLinePoints}
+                    />
+                  </div>
                 ) : (
                   <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
                     파일 없음
@@ -484,7 +492,7 @@ export const PreviewModal = ({
               </div>
 
               <div
-                className="border rounded-lg p-3 space-y-2"
+                className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden"
                 onDragOver={(e) => {
                   if (isUploading) return;
                   e.preventDefault();
@@ -547,42 +555,53 @@ export const PreviewModal = ({
                       className="hidden"
                       disabled={isUploading}
                       onChange={(e) => {
+                        e.stopPropagation();
                         const file = e.target.files?.[0];
                         if (!file) return;
                         onUploadRight(file);
-                        e.currentTarget.value = "";
+                        e.target.value = "";
                       }}
                     />
                   </div>
                 </div>
 
                 {isStageFileStage ? (
-                  previewStageUrl ? (
-                    <img
-                      src={previewStageUrl}
-                      alt={previewStageName || "machining"}
-                      className="w-full h-[300px] object-contain rounded-md border border-slate-200"
-                    />
-                  ) : (
-                    <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
-                      여기로 이미지를 드롭하거나 U를 눌러 업로드하세요.
-                    </div>
-                  )
+                  <div className="flex-1 min-h-0 overflow-auto">
+                    {previewStageUrl ? (
+                      <img
+                        src={previewStageUrl}
+                        alt={previewStageName || "preview"}
+                        className="w-full rounded-md border border-slate-200"
+                      />
+                    ) : hasRightFile && rightMeta?.s3Url ? (
+                      <img
+                        src={rightMeta.s3Url}
+                        alt={fileLabel}
+                        className="w-full rounded-md border border-slate-200"
+                      />
+                    ) : (
+                      <div className="h-full min-h-[300px] flex items-center justify-center text-xs text-slate-500 border rounded-md">
+                        여기로 파일을 드롭하거나 U를 눌러 업로드하세요.
+                      </div>
+                    )}
+                  </div>
                 ) : isCamStage ? (
                   <textarea
-                    className="w-full h-[300px] rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700"
+                    className="w-full flex-1 min-h-0 rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700 resize-none overflow-auto"
                     value={previewNcText}
                     readOnly
                   />
-                ) : previewFiles.cam ? (
-                  <StlPreviewViewer
-                    file={previewFiles.cam}
-                    showOverlay={false}
-                    finishLinePoints={finishLinePoints}
-                  />
+                ) : rightViewer ? (
+                  <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
+                    <StlPreviewViewer
+                      file={rightViewer}
+                      showOverlay={false}
+                      finishLinePoints={finishLinePoints}
+                    />
+                  </div>
                 ) : (
-                  <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
-                    여기로 파일을 드롭하거나 U를 눌러 업로드하세요.
+                  <div className="flex-1 min-h-0 flex items-center justify-center text-xs text-slate-500 border rounded-md">
+                    파일 없음
                   </div>
                 )}
               </div>
