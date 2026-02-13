@@ -574,6 +574,37 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
+        private static bool TryUploadWithFallback(string machineId, short headType, short initialSlot, string rawContent, bool isNew, out short finalSlot, out string usedMode, out string err)
+        {
+            string Prepare(short slot)
+            {
+                var enforced = EnsurePercentAndHeaderSecondLine(rawContent, slot);
+                return SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
+            }
+
+            var prepared = Prepare(initialSlot);
+            if (UploadProgramDataBlocking(machineId, headType, initialSlot, prepared, isNew, out usedMode, out err))
+            {
+                finalSlot = initialSlot;
+                return true;
+            }
+
+            if (err != null && err.Contains("(rc=5)"))
+            {
+                var altSlot = initialSlot == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
+                Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)altSlot, out var _, out var _);
+                var preparedAlt = Prepare((short)altSlot);
+                if (UploadProgramDataBlocking(machineId, headType, (short)altSlot, preparedAlt, isNew, out usedMode, out err))
+                {
+                    finalSlot = (short)altSlot;
+                    return true;
+                }
+            }
+
+            finalSlot = initialSlot;
+            return false;
+        }
+
         // 옵션: 큐 삽입 전에 CNC로 미리 업로드(슬롯 A/B 두 개까지만 선업로드)
         private static PreUploadResult PreUploadProgramsForQueue(string machineId, short headType, List<string> paths)
         {
@@ -801,14 +832,13 @@ namespace HiLinkBridgeWebApi48.Controllers
                 Mode1Api.TryDeleteMachineProgramInfo(machineId, job.HeadType, (short)job.CurrentSlot, out var _, out var _);
 
                 var content = File.ReadAllText(full);
-                var enforced = EnsurePercentAndHeaderSecondLine(content, job.CurrentSlot);
-                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
-                if (!UploadProgramDataBlocking(machineId, job.HeadType, job.CurrentSlot, processed, true, out var _, out var upErr0))
+                if (!TryUploadWithFallback(machineId, job.HeadType, (short)job.CurrentSlot, content, true, out var finalSlot0, out var _, out var upErr0))
                 {
                     job.ErrorCode = "UPLOAD_FAILED";
                     job.ErrorMessage = upErr0;
                     throw new InvalidOperationException(job.ErrorMessage);
                 }
+                job.CurrentSlot = finalSlot0;
             }
 
             for (job.Index = 0; job.Index < job.Paths.Count; job.Index++)
@@ -853,13 +883,27 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
                 await Task.Delay(500);
 
-                // 6) 활성화 프로그램 변경
+                // 6) 활성화 프로그램 변경 (Busy(-1) 재시도)
                 var actDto = new PayloadUpdateActivateProg { headType = 1, programNo = (short)thisSlot };
-                var actRc = Mode1HandleStore.SetActivateProgram(machineId, actDto, out var actErr);
+                short actRc = -1;
+                string actErr = null;
+                var actStarted = DateTime.UtcNow;
+                var actBusyWaitMs = 20000; // 최대 20초 대기
+                for (;;)
+                {
+                    actRc = Mode1HandleStore.SetActivateProgram(machineId, actDto, out actErr);
+                    if (actRc == 0) break;
+                    if (actRc != -1) break; // 다른 에러는 즉시 중단
+
+                    var elapsedMs = (int)(DateTime.UtcNow - actStarted).TotalMilliseconds;
+                    if (elapsedMs >= actBusyWaitMs) break;
+                    await Task.Delay(1000);
+                }
+
                 if (actRc != 0)
                 {
                     job.ErrorCode = "ACTIVATE_FAILED";
-                    job.ErrorMessage = actErr ?? ("SetActivateProgram failed (result=" + actRc + ")");
+                    job.ErrorMessage = actErr ?? ($"SetActivateProgram failed (result={actRc})");
                     throw new InvalidOperationException(job.ErrorMessage);
                 }
 
@@ -892,18 +936,17 @@ namespace HiLinkBridgeWebApi48.Controllers
                         throw new FileNotFoundException("file not found", nextFull);
                     }
                     var nextContent = File.ReadAllText(nextFull);
-                    var enforcedNext = EnsurePercentAndHeaderSecondLine(nextContent, nextSlot);
-                    var processedNext = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforcedNext));
 
                     // 업로드 전에 대상 슬롯 삭제
                     Mode1Api.TryDeleteMachineProgramInfo(machineId, job.HeadType, (short)nextSlot, out var _, out var _);
 
-                    if (!UploadProgramDataBlocking(machineId, job.HeadType, nextSlot, processedNext, true, out var _, out var upErr1))
+                    if (!TryUploadWithFallback(machineId, job.HeadType, (short)nextSlot, nextContent, true, out var finalNextSlot, out var _, out var upErr1))
                     {
                         job.ErrorCode = "UPLOAD_FAILED";
                         job.ErrorMessage = upErr1;
                         throw new InvalidOperationException(job.ErrorMessage);
                     }
+                    nextSlot = finalNextSlot;
                     if (!Mode1Api.TryGetProgListInfo(machineId, job.HeadType, out var progListNext, out var progErrNext))
                     {
                         job.ErrorCode = "PROGRAM_CHECK_FAILED";
@@ -935,6 +978,12 @@ namespace HiLinkBridgeWebApi48.Controllers
                     job.ErrorCode = "PRODUCT_COUNT_NOT_INCREASED";
                     job.ErrorMessage = "product count did not increase";
                     throw new TimeoutException(job.ErrorMessage);
+                }
+
+                // 4-1) 다음 큐 작업 전 약간의 여유 시간(기계 정지/버퍼) 부여
+                if (job.Index + 1 < job.Paths.Count)
+                {
+                    await Task.Delay(2000);
                 }
 
                 // 9) 이전 가공프로그램 삭제
@@ -1258,15 +1307,38 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                     if (!UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var usedMode, out var upErr))
                     {
-                        Console.WriteLine($"[SmartUpload] jobId={jobId} failed: {upErr}");
-                        JobResults[jobId] = new JobResult
+                        var isRc5 = (upErr ?? string.Empty).Contains("(rc=5)");
+                        var triedFallback = false;
+                        if (isRc5)
                         {
-                            JobId = jobId,
-                            Status = "FAILED",
-                            Result = new { success = false, message = upErr ?? "upload failed", usedMode },
-                            CreatedAtUtc = DateTime.UtcNow
-                        };
-                        return;
+                            var altSlot = slotNo == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
+                            if (protectedSlot != altSlot)
+                            {
+                                // 다른 슬롯 삭제 후 재업로드 시도
+                                Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)altSlot, out var _, out var _);
+                                var enforcedAlt = EnsurePercentAndHeaderSecondLine(content, altSlot);
+                                var processedAlt = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforcedAlt));
+                                if (UploadProgramDataBlocking(machineId, headType, altSlot, processedAlt, req?.isNew ?? true, out usedMode, out upErr))
+                                {
+                                    slotNo = altSlot;
+                                    processed = processedAlt;
+                                    triedFallback = true;
+                                }
+                            }
+                        }
+
+                        if (!triedFallback)
+                        {
+                            Console.WriteLine($"[SmartUpload] jobId={jobId} failed: {upErr}");
+                            JobResults[jobId] = new JobResult
+                            {
+                                JobId = jobId,
+                                Status = "FAILED",
+                                Result = new { success = false, message = upErr ?? "upload failed", usedMode },
+                                CreatedAtUtc = DateTime.UtcNow
+                            };
+                            return;
+                        }
                     }
 
                     Console.WriteLine($"[SmartUpload] jobId={jobId} completed. slotNo={slotNo} bytes={processedBytes}");

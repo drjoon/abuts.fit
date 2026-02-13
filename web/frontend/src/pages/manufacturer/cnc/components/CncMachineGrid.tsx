@@ -34,9 +34,14 @@ interface CncMachineGridProps {
   onCancelReservation?: (machine: Machine, jobId?: string) => void;
   onOpenReservationList?: (machine: Machine) => void;
   onTogglePause?: (machine: Machine, jobId: string) => void;
+  onPlayNext?: (machine: Machine, jobId: string) => void;
+  onPlayNowPlaying?: (machine: Machine, jobId: string) => void;
+  onCancelNowPlaying?: (machine: Machine, jobId?: string) => void;
   onToggleAllowJobStart?: (machine: Machine, next: boolean) => void;
   onToggleDummyMachining?: (machine: Machine, next: boolean) => void;
   onPlayManualCard?: (machineId: string, itemId: string) => void;
+  playingNextMap?: Record<string, boolean>;
+  nowPlayingMap?: Record<string, boolean>;
 }
 
 export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
@@ -65,9 +70,14 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onCancelReservation,
   onOpenReservationList,
   onTogglePause,
+  onPlayNext,
+  onPlayNowPlaying,
+  onCancelNowPlaying,
   onToggleAllowJobStart,
   onToggleDummyMachining,
   onPlayManualCard,
+  playingNextMap,
+  nowPlayingMap,
 }) => {
   return (
     <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
@@ -87,7 +97,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
         const originalTotalQty: number | undefined =
           reservationTotalQtyMap?.[m.uid];
 
-        const nextProgs: any[] =
+        const allProgs: any[] =
           reservedJobs.length > 0
             ? reservedJobs.map((job) => {
                 const programNo = job.programNo ?? null;
@@ -113,6 +123,17 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                 return currentNo == null ? true : no !== currentNo;
               });
 
+        const isPlayingNext = !!playingNextMap?.[m.uid];
+        const isNowPlaying = !!nowPlayingMap?.[m.uid];
+        // 첫 번째 예약 작업 → Now Playing, 나머지 → Next Up
+        const displayCurrent =
+          currentProg || (allProgs.length > 0 ? allProgs[0] : null);
+        const displayNextProgs = currentProg
+          ? allProgs
+          : allProgs.length > 1
+            ? allProgs.slice(1)
+            : [];
+
         return (
           <MachineCard
             key={m.uid}
@@ -122,8 +143,9 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             worksheetQueueCount={worksheetQueueCount}
             tempTooltip={tempTooltipMap[m.uid] ?? ""}
             toolTooltip={toolTooltipMap[m.uid] ?? ""}
-            currentProg={currentProg}
-            nextProgs={nextProgs}
+            currentProg={displayCurrent}
+            nextProgs={displayNextProgs}
+            isPlaying={isPlayingNext || isNowPlaying}
             reservedTotalQty={originalTotalQty}
             reservationSummary={reservationSummaryMap?.[m.uid]}
             uploadProgress={
@@ -199,6 +221,30 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                     e.stopPropagation();
                     if (!jobId) return;
                     onTogglePause(m, jobId);
+                  }
+                : undefined
+            }
+            onPlayNext={
+              onPlayNext
+                ? (jobId, e) => {
+                    e.stopPropagation();
+                    onPlayNext(m, jobId);
+                  }
+                : undefined
+            }
+            onPlayNowPlaying={
+              onPlayNowPlaying
+                ? (jobId, e) => {
+                    e.stopPropagation();
+                    if (jobId) onPlayNowPlaying(m, jobId);
+                  }
+                : undefined
+            }
+            onCancelNowPlaying={
+              onCancelNowPlaying
+                ? (jobId, e) => {
+                    e.stopPropagation();
+                    onCancelNowPlaying(m, jobId);
                   }
                 : undefined
             }

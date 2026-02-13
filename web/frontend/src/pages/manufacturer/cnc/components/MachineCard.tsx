@@ -35,6 +35,7 @@ interface MachineCardProps {
   machine: Machine;
   isActive: boolean;
   loading: boolean;
+  isPlaying?: boolean;
   worksheetQueueCount?: number;
   tempTooltip: string;
   toolTooltip: string;
@@ -68,6 +69,9 @@ interface MachineCardProps {
   ) => void;
   onOpenReservationList?: (e: React.MouseEvent) => void;
   onTogglePause?: (jobId: string | undefined, e: React.MouseEvent) => void;
+  onPlayNext?: (jobId: string | undefined, e: React.MouseEvent) => void;
+  onPlayNowPlaying?: (jobId: string | undefined, e: React.MouseEvent) => void;
+  onCancelNowPlaying?: (jobId: string | undefined, e: React.MouseEvent) => void;
   onToggleAllowJobStart?: (next: boolean, e: React.MouseEvent) => void;
   onToggleDummyMachining?: (next: boolean, e: React.MouseEvent) => void;
 }
@@ -90,6 +94,7 @@ export const MachineCard = (props: MachineCardProps) => {
     machine,
     isActive,
     loading,
+    isPlaying = false,
     worksheetQueueCount,
     tempTooltip,
     toolTooltip,
@@ -116,6 +121,9 @@ export const MachineCard = (props: MachineCardProps) => {
     onCancelReservation,
     onOpenReservationList,
     onTogglePause,
+    onPlayNext,
+    onPlayNowPlaying,
+    onCancelNowPlaying,
     onToggleAllowJobStart,
     onToggleDummyMachining,
   } = props;
@@ -203,6 +211,7 @@ export const MachineCard = (props: MachineCardProps) => {
   const isRunning = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
     statusUpper.includes(k),
   );
+  const isRunningUi = isRunning || isPlaying;
 
   const worksheetCount =
     typeof worksheetQueueCount === "number" && worksheetQueueCount > 0
@@ -249,7 +258,7 @@ export const MachineCard = (props: MachineCardProps) => {
             <div className="text-[16px] font-extrabold text-slate-900">
               {machine.name}
             </div>
-            {getMachineStatusChip(String(effectiveStatus || ""), isRunning)}
+            {getMachineStatusChip(String(effectiveStatus || ""), isRunningUi)}
           </div>
         </div>
 
@@ -463,35 +472,72 @@ export const MachineCard = (props: MachineCardProps) => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                {currentProg && (currentProg as any)?.qty > 0 && (
+                  <div className="mr-1 rounded-full bg-white/70 border border-slate-200 px-2 py-1 text-[11px] font-extrabold text-slate-700">
+                    1/{(currentProg as any).qty}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    const hasNow = !!currentProg && !!currentProg.name;
-                    if (!hasNow || !isActive) return;
+                    if (!currentProg || !currentProg.name) return;
 
-                    if (isRunning) {
-                      if (!onStopClick) return;
-                      onStopClick(e);
+                    if (isRunningUi) {
+                      const ok = window.confirm("현재 가공을 정지할까요?");
+                      if (!ok) return;
+                      if (onStopClick) onStopClick(e);
                       return;
                     }
 
-                    // play 버튼: 가공 시작 (Alarm 체크 필수)
-                    // 현재는 에디터를 열도록 구현되어 있으나, 향후 가공 시작으로 변경 필요
-                    onOpenCurrentProg(e);
+                    if (onPlayNowPlaying) {
+                      const jobId =
+                        (currentProg as any)?.jobId ||
+                        (currentProg as any)?.id ||
+                        (currentProg as any)?.name;
+                      onPlayNowPlaying(jobId, e);
+                    }
                   }}
-                  disabled={
-                    loading || !isActive || !currentProg || !currentProg.name
-                  }
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40"
-                  title={isRunning ? "정지(Stop)" : "프로그램 열기"}
+                  disabled={!currentProg || !currentProg.name}
+                  className={`group inline-flex h-9 w-9 items-center justify-center rounded-full border text-slate-700 disabled:opacity-40 transition-colors ${
+                    isRunningUi
+                      ? "bg-white border-slate-200 text-slate-700 animate-pulse"
+                      : "bg-white border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                  }`}
+                  title={isRunningUi ? "정지(Stop)" : "가공 시작"}
                 >
-                  {isRunning ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Play className="h-4 w-4" />
-                  )}
+                  <span className="relative inline-flex h-4 w-4 items-center justify-center">
+                    <Play
+                      className={`absolute h-4 w-4 transition-opacity ${
+                        isRunningUi
+                          ? "opacity-0 group-hover:opacity-0"
+                          : "opacity-100"
+                      }`}
+                    />
+                    <Pause
+                      className={`absolute h-4 w-4 transition-opacity ${
+                        isRunningUi
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100"
+                      }`}
+                    />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-40"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!onCancelNowPlaying || !currentProg) return;
+                    const jobId =
+                      (currentProg as any)?.jobId || (currentProg as any)?.id;
+                    onCancelNowPlaying(jobId, e);
+                  }}
+                  disabled={!currentProg || !onCancelNowPlaying || isRunningUi}
+                  title="삭제"
+                >
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -528,11 +574,13 @@ export const MachineCard = (props: MachineCardProps) => {
                 )}
 
                 {(() => {
-                  const nextJobId = nextProg
+                  const nextJobIdRaw = nextProg
                     ? ((nextProg as any).jobId as string | undefined)
                     : undefined;
-                  const canControlNext =
-                    !!isActive && !!nextProg && !!nextJobId;
+                  const nextJobId =
+                    nextJobIdRaw ||
+                    (nextProg as any)?.id ||
+                    (nextProg as any)?.name;
                   const pausedRaw = (nextProg as any)?.paused;
                   const paused =
                     typeof pausedRaw === "boolean" ? pausedRaw : true;
@@ -543,21 +591,18 @@ export const MachineCard = (props: MachineCardProps) => {
                       className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-40"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!canControlNext || !nextProg) return;
-
-                        if (!onTogglePause) return;
-                        onTogglePause(nextJobId, e);
+                        if (!nextProg) return;
+                        // paused 상태면 play, 아니면 pause
+                        if (paused) {
+                          if (!onPlayNext) return;
+                          onPlayNext(nextJobId, e);
+                        } else {
+                          if (!onTogglePause) return;
+                          onTogglePause(nextJobId, e);
+                        }
                       }}
-                      disabled={!canControlNext}
-                      title={
-                        !nextProg
-                          ? "-"
-                          : !canControlNext
-                            ? "예약된 작업이 없습니다."
-                            : paused
-                              ? "재생"
-                              : "일시정지"
-                      }
+                      disabled={!nextProg}
+                      title={!nextProg ? "-" : paused ? "재생" : "일시정지"}
                     >
                       {paused ? (
                         <Play className="h-4 w-4" />

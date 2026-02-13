@@ -703,6 +703,11 @@ export const CncDashboardPage = () => {
       handleAddMaterial={materials.handleAddMaterial}
       eventLogMachineId={eventLogMachineId}
       setEventLogMachineId={setEventLogMachineId}
+      playingNextMap={queues.playingNextMap}
+      handlePlayNextUp={queues.handlePlayNextUp}
+      handlePlayNowPlaying={queues.handlePlayNowPlaying}
+      nowPlayingMap={queues.nowPlayingMap}
+      refreshDbQueuesForAllMachines={queues.refreshDbQueuesForAllMachines}
     />
   );
 };

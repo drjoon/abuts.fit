@@ -1,3 +1,4 @@
+import React from "react";
 import { Plus } from "lucide-react";
 
 import type { Machine } from "../cnc/types";
@@ -133,7 +134,32 @@ export function CncDashboardPageView(props: any) {
     setEventLogMachineId,
     eventLogMachineId,
     onSelectMachine,
+    playingNextMap,
+    handlePlayNextUp,
+    handlePlayNowPlaying,
+    nowPlayingMap,
   } = props;
+
+  // 10초 간격으로 상태/큐 업데이트
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      const uid = workUid || mergedMachines?.[0]?.uid;
+      if (!uid) return;
+      void refreshStatusFor(uid);
+      void fetchProgramList();
+      const target = mergedMachines?.find((m: any) => m.uid === uid);
+      if (target && loadBridgeQueueForMachine) {
+        void loadBridgeQueueForMachine(target, { silent: true });
+      }
+    }, 10000);
+    return () => clearInterval(id);
+  }, [
+    workUid,
+    mergedMachines,
+    refreshStatusFor,
+    fetchProgramList,
+    loadBridgeQueueForMachine,
+  ]);
 
   const handleSelectMachine = (uid: string) => {
     // workUid 업데이트 + 즉시 상태 조회
@@ -242,6 +268,35 @@ export function CncDashboardPageView(props: any) {
                     updateMachineDummyEnabled(machine.uid, next);
                   }}
                   onPlayManualCard={handleManualCardPlay}
+                  onPlayNext={(machine) => {
+                    void handlePlayNextUp(machine.uid);
+                  }}
+                  onPlayNowPlaying={(machine) => {
+                    void handlePlayNowPlaying(machine.uid);
+                  }}
+                  onCancelNowPlaying={(machine, jobId) => {
+                    const uid = machine.uid;
+                    if (jobId) {
+                      queueBatchRef.current.machineId = uid;
+                      queueBatchRef.current.deleteJobIds.add(jobId);
+                      scheduleQueueBatchCommit(uid);
+                    }
+                    setReservationJobsMap((prev: any) => {
+                      const jobs = prev[uid] || [];
+                      const filtered = jobId
+                        ? jobs.filter((j: any) => j.id !== jobId)
+                        : jobs.slice(1);
+                      const nextMap = { ...prev };
+                      if (filtered.length === 0) {
+                        delete nextMap[uid];
+                      } else {
+                        nextMap[uid] = filtered;
+                      }
+                      return nextMap;
+                    });
+                  }}
+                  nowPlayingMap={nowPlayingMap}
+                  playingNextMap={playingNextMap}
                   onUploadFiles={(machine, files) => {
                     void (async () => {
                       try {
@@ -354,7 +409,8 @@ export function CncDashboardPageView(props: any) {
                       setResetTarget(target);
                       setResetConfirmOpen(true);
                     } else if (action === "stop") {
-                      void sendControlCommand(uid, "stop");
+                      const ok = window.confirm("현재 가공을 정지할까요?");
+                      if (ok) void sendControlCommand(uid, "stop");
                     }
                   }}
                   onOpenReservationList={(machine) => {
