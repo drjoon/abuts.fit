@@ -37,12 +37,6 @@ router.get(
   requireBridgeSecret,
   cncMachineController.createCncDirectDownloadPresignForBridge,
 );
-router.post(
-  "/bridge/manual-file/complete/:machineId",
-  requireBridgeIpAllowlist,
-  requireBridgeSecret,
-  cncMachineController.completeManualFileJobForBridge,
-);
 router.get(
   "/bridge/machine-flags/:machineId",
   requireBridgeIpAllowlist,
@@ -188,19 +182,9 @@ router.post(
 );
 
 router.post(
-  "/:machineId/manual-file/upload",
+  "/:machineId/continuous/upload",
   authorizeRoles("manufacturer", "admin"),
-  cncMachineController.manualFileUploadAndPreload,
-);
-router.post(
-  "/:machineId/manual-file/play",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.manualFilePlay,
-);
-router.post(
-  "/:machineId/manual-file/start",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.startManualFileJobForBridge,
+  cncMachineController.uploadAndEnqueueContinuousForMachine,
 );
 
 router.get(

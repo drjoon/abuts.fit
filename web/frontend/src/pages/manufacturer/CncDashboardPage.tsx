@@ -160,69 +160,9 @@ export const CncDashboardPage = () => {
     async (machineId: string, itemId?: string) => {
       const mid = String(machineId || "").trim();
       if (!mid) return;
-      if (!token) {
-        toast({
-          title: "로그인이 필요합니다",
-          description: "다시 로그인 후 시도해 주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const ok = await ensureCncWriteAllowed();
-      if (!ok) {
-        toast({
-          title: "가공 시작 불가",
-          description: "CNC 가공 시작은 제조사 권한/PIN 확인이 필요합니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        const body: any = {};
-        if (itemId) {
-          body.itemId = String(itemId).trim();
-        }
-
-        const res = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/play`,
-          method: "POST",
-          token,
-          jsonBody: body,
-        });
-        const resBody: any = res.data ?? {};
-        if (!res.ok || resBody?.success === false) {
-          const errMsg =
-            resBody?.message ||
-            resBody?.error ||
-            (res.status === 429
-              ? "요청이 너무 빠릅니다. 잠시 후 다시 시도해 주세요."
-              : "가공 시작 실패");
-          toast({
-            title: "가공 시작 실패",
-            description: errMsg,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        const data = resBody?.data ?? resBody;
-        const slotNo = data?.slotNo;
-        toast({
-          title: "가공 시작",
-          description: slotNo
-            ? `O${slotNo} 가공을 시작했습니다.`
-            : "가공을 시작했습니다.",
-        });
-      } catch (e: any) {
-        const errMsg = e?.message || "가공 시작 실패";
-        toast({
-          title: "가공 시작 실패",
-          description: errMsg,
-          variant: "destructive",
-        });
-      }
+      // legacy manual-file/play removed: continuous queue UI now directly controls machining
+      // keep function to satisfy existing props; no-op.
+      void itemId;
     },
     [ensureCncWriteAllowed, toast, token],
   );

@@ -1,8 +1,4 @@
 import { useState } from "react";
-import {
-  normalizeProgramFileNameByContentFirst,
-  applyProgramNoToContent,
-} from "../lib/programNaming";
 
 export type BridgeEntryType = "directory" | "file";
 
@@ -234,10 +230,6 @@ export const useBridgeStore = (options?: BridgeStoreOptions) => {
           reader.onload = async () => {
             try {
               let content = String(reader.result ?? "");
-              let suggestedName = normalizeProgramFileNameByContentFirst(
-                file.name,
-                content,
-              );
               let targetName = file.name;
 
               let forcedProgramNo: number | null = null;
@@ -264,79 +256,8 @@ export const useBridgeStore = (options?: BridgeStoreOptions) => {
                 }
               }
 
-              if (forcedProgramNo != null) {
-                content = applyProgramNoToContent(forcedProgramNo, content);
-              }
               if (forcedFileName) {
                 targetName = forcedFileName;
-                suggestedName = forcedFileName;
-              }
-
-              const upper = String(file.name || "").toUpperCase();
-              const isFanucName = /^O\d{1,5}\.NC$/.test(upper.trim());
-
-              // 내용 전체(특히 앞부분)에서 O번호 추출
-              // 샘플처럼 둘째 줄에 O번호가 있어도 인식할 수 있도록 한다.
-              const normalizedContent = String(content || "").toUpperCase();
-              const contentMatch = normalizedContent.match(/O(\d{1,5})/m);
-
-              // 파일명에서 O번호 추출 (Fanuc 스타일일 때)
-              const nameMatch = upper.match(/^O(\d{1,5})\.NC$/);
-
-              const contentNo = contentMatch ? Number(contentMatch[1]) : null;
-              const nameNo = nameMatch ? Number(nameMatch[1]) : null;
-
-              const hasMismatch =
-                contentNo != null &&
-                nameNo != null &&
-                Number.isFinite(contentNo) &&
-                Number.isFinite(nameNo) &&
-                contentNo !== nameNo;
-
-              // 번호가 서로 다른 경우에는, 추천 파일명을 "내용의 O번호" 기준으로 강제한다.
-              if (
-                hasMismatch &&
-                contentNo != null &&
-                Number.isFinite(contentNo)
-              ) {
-                let n = contentNo as number;
-                if (n < 0) n = 0;
-                if (n > 9999) n = 9999;
-                const padded = String(n).padStart(4, "0");
-                suggestedName = `O${padded}.nc`;
-              }
-
-              const shouldAskNaming =
-                !forcedFileName &&
-                (hasMismatch || (!nameMatch && suggestedName !== file.name));
-
-              if (shouldAskNaming) {
-                await new Promise<void>((decisionDone) => {
-                  const decide = (strategy: "suggest" | "keep" | "cancel") => {
-                    if (strategy === "suggest") {
-                      targetName = suggestedName;
-                    } else if (strategy === "keep") {
-                      targetName = file.name;
-                    } else if (strategy === "cancel") {
-                      decisionDone();
-                      resolve();
-                      setNamingConflict(null);
-                      return;
-                    }
-                    decisionDone();
-                    setNamingConflict(null);
-                  };
-
-                  setNamingConflict({
-                    originalName: file.name,
-                    suggestedName,
-                    decide,
-                  });
-                });
-
-                if (!targetName) {
-                  return;
-                }
               }
 
               // 현재 경로 기준으로 동일한 파일명이 이미 존재하면, 외부 UI(ConfirmDialog)를 통해
@@ -357,16 +278,6 @@ export const useBridgeStore = (options?: BridgeStoreOptions) => {
                   ) => {
                     if (strategy === "auto") {
                       targetName = suggested;
-                      // 번호 증가로 새 이름을 만들었으면, 내용의 O번호도 새 번호로 맞춘다.
-                      const m = suggested
-                        .toUpperCase()
-                        .match(/^O(\d{1,5})\.NC$/);
-                      if (m) {
-                        const newNo = Number(m[1]);
-                        if (Number.isFinite(newNo)) {
-                          content = applyProgramNoToContent(newNo, content);
-                        }
-                      }
                     } else if (strategy === "cancel") {
                       // 이 파일 업로드는 건너뛴다.
                       decisionDone();

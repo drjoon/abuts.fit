@@ -1369,29 +1369,6 @@ catch (Exception startEx)
     Console.WriteLine("[CncMachining] NotifyMachiningStart endpoint error: {0}", startEx.Message);
 }
 
-// 수동 카드 시작 알림 (manual_file 종류인 경우)
-if (!string.IsNullOrEmpty(job?.kindRaw) && job.kindRaw == "manual_file")
-{
-	try
-	{
-		var manualStartUrl = backend + "/cnc-machines/" + Uri.EscapeDataString(machineId) + "/manual-file/start";
-		var manualPayload = new { jobId = job.id };
-		var manualJson = Newtonsoft.Json.JsonConvert.SerializeObject(manualPayload);
-		using (var manualReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, manualStartUrl))
-		{
-			AddAuthHeader(manualReq);
-			manualReq.Content = new System.Net.Http.StringContent(manualJson, System.Text.Encoding.UTF8, "application/json");
-			using (var manualResp = await Http.SendAsync(manualReq))
-			{
-				_ = await manualResp.Content.ReadAsStringAsync();
-			}
-		}
-	}
-	catch (Exception manualEx)
-	{
-		Console.WriteLine("[CncMachining] NotifyManualFileStart error: {0}", manualEx.Message);
-	}
-}
 }
 catch (Exception ex)
 {

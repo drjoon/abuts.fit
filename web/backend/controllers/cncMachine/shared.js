@@ -274,6 +274,28 @@ export async function getDbBridgeQueueSnapshot(machineId) {
     ? machine.manualCard.fileNameMap
     : [];
 
+  // requestId -> 원본 파일명 매핑 (Request SSOT)
+  const requestIdToOriginal = new Map();
+  try {
+    const rids = Array.from(
+      new Set(
+        jobs.map((j) => String(j?.requestId || "").trim()).filter((v) => !!v),
+      ),
+    );
+    if (rids.length > 0) {
+      const reqs = await Request.find({ requestId: { $in: rids } })
+        .select("requestId caseInfos.ncFile.originalName")
+        .lean();
+      for (const r of reqs) {
+        const rid = String(r?.requestId || "").trim();
+        const on = String(r?.caseInfos?.ncFile?.originalName || "").trim();
+        if (rid && on) requestIdToOriginal.set(rid, on);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   // 저장명 -> 원본명 매핑 생성
   const storedNameToOriginal = new Map();
   for (const entry of fileNameMap) {
@@ -287,12 +309,20 @@ export async function getDbBridgeQueueSnapshot(machineId) {
 
   // 각 job에 originalFileName 추가 (저장명으로 매핑)
   const jobsWithMeta = jobs.map((job) => {
+    const rid = String(job?.requestId || "").trim();
+    const fromRequest = rid ? requestIdToOriginal.get(rid) : null;
     const bridgePath = String(job?.bridgePath || "").trim();
     const storedName = bridgePath.split("/").pop(); // 마지막 경로 부분 = 저장명
     const originalName = storedNameToOriginal.get(storedName);
     return {
       ...job,
-      ...(originalName ? { originalFileName: originalName } : {}),
+      ...(job?.originalFileName
+        ? { originalFileName: job.originalFileName }
+        : fromRequest
+          ? { originalFileName: fromRequest }
+          : originalName
+            ? { originalFileName: originalName }
+            : {}),
     };
   });
 

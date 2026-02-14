@@ -21,7 +21,6 @@ import {
 import { useAuthStore } from "@/store/useAuthStore";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 import { useToast } from "@/hooks/use-toast";
-import { parseProgramNoFromName } from "../lib/programNaming";
 import { Machine } from "@/pages/manufacturer/cnc/types";
 import {
   getMachineStatusDotClass,
@@ -32,6 +31,14 @@ import { useQueueSlots } from "../hooks/useQueueSlots";
 import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
+
+const parseProgramNoFromName = (name: string): number | null => {
+  const str = String(name || "");
+  const m = str.match(/O(\d{1,5})/i);
+  if (!m?.[1]) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+};
 
 interface MachineCardProps {
   machine: Machine;

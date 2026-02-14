@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 
 import type { Machine } from "@/pages/manufacturer/cnc/types";
-import { applyProgramNoToContent } from "../lib/programNaming";
 import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { getFileBlob, setFileBlob } from "@/utils/fileBlobCache";
@@ -328,10 +327,7 @@ export const useCncProgramEditor = ({
       ? extractRequestIdFromPath(bridgePath)
       : "";
     const requestId = (explicitRequestId || derivedRequestId).trim();
-    const normalizedCode =
-      programNo == null
-        ? String(code ?? "")
-        : applyProgramNoToContent(programNo, code);
+    const normalizedCode = String(code ?? "");
     const overrideKey = getProgramOverrideKey(prog);
 
     const isJobProgram = !!(requestId || bridgePath || s3Key);

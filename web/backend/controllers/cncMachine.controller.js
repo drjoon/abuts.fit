@@ -1,10 +1,4 @@
 import {
-  completeManualFileJobForBridge,
-  startManualFileJobForBridge,
-  manualFilePlay,
-  manualFileUploadAndPreload,
-} from "./cncMachine/manualFile.js";
-import {
   applyBridgeQueueBatchForMachine,
   clearBridgeQueueForMachine,
   deleteBridgeQueueJob,
@@ -31,6 +25,7 @@ import {
   enqueueBridgeManualInsertJob,
   getBridgeContinuousState,
   getJobResult,
+  uploadAndEnqueueContinuousForMachine,
   smartUpload,
   smartEnqueue,
   smartDequeue,
@@ -63,10 +58,6 @@ import {
 } from "./cncMachine/machiningBridge.js";
 
 export {
-  completeManualFileJobForBridge,
-  startManualFileJobForBridge,
-  manualFileUploadAndPreload,
-  manualFilePlay,
   getDummySettingsForBridge,
   getMachineFlagsForBridge,
   getDbBridgeQueueSnapshotForBridge,
@@ -83,6 +74,7 @@ export {
   enqueueBridgeContinuousJob,
   enqueueBridgeContinuousJobFromDb,
   enqueueBridgeManualInsertJob,
+  uploadAndEnqueueContinuousForMachine,
   createCncDirectUploadPresign,
   enqueueCncDirectToDb,
   createCncDirectDownloadPresign,

@@ -252,7 +252,7 @@ export function useCncDashboardQueues({
           xhr.timeout = 10 * 60 * 1000;
           xhr.open(
             "POST",
-            `/api/cnc-machines/${encodeURIComponent(mid)}/manual-file/upload`,
+            `/api/cnc-machines/${encodeURIComponent(mid)}/continuous/upload`,
           );
           xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 

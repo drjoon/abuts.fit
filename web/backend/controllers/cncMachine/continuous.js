@@ -5,6 +5,11 @@ import {
   fetchBridgeQueueFromBridge,
   getDbBridgeQueueSnapshot,
   Request,
+  callBridgeJson,
+  runMulter,
+  manualCardUploadMulter,
+  normalizeOriginalFilename,
+  makeManualCardFilePath,
 } from "./shared.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
@@ -14,6 +19,121 @@ function normalizeBridgePath(p) {
     .trim()
     .replace(/^nc\//i, "")
     .replace(/\.(nc|stl)$/i, "");
+}
+
+export async function uploadAndEnqueueContinuousForMachine(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    await runMulter(manualCardUploadMulter.single("file"), req, res);
+    const file = req.file;
+    if (!file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "file is required" });
+    }
+
+    const originalFilenameFromClient = String(
+      req.body?.originalFileName || "",
+    ).trim();
+    const originalFileName =
+      originalFilenameFromClient ||
+      normalizeOriginalFilename(file.originalname);
+    if (!originalFileName) {
+      return res
+        .status(400)
+        .json({ success: false, message: "invalid file name" });
+    }
+
+    const content = Buffer.isBuffer(file.buffer)
+      ? file.buffer.toString("utf8")
+      : Buffer.from(file.buffer || "").toString("utf8");
+    if (!content) {
+      return res.status(400).json({ success: false, message: "empty file" });
+    }
+
+    const extMatch = String(originalFileName).match(/\.(nc|txt)$/i);
+    const ext = extMatch ? String(extMatch[0]).toLowerCase() : ".nc";
+    const base = makeManualCardFilePath({
+      machineId: mid,
+      originalFilename: originalFileName,
+    });
+    const bridgePath = `${base}${ext}`;
+
+    const storeUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/upload`;
+    const { resp: storeResp, json: storeBody } = await callBridgeJson({
+      url: storeUrl,
+      method: "POST",
+      body: { path: bridgePath, content },
+    });
+    if (!storeResp.ok || storeBody?.success === false) {
+      const msg = String(
+        storeBody?.message || storeBody?.error || "bridge-store upload failed",
+      );
+      return res
+        .status(storeResp.status)
+        .json({ success: false, message: msg });
+    }
+
+    const savedPath = String(storeBody?.path || bridgePath).trim();
+
+    const enqueueUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
+      mid,
+    )}/continuous/enqueue`;
+    const enqueuePayload = {
+      fileName: savedPath.split(/[/\\]/).pop(),
+      originalFileName,
+      requestId: null,
+      bridgePath: savedPath,
+      enqueueFront: false,
+    };
+    const enqueueResp = await fetch(enqueueUrl, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(enqueuePayload),
+    });
+    const enqueueBody = await enqueueResp.json().catch(() => ({}));
+    if (!enqueueResp.ok || enqueueBody?.success === false) {
+      const msg = String(
+        enqueueBody?.message || enqueueBody?.error || "failed to enqueue job",
+      );
+      return res
+        .status(enqueueResp.status)
+        .json({ success: false, message: msg });
+    }
+
+    try {
+      const q = await fetchBridgeQueueFromBridge(mid);
+      if (q.ok) {
+        await saveBridgeQueueSnapshot(mid, q.jobs);
+      }
+    } catch {
+      // ignore
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        machineId: mid,
+        jobId: enqueueBody?.jobId || null,
+        bridgePath: savedPath,
+        originalFileName,
+      },
+    });
+  } catch (error) {
+    console.error("uploadAndEnqueueContinuousForMachine error", error);
+    return res.status(500).json({
+      success: false,
+      message: "continuous 업로드 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 function extractRequestIdFromPath(p) {
