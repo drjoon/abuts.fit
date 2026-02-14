@@ -67,6 +67,21 @@
 - 브리지 서버는 JWT 없이 `X-Bridge-Secret` 기반으로 DB 스냅샷을 조회할 수 있다.
 - Endpoint: `GET /api/cnc-machines/bridge/queue-snapshot/:machineId`
 
+## 7. CNC 가공 소요시간 기록 (Bridge -> Backend -> DB)
+
+- **목적**: 브리지 서버가 보내는 machining tick/complete 이벤트를 통해, 의뢰(Request)의 실제 가공 소요 시간을 DB에 안정적으로 기록한다.
+- **저장 위치**: `Request.productionSchedule`
+  - `productionSchedule.machiningProgress.elapsedSeconds`
+    - 브리지 tick 수신 시(`POST /api/cnc-machines/bridge/machining/tick/:machineId`) 갱신
+  - `productionSchedule.machiningDurationSeconds`
+    - 브리지 complete 수신 시(`POST /api/cnc-machines/bridge/machining/complete/:machineId`) 최종 확정 저장
+- **업데이트 지점(코드)**:
+  - Tick: `backend/controllers/cncMachine/machiningBridge.js` -> `recordMachiningTickForBridge`
+  - Complete: `backend/controllers/cncMachine/machiningBridge.js` -> `recordMachiningCompleteForBridge`
+- **완료 처리 규칙**:
+  - complete에서 `actualMachiningComplete`를 기록하고, `machiningDurationSeconds`를 `startedAt` 기준으로 계산하여 저장한다.
+  - `machiningProgress.phase`는 complete에서 `COMPLETED`, `percent=100`, `lastTickAt`으로 마감한다.
+
 ### 5.1 크레딧 관리 정책
 
 - **충전**: 조직 단위로 크레딧 충전 (공급가 기준 적립, 결제는 공급가+VAT)

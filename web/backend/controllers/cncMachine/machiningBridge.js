@@ -275,8 +275,33 @@ export async function recordMachiningCompleteForBridge(req, res) {
     if (requestId) {
       request = await Request.findOne({ requestId });
       if (request) {
+        const progress = request?.productionSchedule?.machiningProgress || null;
+        const startBase =
+          progress?.startedAt ||
+          request?.productionSchedule?.actualMachiningStart;
+        const durationSeconds = startBase
+          ? Math.max(
+              0,
+              Math.floor(
+                (now.getTime() - new Date(startBase).getTime()) / 1000,
+              ),
+            )
+          : 0;
+
         request.productionSchedule = request.productionSchedule || {};
         request.productionSchedule.actualMachiningComplete = now;
+        request.productionSchedule.machiningDurationSeconds = durationSeconds;
+
+        request.productionSchedule.machiningProgress = {
+          ...(progress || {}),
+          machineId: mid,
+          jobId: jobId || (progress?.jobId ?? null),
+          phase: "COMPLETED",
+          percent: 100,
+          startedAt: startBase ? new Date(startBase) : now,
+          lastTickAt: now,
+          elapsedSeconds: durationSeconds,
+        };
         applyStatusMapping(request, "세척.포장");
         await request.save();
         console.log(
@@ -289,6 +314,12 @@ export async function recordMachiningCompleteForBridge(req, res) {
           {
             $set: {
               "productionSchedule.actualMachiningComplete": now,
+              "productionSchedule.machiningDurationSeconds": 0,
+              "productionSchedule.machiningProgress.machineId": mid,
+              "productionSchedule.machiningProgress.jobId": jobId || null,
+              "productionSchedule.machiningProgress.phase": "COMPLETED",
+              "productionSchedule.machiningProgress.percent": 100,
+              "productionSchedule.machiningProgress.lastTickAt": now,
             },
           },
         );

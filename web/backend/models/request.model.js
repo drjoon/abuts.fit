@@ -369,6 +369,8 @@ const requestSchema = new mongoose.Schema(
         elapsedSeconds: Number,
       },
 
+      machiningDurationSeconds: Number,
+
       // 장비 할당
       assignedMachine: {
         type: String, // machineId (M3, M4 등)
