@@ -148,6 +148,7 @@ app.use(
           "'self'",
           "https://abuts-fit.s3.ap-south-1.amazonaws.com",
           "https://*.amazonaws.com",
+          "https://cdn.jsdelivr.net",
         ],
         "img-src": [
           "'self'",

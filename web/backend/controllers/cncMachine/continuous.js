@@ -7,6 +7,43 @@ import {
   Request,
 } from "./shared.js";
 
+const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
+
+function normalizeBridgePath(p) {
+  return String(p || "")
+    .trim()
+    .replace(/^nc\//i, "")
+    .replace(/\.(nc|stl)$/i, "");
+}
+
+function extractRequestIdFromPath(p) {
+  const s = normalizeBridgePath(p);
+  const m = s.match(REQUEST_ID_REGEX);
+  return m?.[1] ? String(m[1]).toUpperCase() : "";
+}
+
+function buildBridgeQueueJobsFromPaths(paths, source) {
+  const list = Array.isArray(paths) ? paths : [];
+  return list
+    .map((rawPath, idx) => {
+      const bridgePath = normalizeBridgePath(rawPath);
+      if (!bridgePath) return null;
+      const requestId = extractRequestIdFromPath(bridgePath);
+      const fileName = bridgePath.split("/").pop() || bridgePath;
+      const id = requestId || bridgePath || String(idx);
+      return {
+        id,
+        kind: "file",
+        fileName,
+        bridgePath,
+        requestId,
+        qty: 1,
+        source: source || "smart",
+      };
+    })
+    .filter(Boolean);
+}
+
 export async function smartUpload(req, res) {
   try {
     const { machineId } = req.params;
@@ -77,6 +114,16 @@ export async function smartEnqueue(req, res) {
       return res
         .status(400)
         .json({ success: false, message: "paths is required" });
+    }
+
+    try {
+      const jobs = buildBridgeQueueJobsFromPaths(
+        payload.paths,
+        "smart_enqueue",
+      );
+      await saveBridgeQueueSnapshot(mid, jobs);
+    } catch (e) {
+      console.error("smartEnqueue snapshot save failed", e);
     }
 
     const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/enqueue`;
@@ -165,6 +212,18 @@ export async function smartReplace(req, res) {
       return res
         .status(400)
         .json({ success: false, message: "paths is required" });
+    }
+
+    // 브리지 서버가 machining complete 이후 다음 작업을 이어가기 위해서는
+    // DB bridgeQueueSnapshot이 남은 큐를 들고 있어야 한다.
+    try {
+      const jobs = buildBridgeQueueJobsFromPaths(
+        payload.paths,
+        "smart_replace",
+      );
+      await saveBridgeQueueSnapshot(mid, jobs);
+    } catch (e) {
+      console.error("smartReplace snapshot save failed", e);
     }
 
     const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/replace`;

@@ -117,6 +117,12 @@
 - **BG 프로그램 규칙**: Rhino/ESPRIT/Bridge 등 BG 프로그램은 requestId/파일명을 조작하지 않고, 백엔드가 내려준 `filePath`를 입력/출력 naming의 기준으로 사용합니다.
 - **finish line**: 파일(finishLineFile)로 저장하지 않으며, `caseInfos.finishLine.points`만 백엔드 DB에 저장/사용합니다.
 
+#### 6.0.1 requestId 단일 소스(SSOT)
+
+- 모든 의뢰 `requestId`는 **MongoDB Request 컬렉션**에 저장된 값을 단일 진실 소스로 삼습니다.
+- 브리지/백엔드/프론트/배경 시스템은 DB에 저장된 `requestId`와 일치하지 않는 값(예: 파일명 끝에 clinic/patient/tooth가 붙은 문자열)을 자체적으로 생성하거나 저장하지 않습니다.
+- 외부 시스템에서 파일 경로나 `bridgePath` 등으로 의뢰를 찾아야 할 때는, 해당 경로를 정규화한 뒤 DB에서 `requestId`를 역으로 조회하여 사용합니다.
+
 ### 6.1 요금/결제 안내
 
 - 기본 서비스 금액은 **VAT 별도**, **배송비 별도**입니다.

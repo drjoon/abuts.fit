@@ -33,7 +33,11 @@ export function initializeSocket(token: string): Socket {
     return socket;
   }
 
-  const serverUrl = import.meta.env.VITE_API_URL || "http://localhost:5001";
+  const serverUrl =
+    import.meta.env.VITE_API_URL ||
+    (typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "http://localhost:5001");
 
   socket = io(serverUrl, {
     auth: { token },
@@ -178,8 +182,25 @@ export function onCncMachiningCompleted(
     completedAt: string;
   }) => void,
 ) {
-  socket?.on("cnc-machining-completed", callback);
-  return () => socket?.off("cnc-machining-completed", callback);
+  const s = getSocket();
+  if (s) {
+    s.on("cnc-machining-completed", callback);
+    return () => s.off("cnc-machining-completed", callback);
+  }
+  // 소켓이 아직 초기화되지 않은 경우 지연 등록
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("cnc-machining-completed", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("cnc-machining-completed", callback);
+  };
 }
 
 export function onCncMachiningTick(
@@ -194,8 +215,25 @@ export function onCncMachiningTick(
     tickAt: string;
   }) => void,
 ) {
-  socket?.on("cnc-machining-tick", callback);
-  return () => socket?.off("cnc-machining-tick", callback);
+  const s = getSocket();
+  if (s) {
+    s.on("cnc-machining-tick", callback);
+    return () => s.off("cnc-machining-tick", callback);
+  }
+  // 소켓이 아직 초기화되지 않은 경우 지연 등록
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("cnc-machining-tick", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("cnc-machining-tick", callback);
+  };
 }
 
 // CNC 가공 타임아웃 이벤트 리스너
@@ -206,6 +244,23 @@ export function onCncMachiningTimeout(
     timedOutAt: string;
   }) => void,
 ) {
-  socket?.on("cnc-machining-timeout", callback);
-  return () => socket?.off("cnc-machining-timeout", callback);
+  const s = getSocket();
+  if (s) {
+    s.on("cnc-machining-timeout", callback);
+    return () => s.off("cnc-machining-timeout", callback);
+  }
+  // 소켓이 아직 초기화되지 않은 경우 지연 등록
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("cnc-machining-timeout", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("cnc-machining-timeout", callback);
+  };
 }

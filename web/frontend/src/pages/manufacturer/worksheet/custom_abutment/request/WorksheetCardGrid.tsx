@@ -109,6 +109,19 @@ export const WorksheetCardGrid = ({
       const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
 
+      const machiningElapsedLabel = (() => {
+        if (!isMachiningStage) return "";
+        const secRaw = (request as any)?.productionSchedule?.machiningProgress
+          ?.elapsedSeconds;
+        const sec = Number.isFinite(Number(secRaw))
+          ? Math.max(0, Math.floor(Number(secRaw)))
+          : null;
+        if (sec == null) return "";
+        const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+        const ss = String(sec % 60).padStart(2, "0");
+        return `${mm}:${ss}`;
+      })();
+
       const maxDiameter =
         typeof caseInfos.maxDiameter === "number" &&
         Number.isFinite(caseInfos.maxDiameter) &&
@@ -233,6 +246,16 @@ export const WorksheetCardGrid = ({
                 // (의뢰/CAM) 카드 상단의 진행상태 표시/배지는 사용하지 않음
                 return null;
               })()}
+              {!!machiningElapsedLabel && (
+                <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                  <span className="font-semibold text-blue-600">
+                    Now Playing
+                  </span>
+                  <span className="tabular-nums font-bold text-blue-600">
+                    {machiningElapsedLabel}
+                  </span>
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
                 <span>
                   {request.requestor?.organization || request.requestor?.name}

@@ -28,9 +28,11 @@ import { useCncDashboardQueues } from "./cncDashboard/hooks/useCncDashboardQueue
 import { useCncDashboardMachineInfo } from "./cncDashboard/hooks/useCncDashboardMachineInfo";
 import { useCncDashboardMaterials } from "./cncDashboard/hooks/useCncDashboardMaterials";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
+import { useSocket } from "@/shared/hooks/useSocket";
 
 export const CncDashboardPage = () => {
   const { user, token } = useAuthStore();
+  useSocket();
   const refreshMachineStatuses = useMachineStatusStore((s) => s.refresh);
   const {
     machines,

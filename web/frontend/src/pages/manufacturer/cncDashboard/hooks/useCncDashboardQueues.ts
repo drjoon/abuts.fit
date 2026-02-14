@@ -415,6 +415,48 @@ export function useCncDashboardQueues({
     ).catch(() => {});
   }, [loadBridgeQueueForMachine, machines, token]);
 
+  // 가공 완료 처리 함수
+  // 브리지 서버에서 가공 완료 후 자동으로 다음 작업을 시작하므로,
+  // 프론트는 현재 작업만 제거하고 상태를 갱신한다.
+  const handleMachiningCompleted = useCallback(
+    (uid: string) => {
+      // 1) 현재 작업 제거
+      setReservationJobsMap((prev) => {
+        const jobs = prev[uid] || [];
+        const filtered = jobs.slice(1);
+        if (filtered.length === 0) {
+          const nextMap = { ...prev };
+          delete nextMap[uid];
+          return nextMap;
+        }
+        return { ...prev, [uid]: filtered };
+      });
+
+      // 2) Now Playing 상태 제거
+      setNowPlayingMap((prev) => {
+        const next = { ...prev };
+        delete next[uid];
+        return next;
+      });
+
+      // 3) 상태 갱신 + 큐 재조회
+      void refreshStatusFor(uid);
+      void fetchProgramList();
+      const m = machines.find((x) => x.uid === uid);
+      if (m) {
+        void loadBridgeQueueForMachine(m, { silent: true });
+      }
+      void refreshDbQueuesForAllMachines();
+    },
+    [
+      refreshStatusFor,
+      fetchProgramList,
+      machines,
+      loadBridgeQueueForMachine,
+      refreshDbQueuesForAllMachines,
+    ],
+  );
+
   useEffect(() => {
     if (!token) return;
 
@@ -425,16 +467,36 @@ export function useCncDashboardQueues({
         typeof (data as any)?.elapsedSeconds === "number"
           ? Math.max(0, Math.floor((data as any).elapsedSeconds))
           : 0;
+      const tickAtMs = data?.tickAt
+        ? new Date(data.tickAt).getTime()
+        : Date.now();
+      machiningElapsedBaseRef.current[mid] = {
+        elapsedSeconds: elapsed,
+        tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
+      };
       setMachiningElapsedSecondsMap((prev) => {
         if (prev[mid] === elapsed) return prev;
         return { ...prev, [mid]: elapsed };
       });
     });
 
+    // 브리지 서버 자동 가공 완료 시에도 UI 갱신
+    const unsubscribeCompleted = onCncMachiningCompleted((data) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      handleMachiningCompleted(mid);
+      setMachiningElapsedSecondsMap((prev) => {
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+    });
+
     return () => {
       unsubscribeTick();
+      unsubscribeCompleted();
     };
-  }, [token]);
+  }, [token, handleMachiningCompleted]);
 
   useEffect(() => {
     if (!token) return;
@@ -700,12 +762,27 @@ export function useCncDashboardQueues({
       setPlayingNextMap((prev) => ({ ...prev, [uid]: true }));
 
       try {
-        // 1) 큐 교체 (Next Up 단건)
+        // 1) 큐 교체 (단건 replace 금지: 연속 가공 큐가 1개로 덮여서 다음 작업이 사라짐)
+        const allPaths = (reservationJobsMap[uid] || [])
+          .map(
+            (j: any) =>
+              j?.bridgePath ||
+              j?.bridge_store_path ||
+              j?.bridgeStorePath ||
+              j?.filePath ||
+              j?.path ||
+              j?.name,
+          )
+          .map((p: any) => String(p || "").trim())
+          .filter((p: string) => !!p);
+        if (!allPaths.includes(String(path).trim())) {
+          allPaths.unshift(String(path).trim());
+        }
         const replaceRes = await apiFetch({
           path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/replace`,
           method: "POST",
           token,
-          jsonBody: { headType: 1, paths: [path] },
+          jsonBody: { headType: 1, paths: allPaths },
         });
         const replaceBody: any = replaceRes.data ?? {};
         if (!replaceRes.ok || replaceBody?.success === false) {
@@ -812,6 +889,42 @@ export function useCncDashboardQueues({
     {},
   );
 
+  const machiningElapsedBaseRef = useRef<
+    Record<string, { elapsedSeconds: number; tickAtMs: number }>
+  >({});
+
+  // WS tick 주기가 느려도 Now Playing 경과시간이 1초 단위로 증가하도록 로컬 타이머 보강
+  useEffect(() => {
+    if (!token) return;
+
+    const t = setInterval(() => {
+      const base = machiningElapsedBaseRef.current;
+      const now = Date.now();
+
+      setMachiningElapsedSecondsMap((prev) => {
+        let changed = false;
+        const next: Record<string, number> = { ...prev };
+
+        for (const [mid, v] of Object.entries(base)) {
+          if (!v) continue;
+          if (!nowPlayingMap[mid]) continue;
+          const add = Math.max(0, Math.floor((now - v.tickAtMs) / 1000));
+          const calc = Math.max(0, Math.floor(v.elapsedSeconds + add));
+          if (next[mid] !== calc) {
+            next[mid] = calc;
+            changed = true;
+          }
+        }
+
+        return changed ? next : prev;
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(t);
+    };
+  }, [nowPlayingMap, token]);
+
   const handlePlayNowPlaying = useCallback(
     async (machineId: string) => {
       const uid = String(machineId || "").trim();
@@ -897,12 +1010,27 @@ export function useCncDashboardQueues({
       setNowPlayingMap((prev) => ({ ...prev, [uid]: true }));
 
       try {
-        // 1) smart/replace로 현재 파일 큐 설정
+        // 1) smart/replace로 현재 파일 큐 설정 (단건 replace 금지: 연속 가공 큐가 1개로 덮여서 다음 작업이 사라짐)
+        const allPaths = (reservationJobsMap[uid] || [])
+          .map(
+            (j: any) =>
+              j?.bridgePath ||
+              j?.bridge_store_path ||
+              j?.bridgeStorePath ||
+              j?.filePath ||
+              j?.path ||
+              j?.name,
+          )
+          .map((p: any) => String(p || "").trim())
+          .filter((p: string) => !!p);
+        if (!allPaths.includes(String(path).trim())) {
+          allPaths.unshift(String(path).trim());
+        }
         const replaceRes = await apiFetch({
           path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/replace`,
           method: "POST",
           token,
-          jsonBody: { headType: 1, paths: [path] },
+          jsonBody: { headType: 1, paths: allPaths },
         });
         const replaceBody: any = replaceRes.data ?? {};
         if (!replaceRes.ok || replaceBody?.success === false) {
@@ -1006,37 +1134,6 @@ export function useCncDashboardQueues({
       toast,
       token,
     ],
-  );
-
-  // 가공 완료 처리 함수
-  // 브리지 서버에서 가공 완료 후 자동으로 다음 작업을 시작하므로,
-  // 프론트는 현재 작업만 제거하고 상태를 갱신한다.
-  const handleMachiningCompleted = useCallback(
-    (uid: string) => {
-      // 1) 현재 작업 제거
-      setReservationJobsMap((prev) => {
-        const jobs = prev[uid] || [];
-        const filtered = jobs.slice(1);
-        if (filtered.length === 0) {
-          const nextMap = { ...prev };
-          delete nextMap[uid];
-          return nextMap;
-        }
-        return { ...prev, [uid]: filtered };
-      });
-
-      // 2) Now Playing 상태 제거
-      setNowPlayingMap((prev) => {
-        const next = { ...prev };
-        delete next[uid];
-        return next;
-      });
-
-      // 3) 상태 갱신
-      void refreshStatusFor(uid);
-      void fetchProgramList();
-    },
-    [refreshStatusFor, fetchProgramList],
   );
 
   return {

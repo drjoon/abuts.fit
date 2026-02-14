@@ -24,7 +24,11 @@ export function initializeSocket(server) {
       }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id).select("-password");
+      const decodedId = decoded?.userId || decoded?.id;
+      if (!decodedId) {
+        return next(new Error("사용자를 찾을 수 없습니다."));
+      }
+      const user = await User.findById(decodedId).select("-password");
 
       if (!user) {
         return next(new Error("사용자를 찾을 수 없습니다."));

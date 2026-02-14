@@ -50,6 +50,8 @@ import { useRequestFileHandlers } from "./useRequestFileHandlers";
 import { usePreviewLoader } from "./usePreviewLoader";
 import { useStageDropHandlers } from "./useStageDropHandlers";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
+import { useSocket } from "@/shared/hooks/useSocket";
+import { onCncMachiningCompleted, onCncMachiningTick } from "@/lib/socket";
 
 type FilePreviewInfo = {
   originalName: string;
@@ -71,6 +73,7 @@ export const RequestPage = ({
   filterRequests?: (req: ManufacturerRequest) => boolean;
 }) => {
   const { user, token } = useAuthStore();
+  useSocket();
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
     showCompleted: boolean;
@@ -250,6 +253,70 @@ export const RequestPage = ({
     setUploadProgress,
     decodeNcText,
   });
+
+  useEffect(() => {
+    if (!token) return;
+
+    const unsubTick = onCncMachiningTick((data: any) => {
+      const requestId = data?.requestId ? String(data.requestId).trim() : "";
+      if (!requestId) return;
+      const elapsedSecondsRaw = data?.elapsedSeconds;
+      const elapsedSeconds = Number.isFinite(Number(elapsedSecondsRaw))
+        ? Math.max(0, Math.floor(Number(elapsedSecondsRaw)))
+        : 0;
+      const machineId = data?.machineId ? String(data.machineId).trim() : "";
+      const jobId = data?.jobId ? String(data.jobId).trim() : "";
+      const phase = data?.phase ? String(data.phase).trim() : "";
+      const percentRaw = data?.percent;
+      const percent = Number.isFinite(Number(percentRaw))
+        ? Math.max(0, Math.min(100, Number(percentRaw)))
+        : null;
+
+      setRequests((prev) =>
+        prev.map((r) => {
+          if (String((r as any)?.requestId || "").trim() !== requestId)
+            return r;
+          const productionSchedule = (r as any)?.productionSchedule || {};
+          return {
+            ...r,
+            productionSchedule: {
+              ...productionSchedule,
+              machiningProgress: {
+                ...(productionSchedule?.machiningProgress || {}),
+                machineId: machineId || null,
+                jobId: jobId || null,
+                phase: phase || null,
+                percent,
+                elapsedSeconds,
+              },
+            },
+          } as any;
+        }),
+      );
+    });
+
+    const unsubCompleted = onCncMachiningCompleted((data: any) => {
+      const requestId = data?.requestId ? String(data.requestId).trim() : "";
+      if (!requestId) {
+        void fetchRequests();
+        return;
+      }
+
+      setRequests((prev) =>
+        prev.filter((r) => {
+          const rid = String((r as any)?.requestId || "").trim();
+          return rid !== requestId;
+        }),
+      );
+
+      void fetchRequests();
+    });
+
+    return () => {
+      if (typeof unsubTick === "function") unsubTick();
+      if (typeof unsubCompleted === "function") unsubCompleted();
+    };
+  }, [fetchRequests, token]);
 
   const {
     handlePageDrop,

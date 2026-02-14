@@ -585,10 +585,37 @@ async function chooseMachineForCamMachining({ request }) {
     }
   }
 
+  // 큐 길이가 동일할 때 가장 오래 전에 배정된 장비를 우선 선택 (균등 분산)
+  const lastAssignedByMachine = {};
+  const candidateIds = candidates.map((c) => c.machineId);
+  if (candidateIds.length > 1) {
+    const recentAssignments = await Request.find({
+      "productionSchedule.assignedMachine": { $in: candidateIds },
+    })
+      .sort({ updatedAt: -1 })
+      .select({ "productionSchedule.assignedMachine": 1, updatedAt: 1 })
+      .limit(candidateIds.length * 20)
+      .lean();
+    for (const r of recentAssignments || []) {
+      const mid = String(r?.productionSchedule?.assignedMachine || "").trim();
+      if (mid && !lastAssignedByMachine[mid]) {
+        lastAssignedByMachine[mid] = r.updatedAt
+          ? new Date(r.updatedAt).getTime()
+          : 0;
+      }
+    }
+  }
+
   const best = candidates.slice().sort((a, b) => {
+    // 1) 큐 길이 작은 순
     const qa = Number(queueLenByMachineId[a.machineId] ?? 0);
     const qb = Number(queueLenByMachineId[b.machineId] ?? 0);
     if (qa !== qb) return qa - qb;
+    // 2) 가장 오래 전에 배정된 장비 우선 (균등 분산)
+    const la = Number(lastAssignedByMachine[a.machineId] ?? 0);
+    const lb = Number(lastAssignedByMachine[b.machineId] ?? 0);
+    if (la !== lb) return la - lb;
+    // 3) machineId 사전순 (최종 타이브레이커)
     return String(a.machineId).localeCompare(String(b.machineId));
   })[0];
 
@@ -918,17 +945,21 @@ const ensureReviewByStageDefaults = (request) => {
 };
 
 const revertManufacturerStageByReviewStage = (request, stage) => {
-  const map = {
+  // 롤백 시 해당 단계의 이전 단계로 되돌린다
+  const prevMap = {
     request: "의뢰",
-    cam: "CAM",
-    machining: "가공",
-    packaging: "세척.포장",
-    shipping: "발송",
-    tracking: "추적관리",
+    cam: "의뢰",
+    machining: "CAM",
+    packaging: "가공",
+    shipping: "세척.포장",
+    tracking: "발송",
   };
-  const target = map[String(stage || "").trim()];
+  const target = prevMap[String(stage || "").trim()];
   if (target) {
     request.manufacturerStage = target;
+    // status/status2는 레거시 호환용으로 동기화
+    request.status = target;
+    request.status2 = "없음";
   }
 };
 
@@ -990,7 +1021,10 @@ export async function deleteStageFile(req, res) {
       };
       const prevStage = prevStageMap[stage];
       if (prevStage) {
+        // reviewByStage가 SSOT이며, status/manufacturerStage는 레거시 호환용으로 동기화
         request.manufacturerStage = prevStage;
+        request.status = prevStage;
+        request.status2 = "없음";
       }
 
       await request.save();
@@ -2175,6 +2209,14 @@ export async function deleteCamFileAndRollback(req, res) {
     // camFile 제거, 상태 롤백
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.camFile = undefined;
+    ensureReviewByStageDefaults(request);
+    request.caseInfos.reviewByStage.cam = {
+      status: "PENDING",
+      updatedAt: new Date(),
+      updatedBy: req.user?._id,
+      reason: "",
+    };
+    // status/status2는 레거시 호환용으로 동기화
     request.status = "의뢰";
     request.status2 = "없음";
     request.lotNumber = request.lotNumber || {};
@@ -2501,14 +2543,16 @@ export async function deleteNcFileAndRollbackCam(req, res) {
 
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.ncFile = undefined;
-    if (request.caseInfos.reviewByStage?.machining) {
-      request.caseInfos.reviewByStage.machining.status = "PENDING";
-      request.caseInfos.reviewByStage.machining.updatedAt = new Date();
-      request.caseInfos.reviewByStage.machining.updatedBy = req.user?._id;
-      request.caseInfos.reviewByStage.machining.reason = "";
-    }
+    ensureReviewByStageDefaults(request);
+    request.caseInfos.reviewByStage.machining = {
+      status: "PENDING",
+      updatedAt: new Date(),
+      updatedBy: req.user?._id,
+      reason: "",
+    };
 
     // 제조사 공정: 가공(중) -> CAM(가공/후) 또는 의뢰(의뢰접수)
+    // reviewByStage가 SSOT이며, status/manufacturerStage는 레거시 호환용으로 동기화
     const isRollbackToRequest = req.query.nextStage === "request";
     if (isRollbackToRequest) {
       request.status = "의뢰";

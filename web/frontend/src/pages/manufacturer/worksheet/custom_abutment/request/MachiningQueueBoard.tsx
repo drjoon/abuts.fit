@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
-import { onCncMachiningCompleted } from "@/lib/socket";
+import { onCncMachiningCompleted, onCncMachiningTick } from "@/lib/socket";
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
 import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
 import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
@@ -67,6 +67,7 @@ type MachineQueueCardProps = {
   statusRefreshing?: boolean;
   onOpenReservation: () => void;
   onOpenProgramCode?: (prog: any, machineId: string) => void;
+  machiningElapsedSeconds?: number | null;
 };
 
 const getStatusDotColor = (status?: string) => getMachineStatusDotClass(status);
@@ -148,6 +149,7 @@ const MachineQueueCard = ({
   statusRefreshing,
   onOpenReservation,
   onOpenProgramCode,
+  machiningElapsedSeconds,
 }: MachineQueueCardProps) => {
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q?.status),
@@ -188,6 +190,18 @@ const MachineQueueCard = ({
 
   const canToggleNowPlaying = currentSlot != null;
   const canPlayNextUp = nextSlot != null;
+
+  const elapsedLabel = (() => {
+    const sec =
+      typeof machiningElapsedSeconds === "number" &&
+      machiningElapsedSeconds >= 0
+        ? Math.floor(machiningElapsedSeconds)
+        : null;
+    if (sec == null) return "";
+    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+    const ss = String(sec % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  })();
 
   return (
     <div className="app-glass-card app-glass-card--xl flex flex-col">
@@ -277,6 +291,11 @@ const MachineQueueCard = ({
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold text-slate-500">
                   Now Playing
+                  {!!elapsedLabel ? (
+                    <span className="ml-2 text-blue-600 font-extrabold">
+                      {elapsedLabel}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {nowPlayingLabel}
@@ -404,11 +423,18 @@ export const MachiningQueueBoard = ({
   const statusByUid = useMachineStatusStore((s) => s.statusByUid);
   const refreshStatuses = useMachineStatusStore((s) => s.refresh);
 
-  const [queueMap, setQueueMap] = useState<QueueMap>({});
   const [loading, setLoading] = useState(false);
 
+  const [queueMap, setQueueMap] = useState<QueueMap>({});
   const [machineStatusMap, setMachineStatusMap] = useState<
     Record<string, MachineStatus>
+  >({});
+
+  const [machiningElapsedSecondsMap, setMachiningElapsedSecondsMap] = useState<
+    Record<string, number>
+  >({});
+  const machiningElapsedBaseRef = useRef<
+    Record<string, { elapsedSeconds: number; tickAtMs: number }>
   >({});
 
   const [statusRefreshing, setStatusRefreshing] = useState(false);
@@ -791,11 +817,18 @@ export const MachiningQueueBoard = ({
           throw new Error("NC 파일 경로가 없어 시작할 수 없습니다.");
         }
 
+        const allPaths = machiningQueueAll
+          .map((q) => String(q?.ncFile?.filePath || "").trim())
+          .filter(Boolean);
+        if (!allPaths.includes(bridgePath)) {
+          allPaths.unshift(bridgePath);
+        }
+
         const replaceRes = await apiFetch({
           path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/replace`,
           method: "POST",
           token,
-          jsonBody: { headType: 1, paths: [bridgePath] },
+          jsonBody: { headType: 1, paths: allPaths },
         });
         const replaceBody: any = replaceRes.data ?? {};
         if (!replaceRes.ok || replaceBody?.success === false) {
@@ -833,6 +866,79 @@ export const MachiningQueueBoard = ({
     },
     [machineStatusMap, queueMap, statusByUid, toast, token],
   );
+
+  // WS tick 기반으로 경과시간 업데이트 (DB fetch 없이 실시간 표시)
+  useEffect(() => {
+    if (!token) return;
+
+    const unsubscribeTick = onCncMachiningTick((data) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      const elapsed =
+        typeof (data as any)?.elapsedSeconds === "number"
+          ? Math.max(0, Math.floor((data as any).elapsedSeconds))
+          : 0;
+      const tickAtMs = data?.tickAt
+        ? new Date(data.tickAt).getTime()
+        : Date.now();
+
+      machiningElapsedBaseRef.current[mid] = {
+        elapsedSeconds: elapsed,
+        tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
+      };
+      setMachiningElapsedSecondsMap((prev) => {
+        if (prev[mid] === elapsed) return prev;
+        return { ...prev, [mid]: elapsed };
+      });
+    });
+
+    const unsubscribeCompleted = onCncMachiningCompleted((data) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      setMachiningElapsedSecondsMap((prev) => {
+        if (prev[mid] == null) return prev;
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+      delete machiningElapsedBaseRef.current[mid];
+    });
+
+    return () => {
+      unsubscribeTick();
+      unsubscribeCompleted();
+    };
+  }, [token]);
+
+  // tick이 듬성듬성 와도 1초 단위로 증가
+  useEffect(() => {
+    if (!token) return;
+
+    const t = setInterval(() => {
+      const base = machiningElapsedBaseRef.current;
+      const now = Date.now();
+      setMachiningElapsedSecondsMap((prev) => {
+        let changed = false;
+        const next: Record<string, number> = { ...prev };
+
+        for (const [mid, v] of Object.entries(base)) {
+          if (!v) continue;
+          const add = Math.max(0, Math.floor((now - v.tickAtMs) / 1000));
+          const calc = Math.max(0, Math.floor(v.elapsedSeconds + add));
+          if (next[mid] !== calc) {
+            next[mid] = calc;
+            changed = true;
+          }
+        }
+
+        return changed ? next : prev;
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(t);
+    };
+  }, [token]);
 
   const playNextUpForMachine = useCallback(
     async (uid: string) => {
@@ -1040,6 +1146,11 @@ export const MachiningQueueBoard = ({
                 machineId={m.uid}
                 machineName={m.name}
                 queue={Array.isArray(queueMap?.[m.uid]) ? queueMap[m.uid] : []}
+                machiningElapsedSeconds={
+                  typeof machiningElapsedSecondsMap?.[m.uid] === "number"
+                    ? machiningElapsedSecondsMap[m.uid]
+                    : null
+                }
                 onOpenRequestLog={(requestId) =>
                   setEventLogRequestId(requestId)
                 }

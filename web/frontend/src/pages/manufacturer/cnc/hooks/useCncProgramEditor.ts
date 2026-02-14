@@ -6,6 +6,17 @@ import { apiFetch } from "@/lib/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { getFileBlob, setFileBlob } from "@/utils/fileBlobCache";
 
+const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
+
+const extractRequestIdFromPath = (raw: string | null | undefined): string => {
+  if (!raw) return "";
+  const str = String(raw).trim();
+  if (!str) return "";
+  const match = str.match(REQUEST_ID_REGEX);
+  if (match && match[1]) return match[1].toUpperCase();
+  return "";
+};
+
 interface UseCncProgramEditorParams {
   workUid: string;
   machines: Machine[];
@@ -143,6 +154,11 @@ export const useCncProgramEditor = ({
       prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
     ).trim();
     const storeScope = String((prog as any)?.storeScope || "").trim();
+    const explicitRequestId = String(prog?.requestId || "").trim();
+    const derivedRequestId = !explicitRequestId
+      ? extractRequestIdFromPath(bridgePath)
+      : "";
+    const normalizedRequestId = (explicitRequestId || derivedRequestId).trim();
     if (bridgePath) {
       const loadBridgeOnce = async (
         pathOverride?: string,
@@ -172,7 +188,7 @@ export const useCncProgramEditor = ({
       const firstText = first?.body?.content;
       if (first.ok && typeof firstText === "string") return firstText;
 
-      const requestId = String(prog?.requestId || "").trim();
+      const requestId = normalizedRequestId;
       if (requestId && token) {
         const ensured = await apiFetch({
           path: `/api/requests/by-request/${encodeURIComponent(
@@ -303,11 +319,15 @@ export const useCncProgramEditor = ({
     if (headType == null) headType = 1;
 
     const s3Key = String(prog?.s3Key || "").trim();
-    const requestId = String(prog?.requestId || "").trim();
+    const explicitRequestId = String(prog?.requestId || "").trim();
     const bridgePath = String(
       prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
     ).trim();
     const storeScope = String((prog as any)?.storeScope || "").trim();
+    const derivedRequestId = !explicitRequestId
+      ? extractRequestIdFromPath(bridgePath)
+      : "";
+    const requestId = (explicitRequestId || derivedRequestId).trim();
     const normalizedCode =
       programNo == null
         ? String(code ?? "")

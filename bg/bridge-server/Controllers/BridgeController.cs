@@ -227,7 +227,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                     if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
                     {
-                        Console.WriteLine("[HighLevelUpload] handle error: " + errUp);
+                        Console.WriteLine("[SmartUpload] handle error: " + errUp);
                         return;
                     }
 
@@ -255,19 +255,19 @@ namespace HiLinkBridgeWebApi48.Controllers
                         }
                         else
                         {
-                            Console.WriteLine("[HighLevelUpload] handle retry error: " + errUp2);
+                            Console.WriteLine("[SmartUpload] handle retry error: " + errUp2);
                         }
                     }
                     if (upRc != 0)
                     {
-                        Console.WriteLine("[HighLevelUpload] upload failed rc={0} for {1}", upRc, machineId);
+                        Console.WriteLine("[SmartUpload] upload failed rc={0} for {1}", upRc, machineId);
                         return;
                     }
-                    Console.WriteLine("[HighLevelUpload] success: {0} headType={1} slot={2}", machineId, headType, slotNo);
+                    Console.WriteLine("[SmartUpload] success: {0} headType={1} slot={2}", machineId, headType, slotNo);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("[HighLevelUpload] background error: " + ex);
+                    Console.WriteLine("[SmartUpload] background error: " + ex);
                 }
             });
         }
@@ -466,7 +466,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             return true;
         }
 
-        private class HighLevelStartJob
+        private class SmartStartJob
         {
             public string JobId;
             public short HeadType;
@@ -488,12 +488,12 @@ namespace HiLinkBridgeWebApi48.Controllers
             public string ErrorMessage;
         }
 
-        private class HighLevelMachineQueue
+        private class SmartMachineQueue
         {
             public readonly object Sync = new object();
-            public readonly Queue<HighLevelStartJob> Jobs = new Queue<HighLevelStartJob>();
+            public readonly Queue<SmartStartJob> Jobs = new Queue<SmartStartJob>();
             public bool WorkerRunning;
-            public HighLevelStartJob Current;
+            public SmartStartJob Current;
         }
 
         private class PreUploadResult
@@ -505,12 +505,17 @@ namespace HiLinkBridgeWebApi48.Controllers
             public List<object> Files { get; set; }
         }
 
-        private static readonly ConcurrentDictionary<string, HighLevelMachineQueue> HighLevelStartQueues =
-            new ConcurrentDictionary<string, HighLevelMachineQueue>(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, SmartMachineQueue> SmartStartQueues =
+            new ConcurrentDictionary<string, SmartMachineQueue>(StringComparer.OrdinalIgnoreCase);
 
-        private static HighLevelMachineQueue GetOrCreateHighLevelQueue(string machineId)
+        private static SmartMachineQueue GetOrCreateSmartQueue(string machineId)
         {
-            return HighLevelStartQueues.GetOrAdd(machineId, _ => new HighLevelMachineQueue());
+            return SmartStartQueues.GetOrAdd(machineId, _ => new SmartMachineQueue());
+        }
+
+        private static SmartMachineQueue GetOrCreateHighLevelQueue(string machineId)
+        {
+            return GetOrCreateSmartQueue(machineId);
         }
 
         private static async Task<bool> WaitUntilIdleOrTimeout(string machineId, int maxWaitSeconds)
@@ -709,7 +714,7 @@ namespace HiLinkBridgeWebApi48.Controllers
 
         private static void EnsureWorkerStarted(string machineId)
         {
-            var q = GetOrCreateHighLevelQueue(machineId);
+            var q = GetOrCreateSmartQueue(machineId);
             lock (q.Sync)
             {
                 if (q.WorkerRunning) return;
@@ -722,7 +727,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 {
                     while (true)
                     {
-                        HighLevelStartJob job = null;
+                        SmartStartJob job = null;
                         lock (q.Sync)
                         {
                             if (q.Jobs.Count == 0)
@@ -733,13 +738,13 @@ namespace HiLinkBridgeWebApi48.Controllers
                             }
                             job = q.Jobs.Peek();
                             q.Current = job;
-                            Console.WriteLine($"[HighLevelStartJob] start jobId={job.JobId} machine={machineId} index={job.Index} total={job.Paths?.Count ?? 0} currentSlot={job.CurrentSlot} prevSlot={job.PreviousSlot}");
+                            Console.WriteLine($"[SmartStartJob] start jobId={job.JobId} machine={machineId} index={job.Index} total={job.Paths?.Count ?? 0} currentSlot={job.CurrentSlot} prevSlot={job.PreviousSlot}");
                         }
 
                         try
                         {
                             job.Status = "RUNNING";
-                            await RunHighLevelStartJob(machineId, job);
+                            await RunSmartStartJob(machineId, job);
                             job.Status = "DONE";
                             job.FinishedAtUtc = DateTime.UtcNow;
                             JobResults[job.JobId] = new JobResult
@@ -757,7 +762,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                                 },
                                 CreatedAtUtc = DateTime.UtcNow
                             };
-                            Console.WriteLine($"[HighLevelStartJob] done jobId={job.JobId} machine={machineId} status=DONE");
+                            Console.WriteLine($"[SmartStartJob] done jobId={job.JobId} machine={machineId} status=DONE");
                         }
                         catch (Exception ex)
                         {
@@ -782,7 +787,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                                 },
                                 CreatedAtUtc = DateTime.UtcNow
                             };
-                            Console.WriteLine($"[HighLevelStartJob] failed jobId={job.JobId} machine={machineId} errorCode={job.ErrorCode} errorMessage={job.ErrorMessage} exception={ex.Message}");
+                            Console.WriteLine($"[SmartStartJob] failed jobId={job.JobId} machine={machineId} errorCode={job.ErrorCode} errorMessage={job.ErrorMessage} exception={ex.Message}");
                         }
                         finally
                         {
@@ -798,7 +803,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("[HighLevelStartWorker] fatal: " + ex);
+                    Console.WriteLine("[SmartStartWorker] fatal: " + ex);
                     lock (q.Sync)
                     {
                         q.WorkerRunning = false;
@@ -807,14 +812,14 @@ namespace HiLinkBridgeWebApi48.Controllers
             });
         }
 
-        private static async Task RunHighLevelStartJob(string machineId, HighLevelStartJob job)
+        private static async Task RunSmartStartJob(string machineId, SmartStartJob job)
         {
             if (job == null) throw new ArgumentNullException(nameof(job));
             if (job.Paths == null || job.Paths.Count == 0) return;
 
             if (IsMockCncMachiningEnabled())
             {
-                await RunHighLevelStartJobMock(machineId, job);
+                await RunSmartStartJobMock(machineId, job);
                 return;
             }
 
@@ -967,7 +972,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                 job.CurrentSlot = nextSlot;
 
                 // 12) 가공 완료 콜백 (백엔드에 통보)
-                await NotifyMachiningCompletedToBackend(machineId, job.JobId, ExtractRequestIdFromBridgePath(job.Paths[0]));
+                await NotifyMachiningCompletedToBackend(
+                    machineId,
+                    job.JobId,
+                    ExtractRequestIdFromBridgePath(job.Paths[0]),
+                    job.Paths[0]);
 
                 // 13) 다음 작업 자동 시작
                 await TryStartNextMachiningJob(machineId, job.HeadType);
@@ -981,6 +990,8 @@ namespace HiLinkBridgeWebApi48.Controllers
             return !string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) && raw != "0";
         }
 
+        private static readonly Regex RequestIdRegex = new Regex(@"(\d{8}-[A-Z0-9]{6,10})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         private static string ExtractRequestIdFromBridgePath(string bridgePath)
         {
             try
@@ -993,9 +1004,38 @@ namespace HiLinkBridgeWebApi48.Controllers
                 {
                     if (string.Equals(parts[i], "nc", StringComparison.OrdinalIgnoreCase))
                     {
-                        return (parts[i + 1] ?? string.Empty).Trim();
+                        var segment = (parts[i + 1] ?? string.Empty).Trim();
+                        var matchFromSegment = RequestIdRegex.Match(segment);
+                        if (matchFromSegment.Success)
+                        {
+                            return matchFromSegment.Groups[1].Value.ToUpperInvariant();
+                        }
+                        return segment;
                     }
                 }
+                // 파일명 기반 fallback: {machineId}_{requestId}_*.nc 또는 {requestId}_*.nc
+                var file = parts.Length > 0 ? parts[parts.Length - 1] : p;
+                file = (file ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(file)) return string.Empty;
+                var fileNoExt = Path.GetFileNameWithoutExtension(file);
+                if (string.IsNullOrEmpty(fileNoExt)) return string.Empty;
+
+                var segs = fileNoExt.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var seg in segs)
+                {
+                    var match = RequestIdRegex.Match(seg);
+                    if (match.Success)
+                    {
+                        return match.Groups[1].Value.ToUpperInvariant();
+                    }
+                }
+
+                var matchFromWhole = RequestIdRegex.Match(fileNoExt);
+                if (matchFromWhole.Success)
+                {
+                    return matchFromWhole.Groups[1].Value.ToUpperInvariant();
+                }
+
                 return string.Empty;
             }
             catch
@@ -1004,31 +1044,31 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
-        private static async Task RunHighLevelStartJobMock(string machineId, HighLevelStartJob job)
+        private static async Task RunSmartStartJobMock(string machineId, SmartStartJob job)
         {
             var bridgePath = job?.Paths != null && job.Paths.Count > 0 ? job.Paths[0] : string.Empty;
             var requestId = ExtractRequestIdFromBridgePath(bridgePath);
 
             try
             {
-                await NotifyMachiningTickToBackend(machineId, job.JobId, requestId, "STARTED", 0);
+                await NotifyMachiningTickToBackend(machineId, job.JobId, requestId, bridgePath, "STARTED", 0);
             }
             catch { }
 
-            await Task.Delay(1500);
+            await Task.Delay(4000);
             try
             {
-                await NotifyMachiningTickToBackend(machineId, job.JobId, requestId, "RUNNING", 50);
+                await NotifyMachiningTickToBackend(machineId, job.JobId, requestId, bridgePath, "RUNNING", 50);
             }
             catch { }
 
-            await Task.Delay(1500);
+            await Task.Delay(4000);
 
-            await NotifyMachiningCompletedToBackend(machineId, job.JobId, requestId);
+            await NotifyMachiningCompletedToBackend(machineId, job.JobId, requestId, bridgePath);
             await TryStartNextMachiningJob(machineId, job.HeadType);
         }
 
-        private static async Task NotifyMachiningTickToBackend(string machineId, string jobId, string requestId, string phase, int percent)
+        private static async Task NotifyMachiningTickToBackend(string machineId, string jobId, string requestId, string bridgePath, string phase, int percent)
         {
             try
             {
@@ -1040,9 +1080,19 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
 
                 var url = $"{backendUrl}/api/cnc-machines/bridge/machining/tick/{Uri.EscapeDataString(machineId)}";
-                var payload = new { jobId, requestId = string.IsNullOrEmpty(requestId) ? null : requestId, phase, percent };
+                var payload = new
+                {
+                    jobId,
+                    requestId = string.IsNullOrEmpty(requestId) ? null : requestId,
+                    bridgePath = string.IsNullOrEmpty(bridgePath) ? null : bridgePath,
+                    phase,
+                    percent
+                };
                 var json = JsonConvert.SerializeObject(payload);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                Console.WriteLine(
+                    $"[NotifyMachiningTick] payload machineId={machineId} jobId={jobId} requestId={payload.requestId ?? "(null)"} bridgePath={payload.bridgePath ?? "(null)"} phase={phase} percent={percent}");
 
                 using (var client = new HttpClient())
                 {
@@ -1057,7 +1107,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
         }
 
-        private static async Task NotifyMachiningCompletedToBackend(string machineId, string jobId, string requestId)
+        private static async Task NotifyMachiningCompletedToBackend(string machineId, string jobId, string requestId, string bridgePath)
         {
             try
             {
@@ -1071,9 +1121,17 @@ namespace HiLinkBridgeWebApi48.Controllers
                 // 운영 서버에는 bridge 전용 complete 엔드포인트(/bridge/machining/complete)가 안정적으로 존재한다.
                 // (smart/machining-completed 라우트는 환경에 따라 미배포일 수 있어 authenticate(401)로 떨어질 수 있음)
                 var url = $"{backendUrl}/api/cnc-machines/bridge/machining/complete/{Uri.EscapeDataString(machineId)}";
-                var payload = new { jobId, requestId = string.IsNullOrEmpty(requestId) ? null : requestId };
+                var payload = new
+                {
+                    jobId,
+                    requestId = string.IsNullOrEmpty(requestId) ? null : requestId,
+                    bridgePath = string.IsNullOrEmpty(bridgePath) ? null : bridgePath
+                };
                 var json = JsonConvert.SerializeObject(payload);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                Console.WriteLine(
+                    $"[NotifyMachiningCompleted] payload machineId={machineId} jobId={jobId} requestId={payload.requestId ?? "(null)"} bridgePath={payload.bridgePath ?? "(null)"}");
 
                 // 브리지 시크릿 헤더 추가
                 var headers = new Dictionary<string, string>
@@ -1167,10 +1225,10 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                     // 백엔드의 /smart/replace, /smart/start 는 제조사 JWT 인증이 필요하므로,
                     // 브리지 서버는 내부 큐에 다음 작업을 직접 enqueue하여 연속 가공을 이어간다.
-                    var q = GetOrCreateHighLevelQueue(machineId);
+                    var q = GetOrCreateSmartQueue(machineId);
                     lock (q.Sync)
                     {
-                        q.Jobs.Enqueue(new HighLevelStartJob
+                        q.Jobs.Enqueue(new SmartStartJob
                         {
                             JobId = Guid.NewGuid().ToString("N"),
                             HeadType = headType,
@@ -1411,7 +1469,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         // POST /machines/{machineId}/smart/upload
         [HttpPost]
         [Route("machines/{machineId}/smart/upload")]
-        public HttpResponseMessage SmartUploadProgram(string machineId, [FromBody] HighLevelUploadProgramRequest req)
+        public HttpResponseMessage SmartUploadProgram(string machineId, [FromBody] SmartUploadProgramRequest req)
         {
             if (string.IsNullOrWhiteSpace(machineId))
             {
@@ -1598,7 +1656,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             });
         }
 
-        public class HighLevelStartEnqueueRequest
+        public class SmartStartEnqueueRequest
         {
             public short? headType { get; set; }
             public string[] paths { get; set; }
@@ -1609,7 +1667,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         // POST /machines/{machineId}/smart/replace (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/smart/replace")]
-        public HttpResponseMessage SmartReplace(string machineId, [FromBody] HighLevelStartEnqueueRequest req)
+        public HttpResponseMessage SmartReplace(string machineId, [FromBody] SmartStartEnqueueRequest req)
         {
             if (string.IsNullOrWhiteSpace(machineId))
             {
@@ -1662,7 +1720,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 try
                 {
-                    var job = new HighLevelStartJob
+                    var job = new SmartStartJob
                     {
                         JobId = jobId,
                         HeadType = req?.headType ?? (short)1,
@@ -1675,7 +1733,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                         FirstFilePreUploaded = preUploadResult != null,
                     };
 
-                    var q = GetOrCreateHighLevelQueue(machineId);
+                    var q = GetOrCreateSmartQueue(machineId);
                     lock (q.Sync)
                     {
                         q.Jobs.Clear();
@@ -1710,7 +1768,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         // POST /machines/{machineId}/smart/enqueue (이중 응답 방식)
         [HttpPost]
         [Route("machines/{machineId}/smart/enqueue")]
-        public HttpResponseMessage SmartEnqueue(string machineId, [FromBody] HighLevelStartEnqueueRequest req)
+        public HttpResponseMessage SmartEnqueue(string machineId, [FromBody] SmartStartEnqueueRequest req)
         {
             if (string.IsNullOrWhiteSpace(machineId))
             {
@@ -1763,7 +1821,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 try
                 {
-                    var job = new HighLevelStartJob
+                    var job = new SmartStartJob
                     {
                         JobId = jobId,
                         HeadType = req?.headType ?? (short)1,
@@ -1776,7 +1834,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                         FirstFilePreUploaded = preUploadResult != null,
                     };
 
-                    var q = GetOrCreateHighLevelQueue(machineId);
+                    var q = GetOrCreateSmartQueue(machineId);
                     int queued;
                     lock (q.Sync)
                     {
@@ -1880,7 +1938,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                             return;
                         }
 
-                        HighLevelStartJob removedJob = null;
+                        SmartStartJob removedJob = null;
                         if (string.IsNullOrWhiteSpace(req?.jobId))
                         {
                             removedJob = q.Jobs.Dequeue();
@@ -1888,7 +1946,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                         else
                         {
                             var target = req.jobId.Trim();
-                            var newQ = new Queue<HighLevelStartJob>();
+                            var newQ = new Queue<SmartStartJob>();
                             while (q.Jobs.Count > 0)
                             {
                                 var j = q.Jobs.Dequeue();
@@ -3268,7 +3326,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             public bool? isNew { get; set; }
         }
 
-        public class HighLevelUploadProgramRequest
+        public class SmartUploadProgramRequest
         {
             public short? headType { get; set; }
             public string path { get; set; }
