@@ -1,6 +1,7 @@
 import Request from "../../models/request.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
+import MachiningRecord from "../../models/machiningRecord.model.js";
 import { getIO } from "../../socket.js";
 import { applyStatusMapping } from "../request/utils.js";
 
@@ -132,9 +133,10 @@ export async function recordMachiningTickForBridge(req, res) {
     let startedAt = now;
 
     if (requestId) {
-      const existing = await Request.findOne({ requestId })
-        .select({ productionSchedule: 1, requestId: 1 })
-        .lean();
+      const existing = await Request.findOne({ requestId }).select({
+        productionSchedule: 1,
+        requestId: 1,
+      });
 
       const prevProgress = existing?.productionSchedule?.machiningProgress;
       const prevJobId = prevProgress?.jobId
@@ -154,11 +156,14 @@ export async function recordMachiningTickForBridge(req, res) {
         : startedAtRaw
           ? new Date(startedAtRaw)
           : now;
+
       elapsedSeconds = Math.max(
         0,
         Math.floor((now.getTime() - startedAt.getTime()) / 1000),
       );
 
+      // Request에는 진행 표시(WS/페이지용)만 남기고,
+      // 영속적인 "가공 기록"은 MachiningRecord에 저장한다.
       const update = {
         $set: {
           "productionSchedule.machiningProgress": {
@@ -177,12 +182,43 @@ export async function recordMachiningTickForBridge(req, res) {
         update.$set["productionSchedule.actualMachiningStart"] = startedAt;
       }
 
+      // machiningRecord upsert + Request에 연결
+      const record = await MachiningRecord.findOneAndUpdate(
+        {
+          requestId,
+          machineId: mid,
+          jobId: jobId || null,
+          status: { $in: ["RUNNING"] },
+        },
+        {
+          $setOnInsert: {
+            requestId,
+            machineId: mid,
+            jobId: jobId || null,
+            bridgePath: bridgePathRaw || null,
+            status: "RUNNING",
+          },
+          $set: {
+            startedAt,
+            lastTickAt: now,
+            percent: percent == null ? null : percent,
+            elapsedSeconds,
+          },
+        },
+        { new: true, upsert: true },
+      );
+
+      if (record?._id && !existing?.productionSchedule?.machiningRecord) {
+        update.$set["productionSchedule.machiningRecord"] = record._id;
+      }
+
       await Request.updateOne({ requestId }, update);
       console.log(
-        "[bridge:machining:tick] updated request",
+        "[bridge:machining:tick] updated request/record",
         JSON.stringify({
           machineId: mid,
           requestId,
+          recordId: record?._id,
           startedAt,
           elapsedSeconds,
           phase,
@@ -288,9 +324,47 @@ export async function recordMachiningCompleteForBridge(req, res) {
             )
           : 0;
 
+        // machiningRecord 업데이트/연결
+        const recordId = request?.productionSchedule?.machiningRecord || null;
+        const record = recordId
+          ? await MachiningRecord.findByIdAndUpdate(
+              recordId,
+              {
+                $set: {
+                  requestId,
+                  machineId: mid,
+                  jobId: jobId || null,
+                  bridgePath: bridgePathRaw || null,
+                  status: "COMPLETED",
+                  startedAt: startBase ? new Date(startBase) : now,
+                  lastTickAt: now,
+                  completedAt: now,
+                  percent: 100,
+                  elapsedSeconds: durationSeconds,
+                  durationSeconds,
+                },
+              },
+              { new: true },
+            )
+          : await MachiningRecord.create({
+              requestId,
+              machineId: mid,
+              jobId: jobId || null,
+              bridgePath: bridgePathRaw || null,
+              status: "COMPLETED",
+              startedAt: startBase ? new Date(startBase) : now,
+              lastTickAt: now,
+              completedAt: now,
+              percent: 100,
+              elapsedSeconds: durationSeconds,
+              durationSeconds,
+            });
+
         request.productionSchedule = request.productionSchedule || {};
         request.productionSchedule.actualMachiningComplete = now;
-        request.productionSchedule.machiningDurationSeconds = durationSeconds;
+        if (!request.productionSchedule.machiningRecord && record?._id) {
+          request.productionSchedule.machiningRecord = record._id;
+        }
 
         request.productionSchedule.machiningProgress = {
           ...(progress || {}),
@@ -302,19 +376,37 @@ export async function recordMachiningCompleteForBridge(req, res) {
           lastTickAt: now,
           elapsedSeconds: durationSeconds,
         };
+
         applyStatusMapping(request, "세척.포장");
         await request.save();
         console.log(
-          "[bridge:machining:complete] request updated",
-          JSON.stringify({ machineId: mid, requestId, stage: "세척.포장" }),
+          "[bridge:machining:complete] request/record updated",
+          JSON.stringify({
+            machineId: mid,
+            requestId,
+            recordId: record?._id,
+            stage: "세척.포장",
+          }),
         );
       } else {
+        // Request를 못 찾는 경우에도 record는 남길 수 있게 attempt
+        if (requestId) {
+          await MachiningRecord.create({
+            requestId,
+            machineId: mid,
+            jobId: jobId || null,
+            bridgePath: bridgePathRaw || null,
+            status: "COMPLETED",
+            completedAt: now,
+            durationSeconds: 0,
+          }).catch(() => {});
+        }
+
         await Request.updateOne(
           { requestId },
           {
             $set: {
               "productionSchedule.actualMachiningComplete": now,
-              "productionSchedule.machiningDurationSeconds": 0,
               "productionSchedule.machiningProgress.machineId": mid,
               "productionSchedule.machiningProgress.jobId": jobId || null,
               "productionSchedule.machiningProgress.phase": "COMPLETED",
@@ -445,11 +537,124 @@ export async function recordMachiningFailForBridge(req, res) {
       metadata: { jobId: jobId || null, alarms },
     });
 
+    if (requestId) {
+      try {
+        const request = await Request.findOne({ requestId }).select({
+          productionSchedule: 1,
+          requestId: 1,
+        });
+
+        const recordId = request?.productionSchedule?.machiningRecord || null;
+        const baseUpdate = {
+          requestId,
+          machineId: mid,
+          jobId: jobId || null,
+          status: "FAILED",
+          failReason: reason || "FAILED",
+          alarms,
+          completedAt: new Date(),
+        };
+
+        const record = recordId
+          ? await MachiningRecord.findByIdAndUpdate(
+              recordId,
+              { $set: baseUpdate },
+              { new: true },
+            )
+          : await MachiningRecord.create(baseUpdate);
+
+        if (
+          request &&
+          !request.productionSchedule?.machiningRecord &&
+          record?._id
+        ) {
+          await Request.updateOne(
+            { requestId },
+            { $set: { "productionSchedule.machiningRecord": record._id } },
+          );
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     return res.status(200).json({ success: true });
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: "machining fail 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function cancelMachiningForMachine(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const now = new Date();
+
+    // requestId를 못 받아도(Stop 버튼 등) machineId 기준 RUNNING record를 마감한다.
+    const record = await MachiningRecord.findOne({
+      machineId: mid,
+      status: "RUNNING",
+    }).sort({ startedAt: -1, createdAt: -1 });
+
+    if (!record?._id) {
+      return res.status(200).json({ success: true, data: { updated: false } });
+    }
+
+    const startedAt = record.startedAt ? new Date(record.startedAt) : null;
+    const durationSeconds = startedAt
+      ? Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000))
+      : record.elapsedSeconds != null
+        ? Math.max(0, Number(record.elapsedSeconds) || 0)
+        : 0;
+
+    record.status = "CANCELED";
+    record.completedAt = now;
+    record.lastTickAt = record.lastTickAt || now;
+    record.durationSeconds = record.durationSeconds ?? durationSeconds;
+    record.elapsedSeconds = record.elapsedSeconds ?? durationSeconds;
+    record.failReason = record.failReason || "USER_STOP";
+    await record.save();
+
+    const requestId = String(record.requestId || "").trim();
+    if (requestId) {
+      await Request.updateOne(
+        { requestId },
+        {
+          $set: {
+            "productionSchedule.actualMachiningComplete": now,
+            "productionSchedule.machiningProgress.phase": "CANCELED",
+            "productionSchedule.machiningProgress.lastTickAt": now,
+            "productionSchedule.machiningProgress.elapsedSeconds":
+              durationSeconds,
+          },
+        },
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        updated: true,
+        recordId: record._id,
+        requestId: requestId || null,
+        status: record.status,
+        durationSeconds,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "machining cancel 처리 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

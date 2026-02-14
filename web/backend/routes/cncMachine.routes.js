@@ -98,6 +98,13 @@ router.get(
   cncMachineController.getBridgeActiveProgram,
 );
 
+// 제조사 UI에서 stop(정지) 후 가공 기록을 취소로 마감
+router.post(
+  "/:machineId/machining/cancel",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.cancelMachiningForMachine,
+);
+
 router.post(
   "/:machineId/smart/upload",
   authorizeRoles("manufacturer", "admin"),

@@ -369,7 +369,12 @@ const requestSchema = new mongoose.Schema(
         elapsedSeconds: Number,
       },
 
-      machiningDurationSeconds: Number,
+      machiningRecord: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "MachiningRecord",
+        default: null,
+        index: true,
+      },
 
       // 장비 할당
       assignedMachine: {

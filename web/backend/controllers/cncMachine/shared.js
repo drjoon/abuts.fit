@@ -466,7 +466,13 @@ export async function getProductionQueuesHandler(req, res) {
   try {
     const requests = await Request.find({
       status: { $in: ["의뢰", "CAM", "생산", "가공"] },
-    }).select("requestId status productionSchedule caseInfos");
+    })
+      .select("requestId status productionSchedule caseInfos")
+      .populate({
+        path: "productionSchedule.machiningRecord",
+        select:
+          "status startedAt completedAt durationSeconds elapsedSeconds lastTickAt machineId jobId",
+      });
 
     const queues = getAllProductionQueues(requests);
 
@@ -499,6 +505,20 @@ export async function getProductionQueuesHandler(req, res) {
               machineId: req.productionSchedule.ncPreload.machineId,
               updatedAt: req.productionSchedule.ncPreload.updatedAt,
               error: req.productionSchedule.ncPreload.error,
+            }
+          : null,
+        machiningRecord: req.productionSchedule?.machiningRecord
+          ? {
+              status: req.productionSchedule.machiningRecord.status,
+              startedAt: req.productionSchedule.machiningRecord.startedAt,
+              completedAt: req.productionSchedule.machiningRecord.completedAt,
+              durationSeconds:
+                req.productionSchedule.machiningRecord.durationSeconds,
+              elapsedSeconds:
+                req.productionSchedule.machiningRecord.elapsedSeconds,
+              lastTickAt: req.productionSchedule.machiningRecord.lastTickAt,
+              machineId: req.productionSchedule.machiningRecord.machineId,
+              jobId: req.productionSchedule.machiningRecord.jobId,
             }
           : null,
         clinicName: req.caseInfos?.clinicName,

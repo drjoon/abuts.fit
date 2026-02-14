@@ -67,20 +67,27 @@
 - 브리지 서버는 JWT 없이 `X-Bridge-Secret` 기반으로 DB 스냅샷을 조회할 수 있다.
 - Endpoint: `GET /api/cnc-machines/bridge/queue-snapshot/:machineId`
 
-## 7. CNC 가공 소요시간 기록 (Bridge -> Backend -> DB)
+## 7. CNC 가공 기록 (Bridge -> Backend -> DB)
 
-- **목적**: 브리지 서버가 보내는 machining tick/complete 이벤트를 통해, 의뢰(Request)의 실제 가공 소요 시간을 DB에 안정적으로 기록한다.
-- **저장 위치**: `Request.productionSchedule`
-  - `productionSchedule.machiningProgress.elapsedSeconds`
-    - 브리지 tick 수신 시(`POST /api/cnc-machines/bridge/machining/tick/:machineId`) 갱신
-  - `productionSchedule.machiningDurationSeconds`
-    - 브리지 complete 수신 시(`POST /api/cnc-machines/bridge/machining/complete/:machineId`) 최종 확정 저장
+- **목적**: 브리지 서버가 보내는 machining tick/complete/fail 이벤트를 통해, 의뢰(Request)의 실제 가공 이력을 DB에 안정적으로 기록한다.
+- **저장 위치(SSOT)**: `MachiningRecord` 컬렉션
+  - 필수 기록:
+    - `startedAt` (가공 시작 시각)
+    - `completedAt` (가공 종료 시각)
+    - `durationSeconds` (최종 소요 시간)
+    - `status` (RUNNING | COMPLETED | FAILED | CANCELED)
+  - 진행 중 보강:
+    - `lastTickAt`, `elapsedSeconds`, `percent`
+  - 실패 보강:
+    - `failReason`, `alarms`
+- **Request 연결(populate)**:
+  - `Request.productionSchedule.machiningRecord`에 `MachiningRecord._id`를 저장하고, 조회 시 populate해서 사용한다.
 - **업데이트 지점(코드)**:
   - Tick: `backend/controllers/cncMachine/machiningBridge.js` -> `recordMachiningTickForBridge`
   - Complete: `backend/controllers/cncMachine/machiningBridge.js` -> `recordMachiningCompleteForBridge`
-- **완료 처리 규칙**:
-  - complete에서 `actualMachiningComplete`를 기록하고, `machiningDurationSeconds`를 `startedAt` 기준으로 계산하여 저장한다.
-  - `machiningProgress.phase`는 complete에서 `COMPLETED`, `percent=100`, `lastTickAt`으로 마감한다.
+  - Fail: `backend/controllers/cncMachine/machiningBridge.js` -> `recordMachiningFailForBridge`
+- **주의**:
+  - `Request.productionSchedule.machiningProgress`는 UI/소켓 실시간 표시용으로 유지하고, 영속적인 이력/최종값은 `MachiningRecord`를 기준으로 한다.
 
 ### 5.1 크레딧 관리 정책
 

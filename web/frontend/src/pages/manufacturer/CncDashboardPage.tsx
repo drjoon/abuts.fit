@@ -140,6 +140,19 @@ export const CncDashboardPage = () => {
     fetchProgramList,
   });
 
+  const [machiningRecordSummaryMap, setMachiningRecordSummaryMap] = useState<
+    Record<
+      string,
+      {
+        status?: string;
+        startedAt?: string | Date;
+        completedAt?: string | Date;
+        durationSeconds?: number;
+        elapsedSeconds?: number;
+      } | null
+    >
+  >({});
+
   const { toast } = useToast();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
 
@@ -575,6 +588,35 @@ export const CncDashboardPage = () => {
     token,
   ]);
 
+  useEffect(() => {
+    if (!token) return;
+    let mounted = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/cnc-machines/queues", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) return;
+        const map =
+          body?.data && typeof body.data === "object" ? body.data : {};
+
+        const next: Record<string, any> = {};
+        for (const [mid, items] of Object.entries(map)) {
+          const list: any[] = Array.isArray(items) ? (items as any[]) : [];
+          const head = list[0] || null;
+          next[String(mid)] = head?.machiningRecord || null;
+        }
+        if (mounted) setMachiningRecordSummaryMap(next);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
     await handleDeleteMachine(deleteTarget.name);
@@ -603,6 +645,7 @@ export const CncDashboardPage = () => {
       toolHealthMap={toolHealthMap}
       programSummary={programSummary}
       machiningElapsedSecondsMap={queues.machiningElapsedSecondsMap}
+      machiningRecordSummaryMap={machiningRecordSummaryMap}
       reservationJobsMap={queues.reservationJobsMap}
       worksheetQueueCountMap={queues.worksheetQueueCountMap}
       reservationSummaryMap={queues.reservationSummaryMap}

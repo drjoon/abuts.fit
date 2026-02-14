@@ -29,6 +29,13 @@ type QueueItem = {
   diameter?: number;
   diameterGroup?: string;
   paused?: boolean;
+  machiningRecord?: {
+    status?: string;
+    startedAt?: string | Date;
+    completedAt?: string | Date;
+    durationSeconds?: number;
+    elapsedSeconds?: number;
+  } | null;
   ncFile?: {
     fileName?: string;
     filePath?: string;
@@ -203,6 +210,58 @@ const MachineQueueCard = ({
     return `${mm}:${ss}`;
   })();
 
+  const machiningRecordSummary = (() => {
+    const rec = currentSlot?.machiningRecord ?? null;
+    if (!rec) return null;
+    const status = String(rec.status || "")
+      .trim()
+      .toUpperCase();
+    const startedAt = rec.startedAt ? new Date(rec.startedAt) : null;
+    const completedAt = rec.completedAt ? new Date(rec.completedAt) : null;
+    const durationSecRaw =
+      typeof rec.durationSeconds === "number"
+        ? rec.durationSeconds
+        : typeof rec.elapsedSeconds === "number"
+          ? rec.elapsedSeconds
+          : null;
+    const durationSec =
+      typeof durationSecRaw === "number" && durationSecRaw >= 0
+        ? Math.floor(durationSecRaw)
+        : null;
+
+    const toHHMM = (d: Date | null) => {
+      if (!d) return "-";
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    };
+
+    const toMMSS = (sec: number | null) => {
+      if (sec == null) return "-";
+      const m = String(Math.floor(sec / 60)).padStart(2, "0");
+      const s = String(sec % 60).padStart(2, "0");
+      return `${m}:${s}`;
+    };
+
+    const statusLabel =
+      status === "COMPLETED"
+        ? "가공완료"
+        : status === "FAILED"
+          ? "가공실패"
+          : status === "CANCELED"
+            ? "취소"
+            : status === "RUNNING"
+              ? "가공중"
+              : status || "-";
+
+    return {
+      statusLabel,
+      startedAtLabel: toHHMM(startedAt),
+      completedAtLabel: toHHMM(completedAt),
+      durationLabel: toMMSS(durationSec),
+    };
+  })();
+
   return (
     <div className="app-glass-card app-glass-card--xl flex flex-col">
       <div className="app-glass-card-content flex items-start justify-between gap-3">
@@ -297,6 +356,20 @@ const MachineQueueCard = ({
                     </span>
                   ) : null}
                 </div>
+                {machiningRecordSummary ? (
+                  <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                    <span className="mr-2 font-extrabold text-slate-700">
+                      {machiningRecordSummary.statusLabel}
+                    </span>
+                    <span className="mr-2">
+                      시작 {machiningRecordSummary.startedAtLabel}
+                    </span>
+                    <span className="mr-2">
+                      종료 {machiningRecordSummary.completedAtLabel}
+                    </span>
+                    <span>소요 {machiningRecordSummary.durationLabel}</span>
+                  </div>
+                ) : null}
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {nowPlayingLabel}
                 </div>

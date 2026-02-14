@@ -8,7 +8,13 @@ export async function getProductionQueues(req, res) {
   try {
     const requests = await Request.find({
       status: { $in: ["의뢰", "CAM", "생산", "가공"] },
-    }).select("requestId status productionSchedule caseInfos");
+    })
+      .select("requestId status productionSchedule caseInfos")
+      .populate({
+        path: "productionSchedule.machiningRecord",
+        select:
+          "status startedAt completedAt durationSeconds elapsedSeconds lastTickAt machineId jobId",
+      });
 
     const queues = getAllProductionQueues(requests);
 
@@ -43,6 +49,21 @@ export async function getProductionQueues(req, res) {
               error: reqItem.productionSchedule.ncPreload.error,
             }
           : null,
+        machiningRecord: reqItem.productionSchedule?.machiningRecord
+          ? {
+              status: reqItem.productionSchedule.machiningRecord.status,
+              startedAt: reqItem.productionSchedule.machiningRecord.startedAt,
+              completedAt:
+                reqItem.productionSchedule.machiningRecord.completedAt,
+              durationSeconds:
+                reqItem.productionSchedule.machiningRecord.durationSeconds,
+              elapsedSeconds:
+                reqItem.productionSchedule.machiningRecord.elapsedSeconds,
+              lastTickAt: reqItem.productionSchedule.machiningRecord.lastTickAt,
+              machineId: reqItem.productionSchedule.machiningRecord.machineId,
+              jobId: reqItem.productionSchedule.machiningRecord.jobId,
+            }
+          : null,
         clinicName: reqItem.caseInfos?.clinicName,
         patientName: reqItem.caseInfos?.patientName,
       }));
@@ -67,7 +88,9 @@ export async function applyProductionQueueBatchForMachine(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     const orderRaw = req.body?.order;

@@ -56,6 +56,7 @@ import {
 import { initializeMachines } from "./cncMachine/dev.js";
 import {
   recordMachiningCompleteForBridge,
+  cancelMachiningForMachine,
   recordMachiningFailForBridge,
   recordMachiningTickForBridge,
 } from "./cncMachine/machiningBridge.js";
@@ -73,6 +74,7 @@ export {
   recordMachiningTickForBridge,
   recordMachiningCompleteForBridge,
   recordMachiningFailForBridge,
+  cancelMachiningForMachine,
   getMachines,
   getBridgeQueueForMachine,
   getBridgeActiveProgram,

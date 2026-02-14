@@ -39,6 +39,13 @@ interface MachineCardProps {
   loading: boolean;
   isPlaying?: boolean;
   machiningElapsedSeconds?: number | null;
+  machiningRecordSummary?: {
+    status?: string;
+    startedAt?: string | Date;
+    completedAt?: string | Date;
+    durationSeconds?: number;
+    elapsedSeconds?: number;
+  } | null;
   worksheetQueueCount?: number;
   tempTooltip: string;
   toolTooltip: string;
@@ -99,6 +106,7 @@ export const MachineCard = (props: MachineCardProps) => {
     loading,
     isPlaying = false,
     machiningElapsedSeconds,
+    machiningRecordSummary,
     worksheetQueueCount,
     tempTooltip,
     toolTooltip,
@@ -239,6 +247,56 @@ export const MachineCard = (props: MachineCardProps) => {
     const mm = String(Math.floor(sec / 60)).padStart(2, "0");
     const ss = String(sec % 60).padStart(2, "0");
     return `${mm}:${ss}`;
+  })();
+
+  const recordLabel = (() => {
+    const rec = machiningRecordSummary || null;
+    if (!rec) return null;
+    const status = String(rec.status || "")
+      .trim()
+      .toUpperCase();
+    const startedAt = rec.startedAt ? new Date(rec.startedAt) : null;
+    const completedAt = rec.completedAt ? new Date(rec.completedAt) : null;
+    const durationSecRaw =
+      typeof rec.durationSeconds === "number"
+        ? rec.durationSeconds
+        : typeof rec.elapsedSeconds === "number"
+          ? rec.elapsedSeconds
+          : null;
+    const durationSec =
+      typeof durationSecRaw === "number" && durationSecRaw >= 0
+        ? Math.floor(durationSecRaw)
+        : null;
+
+    const toHHMM = (d: Date | null) => {
+      if (!d) return "-";
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    };
+    const toMMSS = (sec: number | null) => {
+      if (sec == null) return "-";
+      const m = String(Math.floor(sec / 60)).padStart(2, "0");
+      const s = String(sec % 60).padStart(2, "0");
+      return `${m}:${s}`;
+    };
+    const statusLabel =
+      status === "COMPLETED"
+        ? "가공완료"
+        : status === "FAILED"
+          ? "가공실패"
+          : status === "CANCELED"
+            ? "취소"
+            : status === "RUNNING"
+              ? "가공중"
+              : status || "-";
+
+    return {
+      statusLabel,
+      startedAtLabel: toHHMM(startedAt),
+      completedAtLabel: toHHMM(completedAt),
+      durationLabel: toMMSS(durationSec),
+    };
   })();
 
   return (
@@ -488,6 +546,20 @@ export const MachineCard = (props: MachineCardProps) => {
                     </span>
                   )}
                 </div>
+                {recordLabel ? (
+                  <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                    <span className="mr-2 font-extrabold text-slate-700">
+                      {recordLabel.statusLabel}
+                    </span>
+                    <span className="mr-2">
+                      시작 {recordLabel.startedAtLabel}
+                    </span>
+                    <span className="mr-2">
+                      종료 {recordLabel.completedAtLabel}
+                    </span>
+                    <span>소요 {recordLabel.durationLabel}</span>
+                  </div>
+                ) : null}
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {currentProg ? (currentProg.name ?? "없음") : "없음"}
                 </div>

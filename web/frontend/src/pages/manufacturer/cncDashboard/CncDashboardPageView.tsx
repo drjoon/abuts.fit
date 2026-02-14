@@ -19,7 +19,7 @@ import { CncMaterialModal } from "../cnc/components/CncMaterialModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CncEventLogModal } from "@/components/CncEventLogModal";
 
-export function CncDashboardPageView(props: any) {
+export const CncDashboardPageView = (props: any) => {
   const {
     machines,
     mergedMachines,
@@ -35,6 +35,7 @@ export function CncDashboardPageView(props: any) {
     toolHealthMap,
     programSummary,
     machiningElapsedSecondsMap,
+    machiningRecordSummaryMap,
     reservationJobsMap,
     worksheetQueueCountMap,
     reservationSummaryMap,
@@ -258,6 +259,7 @@ export function CncDashboardPageView(props: any) {
                   toolTooltipMap={toolTooltipMap}
                   programSummary={programSummary}
                   machiningElapsedSecondsMap={machiningElapsedSecondsMap}
+                  machiningRecordSummaryMap={machiningRecordSummaryMap}
                   reservationJobsMap={reservationJobsMap}
                   worksheetQueueCountMap={worksheetQueueCountMap}
                   reservationSummaryMap={reservationSummaryMap}
@@ -714,4 +716,4 @@ export function CncDashboardPageView(props: any) {
       </main>
     </div>
   );
-}
+};

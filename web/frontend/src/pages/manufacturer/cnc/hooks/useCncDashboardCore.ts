@@ -122,6 +122,19 @@ export const useCncDashboardCore = ({
         if (!res.ok) {
           throw new Error(`${action} 실패`);
         }
+
+        if (action === "stop") {
+          try {
+            await apiFetch({
+              path: `/api/cnc-machines/${encodeURIComponent(uid)}/machining/cancel`,
+              method: "POST",
+              token,
+              jsonBody: {},
+            });
+          } catch {
+            // ignore
+          }
+        }
         await refreshStatusFor(uid);
       } catch (e: any) {
         const message = e?.message ?? "알 수 없는 오류";
