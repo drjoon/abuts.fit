@@ -682,6 +682,12 @@ export function useCncDashboardQueues({
       const uid = String(machineId || "").trim();
       if (!uid) return;
 
+      const machine = machines.find((m) => m?.uid === uid) || null;
+      const dummyEnabled = machine?.dummySettings?.enabled !== false;
+      const dummyProgram = String(
+        machine?.dummySettings?.programName || "",
+      ).trim();
+
       const jobs = reservationJobsMap[uid] || [];
       const nextJob = jobs[0];
       if (!nextJob) {
@@ -707,75 +713,87 @@ export function useCncDashboardQueues({
       const ok = await ensureCncWriteAllowed();
       if (!ok) return;
 
-      // 알람 상태 확인
-      try {
-        const [statusRes, alarmRes] = await Promise.all([
-          apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/status`,
-            method: "GET",
-            token,
-          }),
-          apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
-            method: "POST",
-            token,
-            jsonBody: { headType: 1 },
-          }),
-        ]);
+      if (!dummyEnabled) {
+        // 알람 상태 확인
+        try {
+          const [statusRes, alarmRes] = await Promise.all([
+            apiFetch({
+              path: `/api/machines/${encodeURIComponent(uid)}/status`,
+              method: "GET",
+              token,
+            }),
+            apiFetch({
+              path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
+              method: "POST",
+              token,
+              jsonBody: { headType: 1 },
+            }),
+          ]);
 
-        const statusBody: any = statusRes.data ?? {};
-        const machineStatus = String(
-          statusBody?.status ?? statusBody?.data?.status ?? "",
-        ).trim();
-        const isAlarm =
-          machineStatus.toLowerCase() === "alarm" ||
-          machineStatus.toLowerCase().includes("alarm");
+          const statusBody: any = statusRes.data ?? {};
+          const machineStatus = String(
+            statusBody?.status ?? statusBody?.data?.status ?? "",
+          ).trim();
+          const isAlarm =
+            machineStatus.toLowerCase() === "alarm" ||
+            machineStatus.toLowerCase().includes("alarm");
 
-        const alarmBody: any = alarmRes.data ?? {};
-        const alarmData = alarmBody?.data != null ? alarmBody.data : alarmBody;
-        const alarms: any[] = Array.isArray(alarmData?.alarms)
-          ? alarmData.alarms
-          : [];
+          const alarmBody: any = alarmRes.data ?? {};
+          const alarmData =
+            alarmBody?.data != null ? alarmBody.data : alarmBody;
+          const alarms: any[] = Array.isArray(alarmData?.alarms)
+            ? alarmData.alarms
+            : [];
 
-        if (isAlarm || alarms.length > 0) {
-          const alarmText =
-            alarms.length > 0
-              ? alarms
-                  .map((a) =>
-                    a ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}` : "-",
-                  )
-                  .join(", ")
-              : "-";
-          throw new Error(`장비가 Alarm 상태입니다. (${alarmText})`);
+          if (isAlarm || alarms.length > 0) {
+            const alarmText =
+              alarms.length > 0
+                ? alarms
+                    .map((a) =>
+                      a ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}` : "-",
+                    )
+                    .join(", ")
+                : "-";
+            throw new Error(`장비가 Alarm 상태입니다. (${alarmText})`);
+          }
+        } catch (e: any) {
+          const msg =
+            e?.message || "장비 상태가 Alarm이라 가공을 시작할 수 없습니다.";
+          toast({
+            title: "가공 시작 불가 (알람)",
+            description: msg,
+            variant: "destructive",
+          });
+          return;
         }
-      } catch (e: any) {
-        const msg =
-          e?.message || "장비 상태가 Alarm이라 가공을 시작할 수 없습니다.";
-        toast({
-          title: "가공 시작 불가 (알람)",
-          description: msg,
-          variant: "destructive",
-        });
-        return;
       }
 
       setPlayingNextMap((prev) => ({ ...prev, [uid]: true }));
 
       try {
-        // 1) 큐 교체 (단건 replace 금지: 연속 가공 큐가 1개로 덮여서 다음 작업이 사라짐)
-        const allPaths = (reservationJobsMap[uid] || [])
-          .map(
-            (j: any) =>
-              j?.bridgePath ||
-              j?.bridge_store_path ||
-              j?.bridgeStorePath ||
-              j?.filePath ||
-              j?.path ||
-              j?.name,
-          )
-          .map((p: any) => String(p || "").trim())
-          .filter((p: string) => !!p);
-        if (!allPaths.includes(String(path).trim())) {
+        // 1) smart/replace로 전체 큐 설정 (연속 가공)
+        const mockPath = dummyEnabled
+          ? `dummy/${encodeURIComponent(uid)}/${encodeURIComponent(
+              dummyProgram || "O0001",
+            )}-${Date.now()}.nc`
+          : null;
+
+        const allPaths = dummyEnabled
+          ? [mockPath as string]
+          : (reservationJobsMap[uid] || [])
+              .map(
+                (j: any) =>
+                  j?.bridgePath ||
+                  j?.bridge_store_path ||
+                  j?.bridgeStorePath ||
+                  j?.filePath ||
+                  j?.path ||
+                  j?.name,
+              )
+              .map((p: any) => String(p || "").trim())
+              .filter((p: string) => !!p);
+
+        if (!dummyEnabled && !allPaths.includes(String(path).trim())) {
           allPaths.unshift(String(path).trim());
         }
         const replaceRes = await apiFetch({
@@ -930,6 +948,12 @@ export function useCncDashboardQueues({
       const uid = String(machineId || "").trim();
       if (!uid) return;
 
+      const machine = machines.find((m) => m?.uid === uid) || null;
+      const dummyEnabled = machine?.dummySettings?.enabled !== false;
+      const dummyProgram = String(
+        machine?.dummySettings?.programName || "",
+      ).trim();
+
       const jobs = reservationJobsMap[uid] || [];
       const nowJob = jobs[0];
       if (!nowJob) {
@@ -955,75 +979,87 @@ export function useCncDashboardQueues({
       const ok = await ensureCncWriteAllowed();
       if (!ok) return;
 
-      // 알람 체크
-      try {
-        const [statusRes, alarmRes] = await Promise.all([
-          apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/status`,
-            method: "GET",
-            token,
-          }),
-          apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
-            method: "POST",
-            token,
-            jsonBody: { headType: 1 },
-          }),
-        ]);
+      if (!dummyEnabled) {
+        // 알람 체크
+        try {
+          const [statusRes, alarmRes] = await Promise.all([
+            apiFetch({
+              path: `/api/machines/${encodeURIComponent(uid)}/status`,
+              method: "GET",
+              token,
+            }),
+            apiFetch({
+              path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
+              method: "POST",
+              token,
+              jsonBody: { headType: 1 },
+            }),
+          ]);
 
-        const statusBody: any = statusRes.data ?? {};
-        const machineStatus = String(
-          statusBody?.status ?? statusBody?.data?.status ?? "",
-        ).trim();
-        const isAlarm =
-          machineStatus.toLowerCase() === "alarm" ||
-          machineStatus.toLowerCase().includes("alarm");
+          const statusBody: any = statusRes.data ?? {};
+          const machineStatus = String(
+            statusBody?.status ?? statusBody?.data?.status ?? "",
+          ).trim();
+          const isAlarm =
+            machineStatus.toLowerCase() === "alarm" ||
+            machineStatus.toLowerCase().includes("alarm");
 
-        const alarmBody: any = alarmRes.data ?? {};
-        const alarmData = alarmBody?.data != null ? alarmBody.data : alarmBody;
-        const alarms: any[] = Array.isArray(alarmData?.alarms)
-          ? alarmData.alarms
-          : [];
+          const alarmBody: any = alarmRes.data ?? {};
+          const alarmData =
+            alarmBody?.data != null ? alarmBody.data : alarmBody;
+          const alarms: any[] = Array.isArray(alarmData?.alarms)
+            ? alarmData.alarms
+            : [];
 
-        if (isAlarm || alarms.length > 0) {
-          const alarmText =
-            alarms.length > 0
-              ? alarms
-                  .map((a) =>
-                    a ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}` : "-",
-                  )
-                  .join(", ")
-              : "-";
-          throw new Error(`장비가 Alarm 상태입니다. (${alarmText})`);
+          if (isAlarm || alarms.length > 0) {
+            const alarmText =
+              alarms.length > 0
+                ? alarms
+                    .map((a) =>
+                      a ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}` : "-",
+                    )
+                    .join(", ")
+                : "-";
+            throw new Error(`장비가 Alarm 상태입니다. (${alarmText})`);
+          }
+        } catch (e: any) {
+          const msg =
+            e?.message || "장비 상태가 Alarm이라 가공을 시작할 수 없습니다.";
+          toast({
+            title: "가공 시작 불가 (알람)",
+            description: msg,
+            variant: "destructive",
+          });
+          return;
         }
-      } catch (e: any) {
-        const msg =
-          e?.message || "장비 상태가 Alarm이라 가공을 시작할 수 없습니다.";
-        toast({
-          title: "가공 시작 불가 (알람)",
-          description: msg,
-          variant: "destructive",
-        });
-        return;
       }
 
       setNowPlayingMap((prev) => ({ ...prev, [uid]: true }));
 
       try {
         // 1) smart/replace로 현재 파일 큐 설정 (단건 replace 금지: 연속 가공 큐가 1개로 덮여서 다음 작업이 사라짐)
-        const allPaths = (reservationJobsMap[uid] || [])
-          .map(
-            (j: any) =>
-              j?.bridgePath ||
-              j?.bridge_store_path ||
-              j?.bridgeStorePath ||
-              j?.filePath ||
-              j?.path ||
-              j?.name,
-          )
-          .map((p: any) => String(p || "").trim())
-          .filter((p: string) => !!p);
-        if (!allPaths.includes(String(path).trim())) {
+        const mockPath = dummyEnabled
+          ? `dummy/${encodeURIComponent(uid)}/${encodeURIComponent(
+              dummyProgram || "O0001",
+            )}-${Date.now()}.nc`
+          : null;
+
+        const allPaths = dummyEnabled
+          ? [mockPath as string]
+          : (reservationJobsMap[uid] || [])
+              .map(
+                (j: any) =>
+                  j?.bridgePath ||
+                  j?.bridge_store_path ||
+                  j?.bridgeStorePath ||
+                  j?.filePath ||
+                  j?.path ||
+                  j?.name,
+              )
+              .map((p: any) => String(p || "").trim())
+              .filter((p: string) => !!p);
+
+        if (!dummyEnabled && !allPaths.includes(String(path).trim())) {
           allPaths.unshift(String(path).trim());
         }
         const replaceRes = await apiFetch({

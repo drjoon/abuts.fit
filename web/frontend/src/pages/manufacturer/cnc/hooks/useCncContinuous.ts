@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/lib/apiClient";
+import { useSocket } from "@/shared/hooks/useSocket";
 
 export interface ContinuousMachiningState {
   machineId: string;
@@ -17,6 +18,9 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
   const [state, setState] = useState<ContinuousMachiningState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { socket } = useSocket();
+  const lastTickTimeRef = useRef<number>(0);
+  const localTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchState = useCallback(async () => {
     if (!machineId || !token) {
@@ -50,6 +54,7 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
           nextJob: data.nextJob ?? null,
           elapsedSeconds: data.elapsedSeconds ?? 0,
         });
+        lastTickTimeRef.current = Date.now();
       } else {
         setState(null);
       }
@@ -64,6 +69,74 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
   useEffect(() => {
     void fetchState();
   }, [fetchState]);
+
+  // WebSocket 기반 실시간 elapsed 업데이트
+  useEffect(() => {
+    if (!machineId || !state || !socket) return;
+
+    const handleTick = (data: any) => {
+      if (data?.machineId !== machineId) return;
+
+      setState((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          elapsedSeconds: data.elapsedSeconds ?? prev.elapsedSeconds,
+          isRunning: data.isRunning ?? prev.isRunning,
+        };
+      });
+
+      lastTickTimeRef.current = Date.now();
+    };
+
+    const handleCompleted = (data: any) => {
+      if (data?.machineId !== machineId) return;
+      void fetchState();
+    };
+
+    socket.on("cnc-machining-tick", handleTick);
+    socket.on("cnc-machining-completed", handleCompleted);
+
+    return () => {
+      socket.off("cnc-machining-tick", handleTick);
+      socket.off("cnc-machining-completed", handleCompleted);
+    };
+  }, [machineId, state, socket, fetchState]);
+
+  // 로컬 타이머: tick 이벤트가 없을 때 elapsed 보간
+  useEffect(() => {
+    if (!state?.isRunning) {
+      if (localTimerRef.current) {
+        clearInterval(localTimerRef.current);
+        localTimerRef.current = null;
+      }
+      return;
+    }
+
+    localTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - lastTickTimeRef.current;
+      if (elapsed > 5000) {
+        // 5초 이상 tick이 없으면 폴링으로 새로고침
+        void fetchState();
+      } else {
+        // 로컬 보간
+        setState((prev) => {
+          if (!prev || !prev.isRunning) return prev;
+          return {
+            ...prev,
+            elapsedSeconds: prev.elapsedSeconds + 1,
+          };
+        });
+      }
+    }, 1000);
+
+    return () => {
+      if (localTimerRef.current) {
+        clearInterval(localTimerRef.current);
+        localTimerRef.current = null;
+      }
+    };
+  }, [state?.isRunning, fetchState]);
 
   return {
     state,

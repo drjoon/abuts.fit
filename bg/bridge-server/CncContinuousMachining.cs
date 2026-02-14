@@ -214,10 +214,8 @@ return 0;
 private class MachineState
 {
 public string MachineId;
-public int CurrentSlot; // 현재 실행 중인 슬롯 (3000 or 3001)
-public int NextSlot; // 다음 작업 대기 슬롯
+public int CurrentSlot; // 현재 실행 중인 슬롯 (4000 or 4001)
 public CncJobItem CurrentJob;
-public CncJobItem NextJob; // 선업로드된 다음 작업
 public DateTime StartedAtUtc;
 public bool IsRunning;
 public bool AwaitingStart;
@@ -230,9 +228,6 @@ public string LastMachiningCompleteJobId;
 public string LastStartFailJobId;
 public int StartFailCount;
 public DateTime NextStartAttemptUtc;
-public string LastPreloadFailJobId;
-public int PreloadFailCount;
-public DateTime NextPreloadAttemptUtc;
 }
 private static readonly object StateLock = new object();
 private static readonly Dictionary<string, MachineState> MachineStates
@@ -377,7 +372,6 @@ state = new MachineState
 {
 MachineId = machineId,
 CurrentSlot = SLOT_A,
-NextSlot = SLOT_B,
 IsRunning = false,
 AwaitingStart = false,
 SawBusy = false,
@@ -386,9 +380,7 @@ LastManualNotifyUtc = DateTime.MinValue,
 LastMachiningFailJobId = null,
 LastMachiningCompleteJobId = null,
 StartFailCount = 0,
-PreloadFailCount = 0,
 NextStartAttemptUtc = DateTime.MinValue,
-NextPreloadAttemptUtc = DateTime.MinValue,
 };
 MachineStates[machineId] = state;
 }
@@ -485,16 +477,10 @@ state.IsRunning = false;
 state.CurrentJob = null;
 state.SawBusy = false;
 }
-// 다음 작업이 대기 중이면 즉시 전환
-if (state.NextJob != null)
-{
-await SwitchToNextJob(machineId, state);
-}
 }
 else
 {
-// 가공 중: 다음 작업 선업로드
-await PreloadNextJob(machineId, state);
+// 가공 중: 다음 작업은 idle 상태에서 처리
 }
 }
 else
@@ -502,7 +488,6 @@ else
 // 1.5) 프로그램은 올려놨지만 Start는 사용자가 직접(또는 외부) 수행해야 하는 상태
 if (state.AwaitingStart && state.CurrentJob != null)
 {
-// (중요) busy=1(실제 가공 시작) 확인 전에는 preload(기존 프로그램 삭제/새 업로드)가 돌면 안 된다.
 if (TryGetMachineBusy(machineId, out var busy))
 {
 if (busy)
@@ -520,8 +505,6 @@ state.SawBusy = true;
 Console.WriteLine("[CncMachining] detected start machine={0} jobId={1} slot=O{2}",
 machineId, state.CurrentJob?.id, state.CurrentSlot);
 _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
-// 가공 시작이 확인된 이후에만 다음 작업을 preload 한다.
-await PreloadNextJob(machineId, state);
 }
 }
 return;
@@ -537,11 +520,7 @@ if (string.Equals((nextJob.kindRaw ?? string.Empty).Trim(), "manual_file", Strin
 {
     return;
 }
-if (nextJob.paused)
-{
-    // paused 상태의 Next Up은 자동 시작/업로드를 하지 않는다.
-    return;
-}
+
 var now = DateTime.UtcNow;
 if (!string.IsNullOrEmpty(state.LastStartFailJobId) &&
     string.Equals(state.LastStartFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase) &&
@@ -614,178 +593,15 @@ Console.WriteLine("[CncMachining] CheckJobCompleted error machine={0} err={1}", 
 return false;
 }
 }
-private static async Task PreloadNextJob(string machineId, MachineState state)
-{
-    // 이미 선업로드 완료했으면, 더 높은 우선순위 작업이 큐에 생겼는지 확인한다.
-    // (manual_insert는 다음 작업으로 최우선 처리해야 함)
-    if (state.NextJob != null)
-    {
-        var queued = CncJobQueue.Peek(machineId);
-        if (queued == null) return;
-        if (queued.paused) return;
-        var queuedPri = GetJobPriority(queued);
-        var nextPri = GetJobPriority(state.NextJob);
-        if (queuedPri > nextPri)
-        {
-            try
-            {
-                Console.WriteLine("[CncMachining] higher priority job arrived; requeue preloaded nextJob machine={0} queued={1} nextJob={2}",
-                    machineId, queued?.source, state.NextJob?.source);
-                // 기존 NextJob을 큐로 되돌리고(queued 다음 순서), NextJob을 비워서 다음 Tick에서 queued를 선업로드한다.
-                var list = CncJobQueue.Snapshot(machineId) ?? new List<CncJobItem>();
-                if (list.Count > 0)
-                {
-                    var rebuilt = new List<CncJobItem>();
-                    // 현재 큐 맨 앞(queued)은 그대로 두고, 그 다음에 기존 NextJob을 삽입한다.
-                    rebuilt.Add(list[0]);
-                    rebuilt.Add(state.NextJob);
-                    for (int i = 1; i < list.Count; i++)
-                    {
-                        rebuilt.Add(list[i]);
-                    }
-                    CncJobQueue.ReplaceQueue(machineId, rebuilt);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[CncMachining] priority override failed machine={0} err={1}", machineId, ex.Message);
-            }
-            lock (StateLock)
-            {
-                state.NextJob = null;
-                state.LastPreloadFailJobId = null;
-                state.PreloadFailCount = 0;
-                state.NextPreloadAttemptUtc = DateTime.MinValue;
-            }
-            return;
-        }
-    }
-    var nextJob = CncJobQueue.Peek(machineId);
-    if (nextJob == null) return;
-    var now = DateTime.UtcNow;
-    if (!string.IsNullOrEmpty(state.LastPreloadFailJobId) &&
-        string.Equals(state.LastPreloadFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase) &&
-        now < state.NextPreloadAttemptUtc)
-    {
-        return;
-    }
-    try
-    {
-        Console.WriteLine("[CncMachining] preloading next job machine={0} jobId={1} file={2} to slot=O{3}",
-            machineId, nextJob?.id, nextJob?.fileName, state.NextSlot);
-        var (uploaded, uploadErr) = await UploadProgramToSlot(machineId, nextJob, state.NextSlot);
-        if (uploaded)
-        {
-            lock (StateLock)
-            {
-                state.NextJob = nextJob;
-                state.LastPreloadFailJobId = null;
-                state.PreloadFailCount = 0;
-                state.NextPreloadAttemptUtc = DateTime.MinValue;
-            }
-            CncJobQueue.Pop(machineId);
-            Console.WriteLine("[CncMachining] preload success machine={0} jobId={1} slot=O{2}", machineId, nextJob?.id, state.NextSlot);
-            _ = Task.Run(() => NotifyNcPreloadStatus(nextJob, machineId, "READY", null));
-        }
-        else
-        {
-            _ = Task.Run(() => NotifyNcPreloadStatus(nextJob, machineId, "FAILED", uploadErr ?? "preload upload failed"));
-            // 재시도하지 않고 큐에서 제거 (관리자가 확인 후 재등록)
-            CncJobQueue.Pop(machineId);
-            lock (StateLock)
-            {
-                state.LastPreloadFailJobId = null;
-                state.PreloadFailCount = 0;
-                state.NextPreloadAttemptUtc = DateTime.MinValue;
-            }
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine("[CncMachining] preload error machine={0} err={1}", machineId, ex.Message);
-        _ = Task.Run(() => NotifyNcPreloadStatus(nextJob, machineId, "FAILED", "exception: " + ex.Message));
-        CncJobQueue.Pop(machineId);
-    }
-}
-private static async Task SwitchToNextJob(string machineId, MachineState state)
-{
-try
-{
-Console.WriteLine("[CncMachining] switching to next job machine={0} jobId={1} from O{2} to O{3}",
-machineId, state.NextJob?.id, state.CurrentSlot, state.NextSlot);
-// 1. Edit 모드 전환 (Idle에서만)
-if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
-{
-Console.WriteLine("[CncMachining] edit mode failed machine={0} err={1}", machineId, modeErr);
-return;
-}
-await Task.Delay(300);
-Mode1HandleStore.Invalidate(machineId);
-// 2. (옵션) 이전 슬롯 프로그램 삭제
-try
-{
-var delEnabled = (Environment.GetEnvironmentVariable("CNC_DELETE_PREV_ON_SWITCH") ?? "false").Trim();
-if (string.Equals(delEnabled, "true", StringComparison.OrdinalIgnoreCase))
-{
-if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)state.CurrentSlot, out var _, out var delErr))
-{
-Console.WriteLine("[CncMachining] delete existing failed machine={0} jobId={1} slot=O{2} err={3}", machineId, state.CurrentJob?.id, state.CurrentSlot, delErr);
-}
-}
-else
-{
-Console.WriteLine("[CncMachining] delete prev skipped machine={0} jobId={1} slot=O{2}", machineId, state.CurrentJob?.id, state.CurrentSlot);
-}
-}
-catch { }
-// 3. NextSlot 활성화 (O4000/O4001은 메인 슬롯이므로 headType=1)
-var dto = new UpdateMachineActivateProgNo
-{
-headType = 1,
-programNo = (short)state.NextSlot
-};
-var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
-if (res != 0)
-{
-Console.WriteLine("[CncMachining] activate failed machine={0} jobId={1} res={2} err={3}",
-machineId, state.NextJob?.id, res, err);
-return;
-}
-// 4. Auto 모드 전환
-if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var modeErr2))
-{
-Console.WriteLine("[CncMachining] auto mode failed machine={0} err={1}", machineId, modeErr2);
-return;
-}
-await Task.Delay(300);
-// Start는 여기서 보내지 않는다. (Now Playing으로 올라간 뒤 사용자가 Start)
-// 상태 업데이트
-lock (StateLock)
-{
-state.CurrentSlot = state.NextSlot;
-state.NextSlot = (state.CurrentSlot == SLOT_A) ? SLOT_B : SLOT_A;
-state.CurrentJob = state.NextJob;
-state.NextJob = null;
-state.IsRunning = false;
-state.AwaitingStart = true;
-state.StartedAtUtc = DateTime.MinValue;
-state.ProductCountBefore = 0;
-state.SawBusy = false;
-}
-Console.WriteLine("[CncMachining] switch success machine={0} jobId={1} now ready O{2}",
-machineId, state.CurrentJob?.id, state.CurrentSlot);
-}
-catch (Exception ex)
-{
-Console.WriteLine("[CncMachining] switch error machine={0} err={1}", machineId, ex.Message);
-}
-}
+
 private static async Task<bool> StartNewJob(string machineId, MachineState state, CncJobItem job)
 {
 try
 {
-Console.WriteLine("[CncMachining] starting new job machine={0} jobId={1} file={2} slot=O{3}",
-machineId, job?.id, job?.fileName, state.CurrentSlot);
+// 현재 가공 중인 슬롯을 피해서 다른 슬롯 선택
+var uploadSlot = (state.CurrentSlot == SLOT_A) ? SLOT_B : SLOT_A;
+Console.WriteLine("[CncMachining] starting new job machine={0} jobId={1} file={2} slot=O{3} (current=O{4})",
+machineId, job?.id, job?.fileName, uploadSlot, state.CurrentSlot);
 // 1. Edit 모드 전환 (Idle에서만)
 if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
 {
@@ -794,8 +610,23 @@ return false;
 }
 await Task.Delay(300);
 Mode1HandleStore.Invalidate(machineId);
-// 2. CurrentSlot에 업로드
-var (uploaded, uploadErr) = await UploadProgramToSlot(machineId, job, state.CurrentSlot);
+// 2. 대상 슬롯에 기존 프로그램 삭제 후 업로드
+try
+{
+if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)uploadSlot, out var _, out var delErr))
+{
+if (!string.IsNullOrEmpty(delErr))
+{
+Console.WriteLine("[CncMachining] delete before upload ignored machine={0} jobId={1} slot=O{2} err={3}", machineId, job?.id, uploadSlot, delErr);
+}
+}
+else
+{
+Console.WriteLine("[CncMachining] delete before upload ok machine={0} jobId={1} slot=O{2}", machineId, job?.id, uploadSlot);
+}
+}
+catch { }
+var (uploaded, uploadErr) = await UploadProgramToSlot(machineId, job, uploadSlot);
 if (!uploaded)
 {
 _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", uploadErr ?? "start upload failed"));
@@ -803,10 +634,14 @@ return false;
 }
 _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "READY", null));
 // 3. 활성화 (O4000/O4001은 메인 슬롯이므로 headType=1)
+// 더미 job: programNo로 직접 활성화
+short activateProgNo = job.kind == CncJobKind.Dummy && job.programNo.HasValue
+  ? (short)job.programNo.Value
+  : (short)uploadSlot;
 var dto = new UpdateMachineActivateProgNo
 {
 headType = 1,
-programNo = (short)state.CurrentSlot
+programNo = activateProgNo
 };
 var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
 if (res != 0)
@@ -827,6 +662,7 @@ await Task.Delay(300);
 lock (StateLock)
 {
 state.CurrentJob = job;
+state.CurrentSlot = uploadSlot;
 state.IsRunning = false;
 state.AwaitingStart = true;
 state.StartedAtUtc = DateTime.MinValue;
@@ -954,6 +790,19 @@ string error = null;
 try
 {
 if (job == null) return (false, null);
+
+// 더미 job: 파일 업로드 없이 programNo로 직접 활성화
+if (job.kind == CncJobKind.Dummy)
+{
+if (!job.programNo.HasValue || job.programNo.Value <= 0)
+{
+Console.WriteLine("[CncMachining] dummy job invalid programNo machine={0} jobId={1}", machineId, job?.id);
+return (false, "invalid programNo for dummy job");
+}
+Console.WriteLine("[CncMachining] dummy job skipping upload machine={0} jobId={1} programNo={2}", machineId, job?.id, job.programNo.Value);
+return (true, null);
+}
+
 if (!TryResolveJobFilePath(job, out var fullPath, out var resolveErr))
 {
 Console.WriteLine("[CncMachining] file resolve failed: {0}", resolveErr);
@@ -1415,12 +1264,10 @@ var active = CncMachineSignalUtils.TryGetActiveProgramNo(machineId) ?? ParseActi
 if (active == SLOT_A)
 {
 state.CurrentSlot = SLOT_A;
-if (state.NextJob == null) state.NextSlot = SLOT_B;
 }
 else if (active == SLOT_B)
 {
 state.CurrentSlot = SLOT_B;
-if (state.NextJob == null) state.NextSlot = SLOT_A;
 }
 }
 catch { }
@@ -1560,15 +1407,15 @@ return new
 {
 machineId = state.MachineId,
 currentSlot = state.CurrentSlot,
-nextSlot = state.NextSlot,
 isRunning = state.IsRunning,
 currentJob = state.CurrentJob?.fileName,
-nextJob = state.NextJob?.fileName,
 elapsedSeconds = state.IsRunning ? (DateTime.UtcNow - state.StartedAtUtc).TotalSeconds : 0
 };
 }
 return null;
 }
 }
+
 }
+
 }

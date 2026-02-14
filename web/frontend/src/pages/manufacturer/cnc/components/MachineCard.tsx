@@ -813,50 +813,114 @@ export const MachineCard = (props: MachineCardProps) => {
                       );
                     }
 
-                    const rawRes = await fetch(
-                      `/api/machines/${encodeURIComponent(machine.uid)}/raw`,
-                      {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                          Authorization: `Bearer ${token}`,
-                        },
-                        body: JSON.stringify({
-                          dataType: "SetActivateProgram",
-                          payload: { headType: 1, programNo: progNo },
-                          timeoutMilliseconds: 5000,
-                        }),
-                      },
-                    );
-                    const rawBody: any = await rawRes.json().catch(() => ({}));
-                    if (!rawRes.ok || rawBody?.success === false) {
-                      throw new Error(
-                        rawBody?.message ||
-                          rawBody?.error ||
-                          "더미 프로그램 활성화에 실패했습니다.",
-                      );
-                    }
+                    const dummyEnabled =
+                      machine.dummySettings?.enabled !== false;
 
-                    const startRes = await fetch(
-                      `/api/machines/${encodeURIComponent(machine.uid)}/start`,
-                      {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                          Authorization: `Bearer ${token}`,
+                    if (dummyEnabled) {
+                      const dummyPath = `dummy/${encodeURIComponent(
+                        machine.uid,
+                      )}/${encodeURIComponent(
+                        dummyProgram || `O${String(progNo).padStart(4, "0")}`,
+                      )}-${Date.now()}.nc`;
+
+                      const replaceRes = await fetch(
+                        `/api/cnc-machines/${encodeURIComponent(
+                          machine.uid,
+                        )}/smart/replace`,
+                        {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                          },
+                          body: JSON.stringify({
+                            headType: 1,
+                            paths: [dummyPath],
+                          }),
                         },
-                        body: JSON.stringify({ status: 0, ioUid: 0 }),
-                      },
-                    );
-                    const startBody: any = await startRes
-                      .json()
-                      .catch(() => ({}));
-                    if (!startRes.ok || startBody?.success === false) {
-                      throw new Error(
-                        startBody?.message ||
-                          startBody?.error ||
-                          "더미 가공 시작에 실패했습니다.",
                       );
+                      const replaceBody: any = await replaceRes
+                        .json()
+                        .catch(() => ({}));
+                      if (!replaceRes.ok || replaceBody?.success === false) {
+                        throw new Error(
+                          replaceBody?.message ||
+                            replaceBody?.error ||
+                            "더미 큐 교체(smart/replace)에 실패했습니다.",
+                        );
+                      }
+
+                      const startRes = await fetch(
+                        `/api/cnc-machines/${encodeURIComponent(
+                          machine.uid,
+                        )}/smart/start`,
+                        {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                          },
+                          body: JSON.stringify({}),
+                        },
+                      );
+                      const startBody: any = await startRes
+                        .json()
+                        .catch(() => ({}));
+                      if (!startRes.ok || startBody?.success === false) {
+                        throw new Error(
+                          startBody?.message ||
+                            startBody?.error ||
+                            "더미 smart/start에 실패했습니다.",
+                        );
+                      }
+                    } else {
+                      const rawRes = await fetch(
+                        `/api/machines/${encodeURIComponent(machine.uid)}/raw`,
+                        {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                          },
+                          body: JSON.stringify({
+                            dataType: "SetActivateProgram",
+                            payload: { headType: 1, programNo: progNo },
+                            timeoutMilliseconds: 5000,
+                          }),
+                        },
+                      );
+                      const rawBody: any = await rawRes
+                        .json()
+                        .catch(() => ({}));
+                      if (!rawRes.ok || rawBody?.success === false) {
+                        throw new Error(
+                          rawBody?.message ||
+                            rawBody?.error ||
+                            "더미 프로그램 활성화에 실패했습니다.",
+                        );
+                      }
+
+                      const startRes = await fetch(
+                        `/api/machines/${encodeURIComponent(machine.uid)}/start`,
+                        {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${token}`,
+                          },
+                          body: JSON.stringify({ status: 0, ioUid: 0 }),
+                        },
+                      );
+                      const startBody: any = await startRes
+                        .json()
+                        .catch(() => ({}));
+                      if (!startRes.ok || startBody?.success === false) {
+                        throw new Error(
+                          startBody?.message ||
+                            startBody?.error ||
+                            "더미 가공 시작에 실패했습니다.",
+                        );
+                      }
                     }
 
                     toast({

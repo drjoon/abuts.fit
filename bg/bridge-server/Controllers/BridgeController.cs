@@ -817,6 +817,13 @@ namespace HiLinkBridgeWebApi48.Controllers
             if (job == null) throw new ArgumentNullException(nameof(job));
             if (job.Paths == null || job.Paths.Count == 0) return;
 
+            var firstPath = (job.Paths[0] ?? string.Empty).Trim();
+            if (!string.IsNullOrEmpty(firstPath) && firstPath.StartsWith("dummy/", StringComparison.OrdinalIgnoreCase))
+            {
+                await RunSmartStartJobMock(machineId, job);
+                return;
+            }
+
             if (IsMockCncMachiningEnabled())
             {
                 await RunSmartStartJobMock(machineId, job);
