@@ -22,6 +22,15 @@ const machiningRecordSchema = new mongoose.Schema(
       default: null,
     },
 
+    fileName: {
+      type: String,
+      default: null,
+    },
+    originalFileName: {
+      type: String,
+      default: null,
+    },
+
     status: {
       type: String,
       enum: ["RUNNING", "COMPLETED", "FAILED", "CANCELED"],

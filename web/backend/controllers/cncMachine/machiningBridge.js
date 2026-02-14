@@ -37,6 +37,40 @@ function normalizeBridgePath(raw) {
     .trim();
 }
 
+async function resolveJobMetaFromSnapshot({ machineId, jobId, bridgePath }) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return { fileName: null, originalFileName: null };
+  try {
+    const machine = await CncMachine.findOne({ machineId: mid })
+      .select("bridgeQueueSnapshot")
+      .lean();
+    const jobs = Array.isArray(machine?.bridgeQueueSnapshot?.jobs)
+      ? machine.bridgeQueueSnapshot.jobs
+      : [];
+    const jid = String(jobId || "").trim();
+    const bp = String(bridgePath || "").trim();
+    const found = jobs.find((j) => {
+      if (!j || typeof j !== "object") return false;
+      if (jid && String(j.id || "").trim() === jid) return true;
+      if (bp) {
+        const p = String(j.bridgePath || j.path || "").trim();
+        if (p && p === bp) return true;
+      }
+      return false;
+    });
+    const fileName = found?.fileName ? String(found.fileName).trim() : null;
+    const originalFileName = found?.originalFileName
+      ? String(found.originalFileName).trim()
+      : null;
+    return {
+      fileName: fileName || null,
+      originalFileName: originalFileName || null,
+    };
+  } catch {
+    return { fileName: null, originalFileName: null };
+  }
+}
+
 export async function recordMachiningStartForBridge(req, res) {
   try {
     const { machineId } = req.params;
@@ -54,6 +88,12 @@ export async function recordMachiningStartForBridge(req, res) {
     const bridgePathRaw = req.body?.bridgePath
       ? String(req.body.bridgePath).trim()
       : "";
+
+    const meta = await resolveJobMetaFromSnapshot({
+      machineId: mid,
+      jobId,
+      bridgePath: bridgePathRaw,
+    });
 
     let requestId = await resolveRequestIdFromDb({
       requestId: requestIdRaw,
@@ -85,12 +125,16 @@ export async function recordMachiningStartForBridge(req, res) {
           machineId: mid,
           jobId: jobId || null,
           bridgePath: bridgePathRaw || null,
+          fileName: meta.fileName,
+          originalFileName: meta.originalFileName,
           status: "RUNNING",
         },
         $set: {
           startedAt,
           lastTickAt: startedAt,
           elapsedSeconds: 0,
+          fileName: meta.fileName,
+          originalFileName: meta.originalFileName,
         },
       },
       { new: true, upsert: true },
@@ -245,6 +289,12 @@ export async function recordMachiningTickForBridge(req, res) {
     );
 
     let requestId = requestIdRaw;
+
+    const meta = await resolveJobMetaFromSnapshot({
+      machineId: mid,
+      jobId,
+      bridgePath: bridgePathRaw,
+    });
     if (!requestId && bridgePathRaw) {
       try {
         const machine = await CncMachine.findOne({ machineId: mid }).select(
@@ -353,6 +403,8 @@ export async function recordMachiningTickForBridge(req, res) {
           machineId: mid,
           jobId: jobId || null,
           bridgePath: bridgePathRaw || null,
+          fileName: meta.fileName,
+          originalFileName: meta.originalFileName,
           status: "RUNNING",
         },
         $set: {
@@ -360,6 +412,8 @@ export async function recordMachiningTickForBridge(req, res) {
           lastTickAt: now,
           percent: percent == null ? null : percent,
           elapsedSeconds,
+          fileName: meta.fileName,
+          originalFileName: meta.originalFileName,
         },
       },
       { new: true, upsert: true },
@@ -540,6 +594,8 @@ export async function recordMachiningCompleteForBridge(req, res) {
                   machineId: mid,
                   jobId: jobId || null,
                   bridgePath: bridgePathRaw || null,
+                  fileName: meta.fileName,
+                  originalFileName: meta.originalFileName,
                   status: "COMPLETED",
                   startedAt: startBase ? new Date(startBase) : now,
                   lastTickAt: now,
@@ -556,6 +612,8 @@ export async function recordMachiningCompleteForBridge(req, res) {
               machineId: mid,
               jobId: jobId || null,
               bridgePath: bridgePathRaw || null,
+              fileName: meta.fileName,
+              originalFileName: meta.originalFileName,
               status: "COMPLETED",
               startedAt: startBase ? new Date(startBase) : now,
               lastTickAt: now,
@@ -609,6 +667,8 @@ export async function recordMachiningCompleteForBridge(req, res) {
               machineId: mid,
               jobId: jobId || null,
               bridgePath: bridgePathRaw || null,
+              fileName: meta.fileName,
+              originalFileName: meta.originalFileName,
             },
             $set: {
               status: "COMPLETED",
@@ -618,6 +678,8 @@ export async function recordMachiningCompleteForBridge(req, res) {
               percent: 100,
               durationSeconds: 0,
               elapsedSeconds: 0,
+              fileName: meta.fileName,
+              originalFileName: meta.originalFileName,
             },
           },
           { upsert: true },
@@ -664,8 +726,14 @@ export async function recordMachiningCompleteForBridge(req, res) {
             jobId: jobId || null,
             bridgePath: bridgePathRaw || null,
             startedAt,
+            fileName: meta.fileName,
+            originalFileName: meta.originalFileName,
           },
-          $set: completionSet,
+          $set: {
+            ...completionSet,
+            fileName: meta.fileName,
+            originalFileName: meta.originalFileName,
+          },
         },
         { upsert: true },
       );
@@ -772,8 +840,17 @@ export async function recordMachiningFailForBridge(req, res) {
       ? String(req.body.requestId).trim()
       : "";
     const jobId = req.body?.jobId ? String(req.body.jobId).trim() : "";
+    const bridgePathRaw = req.body?.bridgePath
+      ? String(req.body.bridgePath).trim()
+      : "";
     const reason = req.body?.reason ? String(req.body.reason).trim() : "";
     const alarms = Array.isArray(req.body?.alarms) ? req.body.alarms : [];
+
+    const meta = await resolveJobMetaFromSnapshot({
+      machineId: mid,
+      jobId,
+      bridgePath: bridgePathRaw,
+    });
 
     await CncEvent.create({
       requestId: requestId || null,
@@ -798,6 +875,9 @@ export async function recordMachiningFailForBridge(req, res) {
           requestId,
           machineId: mid,
           jobId: jobId || null,
+          bridgePath: bridgePathRaw || null,
+          fileName: meta.fileName,
+          originalFileName: meta.originalFileName,
           status: "FAILED",
           failReason: reason || "FAILED",
           alarms,
@@ -840,12 +920,16 @@ export async function recordMachiningFailForBridge(req, res) {
               machineId: mid,
               jobId: jobId || null,
               bridgePath: bridgePathRaw || null,
+              fileName: meta.fileName,
+              originalFileName: meta.originalFileName,
             },
             $set: {
               status: "FAILED",
               failReason: reason || "FAILED",
               alarms,
               completedAt: new Date(),
+              fileName: meta.fileName,
+              originalFileName: meta.originalFileName,
             },
           },
           { upsert: true },
@@ -900,6 +984,21 @@ export async function cancelMachiningForMachine(req, res) {
     record.durationSeconds = record.durationSeconds ?? durationSeconds;
     record.elapsedSeconds = record.elapsedSeconds ?? durationSeconds;
     record.failReason = record.failReason || "USER_STOP";
+
+    try {
+      if (!record.fileName || !record.originalFileName) {
+        const meta = await resolveJobMetaFromSnapshot({
+          machineId: mid,
+          jobId: String(record.jobId || "").trim(),
+          bridgePath: String(record.bridgePath || "").trim(),
+        });
+        record.fileName = record.fileName || meta.fileName;
+        record.originalFileName =
+          record.originalFileName || meta.originalFileName;
+      }
+    } catch {
+      // ignore
+    }
     await record.save();
 
     const requestId = String(record.requestId || "").trim();

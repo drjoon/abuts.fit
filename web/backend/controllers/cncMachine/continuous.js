@@ -358,6 +358,10 @@ export async function enqueueBridgeContinuousJob(req, res) {
     const bridgePathRaw = req.body?.bridgePath;
     const bridgePath =
       bridgePathRaw != null ? String(bridgePathRaw).trim() : "";
+    const originalFileNameRaw = req.body?.originalFileName;
+    const originalFileName = originalFileNameRaw
+      ? String(originalFileNameRaw).trim()
+      : "";
     const enqueueFront = req.body?.enqueueFront === true;
 
     if (!fileName) {
@@ -373,6 +377,7 @@ export async function enqueueBridgeContinuousJob(req, res) {
 
     const payload = {
       fileName,
+      originalFileName: originalFileName || fileName,
       requestId: requestId || null,
       bridgePath: bridgePath || null,
       enqueueFront,
@@ -447,6 +452,9 @@ export async function enqueueBridgeContinuousJobFromDb(req, res) {
     const bridgePath = String(reqDoc?.caseInfos?.ncFile?.filePath || "").trim();
     const rawFileName = String(
       reqDoc?.caseInfos?.ncFile?.fileName || "",
+    ).trim();
+    const originalFileName = String(
+      reqDoc?.caseInfos?.ncFile?.originalName || "",
     ).trim();
     const derivedFileName = bridgePath
       ? String(bridgePath).split(/[/\\]/).pop()
@@ -637,6 +645,7 @@ export async function enqueueBridgeManualInsertJob(req, res) {
 
     const payload = {
       fileName,
+      originalFileName: fileName,
       requestId: null,
       bridgePath: null,
       s3Key,

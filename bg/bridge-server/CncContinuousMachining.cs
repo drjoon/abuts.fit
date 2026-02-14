@@ -295,16 +295,17 @@ public static void Stop()
 try { _timer?.Dispose(); } catch { }
 _timer = null;
 }
-public static CncJobItem EnqueueFileJob(string machineId, string fileName, string requestId, string bridgePath = null, string s3Key = null, string s3Bucket = null, bool enqueueFront = false)
+public static CncJobItem EnqueueFileJob(string machineId, string fileName, string requestId, string bridgePath = null, string s3Key = null, string s3Bucket = null, bool enqueueFront = false, string originalFileName = null)
 {
 var mid = (machineId ?? string.Empty).Trim();
 if (string.IsNullOrEmpty(mid)) return null;
 var fn = (fileName ?? string.Empty).Trim();
 if (string.IsNullOrEmpty(fn)) return null;
 var rid = string.IsNullOrWhiteSpace(requestId) ? null : requestId;
+var ofn = string.IsNullOrWhiteSpace(originalFileName) ? fn : originalFileName;
 var job = enqueueFront
-                ? CncJobQueue.EnqueueFileFront(mid, fn, rid, fn)
-                : CncJobQueue.EnqueueFileBack(mid, fn, rid, fn);
+                ? CncJobQueue.EnqueueFileFront(mid, fn, rid, ofn)
+                : CncJobQueue.EnqueueFileBack(mid, fn, rid, ofn);
 try
             {
                 var bp = (bridgePath ?? string.Empty).Trim();
@@ -1314,11 +1315,14 @@ try
 {
 var backend = GetBackendBase();
 var url = backend + "/bg/register-file";
+var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
+? job?.fileName
+: job.originalFileName;
 var payload = new
 {
 sourceStep = "cnc",
 fileName = job.fileName,
-originalFileName = job.fileName,
+originalFileName = canonical,
 requestId = job.requestId,
 status = "success",
 metadata = new { machineId = machineId }
@@ -1401,11 +1405,14 @@ try
 var backend = GetBackendBase();
 if (string.IsNullOrEmpty(backend)) return;
 var url = backend + "/bg/register-file";
+var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
+? job?.fileName
+: job.originalFileName;
 var payload = new
 {
 sourceStep = "cnc-preload",
 fileName = job?.fileName,
-originalFileName = job?.fileName,
+originalFileName = canonical,
 requestId = job?.requestId,
 status = string.Equals(status, "READY", StringComparison.OrdinalIgnoreCase) ? "success" : "failed",
 metadata = new { machineId = machineId, error = error }

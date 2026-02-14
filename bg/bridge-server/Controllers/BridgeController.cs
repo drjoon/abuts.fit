@@ -3741,6 +3741,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             try
             {
                 var fileName = payload.Value<string>("fileName");
+                var originalFileName = payload.Value<string>("originalFileName");
                 var requestId = payload.Value<string>("requestId");
                 var jobId = payload.Value<string>("jobId") ?? Guid.NewGuid().ToString();
                 var bridgePath = payload.Value<string>("bridgePath");
@@ -3765,7 +3766,11 @@ namespace HiLinkBridgeWebApi48.Controllers
                     machineId,
                     job.fileName,
                     job.requestId,
-                    job.originalFileName
+                    bridgePath,
+                    s3Key,
+                    s3Bucket,
+                    enqueueFront,
+                    originalFileName
                 );
                 if (enqueued == null)
                 {

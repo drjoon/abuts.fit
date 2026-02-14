@@ -109,6 +109,7 @@ const cncMachineSchema = new mongoose.Schema(
           id: { type: String, trim: true },
           kind: { type: String, trim: true },
           fileName: { type: String, trim: true },
+          originalFileName: { type: String, trim: true },
           bridgePath: { type: String, trim: true },
           s3Key: { type: String, trim: true },
           s3Bucket: { type: String, trim: true },
