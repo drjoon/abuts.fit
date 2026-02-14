@@ -30,11 +30,16 @@ export async function machiningCompleted(req, res) {
         .trim()
         .toUpperCase();
       if (normalizedStatus === "COMPLETED") {
+        const rid = req.body?.requestId
+          ? String(req.body.requestId).trim()
+          : "";
         const jid = String(jobId || "").trim();
-        const isObjectId = mongoose.Types.ObjectId.isValid(jid);
-        const request = isObjectId
-          ? await Request.findById(jid)
-          : await Request.findOne({ requestId: jid });
+
+        const request = rid
+          ? await Request.findOne({ requestId: rid })
+          : mongoose.Types.ObjectId.isValid(jid)
+            ? await Request.findById(jid)
+            : await Request.findOne({ requestId: jid });
 
         if (request) {
           applyStatusMapping(request, "세척.포장");

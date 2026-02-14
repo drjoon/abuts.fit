@@ -34,6 +34,7 @@ export function CncDashboardPageView(props: any) {
     toolTooltipMap,
     toolHealthMap,
     programSummary,
+    machiningElapsedSecondsMap,
     reservationJobsMap,
     worksheetQueueCountMap,
     reservationSummaryMap,
@@ -256,6 +257,7 @@ export function CncDashboardPageView(props: any) {
                   tempTooltipMap={tempTooltipMap}
                   toolTooltipMap={toolTooltipMap}
                   programSummary={programSummary}
+                  machiningElapsedSecondsMap={machiningElapsedSecondsMap}
                   reservationJobsMap={reservationJobsMap}
                   worksheetQueueCountMap={worksheetQueueCountMap}
                   reservationSummaryMap={reservationSummaryMap}

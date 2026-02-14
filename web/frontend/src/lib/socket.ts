@@ -182,6 +182,22 @@ export function onCncMachiningCompleted(
   return () => socket?.off("cnc-machining-completed", callback);
 }
 
+export function onCncMachiningTick(
+  callback: (data: {
+    machineId: string;
+    jobId: string | null;
+    requestId: string;
+    phase: string | null;
+    percent: number | null;
+    startedAt: string;
+    elapsedSeconds: number;
+    tickAt: string;
+  }) => void,
+) {
+  socket?.on("cnc-machining-tick", callback);
+  return () => socket?.off("cnc-machining-tick", callback);
+}
+
 // CNC 가공 타임아웃 이벤트 리스너
 export function onCncMachiningTimeout(
   callback: (data: {

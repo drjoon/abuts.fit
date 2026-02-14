@@ -38,6 +38,7 @@ interface MachineCardProps {
   isActive: boolean;
   loading: boolean;
   isPlaying?: boolean;
+  machiningElapsedSeconds?: number | null;
   worksheetQueueCount?: number;
   tempTooltip: string;
   toolTooltip: string;
@@ -97,6 +98,7 @@ export const MachineCard = (props: MachineCardProps) => {
     isActive,
     loading,
     isPlaying = false,
+    machiningElapsedSeconds,
     worksheetQueueCount,
     tempTooltip,
     toolTooltip,
@@ -226,6 +228,18 @@ export const MachineCard = (props: MachineCardProps) => {
   const continuousElapsedMin = continuousState?.isRunning
     ? Math.floor(continuousState.elapsedSeconds / 60)
     : 0;
+
+  const elapsedLabel = (() => {
+    const sec =
+      typeof machiningElapsedSeconds === "number" &&
+      machiningElapsedSeconds >= 0
+        ? Math.floor(machiningElapsedSeconds)
+        : null;
+    if (sec == null) return "";
+    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
+    const ss = String(sec % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  })();
 
   return (
     <div
@@ -472,6 +486,11 @@ export const MachineCard = (props: MachineCardProps) => {
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {currentProg ? (currentProg.name ?? "없음") : "없음"}
                 </div>
+                {!!elapsedLabel && (
+                  <div className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                    경과 {elapsedLabel}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-1">

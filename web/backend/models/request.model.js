@@ -359,6 +359,16 @@ const requestSchema = new mongoose.Schema(
       actualBatchProcessing: Date,
       actualShipPickup: Date,
 
+      machiningProgress: {
+        machineId: String,
+        jobId: String,
+        phase: String,
+        percent: Number,
+        startedAt: Date,
+        lastTickAt: Date,
+        elapsedSeconds: Number,
+      },
+
       // 장비 할당
       assignedMachine: {
         type: String, // machineId (M3, M4 등)

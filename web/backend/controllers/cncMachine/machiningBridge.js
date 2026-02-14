@@ -1,4 +1,7 @@
 import Request from "../../models/request.model.js";
+import CncEvent from "../../models/cncEvent.model.js";
+import { getIO } from "../../socket.js";
+import { applyStatusMapping } from "../request/utils.js";
 
 export async function recordMachiningTickForBridge(req, res) {
   try {
@@ -8,6 +11,68 @@ export async function recordMachiningTickForBridge(req, res) {
       return res
         .status(400)
         .json({ success: false, message: "machineId is required" });
+    }
+
+    const jobId = req.body?.jobId ? String(req.body.jobId).trim() : "";
+    const requestId = req.body?.requestId
+      ? String(req.body.requestId).trim()
+      : "";
+    const phase = req.body?.phase ? String(req.body.phase).trim() : "";
+    const percentRaw = req.body?.percent;
+    const percent = Number.isFinite(Number(percentRaw))
+      ? Math.max(0, Math.min(100, Number(percentRaw)))
+      : null;
+
+    if (requestId) {
+      const now = new Date();
+      const existing = await Request.findOne({ requestId })
+        .select({ productionSchedule: 1, requestId: 1 })
+        .lean();
+
+      const startedAtRaw =
+        existing?.productionSchedule?.machiningProgress?.startedAt;
+      const startedAt = startedAtRaw ? new Date(startedAtRaw) : now;
+      const elapsedSeconds = Math.max(
+        0,
+        Math.floor((now.getTime() - startedAt.getTime()) / 1000),
+      );
+
+      const update = {
+        $set: {
+          "productionSchedule.machiningProgress": {
+            machineId: mid,
+            jobId: jobId || null,
+            phase: phase || null,
+            percent: percent == null ? null : percent,
+            startedAt,
+            lastTickAt: now,
+            elapsedSeconds,
+          },
+        },
+      };
+
+      if (!existing?.productionSchedule?.actualMachiningStart) {
+        update.$set["productionSchedule.actualMachiningStart"] = startedAt;
+      }
+
+      await Request.updateOne({ requestId }, update);
+
+      const io = getIO();
+      const payload = {
+        machineId: mid,
+        jobId: jobId || null,
+        requestId,
+        phase: phase || null,
+        percent: percent == null ? null : percent,
+        startedAt,
+        elapsedSeconds,
+        tickAt: now,
+      };
+
+      if (jobId) {
+        io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-tick", payload);
+      }
+      io.emit("cnc-machining-tick", payload);
     }
 
     return res.status(200).json({ success: true });
@@ -35,15 +100,25 @@ export async function recordMachiningCompleteForBridge(req, res) {
       : "";
     const jobId = req.body?.jobId ? String(req.body.jobId).trim() : "";
 
+    const now = new Date();
+    let request = null;
     if (requestId) {
-      await Request.updateOne(
-        { requestId },
-        {
-          $set: {
-            "productionSchedule.actualMachiningComplete": new Date(),
+      request = await Request.findOne({ requestId });
+      if (request) {
+        request.productionSchedule = request.productionSchedule || {};
+        request.productionSchedule.actualMachiningComplete = now;
+        applyStatusMapping(request, "세척.포장");
+        await request.save();
+      } else {
+        await Request.updateOne(
+          { requestId },
+          {
+            $set: {
+              "productionSchedule.actualMachiningComplete": now,
+            },
           },
-        },
-      );
+        );
+      }
     }
 
     await CncEvent.create({
@@ -55,6 +130,23 @@ export async function recordMachiningCompleteForBridge(req, res) {
       message: "OK",
       metadata: { jobId: jobId || null },
     });
+
+    try {
+      const io = getIO();
+      const payload = {
+        machineId: mid,
+        jobId: jobId || null,
+        status: "COMPLETED",
+        completedAt: now,
+        requestId: requestId || null,
+      };
+      if (jobId) {
+        io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-completed", payload);
+      }
+      io.emit("cnc-machining-completed", payload);
+    } catch {
+      // ignore
+    }
 
     return res.status(200).json({ success: true });
   } catch (error) {

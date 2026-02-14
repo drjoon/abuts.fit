@@ -538,7 +538,8 @@ namespace HiLinkBridgeWebApi48
 
 
 
-            TrimBase(Get("BACKEND_BASE", "https://abuts.fit/api"), "https://abuts.fit/api");
+
+            TrimBase(Get("BACKEND_BASE", "https://abuts.fit"), "https://abuts.fit");
 
 
 

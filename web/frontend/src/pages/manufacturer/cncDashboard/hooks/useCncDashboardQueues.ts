@@ -6,6 +6,7 @@ import {
   unsubscribeCncMachining,
   onCncMachiningCompleted,
   onCncMachiningTimeout,
+  onCncMachiningTick,
 } from "@/lib/socket";
 
 import type { Machine } from "../../cnc/types";
@@ -69,6 +70,10 @@ export function useCncDashboardQueues({
     fileName: string;
     percent: number;
   } | null>(null);
+
+  const [machiningElapsedSecondsMap, setMachiningElapsedSecondsMap] = useState<
+    Record<string, number>
+  >({});
 
   const uploadSeqRef = useRef(0);
 
@@ -409,6 +414,27 @@ export function useCncDashboardQueues({
       list.map((m) => loadBridgeQueueForMachine(m, { silent: true })),
     ).catch(() => {});
   }, [loadBridgeQueueForMachine, machines, token]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const unsubscribeTick = onCncMachiningTick((data) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      const elapsed =
+        typeof (data as any)?.elapsedSeconds === "number"
+          ? Math.max(0, Math.floor((data as any).elapsedSeconds))
+          : 0;
+      setMachiningElapsedSecondsMap((prev) => {
+        if (prev[mid] === elapsed) return prev;
+        return { ...prev, [mid]: elapsed };
+      });
+    });
+
+    return () => {
+      unsubscribeTick();
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -916,6 +942,11 @@ export function useCncDashboardQueues({
           const unsubscribeCompleted = onCncMachiningCompleted((data) => {
             if (data.machineId === uid && data.jobId === jobId) {
               handleMachiningCompleted(uid);
+              setMachiningElapsedSecondsMap((prev) => {
+                const next = { ...prev };
+                delete next[uid];
+                return next;
+              });
               unsubscribeCompleted();
               unsubscribeTimeout();
               unsubscribeCncMachining(uid, jobId);
@@ -935,6 +966,11 @@ export function useCncDashboardQueues({
                 delete next[uid];
                 return next;
               });
+              setMachiningElapsedSecondsMap((prev) => {
+                const next = { ...prev };
+                delete next[uid];
+                return next;
+              });
               unsubscribeCompleted();
               unsubscribeTimeout();
               unsubscribeCncMachining(uid, jobId);
@@ -950,6 +986,11 @@ export function useCncDashboardQueues({
           variant: "destructive",
         });
         setNowPlayingMap((prev) => {
+          const next = { ...prev };
+          delete next[uid];
+          return next;
+        });
+        setMachiningElapsedSecondsMap((prev) => {
           const next = { ...prev };
           delete next[uid];
           return next;
@@ -1019,6 +1060,7 @@ export function useCncDashboardQueues({
     loadQueueForMachine,
     uploadManualCardFiles,
     uploadProgress,
+    machiningElapsedSecondsMap,
     refreshDbQueuesForAllMachines,
 
     setReservationJobsMap,

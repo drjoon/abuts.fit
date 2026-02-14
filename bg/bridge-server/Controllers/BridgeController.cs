@@ -812,6 +812,12 @@ namespace HiLinkBridgeWebApi48.Controllers
             if (job == null) throw new ArgumentNullException(nameof(job));
             if (job.Paths == null || job.Paths.Count == 0) return;
 
+            if (IsMockCncMachiningEnabled())
+            {
+                await RunHighLevelStartJobMock(machineId, job);
+                return;
+            }
+
             // 시작 슬롯 결정(현재 활성/가공중 프로그램 피하기)
             job.CurrentSlot = job.PreUploadedSlot ?? ChooseManualSlotForUpload(machineId);
             job.PreviousSlot = 0;
@@ -961,14 +967,97 @@ namespace HiLinkBridgeWebApi48.Controllers
                 job.CurrentSlot = nextSlot;
 
                 // 12) 가공 완료 콜백 (백엔드에 통보)
-                await NotifyMachiningCompletedToBackend(machineId, job.JobId);
+                await NotifyMachiningCompletedToBackend(machineId, job.JobId, ExtractRequestIdFromBridgePath(job.Paths[0]));
 
                 // 13) 다음 작업 자동 시작
                 await TryStartNextMachiningJob(machineId, job.HeadType);
             }
         }
 
-        private static async Task NotifyMachiningCompletedToBackend(string machineId, string jobId)
+        private static bool IsMockCncMachiningEnabled()
+        {
+            var raw = (Environment.GetEnvironmentVariable("MOCK_CNC_MACHINING_ENABLED") ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(raw)) return false;
+            return !string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase) && raw != "0";
+        }
+
+        private static string ExtractRequestIdFromBridgePath(string bridgePath)
+        {
+            try
+            {
+                var p = (bridgePath ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(p)) return string.Empty;
+                p = p.Replace('\\', '/');
+                var parts = p.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < parts.Length - 1; i += 1)
+                {
+                    if (string.Equals(parts[i], "nc", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return (parts[i + 1] ?? string.Empty).Trim();
+                    }
+                }
+                return string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static async Task RunHighLevelStartJobMock(string machineId, HighLevelStartJob job)
+        {
+            var bridgePath = job?.Paths != null && job.Paths.Count > 0 ? job.Paths[0] : string.Empty;
+            var requestId = ExtractRequestIdFromBridgePath(bridgePath);
+
+            try
+            {
+                await NotifyMachiningTickToBackend(machineId, job.JobId, requestId, "STARTED", 0);
+            }
+            catch { }
+
+            await Task.Delay(1500);
+            try
+            {
+                await NotifyMachiningTickToBackend(machineId, job.JobId, requestId, "RUNNING", 50);
+            }
+            catch { }
+
+            await Task.Delay(1500);
+
+            await NotifyMachiningCompletedToBackend(machineId, job.JobId, requestId);
+            await TryStartNextMachiningJob(machineId, job.HeadType);
+        }
+
+        private static async Task NotifyMachiningTickToBackend(string machineId, string jobId, string requestId, string phase, int percent)
+        {
+            try
+            {
+                var backendUrl = Config.BackendBase?.TrimEnd('/');
+                if (string.IsNullOrEmpty(backendUrl))
+                {
+                    Console.WriteLine($"[NotifyMachiningTick] BackendUrl not configured");
+                    return;
+                }
+
+                var url = $"{backendUrl}/api/cnc-machines/bridge/machining/tick/{Uri.EscapeDataString(machineId)}";
+                var payload = new { jobId, requestId = string.IsNullOrEmpty(requestId) ? null : requestId, phase, percent };
+                var json = JsonConvert.SerializeObject(payload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.Add("X-Bridge-Secret", Config.BridgeSharedSecret ?? string.Empty);
+                    var response = await client.PostAsync(url, content);
+                    Console.WriteLine($"[NotifyMachiningTick] machineId={machineId} jobId={jobId} status={response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[NotifyMachiningTick] Error: {ex.Message}");
+            }
+        }
+
+        private static async Task NotifyMachiningCompletedToBackend(string machineId, string jobId, string requestId)
         {
             try
             {
@@ -979,8 +1068,10 @@ namespace HiLinkBridgeWebApi48.Controllers
                     return;
                 }
 
-                var url = $"{backendUrl}/api/cnc-machines/{Uri.EscapeDataString(machineId)}/smart/machining-completed";
-                var payload = new { jobId, status = "COMPLETED" };
+                // 운영 서버에는 bridge 전용 complete 엔드포인트(/bridge/machining/complete)가 안정적으로 존재한다.
+                // (smart/machining-completed 라우트는 환경에 따라 미배포일 수 있어 authenticate(401)로 떨어질 수 있음)
+                var url = $"{backendUrl}/api/cnc-machines/bridge/machining/complete/{Uri.EscapeDataString(machineId)}";
+                var payload = new { jobId, requestId = string.IsNullOrEmpty(requestId) ? null : requestId };
                 var json = JsonConvert.SerializeObject(payload);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
@@ -998,7 +1089,16 @@ namespace HiLinkBridgeWebApi48.Controllers
                     }
 
                     var response = await client.PostAsync(url, content);
-                    Console.WriteLine($"[NotifyMachiningCompleted] machineId={machineId} jobId={jobId} status={response.StatusCode}");
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var body = string.Empty;
+                        try { body = await response.Content.ReadAsStringAsync(); } catch { }
+                        Console.WriteLine($"[NotifyMachiningCompleted] machineId={machineId} jobId={jobId} status={response.StatusCode} url={url} body={body}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[NotifyMachiningCompleted] machineId={machineId} jobId={jobId} status={response.StatusCode}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -1019,7 +1119,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 }
 
                 // 백엔드에서 다음 작업 조회
-                var url = $"{backendUrl}/api/cnc-machines/{Uri.EscapeDataString(machineId)}/bridge/queue-snapshot";
+                var url = $"{backendUrl}/api/cnc-machines/bridge/queue-snapshot/{Uri.EscapeDataString(machineId)}";
                 var headers = new Dictionary<string, string>
                 {
                     { "X-Bridge-Secret", Config.BridgeSharedSecret ?? string.Empty }
@@ -1035,13 +1135,15 @@ namespace HiLinkBridgeWebApi48.Controllers
                     var response = await client.GetAsync(url);
                     if (!response.IsSuccessStatusCode)
                     {
-                        Console.WriteLine($"[TryStartNextMachiningJob] Failed to get queue snapshot: {response.StatusCode}");
+                        var body = string.Empty;
+                        try { body = await response.Content.ReadAsStringAsync(); } catch { }
+                        Console.WriteLine($"[TryStartNextMachiningJob] Failed to get queue snapshot: {response.StatusCode} url={url} body={body}");
                         return;
                     }
 
                     var json = await response.Content.ReadAsStringAsync();
                     var queueData = JsonConvert.DeserializeObject<JObject>(json);
-                    var jobs = queueData?["data"]?["jobs"] as JArray;
+                    var jobs = queueData?["data"] as JArray;
 
                     if (jobs == null || jobs.Count == 0)
                     {
@@ -1063,24 +1165,28 @@ namespace HiLinkBridgeWebApi48.Controllers
                         return;
                     }
 
-                    // smart/replace로 큐 설정
-                    var replaceUrl = $"{backendUrl}/api/cnc-machines/{Uri.EscapeDataString(machineId)}/smart/replace";
-                    var replacePayload = new { headType, paths = new[] { path } };
-                    var replaceJson = JsonConvert.SerializeObject(replacePayload);
-                    var replaceContent = new StringContent(replaceJson, Encoding.UTF8, "application/json");
-
-                    var replaceResponse = await client.PostAsync(replaceUrl, replaceContent);
-                    if (!replaceResponse.IsSuccessStatusCode)
+                    // 백엔드의 /smart/replace, /smart/start 는 제조사 JWT 인증이 필요하므로,
+                    // 브리지 서버는 내부 큐에 다음 작업을 직접 enqueue하여 연속 가공을 이어간다.
+                    var q = GetOrCreateHighLevelQueue(machineId);
+                    lock (q.Sync)
                     {
-                        Console.WriteLine($"[TryStartNextMachiningJob] smart/replace failed: {replaceResponse.StatusCode}");
-                        return;
+                        q.Jobs.Enqueue(new HighLevelStartJob
+                        {
+                            JobId = Guid.NewGuid().ToString("N"),
+                            HeadType = headType,
+                            Paths = new List<string> { path },
+                            MaxWaitSeconds = Config.CncJobAssumeMinutes * 60,
+                            Index = 0,
+                            CurrentSlot = 0,
+                            PreviousSlot = 0,
+                            ProductCountBefore = 0,
+                            StartedAtUtc = DateTime.UtcNow,
+                            Status = "QUEUED",
+                        });
                     }
 
-                    // smart/start로 가공 시작
-                    var startUrl = $"{backendUrl}/api/cnc-machines/{Uri.EscapeDataString(machineId)}/smart/start";
-                    var startResponse = await client.PostAsync(startUrl, new StringContent("", Encoding.UTF8, "application/json"));
-
-                    Console.WriteLine($"[TryStartNextMachiningJob] machineId={machineId} path={path} status={startResponse.StatusCode}");
+                    EnsureWorkerStarted(machineId);
+                    Console.WriteLine($"[TryStartNextMachiningJob] Enqueued next job locally. machineId={machineId} path={path}");
                 }
             }
             catch (Exception ex)
