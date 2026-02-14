@@ -1,0 +1,178 @@
+[2025-12-26T01:27:08Z] Started EB User Data
++ SLEEP_TIME=2
++ SLEEP_TIME_MAX=3600
++ true
++ curl https://elasticbeanstalk-platform-assets-ap-south-1.s3.ap-south-1.amazonaws.com/stalks/eb_nodejs24_amazon_linux_2023_1.0.1599.0_20251211143459/lib/UserDataScript.sh
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  4838  100  4838    0     0  92488      0 --:--:-- --:--:-- --:--:-- 94862
++ RESULT=0
++ [[ 0 -ne 0 ]]
++ /bin/bash /tmp/ebbootstrap.sh 'https://cloudformation-waitcondition-ap-south-1.s3.ap-south-1.amazonaws.com/arn%3Aaws%3Acloudformation%3Aap-south-1%3A106055905364%3Astack/awseb-e-37m2a4tpya-stack/9b70b850-de24-11f0-a6cb-02bd1a402a2b/9b723ef0-de24-11f0-a6cb-02bd1a402a2b/AWSEBInstanceLaunchWaitHandle?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20251221T042208Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86399&X-Amz-Credential=AKIARN2TU4VHANVLYVMW%2F20251221%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Signature=5f9f517a5dda5b549985c03cd3b23a4eb2ca49f52716d693798be562ae5651ba' arn:aws:cloudformation:ap-south-1:106055905364:stack/awseb-e-37m2a4tpya-stack/9b70b850-de24-11f0-a6cb-02bd1a402a2b 641851e8-07b3-4fb9-8fa5-a74a9338885f https://elasticbeanstalk-health.ap-south-1.amazonaws.com '' https://elasticbeanstalk-platform-assets-ap-south-1.s3.ap-south-1.amazonaws.com/stalks/eb_nodejs24_amazon_linux_2023_1.0.1599.0_20251211143459 ap-south-1
+[2025-12-26T01:27:08.845Z] Started EB Bootstrapping Script.
+[2025-12-26T01:27:08.849Z] Received parameters:
+ TARBALLS = 
+ EB_GEMS = 
+ SIGNAL_URL = https://cloudformation-waitcondition-ap-south-1.s3.ap-south-1.amazonaws.com/arn%3Aaws%3Acloudformation%3Aap-south-1%3A106055905364%3Astack/awseb-e-37m2a4tpya-stack/9b70b850-de24-11f0-a6cb-02bd1a402a2b/9b723ef0-de24-11f0-a6cb-02bd1a402a2b/AWSEBInstanceLaunchWaitHandle?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20251221T042208Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86399&X-Amz-Credential=AKIARN2TU4VHANVLYVMW%2F20251221%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Signature=5f9f517a5dda5b549985c03cd3b23a4eb2ca49f52716d693798be562ae5651ba
+ STACK_ID = arn:aws:cloudformation:ap-south-1:106055905364:stack/awseb-e-37m2a4tpya-stack/9b70b850-de24-11f0-a6cb-02bd1a402a2b
+ REGION = ap-south-1
+ GUID = 
+ HEALTHD_GROUP_ID = 641851e8-07b3-4fb9-8fa5-a74a9338885f
+ HEALTHD_ENDPOINT = https://elasticbeanstalk-health.ap-south-1.amazonaws.com
+ PROXY_SERVER = 
+ HEALTHD_PROXY_LOG_LOCATION = 
+ PLATFORM_ASSETS_URL = https://elasticbeanstalk-platform-assets-ap-south-1.s3.ap-south-1.amazonaws.com/stalks/eb_nodejs24_amazon_linux_2023_1.0.1599.0_20251211143459
+[2025-12-26T01:27:08.856Z] engine url is set to https://elasticbeanstalk-platform-assets-ap-south-1.s3.ap-south-1.amazonaws.com/stalks/eb_nodejs24_amazon_linux_2023_1.0.1599.0_20251211143459/lib/platform-engine-arm64.zip
+[2025-12-26T01:27:08.858Z] first init of instance.
+[2025-12-26T01:27:08.861Z] Started executing cfn_init _OnInstanceBoot.
+[2025-12-26T01:27:08.863Z] Running cfn-init ConfigSet: _OnInstanceBoot.
+[2025-12-26T01:27:08.866Z] Using stack-id from userdata
+[2025-12-26T01:27:09.656Z] Command Returned: 
+[2025-12-26T01:27:09.659Z] Completed executing cfn_init.
+[2025-12-26T01:27:09.662Z] finished _OnInstanceBoot
+[2025-12-26T01:27:09.666Z] installing platform engine
+2025-12-26 01:27:10 URL:https://elasticbeanstalk-platform-assets-ap-south-1.s3.ap-south-1.amazonaws.com/stalks/eb_nodejs24_amazon_linux_2023_1.0.1599.0_20251211143459/lib/platform-engine-arm64.zip [31155720/31155720] -> "/tmp/platform-engine.zip" [1]
+[2025-12-26T01:27:10.887Z] executing platform engine. see /var/log/eb-engine.log.
+[2025-12-26T01:27:37.997Z] Successfully bootstrapped instance.
+[2025-12-26T01:27:38.002Z] Sending signal 0 to CFN wait condition https://cloudformation-waitcondition-ap-south-1.s3.ap-south-1.amazonaws.com/arn%3Aaws%3Acloudformation%3Aap-south-1%3A106055905364%3Astack/awseb-e-37m2a4tpya-stack/9b70b850-de24-11f0-a6cb-02bd1a402a2b/9b723ef0-de24-11f0-a6cb-02bd1a402a2b/AWSEBInstanceLaunchWaitHandle?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20251221T042208Z&X-Amz-SignedHeaders=host&X-Amz-Expires=86399&X-Amz-Credential=AKIARN2TU4VHANVLYVMW%2F20251221%2Fap-south-1%2Fs3%2Faws4_request&X-Amz-Signature=5f9f517a5dda5b549985c03cd3b23a4eb2ca49f52716d693798be562ae5651ba
+Error signaling CloudFormation: [Errno 403] HTTP Error 403 : <?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>AccessDenied</Code><Message>Request has expired</Message><X-Amz-Expires>86399</X-Amz-Expires><Expires>2025-12-22T04:22:07Z</Expires><ServerTime>2025-12-26T01:27:38Z</ServerTime><RequestId>0G7VE7K1Z9P96QNW</RequestId><HostId>3U33wM1KvVypz1jVjqqiv/XZu3KTbBeNaJjFlK1lkxhSusHMZ8oPEYCjlRlzkXWMmiSfsTR0J0v5r4Gmnku1vfTD8nkPpzF7</HostId></Error>
+[2025-12-26T01:27:38.288Z] Wait Condition Signal expired.
+[2025-12-26T01:27:38.291Z] Tailing /var/log/eb-engine.log
+
+******************* eb-engine taillog *******************
+2025/12/26 01:27:27.136723 [INFO] Running command: systemctl enable eb-app.target
+2025/12/26 01:27:27.390441 [INFO] Created symlink /etc/systemd/system/multi-user.target.wants/eb-app.target → /etc/systemd/system/eb-app.target.
+
+2025/12/26 01:27:27.390482 [INFO] Running command: systemctl start eb-app.target
+2025/12/26 01:27:27.400355 [INFO] Running command: systemctl enable web.service
+2025/12/26 01:27:27.648766 [INFO] Created symlink /etc/systemd/system/multi-user.target.wants/web.service → /etc/systemd/system/web.service.
+
+2025/12/26 01:27:27.648798 [INFO] Running command: systemctl show -p PartOf web.service
+2025/12/26 01:27:27.659638 [INFO] Running command: systemctl is-active web.service
+2025/12/26 01:27:27.667300 [INFO] Running command: systemctl start web.service
+2025/12/26 01:27:27.737771 [INFO] Executing instruction: start X-Ray
+2025/12/26 01:27:27.737797 [INFO] X-Ray is not enabled.
+2025/12/26 01:27:27.737800 [INFO] Executing instruction: start proxy with new configuration
+2025/12/26 01:27:27.737822 [INFO] Running command: /usr/sbin/nginx -t -c /var/proxy/staging/nginx/nginx.conf
+2025/12/26 01:27:27.793231 [INFO] nginx: [warn] could not build optimal types_hash, you should increase either types_hash_max_size: 1024 or types_hash_bucket_size: 64; ignoring types_hash_bucket_size
+nginx: the configuration file /var/proxy/staging/nginx/nginx.conf syntax is ok
+nginx: configuration file /var/proxy/staging/nginx/nginx.conf test is successful
+
+2025/12/26 01:27:27.793315 [INFO] Running command: cp -rp /var/proxy/staging/nginx/* /etc/nginx
+2025/12/26 01:27:27.796115 [INFO] Running command: systemctl show -p PartOf nginx.service
+2025/12/26 01:27:27.812391 [INFO] Running command: systemctl daemon-reload
+2025/12/26 01:27:28.147300 [INFO] Running command: systemctl reset-failed
+2025/12/26 01:27:28.159137 [INFO] Running command: systemctl show -p PartOf nginx.service
+2025/12/26 01:27:28.173009 [INFO] Running command: systemctl is-active nginx.service
+2025/12/26 01:27:28.182861 [INFO] Running command: systemctl start nginx.service
+2025/12/26 01:27:28.335510 [INFO] Executing instruction: configureSqsd
+2025/12/26 01:27:28.335535 [INFO] This is a web server environment instance, skip configure sqsd daemon ...
+2025/12/26 01:27:28.335538 [INFO] Executing instruction: startSqsd
+2025/12/26 01:27:28.335540 [INFO] This is a web server environment instance, skip start sqsd daemon ...
+2025/12/26 01:27:28.335543 [INFO] Executing instruction: Track pids in healthd
+2025/12/26 01:27:28.335546 [INFO] This is an enhanced health env...
+2025/12/26 01:27:28.335556 [INFO] Running command: systemctl show -p ConsistsOf aws-eb.target | cut -d= -f2
+2025/12/26 01:27:28.355488 [INFO] healthd.service cfn-hup.service nginx.service
+
+2025/12/26 01:27:28.355523 [INFO] Running command: systemctl show -p ConsistsOf eb-app.target | cut -d= -f2
+2025/12/26 01:27:28.365282 [INFO] web.service
+
+2025/12/26 01:27:28.365649 [INFO] Executing instruction: RunAppDeployPostDeployHooks
+2025/12/26 01:27:28.365708 [INFO] Executing platform hooks in .platform/hooks/postdeploy/
+2025/12/26 01:27:28.365754 [INFO] Following scripts will be executed in order: [01_install_backend_current.sh]
+2025/12/26 01:27:28.365761 [INFO] Try add execution permission
+2025/12/26 01:27:28.365766 [INFO] Adding execute mode to file, original mode is 420
+2025/12/26 01:27:28.365785 [INFO] Running command: file -b /var/app/current/.platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/26 01:27:28.369170 [INFO] Bourne-Again shell script, ASCII text executable
+
+2025/12/26 01:27:28.369186 [INFO] Running script: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/26 01:27:37.994785 [INFO] Finished running scripts in /var/app/current/.platform/hooks/postdeploy
+2025/12/26 01:27:37.994804 [INFO] Executing cleanup logic
+2025/12/26 01:27:37.994980 [INFO] Platform Engine finished execution on command: self-startup
+******************* End of taillog *******************
+
+
+[2025-12-26T01:27:38.296Z] Tailing /var/log/eb-tools.log
+
+******************* eb-tools taillog *******************
+***eb-tools is not available yet.***
+******************* End of taillog *******************
+
+
+[2025-12-26T01:27:38.298Z] Tailing /var/log/eb-hooks.log
+
+******************* eb-hooks taillog *******************
+2025/12/26 01:27:15.712517 [INFO] Running command: .platform/hooks/predeploy/01_install_backend.sh
+2025/12/26 01:27:26.741397 [INFO] [predeploy] Running hook...
+[predeploy] Expected backend dir: /var/app/staging/backend
+[predeploy] removing non-symlink /var/app/staging/backend/shared
+[predeploy] linked /var/app/staging/backend/shared -> ../shared
+[predeploy] Installing dependencies in /var/app/staging/backend
+
+added 342 packages in 10s
+[predeploy] npm ci finished in /var/app/staging/backend
+
+2025/12/26 01:27:26.741451 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+npm notice
+npm notice New minor version of npm available! 11.6.2 -> 11.7.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.7.0
+npm notice To update run: npm install -g npm@11.7.0
+npm notice
+
+2025/12/26 01:27:28.369194 [INFO] Running command: .platform/hooks/postdeploy/01_install_backend_current.sh
+2025/12/26 01:27:37.994747 [INFO] [postdeploy] Running hook...
+[postdeploy] Expected backend dir: /var/app/current/backend
+[postdeploy] Installing dependencies in /var/app/current/backend
+
+added 342 packages in 9s
+[postdeploy] npm ci finished in /var/app/current/backend
+
+2025/12/26 01:27:37.994780 [INFO] npm warn deprecated querystring@0.2.0: The querystring API is considered Legacy. new code should use the URLSearchParams API instead.
+******************* End of taillog *******************
+
+
+[2025-12-26T01:27:38.301Z] Tailing /var/log/cfn-init.log
+
+******************* cfn-init taillog *******************
+2025-12-26 01:27:09,328 [INFO] -----------------------Starting build-----------------------
+2025-12-26 01:27:09,334 [INFO] Running configSets: _OnInstanceBoot
+2025-12-26 01:27:09,337 [INFO] Running configSet _OnInstanceBoot
+2025-12-26 01:27:09,339 [INFO] Running config AWSEBBaseConfig
+2025-12-26 01:27:09,599 [INFO] Command clearbackupfiles succeeded
+2025-12-26 01:27:09,602 [INFO] Running config AWSEBCfnHupEndpointOverride
+2025-12-26 01:27:09,607 [INFO] Command clearbackupfiles succeeded
+2025-12-26 01:27:09,608 [INFO] ConfigSets completed
+2025-12-26 01:27:09,608 [INFO] -----------------------Build complete-----------------------
+2025-12-26 01:27:12,928 [INFO] -----------------------Starting build-----------------------
+2025-12-26 01:27:12,933 [INFO] Running configSets: Infra-EmbeddedPreBuild
+2025-12-26 01:27:12,936 [INFO] Running configSet Infra-EmbeddedPreBuild
+2025-12-26 01:27:12,936 [INFO] ConfigSets completed
+2025-12-26 01:27:12,936 [INFO] -----------------------Build complete-----------------------
+2025-12-26 01:27:15,603 [INFO] -----------------------Starting build-----------------------
+2025-12-26 01:27:15,609 [INFO] Running configSets: Infra-EmbeddedPostBuild
+2025-12-26 01:27:15,611 [INFO] Running configSet Infra-EmbeddedPostBuild
+2025-12-26 01:27:15,612 [INFO] ConfigSets completed
+2025-12-26 01:27:15,612 [INFO] -----------------------Build complete-----------------------
+******************* End of taillog *******************
+
+
+[2025-12-26T01:27:38.304Z] Tailing /var/log/cfn-hup.log
+
+******************* cfn-hup taillog *******************
+2025-12-26 01:27:12,835 [DEBUG] CloudFormation client initialized with endpoint https://cloudformation.ap-south-1.amazonaws.com
+2025-12-26 01:27:12,835 [DEBUG] SQS client initialized with endpoint https://sqs.ap-south-1.amazonaws.com
+2025-12-26 01:27:12,835 [DEBUG] CloudFormation client initialized with endpoint https://cloudformation.ap-south-1.amazonaws.com
+2025-12-26 01:27:12,835 [DEBUG] Enabled single threading mode.
+2025-12-26 01:27:12,835 [DEBUG] Creating /var/lib/cfn-hup/data
+2025-12-26 01:27:12,844 [INFO] No umask value specified in config file. Using the default one: 0o22
+2025-12-26 01:27:12,874 [INFO] Pid: 1785
+2025-12-26 01:27:13,113 [INFO] Refreshing listener credentials
+2025-12-26 01:27:13,194 [INFO] Scheduling next credential refresh in 1799.0 seconds
+******************* End of taillog *******************
+
+
+[2025-12-26T01:27:38.307Z] Completed EB Bootstrapping Script.
++ RESULT=0
++ [[ 0 -ne 0 ]]
++ exit 0

@@ -412,8 +412,6 @@ export async function recordMachiningTickForBridge(req, res) {
           lastTickAt: now,
           percent: percent == null ? null : percent,
           elapsedSeconds,
-          fileName: meta.fileName,
-          originalFileName: meta.originalFileName,
         },
       },
       { new: true, upsert: true },
