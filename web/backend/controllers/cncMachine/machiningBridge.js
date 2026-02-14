@@ -684,8 +684,6 @@ export async function recordMachiningCompleteForBridge(req, res) {
               percent: 100,
               durationSeconds: 0,
               elapsedSeconds: 0,
-              fileName: meta.fileName,
-              originalFileName: meta.originalFileName,
             },
           },
           { upsert: true },
@@ -737,8 +735,6 @@ export async function recordMachiningCompleteForBridge(req, res) {
           },
           $set: {
             ...completionSet,
-            fileName: meta.fileName,
-            originalFileName: meta.originalFileName,
           },
         },
         { upsert: true },
