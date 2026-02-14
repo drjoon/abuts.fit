@@ -641,6 +641,15 @@ export async function recordMachiningCompleteForBridge(req, res) {
         ? Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000))
         : Math.max(0, Number(running?.elapsedSeconds ?? 0) || 0);
 
+      const completionSet = {
+        status: "COMPLETED",
+        lastTickAt: now,
+        completedAt: now,
+        percent: 100,
+        durationSeconds,
+        elapsedSeconds: durationSeconds,
+      };
+
       await MachiningRecord.findOneAndUpdate(
         {
           requestId: null,
@@ -656,15 +665,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
             bridgePath: bridgePathRaw || null,
             startedAt,
           },
-          $set: {
-            status: "COMPLETED",
-            startedAt,
-            lastTickAt: now,
-            completedAt: now,
-            percent: 100,
-            durationSeconds,
-            elapsedSeconds: durationSeconds,
-          },
+          $set: completionSet,
         },
         { upsert: true },
       );
