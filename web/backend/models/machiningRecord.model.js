@@ -5,7 +5,7 @@ const machiningRecordSchema = new mongoose.Schema(
     requestId: {
       type: String,
       index: true,
-      required: true,
+      default: null,
     },
     machineId: {
       type: String,
@@ -69,6 +69,12 @@ const machiningRecordSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-machiningRecordSchema.index({ requestId: 1, machineId: 1, jobId: 1, status: 1 });
+machiningRecordSchema.index({
+  requestId: 1,
+  machineId: 1,
+  jobId: 1,
+  status: 1,
+});
+machiningRecordSchema.index({ machineId: 1, jobId: 1, status: 1 });
 
 export default mongoose.model("MachiningRecord", machiningRecordSchema);

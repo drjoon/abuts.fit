@@ -205,6 +205,10 @@ export async function saveBridgeQueueSnapshot(machineId, jobs) {
             id: j.id != null ? String(j.id).trim() : "",
             kind: j.kind != null ? String(j.kind).trim() : "",
             fileName: j.fileName != null ? String(j.fileName).trim() : "",
+            originalFileName:
+              j.originalFileName != null
+                ? String(j.originalFileName).trim()
+                : "",
             bridgePath: j.bridgePath != null ? String(j.bridgePath).trim() : "",
             s3Key: j.s3Key != null ? String(j.s3Key).trim() : "",
             s3Bucket: j.s3Bucket != null ? String(j.s3Bucket).trim() : "",

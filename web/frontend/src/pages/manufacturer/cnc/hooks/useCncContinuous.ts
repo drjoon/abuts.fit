@@ -114,20 +114,13 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
     }
 
     localTimerRef.current = setInterval(() => {
-      const elapsed = Date.now() - lastTickTimeRef.current;
-      if (elapsed > 5000) {
-        // 5초 이상 tick이 없으면 폴링으로 새로고침
-        void fetchState();
-      } else {
-        // 로컬 보간
-        setState((prev) => {
-          if (!prev || !prev.isRunning) return prev;
-          return {
-            ...prev,
-            elapsedSeconds: prev.elapsedSeconds + 1,
-          };
-        });
-      }
+      setState((prev) => {
+        if (!prev || !prev.isRunning) return prev;
+        return {
+          ...prev,
+          elapsedSeconds: prev.elapsedSeconds + 1,
+        };
+      });
     }, 1000);
 
     return () => {
@@ -136,7 +129,7 @@ export const useCncContinuous = (machineId: string | null | undefined) => {
         localTimerRef.current = null;
       }
     };
-  }, [state?.isRunning, fetchState]);
+  }, [state?.isRunning]);
 
   return {
     state,

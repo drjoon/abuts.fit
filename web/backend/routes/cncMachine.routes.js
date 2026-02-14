@@ -56,6 +56,12 @@ router.post(
   cncMachineController.recordMachiningTickForBridge,
 );
 router.post(
+  "/bridge/machining/start/:machineId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.recordMachiningStartForBridge,
+);
+router.post(
   "/bridge/machining/complete/:machineId",
   requireBridgeIpAllowlist,
   requireBridgeSecret,

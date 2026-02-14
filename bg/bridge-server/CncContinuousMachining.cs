@@ -1333,6 +1333,38 @@ using (var resp = await Http.SendAsync(req))
 _ = await resp.Content.ReadAsStringAsync();
 }
 }
+
+// CNC machining started notify (bridge -> backend)
+try
+{
+    if (!string.IsNullOrEmpty(backend))
+    {
+        var startUrl = backend + "/api/cnc-machines/bridge/machining/start/" + Uri.EscapeDataString(machineId);
+        var startPayload = new
+        {
+            machineId = machineId,
+            jobId = job?.id,
+            requestId = job?.requestId,
+            bridgePath = job?.bridgePath,
+            startedAt = DateTime.UtcNow,
+        };
+        var startJson = Newtonsoft.Json.JsonConvert.SerializeObject(startPayload);
+        using (var startReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, startUrl))
+        {
+            AddAuthHeader(startReq);
+            startReq.Content = new System.Net.Http.StringContent(startJson, System.Text.Encoding.UTF8, "application/json");
+            using (var startResp = await Http.SendAsync(startReq))
+            {
+                _ = await startResp.Content.ReadAsStringAsync();
+            }
+        }
+    }
+}
+catch (Exception startEx)
+{
+    Console.WriteLine("[CncMachining] NotifyMachiningStart endpoint error: {0}", startEx.Message);
+}
+
 // 수동 카드 시작 알림 (manual_file 종류인 경우)
 if (!string.IsNullOrEmpty(job?.kindRaw) && job.kindRaw == "manual_file")
 {

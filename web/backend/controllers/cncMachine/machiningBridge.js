@@ -7,6 +7,27 @@ import { applyStatusMapping } from "../request/utils.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 
+const STARTED_EMIT_TTL_MS = 30 * 1000;
+const startedEmitCache = new Map();
+
+function makeStartedEmitKey({ machineId, jobId, requestId, bridgePath }) {
+  return [
+    String(machineId || "").trim(),
+    String(jobId || "").trim(),
+    String(requestId || "").trim(),
+    String(bridgePath || "").trim(),
+  ].join("|");
+}
+
+function shouldEmitStarted(key) {
+  const now = Date.now();
+  const last = startedEmitCache.get(key);
+  if (typeof last === "number" && now - last < STARTED_EMIT_TTL_MS)
+    return false;
+  startedEmitCache.set(key, now);
+  return true;
+}
+
 function normalizeBridgePath(raw) {
   const p = String(raw || "").trim();
   if (!p) return "";
@@ -14,6 +35,137 @@ function normalizeBridgePath(raw) {
     .replace(/^nc\//i, "")
     .replace(/\.(nc|stl)$/i, "")
     .trim();
+}
+
+export async function recordMachiningStartForBridge(req, res) {
+  try {
+    const { machineId } = req.params;
+    const mid = String(machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    const jobId = req.body?.jobId ? String(req.body.jobId).trim() : "";
+    const requestIdRaw = req.body?.requestId
+      ? String(req.body.requestId).trim()
+      : "";
+    const bridgePathRaw = req.body?.bridgePath
+      ? String(req.body.bridgePath).trim()
+      : "";
+
+    let requestId = await resolveRequestIdFromDb({
+      requestId: requestIdRaw,
+      bridgePath: bridgePathRaw,
+    });
+
+    const now = new Date();
+    const startedAt = req.body?.startedAt ? new Date(req.body.startedAt) : now;
+
+    const recordQuery = requestId
+      ? {
+          requestId,
+          machineId: mid,
+          jobId: jobId || null,
+          status: { $in: ["RUNNING"] },
+        }
+      : {
+          requestId: null,
+          machineId: mid,
+          jobId: jobId || null,
+          status: { $in: ["RUNNING"] },
+        };
+
+    const record = await MachiningRecord.findOneAndUpdate(
+      recordQuery,
+      {
+        $setOnInsert: {
+          requestId: requestId || null,
+          machineId: mid,
+          jobId: jobId || null,
+          bridgePath: bridgePathRaw || null,
+          status: "RUNNING",
+        },
+        $set: {
+          startedAt,
+          lastTickAt: startedAt,
+          elapsedSeconds: 0,
+        },
+      },
+      { new: true, upsert: true },
+    );
+
+    if (requestId) {
+      const existing = await Request.findOne({ requestId }).select({
+        productionSchedule: 1,
+        requestId: 1,
+      });
+
+      const update = {
+        $set: {
+          "productionSchedule.machiningProgress": {
+            machineId: mid,
+            jobId: jobId || null,
+            phase: "STARTED",
+            percent: 0,
+            startedAt,
+            lastTickAt: startedAt,
+            elapsedSeconds: 0,
+          },
+        },
+      };
+
+      if (!existing?.productionSchedule?.actualMachiningStart) {
+        update.$set["productionSchedule.actualMachiningStart"] = startedAt;
+      }
+      if (record?._id && !existing?.productionSchedule?.machiningRecord) {
+        update.$set["productionSchedule.machiningRecord"] = record._id;
+      }
+      await Request.updateOne({ requestId }, update);
+    }
+
+    try {
+      const key = makeStartedEmitKey({
+        machineId: mid,
+        jobId,
+        requestId,
+        bridgePath: bridgePathRaw,
+      });
+      if (shouldEmitStarted(key)) {
+        const io = getIO();
+        const payload = {
+          machineId: mid,
+          jobId: jobId || null,
+          requestId: requestId || null,
+          bridgePath: bridgePathRaw || null,
+          startedAt,
+        };
+        if (jobId) {
+          io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-started", payload);
+        }
+        io.emit("cnc-machining-started", payload);
+      }
+    } catch {
+      // ignore
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        machineId: mid,
+        jobId: jobId || null,
+        requestId: requestId || null,
+        startedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "machining start 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 async function resolveRequestIdFromDb({ requestId: requestIdRaw, bridgePath }) {
@@ -132,6 +284,12 @@ export async function recordMachiningTickForBridge(req, res) {
     let elapsedSeconds = 0;
     let startedAt = now;
 
+    const phaseUpper = String(phase || "")
+      .trim()
+      .toUpperCase();
+
+    let existing = null;
+
     if (requestId) {
       const existing = await Request.findOne({ requestId }).select({
         productionSchedule: 1,
@@ -143,10 +301,6 @@ export async function recordMachiningTickForBridge(req, res) {
         ? String(prevProgress.jobId).trim()
         : "";
       const startedAtRaw = prevProgress?.startedAt;
-      const phaseUpper = String(phase || "")
-        .trim()
-        .toUpperCase();
-
       const shouldResetStart =
         phaseUpper === "STARTED" ||
         (!!jobId && prevJobId && prevJobId !== String(jobId).trim());
@@ -161,9 +315,89 @@ export async function recordMachiningTickForBridge(req, res) {
         0,
         Math.floor((now.getTime() - startedAt.getTime()) / 1000),
       );
+    } else {
+      const running = await MachiningRecord.findOne({
+        requestId: null,
+        machineId: mid,
+        jobId: jobId || null,
+        status: "RUNNING",
+      }).select({ startedAt: 1 });
 
-      // Request에는 진행 표시(WS/페이지용)만 남기고,
-      // 영속적인 "가공 기록"은 MachiningRecord에 저장한다.
+      const shouldResetStart = phaseUpper === "STARTED" || !running?.startedAt;
+      startedAt = shouldResetStart ? now : new Date(running.startedAt);
+      elapsedSeconds = Math.max(
+        0,
+        Math.floor((now.getTime() - startedAt.getTime()) / 1000),
+      );
+    }
+
+    const recordQuery = requestId
+      ? {
+          requestId,
+          machineId: mid,
+          jobId: jobId || null,
+          status: { $in: ["RUNNING"] },
+        }
+      : {
+          requestId: null,
+          machineId: mid,
+          jobId: jobId || null,
+          status: { $in: ["RUNNING"] },
+        };
+
+    const record = await MachiningRecord.findOneAndUpdate(
+      recordQuery,
+      {
+        $setOnInsert: {
+          requestId: requestId || null,
+          machineId: mid,
+          jobId: jobId || null,
+          bridgePath: bridgePathRaw || null,
+          status: "RUNNING",
+        },
+        $set: {
+          startedAt,
+          lastTickAt: now,
+          percent: percent == null ? null : percent,
+          elapsedSeconds,
+        },
+      },
+      { new: true, upsert: true },
+    );
+
+    try {
+      if (phaseUpper === "STARTED") {
+        const key = makeStartedEmitKey({
+          machineId: mid,
+          jobId,
+          requestId,
+          bridgePath: bridgePathRaw,
+        });
+        if (shouldEmitStarted(key)) {
+          const io = getIO();
+          const payload = {
+            machineId: mid,
+            jobId: jobId || null,
+            requestId: requestId || null,
+            bridgePath: bridgePathRaw || null,
+            startedAt: startedAt,
+          };
+          if (jobId) {
+            io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-started", payload);
+          }
+          io.emit("cnc-machining-started", payload);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (requestId) {
+      const existing = await Request.findOne({ requestId }).select({
+        productionSchedule: 1,
+        requestId: 1,
+      });
+
       const update = {
         $set: {
           "productionSchedule.machiningProgress": {
@@ -182,73 +416,45 @@ export async function recordMachiningTickForBridge(req, res) {
         update.$set["productionSchedule.actualMachiningStart"] = startedAt;
       }
 
-      // machiningRecord upsert + Request에 연결
-      const record = await MachiningRecord.findOneAndUpdate(
-        {
-          requestId,
-          machineId: mid,
-          jobId: jobId || null,
-          status: { $in: ["RUNNING"] },
-        },
-        {
-          $setOnInsert: {
-            requestId,
-            machineId: mid,
-            jobId: jobId || null,
-            bridgePath: bridgePathRaw || null,
-            status: "RUNNING",
-          },
-          $set: {
-            startedAt,
-            lastTickAt: now,
-            percent: percent == null ? null : percent,
-            elapsedSeconds,
-          },
-        },
-        { new: true, upsert: true },
-      );
-
       if (record?._id && !existing?.productionSchedule?.machiningRecord) {
         update.$set["productionSchedule.machiningRecord"] = record._id;
       }
 
       await Request.updateOne({ requestId }, update);
-      console.log(
-        "[bridge:machining:tick] updated request/record",
-        JSON.stringify({
-          machineId: mid,
-          requestId,
-          recordId: record?._id,
-          startedAt,
-          elapsedSeconds,
-          phase,
-          percent,
-        }),
-      );
-    } else {
-      console.warn(
-        "[bridge:machining:tick] missing requestId",
-        JSON.stringify({ machineId: mid, jobId, bridgePath: bridgePathRaw }),
-      );
     }
 
-    const io = getIO();
-    const payload = {
-      machineId: mid,
-      jobId: jobId || null,
-      requestId: requestId || null,
-      bridgePath: bridgePathRaw || null,
-      phase: phase || null,
-      percent: percent == null ? null : percent,
-      startedAt,
-      elapsedSeconds,
-      tickAt: now,
-    };
+    console.log(
+      "[bridge:machining:tick] updated record",
+      JSON.stringify({
+        machineId: mid,
+        requestId: requestId || null,
+        recordId: record?._id,
+        startedAt,
+        elapsedSeconds,
+        phase,
+        percent,
+      }),
+    );
 
-    if (jobId) {
-      io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-tick", payload);
+    try {
+      const io = getIO();
+      const payload = {
+        machineId: mid,
+        jobId: jobId || null,
+        requestId: requestId || "",
+        phase: phase || null,
+        percent,
+        startedAt,
+        elapsedSeconds,
+        tickAt: now,
+      };
+      if (jobId) {
+        io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-tick", payload);
+      }
+      io.emit("cnc-machining-tick", payload);
+    } catch {
+      // ignore
     }
-    io.emit("cnc-machining-tick", payload);
 
     return res.status(200).json({ success: true });
   } catch (error) {
@@ -324,7 +530,6 @@ export async function recordMachiningCompleteForBridge(req, res) {
             )
           : 0;
 
-        // machiningRecord 업데이트/연결
         const recordId = request?.productionSchedule?.machiningRecord || null;
         const record = recordId
           ? await MachiningRecord.findByIdAndUpdate(
@@ -389,40 +594,82 @@ export async function recordMachiningCompleteForBridge(req, res) {
           }),
         );
       } else {
-        // Request를 못 찾는 경우에도 record는 남길 수 있게 attempt
-        if (requestId) {
-          await MachiningRecord.create({
-            requestId,
+        // requestId가 없어도 완료 기록은 남긴다.
+        const now = new Date();
+        await MachiningRecord.findOneAndUpdate(
+          {
+            requestId: null,
             machineId: mid,
             jobId: jobId || null,
-            bridgePath: bridgePathRaw || null,
-            status: "COMPLETED",
-            completedAt: now,
-            durationSeconds: 0,
-          }).catch(() => {});
-        }
-
-        await Request.updateOne(
-          { requestId },
+            status: { $in: ["RUNNING"] },
+          },
           {
+            $setOnInsert: {
+              requestId: null,
+              machineId: mid,
+              jobId: jobId || null,
+              bridgePath: bridgePathRaw || null,
+            },
             $set: {
-              "productionSchedule.actualMachiningComplete": now,
-              "productionSchedule.machiningProgress.machineId": mid,
-              "productionSchedule.machiningProgress.jobId": jobId || null,
-              "productionSchedule.machiningProgress.phase": "COMPLETED",
-              "productionSchedule.machiningProgress.percent": 100,
-              "productionSchedule.machiningProgress.lastTickAt": now,
+              status: "COMPLETED",
+              startedAt: now,
+              lastTickAt: now,
+              completedAt: now,
+              percent: 100,
+              durationSeconds: 0,
+              elapsedSeconds: 0,
             },
           },
+          { upsert: true },
         );
         console.warn(
-          "[bridge:machining:complete] request not found, updateOne fallback",
-          JSON.stringify({ machineId: mid, requestId }),
+          "[bridge:machining:complete] missing requestId, record saved",
+          JSON.stringify({ machineId: mid, jobId, bridgePath: bridgePathRaw }),
         );
       }
     } else {
+      const now = new Date();
+      const running = await MachiningRecord.findOne({
+        requestId: null,
+        machineId: mid,
+        jobId: jobId || null,
+        status: "RUNNING",
+      }).select({ startedAt: 1, elapsedSeconds: 1 });
+
+      const startedAt = running?.startedAt ? new Date(running.startedAt) : now;
+      const durationSeconds = running?.startedAt
+        ? Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000))
+        : Math.max(0, Number(running?.elapsedSeconds ?? 0) || 0);
+
+      await MachiningRecord.findOneAndUpdate(
+        {
+          requestId: null,
+          machineId: mid,
+          jobId: jobId || null,
+          status: { $in: ["RUNNING"] },
+        },
+        {
+          $setOnInsert: {
+            requestId: null,
+            machineId: mid,
+            jobId: jobId || null,
+            bridgePath: bridgePathRaw || null,
+            startedAt,
+          },
+          $set: {
+            status: "COMPLETED",
+            startedAt,
+            lastTickAt: now,
+            completedAt: now,
+            percent: 100,
+            durationSeconds,
+            elapsedSeconds: durationSeconds,
+          },
+        },
+        { upsert: true },
+      );
       console.warn(
-        "[bridge:machining:complete] still missing requestId",
+        "[bridge:machining:complete] missing requestId, record saved",
         JSON.stringify({ machineId: mid, jobId, bridgePath: bridgePathRaw }),
       );
     }
@@ -542,6 +789,7 @@ export async function recordMachiningFailForBridge(req, res) {
         const request = await Request.findOne({ requestId }).select({
           productionSchedule: 1,
           requestId: 1,
+          status: 1,
         });
 
         const recordId = request?.productionSchedule?.machiningRecord || null;
@@ -573,6 +821,34 @@ export async function recordMachiningFailForBridge(req, res) {
             { $set: { "productionSchedule.machiningRecord": record._id } },
           );
         }
+      } catch {
+        // ignore
+      }
+    } else {
+      try {
+        await MachiningRecord.findOneAndUpdate(
+          {
+            requestId: null,
+            machineId: mid,
+            jobId: jobId || null,
+            status: { $in: ["RUNNING"] },
+          },
+          {
+            $setOnInsert: {
+              requestId: null,
+              machineId: mid,
+              jobId: jobId || null,
+              bridgePath: bridgePathRaw || null,
+            },
+            $set: {
+              status: "FAILED",
+              failReason: reason || "FAILED",
+              alarms,
+              completedAt: new Date(),
+            },
+          },
+          { upsert: true },
+        );
       } catch {
         // ignore
       }
@@ -639,6 +915,27 @@ export async function cancelMachiningForMachine(req, res) {
           },
         },
       );
+    }
+
+    try {
+      const io = getIO();
+      const payload = {
+        machineId: mid,
+        jobId: String(record.jobId || "") || null,
+        requestId: requestId || null,
+        status: "CANCELED",
+        canceledAt: now,
+        durationSeconds,
+      };
+      if (payload.jobId) {
+        io.to(`cnc:${mid}:${payload.jobId}`).emit(
+          "cnc-machining-canceled",
+          payload,
+        );
+      }
+      io.emit("cnc-machining-canceled", payload);
+    } catch {
+      // ignore
     }
 
     return res.status(200).json({

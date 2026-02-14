@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
-import { onCncMachiningCompleted, onCncMachiningTick } from "@/lib/socket";
+import {
+  onCncMachiningCompleted,
+  onCncMachiningTick,
+  onCncMachiningStarted,
+} from "@/lib/socket";
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
 import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
 import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
@@ -944,6 +948,19 @@ export const MachiningQueueBoard = ({
   useEffect(() => {
     if (!token) return;
 
+    const unsubscribeStarted = onCncMachiningStarted((data) => {
+      const mid = String((data as any)?.machineId || "").trim();
+      if (!mid) return;
+      const startedAtMs = (data as any)?.startedAt
+        ? new Date((data as any).startedAt).getTime()
+        : Date.now();
+      machiningElapsedBaseRef.current[mid] = {
+        elapsedSeconds: 0,
+        tickAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+      };
+      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
+    });
+
     const unsubscribeTick = onCncMachiningTick((data) => {
       const mid = String(data?.machineId || "").trim();
       if (!mid) return;
@@ -978,6 +995,7 @@ export const MachiningQueueBoard = ({
     });
 
     return () => {
+      unsubscribeStarted();
       unsubscribeTick();
       unsubscribeCompleted();
     };

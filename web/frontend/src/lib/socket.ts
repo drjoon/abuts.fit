@@ -18,6 +18,65 @@ export interface SocketMessage {
   updatedAt: string;
 }
 
+export function onCncMachiningCanceled(
+  callback: (data: {
+    machineId: string;
+    jobId: string | null;
+    requestId: string | null;
+    status: "CANCELED";
+    canceledAt: string;
+    durationSeconds: number;
+  }) => void,
+) {
+  const s = getSocket();
+  if (s) {
+    s.on("cnc-machining-canceled", callback);
+    return () => s.off("cnc-machining-canceled", callback);
+  }
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("cnc-machining-canceled", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("cnc-machining-canceled", callback);
+  };
+}
+
+export function onCncMachiningStarted(
+  callback: (data: {
+    machineId: string;
+    jobId: string | null;
+    requestId: string | null;
+    bridgePath: string | null;
+    startedAt: string;
+  }) => void,
+) {
+  const s = getSocket();
+  if (s) {
+    s.on("cnc-machining-started", callback);
+    return () => s.off("cnc-machining-started", callback);
+  }
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("cnc-machining-started", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("cnc-machining-started", callback);
+  };
+}
+
 export interface SocketNotification {
   _id?: string;
   type: string;

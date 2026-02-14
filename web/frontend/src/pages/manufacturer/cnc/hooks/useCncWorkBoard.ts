@@ -183,31 +183,15 @@ export const useCncWorkBoard = (
   const fetchProgramList = async () => {
     if (!workUid) return;
     try {
-      const [listRes, actRes] = await Promise.all([
-        callRaw(workUid, "GetProgListInfo", 1), // 1=메인
-        apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(
-            workUid,
-          )}/programs/active`,
-          method: "GET",
-          token,
-        }).then((res) => {
-          const body = res.data ?? {};
-          if (!res.ok || (body as any)?.success === false) {
-            const msg =
-              (body as any)?.message ||
-              (body as any)?.error ||
-              `programs/active 호출 실패 (HTTP ${res.status})`;
-            throw new Error(msg);
-          }
-          return (body as any)?.data ?? body;
-        }),
-      ]);
+      const listRes = await callRaw(workUid, "GetProgListInfo", 1); // 1=메인
 
       const pl = (listRes && (listRes.data ?? listRes)) as any;
       const progList = pl?.machineProgramListInfo?.programArray ?? [];
-      const act = (actRes && (actRes.data ?? actRes)) as any;
-      const current = act?.machineCurrentProgInfo ?? null;
+      const current = Array.isArray(progList)
+        ? progList.find(
+            (p: any) => p?.active === true || p?.status === "ACTIVE",
+          )
+        : null;
 
       setProgramSummary({
         current,

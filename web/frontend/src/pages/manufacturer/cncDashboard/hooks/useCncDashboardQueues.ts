@@ -6,7 +6,9 @@ import {
   unsubscribeCncMachining,
   onCncMachiningCompleted,
   onCncMachiningTimeout,
+  onCncMachiningCanceled,
   onCncMachiningTick,
+  onCncMachiningStarted,
 } from "@/lib/socket";
 
 import type { Machine } from "../../cnc/types";
@@ -943,6 +945,88 @@ export function useCncDashboardQueues({
     };
   }, [nowPlayingMap, token]);
 
+  // WS started/tick/completed/timeout 기반으로 Now Playing 타이머를 시작/종료한다.
+  useEffect(() => {
+    if (!token) return;
+
+    const unsubStarted = onCncMachiningStarted((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      setNowPlayingMap((prev) => ({ ...prev, [mid]: true }));
+      const startedAtMs = data?.startedAt
+        ? new Date(data.startedAt).getTime()
+        : Date.now();
+      machiningElapsedBaseRef.current[mid] = {
+        elapsedSeconds: 0,
+        tickAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+      };
+      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
+    });
+
+    const unsubTick = onCncMachiningTick((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      const elapsed =
+        typeof data?.elapsedSeconds === "number"
+          ? Math.max(0, Math.floor(data.elapsedSeconds))
+          : 0;
+      const tickAtMs = data?.tickAt
+        ? new Date(data.tickAt).getTime()
+        : Date.now();
+      machiningElapsedBaseRef.current[mid] = {
+        elapsedSeconds: elapsed,
+        tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
+      };
+      setNowPlayingMap((prev) => ({ ...prev, [mid]: true }));
+      setMachiningElapsedSecondsMap((prev) => {
+        if (prev[mid] === elapsed) return prev;
+        return { ...prev, [mid]: elapsed };
+      });
+    });
+
+    const stopFor = (mid: string) => {
+      setNowPlayingMap((prev) => {
+        if (!prev[mid]) return prev;
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+      setMachiningElapsedSecondsMap((prev) => {
+        if (prev[mid] == null) return prev;
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
+      delete machiningElapsedBaseRef.current[mid];
+    };
+
+    const unsubCompleted = onCncMachiningCompleted((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      stopFor(mid);
+    });
+
+    const unsubTimeout = onCncMachiningTimeout((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      stopFor(mid);
+    });
+
+    const unsubCanceled = onCncMachiningCanceled((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      stopFor(mid);
+    });
+
+    return () => {
+      unsubStarted?.();
+      unsubTick?.();
+      unsubCompleted?.();
+      unsubTimeout?.();
+      unsubCanceled?.();
+    };
+  }, [token]);
+
   const handlePlayNowPlaying = useCallback(
     async (machineId: string) => {
       const uid = String(machineId || "").trim();
@@ -1034,7 +1118,7 @@ export function useCncDashboardQueues({
         }
       }
 
-      setNowPlayingMap((prev) => ({ ...prev, [uid]: true }));
+      // nowPlayingMap은 WS(started/tick) 이벤트로 켜진다.
 
       try {
         // 1) smart/replace로 현재 파일 큐 설정 (단건 replace 금지: 연속 가공 큐가 1개로 덮여서 다음 작업이 사라짐)

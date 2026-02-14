@@ -13,16 +13,22 @@ export async function createCncDirectUploadPresign(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     const rawName = String(req.body?.fileName || "").trim();
     const fileName = rawName;
     if (!fileName) {
-      return res.status(400).json({ success: false, message: "fileName is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "fileName is required" });
     }
 
-    const contentType = String(req.body?.contentType || "application/octet-stream").trim();
+    const contentType = String(
+      req.body?.contentType || "application/octet-stream",
+    ).trim();
     const fileSize = Number(req.body?.fileSize || 0);
 
     const safeName = sanitizeS3KeySegment(fileName);
@@ -55,15 +61,22 @@ export async function createCncDirectDownloadPresign(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     const s3Key = String(req.query?.s3Key || req.body?.s3Key || "").trim();
     if (!s3Key) {
-      return res.status(400).json({ success: false, message: "s3Key is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "s3Key is required" });
     }
 
-    const expiresIn = Math.max(60, Math.min(3600, Number(req.query?.expiresIn || 300)));
+    const expiresIn = Math.max(
+      60,
+      Math.min(3600, Number(req.query?.expiresIn || 300)),
+    );
     const presign = await getPresignedGetUrl(s3Key, expiresIn);
 
     return res.status(200).json({
@@ -90,15 +103,22 @@ export async function createCncDirectDownloadPresignForBridge(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     const s3Key = String(req.query?.s3Key || req.body?.s3Key || "").trim();
     if (!s3Key) {
-      return res.status(400).json({ success: false, message: "s3Key is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "s3Key is required" });
     }
 
-    const expiresIn = Math.max(60, Math.min(3600, Number(req.query?.expiresIn || 300)));
+    const expiresIn = Math.max(
+      60,
+      Math.min(3600, Number(req.query?.expiresIn || 300)),
+    );
     const presign = await getPresignedGetUrl(s3Key, expiresIn);
 
     return res.status(200).json({
@@ -125,7 +145,9 @@ export async function enqueueCncDirectToDb(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     const fileName = String(req.body?.fileName || "").trim();
@@ -153,6 +175,7 @@ export async function enqueueCncDirectToDb(req, res) {
       id: jobId,
       kind: "requested_file",
       fileName,
+      originalFileName: fileName,
       bridgePath: `${mid}/${fileName}`,
       s3Key,
       s3Bucket: s3Bucket || process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
@@ -188,7 +211,9 @@ export async function refreshCncDirectFromBridge(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/${encodeURIComponent(mid)}`;
@@ -198,7 +223,9 @@ export async function refreshCncDirectFromBridge(req, res) {
     });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok || body?.success === false) {
-      return res.status(resp.status).json({ success: false, message: body?.message || body?.error });
+      return res
+        .status(resp.status)
+        .json({ success: false, message: body?.message || body?.error });
     }
     const list = Array.isArray(body?.data) ? body.data : body?.data || [];
     const jobs = Array.isArray(list) ? list : [];

@@ -21,7 +21,30 @@ namespace HiLinkBridgeWebApi48
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Console.WriteLine("[BridgeAuth] {0} {1}", request.Method, request.RequestUri);
+            var logEnabledRaw = (Environment.GetEnvironmentVariable("BRIDGE_LOG_REQUESTS") ?? string.Empty).Trim();
+            var logEnabled = !string.IsNullOrEmpty(logEnabledRaw)
+                && !string.Equals(logEnabledRaw, "false", StringComparison.OrdinalIgnoreCase)
+                && logEnabledRaw != "0";
+
+            try
+            {
+                var path = request?.RequestUri?.AbsolutePath ?? string.Empty;
+                var isNoise =
+                    path.IndexOf("/api/cnc/machines/", StringComparison.OrdinalIgnoreCase) >= 0
+                    && (
+                        path.EndsWith("/status", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith("/programs/active", StringComparison.OrdinalIgnoreCase)
+                        || path.EndsWith("/programs/list", StringComparison.OrdinalIgnoreCase)
+                    );
+                if (logEnabled || !isNoise)
+                {
+                    Console.WriteLine("[BridgeAuth] {0} {1}", request.Method, request.RequestUri);
+                }
+            }
+            catch
+            {
+                Console.WriteLine("[BridgeAuth] {0} {1}", request.Method, request.RequestUri);
+            }
 
             // IP 화이트리스트 검증 (매 요청마다 동적으로 로드)
             var allowIpsRaw = Config.BridgeAllowIpsRaw ?? string.Empty;

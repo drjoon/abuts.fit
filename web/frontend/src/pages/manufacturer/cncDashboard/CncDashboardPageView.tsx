@@ -142,27 +142,6 @@ export const CncDashboardPageView = (props: any) => {
     nowPlayingMap,
   } = props;
 
-  // 10초 간격으로 상태/큐 업데이트
-  React.useEffect(() => {
-    const id = setInterval(() => {
-      const uid = workUid || mergedMachines?.[0]?.uid;
-      if (!uid) return;
-      void refreshStatusFor(uid);
-      void fetchProgramList();
-      const target = mergedMachines?.find((m: any) => m.uid === uid);
-      if (target && loadBridgeQueueForMachine) {
-        void loadBridgeQueueForMachine(target, { silent: true });
-      }
-    }, 10000);
-    return () => clearInterval(id);
-  }, [
-    workUid,
-    mergedMachines,
-    refreshStatusFor,
-    fetchProgramList,
-    loadBridgeQueueForMachine,
-  ]);
-
   const handleSelectMachine = (uid: string) => {
     // workUid 업데이트 + 즉시 상태 조회
     if (setWorkUid) {
