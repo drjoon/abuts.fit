@@ -546,6 +546,12 @@ export async function recordMachiningCompleteForBridge(req, res) {
       bridgePath: bridgePathRaw,
     });
 
+    const meta = await resolveJobMetaFromSnapshot({
+      machineId: mid,
+      jobId,
+      bridgePath: bridgePathRaw,
+    });
+
     console.log(
       "[bridge:machining:complete] requestId resolved",
       JSON.stringify({
