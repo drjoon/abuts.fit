@@ -91,6 +91,13 @@ router.patch(
   cncMachineController.updateDummyEnabledBulk,
 );
 
+// 더미 가공 on/off (단일 장비)
+router.patch(
+  "/:machineId/dummy/enabled",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.updateDummySettings,
+);
+
 // 브리지 예약 큐 조회 (머신별)
 router.get(
   "/:machineId/bridge-queue",
