@@ -91,6 +91,7 @@ interface MachineCardProps {
   onCancelNowPlaying?: (jobId: string | undefined, e: React.MouseEvent) => void;
   onToggleAllowJobStart?: (next: boolean, e: React.MouseEvent) => void;
   onToggleDummyMachining?: (next: boolean, e: React.MouseEvent) => void;
+  onReloadBridgeQueue?: () => void;
 }
 
 const getMachineStatusChip = (status: string, isRunning: boolean) => {
@@ -145,6 +146,7 @@ export const MachineCard = (props: MachineCardProps) => {
     onCancelNowPlaying,
     onToggleAllowJobStart,
     onToggleDummyMachining,
+    onReloadBridgeQueue,
   } = props;
 
   const { token } = useAuthStore();
@@ -163,6 +165,20 @@ export const MachineCard = (props: MachineCardProps) => {
   ]);
   const [dummyExcludeHolidays, setDummyExcludeHolidays] = useState(false);
   const [dummySaving, setDummySaving] = useState(false);
+
+  const [queueAdminOpen, setQueueAdminOpen] = useState(false);
+  const [queueAdminLoading, setQueueAdminLoading] = useState(false);
+  const [queueAdminJobs, setQueueAdminJobs] = useState<
+    {
+      id: string;
+      fileName?: string;
+      originalFileName?: string;
+      source?: string;
+      createdAtUtc?: string;
+      paused?: boolean;
+      qty?: number;
+    }[]
+  >([]);
 
   useEffect(() => {
     if (!machine?.dummySettings) return;
@@ -189,6 +205,122 @@ export const MachineCard = (props: MachineCardProps) => {
       setDummyExcludeHolidays(excludeHolidays);
     }
   }, [machine?.dummySettings, machine?.uid]);
+
+  const isMockUi = machine.dummySettings?.enabled !== false;
+
+  const loadQueueAdmin = async (options?: { silent?: boolean }) => {
+    if (!token) return;
+    const uid = String(machine?.uid || "").trim();
+    if (!uid) return;
+    if (!options?.silent) setQueueAdminLoading(true);
+    try {
+      const res = await fetch(
+        `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue`,
+        {
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-cache",
+            Pragma: "no-cache",
+          },
+        },
+      );
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || body?.error || "큐 조회 실패");
+      }
+      const list: any[] = Array.isArray(body?.data) ? body.data : [];
+      setQueueAdminJobs(
+        list.map((j) => ({
+          id: String(j?.id || "").trim(),
+          fileName: j?.fileName ? String(j.fileName) : undefined,
+          originalFileName: j?.originalFileName
+            ? String(j.originalFileName)
+            : undefined,
+          source: j?.source ? String(j.source) : undefined,
+          createdAtUtc: j?.createdAtUtc ? String(j.createdAtUtc) : undefined,
+          paused: j?.paused === true,
+          qty:
+            typeof j?.qty === "number" && Number.isFinite(j.qty)
+              ? j.qty
+              : undefined,
+        })),
+      );
+      if (onReloadBridgeQueue) onReloadBridgeQueue();
+    } catch (e: any) {
+      const msg = e?.message || "큐 조회 중 오류";
+      toast({
+        title: "큐 조회 실패",
+        description: msg,
+        variant: "destructive",
+      });
+    } finally {
+      setQueueAdminLoading(false);
+    }
+  };
+
+  const deleteQueueJobAdmin = async (jobId: string) => {
+    if (!token) return;
+    const uid = String(machine?.uid || "").trim();
+    const jid = String(jobId || "").trim();
+    if (!uid || !jid) return;
+    setQueueAdminLoading(true);
+    try {
+      const res = await fetch(
+        `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/${encodeURIComponent(
+          jid,
+        )}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || body?.error || "삭제 실패");
+      }
+      toast({ title: "삭제 완료" });
+      await loadQueueAdmin({ silent: true });
+    } catch (e: any) {
+      const msg = e?.message || "삭제 중 오류";
+      toast({ title: "삭제 실패", description: msg, variant: "destructive" });
+    } finally {
+      setQueueAdminLoading(false);
+    }
+  };
+
+  const clearQueueAdmin = async () => {
+    if (!token) return;
+    const uid = String(machine?.uid || "").trim();
+    if (!uid) return;
+    const ok = window.confirm("이 장비의 큐를 모두 비울까요?");
+    if (!ok) return;
+    setQueueAdminLoading(true);
+    try {
+      const res = await fetch(
+        `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/clear`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || body?.error || "전체 삭제 실패");
+      }
+      toast({ title: "큐 비움 완료" });
+      await loadQueueAdmin({ silent: true });
+    } catch (e: any) {
+      const msg = e?.message || "전체 삭제 중 오류";
+      toast({
+        title: "큐 비움 실패",
+        description: msg,
+        variant: "destructive",
+      });
+    } finally {
+      setQueueAdminLoading(false);
+    }
+  };
   const hasReservation = !!reservationSummary;
   const validNextProgs = Array.isArray(nextProgs) ? nextProgs : [];
   const { currentSlot: nextProg } = useQueueSlots(validNextProgs);
@@ -429,6 +561,18 @@ export const MachineCard = (props: MachineCardProps) => {
       )}
       <div className="relative flex items-start justify-end gap-3 mb-4">
         <div className="flex flex-nowrap items-center justify-end gap-1.5">
+          <div className="flex items-center gap-2">
+            <div
+              className={`rounded-full px-2 py-0.5 text-[10px] font-black tracking-wide border ${
+                isMockUi
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-slate-50 text-slate-700 border-slate-200"
+              }`}
+              title={isMockUi ? "더미(모의) 가공" : "실제 가공"}
+            >
+              {isMockUi ? "MOCK" : "REAL"}
+            </div>
+          </div>
           {onUploadFiles && (
             <>
               <button
@@ -479,14 +623,25 @@ export const MachineCard = (props: MachineCardProps) => {
             <Info className="h-3.5 w-3.5" />
           </button>
           <button
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 text-[11px] font-bold shadow-sm"
-            onClick={onMaterialClick}
-            title="원소재"
-            disabled={loading || !onMaterialClick}
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm disabled:opacity-40"
+            onClick={(e) => {
+              e.stopPropagation();
+              const next = !queueAdminOpen;
+              setQueueAdminOpen(next);
+              if (next) void loadQueueAdmin();
+            }}
+            title="큐 관리"
+            disabled={loading}
           >
-            {machine.currentMaterial?.diameter
-              ? `Ø${machine.currentMaterial.diameter}`
-              : "Ø"}
+            <ShieldOff className="h-3.5 w-3.5" />
+          </button>
+          <button
+            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
+            onClick={onTempClick}
+            title={tempTooltip || "소재 정보 확인"}
+            disabled={loading}
+          >
+            <Thermometer className="h-3.5 w-3.5" />
           </button>
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
@@ -506,6 +661,77 @@ export const MachineCard = (props: MachineCardProps) => {
         </div>
       </div>
 
+      {queueAdminOpen && (
+        <div
+          className="mb-4 rounded-2xl border border-slate-200 bg-white/70 px-3 py-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[12px] font-extrabold text-slate-800">
+              큐 관리
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                disabled={queueAdminLoading}
+                onClick={() => void loadQueueAdmin()}
+              >
+                새로고침
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                disabled={queueAdminLoading}
+                onClick={() => void clearQueueAdmin()}
+              >
+                전체 비우기
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2 max-h-[160px] overflow-auto rounded-xl border border-slate-100 bg-white">
+            {queueAdminJobs.length === 0 ? (
+              <div className="px-3 py-3 text-[12px] text-slate-500">
+                비어있음
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {queueAdminJobs.map((j) => {
+                  const title =
+                    j.originalFileName || j.fileName || j.id || "(unknown)";
+                  return (
+                    <div
+                      key={j.id}
+                      className="flex items-center justify-between gap-2 px-3 py-2"
+                      title={title}
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-[12px] font-bold text-slate-800">
+                          {title}
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-slate-500">
+                          {j.source ? `source=${j.source}` : ""}
+                          {j.qty ? `  qty=${j.qty}` : ""}
+                          {j.paused ? "  paused" : ""}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        disabled={queueAdminLoading}
+                        onClick={() => void deleteQueueJobAdmin(j.id)}
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="relative h-10 -mt-1 mb-2">
         {machine.lastError ? (
           <div className="absolute inset-x-0 top-0 rounded-2xl bg-red-50 px-3 py-2 text-xs text-red-700 border border-red-200 truncate">
@@ -521,7 +747,6 @@ export const MachineCard = (props: MachineCardProps) => {
           </div>
         )}
       </div>
-
       <div className="mb-4 flex flex-col gap-3 text-sm relative">
         <div className="-mt-1">
           <div className="rounded-2xl bg-slate-50 px-3 py-2 text-[11px] font-extrabold text-slate-700 border border-slate-200">

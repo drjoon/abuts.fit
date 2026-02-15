@@ -53,6 +53,7 @@ interface CncMachineGridProps {
   onPlayManualCard?: (machineId: string, itemId: string) => void;
   playingNextMap?: Record<string, boolean>;
   nowPlayingMap?: Record<string, boolean>;
+  onReloadBridgeQueueForMachine?: (machine: Machine) => void;
 }
 
 export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
@@ -91,6 +92,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onPlayManualCard,
   playingNextMap,
   nowPlayingMap,
+  onReloadBridgeQueueForMachine,
 }) => {
   return (
     <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
@@ -217,6 +219,11 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
               e.stopPropagation();
               onOpenJobConfig(m);
             }}
+            onReloadBridgeQueue={
+              onReloadBridgeQueueForMachine
+                ? () => onReloadBridgeQueueForMachine(m)
+                : undefined
+            }
             onUploadFiles={
               onUploadFiles
                 ? (files) => {

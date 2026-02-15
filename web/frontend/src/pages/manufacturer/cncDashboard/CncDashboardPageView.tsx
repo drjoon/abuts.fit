@@ -314,6 +314,9 @@ export const CncDashboardPageView = (props: any) => {
                       setPlaylistOpen(true);
                     });
                   }}
+                  onReloadBridgeQueueForMachine={(machine) => {
+                    void loadBridgeQueueForMachine(machine, { silent: true });
+                  }}
                   onTempClick={(machine) => {
                     void openTempDetail(machine.uid);
                   }}

@@ -91,6 +91,20 @@ router.get(
   cncMachineController.getBridgeQueueForMachine,
 );
 
+// 브리지 예약 큐 단건 삭제
+router.delete(
+  "/:machineId/bridge-queue/:jobId",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.deleteBridgeQueueJob,
+);
+
+// 브리지 예약 큐 전체 삭제
+router.post(
+  "/:machineId/bridge-queue/clear",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.clearBridgeQueueForMachine,
+);
+
 // 활성 프로그램 조회 (브리지 경유)
 router.get(
   "/:machineId/programs/active",
