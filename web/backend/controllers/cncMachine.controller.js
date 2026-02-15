@@ -47,6 +47,7 @@ import {
   getDummySettingsForBridge,
   updateDummyLastRunKeyForBridge,
   updateDummySettings,
+  updateDummyEnabledBulk,
 } from "./cncMachine/dummy.js";
 import { initializeMachines } from "./cncMachine/dev.js";
 import {
@@ -99,5 +100,6 @@ export {
   scheduleMaterialChange,
   cancelScheduledMaterialChange,
   updateDummySettings,
+  updateDummyEnabledBulk,
   initializeMachines,
 };

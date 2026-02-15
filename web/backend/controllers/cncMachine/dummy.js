@@ -40,6 +40,42 @@ export async function getDummySettingsForBridge(req, res) {
   }
 }
 
+export async function updateDummyEnabledBulk(req, res) {
+  try {
+    const { enabled } = req.body || {};
+    const enabledProvided = enabled === true || enabled === false;
+    const nextEnabled = enabledProvided ? enabled === true : true;
+
+    await CncMachine.updateMany(
+      { status: "active" },
+      {
+        $set: {
+          "dummySettings.enabled": nextEnabled,
+        },
+      },
+    );
+
+    const machines = await CncMachine.find({ status: "active" })
+      .sort({ machineId: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: machines.map((m) => ({
+        machineId: m.machineId,
+        dummySettings: m.dummySettings || null,
+      })),
+    });
+  } catch (error) {
+    console.error("Error in updateDummyEnabledBulk:", error);
+    return res.status(500).json({
+      success: false,
+      message: "더미 가공 설정 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function updateDummyLastRunKeyForBridge(req, res) {
   try {
     const { machineId } = req.params;
@@ -95,7 +131,9 @@ export async function updateDummySettings(req, res) {
     const existingDummy = machine.dummySettings || {};
 
     const enabledProvided = enabled === true || enabled === false;
-    const nextEnabled = enabledProvided ? enabled === true : existingDummy.enabled !== false;
+    const nextEnabled = enabledProvided
+      ? enabled === true
+      : existingDummy.enabled !== false;
 
     const nextProgram =
       typeof programName === "string"
@@ -122,7 +160,9 @@ export async function updateDummySettings(req, res) {
     }
 
     const nextExcludeHolidays =
-      typeof excludeHolidays === "boolean" ? excludeHolidays : Boolean(existingDummy.excludeHolidays);
+      typeof excludeHolidays === "boolean"
+        ? excludeHolidays
+        : Boolean(existingDummy.excludeHolidays);
 
     machine.dummySettings = {
       enabled: nextEnabled,

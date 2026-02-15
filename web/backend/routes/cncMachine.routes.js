@@ -84,6 +84,13 @@ router.get(
   cncMachineController.getMachines,
 );
 
+// 더미 가공 전체 on/off (제조사, 관리자)
+router.patch(
+  "/dummy/enabled",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.updateDummyEnabledBulk,
+);
+
 // 브리지 예약 큐 조회 (머신별)
 router.get(
   "/:machineId/bridge-queue",

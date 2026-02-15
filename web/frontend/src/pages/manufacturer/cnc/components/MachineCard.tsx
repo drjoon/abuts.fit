@@ -219,21 +219,21 @@ export const MachineCard = (props: MachineCardProps) => {
           headers: { Authorization: `Bearer ${token}` },
         });
         const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) return;
+        if (!res.ok || body?.success === false) {
+          return;
+        }
         const enabled = body?.data?.mockCncMachiningEnabled;
         if (enabled === true) setIsMockFromBackend(true);
         else if (enabled === false) setIsMockFromBackend(false);
       } catch {
-        // ignore
+        // keep previous state on failure
       }
     })();
   }, [token]);
 
-  const isDummyEnabled =
-    isMockFromBackend != null
-      ? isMockFromBackend
-      : machine.dummySettings?.enabled !== false;
-  const isMockUi = isDummyEnabled;
+  const badgeIsMock = isMockFromBackend === true;
+  const isDummyEnabled = machine.dummySettings?.enabled !== false;
+  const isMockUi = badgeIsMock;
 
   const loadQueueAdmin = async (options?: { silent?: boolean }) => {
     if (!token) return;
