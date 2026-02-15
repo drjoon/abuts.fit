@@ -96,7 +96,7 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/programs?headType=1&slotNo=10
 
 `POST /api/cnc/machines/{machineId}/smart/upload`
 
-목적: 현재 장비 상태를 보고 `O4000/O4001` 중 안전한 슬롯을 자동 선택한 뒤 업로드한다.
+목적: `O4000` 슬롯에 NC 프로그램을 업로드한다.
 
 **이중 응답 방식:**
 
@@ -178,9 +178,7 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/2285bef76c6b4d2da03ab53c
 
 동작:
 
-- 활성 프로그램(`/programs/active`) 슬롯이 4000/4001이면 그 슬롯은 보호(삭제/덮어쓰기 금지)하고, 반대 슬롯을 선택
-- 활성 슬롯이 4000/4001이 아니면 기본적으로 4000을 선택
-- NC 본문을 `%`로 감싸고, 2행 `O####`를 선택된 슬롯(`O4000`/`O4001`)로 강제
+- NC 본문을 `%`로 감싸고, 2행 `O####`를 `O4000`으로 강제
 
 ### 2) 스마트 다운로드 (이중 응답 방식)
 
@@ -254,79 +252,6 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/188fbce9b7224c1886a02370
 }
 ```
 
-### 3) 스마트 replace (대기 큐 교체)
-
-`POST /api/cnc/machines/{machineId}/smart/replace`
-
-목적: 현재 실행 중인 작업은 유지하고, **대기 큐를 지정된 paths로 교체**한다.
-
-```bash
- curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/replace" \
- -H "Content-Type: application/json" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"paths":["M5_20260212-MEYSHAXP-47_rc28sni0.nc"],"uploadIfMissing":true}'
-```
-
-### 2) 스마트 enqueue
-
-`POST /api/cnc/machines/{machineId}/smart/enqueue`
-
-목적: 연속가공할 프로그램 목록을 큐에 넣는다. (가공 시작은 별도 `/smart/start`)
-
-```bash
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/enqueue" \
- -H "Content-Type: application/json" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"paths":["M5_20260212-MEYSHAXP-47_rc28sni0.nc"],
- "uploadIfMissing":true,
- "maxWaitSeconds":1800}'
-```
-
-### 3) 스마트 start
-
-`POST /api/cnc/machines/{machineId}/smart/start`
-
-목적: 큐에 작업이 있으면 워커를 시작하고 자동으로 연속 가공한다.
-
-주의:
-
-- 큐가 비어있으면 `409`를 반환하고 종료한다.
-- 사이클타임 절감: 가공 중 다음 슬롯에 선업로드(Preload) + 업로드 완료 확인을 수행한다.
-
-```bash
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/start" \
-  -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
-  -H "Content-Length: 0"
-```
-
-### 4) 스마트 dequeue
-
-`POST /api/cnc/machines/{machineId}/smart/dequeue`
-
-목적: 큐에서 작업을 제거한다.
-
-주의:
-
-- 가공중에도 dequeue 가능
-- 실행중 작업은 dequeue 불가(409)
-
-```bash
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/dequeue" \
- -H "Content-Type: application/json" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"jobId":"<jobId>"}'
-```
-
-### 5) 스마트 status
-
-`GET /api/cnc/machines/{machineId}/smart/status`
-
-목적: 가공 진행/종료 상태, 경과 시간, 에러/알람 확인(진단용)
-
-```bash
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/smart/status" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
-```
 
 # 프로그램 목록 (메인)
 
@@ -338,27 +263,3 @@ curl "http://1.217.31.227:8002/api/cnc/machines/M4/programs?headType=1" \
 메인: headType=1
 서브: headType=2
 ````
-
-## 테스트
-
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/enqueue" \
- -H "Content-Type: application/json" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -d '{"headType":1,"paths":["M5_20260212-MEYSHAXP-47_rc28sni0.nc"],"uploadIfMissing":true,"maxWaitSeconds":1800}'
-
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/smart/status" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
-
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/4f2a9849adda4a348643ac99c59ceddf" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
-
-# queued가 1이어야 합니다.
-
-curl -X POST "http://1.217.31.227:8002/api/cnc/machines/M5/smart/start" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg" \
- -H "Content-Length: 0"
-
-curl "http://1.217.31.227:8002/api/cnc/machines/M5/jobs/39c27d77cdef42a4a54eeae75084c693" \
- -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"
-
- curl "http://1.217.31.227:8002/api/cnc/machines/M5/alarms?headType=1" -H "X-Bridge-Secret: t1ZYB4ELMWBKHDuyyUgnx4HdyRg"

@@ -758,79 +758,33 @@ export function useCncDashboardQueues({
       setPlayingNextMap((prev) => ({ ...prev, [uid]: true }));
 
       try {
-        // 1) smart/replace로 전체 큐 설정 (연속 가공)
-        const allPaths = (reservationJobsMap[uid] || [])
-          .map(
-            (j: any) =>
-              j?.bridgePath ||
-              j?.bridge_store_path ||
-              j?.bridgeStorePath ||
-              j?.filePath ||
-              j?.path ||
-              j?.name,
-          )
-          .map((p: any) => String(p || "").trim())
-          .filter((p: string) => !!p);
+        // bridge-queue의 order를 조정하고, 첫 job을 unpause 하여(auto-start 허용) 연속 가공 워커가 시작하도록 한다.
+        const jobs = reservationJobsMap[uid] || [];
+        const firstId = String(jobs?.[0]?.id || "").trim();
+        const rest = jobs.slice(1);
+        const order = [
+          firstId,
+          ...rest.map((j) => String(j?.id || "").trim()).filter(Boolean),
+        ].filter(Boolean);
+        if (!firstId) throw new Error("Now Playing 작업이 없습니다.");
 
-        if (!allPaths.includes(String(path).trim())) {
-          allPaths.unshift(String(path).trim());
-        }
-        const replaceRes = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/replace`,
+        const batchRes = await apiFetch({
+          path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/batch`,
           method: "POST",
           token,
-          jsonBody: { headType: 1, paths: allPaths },
+          jsonBody: {
+            order,
+            // 첫 작업을 재생 상태로 전환 (allowAutoStart 추론: paused=false)
+            pauseUpdates: [{ jobId: firstId, paused: false }],
+          },
         });
-        const replaceBody: any = replaceRes.data ?? {};
-        if (!replaceRes.ok || replaceBody?.success === false) {
+        const batchBody: any = batchRes.data ?? {};
+        if (!batchRes.ok || batchBody?.success === false) {
           throw new Error(
-            replaceBody?.message || replaceBody?.error || "큐 교체 실패",
+            batchBody?.message ||
+              batchBody?.error ||
+              "브리지 예약 큐 반영에 실패했습니다.",
           );
-        }
-
-        // 2) 워커 시작
-        const startRes = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/start`,
-          method: "POST",
-          token,
-        });
-        const startBody: any = startRes.data ?? {};
-        if (startRes.status === 409) {
-          throw new Error("큐가 비어 있습니다.");
-        }
-        if (!startRes.ok || startBody?.success === false) {
-          throw new Error(
-            startBody?.message || startBody?.error || "가공 시작 실패",
-          );
-        }
-
-        // 이중 응답 처리
-        const playJobId = startBody?.jobId;
-        if (startRes.status === 202 && playJobId) {
-          let jobCompleted = false;
-          for (let i = 0; i < 30; i += 1) {
-            try {
-              const jobRes = await apiFetch({
-                path: `/api/cnc-machines/${encodeURIComponent(uid)}/jobs/${encodeURIComponent(playJobId)}`,
-                method: "GET",
-                token,
-              });
-              const jobBody: any = jobRes.data ?? {};
-              if (jobRes.ok && jobBody?.status === "COMPLETED") {
-                jobCompleted = true;
-                break;
-              }
-              if (jobRes.ok && jobBody?.status === "FAILED") {
-                throw new Error(jobBody?.result?.message || "가공 시작 실패");
-              }
-            } catch (e: any) {
-              if (i === 29) throw e;
-            }
-            await new Promise((r) => setTimeout(r, 500));
-          }
-          if (!jobCompleted) {
-            throw new Error("가공 시작 결과 확인 타임아웃");
-          }
         }
 
         // Next Up → Now Playing 반영: 첫 작업 제거 후 재조회
@@ -1094,49 +1048,25 @@ export function useCncDashboardQueues({
       // nowPlayingMap은 WS(started/tick) 이벤트로 켜진다.
 
       try {
-        // 1) smart/replace로 현재 파일 큐 설정 (단건 replace 금지: 연속 가공 큐가 1개로 덮여서 다음 작업이 사라짐)
-        const allPaths = (reservationJobsMap[uid] || [])
-          .map(
-            (j: any) =>
-              j?.bridgePath ||
-              j?.bridge_store_path ||
-              j?.bridgeStorePath ||
-              j?.filePath ||
-              j?.path ||
-              j?.name,
-          )
-          .map((p: any) => String(p || "").trim())
-          .filter((p: string) => !!p);
+        // bridge-queue에서 현재 Now Playing(job[0])을 unpause 하여(auto-start 허용) 연속 가공 워커가 시작하도록 한다.
+        const jobs = reservationJobsMap[uid] || [];
+        const firstId = String(jobs?.[0]?.id || "").trim();
+        if (!firstId) throw new Error("Now Playing 작업이 없습니다.");
 
-        if (!allPaths.includes(String(path).trim())) {
-          allPaths.unshift(String(path).trim());
-        }
-        const replaceRes = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/replace`,
+        const batchRes = await apiFetch({
+          path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/batch`,
           method: "POST",
           token,
-          jsonBody: { headType: 1, paths: allPaths },
+          jsonBody: {
+            pauseUpdates: [{ jobId: firstId, paused: false }],
+          },
         });
-        const replaceBody: any = replaceRes.data ?? {};
-        if (!replaceRes.ok || replaceBody?.success === false) {
+        const batchBody: any = batchRes.data ?? {};
+        if (!batchRes.ok || batchBody?.success === false) {
           throw new Error(
-            replaceBody?.message || replaceBody?.error || "큐 교체 실패",
-          );
-        }
-
-        // 2) smart/start로 가공 시작
-        const startRes = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/start`,
-          method: "POST",
-          token,
-        });
-        const startBody: any = startRes.data ?? {};
-        if (startRes.status === 409) {
-          throw new Error("큐가 비어 있습니다.");
-        }
-        if (!startRes.ok || startBody?.success === false) {
-          throw new Error(
-            startBody?.message || startBody?.error || "가공 시작 실패",
+            batchBody?.message ||
+              batchBody?.error ||
+              "브리지 예약 큐 반영에 실패했습니다.",
           );
         }
 
@@ -1144,52 +1074,6 @@ export function useCncDashboardQueues({
           title: "가공 시작",
           description: `${nowJob.name || path} 가공을 시작합니다.`,
         });
-
-        // 3) WebSocket으로 가공 완료 알림 대기
-        const jobId = startBody?.jobId;
-        if (jobId) {
-          // 백엔드가 폴링하고 완료 시 WebSocket으로 알림
-          subscribeCncMachining(uid, jobId);
-
-          // 완료 이벤트 리스너
-          const unsubscribeCompleted = onCncMachiningCompleted((data) => {
-            if (data.machineId === uid && data.jobId === jobId) {
-              handleMachiningCompleted(uid);
-              setMachiningElapsedSecondsMap((prev) => {
-                const next = { ...prev };
-                delete next[uid];
-                return next;
-              });
-              unsubscribeCompleted();
-              unsubscribeTimeout();
-              unsubscribeCncMachining(uid, jobId);
-            }
-          });
-
-          // 타임아웃 이벤트 리스너
-          const unsubscribeTimeout = onCncMachiningTimeout((data) => {
-            if (data.machineId === uid && data.jobId === jobId) {
-              toast({
-                title: "폴링 타임아웃",
-                description: "20분 내 가공 완료를 확인하지 못했습니다.",
-                variant: "destructive",
-              });
-              setNowPlayingMap((prev) => {
-                const next = { ...prev };
-                delete next[uid];
-                return next;
-              });
-              setMachiningElapsedSecondsMap((prev) => {
-                const next = { ...prev };
-                delete next[uid];
-                return next;
-              });
-              unsubscribeCompleted();
-              unsubscribeTimeout();
-              unsubscribeCncMachining(uid, jobId);
-            }
-          });
-        }
       } catch (e: any) {
         const msg = e?.message ?? "가공 시작 요청 중 오류";
         setError(msg);

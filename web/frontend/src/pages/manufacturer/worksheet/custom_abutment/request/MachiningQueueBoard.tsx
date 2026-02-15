@@ -894,38 +894,27 @@ export const MachiningQueueBoard = ({
           throw new Error("NC 파일 경로가 없어 시작할 수 없습니다.");
         }
 
-        const allPaths = machiningQueueAll
-          .map((q) => String(q?.ncFile?.filePath || "").trim())
+        const allIds = machiningQueueAll
+          .map((q) => String((q as any)?.id || (q as any)?._id || "").trim())
           .filter(Boolean);
-        if (!allPaths.includes(bridgePath)) {
-          allPaths.unshift(bridgePath);
-        }
+        const firstId = allIds[0] || "";
+        if (!firstId) throw new Error("큐 작업 id가 없어 시작할 수 없습니다.");
 
-        const replaceRes = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/replace`,
+        const batchRes = await apiFetch({
+          path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/batch`,
           method: "POST",
           token,
-          jsonBody: { headType: 1, paths: allPaths },
+          jsonBody: {
+            order: allIds,
+            pauseUpdates: [{ jobId: firstId, paused: false }],
+          },
         });
-        const replaceBody: any = replaceRes.data ?? {};
-        if (!replaceRes.ok || replaceBody?.success === false) {
+        const batchBody: any = batchRes.data ?? {};
+        if (!batchRes.ok || batchBody?.success === false) {
           throw new Error(
-            replaceBody?.message ||
-              replaceBody?.error ||
-              "smart replace failed",
-          );
-        }
-
-        const startRes = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/smart/start`,
-          method: "POST",
-          token,
-          jsonBody: {},
-        });
-        const startBody: any = startRes.data ?? {};
-        if (!startRes.ok || startBody?.success === false) {
-          throw new Error(
-            startBody?.message || startBody?.error || "smart start failed",
+            batchBody?.message ||
+              batchBody?.error ||
+              "브리지 예약 큐 반영에 실패했습니다.",
           );
         }
 

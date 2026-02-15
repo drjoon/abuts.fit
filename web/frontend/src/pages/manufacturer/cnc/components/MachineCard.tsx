@@ -1147,16 +1147,29 @@ export const MachineCard = (props: MachineCardProps) => {
                     }
 
                     if (isDummyEnabled) {
-                      const dummyPath = `dummy/${encodeURIComponent(
-                        machine.uid,
-                      )}/${encodeURIComponent(
-                        dummyProgram || `O${String(progNo).padStart(4, "0")}`,
-                      )}-${Date.now()}.nc`;
+                      // smart/start 없이, bridge-queue에서 첫 작업을 unpause하여 연속 가공이 시작되도록 한다.
+                      const qRes = await fetch(
+                        `/api/cnc-machines/${encodeURIComponent(machine.uid)}/bridge-queue`,
+                        {
+                          method: "GET",
+                          headers: {
+                            Authorization: `Bearer ${token}`,
+                            "Cache-Control": "no-cache",
+                            Pragma: "no-cache",
+                          },
+                        },
+                      );
+                      const qBody: any = await qRes.json().catch(() => ({}));
+                      const list: any[] = Array.isArray(qBody?.data)
+                        ? qBody.data
+                        : [];
+                      const firstId = String(list?.[0]?.id || "").trim();
+                      if (!firstId) {
+                        throw new Error("브리지 예약 큐에 작업이 없습니다.");
+                      }
 
-                      const replaceRes = await fetch(
-                        `/api/cnc-machines/${encodeURIComponent(
-                          machine.uid,
-                        )}/smart/replace`,
+                      const batchRes = await fetch(
+                        `/api/cnc-machines/${encodeURIComponent(machine.uid)}/bridge-queue/batch`,
                         {
                           method: "POST",
                           headers: {
@@ -1164,43 +1177,18 @@ export const MachineCard = (props: MachineCardProps) => {
                             Authorization: `Bearer ${token}`,
                           },
                           body: JSON.stringify({
-                            headType: 1,
-                            paths: [dummyPath],
+                            pauseUpdates: [{ jobId: firstId, paused: false }],
                           }),
                         },
                       );
-                      const replaceBody: any = await replaceRes
+                      const batchBody: any = await batchRes
                         .json()
                         .catch(() => ({}));
-                      if (!replaceRes.ok || replaceBody?.success === false) {
+                      if (!batchRes.ok || batchBody?.success === false) {
                         throw new Error(
-                          replaceBody?.message ||
-                            replaceBody?.error ||
-                            "더미 큐 교체(smart/replace)에 실패했습니다.",
-                        );
-                      }
-
-                      const startRes = await fetch(
-                        `/api/cnc-machines/${encodeURIComponent(
-                          machine.uid,
-                        )}/smart/start`,
-                        {
-                          method: "POST",
-                          headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${token}`,
-                          },
-                          body: JSON.stringify({}),
-                        },
-                      );
-                      const startBody: any = await startRes
-                        .json()
-                        .catch(() => ({}));
-                      if (!startRes.ok || startBody?.success === false) {
-                        throw new Error(
-                          startBody?.message ||
-                            startBody?.error ||
-                            "더미 smart/start에 실패했습니다.",
+                          batchBody?.message ||
+                            batchBody?.error ||
+                            "브리지 예약 큐 반영에 실패했습니다.",
                         );
                       }
                     } else {

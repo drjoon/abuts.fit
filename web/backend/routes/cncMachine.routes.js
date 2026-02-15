@@ -146,36 +146,6 @@ router.post(
   cncMachineController.smartUpload,
 );
 
-router.post(
-  "/:machineId/smart/enqueue",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.smartEnqueue,
-);
-
-router.post(
-  "/:machineId/smart/dequeue",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.smartDequeue,
-);
-
-router.post(
-  "/:machineId/smart/replace",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.smartReplace,
-);
-
-router.post(
-  "/:machineId/smart/start",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.smartStart,
-);
-
-router.get(
-  "/:machineId/smart/status",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.smartStatus,
-);
-
 // 작업 결과 조회 (이중 응답 방식)
 router.get(
   "/:machineId/jobs/:jobId",

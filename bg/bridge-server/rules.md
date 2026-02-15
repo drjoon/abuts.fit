@@ -132,14 +132,14 @@
 
 ## 4. 운영 가이드라인
 
-### 4.1 스마트(Smart) 업로드/큐/가공 시작 엔드포인트
+### 4.1 스마트(Smart) 업로드/다운로드 엔드포인트
 
 #### 아키텍처 원칙
 
-- **단일 파일 처리**: 브리지는 `smart/start` 호출 시 **단 1개 파일만 처리**한다.
-- **연속 가공 관리**: 연속 가공은 **백엔드 DB에서 관리**한다.
-  - 프론트: play/stop/upload/delete 등 행위 → 백엔드 DB 업데이트
-  - 브리지: 가공 완료 감시 (2초 간격 폴링) → 백엔드에 콜백 → 다음 작업 자동 시작
+- **스마트 API 축소**: 브리지의 smart API는 `smart/upload`, `smart/download`만 제공한다.
+- **연속 가공 관리**: 연속 가공은 **백엔드 DB(SSOT) 큐 + 브리지 CncContinuousMachining**으로만 처리한다.
+  - 프론트: 큐 reorder/pause 등 행위 → 백엔드 DB 업데이트
+  - 브리지: DB 큐를 받아 `O4000`에 업로드/활성화(→조건부 Start) + 완료 감시/consume
   - 백엔드: 브리지 콜백 수신 → WebSocket으로 프론트 알림
   - 프론트: WebSocket 알림 수신 → 현재 작업 제거
 - **폴링 책임**: 오직 **브리지만 폴링**한다. 백엔드/프론트는 폴링하지 않는다.
@@ -148,24 +148,21 @@
 
 - `POST /api/cnc/machines/{machineId}/smart/upload`
 - 입력: `path` (bridge-store 상대 경로)
-- 동작: **활성 프로그램 슬롯(`/programs/active`)만 확인** 후 `O4000/O4001` 중 안전한 슬롯을 선택하고, 본문 2행의 `O####`를 해당 슬롯으로 강제한 뒤 업로드한다.
+- 동작: `O4000`에 업로드하고, 본문 2행의 `O####`를 `O4000`으로 강제한 뒤 업로드한다.
 - **업로드 크기 제한**: 최대 500KB까지 업로드 가능
 - 업로드 재시도(EW_BUSY):
   - `SetMachineProgramInfo`/`UpdateProgram`에서 `EW_BUSY(-1)`이면 **최대 20초까지 1초 간격**으로 재시도한다.
 - 슬롯 정리(메모리 확보):
-  - 슬롯 `4000/4001` 중 **활성 프로그램 슬롯은 보호(삭제 금지)** 한다.
-  - 보호 슬롯이 아닌 쪽은 **업로드 전에 무조건 삭제**하여 대용량 업로드 실패(`EW_DATA(5)`/`EW_BUSY(-1)`) 확률을 낮춘다.
-  - 보호 슬롯이 `4000`이면 업로드는 `4001`, 보호 슬롯이 `4001`이면 업로드는 `4000`으로 강제한다.
-- Busy 상태 업로드:
-  - 가공(Busy) 중이라도 AUTO 모드에서 비활성 슬롯으로 업로드 가능하므로 모드 전환 없이 업로드한다.
-  - 단, Alarm 상태면 중단.
+  - 업로드 전에 `O4000` 슬롯을 삭제한 뒤 업로드한다.
+- Busy/Alarm 상태:
+  - Alarm 상태면 중단한다.
 - 업로드 완료 확인:
   - 소형(<=90KB): `GetMachineProgramData`로 길이 비교
   - 대형(>90KB): `GetMachineProgramData` readback이 잘릴 수 있어 ProgramList 존재 여부만 확인
     - **최대 20초 / 1초 간격 폴링**
 - 로깅/응답:
   - 브리지 콘솔 로그와 API 응답(`logs`)에 아래 정보를 포함한다.
-    - `activeSlot`, `protectedSlot`, `deletedSlots`, `uploadSlot`, `fileBytes`
+    - `fileBytes`, `slotNo`
     - 업로드 실패 시 `uploadFailed usedMode=... err=...`
 
 #### 프로그램 다운로드 제한사항
@@ -176,53 +173,23 @@
 - 다운로드 API 응답에 `warning` 필드가 있으면 truncated 상태이므로 주의가 필요합니다.
 - **권장**: 대용량 프로그램은 원본 파일을 별도로 보관하고, CNC에서 다운로드하지 않습니다.
 
-#### 스마트 enqueue
+#### 스마트 업로드
 
-- `POST /api/cnc/machines/{machineId}/smart/enqueue`
-- 입력: `paths[]` (bridge-store 상대 경로 배열)
-- 동작: 큐에 작업을 추가만 한다. (즉시 가공 시작하지 않음)
+- `POST /api/cnc/machines/{machineId}/smart/upload`
+- 입력: `path` (bridge-store 상대 경로)
+- 동작: `O4000`에 업로드하고 2행 `O####`를 `O4000`으로 강제한다.
 
-#### 스마트 replace
+#### 스마트 다운로드
 
-- `POST /api/cnc/machines/{machineId}/smart/replace`
-- 입력: `paths[]` (bridge-store 상대 경로 배열, **단 1개만 사용**)
-- 동작: 현재 실행 중인 작업(`current`)은 유지하고, **대기 큐를 지정된 paths로 교체**한다.
-- 용도: 프론트에서 `play` 버튼 클릭 시, 선택된 1개 파일로 큐를 교체한 뒤 `/smart/start`로 즉시 시작하기 위한 용도.
-- **주의**: 경로 배열은 1개만 포함해야 함. 브리지는 단일 파일만 처리.
-
-#### 스마트 dequeue
-
-- `POST /api/cnc/machines/{machineId}/smart/dequeue`
-- 입력: `jobId`(선택) 없으면 큐의 첫 작업을 제거
-- 동작: 큐에서 작업을 제거한다. (실행 중인 작업은 제거 불가)
-
-#### 스마트 가공 시작
-
-- `POST /api/cnc/machines/{machineId}/smart/start`
-- 동작: 큐에 작업이 있으면 워커를 시작하고 **단일 파일만 처리**한다.
-- 응답: 202 Accepted + `jobId` 반환 (비동기 처리)
-- **연속 가공 흐름** (브리지 주도):
-  1. 프론트: `smart/replace` + `smart/start` 호출
-  2. 브리지: 단일 파일 가공 시작
-  3. 브리지: 가공 완료 감시 (2초 간격 폴링)
-  4. 브리지: 가공 완료 → 백엔드에 콜백 (`POST /api/cnc-machines/{machineId}/smart/machining-completed`)
-  5. 백엔드: 콜백 수신 → WebSocket으로 프론트 알림
-  6. 프론트: 완료 알림 수신 → 현재 작업 제거
-  7. 브리지: 백엔드 DB에서 다음 작업 조회 → `smart/replace` + `smart/start` 자동 호출
-  8. (반복)
-
-#### 스마트 상태 조회
-
-- `GET /api/cnc/machines/{machineId}/smart/status`
-- 응답: `{ workerRunning, queued, current }`
-- 용도: 가공 진행/종료 상태, 경과 시간, 에러/알람 확인(진단용)
-- **폴링 기준**: `workerRunning === false && current === null` → 가공 완료
+- `POST /api/cnc/machines/{machineId}/smart/download`
+- 입력: `programNo`, `path`
+- 동작: 장비에서 프로그램을 다운로드하고 파일로 저장한다.
 
 ### 4.2 헬스체크
 
 - 브리지 서비스의 생존 여부와 각 장비의 연결 상태를 주기적으로 확인합니다.
 
-## 5. 연속 가공 시스템 (O3000↔O3001 토글)
+## 5. 연속 가공 시스템
 
 ### 5.1 개요
 
@@ -233,7 +200,7 @@
 1. **단일 슬롯**: 항상 O4000만 사용
 2. **작업 시작 절차**: Idle 상태에서 O4000 삭제 → 업로드 → 활성화 → (조건부) Start
 3. **슬롯 폴링 금지**: 활성 슬롯 확인을 위한 `GetMachineActivateProgInfo` 폴링을 하지 않는다.
-4. **슬롯 토글 금지**: O4001을 사용한 토글/선업로드 로직을 구현하지 않는다.
+4. **슬롯 토글 금지**: 슬롯 토글/선업로드 로직을 구현하지 않는다.
 
 ### 5.3 주요 프로세스
 

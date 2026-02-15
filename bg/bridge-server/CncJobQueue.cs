@@ -66,7 +66,7 @@ namespace HiLinkBridgeWebApi48
             return Queues.GetOrAdd(machineId ?? string.Empty, _ => new LinkedList<CncJobItem>());
         }
 
-        public static CncJobItem EnqueueFileBack(string machineId, string fileName, string requestId, string originalFileName = null)
+        public static CncJobItem EnqueueFileBack(string machineId, string fileName, string requestId, string originalFileName = null, bool allowAutoStart = true)
         {
             var job = new CncJobItem
             {
@@ -78,7 +78,7 @@ namespace HiLinkBridgeWebApi48
                 fileName = fileName,
                 originalFileName = string.IsNullOrWhiteSpace(originalFileName) ? fileName : originalFileName,
                 requestId = requestId,
-                allowAutoStart = true,
+                allowAutoStart = allowAutoStart,
                 priority = 2,
                 createdAtUtc = DateTime.UtcNow,
                 source = "cam_approve"
@@ -95,7 +95,7 @@ namespace HiLinkBridgeWebApi48
 
 
         // 파일을 '끼워넣기': 현재 진행 중 작업이 끝나면 바로 다음으로 실행되도록 큐의 앞에 넣는다.
-        public static CncJobItem EnqueueFileFront(string machineId, string fileName, string requestId, string originalFileName = null)
+        public static CncJobItem EnqueueFileFront(string machineId, string fileName, string requestId, string originalFileName = null, bool allowAutoStart = true)
         {
             var job = new CncJobItem
             {
@@ -107,7 +107,7 @@ namespace HiLinkBridgeWebApi48
                 fileName = fileName,
                 originalFileName = string.IsNullOrWhiteSpace(originalFileName) ? fileName : originalFileName,
                 requestId = requestId,
-                allowAutoStart = true,
+                allowAutoStart = allowAutoStart,
                 priority = 2,
                 createdAtUtc = DateTime.UtcNow,
                 source = "bridge_insert"

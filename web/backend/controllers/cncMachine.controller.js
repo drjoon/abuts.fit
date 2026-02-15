@@ -27,11 +27,6 @@ import {
   getJobResult,
   uploadAndEnqueueContinuousForMachine,
   smartUpload,
-  smartEnqueue,
-  smartDequeue,
-  smartReplace,
-  smartStart,
-  smartStatus,
 } from "./cncMachine/continuous.js";
 import {
   applyProductionQueueBatchForMachine,
@@ -81,11 +76,6 @@ export {
   createCncDirectDownloadPresign,
   getBridgeContinuousState,
   smartUpload,
-  smartEnqueue,
-  smartDequeue,
-  smartReplace,
-  smartStart,
-  smartStatus,
   getJobResult,
   deleteBridgeQueueJob,
   reorderBridgeQueueForMachine,

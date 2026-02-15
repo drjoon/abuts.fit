@@ -147,6 +147,19 @@ export async function reorderBridgeQueueForMachine(req, res) {
       ? orderRaw.map((v) => String(v || "").trim()).filter((v) => !!v)
       : [];
 
+    const pauseRaw = req.body?.pauseUpdates;
+    const pauseUpdates = Array.isArray(pauseRaw)
+      ? pauseRaw
+          .map((u) => {
+            if (!u) return null;
+            const jobId = String(u.jobId || u.id || "").trim();
+            if (!jobId) return null;
+            const paused = u.paused === true;
+            return { jobId, paused };
+          })
+          .filter(Boolean)
+      : [];
+
     const snap = await getDbBridgeQueueSnapshot(mid);
     const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
     const idOrder =
@@ -392,6 +405,23 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
                 "Content-Type": "application/json",
               }),
               body: JSON.stringify({ qty: u.qty }),
+            });
+          } catch {
+            // ignore
+          }
+        }
+
+        for (const u of pauseUpdates) {
+          try {
+            const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/queue/${encodeURIComponent(
+              mid,
+            )}/${encodeURIComponent(u.jobId)}/pause`;
+            await fetch(url, {
+              method: "PATCH",
+              headers: withBridgeHeaders({
+                "Content-Type": "application/json",
+              }),
+              body: JSON.stringify({ paused: u.paused }),
             });
           } catch {
             // ignore
