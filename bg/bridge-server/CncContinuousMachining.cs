@@ -61,6 +61,49 @@ catch (Exception ex)
 Console.WriteLine("[CncMachining] NotifyMachiningCompleted error: {0}", ex.Message);
 }
 }
+
+private static async Task<bool> TryConsumeBackendQueueJob(string machineId, string jobId)
+{
+    try
+    {
+        var backendBase = Config.BackendBase;
+        if (string.IsNullOrEmpty(backendBase)) return false;
+        var mid = (machineId ?? string.Empty).Trim();
+        var jid = (jobId ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(mid) || string.IsNullOrEmpty(jid)) return false;
+
+        var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/queue-consume/" + Uri.EscapeDataString(mid) + "/" + Uri.EscapeDataString(jid);
+        using (var req = new HttpRequestMessage(HttpMethod.Post, url))
+        {
+            AddSecretHeader(req);
+            using (var resp = await BackendClient.SendAsync(req))
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("[CncMachining] backend queue consume failed machine={0} jobId={1} status={2} body={3}", mid, jid, (int)resp.StatusCode, body);
+                    return false;
+                }
+                try
+                {
+                    var json = JObject.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+                    if (json.Value<bool?>("success") != true)
+                    {
+                        Console.WriteLine("[CncMachining] backend queue consume success=false machine={0} jobId={1} body={2}", mid, jid, body);
+                        return false;
+                    }
+                }
+                catch { }
+                return true;
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] TryConsumeBackendQueueJob error machine={0} jobId={1} err={2}", machineId, jobId, ex.Message);
+        return false;
+    }
+}
 private static async Task NotifyMachiningFailed(CncJobItem job, string machineId, string error, List<object> alarms = null)
 {
 try
@@ -512,6 +555,9 @@ _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
 return;
 }
 // 2. Idle 상태: 새 작업 시작
+// 새로운 가공 시작 직전에는 항상 백엔드 SSOT(큐 스냅샷)로 동기화한다.
+// (가공중/awaitingStart 상태에서는 큐를 건드리지 않는다.)
+await SyncQueueFromBackend(machineId, force: true);
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
 {
@@ -523,6 +569,16 @@ if (string.Equals((nextJob.kindRaw ?? string.Empty).Trim(), "manual_file", Strin
     return;
 }
 
+// SSOT는 백엔드이므로, 실제 가공을 시작하기 전에 백엔드 큐에서 해당 job을 먼저 제거(consume)한다.
+// consume 실패 시에는 다음 루프에서 재시도한다.
+if (!await TryConsumeBackendQueueJob(machineId, nextJob.id))
+{
+    return;
+}
+
+// consume 후 다시 동기화(로컬 큐 메타/순서를 백엔드와 동일하게 유지)
+await SyncQueueFromBackend(machineId, force: true);
+
 var now = DateTime.UtcNow;
 if (!string.IsNullOrEmpty(state.LastStartFailJobId) &&
     string.Equals(state.LastStartFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase) &&
@@ -533,7 +589,6 @@ if (!string.IsNullOrEmpty(state.LastStartFailJobId) &&
 var started = await StartNewJob(machineId, state, nextJob);
 if (started)
 {
-CncJobQueue.Pop(machineId);
 lock (StateLock)
 {
 state.LastStartFailJobId = null;
@@ -544,7 +599,6 @@ state.NextStartAttemptUtc = DateTime.MinValue;
 else
 {
 // 재시도하지 않고 큐에서 제거 (관리자가 확인 후 재등록)
-CncJobQueue.Pop(machineId);
 Console.WriteLine("[CncMachining] start dropped machine={0} jobId={1} file={2}",
 machineId,
 nextJob.id,
@@ -672,18 +726,30 @@ state.ProductCountBefore = 0;
 state.SawBusy = false;
 }
 
-// 백엔드 DB 플래그(allowAutoMachining && allowJobStart)가 true일 때만 자동 Start 신호를 보낸다.
-var allowAutoStart = await ShouldAutoStartByBackendFlags(machineId);
-if (allowAutoStart)
-{
-if (!TryStartSignal(machineId, out var startErr))
-{
-Console.WriteLine("[CncMachining] start signal failed machine={0} err={1}", machineId, startErr);
-_ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", "start signal failed: " + (startErr ?? string.Empty)));
-return false;
-}
-Console.WriteLine("[CncMachining] start signal sent machine={0}", machineId);
-}
+    // 원격 가공 허용(allowJobStart/allowRemoteStart)이 true이고,
+    // 자동 가공 플래그(allowAutoMachining) + job.allowAutoStart 가 true일 때만 자동 Start 신호를 보낸다.
+    var flags = await GetMachineFlagsFromBackend(machineId);
+    var allowRemoteStart = flags != null && flags.AllowJobStart;
+    var allowAutoStart = flags != null && flags.AllowAutoMachining;
+    var jobAllowsAutoStart = job?.allowAutoStart == true;
+    if (allowRemoteStart && allowAutoStart && jobAllowsAutoStart)
+    {
+        if (!TryStartSignal(machineId, out var startErr))
+        {
+            Console.WriteLine("[CncMachining] start signal failed machine={0} err={1}", machineId, startErr);
+            _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", "start signal failed: " + (startErr ?? string.Empty)));
+            return false;
+        }
+        Console.WriteLine("[CncMachining] start signal sent machine={0}", machineId);
+    }
+    else if (allowRemoteStart && allowAutoStart && !jobAllowsAutoStart)
+    {
+        Console.WriteLine("[CncMachining] auto-start skipped (job flag false) machine={0} jobId={1}", machineId, job?.id);
+    }
+    else if (!allowRemoteStart)
+    {
+        Console.WriteLine("[CncMachining] auto-start blocked (allowRemoteStart=false) machine={0} jobId={1}", machineId, job?.id);
+    }
 
 Console.WriteLine("[CncMachining] start ready machine={0} slot=O{1}",
 machineId, state.CurrentSlot);
@@ -696,62 +762,77 @@ _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", "exception: "
 return false;
 }
 }
+}
+
+private static async Task<MachineFlags> GetMachineFlagsFromBackend(string machineId)
+{
+    try
+    {
+        var backendBase = Config.BackendBase;
+        if (string.IsNullOrEmpty(backendBase)) return null;
+        var mid = (machineId ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(mid)) return null;
+
+        MachineFlags cached;
+        lock (StateLock)
+        {
+            MachineFlagsCache.TryGetValue(mid, out cached);
+        }
+
+        if (cached != null)
+        {
+            var age = DateTime.UtcNow - cached.FetchedAtUtc;
+            if (age.TotalSeconds <= MACHINE_FLAGS_CACHE_SEC)
+            {
+                return cached;
+            }
+        }
+
+        var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/machine-flags/" + Uri.EscapeDataString(mid);
+        var req = new HttpRequestMessage(HttpMethod.Get, url);
+        AddSecretHeader(req);
+        var resp = await BackendClient.SendAsync(req);
+        var body = await resp.Content.ReadAsStringAsync();
+        if (!resp.IsSuccessStatusCode)
+        {
+            Console.WriteLine("[CncMachining] machine-flags failed machine={0} status={1} body={2}", mid, (int)resp.StatusCode, body);
+            return null;
+        }
+
+        var json = JObject.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
+        var data = json["data"] as JObject;
+        var allowAuto = data != null && data["allowAutoMachining"] != null && data["allowAutoMachining"].Type == JTokenType.Boolean
+            ? data["allowAutoMachining"].Value<bool>()
+            : false;
+        var allowJobStart = data != null && data["allowJobStart"] != null && data["allowJobStart"].Type == JTokenType.Boolean
+            ? data["allowJobStart"].Value<bool>()
+            : false;
+
+        var flags = new MachineFlags
+        {
+            AllowAutoMachining = allowAuto,
+            AllowJobStart = allowJobStart,
+            FetchedAtUtc = DateTime.UtcNow
+        };
+        lock (StateLock)
+        {
+            MachineFlagsCache[mid] = flags;
+        }
+        return flags;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("[CncMachining] GetMachineFlagsFromBackend error machine={0} err={1}", machineId, ex.Message);
+        return null;
+    }
+}
 
 private static async Task<bool> ShouldAutoStartByBackendFlags(string machineId)
 {
 try
 {
-var backendBase = Config.BackendBase;
-if (string.IsNullOrEmpty(backendBase)) return false;
-var mid = (machineId ?? string.Empty).Trim();
-if (string.IsNullOrEmpty(mid)) return false;
-
-MachineFlags cached;
-lock (StateLock)
-{
-MachineFlagsCache.TryGetValue(mid, out cached);
-}
-
-if (cached != null)
-{
-var age = DateTime.UtcNow - cached.FetchedAtUtc;
-if (age.TotalSeconds <= MACHINE_FLAGS_CACHE_SEC)
-{
-return cached.AllowAutoMachining && cached.AllowJobStart;
-}
-}
-
-var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/machine-flags/" + Uri.EscapeDataString(mid);
-var req = new HttpRequestMessage(HttpMethod.Get, url);
-AddSecretHeader(req);
-var resp = await BackendClient.SendAsync(req);
-var body = await resp.Content.ReadAsStringAsync();
-if (!resp.IsSuccessStatusCode)
-{
-Console.WriteLine("[CncMachining] machine-flags failed machine={0} status={1} body={2}", mid, (int)resp.StatusCode, body);
-return false;
-}
-
-var json = JObject.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
-var data = json["data"] as JObject;
-var allowAuto = data != null && data["allowAutoMachining"] != null && data["allowAutoMachining"].Type == JTokenType.Boolean
-? data["allowAutoMachining"].Value<bool>()
-: false;
-var allowJobStart = data != null && data["allowJobStart"] != null && data["allowJobStart"].Type == JTokenType.Boolean
-? data["allowJobStart"].Value<bool>()
-: false;
-
-lock (StateLock)
-{
-MachineFlagsCache[mid] = new MachineFlags
-{
-AllowAutoMachining = allowAuto,
-AllowJobStart = allowJobStart,
-FetchedAtUtc = DateTime.UtcNow
-};
-}
-
-return allowAuto && allowJobStart;
+var flags = await GetMachineFlagsFromBackend(machineId);
+return flags != null && flags.AllowAutoMachining;
 }
 catch (Exception ex)
 {
@@ -861,7 +942,7 @@ return (false, error);
 }
 }
 var content = File.ReadAllText(fullPath);
-// NC 파일 content 전처리: 상단에 OXXXX 헤더가 없으면 삽입
+// NC 파일 content 전처리: 상단에 OXXXX 프로그램 헤더가 없으면 삽입
 var processedContent = EnsureProgramHeader(content, slotNo);
 var info = new UpdateMachineProgramInfo
 {
@@ -955,16 +1036,7 @@ catch
 return false;
 }
 }
-private static void AddSecretHeader(HttpRequestMessage req)
-{
-var secret = Config.BridgeSharedSecret;
-if (!string.IsNullOrEmpty(secret))
-{
-req.Headers.Remove("X-Bridge-Secret");
-req.Headers.Add("X-Bridge-Secret", secret);
-}
-}
-private static async Task SyncQueueFromBackend(string machineId)
+private static async Task SyncQueueFromBackend(string machineId, bool force = false)
 {
 try
 {
@@ -973,7 +1045,7 @@ if (string.IsNullOrEmpty(mid)) return;
 var now = DateTime.UtcNow;
 lock (LastBackendSyncUtc)
 {
-if (LastBackendSyncUtc.TryGetValue(mid, out var last) && (now - last).TotalSeconds < BACKEND_SYNC_INTERVAL_SEC)
+if (!force && LastBackendSyncUtc.TryGetValue(mid, out var last) && (now - last).TotalSeconds < BACKEND_SYNC_INTERVAL_SEC)
 {
 return;
 }
@@ -1026,12 +1098,20 @@ var bridgePath = (j?["bridgePath"]?.ToString() ?? string.Empty).Trim();
 var s3Key = (j?["s3Key"]?.ToString() ?? string.Empty).Trim();
 var s3Bucket = (j?["s3Bucket"]?.ToString() ?? string.Empty).Trim();
 var requestId = (j?["requestId"]?.ToString() ?? string.Empty).Trim();
+var priority = 2;
+try
+{
+priority = j?["priority"]?.Value<int?>() ?? 2;
+}
+catch { priority = 2; }
 var paused = false;
 try
 {
 paused = j?["paused"]?.Value<bool?>() ?? false;
 }
 catch { paused = false; }
+// 백엔드 allowAutoStart가 오면 그대로 사용, 없으면 '재생 상태'(paused == false)로부터 추론하여 장비페이지 Play도 자동시작 허용
+var allowAutoStart = j?["allowAutoStart"]?.Value<bool?>() ?? (!paused);
 var qty = 1;
 try
 {
@@ -1051,9 +1131,11 @@ bridgePath = bridgePath,
 s3Key = s3Key,
 s3Bucket = s3Bucket,
 requestId = requestId,
+priority = Math.Max(1, priority),
 createdAtUtc = DateTime.UtcNow,
 source = string.IsNullOrEmpty(source) ? "backend_db" : source,
-paused = paused
+paused = paused,
+allowAutoStart = allowAutoStart,
 });
 }
 try
@@ -1322,8 +1404,8 @@ private static void AddAuthHeader(System.Net.Http.HttpRequestMessage req)
 var jwt = GetBackendJwt();
 if (!string.IsNullOrEmpty(jwt))
 {
-req.Headers.Remove("Authorization");
-req.Headers.Add("Authorization", "Bearer " + jwt);
+req.Headers.Remove("X-Bridge-Secret");
+req.Headers.Add("X-Bridge-Secret", jwt);
 }
 }
 private static readonly System.Net.Http.HttpClient Http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
@@ -1368,7 +1450,10 @@ try
             jobId = job?.id,
             requestId = job?.requestId,
             bridgePath = job?.bridgePath,
-            startedAt = DateTime.UtcNow,
+            s3Key = job?.s3Key,
+            s3Bucket = job?.s3Bucket,
+            createdAt = DateTime.UtcNow,
+            allowAutoStart = job?.allowAutoStart,
         };
         var startJson = Newtonsoft.Json.JsonConvert.SerializeObject(startPayload);
         using (var startReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, startUrl))

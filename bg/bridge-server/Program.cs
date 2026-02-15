@@ -21,7 +21,10 @@ namespace HiLinkBridgeWebApi48
             try
             {
                 var backendBaseRaw = Environment.GetEnvironmentVariable("BACKEND_BASE") ?? string.Empty;
-                var backendBase = backendBaseRaw.Trim().TrimEnd('/');
+                var backendBaseTrimmed = backendBaseRaw.Trim().TrimEnd('/');
+                var backendBase = backendBaseTrimmed.EndsWith("/api", StringComparison.OrdinalIgnoreCase)
+                    ? backendBaseTrimmed
+                    : (backendBaseTrimmed + "/api");
                 if (string.IsNullOrEmpty(backendBase))
                 {
                     Console.WriteLine("[BridgeSettings] BACKEND_BASE is empty; skip register");

@@ -1,6 +1,7 @@
 import {
   applyBridgeQueueBatchForMachine,
   clearBridgeQueueForMachine,
+  consumeBridgeQueueJobForBridge,
   deleteBridgeQueueJob,
   getBridgeQueueForMachine,
   getDbBridgeQueueSnapshotForBridge,
@@ -62,6 +63,7 @@ export {
   getDummySettingsForBridge,
   getMachineFlagsForBridge,
   getDbBridgeQueueSnapshotForBridge,
+  consumeBridgeQueueJobForBridge,
   createCncDirectDownloadPresignForBridge,
   updateDummyLastRunKeyForBridge,
   recordMachiningTickForBridge,

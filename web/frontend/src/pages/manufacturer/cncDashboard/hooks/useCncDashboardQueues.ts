@@ -1045,56 +1045,58 @@ export function useCncDashboardQueues({
       const ok = await ensureCncWriteAllowed();
       if (!ok) return;
 
-      // 알람 체크
-      try {
-        const [statusRes, alarmRes] = await Promise.all([
-          apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/status`,
-            method: "GET",
-            token,
-          }),
-          apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
-            method: "POST",
-            token,
-            jsonBody: { headType: 1 },
-          }),
-        ]);
+      // 알람 상태 확인 (mock 모드에서는 건너뜀, 실모드에서는 표시만)
+      const isMockMode =
+        machines.find((m) => m.uid === uid)?.dummySettings?.enabled !== false;
+      if (!isMockMode) {
+        try {
+          const [statusRes, alarmRes] = await Promise.all([
+            apiFetch({
+              path: `/api/machines/${encodeURIComponent(uid)}/status`,
+              method: "GET",
+              token,
+            }),
+            apiFetch({
+              path: `/api/machines/${encodeURIComponent(uid)}/alarm`,
+              method: "POST",
+              token,
+              jsonBody: { headType: 1 },
+            }),
+          ]);
 
-        const statusBody: any = statusRes.data ?? {};
-        const machineStatus = String(
-          statusBody?.status ?? statusBody?.data?.status ?? "",
-        ).trim();
-        const isAlarm =
-          machineStatus.toLowerCase() === "alarm" ||
-          machineStatus.toLowerCase().includes("alarm");
+          const statusBody: any = statusRes.data ?? {};
+          const machineStatus = String(
+            statusBody?.status ?? statusBody?.data?.status ?? "",
+          ).trim();
+          const isAlarm =
+            machineStatus.toLowerCase() === "alarm" ||
+            machineStatus.toLowerCase().includes("alarm");
 
-        const alarmBody: any = alarmRes.data ?? {};
-        const alarmData = alarmBody?.data != null ? alarmBody.data : alarmBody;
-        const alarms: any[] = Array.isArray(alarmData?.alarms)
-          ? alarmData.alarms
-          : [];
+          const alarmBody: any = alarmRes.data ?? {};
+          const alarmData =
+            alarmBody?.data != null ? alarmBody.data : alarmBody;
+          const alarms: any[] = Array.isArray(alarmData?.alarms)
+            ? alarmData.alarms
+            : [];
 
-        if (isAlarm || alarms.length > 0) {
-          const alarmText =
-            alarms.length > 0
-              ? alarms
-                  .map((a) =>
-                    a ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}` : "-",
-                  )
-                  .join(", ")
-              : "-";
-          throw new Error(`장비가 Alarm 상태입니다. (${alarmText})`);
+          if (isAlarm || alarms.length > 0) {
+            const alarmText =
+              alarms.length > 0
+                ? alarms
+                    .map((a) =>
+                      a ? `type ${a.type ?? "?"} / no ${a.no ?? "?"}` : "-",
+                    )
+                    .join(", ")
+                : "-";
+            toast({
+              title: "알람 상태",
+              description: `장비가 Alarm 상태입니다. (${alarmText})`,
+              variant: "destructive",
+            });
+          }
+        } catch (e: any) {
+          // 상태 조회 실패 시에도 차단하지 않고 진행
         }
-      } catch (e: any) {
-        const msg =
-          e?.message || "장비 상태가 Alarm이라 가공을 시작할 수 없습니다.";
-        toast({
-          title: "가공 시작 불가 (알람)",
-          description: msg,
-          variant: "destructive",
-        });
-        return;
       }
 
       // nowPlayingMap은 WS(started/tick) 이벤트로 켜진다.

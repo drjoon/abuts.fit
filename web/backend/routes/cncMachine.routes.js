@@ -31,6 +31,13 @@ router.get(
   cncMachineController.getDbBridgeQueueSnapshotForBridge,
 );
 
+router.post(
+  "/bridge/queue-consume/:machineId/:jobId",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  cncMachineController.consumeBridgeQueueJobForBridge,
+);
+
 router.get(
   "/bridge/cnc-direct/presign-download/:machineId",
   requireBridgeIpAllowlist,

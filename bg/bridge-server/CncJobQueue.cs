@@ -31,6 +31,11 @@ namespace HiLinkBridgeWebApi48
         public long? fileSize { get; set; }
         public string contentType { get; set; }
         public string requestId { get; set; }
+        // 자동 가공 신호를 보내도 되는지 (가공 페이지 업로드 등)
+        public bool allowAutoStart { get; set; }
+
+        // 큐 우선순위: 1(장비페이지) > 2(가공페이지)
+        public int priority { get; set; }
 
         // dummy job
         public int? programNo { get; set; }
@@ -73,6 +78,8 @@ namespace HiLinkBridgeWebApi48
                 fileName = fileName,
                 originalFileName = string.IsNullOrWhiteSpace(originalFileName) ? fileName : originalFileName,
                 requestId = requestId,
+                allowAutoStart = true,
+                priority = 2,
                 createdAtUtc = DateTime.UtcNow,
                 source = "cam_approve"
             };
@@ -100,6 +107,8 @@ namespace HiLinkBridgeWebApi48
                 fileName = fileName,
                 originalFileName = string.IsNullOrWhiteSpace(originalFileName) ? fileName : originalFileName,
                 requestId = requestId,
+                allowAutoStart = true,
+                priority = 2,
                 createdAtUtc = DateTime.UtcNow,
                 source = "manual_insert"
             };
@@ -185,6 +194,8 @@ namespace HiLinkBridgeWebApi48
                         s3Key = v.s3Key,
                         s3Bucket = v.s3Bucket,
                         requestId = v.requestId,
+                        allowAutoStart = v.allowAutoStart,
+                        priority = v.priority,
                         programNo = v.programNo,
                         programName = v.programName,
                         createdAtUtc = v.createdAtUtc,

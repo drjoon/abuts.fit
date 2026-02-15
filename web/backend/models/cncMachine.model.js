@@ -116,6 +116,10 @@ const cncMachineSchema = new mongoose.Schema(
           fileSize: { type: Number },
           contentType: { type: String, trim: true },
           requestId: { type: String, trim: true },
+          // 큐 우선순위: 1(장비페이지) > 2(가공페이지)
+          priority: { type: Number, default: 2 },
+          // 자동 시작 허용(장비페이지: next up play, 가공페이지: allowAutoStart=true일 때)
+          allowAutoStart: { type: Boolean, default: false },
           programNo: { type: Number },
           programName: { type: String, trim: true },
           qty: { type: Number },

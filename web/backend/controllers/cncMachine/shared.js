@@ -197,7 +197,7 @@ export async function saveBridgeQueueSnapshot(machineId, jobs) {
   const mid = String(machineId || "").trim();
   if (!mid) return null;
 
-  const safeJobs = Array.isArray(jobs)
+  const safeJobs0 = Array.isArray(jobs)
     ? jobs
         .map((j) => {
           if (!j || typeof j !== "object") return null;
@@ -219,6 +219,10 @@ export async function saveBridgeQueueSnapshot(machineId, jobs) {
             contentType:
               j.contentType != null ? String(j.contentType).trim() : "",
             requestId: j.requestId != null ? String(j.requestId).trim() : "",
+            priority:
+              typeof j.priority === "number" && Number.isFinite(j.priority)
+                ? j.priority
+                : null,
             programNo:
               typeof j.programNo === "number" && Number.isFinite(j.programNo)
                 ? j.programNo
@@ -232,10 +236,24 @@ export async function saveBridgeQueueSnapshot(machineId, jobs) {
             createdAtUtc: j.createdAtUtc ? new Date(j.createdAtUtc) : null,
             source: j.source != null ? String(j.source).trim() : "",
             paused: j.paused === true,
+            allowAutoStart:
+              j.allowAutoStart === true ||
+              ((typeof j.priority === "number" ? j.priority : null) === 1 &&
+                j.paused !== true),
           };
         })
         .filter(Boolean)
     : [];
+
+  // 우선순위(장비=1, 가공=2) 기반으로 stable ordering
+  const equipment = [];
+  const machining = [];
+  for (const j of safeJobs0) {
+    const p = typeof j?.priority === "number" ? j.priority : 2;
+    if (p === 1) equipment.push(j);
+    else machining.push(j);
+  }
+  const safeJobs = equipment.concat(machining);
 
   const now = new Date();
   const updated = await getOrCreateCncMachine(mid, {

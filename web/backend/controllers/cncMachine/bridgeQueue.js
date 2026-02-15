@@ -19,9 +19,20 @@ export async function getBridgeQueueForMachine(req, res) {
     }
 
     const snap = await getDbBridgeQueueSnapshot(mid);
+
+    const jobs0 = Array.isArray(snap.jobs) ? snap.jobs : [];
+    const equipment = [];
+    const machining = [];
+    for (const j of jobs0) {
+      const p = typeof j?.priority === "number" ? j.priority : 2;
+      if (p === 1) equipment.push(j);
+      else machining.push(j);
+    }
+    const ordered = equipment.concat(machining);
+
     return res.status(200).json({
       success: true,
-      data: snap.jobs,
+      data: ordered,
       meta: {
         source: "db",
         updatedAt: snap.updatedAt ? snap.updatedAt.toISOString() : null,
@@ -33,6 +44,47 @@ export async function getBridgeQueueForMachine(req, res) {
     return res.status(500).json({
       success: false,
       message: "브리지 예약 큐 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function consumeBridgeQueueJobForBridge(req, res) {
+  try {
+    const { machineId, jobId } = req.params;
+    const mid = String(machineId || "").trim();
+    const jid = String(jobId || "").trim();
+    if (!mid || !jid) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId and jobId are required",
+      });
+    }
+
+    const snap = await getDbBridgeQueueSnapshot(mid);
+    const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+    const removedJob = jobs.find((j) => String(j?.id || "") === jid) || null;
+    if (!removedJob) {
+      return res.status(404).json({
+        success: false,
+        message: "job not found",
+      });
+    }
+
+    const nextJobs = jobs.filter((j) => String(j?.id || "") !== jid);
+    await saveBridgeQueueSnapshot(mid, nextJobs);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        removedJob,
+      },
+    });
+  } catch (error) {
+    console.error("Error in consumeBridgeQueueJobForBridge:", error);
+    return res.status(500).json({
+      success: false,
+      message: "브리지 큐 소비 처리 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -50,9 +102,19 @@ export async function getDbBridgeQueueSnapshotForBridge(req, res) {
     }
 
     const snap = await getDbBridgeQueueSnapshot(mid);
+
+    const jobs0 = Array.isArray(snap.jobs) ? snap.jobs : [];
+    const equipment = [];
+    const machining = [];
+    for (const j of jobs0) {
+      const p = typeof j?.priority === "number" ? j.priority : 2;
+      if (p === 1) equipment.push(j);
+      else machining.push(j);
+    }
+    const ordered = equipment.concat(machining);
     return res.status(200).json({
       success: true,
-      data: snap.jobs,
+      data: ordered,
       meta: {
         source: "db",
         updatedAt: snap.updatedAt ? snap.updatedAt.toISOString() : null,
@@ -87,7 +149,8 @@ export async function reorderBridgeQueueForMachine(req, res) {
 
     const snap = await getDbBridgeQueueSnapshot(mid);
     const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
-    const idOrder = order.length > 0 ? order : jobs.map((j) => j?.id).filter(Boolean);
+    const idOrder =
+      order.length > 0 ? order : jobs.map((j) => j?.id).filter(Boolean);
 
     const jobById = new Map();
     for (const j of jobs) {
@@ -229,7 +292,9 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
-      return res.status(400).json({ success: false, message: "machineId is required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
     }
 
     const clear = req.body?.clear === true;
@@ -262,7 +327,9 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
     let jobs = clear ? [] : jobs0;
 
     if (clear && jobs0.length > 0) {
-      const targets = jobs0.filter((j) => String(j?.kind || "") === "manual_file");
+      const targets = jobs0.filter(
+        (j) => String(j?.kind || "") === "manual_file",
+      );
       for (const j of targets) {
         const p = String(j?.bridgePath || "").trim();
         if (!p) continue;
@@ -288,7 +355,9 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
     }
 
     if (!clear && removedJobs.length > 0) {
-      const targets = removedJobs.filter((j) => String(j?.kind || "") === "manual_file");
+      const targets = removedJobs.filter(
+        (j) => String(j?.kind || "") === "manual_file",
+      );
       for (const j of targets) {
         const p = String(j?.bridgePath || "").trim();
         if (!p) continue;
@@ -361,7 +430,9 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
             )}/${encodeURIComponent(u.jobId)}/qty`;
             await fetch(url, {
               method: "PATCH",
-              headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+              headers: withBridgeHeaders({
+                "Content-Type": "application/json",
+              }),
               body: JSON.stringify({ qty: u.qty }),
             });
           } catch {
