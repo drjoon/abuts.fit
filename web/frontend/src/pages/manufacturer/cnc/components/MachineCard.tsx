@@ -5,7 +5,7 @@ import {
   Settings,
   Info,
   X,
-  ShieldOff,
+  ListChecks,
   Pause,
   Play,
   Cylinder,
@@ -29,6 +29,7 @@ import {
 import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 import { useQueueSlots } from "../hooks/useQueueSlots";
 import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
 
@@ -179,6 +180,10 @@ export const MachineCard = (props: MachineCardProps) => {
       qty?: number;
     }[]
   >([]);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [isMockFromBackend, setIsMockFromBackend] = useState<boolean | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!machine?.dummySettings) return;
@@ -206,7 +211,32 @@ export const MachineCard = (props: MachineCardProps) => {
     }
   }, [machine?.dummySettings, machine?.uid]);
 
-  const isMockUi = machine.dummySettings?.enabled !== false;
+  useEffect(() => {
+    const uid = String(machine?.uid || "").trim();
+    if (!uid || !token) return;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/cnc-machines/${encodeURIComponent(uid)}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) return;
+        const enabled = body?.data?.dummySettings?.enabled;
+        setIsMockFromBackend(enabled !== false);
+      } catch {
+        // ignore
+      }
+    })();
+  }, [machine?.uid, token]);
+
+  const isDummyEnabled =
+    isMockFromBackend != null
+      ? isMockFromBackend
+      : machine.dummySettings?.enabled !== false;
+  const isMockUi = isDummyEnabled;
 
   const loadQueueAdmin = async (options?: { silent?: boolean }) => {
     if (!token) return;
@@ -293,8 +323,6 @@ export const MachineCard = (props: MachineCardProps) => {
     if (!token) return;
     const uid = String(machine?.uid || "").trim();
     if (!uid) return;
-    const ok = window.confirm("이 장비의 큐를 모두 비울까요?");
-    if (!ok) return;
     setQueueAdminLoading(true);
     try {
       const res = await fetch(
@@ -472,34 +500,40 @@ export const MachineCard = (props: MachineCardProps) => {
               {machine.name}
             </div>
             {getMachineStatusChip(String(effectiveStatus || ""), isRunningUi)}
+            <div
+              className={`rounded-full px-2 py-0.5 text-[10px] font-black tracking-wide border ${
+                isMockUi
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-slate-50 text-slate-700 border-slate-200"
+              }`}
+              title={isMockUi ? "더미(모의) 가공" : "실제 가공"}
+            >
+              {isMockUi ? "MOCK" : "REAL"}
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
             <div className="text-[11px] font-extrabold text-slate-700">
-              더미 가공
+              더미가공
             </div>
             <button
               type="button"
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                machine.dummySettings?.enabled !== false
-                  ? "bg-blue-500"
-                  : "bg-gray-300"
+                isDummyEnabled ? "bg-blue-500" : "bg-gray-300"
               } ${!onToggleDummyMachining ? "opacity-50" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!onToggleDummyMachining) return;
-                const next = machine.dummySettings?.enabled === false;
+                const next = !isDummyEnabled;
                 onToggleDummyMachining(next, e);
               }}
               disabled={loading || !onToggleDummyMachining}
             >
               <span
                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  machine.dummySettings?.enabled !== false
-                    ? "translate-x-5"
-                    : "translate-x-1"
+                  isDummyEnabled ? "translate-x-5" : "translate-x-1"
                 }`}
               />
             </button>
@@ -507,7 +541,7 @@ export const MachineCard = (props: MachineCardProps) => {
 
           <div className="flex items-center gap-2">
             <div className="text-[11px] font-extrabold text-slate-700">
-              원격 가공
+              원격가공
             </div>
             <button
               type="button"
@@ -552,6 +586,18 @@ export const MachineCard = (props: MachineCardProps) => {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        title="큐 전체 비우기"
+        description="이 장비의 작업 큐를 모두 삭제합니다. 계속할까요?"
+        confirmLabel="전체 비우기"
+        cancelLabel="취소"
+        onCancel={() => setClearConfirmOpen(false)}
+        onConfirm={async () => {
+          setClearConfirmOpen(false);
+          await clearQueueAdmin();
+        }}
+      />
       {dropping && (
         <div className="absolute inset-0 rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/60 z-20 flex items-center justify-center">
           <div className="text-sm font-semibold text-blue-700">
@@ -561,18 +607,6 @@ export const MachineCard = (props: MachineCardProps) => {
       )}
       <div className="relative flex items-start justify-end gap-3 mb-4">
         <div className="flex flex-nowrap items-center justify-end gap-1.5">
-          <div className="flex items-center gap-2">
-            <div
-              className={`rounded-full px-2 py-0.5 text-[10px] font-black tracking-wide border ${
-                isMockUi
-                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                  : "bg-slate-50 text-slate-700 border-slate-200"
-              }`}
-              title={isMockUi ? "더미(모의) 가공" : "실제 가공"}
-            >
-              {isMockUi ? "MOCK" : "REAL"}
-            </div>
-          </div>
           {onUploadFiles && (
             <>
               <button
@@ -633,7 +667,7 @@ export const MachineCard = (props: MachineCardProps) => {
             title="큐 관리"
             disabled={loading}
           >
-            <ShieldOff className="h-3.5 w-3.5" />
+            <ListChecks className="h-3.5 w-3.5" />
           </button>
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
@@ -683,7 +717,7 @@ export const MachineCard = (props: MachineCardProps) => {
                 type="button"
                 className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
                 disabled={queueAdminLoading}
-                onClick={() => void clearQueueAdmin()}
+                onClick={() => setClearConfirmOpen(true)}
               >
                 전체 비우기
               </button>
@@ -979,7 +1013,7 @@ export const MachineCard = (props: MachineCardProps) => {
                 </label>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold">더미 가공 스케줄</span>
+                    <span className="font-semibold">더미가공 스케줄</span>
                     <button
                       type="button"
                       className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200"
@@ -1117,10 +1151,7 @@ export const MachineCard = (props: MachineCardProps) => {
                       );
                     }
 
-                    const dummyEnabled =
-                      machine.dummySettings?.enabled !== false;
-
-                    if (dummyEnabled) {
+                    if (isDummyEnabled) {
                       const dummyPath = `dummy/${encodeURIComponent(
                         machine.uid,
                       )}/${encodeURIComponent(
@@ -1222,7 +1253,7 @@ export const MachineCard = (props: MachineCardProps) => {
                         throw new Error(
                           startBody?.message ||
                             startBody?.error ||
-                            "더미 가공 시작에 실패했습니다.",
+                            "더미가공 시작에 실패했습니다.",
                         );
                       }
                     }

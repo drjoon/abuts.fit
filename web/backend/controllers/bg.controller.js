@@ -2,6 +2,7 @@ import s3Utils from "../utils/s3.utils.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
+import BridgeSetting from "../models/bridgeSetting.model.js";
 import path from "path";
 import fs from "fs/promises";
 import Request from "../models/request.model.js";
@@ -17,6 +18,60 @@ const REMOTE_BASE_BY_STEP = {
   "3-nc": process.env.ESPRIT_ADDIN_BASE_URL,
   cnc: process.env.BRIDGE_BASE || process.env.BRIDGE_NODE_URL,
 };
+
+export const registerBridgeSettings = asyncHandler(async (req, res) => {
+  const {
+    HILINK_DLL_ENTER_TIMEOUT_MS,
+    HILINK_DLL_HOLD_FATAL_MS,
+    HILINK_FAILFAST_ON_HANG,
+    MOCK_CNC_MACHINING_ENABLED,
+    DUMMY_CNC_SCHEDULER_ENABLED,
+    CNC_JOB_ASSUME_MINUTES,
+  } = req.body || {};
+
+  const parseBool = (val) => {
+    if (val === undefined || val === null) return null;
+    const s = String(val).trim().toLowerCase();
+    if (s === "true" || s === "1") return true;
+    if (s === "false" || s === "0") return false;
+    return null;
+  };
+
+  const doc = {
+    _id: "default",
+    hilinkDllEnterTimeoutMs: Number.isFinite(
+      Number(HILINK_DLL_ENTER_TIMEOUT_MS),
+    )
+      ? Number(HILINK_DLL_ENTER_TIMEOUT_MS)
+      : null,
+    hilinkDllHoldFatalMs: Number.isFinite(Number(HILINK_DLL_HOLD_FATAL_MS))
+      ? Number(HILINK_DLL_HOLD_FATAL_MS)
+      : null,
+    hilinkFailfastOnHang: parseBool(HILINK_FAILFAST_ON_HANG),
+    mockCncMachiningEnabled: parseBool(MOCK_CNC_MACHINING_ENABLED),
+    dummyCncSchedulerEnabled: parseBool(DUMMY_CNC_SCHEDULER_ENABLED),
+    cncJobAssumeMinutes: Number.isFinite(Number(CNC_JOB_ASSUME_MINUTES))
+      ? Number(CNC_JOB_ASSUME_MINUTES)
+      : null,
+  };
+
+  await BridgeSetting.findOneAndUpdate({ _id: "default" }, doc, {
+    upsert: true,
+    new: true,
+    setDefaultsOnInsert: true,
+  });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { saved: true }, "Bridge settings registered"));
+});
+
+export const getBridgeSettings = asyncHandler(async (_req, res) => {
+  const doc = await BridgeSetting.findById("default").lean();
+  return res
+    .status(200)
+    .json(new ApiResponse(200, doc || {}, "Bridge settings fetched"));
+});
 
 const trimSlash = (s = "") => s.replace(/\/+$/, "");
 

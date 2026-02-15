@@ -57,4 +57,18 @@ router.get(
   bgController.getRequestMeta,
 );
 
+// 브리지 설정 등록(bridge -> backend) 및 조회(frontend)
+router.post(
+  "/bridge-settings",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.registerBridgeSettings,
+);
+router.get(
+  "/bridge-settings",
+  authenticate,
+  authorize("manufacturer", "admin"),
+  bgController.getBridgeSettings,
+);
+
 export default router;
