@@ -88,15 +88,31 @@ export interface SocketNotification {
 }
 
 export function initializeSocket(token: string): Socket {
-  if (socket?.connected) {
+  // 이미 소켓 인스턴스가 있으면(연결 중 포함) 재사용한다.
+  // 연결 중에 initializeSocket이 반복 호출되면 기존 인스턴스를 덮어써서
+  // 리스너가 사라지고 UI 이벤트가 누락될 수 있다.
+  if (socket) {
     return socket;
   }
 
-  const serverUrl =
-    import.meta.env.VITE_API_URL ||
-    (typeof window !== "undefined" && window.location?.origin
+  const envSocketUrl = (import.meta.env.VITE_SOCKET_URL as string) || "";
+  const envApiUrl = (import.meta.env.VITE_API_URL as string) || "";
+  const envDevApiTarget = (import.meta.env.VITE_DEV_API_TARGET as string) || "";
+  const origin =
+    typeof window !== "undefined" && window.location?.origin
       ? window.location.origin
-      : "http://localhost:5001");
+      : "";
+
+  // 운영 빌드에서는 env가 잘못 주입되더라도 localhost로 붙지 않도록
+  // 기본값을 window.location.origin으로 강제한다.
+  // (명시적 VITE_SOCKET_URL이 있으면 그 값을 최우선으로 사용)
+  const serverUrl = envSocketUrl
+    ? envSocketUrl
+    : import.meta.env.DEV
+      ? envApiUrl || envDevApiTarget || origin || "http://localhost:8080"
+      : origin || envApiUrl || "https://abuts.fit";
+
+  console.log("[socket] connecting to", serverUrl);
 
   socket = io(serverUrl, {
     auth: { token },

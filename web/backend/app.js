@@ -146,9 +146,14 @@ app.use(
         // 업로드/정적 파일을 S3에서 직접 읽을 수 있도록 허용
         "connect-src": [
           "'self'",
+          // Socket.io (운영: 동일 오리진 wss/https)
+          "wss:",
           "https://abuts-fit.s3.ap-south-1.amazonaws.com",
           "https://*.amazonaws.com",
           "https://cdn.jsdelivr.net",
+          ...(process.env.NODE_ENV === "development"
+            ? ["http://localhost:8080", "ws://localhost:8080"]
+            : []),
         ],
         "img-src": [
           "'self'",

@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiFetch } from "@/lib/apiClient";
 import {
-  subscribeCncMachining,
-  unsubscribeCncMachining,
   onCncMachiningCompleted,
   onCncMachiningTimeout,
   onCncMachiningCanceled,
   onCncMachiningTick,
   onCncMachiningStarted,
+  initializeSocket,
 } from "@/lib/socket";
 
 import type { Machine } from "../../cnc/types";
@@ -38,6 +37,11 @@ export function useCncDashboardQueues({
   refreshStatusFor,
   fetchProgramList,
 }: Params) {
+  const machinesRef = useRef<Machine[]>(machines);
+  useEffect(() => {
+    machinesRef.current = Array.isArray(machines) ? machines : [];
+  }, [machines]);
+
   const queueBatchRef = useRef<{
     t: any | null;
     machineId: string | null;
@@ -307,8 +311,22 @@ export function useCncDashboardQueues({
   useEffect(() => {
     if (!token) return;
 
+    // 소켓 연결 초기화 (Hook 순서 변경 없이 기존 구독 effect 내부에서 처리)
+    initializeSocket(token);
+
+    const resolveMachineId = (raw: any) => {
+      const mid = String(raw || "").trim();
+      if (!mid) return "";
+      const upper = mid.toUpperCase();
+      const list = machinesRef.current || [];
+      const found = list.find(
+        (m) => String(m?.uid || "").toUpperCase() === upper,
+      );
+      return found?.uid || mid;
+    };
+
     const unsubscribeTick = onCncMachiningTick((data) => {
-      const mid = String(data?.machineId || "").trim();
+      const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
       const elapsed =
         typeof (data as any)?.elapsedSeconds === "number"
@@ -321,6 +339,10 @@ export function useCncDashboardQueues({
         elapsedSeconds: elapsed,
         tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
       };
+
+      if (import.meta.env.DEV) {
+        console.log("[cnc][tick]", { machineId: mid, elapsedSeconds: elapsed });
+      }
       setMachiningElapsedSecondsMap((prev) => {
         if (prev[mid] === elapsed) return prev;
         return { ...prev, [mid]: elapsed };
@@ -329,8 +351,12 @@ export function useCncDashboardQueues({
 
     // 브리지 서버 자동 가공 완료 시에도 UI 갱신
     const unsubscribeCompleted = onCncMachiningCompleted((data) => {
-      const mid = String(data?.machineId || "").trim();
+      const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
+
+      if (import.meta.env.DEV) {
+        console.log("[cnc][completed]", { machineId: mid, data });
+      }
       handleMachiningCompleted(mid);
       setMachiningElapsedSecondsMap((prev) => {
         const next = { ...prev };
@@ -722,9 +748,24 @@ export function useCncDashboardQueues({
   useEffect(() => {
     if (!token) return;
 
+    const resolveMachineId = (raw: any) => {
+      const mid = String(raw || "").trim();
+      if (!mid) return "";
+      const upper = mid.toUpperCase();
+      const list = machinesRef.current || [];
+      const found = list.find(
+        (m) => String(m?.uid || "").toUpperCase() === upper,
+      );
+      return found?.uid || mid;
+    };
+
     const unsubStarted = onCncMachiningStarted((data: any) => {
-      const mid = String(data?.machineId || "").trim();
+      const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
+
+      if (import.meta.env.DEV) {
+        console.log("[cnc][started]", { machineId: mid, data });
+      }
       setNowPlayingMap((prev) => ({ ...prev, [mid]: true }));
       const startedAtMs = data?.startedAt
         ? new Date(data.startedAt).getTime()
@@ -737,7 +778,7 @@ export function useCncDashboardQueues({
     });
 
     const unsubTick = onCncMachiningTick((data: any) => {
-      const mid = String(data?.machineId || "").trim();
+      const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
       const elapsed =
         typeof data?.elapsedSeconds === "number"
@@ -750,6 +791,10 @@ export function useCncDashboardQueues({
         elapsedSeconds: elapsed,
         tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
       };
+
+      if (import.meta.env.DEV) {
+        console.log("[cnc][tick]", { machineId: mid, elapsedSeconds: elapsed });
+      }
       setNowPlayingMap((prev) => ({ ...prev, [mid]: true }));
       setMachiningElapsedSecondsMap((prev) => {
         if (prev[mid] === elapsed) return prev;
@@ -774,19 +819,23 @@ export function useCncDashboardQueues({
     };
 
     const unsubCompleted = onCncMachiningCompleted((data: any) => {
-      const mid = String(data?.machineId || "").trim();
+      const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
+
+      if (import.meta.env.DEV) {
+        console.log("[cnc][completed]", { machineId: mid, data });
+      }
       stopFor(mid);
     });
 
     const unsubTimeout = onCncMachiningTimeout((data: any) => {
-      const mid = String(data?.machineId || "").trim();
+      const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
       stopFor(mid);
     });
 
     const unsubCanceled = onCncMachiningCanceled((data: any) => {
-      const mid = String(data?.machineId || "").trim();
+      const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
       stopFor(mid);
     });

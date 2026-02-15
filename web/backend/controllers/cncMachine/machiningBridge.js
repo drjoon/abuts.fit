@@ -189,10 +189,21 @@ export async function recordMachiningStartForBridge(req, res) {
           io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-started", payload);
         }
         io.emit("cnc-machining-started", payload);
+
+        // 시작 시점에 STARTED phase tick도 함께 보내 로컬 타이머를 즉시 시작하도록 한다.
+        const tickPayload = {
+          ...payload,
+          phase: "STARTED",
+          percent: null,
+          elapsedSeconds: 0,
+          tickAt: now,
+        };
+        if (jobId) {
+          io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-tick", tickPayload);
+        }
+        io.emit("cnc-machining-tick", tickPayload);
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     return res.status(200).json({
       success: true,

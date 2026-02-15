@@ -667,6 +667,9 @@ if (Config.MockCncMachining)
         state.SawBusy = false;
     }
 
+    // 시작 시점에 STARTED tick을 한 번 보내 로컬 타이머가 바로 시작되도록 한다.
+    _ = Task.Run(() => NotifyMachiningTick(job, machineId, "STARTED", null));
+
     // 모의 가공 동안 5초마다 tick을 보내 경과시간을 프론트에 전달한다.
     _ = Task.Run(async () =>
     {
