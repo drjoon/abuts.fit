@@ -12,7 +12,6 @@ import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgra
 import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
 import { useQueueSlots } from "@/pages/manufacturer/cnc/hooks/useQueueSlots";
 import { apiFetch } from "@/lib/apiClient";
-import { CncCirclePlayPauseButton } from "@/pages/manufacturer/cnc/components/CncCirclePlayPauseButton";
 import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";
 import { CncEventLogModal } from "@/components/CncEventLogModal";
@@ -70,8 +69,6 @@ type MachineQueueCardProps = {
   machineName?: string;
   queue: QueueItem[];
   onOpenRequestLog?: (requestId: string) => void;
-  onToggleNowPlaying: (machineId: string) => void;
-  onPlayNextUp: (machineId: string) => void;
   autoEnabled: boolean;
   onToggleAuto: (next: boolean) => void;
   machineStatus?: MachineStatus | null;
@@ -152,8 +149,6 @@ const MachineQueueCard = ({
   machineName,
   queue,
   onOpenRequestLog,
-  onToggleNowPlaying,
-  onPlayNextUp,
   autoEnabled,
   onToggleAuto,
   machineStatus,
@@ -218,16 +213,6 @@ const MachineQueueCard = ({
     : machineStatus?.nextProgram
       ? String(machineStatus.nextProgram)
       : "없음";
-
-  // 가공 중 상태 판단
-  const isMachining = machineStatus?.status
-    ? ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
-        String(machineStatus.status).toUpperCase().includes(k),
-      )
-    : false;
-
-  const canToggleNowPlaying = currentSlot != null;
-  const canPlayNextUp = nextSlot != null;
 
   const elapsedLabel = (() => {
     const sec =
@@ -414,17 +399,6 @@ const MachineQueueCard = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <CncCirclePlayPauseButton
-                  paused={!isMachining}
-                  running={isMachining}
-                  disabled={!canToggleNowPlaying}
-                  title={isMachining ? "정지(Stop)" : "가공 시작"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!canToggleNowPlaying) return;
-                    onToggleNowPlaying(machineId);
-                  }}
-                />
                 {headRequestId ? (
                   <button
                     type="button"
@@ -476,29 +450,7 @@ const MachineQueueCard = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                {(() => {
-                  const nextItemPaused = nextSlot?.paused === true;
-                  return (
-                    <CncCirclePlayPauseButton
-                      paused={nextItemPaused}
-                      disabled={!canPlayNextUp}
-                      title={
-                        !canPlayNextUp
-                          ? "-"
-                          : nextItemPaused
-                            ? "자동 시작"
-                            : "일시정지"
-                      }
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!canPlayNextUp) return;
-                        onPlayNextUp(machineId);
-                      }}
-                    />
-                  );
-                })()}
-              </div>
+              <div className="flex items-center gap-2 shrink-0"></div>
             </div>
           </div>
         </div>
@@ -883,235 +835,6 @@ export const MachiningQueueBoard = ({
     }
   };
 
-  const toggleNowPlayingForMachine = useCallback(
-    async (uid: string) => {
-      if (!token) return;
-
-      const local = machineStatusMap?.[uid] ?? null;
-      const fromStore = statusByUid?.[uid];
-      const statusMerged = String(
-        fromStore != null ? fromStore : local?.status || "",
-      )
-        .trim()
-        .toUpperCase();
-
-      const isMachiningNow = ["RUN", "RUNNING", "ONLINE", "OK"].some((k) =>
-        statusMerged.includes(k),
-      );
-
-      const rawQueue = Array.isArray(queueMap?.[uid]) ? queueMap[uid] : [];
-      const machiningQueueAll = rawQueue.filter((x) =>
-        isMachiningStatus(x?.status),
-      );
-      const head = machiningQueueAll[0] ?? null;
-      const nc = head?.ncFile ?? null;
-      const bridgePath = String(nc?.filePath || "").trim();
-
-      try {
-        if (isMachiningNow) {
-          const res = await apiFetch({
-            path: `/api/machines/${encodeURIComponent(uid)}/stop`,
-            method: "POST",
-            token,
-          });
-          const body: any = res.data ?? {};
-          if (!res.ok || body?.success === false) {
-            throw new Error(body?.message || body?.error || "정지 실패");
-          }
-          toast({
-            title: "가공 정지",
-            description: "가공 정지 요청을 보냈습니다.",
-          });
-          return;
-        }
-
-        if (!bridgePath) {
-          throw new Error("NC 파일 경로가 없어 시작할 수 없습니다.");
-        }
-
-        const allIds = machiningQueueAll
-          .map((q) => String((q as any)?.id || (q as any)?._id || "").trim())
-          .filter(Boolean);
-        const firstId = allIds[0] || "";
-        if (!firstId) throw new Error("큐 작업 id가 없어 시작할 수 없습니다.");
-
-        const batchRes = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/batch`,
-          method: "POST",
-          token,
-          jsonBody: {
-            order: allIds,
-            pauseUpdates: [{ jobId: firstId, paused: false }],
-          },
-        });
-        const batchBody: any = batchRes.data ?? {};
-        if (!batchRes.ok || batchBody?.success === false) {
-          throw new Error(
-            batchBody?.message ||
-              batchBody?.error ||
-              "브리지 예약 큐 반영에 실패했습니다.",
-          );
-        }
-
-        toast({
-          title: "가공 시작",
-          description: "가공 시작 요청을 보냈습니다.",
-        });
-      } catch (e: any) {
-        toast({
-          title: "가공 제어 실패",
-          description: e?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      }
-    },
-    [machineStatusMap, queueMap, statusByUid, toast, token],
-  );
-
-  // WS tick 기반으로 경과시간 업데이트 (DB fetch 없이 실시간 표시)
-  useEffect(() => {
-    if (!token) return;
-
-    const unsubscribeStarted = onCncMachiningStarted((data) => {
-      const mid = String((data as any)?.machineId || "").trim();
-      if (!mid) return;
-      const startedAtMs = (data as any)?.startedAt
-        ? new Date((data as any).startedAt).getTime()
-        : Date.now();
-      machiningElapsedBaseRef.current[mid] = {
-        elapsedSeconds: 0,
-        tickAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
-      };
-      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
-    });
-
-    const unsubscribeTick = onCncMachiningTick((data) => {
-      const mid = String(data?.machineId || "").trim();
-      if (!mid) return;
-      const elapsed =
-        typeof (data as any)?.elapsedSeconds === "number"
-          ? Math.max(0, Math.floor((data as any).elapsedSeconds))
-          : 0;
-      const tickAtMs = data?.tickAt
-        ? new Date(data.tickAt).getTime()
-        : Date.now();
-
-      machiningElapsedBaseRef.current[mid] = {
-        elapsedSeconds: elapsed,
-        tickAtMs: Number.isFinite(tickAtMs) ? tickAtMs : Date.now(),
-      };
-      setMachiningElapsedSecondsMap((prev) => {
-        if (prev[mid] === elapsed) return prev;
-        return { ...prev, [mid]: elapsed };
-      });
-    });
-
-    const unsubscribeCompleted = onCncMachiningCompleted((data) => {
-      const mid = String(data?.machineId || "").trim();
-      if (!mid) return;
-      setMachiningElapsedSecondsMap((prev) => {
-        if (prev[mid] == null) return prev;
-        const next = { ...prev };
-        delete next[mid];
-        return next;
-      });
-      delete machiningElapsedBaseRef.current[mid];
-    });
-
-    return () => {
-      unsubscribeStarted();
-      unsubscribeTick();
-      unsubscribeCompleted();
-    };
-  }, [token]);
-
-  // tick이 듬성듬성 와도 1초 단위로 증가
-  useEffect(() => {
-    if (!token) return;
-
-    const t = setInterval(() => {
-      const base = machiningElapsedBaseRef.current;
-      const now = Date.now();
-      setMachiningElapsedSecondsMap((prev) => {
-        let changed = false;
-        const next: Record<string, number> = { ...prev };
-
-        for (const [mid, v] of Object.entries(base)) {
-          if (!v) continue;
-          const add = Math.max(0, Math.floor((now - v.tickAtMs) / 1000));
-          const calc = Math.max(0, Math.floor(v.elapsedSeconds + add));
-          if (next[mid] !== calc) {
-            next[mid] = calc;
-            changed = true;
-          }
-        }
-
-        return changed ? next : prev;
-      });
-    }, 1000);
-
-    return () => {
-      clearInterval(t);
-    };
-  }, [token]);
-
-  const playNextUpForMachine = useCallback(
-    async (uid: string) => {
-      if (!token) return;
-
-      const rawQueue = Array.isArray(queueMap?.[uid]) ? queueMap[uid] : [];
-      const machiningQueueAll = rawQueue.filter((x) =>
-        isMachiningStatus(x?.status),
-      );
-      const nextItem = machiningQueueAll[1] ?? null;
-      if (!nextItem?.requestId) return;
-
-      try {
-        const nextItemId = String(nextItem.requestId);
-        const currentPaused = nextItem.paused === true;
-        const newPaused = !currentPaused;
-
-        const res = await apiFetch({
-          path: `/api/cnc-machines/${encodeURIComponent(uid)}/bridge-queue/${encodeURIComponent(nextItemId)}/pause`,
-          method: "PATCH",
-          token,
-          jsonBody: { paused: newPaused },
-        });
-
-        if (!res.ok) {
-          throw new Error("pause 상태 변경 실패");
-        }
-
-        // 로컬 상태 즉시 업데이트 (UI 반응성)
-        setQueueMap((prev) => {
-          const updated = { ...prev };
-          if (Array.isArray(updated[uid])) {
-            updated[uid] = updated[uid].map((item) =>
-              item?.requestId === nextItemId
-                ? { ...item, paused: newPaused }
-                : item,
-            );
-          }
-          return updated;
-        });
-
-        toast({
-          title: newPaused ? "일시정지" : "재개",
-          description: newPaused
-            ? "다음 파일이 일시정지 상태로 설정되었습니다."
-            : "다음 파일이 자동 시작 상태로 설정되었습니다.",
-        });
-      } catch (e: any) {
-        toast({
-          title: "상태 변경 실패",
-          description: e?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      }
-    },
-    [queueMap, toast, token],
-  );
-
   const requestToggleMachineAuto = useCallback(
     (uid: string, next: boolean) => {
       if (!next) {
@@ -1269,12 +992,6 @@ export const MachiningQueueBoard = ({
                 onOpenRequestLog={(requestId) =>
                   setEventLogRequestId(requestId)
                 }
-                onToggleNowPlaying={(machineId) => {
-                  void toggleNowPlayingForMachine(machineId);
-                }}
-                onPlayNextUp={(machineId) => {
-                  void playNextUpForMachine(machineId);
-                }}
                 autoEnabled={m.allowAutoMachining === true}
                 onToggleAuto={(next) => {
                   requestToggleMachineAuto(m.uid, next);

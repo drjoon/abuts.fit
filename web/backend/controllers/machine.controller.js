@@ -12,6 +12,10 @@ const lastRawReadCall = new Map();
 
 import Machine from "../models/machine.model.js";
 import Request from "../models/request.model.js";
+import {
+  fetchBridgeQueueFromBridge,
+  saveBridgeQueueSnapshot,
+} from "./cncMachine/shared.js";
 
 function withBridgeHeaders(extra = {}) {
   const base = {};
@@ -581,7 +585,7 @@ export async function upsertMachine(req, res) {
             process.env.BRIDGE_BASE ||
             "http://localhost:8002";
           try {
-            await fetch(
+            const triggerResp = await fetch(
               `${String(base).replace(/\/$/, "")}/api/bridge/process-file`,
               {
                 method: "POST",
@@ -596,6 +600,15 @@ export async function upsertMachine(req, res) {
                 }),
               },
             );
+
+            try {
+              const q = await fetchBridgeQueueFromBridge(finalUid);
+              if (q.ok) {
+                await saveBridgeQueueSnapshot(finalUid, q.jobs);
+              }
+            } catch (e) {
+              console.warn("autoMachining queue sync failed", e);
+            }
 
             autoMachiningTrigger.attempted = true;
           } catch (e) {
