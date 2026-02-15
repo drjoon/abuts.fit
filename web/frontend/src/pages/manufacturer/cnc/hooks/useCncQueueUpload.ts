@@ -159,6 +159,7 @@ export const useCncQueueUpload = () => {
               fileSize: file.size,
               qty: 1,
               requestId: null,
+              allowAutoStart: true,
             },
           });
           const enqueueBody: any = enqueueRes.data ?? {};

@@ -158,6 +158,7 @@ export async function enqueueCncDirectToDb(req, res) {
     const qty = Math.max(1, Number(req.body?.qty ?? 1) || 1);
     const requestIdRaw = req.body?.requestId;
     const requestId = requestIdRaw != null ? String(requestIdRaw).trim() : "";
+    const allowAutoStart = Boolean(req.body?.allowAutoStart);
 
     if (!fileName || !s3Key) {
       return res.status(400).json({
@@ -187,7 +188,8 @@ export async function enqueueCncDirectToDb(req, res) {
       qty,
       createdAtUtc: now,
       source: "manual_upload",
-      paused: true,
+      paused: !allowAutoStart,
+      allowAutoStart,
     });
 
     await saveBridgeQueueSnapshot(mid, jobs);

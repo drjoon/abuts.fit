@@ -168,7 +168,13 @@ namespace HiLinkBridgeWebApi48
             var q = GetQueue(machineId);
             lock (GetLock(machineId))
             {
-                return q.First != null ? q.First.Value : null;
+                foreach (var job in q)
+                {
+                    if (job == null) continue;
+                    if (job.paused) continue;
+                    return job;
+                }
+                return null;
             }
         }
 
