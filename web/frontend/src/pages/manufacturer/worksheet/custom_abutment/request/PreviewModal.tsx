@@ -3,10 +3,12 @@ import { DialogClose } from "@radix-ui/react-dialog";
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
 import { StlPreviewViewer } from "@/components/StlPreviewViewer";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   type ManufacturerRequest,
   type ReviewStageKey,
@@ -117,6 +119,7 @@ export const PreviewModal = ({
   setConfirmAction,
   setConfirmOpen,
 }: PreviewModalProps) => {
+  const { token } = useAuthStore();
   const req = previewFiles.request as ManufacturerRequest | null;
   if (!req) return null;
 
@@ -391,6 +394,43 @@ export const PreviewModal = ({
                   stageOverride: currentReviewStageKey,
                   keepPreviewOpen: true,
                 });
+
+                if (isCamStage) {
+                  const requestId = String(
+                    (req as any)?.requestId || "",
+                  ).trim();
+                  if (!token) {
+                    throw new Error("로그인이 필요합니다.");
+                  }
+                  if (!requestId) {
+                    throw new Error(
+                      "requestId가 없어 NC 동기화를 진행할 수 없습니다.",
+                    );
+                  }
+
+                  const ensureRes = await fetch(
+                    `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
+                    {
+                      method: "POST",
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({}),
+                    },
+                  );
+                  const ensureBody: any = await ensureRes
+                    .json()
+                    .catch(() => ({}));
+                  if (!ensureRes.ok || ensureBody?.success === false) {
+                    throw new Error(
+                      ensureBody?.message ||
+                        ensureBody?.error ||
+                        "NC 파일 bridge-store 동기화에 실패했습니다.",
+                    );
+                  }
+                }
+
                 // 성공 시에만 다음 요청으로 이동
                 if (onOpenNextRequest && req._id) {
                   onOpenNextRequest(req._id);

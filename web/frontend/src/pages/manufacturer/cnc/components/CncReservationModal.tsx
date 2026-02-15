@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Machine } from "@/pages/manufacturer/cnc/types";
 import { useToast } from "@/hooks/use-toast";
-import { apiFetch } from "@/lib/apiClient";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useManUpload } from "../hooks/useManUpload";
 
 type CncReservationMode = "immediate" | "reserved";
 
@@ -36,49 +35,11 @@ export const CncReservationModal = ({
   onConfirm,
 }: CncReservationModalProps) => {
   const { toast } = useToast();
-  const { token } = useAuthStore();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dropping, setDropping] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const [uploadProgress, setUploadProgress] = useState<{
-    fileName: string;
-    percent: number;
-  } | null>(null);
-
-  const uploadToPresignedUrl = useCallback(
-    async (uploadUrl: string, file: File) => {
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadUrl);
-        setUploadProgress({ fileName: file.name, percent: 0 });
-        xhr.setRequestHeader(
-          "Content-Type",
-          file.type || "application/octet-stream",
-        );
-
-        xhr.upload.onprogress = (evt) => {
-          if (!evt.lengthComputable) return;
-          const percent = Math.max(
-            0,
-            Math.min(100, Math.round((evt.loaded / evt.total) * 100)),
-          );
-          setUploadProgress({ fileName: file.name, percent });
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            setUploadProgress({ fileName: file.name, percent: 100 });
-            resolve();
-          } else reject(new Error(`S3 업로드 실패 (HTTP ${xhr.status})`));
-        };
-        xhr.onerror = () => reject(new Error("S3 업로드 실패"));
-
-        xhr.send(file);
-      });
-    },
-    [],
-  );
+  const { uploadMachineFiles, uploadProgress } = useManUpload();
 
   const handleRequestCloseSafe = useCallback(() => {
     if (submitting) {
@@ -104,96 +65,18 @@ export const CncReservationModal = ({
         return;
       }
 
-      if (!token) {
-        toast({
-          title: "인증이 필요합니다.",
-          description: "다시 로그인한 뒤 시도해 주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-
       const list = Array.from(files || []);
       if (list.length === 0) return;
 
       setSubmitting(true);
-      setUploadProgress(null);
       try {
-        const uploadedJobs: CncJobItem[] = [];
-
-        for (const file of list) {
-          const fileName = String(file.name || "").trim();
-          if (!fileName) {
-            throw new Error("파일명이 올바르지 않습니다.");
-          }
-
-          // smartUpload 이중 응답: 즉시 jobId 반환 후 백그라운드 처리
-          const uploadRes = await apiFetch({
-            path: `/api/cnc-machines/${encodeURIComponent(
-              machine.uid,
-            )}/smart/upload`,
-            method: "POST",
-            token,
-            jsonBody: {
-              headType: 1,
-              path: fileName,
-              isNew: true,
-            },
-          });
-
-          const uploadBody: any = uploadRes.data ?? {};
-          if (!uploadRes.ok || uploadBody?.success === false) {
-            throw new Error(
-              uploadBody?.message || uploadBody?.error || "스마트 업로드 실패",
-            );
-          }
-
-          // 202 Accepted면 jobId로 결과 폴링
-          const jobId = uploadBody?.jobId;
-          if (uploadRes.status === 202 && jobId) {
-            let uploadCompleted = false;
-            for (let i = 0; i < 60; i += 1) {
-              try {
-                const jobRes = await apiFetch({
-                  path: `/api/cnc-machines/${encodeURIComponent(
-                    machine.uid,
-                  )}/jobs/${encodeURIComponent(jobId)}`,
-                  method: "GET",
-                  token,
-                });
-                const jobBody: any = jobRes.data ?? {};
-                if (jobRes.ok && jobBody?.status === "COMPLETED") {
-                  uploadCompleted = true;
-                  break;
-                }
-                if (jobRes.ok && jobBody?.status === "FAILED") {
-                  throw new Error(jobBody?.result?.message || "업로드 실패");
-                }
-              } catch (e: any) {
-                if (i === 59) throw e;
-              }
-              await new Promise((r) => setTimeout(r, 1000));
-            }
-            if (!uploadCompleted) {
-              throw new Error("업로드 결과 확인 타임아웃");
-            }
-          }
-
-          uploadedJobs.push({
-            id: `upload:${fileName}:${Date.now()}`,
-            source: "upload",
-            programNo: null,
-            name: fileName,
-            qty: 1,
-          });
-        }
-
+        await uploadMachineFiles(machine.uid, list);
         toast({
           title: "업로드 완료",
           description: "다음 가공 파일로 등록되었습니다.",
         });
 
-        onConfirm({ mode: "reserved", jobs: uploadedJobs });
+        onConfirm({ mode: "reserved", jobs: [] });
         onRequestClose();
       } catch (e: any) {
         toast({
@@ -203,17 +86,9 @@ export const CncReservationModal = ({
         });
       } finally {
         setSubmitting(false);
-        setUploadProgress(null);
       }
     },
-    [
-      machine?.uid,
-      onConfirm,
-      onRequestClose,
-      toast,
-      token,
-      uploadToPresignedUrl,
-    ],
+    [machine?.uid, onConfirm, onRequestClose, toast, uploadMachineFiles],
   );
 
   useEffect(() => {

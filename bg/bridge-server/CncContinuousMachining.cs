@@ -718,12 +718,12 @@ state.SawBusy = false;
 }
 
     // 원격 가공 허용(allowJobStart/allowRemoteStart)이 true이고,
-    // 자동 가공 플래그(allowAutoMachining) + job.allowAutoStart 가 true일 때만 자동 Start 신호를 보낸다.
+    // 자동 가공 플래그(allowAutoMachining)가 true일 때만 자동 Start 신호를 보낸다.
     var flags = await GetMachineFlagsFromBackend(machineId);
     var allowRemoteStart = flags != null && flags.AllowJobStart;
     var allowAutoStart = flags != null && flags.AllowAutoMachining;
-    var jobAllowsAutoStart = job?.allowAutoStart == true;
-    if (allowRemoteStart && allowAutoStart && jobAllowsAutoStart)
+
+    if (allowRemoteStart && allowAutoStart)
     {
         if (!TryStartSignal(machineId, out var startErr))
         {
@@ -732,10 +732,6 @@ state.SawBusy = false;
             return false;
         }
         Console.WriteLine("[CncMachining] start signal sent machine={0}", machineId);
-    }
-    else if (allowRemoteStart && allowAutoStart && !jobAllowsAutoStart)
-    {
-        Console.WriteLine("[CncMachining] auto-start skipped (job flag false) machine={0} jobId={1}", machineId, job?.id);
     }
     else if (!allowRemoteStart)
     {

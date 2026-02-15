@@ -67,17 +67,9 @@ export function useCncDashboardQueues({
     Record<string, number>
   >({});
 
-  const [uploadProgress, setUploadProgress] = useState<{
-    machineId: string;
-    fileName: string;
-    percent: number;
-  } | null>(null);
-
   const [machiningElapsedSecondsMap, setMachiningElapsedSecondsMap] = useState<
     Record<string, number>
   >({});
-
-  const uploadSeqRef = useRef(0);
 
   const [playlistOpen, setPlaylistOpen] = useState(false);
   const [playlistTarget, setPlaylistTarget] = useState<Machine | null>(null);
@@ -210,145 +202,6 @@ export function useCncDashboardQueues({
       }
     },
     [setError, toast, token],
-  );
-
-  const uploadContinuousFiles = useCallback(
-    async (machineId: string, files: FileList | File[]) => {
-      const mid = String(machineId || "").trim();
-      if (!mid) throw new Error("장비 ID가 올바르지 않습니다.");
-      if (!token) throw new Error("로그인이 필요합니다.");
-
-      const list = Array.isArray(files) ? files : Array.from(files || []);
-      if (list.length === 0) return;
-
-      const ok = await ensureCncWriteAllowed();
-      if (!ok) {
-        toast({
-          title: "업로드 불가",
-          description: "CNC 업로드는 제조사 권한/PIN 확인이 필요합니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const seq = (uploadSeqRef.current += 1);
-      const setProgressSafe = (
-        next: { machineId: string; fileName: string; percent: number } | null,
-      ) => {
-        if (uploadSeqRef.current !== seq) return;
-        setUploadProgress(next as any);
-      };
-
-      const uploadOne = async (file: File) => {
-        return await new Promise<any>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.timeout = 10 * 60 * 1000;
-          xhr.open(
-            "POST",
-            `/api/cnc-machines/${encodeURIComponent(mid)}/continuous/upload`,
-          );
-          xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-          const fileName = String(file?.name || "").trim() || "(unknown)";
-          setProgressSafe({ machineId: mid, fileName, percent: 0 });
-          xhr.upload.onprogress = (evt) => {
-            if (!evt.lengthComputable) return;
-            const percent = Math.max(
-              0,
-              Math.min(100, Math.round((evt.loaded / evt.total) * 100)),
-            );
-            setProgressSafe({ machineId: mid, fileName, percent });
-          };
-
-          xhr.onload = () => {
-            let parsed: any = {};
-            try {
-              parsed = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-            } catch {
-              parsed = {};
-            }
-            if (xhr.status >= 200 && xhr.status < 300) {
-              setProgressSafe({ machineId: mid, fileName, percent: 100 });
-              resolve(parsed);
-              return;
-            }
-            const msg =
-              parsed?.message ||
-              parsed?.error ||
-              `장비카드 업로드에 실패했습니다. (HTTP ${xhr.status})`;
-            reject(new Error(msg));
-          };
-          xhr.onerror = () => reject(new Error("업로드에 실패했습니다."));
-          xhr.onabort = () => reject(new Error("업로드가 취소되었습니다."));
-          xhr.ontimeout = () =>
-            reject(new Error("업로드 시간이 초과되었습니다."));
-
-          const form = new FormData();
-          form.append("file", file);
-          form.append("originalFileName", fileName);
-          xhr.send(form);
-        });
-      };
-
-      let uploadedCount = 0;
-      const failedFiles: { name: string; message: string }[] = [];
-      let lastSlotNo: any = null;
-
-      try {
-        for (const file of list) {
-          if (!file) continue;
-          const fileName = String(file.name || "").trim() || "(unknown)";
-          try {
-            const body = await uploadOne(file);
-            const data = body?.data ?? body;
-            lastSlotNo = data?.slotNo ?? lastSlotNo;
-            uploadedCount += 1;
-          } catch (e: any) {
-            failedFiles.push({
-              name: fileName,
-              message: e?.message || "업로드 실패",
-            });
-          }
-        }
-      } finally {
-        setTimeout(() => setProgressSafe(null), 800);
-      }
-
-      if (uploadedCount > 0) {
-        toast({
-          title: "업로드 완료",
-          description:
-            uploadedCount <= 1
-              ? lastSlotNo
-                ? `CNC 슬롯 O${lastSlotNo}에 업로드되었습니다.`
-                : "업로드되었습니다."
-              : `${uploadedCount}개 파일이 업로드되었습니다.`,
-        });
-      }
-
-      if (failedFiles.length > 0) {
-        const summary =
-          failedFiles.length === 1
-            ? `${failedFiles[0].name}: ${failedFiles[0].message}`
-            : `${failedFiles.length}개 실패: ${failedFiles
-                .slice(0, 3)
-                .map((f) => f.name)
-                .join(", ")}${failedFiles.length > 3 ? "…" : ""}`;
-        toast({
-          title: uploadedCount > 0 ? "일부 파일 업로드 실패" : "업로드 실패",
-          description: summary,
-          variant: "destructive",
-        });
-      }
-
-      if (uploadedCount > 0) {
-        const m = machines.find((x) => x?.uid === mid) || null;
-        if (m) {
-          await loadBridgeQueueForMachine(m, { silent: true });
-        }
-      }
-    },
-    [ensureCncWriteAllowed, loadBridgeQueueForMachine, machines, toast, token],
   );
 
   const refreshDbQueuesForAllMachines = useCallback(async () => {
@@ -1108,10 +961,10 @@ export function useCncDashboardQueues({
   return {
     loadBridgeQueueForMachine,
     loadQueueForMachine,
-    uploadContinuousFiles,
-    uploadProgress,
     machiningElapsedSecondsMap,
     refreshDbQueuesForAllMachines,
+    reservationSummaryMap,
+    reservationJobsMap,
     worksheetQueueCountMap,
     queueBatchRef,
     scheduleQueueBatchCommit,
@@ -1119,8 +972,6 @@ export function useCncDashboardQueues({
     setReservationJobsMap,
     setReservationSummaryMap,
     setReservationTotalQtyMap,
-    reservationJobsMap,
-    reservationSummaryMap,
     reservationTotalQtyMap,
     playlistOpen,
     setPlaylistOpen,

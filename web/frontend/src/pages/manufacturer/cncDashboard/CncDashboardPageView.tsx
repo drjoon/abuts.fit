@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import type { Machine } from "../cnc/types";
 import type { HealthLevel } from "../cnc/components/MachineCard";
 import type { CncJobItem } from "../cnc/components/CncReservationModal";
+import { useManUpload } from "../cnc/hooks/useManUpload";
 import {
   CncPlaylistDrawer,
   type PlaylistJobItem,
@@ -40,10 +41,10 @@ export const CncDashboardPageView = (props: any) => {
     worksheetQueueCountMap,
     reservationSummaryMap,
     reservationTotalQtyMap,
-    uploadProgress,
+    uploadProgress: _uploadProgress,
     updateMachineFlags,
     updateMachineDummyEnabled,
-    uploadContinuousFiles,
+    uploadMachineFiles: _uploadMachineFiles,
     refreshDbQueuesForAllMachines,
     setWorkUid,
     refreshStatusFor,
@@ -139,6 +140,12 @@ export const CncDashboardPageView = (props: any) => {
     handlePlayNextUp,
     nowPlayingMap,
   } = props;
+
+  const {
+    uploadMachineFiles,
+    uploadProgress: manUploadProgress,
+    uploading: manUploading,
+  } = useManUpload();
 
   const handleSelectMachine = (uid: string) => {
     // workUid 업데이트 + 즉시 상태 조회
@@ -241,7 +248,7 @@ export const CncDashboardPageView = (props: any) => {
                   worksheetQueueCountMap={worksheetQueueCountMap}
                   reservationSummaryMap={reservationSummaryMap}
                   reservationTotalQtyMap={reservationTotalQtyMap}
-                  uploadProgress={uploadProgress}
+                  uploadProgress={manUploadProgress}
                   onToggleAllowJobStart={(machine, next) => {
                     updateMachineFlags(machine, { allowJobStart: next });
                   }}
@@ -277,11 +284,13 @@ export const CncDashboardPageView = (props: any) => {
                   onUploadFiles={(machine, files) => {
                     void (async () => {
                       try {
-                        await uploadContinuousFiles(machine.uid, files);
-                        // 업로드 후 수동 카드 큐 다시 로드 (완료 대기)
-                        if (refreshDbQueuesForAllMachines) {
-                          await refreshDbQueuesForAllMachines();
-                        }
+                        await uploadMachineFiles(machine.uid, files, {
+                          onDone: async () => {
+                            if (refreshDbQueuesForAllMachines) {
+                              await refreshDbQueuesForAllMachines();
+                            }
+                          },
+                        });
                         toast({
                           title: "업로드 완료",
                           description: "파일이 업로드되었습니다.",

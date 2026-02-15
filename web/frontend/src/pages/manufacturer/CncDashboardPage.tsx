@@ -579,10 +579,8 @@ export const CncDashboardPage = () => {
       worksheetQueueCountMap={queues.worksheetQueueCountMap}
       reservationSummaryMap={queues.reservationSummaryMap}
       reservationTotalQtyMap={queues.reservationTotalQtyMap}
-      uploadProgress={queues.uploadProgress}
       updateMachineFlags={updateMachineFlags}
       updateMachineDummyEnabled={materials.updateMachineDummyEnabled}
-      uploadContinuousFiles={queues.uploadContinuousFiles}
       setWorkUid={(uid: string) => {
         setWorkUid(uid);
         if (token && uid) {
