@@ -133,8 +133,6 @@ export async function recordMachiningStartForBridge(req, res) {
           startedAt,
           lastTickAt: startedAt,
           elapsedSeconds: 0,
-          fileName: meta.fileName,
-          originalFileName: meta.originalFileName,
         },
       },
       { new: true, upsert: true },

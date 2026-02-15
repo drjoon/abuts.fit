@@ -162,6 +162,32 @@ const MachineQueueCard = ({
   onOpenProgramCode,
   machiningElapsedSeconds,
 }: MachineQueueCardProps) => {
+  const { toast } = useToast();
+  const token = useAuthStore((s) => s.token);
+  const [isMockFromBackend, setIsMockFromBackend] = useState<boolean | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!token) return;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/bg/bridge-settings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          return;
+        }
+        const enabled = body?.data?.mockCncMachiningEnabled;
+        if (enabled === true) setIsMockFromBackend(true);
+        else if (enabled === false) setIsMockFromBackend(false);
+      } catch {
+        // keep previous state on failure
+      }
+    })();
+  }, [token]);
+
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q?.status),
   );
@@ -177,6 +203,7 @@ const MachineQueueCard = ({
   const statusColor = getStatusDotColor(machineStatus?.status);
 
   const headerTitle = machineName || machineId;
+  const badgeIsMock = isMockFromBackend === true;
 
   // Now Playing: currentSlot의 파일명 또는 machineStatus.currentProgram
   const nowPlayingLabel = currentSlot
@@ -274,6 +301,14 @@ const MachineQueueCard = ({
             <div className="truncate text-[15px] font-extrabold text-slate-900">
               {headerTitle}
             </div>
+            {badgeIsMock ? (
+              <Badge
+                variant="outline"
+                className="shrink-0 bg-violet-50 text-[10px] font-extrabold text-violet-700 border-violet-200 px-2 py-0.5"
+              >
+                MOCK
+              </Badge>
+            ) : null}
             <span
               className={`w-3 h-3 rounded-full ${statusColor} ${
                 statusRefreshing ? "animate-pulse" : ""

@@ -13,6 +13,16 @@ const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
   path.resolve(process.cwd(), "../../bg/storage");
 
+const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET || "";
+
+function withBridgeHeaders(extra = {}) {
+  const base = {};
+  if (BRIDGE_SHARED_SECRET) {
+    base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
+  }
+  return { ...base, ...extra };
+}
+
 const REMOTE_BASE_BY_STEP = {
   "2-filled": process.env.RHINO_COMPUTE_BASE_URL,
   "3-nc": process.env.ESPRIT_ADDIN_BASE_URL,
@@ -199,7 +209,9 @@ async function fetchRemoteFileBuffer(sourceStep, fileName) {
   const remoteUrl = `${baseUrl}/files/${encodeURIComponent(fileName)}`;
   console.log(`[BG-Callback] Attempting remote fetch: ${remoteUrl}`);
   try {
-    const res = await fetch(remoteUrl);
+    const res = await fetch(remoteUrl, {
+      headers: withBridgeHeaders(),
+    });
     if (!res.ok) {
       console.warn(
         `[BG-Callback] Remote fetch failed: ${remoteUrl} status=${res.status}`,
