@@ -540,17 +540,6 @@ export function useCncDashboardQueues({
         return;
       }
 
-      const path =
-        (nextJob as any)?.bridgePath || (nextJob as any)?.path || nextJob.name;
-      if (!path) {
-        toast({
-          title: "가공 시작 불가",
-          description: "업로드 경로를 찾을 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
       const ok = await ensureCncWriteAllowed();
       if (!ok) return;
 
@@ -830,17 +819,6 @@ export function useCncDashboardQueues({
         return;
       }
 
-      const path =
-        (nowJob as any)?.bridgePath || (nowJob as any)?.path || nowJob.name;
-      if (!path) {
-        toast({
-          title: "가공 시작 불가",
-          description: "업로드 경로를 찾을 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
       const ok = await ensureCncWriteAllowed();
       if (!ok) return;
 
@@ -925,7 +903,7 @@ export function useCncDashboardQueues({
 
         toast({
           title: "가공 시작",
-          description: `${nowJob.name || path} 가공을 시작합니다.`,
+          description: `${nowJob.name || "작업"} 가공을 시작합니다.`,
         });
       } catch (e: any) {
         const msg = e?.message ?? "가공 시작 요청 중 오류";

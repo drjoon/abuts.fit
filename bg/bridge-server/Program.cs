@@ -131,6 +131,16 @@ namespace HiLinkBridgeWebApi48
             {
                 // Force Config static ctor to run so local.env is loaded before mode logging
                 _ = Config.BackendBase;
+                try
+                {
+                    var asm = typeof(Program).Assembly;
+                    Console.WriteLine("[build] asm.location=" + (asm.Location ?? ""));
+                    Console.WriteLine("[build] asm.version=" + (asm.GetName()?.Version?.ToString() ?? ""));
+                    var envMockEnabled = (Environment.GetEnvironmentVariable("MOCK_CNC_MACHINING_ENABLED") ?? string.Empty).Trim();
+                    Console.WriteLine("[build] env.MOCK_CNC_MACHINING_ENABLED=" + (string.IsNullOrEmpty(envMockEnabled) ? "(empty)" : envMockEnabled));
+                    Console.WriteLine("[build] Config.MockCncMachining=" + Config.MockCncMachining);
+                }
+                catch { }
                 var mockEnv = (Environment.GetEnvironmentVariable("MOCK_CNC_MACHINING_ENABLED") ?? string.Empty).Trim();
                 var mock = !(string.IsNullOrEmpty(mockEnv) || string.Equals(mockEnv, "false", StringComparison.OrdinalIgnoreCase) || mockEnv == "0");
                 Console.WriteLine(mock

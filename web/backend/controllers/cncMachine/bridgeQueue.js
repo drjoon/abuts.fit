@@ -147,19 +147,6 @@ export async function reorderBridgeQueueForMachine(req, res) {
       ? orderRaw.map((v) => String(v || "").trim()).filter((v) => !!v)
       : [];
 
-    const pauseRaw = req.body?.pauseUpdates;
-    const pauseUpdates = Array.isArray(pauseRaw)
-      ? pauseRaw
-          .map((u) => {
-            if (!u) return null;
-            const jobId = String(u.jobId || u.id || "").trim();
-            if (!jobId) return null;
-            const paused = u.paused === true;
-            return { jobId, paused };
-          })
-          .filter(Boolean)
-      : [];
-
     const snap = await getDbBridgeQueueSnapshot(mid);
     const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
     const idOrder =
@@ -334,6 +321,19 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
       ? delRaw.map((v) => String(v || "").trim()).filter(Boolean)
       : [];
 
+    const pauseRaw = req.body?.pauseUpdates;
+    const pauseUpdates = Array.isArray(pauseRaw)
+      ? pauseRaw
+          .map((u) => {
+            if (!u) return null;
+            const jobId = String(u.jobId || u.id || "").trim();
+            if (!jobId) return null;
+            const paused = u.paused === true;
+            return { jobId, paused };
+          })
+          .filter(Boolean)
+      : [];
+
     const snap = await getDbBridgeQueueSnapshot(mid);
     const jobs0 = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
 
@@ -353,6 +353,16 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
         if (!id) return j;
         if (!qtyMap.has(id)) return j;
         return { ...j, qty: qtyMap.get(id) };
+      });
+    }
+
+    if (!clear && pauseUpdates.length > 0) {
+      const pauseMap = new Map(pauseUpdates.map((u) => [u.jobId, u.paused]));
+      jobs = jobs.map((j) => {
+        const id = String(j?.id || "");
+        if (!id) return j;
+        if (!pauseMap.has(id)) return j;
+        return { ...j, paused: pauseMap.get(id) };
       });
     }
 

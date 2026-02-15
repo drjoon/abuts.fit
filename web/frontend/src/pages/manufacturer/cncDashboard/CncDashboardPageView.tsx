@@ -138,6 +138,7 @@ export const CncDashboardPageView = (props: any) => {
     onSelectMachine,
     playingNextMap,
     handlePlayNextUp,
+    handlePlayNowPlaying,
     nowPlayingMap,
   } = props;
 
@@ -258,6 +259,9 @@ export const CncDashboardPageView = (props: any) => {
                   onPlayNext={(machine) => {
                     void handlePlayNextUp(machine.uid);
                   }}
+                  onPlayNowPlaying={(machine) => {
+                    void handlePlayNowPlaying(machine.uid);
+                  }}
                   onCancelNowPlaying={(machine, jobId) => {
                     const uid = machine.uid;
                     if (jobId) {
@@ -289,6 +293,9 @@ export const CncDashboardPageView = (props: any) => {
                             if (refreshDbQueuesForAllMachines) {
                               await refreshDbQueuesForAllMachines();
                             }
+                            await loadBridgeQueueForMachine(machine, {
+                              silent: true,
+                            });
                           },
                         });
                         toast({
