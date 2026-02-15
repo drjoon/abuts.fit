@@ -40,6 +40,17 @@ namespace HiLinkBridgeWebApi48
                     value = Unquote(value);
                     Environment.SetEnvironmentVariable(key, value);
                 }
+
+                try
+                {
+                    var raw = Environment.GetEnvironmentVariable("BACKEND_BASE") ?? string.Empty;
+                    Console.WriteLine("[config] env.BACKEND_BASE=" + (string.IsNullOrEmpty(raw) ? "(empty)" : raw));
+                    Console.WriteLine("[config] Config.BackendBase=" + (string.IsNullOrEmpty(BackendBase) ? "(empty)" : BackendBase));
+                    Console.WriteLine("[config] Config.BackendRootBase=" + (string.IsNullOrEmpty(BackendRootBase) ? "(empty)" : BackendRootBase));
+                }
+                catch
+                {
+                }
             }
             catch
             {
@@ -104,6 +115,14 @@ namespace HiLinkBridgeWebApi48
             }
             return trimmed;
         }
+        private static string NormalizeBackendApiBase(string value, string fallback)
+        {
+            var trimmed = TrimBase(value, fallback);
+            if (string.IsNullOrEmpty(trimmed)) return trimmed;
+            return trimmed.EndsWith("/api", StringComparison.OrdinalIgnoreCase)
+                ? trimmed
+                : (trimmed + "/api");
+        }
         public static string BridgeSharedSecret => Get("BRIDGE_SHARED_SECRET", "");
         public static string BridgeAllowIpsRaw => Get("BRIDGE_ALLOW_IPS", "");
         public static IEnumerable<string> BridgeAllowIps => BridgeAllowIpsRaw.Split(',').Select(ip => ip.Trim()).Where(ip => !string.IsNullOrEmpty(ip));
@@ -113,7 +132,6 @@ namespace HiLinkBridgeWebApi48
             !string.Equals(Get("DUMMY_CNC_SCHEDULER_ENABLED", ""), "false", StringComparison.OrdinalIgnoreCase);
         public static bool MockCncMachining =>
             IsTrue(Get("MOCK_CNC_MACHINING_ENABLED", ""));
-
         private static bool IsTrue(string value)
         {
             var v = (value ?? string.Empty).Trim();
@@ -123,7 +141,25 @@ namespace HiLinkBridgeWebApi48
         public static string BridgeSelfBase =>
             TrimBase(Get("BRIDGE_SELF_BASE", ""), "");
         public static string BackendBase =>
-            TrimBase(Get("BACKEND_BASE", ""), "");
+            NormalizeBackendApiBase(Get("BACKEND_BASE", ""), "");
+        public static string BackendApiBase
+        {
+            get
+            {
+                return BackendBase;
+            }
+        }
+        public static string BackendRootBase
+        {
+            get
+            {
+                var apiBase = BackendBase;
+                if (string.IsNullOrEmpty(apiBase)) return string.Empty;
+                return apiBase.EndsWith("/api", StringComparison.OrdinalIgnoreCase)
+                    ? apiBase.Substring(0, apiBase.Length - 4)
+                    : apiBase;
+            }
+        }
         public static int CncStartIoUid => GetInt("CNC_START_IOUID", 0, 0, short.MaxValue);
         public static int CncBusyIoUid => GetInt("CNC_BUSY_IOUID", 0, -1, short.MaxValue);
         public static int CncJobAssumeMinutes => GetInt("CNC_JOB_ASSUME_MINUTES", 0, 1, 24 * 60);

@@ -50,11 +50,50 @@ var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
 using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
 {
 AddAuthHeader(req);
+AddSecretHeader(req);
 req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
 using (var resp = await Http.SendAsync(req))
 {
 _ = await resp.Content.ReadAsStringAsync();
 }
+}
+
+// CNC machining completed notify (bridge -> backend)
+try
+{
+    if (!string.IsNullOrEmpty(backend))
+    {
+        var completeUrl = backend + "/cnc-machines/bridge/machining/complete/" + Uri.EscapeDataString(machineId);
+        var completePayload = new
+        {
+            machineId = machineId,
+            jobId = job?.id,
+            requestId = job?.requestId,
+            bridgePath = job?.bridgePath,
+            s3Key = job?.s3Key,
+            s3Bucket = job?.s3Bucket,
+            completedAt = DateTime.UtcNow,
+        };
+        var completeJson = Newtonsoft.Json.JsonConvert.SerializeObject(completePayload);
+        using (var completeReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, completeUrl))
+        {
+            AddAuthHeader(completeReq);
+            AddSecretHeader(completeReq);
+            completeReq.Content = new System.Net.Http.StringContent(completeJson, System.Text.Encoding.UTF8, "application/json");
+            using (var completeResp = await Http.SendAsync(completeReq))
+            {
+                var completeBody = await completeResp.Content.ReadAsStringAsync();
+                if (!completeResp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("[CncMachining] NotifyMachiningComplete endpoint failed status={0} body={1}", (int)completeResp.StatusCode, completeBody);
+                }
+            }
+        }
+    }
+}
+catch (Exception completeEx)
+{
+    Console.WriteLine("[CncMachining] NotifyMachiningComplete endpoint error: {0}", completeEx.Message);
 }
 }
 catch (Exception ex)
@@ -1474,6 +1513,7 @@ var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
 using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
 {
 AddAuthHeader(req);
+AddSecretHeader(req);
 req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
 using (var resp = await Http.SendAsync(req))
 {
@@ -1485,7 +1525,7 @@ try
 {
     if (!string.IsNullOrEmpty(backend))
     {
-        var startUrl = backend + "/api/cnc-machines/bridge/machining/start/" + Uri.EscapeDataString(machineId);
+        var startUrl = backend + "/cnc-machines/bridge/machining/start/" + Uri.EscapeDataString(machineId);
         var startPayload = new
         {
             machineId = machineId,
@@ -1501,10 +1541,15 @@ try
         using (var startReq = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, startUrl))
         {
             AddAuthHeader(startReq);
+            AddSecretHeader(startReq);
             startReq.Content = new System.Net.Http.StringContent(startJson, System.Text.Encoding.UTF8, "application/json");
             using (var startResp = await Http.SendAsync(startReq))
             {
-                _ = await startResp.Content.ReadAsStringAsync();
+                var startBody = await startResp.Content.ReadAsStringAsync();
+                if (!startResp.IsSuccessStatusCode)
+                {
+                    Console.WriteLine("[CncMachining] NotifyMachiningStart endpoint failed status={0} body={1}", (int)startResp.StatusCode, startBody);
+                }
             }
         }
     }
@@ -1538,7 +1583,7 @@ try
     if (startedAt == DateTime.MinValue) startedAt = DateTime.UtcNow;
     var elapsedSeconds = Math.Max(0, (int)Math.Floor((DateTime.UtcNow - startedAt).TotalSeconds));
 
-    var tickUrl = backend + "/api/cnc-machines/bridge/machining/tick/" + Uri.EscapeDataString(machineId);
+    var tickUrl = backend + "/cnc-machines/bridge/machining/tick/" + Uri.EscapeDataString(machineId);
     var tickPayload = new
     {
         machineId = machineId,
@@ -1557,10 +1602,15 @@ try
     using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, tickUrl))
     {
         AddAuthHeader(req);
+        AddSecretHeader(req);
         req.Content = new System.Net.Http.StringContent(tickJson, System.Text.Encoding.UTF8, "application/json");
         using (var resp = await Http.SendAsync(req))
         {
-            _ = await resp.Content.ReadAsStringAsync();
+            var body = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
+            {
+                Console.WriteLine("[CncMachining] NotifyMachiningTick failed status={0} body={1}", (int)resp.StatusCode, body);
+            }
         }
     }
 }
@@ -1593,6 +1643,7 @@ var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
 using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
 {
 AddAuthHeader(req);
+AddSecretHeader(req);
 req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
 using (var resp = await Http.SendAsync(req))
 {

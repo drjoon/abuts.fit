@@ -109,7 +109,7 @@ export function initializeSocket(token: string): Socket {
   const serverUrl = envSocketUrl
     ? envSocketUrl
     : import.meta.env.DEV
-      ? envApiUrl || envDevApiTarget || origin || "http://localhost:8080"
+      ? envDevApiTarget || envApiUrl || origin || "http://localhost:8080"
       : origin || envApiUrl || "https://abuts.fit";
 
   console.log("[socket] connecting to", serverUrl);
