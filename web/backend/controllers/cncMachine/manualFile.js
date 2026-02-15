@@ -16,6 +16,15 @@ import {
 
 import path from "path";
 
+const MANUAL_FILE_DISABLED = true;
+
+function rejectManualFileDisabled(res) {
+  return res.status(503).json({
+    success: false,
+    message: "manual_file 기능이 현재 비활성화되어 있습니다.",
+  });
+}
+
 async function loadManualCardQueue(machineId) {
   const mid = String(machineId || "").trim();
   if (!mid) return { items: [], updatedAt: null };
@@ -167,6 +176,9 @@ async function preloadManualCardTop2(machineId) {
 
 export async function startManualFileJobForBridge(req, res) {
   try {
+    if (MANUAL_FILE_DISABLED) {
+      return rejectManualFileDisabled(res);
+    }
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
@@ -221,6 +233,9 @@ export async function startManualFileJobForBridge(req, res) {
 
 export async function completeManualFileJobForBridge(req, res) {
   try {
+    if (MANUAL_FILE_DISABLED) {
+      return rejectManualFileDisabled(res);
+    }
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
@@ -282,6 +297,9 @@ export async function completeManualFileJobForBridge(req, res) {
 
 export async function manualFileUploadAndPreload(req, res) {
   try {
+    if (MANUAL_FILE_DISABLED) {
+      return rejectManualFileDisabled(res);
+    }
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {
@@ -440,6 +458,9 @@ export async function manualFileUploadAndPreload(req, res) {
 
 export async function manualFilePlay(req, res) {
   try {
+    if (MANUAL_FILE_DISABLED) {
+      return rejectManualFileDisabled(res);
+    }
     const { machineId } = req.params;
     const mid = String(machineId || "").trim();
     if (!mid) {

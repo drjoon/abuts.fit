@@ -24,7 +24,7 @@ export const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://localhost:8002";
 export const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
 export const MANUAL_SLOT_NOW = 4000;
-export const MANUAL_SLOT_NEXT = 4001;
+export const MANUAL_SLOT_NEXT = 4000;
 
 export const toNumberOrNull = (v) => {
   const n = Number(v);

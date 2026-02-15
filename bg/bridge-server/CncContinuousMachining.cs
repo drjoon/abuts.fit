@@ -250,7 +250,6 @@ private const int MACHINE_FLAGS_CACHE_SEC = 5;
 private const int BACKEND_SYNC_INTERVAL_SEC = 10;
 // 고정 슬롯 번호
 private const int SLOT_A = 4000;
-private const int SLOT_B = 4001;
 
 private static int GetJobPriority(CncJobItem job)
 {
@@ -263,7 +262,7 @@ return 0;
 private class MachineState
 {
 public string MachineId;
-public int CurrentSlot; // 현재 실행 중인 슬롯 (4000 or 4001)
+public int CurrentSlot; // 현재 실행 중인 슬롯 (4000)
 public CncJobItem CurrentJob;
 public DateTime StartedAtUtc;
 public bool IsRunning;
@@ -472,9 +471,7 @@ if (!string.IsNullOrEmpty(state.PendingConsumeJobId))
     }
     return;
 }
-// 장비의 현재 활성 프로그램을 읽어 슬롯 기준을 맞춘다.
-// (선업로드가 이미 된 경우에는 nextSlot을 바꾸지 않는다.)
-RefreshSlotsFromMachine(machineId, state);
+// 슬롯 동기화 폴링은 하지 않는다. (항상 O4000만 사용)
 
 // manual_file 전용 완료 감지: busy 1->0 전환 시 백엔드에 complete 통보
 try
@@ -724,10 +721,9 @@ if (Config.MockCncMachining)
     return true;
 }
 
-// 현재 가공 중인 슬롯을 피해서 다른 슬롯 선택
-var uploadSlot = (state.CurrentSlot == SLOT_A) ? SLOT_B : SLOT_A;
-Console.WriteLine("[CncMachining] starting new job machine={0} jobId={1} file={2} slot=O{3} (current=O{4})",
-machineId, job?.id, job?.fileName, uploadSlot, state.CurrentSlot);
+var uploadSlot = SLOT_A;
+Console.WriteLine("[CncMachining] starting new job machine={0} jobId={1} file={2} slot=O{3}",
+machineId, job?.id, job?.fileName, uploadSlot);
 // 1. Edit 모드 전환 (Idle에서만)
 if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
 {
@@ -759,7 +755,7 @@ _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", uploadErr ?? 
 return false;
 }
 _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "READY", null));
-// 3. 활성화 (O4000/O4001은 메인 슬롯이므로 headType=1)
+// 3. 활성화 (O4000은 메인 슬롯이므로 headType=1)
 // 더미 job: programNo로 직접 활성화
 short activateProgNo = job.kind == CncJobKind.Dummy && job.programNo.HasValue
   ? (short)job.programNo.Value
@@ -793,7 +789,7 @@ await Task.Delay(300);
 lock (StateLock)
 {
 state.CurrentJob = job;
-state.CurrentSlot = uploadSlot;
+state.CurrentSlot = SLOT_A;
 state.IsRunning = false;
 state.AwaitingStart = true;
 state.StartedAtUtc = DateTime.MinValue;
@@ -1025,8 +1021,7 @@ programNo = (short)slotNo,
 programData = processedContent,
 isNew = true,
 };
-// CNC 메모리 제약 대응: 업로드 대상 슬롯(O4000/O4001)에 기존 프로그램이 있으면 삭제 후 업로드한다.
-// (연속가공 흐름상 preload는 항상 '다음 슬롯'에 수행되므로, 현재 가공 슬롯 삭제 위험은 없다.)
+// CNC 메모리 제약 대응: 업로드 대상 슬롯(O4000)에 기존 프로그램이 있으면 삭제 후 업로드한다.
 try
 {
 if (!Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)slotNo, out var _, out var delErr))
@@ -1439,26 +1434,6 @@ private static bool TryGetProductCount(string machineId, out int count)
     }
     Console.WriteLine("[CncMachining] productCount read failed machine={0}", machineId);
     return false;
-}
-private static void RefreshSlotsFromMachine(string machineId, MachineState state)
-{
-try
-{
-if (!Mode1Api.TryGetActivateProgInfo(machineId, out var info, out _))
-{
-return;
-}
-var active = CncMachineSignalUtils.TryGetActiveProgramNo(machineId) ?? ParseActiveProgramNo(info);
-if (active == SLOT_A)
-{
-state.CurrentSlot = SLOT_A;
-}
-else if (active == SLOT_B)
-{
-state.CurrentSlot = SLOT_B;
-}
-}
-catch { }
 }
 private static int ParseActiveProgramNo(MachineProgramInfo info)
 {

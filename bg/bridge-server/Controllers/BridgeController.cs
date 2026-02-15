@@ -1362,6 +1362,12 @@ namespace HiLinkBridgeWebApi48.Controllers
         [Route("machines/{machineId}/manual/preload")]
         public HttpResponseMessage ManualPreload(string machineId, [FromBody] ManualPreloadRequest req)
         {
+            return Request.CreateResponse(HttpStatusCode.Gone, new
+            {
+                success = false,
+                message = "manual_file is disabled"
+            });
+
             if (string.IsNullOrWhiteSpace(machineId))
             {
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
@@ -2125,6 +2131,12 @@ namespace HiLinkBridgeWebApi48.Controllers
         [Route("machines/{machineId}/manual/play")]
         public async Task<HttpResponseMessage> ManualPlay(string machineId, [FromBody] ManualPlayRequest req)
         {
+            return Request.CreateResponse(HttpStatusCode.Gone, new
+            {
+                success = false,
+                message = "manual_file is disabled"
+            });
+
             if (string.IsNullOrWhiteSpace(machineId))
             {
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
