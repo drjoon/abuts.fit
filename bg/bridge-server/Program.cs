@@ -88,6 +88,18 @@ namespace HiLinkBridgeWebApi48
             }
 
             Console.WriteLine("Starting HiLinkBridgeWebApi48 on " + BaseAddress + "...");
+            try
+            {
+                // Force Config static ctor to run so local.env is loaded before mode logging
+                _ = Config.BackendBase;
+
+                var mockEnv = (Environment.GetEnvironmentVariable("MOCK_CNC_MACHINING_ENABLED") ?? string.Empty).Trim();
+                var mock = !(string.IsNullOrEmpty(mockEnv) || string.Equals(mockEnv, "false", StringComparison.OrdinalIgnoreCase) || mockEnv == "0");
+                Console.WriteLine(mock
+                    ? "[MODE] MOCK CNC MACHINING ENABLED (alarms ignored, simulated machining)"
+                    : "[MODE] REAL CNC MACHINING (alarms enforced)");
+            }
+            catch { }
             using (WebApp.Start<Startup>(BaseAddress))
             {
                 Console.WriteLine("Hi-Link Bridge WebAPI (net48) is running. Initializing machines from machines.json...");

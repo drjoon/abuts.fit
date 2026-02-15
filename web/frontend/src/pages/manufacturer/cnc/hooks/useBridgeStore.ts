@@ -8,15 +8,7 @@ export interface BridgeEntry {
   size?: number;
 }
 
-interface BridgeStoreOptions {
-  resolveForcedProgram?: () =>
-    | Promise<{ programNo?: number | null; fileName?: string | null } | null>
-    | { programNo?: number | null; fileName?: string | null }
-    | null;
-}
-
-const ensureFanucName = (programNo: number) =>
-  `O${String(programNo).padStart(4, "0")}.nc`;
+interface BridgeStoreOptions {}
 
 export const useBridgeStore = (options?: BridgeStoreOptions) => {
   const [bridgeEntries, setBridgeEntries] = useState<BridgeEntry[]>([]);
@@ -232,41 +224,13 @@ export const useBridgeStore = (options?: BridgeStoreOptions) => {
               let content = String(reader.result ?? "");
               let targetName = file.name;
 
-              let forcedProgramNo: number | null = null;
-              let forcedFileName: string | null = null;
-              if (options?.resolveForcedProgram) {
-                try {
-                  const resolved = await Promise.resolve(
-                    options.resolveForcedProgram(),
-                  );
-                  if (resolved) {
-                    if (
-                      typeof resolved.programNo === "number" &&
-                      Number.isFinite(resolved.programNo)
-                    ) {
-                      forcedProgramNo = resolved.programNo;
-                      forcedFileName = ensureFanucName(resolved.programNo);
-                    }
-                    if (resolved.fileName) {
-                      forcedFileName = resolved.fileName;
-                    }
-                  }
-                } catch {
-                  // ignore resolver failure
-                }
-              }
-
-              if (forcedFileName) {
-                targetName = forcedFileName;
-              }
-
               // 현재 경로 기준으로 동일한 파일명이 이미 존재하면, 외부 UI(ConfirmDialog)를 통해
               // 덮어쓰기/번호 증가/취소 중 하나를 선택할 수 있도록 uploadConflict 상태를 사용한다.
               const conflict = bridgeEntries.find(
                 (e) => e.type === "file" && e.name === targetName,
               );
 
-              if (conflict && !forcedFileName) {
+              if (conflict) {
                 const suggested = getIncrementedFilename(
                   targetName,
                   bridgeEntries,

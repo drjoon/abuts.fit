@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -981,7 +982,7 @@ LastBackendSyncUtc[mid] = now;
 var backendBase = Config.BackendBase;
 if (string.IsNullOrEmpty(backendBase)) return;
 var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/queue-snapshot/" + Uri.EscapeDataString(mid);
-string text;
+string text = null;
 using (var req = new HttpRequestMessage(HttpMethod.Get, url))
 {
 AddSecretHeader(req);
@@ -995,7 +996,18 @@ return;
 }
 }
 }
-var root = JObject.Parse(text);
+JObject root;
+try
+{
+root = JObject.Parse(text);
+}
+catch (Exception parseEx)
+{
+var snippet = (text ?? string.Empty);
+if (snippet.Length > 500) snippet = snippet.Substring(0, 500) + "...";
+Console.WriteLine("[CncMachining] queue snapshot parse error url={0} error={1} bodySnippet={2}", url, parseEx.Message, snippet);
+return;
+}
 if (root.Value<bool?>("success") != true)
 {
 Console.WriteLine("[CncMachining] backend queue snapshot success=false");
@@ -1044,6 +1056,12 @@ source = string.IsNullOrEmpty(source) ? "backend_db" : source,
 paused = paused
 });
 }
+try
+{
+var sample = string.Join(", ", jobs.Take(3).Select(x => string.Format("{0}({1}:{2})", x.id, x.kindRaw, x.source)));
+Console.WriteLine("[CncMachining] backend snapshot machine={0} jobs={1} sample=[{2}]", mid, jobs.Count, sample);
+}
+catch { }
 CncJobQueue.ReplaceQueue(mid, jobs);
 }
 catch (Exception ex)

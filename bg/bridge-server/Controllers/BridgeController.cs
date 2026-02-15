@@ -701,6 +701,13 @@ namespace HiLinkBridgeWebApi48.Controllers
         private static bool IsAlarm(string machineId, out string error)
         {
             error = null;
+
+            // mock 모드일 때는 알람을 항상 무시한다.
+            if (IsMockCncMachiningEnabled())
+            {
+                return false;
+            }
+
             if (Mode1Api.TryGetMachineStatus(machineId, out var st, out var stErr))
             {
                 if (st == MachineStatusType.Alarm)
@@ -2147,8 +2154,9 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 // skipAlarmCheck=true이면 Alarm 체크를 건너뛴다 (에디터 로드용, 기본값)
                 // skipAlarmCheck=false이면 Alarm 체크를 수행한다 (가공 시작 시)
+                // mock 모드면 알람을 무시한다.
                 bool skipAlarmCheck = req?.skipAlarmCheck != false;
-                if (!skipAlarmCheck && Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
+                if (!IsMockCncMachiningEnabled() && !skipAlarmCheck && Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
                 {
                     if (status == MachineStatusType.Alarm)
                     {
@@ -2440,9 +2448,18 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 short headType = 1;
                 var headTypeToken = raw.payload?["headType"];
-                if (headTypeToken != null && headTypeToken.Type == JTokenType.Integer)
+                if (headTypeToken != null)
                 {
                     try { headType = (short)headTypeToken.Value<int>(); } catch { }
+                }
+
+                if (IsMockCncMachiningEnabled())
+                {
+                    return Request.CreateResponse(HttpStatusCode.OK, new
+                    {
+                        success = true,
+                        data = new { headType = headType, alarms = new object[0] }
+                    });
                 }
 
                 if (!Mode1Api.TryGetMachineAlarmInfo(raw.uid, headType, out var data, out var err))
@@ -3020,6 +3037,15 @@ namespace HiLinkBridgeWebApi48.Controllers
             if (string.IsNullOrWhiteSpace(machineId))
             {
                 return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
+            }
+
+            if (IsMockCncMachiningEnabled())
+            {
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    data = new { headType = headType, alarms = new object[0] }
+                });
             }
 
             if (!Mode1Api.TryGetMachineAlarmInfo(machineId, headType, out var data, out var err))
