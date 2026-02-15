@@ -14,6 +14,14 @@ import type { Machine } from "../../cnc/types";
 import type { CncJobItem } from "../../cnc/components/CncReservationModal";
 import type { PlaylistJobItem } from "../../cnc/components/CncPlaylistDrawer";
 
+type LastCompletedMachining = {
+  machineId: string;
+  jobId: string | null;
+  requestId: string | null;
+  completedAt: string;
+  durationSeconds: number;
+};
+
 interface Params {
   machines: Machine[];
   setMachines: any;
@@ -73,6 +81,10 @@ export function useCncDashboardQueues({
 
   const [machiningElapsedSecondsMap, setMachiningElapsedSecondsMap] = useState<
     Record<string, number>
+  >({});
+
+  const [lastCompletedMap, setLastCompletedMap] = useState<
+    Record<string, LastCompletedMachining>
   >({});
 
   const [playlistOpen, setPlaylistOpen] = useState(false);
@@ -353,6 +365,46 @@ export function useCncDashboardQueues({
     const unsubscribeCompleted = onCncMachiningCompleted((data) => {
       const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
+
+      const durationSeconds = (() => {
+        const fromDuration =
+          typeof (data as any)?.durationSeconds === "number" &&
+          (data as any).durationSeconds >= 0
+            ? Math.floor((data as any).durationSeconds)
+            : null;
+        if (fromDuration != null) return fromDuration;
+
+        const fromElapsed =
+          typeof (data as any)?.elapsedSeconds === "number" &&
+          (data as any).elapsedSeconds >= 0
+            ? Math.floor((data as any).elapsedSeconds)
+            : null;
+        if (fromElapsed != null) return fromElapsed;
+
+        const fromBase = machiningElapsedBaseRef.current?.[mid]?.elapsedSeconds;
+        if (typeof fromBase === "number" && fromBase >= 0) {
+          return Math.floor(fromBase);
+        }
+
+        return 0;
+      })();
+
+      setLastCompletedMap((prev) => ({
+        ...prev,
+        [mid]: {
+          machineId: mid,
+          jobId:
+            (data as any)?.jobId != null ? String((data as any).jobId) : null,
+          requestId:
+            (data as any)?.requestId != null
+              ? String((data as any).requestId)
+              : null,
+          completedAt: String(
+            (data as any)?.completedAt || new Date().toISOString(),
+          ),
+          durationSeconds,
+        },
+      }));
 
       if (import.meta.env.DEV) {
         console.log("[cnc][completed]", { machineId: mid, data });
@@ -989,6 +1041,7 @@ export function useCncDashboardQueues({
     loadBridgeQueueForMachine,
     loadQueueForMachine,
     machiningElapsedSecondsMap,
+    lastCompletedMap,
     refreshDbQueuesForAllMachines,
     reservationSummaryMap,
     reservationJobsMap,

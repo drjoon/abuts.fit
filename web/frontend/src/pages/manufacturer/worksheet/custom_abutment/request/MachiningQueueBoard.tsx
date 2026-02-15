@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast";
 import {
+  initializeSocket,
   onCncMachiningCompleted,
   onCncMachiningTick,
   onCncMachiningStarted,
@@ -64,6 +65,14 @@ type MachineStatus = {
   nextProgram?: string;
 };
 
+type LastCompletedMachining = {
+  machineId: string;
+  jobId: string | null;
+  requestId: string | null;
+  completedAt: string;
+  durationSeconds: number;
+};
+
 type MachineQueueCardProps = {
   machineId: string;
   machineName?: string;
@@ -76,6 +85,7 @@ type MachineQueueCardProps = {
   onOpenReservation: () => void;
   onOpenProgramCode?: (prog: any, machineId: string) => void;
   machiningElapsedSeconds?: number | null;
+  lastCompleted?: LastCompletedMachining | null;
 };
 
 const getStatusDotColor = (status?: string) => getMachineStatusDotClass(status);
@@ -156,6 +166,7 @@ const MachineQueueCard = ({
   onOpenReservation,
   onOpenProgramCode,
   machiningElapsedSeconds,
+  lastCompleted,
 }: MachineQueueCardProps) => {
   const { toast } = useToast();
   const token = useAuthStore((s) => s.token);
@@ -278,6 +289,63 @@ const MachineQueueCard = ({
     };
   })();
 
+  const derivedCompleted = (() => {
+    if (lastCompleted) return lastCompleted;
+    const rec = currentSlot?.machiningRecord ?? null;
+    if (!rec) return null;
+    const status = String(rec.status || "")
+      .trim()
+      .toUpperCase();
+    if (!status || !["COMPLETED", "FAILED", "CANCELED"].includes(status)) {
+      return null;
+    }
+    const completedAt = rec.completedAt
+      ? String(rec.completedAt)
+      : (rec as any)?.lastTickAt
+        ? String((rec as any).lastTickAt)
+        : new Date().toISOString();
+    const durationSecondsRaw =
+      typeof rec.durationSeconds === "number"
+        ? rec.durationSeconds
+        : typeof rec.elapsedSeconds === "number"
+          ? rec.elapsedSeconds
+          : null;
+    const durationSeconds =
+      typeof durationSecondsRaw === "number" && durationSecondsRaw >= 0
+        ? Math.floor(durationSecondsRaw)
+        : 0;
+    const rid = currentSlot?.requestId ? String(currentSlot.requestId) : null;
+    return {
+      machineId,
+      jobId: null,
+      requestId: rid || null,
+      completedAt,
+      durationSeconds,
+    } satisfies LastCompletedMachining;
+  })();
+
+  const lastCompletedSummary = (() => {
+    const base = derivedCompleted;
+    if (!base) return null;
+    const completedAt = base.completedAt ? new Date(base.completedAt) : null;
+    const durationSec =
+      typeof base.durationSeconds === "number" && base.durationSeconds >= 0
+        ? Math.floor(base.durationSeconds)
+        : null;
+    const hhmm = completedAt
+      ? `${String(completedAt.getHours()).padStart(2, "0")}:${String(
+          completedAt.getMinutes(),
+        ).padStart(2, "0")}`
+      : "-";
+    const mmss =
+      durationSec == null
+        ? "-"
+        : `${String(Math.floor(durationSec / 60)).padStart(2, "0")}:${String(
+            durationSec % 60,
+          ).padStart(2, "0")}`;
+    return { completedAtLabel: hhmm, durationLabel: mmss };
+  })();
+
   return (
     <div className="app-glass-card app-glass-card--xl flex flex-col">
       <div className="app-glass-card-content flex items-start justify-between gap-3">
@@ -346,6 +414,34 @@ const MachineQueueCard = ({
 
       <div className="app-glass-card-content mt-4 flex flex-col gap-2 text-sm">
         <div className="grid grid-cols-1 gap-2">
+          {derivedCompleted ? (
+            <div className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-semibold text-slate-500">
+                    가공 완료
+                  </div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                    <span className="mr-2">
+                      종료 {lastCompletedSummary?.completedAtLabel || "-"}
+                    </span>
+                    <span>
+                      소요 {lastCompletedSummary?.durationLabel || "-"}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                    {derivedCompleted.requestId
+                      ? `의뢰 (${String(derivedCompleted.requestId)})`
+                      : derivedCompleted.jobId
+                        ? `작업 (${String(derivedCompleted.jobId)})`
+                        : "-"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0" />
+              </div>
+            </div>
+          ) : null}
+
           <div
             role="button"
             tabIndex={0}
@@ -380,20 +476,6 @@ const MachineQueueCard = ({
                     </span>
                   ) : null}
                 </div>
-                {machiningRecordSummary ? (
-                  <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
-                    <span className="mr-2 font-extrabold text-slate-700">
-                      {machiningRecordSummary.statusLabel}
-                    </span>
-                    <span className="mr-2">
-                      시작 {machiningRecordSummary.startedAtLabel}
-                    </span>
-                    <span className="mr-2">
-                      종료 {machiningRecordSummary.completedAtLabel}
-                    </span>
-                    <span>소요 {machiningRecordSummary.durationLabel}</span>
-                  </div>
-                ) : null}
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {nowPlayingLabel}
                 </div>
@@ -499,6 +581,10 @@ export const MachiningQueueBoard = ({
   >({});
   const machiningElapsedBaseRef = useRef<
     Record<string, { elapsedSeconds: number; tickAtMs: number }>
+  >({});
+
+  const [lastCompletedMap, setLastCompletedMap] = useState<
+    Record<string, LastCompletedMachining>
   >({});
 
   const [statusRefreshing, setStatusRefreshing] = useState(false);
@@ -700,6 +786,88 @@ export const MachiningQueueBoard = ({
       mounted = false;
     };
   }, [token, toast]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    initializeSocket(token);
+
+    const offStarted = onCncMachiningStarted((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      machiningElapsedBaseRef.current[mid] = {
+        elapsedSeconds: 0,
+        tickAtMs: Date.now(),
+      };
+      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
+    });
+
+    const offTick = onCncMachiningTick((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+      const sec =
+        typeof data?.elapsedSeconds === "number" && data.elapsedSeconds >= 0
+          ? Math.floor(data.elapsedSeconds)
+          : null;
+      if (sec == null) return;
+      machiningElapsedBaseRef.current[mid] = {
+        elapsedSeconds: sec,
+        tickAtMs: Date.now(),
+      };
+      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: sec }));
+    });
+
+    const offCompleted = onCncMachiningCompleted((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid) return;
+
+      const durationSeconds = (() => {
+        const fromDuration =
+          typeof data?.durationSeconds === "number" && data.durationSeconds >= 0
+            ? Math.floor(data.durationSeconds)
+            : null;
+        if (fromDuration != null) return fromDuration;
+
+        const fromElapsed =
+          typeof data?.elapsedSeconds === "number" && data.elapsedSeconds >= 0
+            ? Math.floor(data.elapsedSeconds)
+            : null;
+        if (fromElapsed != null) return fromElapsed;
+
+        const fromBase = machiningElapsedBaseRef.current?.[mid]?.elapsedSeconds;
+        if (typeof fromBase === "number" && fromBase >= 0) {
+          return Math.floor(fromBase);
+        }
+
+        const fromMap = machiningElapsedSecondsMap?.[mid];
+        if (typeof fromMap === "number" && fromMap >= 0) {
+          return Math.floor(fromMap);
+        }
+
+        return 0;
+      })();
+
+      setLastCompletedMap((prev) => ({
+        ...prev,
+        [mid]: {
+          machineId: mid,
+          jobId: data?.jobId != null ? String(data.jobId) : null,
+          requestId: data?.requestId != null ? String(data.requestId) : null,
+          completedAt: String(data?.completedAt || new Date().toISOString()),
+          durationSeconds,
+        },
+      }));
+
+      delete machiningElapsedBaseRef.current[mid];
+      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
+    });
+
+    return () => {
+      offStarted?.();
+      offTick?.();
+      offCompleted?.();
+    };
+  }, [token]);
 
   const refreshMachineStatuses = useCallback(async () => {
     if (!token) return;
@@ -989,6 +1157,7 @@ export const MachiningQueueBoard = ({
                     ? machiningElapsedSecondsMap[m.uid]
                     : null
                 }
+                lastCompleted={lastCompletedMap?.[m.uid] || null}
                 onOpenRequestLog={(requestId) =>
                   setEventLogRequestId(requestId)
                 }

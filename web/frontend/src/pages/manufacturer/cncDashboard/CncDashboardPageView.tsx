@@ -36,6 +36,7 @@ export const CncDashboardPageView = (props: any) => {
     toolHealthMap,
     programSummary,
     machiningElapsedSecondsMap,
+    lastCompletedMap,
     machiningRecordSummaryMap,
     reservationJobsMap,
     worksheetQueueCountMap,
@@ -244,6 +245,7 @@ export const CncDashboardPageView = (props: any) => {
                   toolTooltipMap={toolTooltipMap}
                   programSummary={programSummary}
                   machiningElapsedSecondsMap={machiningElapsedSecondsMap}
+                  lastCompletedMap={lastCompletedMap}
                   machiningRecordSummaryMap={machiningRecordSummaryMap}
                   reservationJobsMap={reservationJobsMap}
                   worksheetQueueCountMap={worksheetQueueCountMap}

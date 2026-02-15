@@ -574,6 +574,7 @@ export const CncDashboardPage = () => {
       toolHealthMap={toolHealthMap}
       programSummary={programSummary}
       machiningElapsedSecondsMap={queues.machiningElapsedSecondsMap}
+      lastCompletedMap={queues.lastCompletedMap}
       machiningRecordSummaryMap={machiningRecordSummaryMap}
       reservationJobsMap={queues.reservationJobsMap}
       worksheetQueueCountMap={queues.worksheetQueueCountMap}

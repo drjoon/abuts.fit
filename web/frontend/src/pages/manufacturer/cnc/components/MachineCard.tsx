@@ -47,6 +47,13 @@ interface MachineCardProps {
   loading: boolean;
   isPlaying?: boolean;
   machiningElapsedSeconds?: number | null;
+  lastCompleted?: {
+    machineId: string;
+    jobId: string | null;
+    requestId: string | null;
+    completedAt: string;
+    durationSeconds: number;
+  } | null;
   machiningRecordSummary?: {
     status?: string;
     startedAt?: string | Date;
@@ -114,6 +121,7 @@ export const MachineCard = (props: MachineCardProps) => {
     loading,
     isPlaying = false,
     machiningElapsedSeconds,
+    lastCompleted,
     machiningRecordSummary,
     worksheetQueueCount,
     tempTooltip,
@@ -461,6 +469,73 @@ export const MachineCard = (props: MachineCardProps) => {
     };
   })();
 
+  const derivedCompleted = (() => {
+    if (lastCompleted) return lastCompleted;
+    const rec = machiningRecordSummary || null;
+    if (!rec) return null;
+    const status = String(rec.status || "")
+      .trim()
+      .toUpperCase();
+    if (!status || !["COMPLETED", "FAILED", "CANCELED"].includes(status)) {
+      return null;
+    }
+    const completedAt = rec.completedAt
+      ? String(rec.completedAt)
+      : (rec as any)?.lastTickAt
+        ? String((rec as any).lastTickAt)
+        : new Date().toISOString();
+    const durationSecondsRaw =
+      typeof rec.durationSeconds === "number"
+        ? rec.durationSeconds
+        : typeof rec.elapsedSeconds === "number"
+          ? rec.elapsedSeconds
+          : null;
+    const durationSeconds =
+      typeof durationSecondsRaw === "number" && durationSecondsRaw >= 0
+        ? Math.floor(durationSecondsRaw)
+        : 0;
+    const requestId = (currentProg as any)?.requestId
+      ? String((currentProg as any).requestId)
+      : null;
+    const jobId = (currentProg as any)?.jobId
+      ? String((currentProg as any).jobId)
+      : (currentProg as any)?.id
+        ? String((currentProg as any).id)
+        : null;
+    return {
+      machineId: machine.uid,
+      jobId,
+      requestId,
+      completedAt,
+      durationSeconds,
+    };
+  })();
+
+  const lastCompletedSummary = (() => {
+    const base = derivedCompleted;
+    if (!base) return null;
+    const completedAt = base.completedAt ? new Date(base.completedAt) : null;
+    const durationSec =
+      typeof base.durationSeconds === "number" && base.durationSeconds >= 0
+        ? Math.floor(base.durationSeconds)
+        : null;
+
+    const hhmm = completedAt
+      ? `${String(completedAt.getHours()).padStart(2, "0")}:${String(
+          completedAt.getMinutes(),
+        ).padStart(2, "0")}`
+      : "-";
+
+    const mmss =
+      durationSec == null
+        ? "-"
+        : `${String(Math.floor(durationSec / 60)).padStart(2, "0")}:${String(
+            durationSec % 60,
+          ).padStart(2, "0")}`;
+
+    return { completedAtLabel: hhmm, durationLabel: mmss };
+  })();
+
   return (
     <div
       onClick={onSelect}
@@ -784,6 +859,34 @@ export const MachineCard = (props: MachineCardProps) => {
         </div>
 
         <div className="grid grid-cols-1 gap-2">
+          {derivedCompleted ? (
+            <div className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold text-slate-500">
+                    가공 완료
+                  </div>
+                  <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                    <span className="mr-2">
+                      종료 {lastCompletedSummary?.completedAtLabel || "-"}
+                    </span>
+                    <span>
+                      소요 {lastCompletedSummary?.durationLabel || "-"}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                    {derivedCompleted.requestId
+                      ? `의뢰 (${String(derivedCompleted.requestId)})`
+                      : derivedCompleted.jobId
+                        ? `작업 (${String(derivedCompleted.jobId)})`
+                        : "-"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1" />
+              </div>
+            </div>
+          ) : null}
+
           <div
             role="button"
             tabIndex={0}
@@ -807,20 +910,6 @@ export const MachineCard = (props: MachineCardProps) => {
                     </span>
                   )}
                 </div>
-                {recordLabel ? (
-                  <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
-                    <span className="mr-2 font-extrabold text-slate-700">
-                      {recordLabel.statusLabel}
-                    </span>
-                    <span className="mr-2">
-                      시작 {recordLabel.startedAtLabel}
-                    </span>
-                    <span className="mr-2">
-                      종료 {recordLabel.completedAtLabel}
-                    </span>
-                    <span>소요 {recordLabel.durationLabel}</span>
-                  </div>
-                ) : null}
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {currentProg ? (currentProg.name ?? "없음") : "없음"}
                 </div>

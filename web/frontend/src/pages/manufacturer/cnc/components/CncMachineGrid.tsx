@@ -12,6 +12,18 @@ interface CncMachineGridProps {
   toolTooltipMap: Record<string, string>;
   programSummary: { current?: any; list?: any[] } | null;
   machiningElapsedSecondsMap?: Record<string, number>;
+  lastCompletedMap?:
+    | Record<
+        string,
+        {
+          machineId: string;
+          jobId: string | null;
+          requestId: string | null;
+          completedAt: string;
+          durationSeconds: number;
+        }
+      >
+    | undefined;
   machiningRecordSummaryMap?: Record<
     string,
     {
@@ -63,6 +75,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   toolTooltipMap,
   programSummary,
   machiningElapsedSecondsMap,
+  lastCompletedMap,
   machiningRecordSummaryMap,
   reservationJobsMap,
   worksheetQueueCountMap,
@@ -156,6 +169,7 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
             machiningElapsedSeconds={
               machiningElapsedSecondsMap?.[m.uid] ?? null
             }
+            lastCompleted={lastCompletedMap?.[m.uid] ?? null}
             machiningRecordSummary={machiningRecordSummaryMap?.[m.uid] ?? null}
             worksheetQueueCount={worksheetQueueCount}
             tempTooltip={tempTooltipMap[m.uid] ?? ""}
