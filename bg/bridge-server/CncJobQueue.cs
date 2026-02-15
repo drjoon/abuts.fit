@@ -336,5 +336,29 @@ namespace HiLinkBridgeWebApi48
                 q.Clear();
             }
         }
+
+        public static bool TryRemove(string machineId, string jobId)
+        {
+            var mid = (machineId ?? string.Empty).Trim();
+            var jid = (jobId ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(mid) || string.IsNullOrEmpty(jid)) return false;
+
+            var q = GetQueue(mid);
+            lock (GetLock(mid))
+            {
+                if (q.Count == 0) return false;
+                var node = q.First;
+                while (node != null)
+                {
+                    if (node.Value != null && string.Equals(node.Value.id, jid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        q.Remove(node);
+                        return true;
+                    }
+                    node = node.Next;
+                }
+                return false;
+            }
+        }
     }
 }

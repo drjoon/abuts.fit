@@ -20,6 +20,7 @@ public class CncMachining
 private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 private static readonly HttpClient BackendClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 private static readonly Dictionary<string, DateTime> LastBackendSyncUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+private static readonly Dictionary<string, DateTime> LastSnapshotLogUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 private class MachineFlags
 {
 public bool AllowAutoMachining;
@@ -267,6 +268,9 @@ public CncJobItem CurrentJob;
 public DateTime StartedAtUtc;
 public bool IsRunning;
 public bool AwaitingStart;
+public string PendingConsumeJobId;
+public int ConsumeFailCount;
+public DateTime NextConsumeAttemptUtc;
 public int ProductCountBefore; // 가공 시작 전 생산 수량
 public bool SawBusy;
 public bool LastBusy;
@@ -434,6 +438,40 @@ NextStartAttemptUtc = DateTime.MinValue,
 MachineStates[machineId] = state;
 }
 }
+
+// 완료 후 consume(SSOT 큐 제거) 재시도 중이면 먼저 처리한다.
+// (consume 성공 전에는 동일 job 재시작을 막는다.)
+if (!string.IsNullOrEmpty(state.PendingConsumeJobId))
+{
+    var nowUtc = DateTime.UtcNow;
+    if (nowUtc < state.NextConsumeAttemptUtc)
+    {
+        return;
+    }
+    if (await TryConsumeBackendQueueJob(machineId, state.PendingConsumeJobId))
+    {
+        lock (StateLock)
+        {
+            state.PendingConsumeJobId = null;
+            state.ConsumeFailCount = 0;
+            state.NextConsumeAttemptUtc = DateTime.MinValue;
+            state.CurrentJob = null;
+            state.IsRunning = false;
+            state.AwaitingStart = false;
+            state.SawBusy = false;
+        }
+    }
+    else
+    {
+        lock (StateLock)
+        {
+            state.ConsumeFailCount = Math.Min(10, state.ConsumeFailCount + 1);
+            var delaySec = Math.Min(60, 2 * state.ConsumeFailCount);
+            state.NextConsumeAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
+        }
+    }
+    return;
+}
 // 장비의 현재 활성 프로그램을 읽어 슬롯 기준을 맞춘다.
 // (선업로드가 이미 된 경우에는 nextSlot을 바꾸지 않는다.)
 RefreshSlotsFromMachine(machineId, state);
@@ -520,6 +558,25 @@ _ = Task.Run(() => NotifyMachiningCompleted(state.CurrentJob, machineId));
 }
 catch { }
 
+// 완료 시점에 백엔드 SSOT 큐에서 job 제거(consume)
+var completedJobId = state.CurrentJob?.id;
+if (!string.IsNullOrEmpty(completedJobId))
+{
+    if (!await TryConsumeBackendQueueJob(machineId, completedJobId))
+    {
+        Console.WriteLine("[CncMachining] consume after complete failed (will retry) machine={0} jobId={1}", machineId, completedJobId);
+        lock (StateLock)
+        {
+            state.PendingConsumeJobId = completedJobId;
+            state.ConsumeFailCount = Math.Max(1, state.ConsumeFailCount);
+            state.NextConsumeAttemptUtc = DateTime.UtcNow.AddSeconds(2);
+            state.IsRunning = false;
+            state.AwaitingStart = false;
+        }
+        return;
+    }
+}
+
 lock (StateLock)
 {
 state.IsRunning = false;
@@ -559,9 +616,6 @@ _ = Task.Run(() => NotifyMachiningStarted(state.CurrentJob, machineId));
 return;
 }
 // 2. Idle 상태: 새 작업 시작
-// 새로운 가공 시작 직전에는 항상 백엔드 SSOT(큐 스냅샷)로 동기화한다.
-// (가공중/awaitingStart 상태에서는 큐를 건드리지 않는다.)
-await SyncQueueFromBackend(machineId, force: true);
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
 {
@@ -573,16 +627,6 @@ if (string.Equals((nextJob.kindRaw ?? string.Empty).Trim(), "manual_file", Strin
     return;
 }
 
-// SSOT는 백엔드이므로, 실제 가공을 시작하기 전에 백엔드 큐에서 해당 job을 먼저 제거(consume)한다.
-// consume 실패 시에는 다음 루프에서 재시도한다.
-if (!await TryConsumeBackendQueueJob(machineId, nextJob.id))
-{
-    return;
-}
-
-// consume 후 다시 동기화(로컬 큐 메타/순서를 백엔드와 동일하게 유지)
-await SyncQueueFromBackend(machineId, force: true);
-
 var now = DateTime.UtcNow;
 if (!string.IsNullOrEmpty(state.LastStartFailJobId) &&
     string.Equals(state.LastStartFailJobId, nextJob.id, StringComparison.OrdinalIgnoreCase) &&
@@ -593,6 +637,9 @@ if (!string.IsNullOrEmpty(state.LastStartFailJobId) &&
 var started = await StartNewJob(machineId, state, nextJob);
 if (started)
 {
+// 로컬에서는 시작된 job을 큐에서 제거해서 재시작을 막는다.
+// 백엔드 SSOT 큐 제거는 완료 시점에 수행한다.
+_ = CncJobQueue.TryRemove(machineId, nextJob.id);
 lock (StateLock)
 {
 state.LastStartFailJobId = null;
@@ -602,17 +649,18 @@ state.NextStartAttemptUtc = DateTime.MinValue;
 }
 else
 {
-// 재시도하지 않고 큐에서 제거 (관리자가 확인 후 재등록)
-Console.WriteLine("[CncMachining] start dropped machine={0} jobId={1} file={2}",
+// 시작 실패: SSOT(백엔드) 큐는 유지. 브리지에서만 백오프로 재시도한다.
+Console.WriteLine("[CncMachining] start failed (will retry) machine={0} jobId={1} file={2}",
 machineId,
 nextJob.id,
 nextJob.fileName
 );
 lock (StateLock)
 {
-state.LastStartFailJobId = null;
-state.StartFailCount = 0;
-state.NextStartAttemptUtc = DateTime.MinValue;
+state.LastStartFailJobId = nextJob.id;
+state.StartFailCount = Math.Min(10, state.StartFailCount + 1);
+var delaySec = Math.Min(60, 2 * state.StartFailCount);
+state.NextStartAttemptUtc = DateTime.UtcNow.AddSeconds(delaySec);
 }
 }
 }
@@ -658,6 +706,24 @@ private static async Task<bool> StartNewJob(string machineId, MachineState state
 {
 try
 {
+// MOCK 모드: 장비 호출을 모두 건너뛰고 성공 처리
+if (Config.MockCncMachining)
+{
+    Console.WriteLine("[CncMachining] MOCK start bypass machine={0} jobId={1} file={2}", machineId, job?.id, job?.fileName);
+    _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "READY", null));
+    lock (StateLock)
+    {
+        state.CurrentJob = job;
+        state.CurrentSlot = SLOT_A; // 임의 슬롯
+        state.IsRunning = false;
+        state.AwaitingStart = true;
+        state.StartedAtUtc = DateTime.MinValue;
+        state.ProductCountBefore = 0;
+        state.SawBusy = false;
+    }
+    return true;
+}
+
 // 현재 가공 중인 슬롯을 피해서 다른 슬롯 선택
 var uploadSlot = (state.CurrentSlot == SLOT_A) ? SLOT_B : SLOT_A;
 Console.WriteLine("[CncMachining] starting new job machine={0} jobId={1} file={2} slot=O{3} (current=O{4})",
@@ -703,6 +769,11 @@ var dto = new UpdateMachineActivateProgNo
 headType = 1,
 programNo = activateProgNo
 };
+if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var handleErr))
+{
+    Console.WriteLine("[CncMachining] handle missing before activate machine={0} err={1}", machineId, handleErr);
+    return false;
+}
 var res = Mode1HandleStore.SetActivateProgram(machineId, dto, out var err);
 if (res != 0)
 {
@@ -1144,7 +1215,20 @@ allowAutoStart = allowAutoStart,
 try
 {
 var sample = string.Join(", ", jobs.Take(3).Select(x => string.Format("{0}({1}:{2})", x.id, x.kindRaw, x.source)));
+var nowLog = DateTime.UtcNow;
+var shouldLog = false;
+lock (LastSnapshotLogUtc)
+{
+if (!LastSnapshotLogUtc.TryGetValue(mid, out var last) || (nowLog - last).TotalSeconds >= 60)
+{
+shouldLog = true;
+LastSnapshotLogUtc[mid] = nowLog;
+}
+}
+if (shouldLog)
+{
 Console.WriteLine("[CncMachining] backend snapshot machine={0} jobs={1} sample=[{2}]", mid, jobs.Count, sample);
+}
 }
 catch { }
 CncJobQueue.ReplaceQueue(mid, jobs);
