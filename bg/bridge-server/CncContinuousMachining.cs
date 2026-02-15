@@ -75,7 +75,11 @@ private static async Task<bool> TryConsumeBackendQueueJob(string machineId, stri
         var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/queue-consume/" + Uri.EscapeDataString(mid) + "/" + Uri.EscapeDataString(jid);
         using (var req = new HttpRequestMessage(HttpMethod.Post, url))
         {
+            var secret = Config.BridgeSharedSecret;
+            var hasSecret = !string.IsNullOrEmpty(secret);
+            Console.WriteLine("[CncMachining] queue-consume add-secret hasSecret={0} machine={1} jobId={2}", hasSecret, mid, jid);
             AddSecretHeader(req);
+            AddAuthHeader(req);
             using (var resp = await BackendClient.SendAsync(req))
             {
                 var body = await resp.Content.ReadAsStringAsync();
@@ -762,7 +766,6 @@ _ = Task.Run(() => NotifyNcPreloadStatus(job, machineId, "FAILED", "exception: "
 return false;
 }
 }
-}
 
 private static async Task<MachineFlags> GetMachineFlagsFromBackend(string machineId)
 {
@@ -1399,13 +1402,26 @@ private static string GetBackendJwt()
 {
 return (Environment.GetEnvironmentVariable("BACKEND_JWT") ?? string.Empty).Trim();
 }
+private static string GetBridgeSecret()
+{
+return Config.BridgeSharedSecret;
+}
 private static void AddAuthHeader(System.Net.Http.HttpRequestMessage req)
 {
 var jwt = GetBackendJwt();
 if (!string.IsNullOrEmpty(jwt))
 {
+req.Headers.Remove("Authorization");
+req.Headers.Add("Authorization", "Bearer " + jwt);
+}
+}
+private static void AddSecretHeader(System.Net.Http.HttpRequestMessage req)
+{
+var secret = GetBridgeSecret();
+if (!string.IsNullOrEmpty(secret))
+{
 req.Headers.Remove("X-Bridge-Secret");
-req.Headers.Add("X-Bridge-Secret", jwt);
+req.Headers.Add("X-Bridge-Secret", secret);
 }
 }
 private static readonly System.Net.Http.HttpClient Http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
