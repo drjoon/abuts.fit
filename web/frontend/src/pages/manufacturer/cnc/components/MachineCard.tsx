@@ -212,25 +212,22 @@ export const MachineCard = (props: MachineCardProps) => {
   }, [machine?.dummySettings, machine?.uid]);
 
   useEffect(() => {
-    const uid = String(machine?.uid || "").trim();
-    if (!uid || !token) return;
+    if (!token) return;
     void (async () => {
       try {
-        const res = await fetch(
-          `/api/cnc-machines/${encodeURIComponent(uid)}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        );
+        const res = await fetch(`/api/bg/bridge-settings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const body: any = await res.json().catch(() => ({}));
         if (!res.ok || body?.success === false) return;
-        const enabled = body?.data?.dummySettings?.enabled;
-        setIsMockFromBackend(enabled !== false);
+        const enabled = body?.data?.mockCncMachiningEnabled;
+        if (enabled === true) setIsMockFromBackend(true);
+        else if (enabled === false) setIsMockFromBackend(false);
       } catch {
         // ignore
       }
     })();
-  }, [machine?.uid, token]);
+  }, [token]);
 
   const isDummyEnabled =
     isMockFromBackend != null
