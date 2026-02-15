@@ -43,7 +43,7 @@ export const CncDashboardPageView = (props: any) => {
     uploadProgress,
     updateMachineFlags,
     updateMachineDummyEnabled,
-    uploadManualCardFiles,
+    uploadContinuousFiles,
     refreshDbQueuesForAllMachines,
     setWorkUid,
     refreshStatusFor,
@@ -65,7 +65,6 @@ export const CncDashboardPageView = (props: any) => {
     queueBatchRef,
     scheduleQueueBatchCommit,
     onTogglePause,
-    handleManualCardPlay,
     setReservationJobsMap,
     setReservationSummaryMap,
     setReservationTotalQtyMap,
@@ -138,7 +137,6 @@ export const CncDashboardPageView = (props: any) => {
     onSelectMachine,
     playingNextMap,
     handlePlayNextUp,
-    handlePlayNowPlaying,
     nowPlayingMap,
   } = props;
 
@@ -250,12 +248,8 @@ export const CncDashboardPageView = (props: any) => {
                   onToggleDummyMachining={(machine, next) => {
                     updateMachineDummyEnabled(machine.uid, next);
                   }}
-                  onPlayManualCard={handleManualCardPlay}
                   onPlayNext={(machine) => {
                     void handlePlayNextUp(machine.uid);
-                  }}
-                  onPlayNowPlaying={(machine) => {
-                    void handlePlayNowPlaying(machine.uid);
                   }}
                   onCancelNowPlaying={(machine, jobId) => {
                     const uid = machine.uid;
@@ -283,7 +277,7 @@ export const CncDashboardPageView = (props: any) => {
                   onUploadFiles={(machine, files) => {
                     void (async () => {
                       try {
-                        await uploadManualCardFiles(machine.uid, files);
+                        await uploadContinuousFiles(machine.uid, files);
                         // 업로드 후 수동 카드 큐 다시 로드 (완료 대기)
                         if (refreshDbQueuesForAllMachines) {
                           await refreshDbQueuesForAllMachines();

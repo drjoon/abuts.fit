@@ -326,53 +326,11 @@ export async function applyBridgeQueueBatchForMachine(req, res) {
 
     let jobs = clear ? [] : jobs0;
 
-    if (clear && jobs0.length > 0) {
-      const targets = jobs0.filter(
-        (j) => String(j?.kind || "") === "manual_file",
-      );
-      for (const j of targets) {
-        const p = String(j?.bridgePath || "").trim();
-        if (!p) continue;
-        try {
-          const delUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/file?path=${encodeURIComponent(
-            p,
-          )}`;
-          await fetch(delUrl, {
-            method: "DELETE",
-            headers: withBridgeHeaders(),
-          }).catch(() => null);
-        } catch {
-          // ignore
-        }
-      }
-    }
-
     let removedJobs = [];
     if (!clear && deleteJobIds.length > 0) {
       const delSet = new Set(deleteJobIds);
       removedJobs = jobs.filter((j) => delSet.has(String(j?.id || "")));
       jobs = jobs.filter((j) => !delSet.has(String(j?.id || "")));
-    }
-
-    if (!clear && removedJobs.length > 0) {
-      const targets = removedJobs.filter(
-        (j) => String(j?.kind || "") === "manual_file",
-      );
-      for (const j of targets) {
-        const p = String(j?.bridgePath || "").trim();
-        if (!p) continue;
-        try {
-          const delUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge-store/file?path=${encodeURIComponent(
-            p,
-          )}`;
-          await fetch(delUrl, {
-            method: "DELETE",
-            headers: withBridgeHeaders(),
-          }).catch(() => null);
-        } catch {
-          // ignore
-        }
-      }
     }
 
     if (!clear && qtyUpdates.length > 0) {

@@ -76,7 +76,6 @@ interface MachineCardProps {
   onEditClick: (e: React.MouseEvent) => void;
   onOpenCurrentProg: (e: React.MouseEvent) => void;
   onOpenNextProg: (prog: any, e: React.MouseEvent) => void;
-  onPlayManualCard?: (itemId: string) => void;
   onResetClick: (e: React.MouseEvent) => void;
   onStopClick?: (e: React.MouseEvent) => void;
   onOpenJobConfig: (e: React.MouseEvent) => void;
@@ -134,7 +133,6 @@ export const MachineCard = (props: MachineCardProps) => {
     onEditClick,
     onOpenCurrentProg,
     onOpenNextProg,
-    onPlayManualCard,
     onResetClick,
     onStopClick,
     onOpenJobConfig,

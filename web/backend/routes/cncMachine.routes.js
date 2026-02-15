@@ -197,13 +197,6 @@ router.post(
   cncMachineController.enqueueBridgeContinuousJobFromDb,
 );
 
-// 수동 끼워넣기(브리지 큐 앞 삽입)
-router.post(
-  "/:machineId/continuous/enqueue-manual-insert",
-  authorizeRoles("manufacturer", "admin"),
-  cncMachineController.enqueueBridgeManualInsertJob,
-);
-
 // CNC(3-direct) 업로드: presign 발급 + DB 예약목록 enqueue (브리지 서버 다운 시에도 동작)
 router.post(
   "/:machineId/direct/presign",

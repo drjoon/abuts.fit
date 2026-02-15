@@ -7,9 +7,9 @@ import {
   Request,
   callBridgeJson,
   runMulter,
-  manualCardUploadMulter,
+  cncUploadMulter,
   normalizeOriginalFilename,
-  makeManualCardFilePath,
+  makeCncUploadFilePath,
 } from "./shared.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
@@ -31,7 +31,7 @@ export async function uploadAndEnqueueContinuousForMachine(req, res) {
         .json({ success: false, message: "machineId is required" });
     }
 
-    await runMulter(manualCardUploadMulter.single("file"), req, res);
+    await runMulter(cncUploadMulter.single("file"), req, res);
     const file = req.file;
     if (!file) {
       return res
@@ -60,7 +60,7 @@ export async function uploadAndEnqueueContinuousForMachine(req, res) {
 
     const extMatch = String(originalFileName).match(/\.(nc|txt)$/i);
     const ext = extMatch ? String(extMatch[0]).toLowerCase() : ".nc";
-    const base = makeManualCardFilePath({
+    const base = makeCncUploadFilePath({
       machineId: mid,
       originalFilename: originalFileName,
     });
@@ -734,101 +734,6 @@ export async function getBridgeContinuousState(req, res) {
     return res.status(500).json({
       success: false,
       message: "브리지 연속 가공 상태 조회 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
-
-export async function enqueueBridgeManualInsertJob(req, res) {
-  try {
-    const { machineId } = req.params;
-    const mid = String(machineId || "").trim();
-    if (!mid) {
-      return res
-        .status(400)
-        .json({ success: false, message: "machineId is required" });
-    }
-
-    const fileName = String(req.body?.fileName || "").trim();
-    const s3Key = String(req.body?.s3Key || "").trim();
-    const s3Bucket = String(req.body?.s3Bucket || "").trim();
-    if (!fileName || !s3Key) {
-      return res.status(400).json({
-        success: false,
-        message: "fileName and s3Key are required",
-      });
-    }
-
-    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
-      mid,
-    )}/continuous/enqueue`;
-
-    const payload = {
-      fileName,
-      originalFileName: fileName,
-      requestId: null,
-      bridgePath: null,
-      s3Key,
-      s3Bucket: s3Bucket || null,
-      enqueueFront: true,
-    };
-
-    const snap = await getDbBridgeQueueSnapshot(mid);
-    const jobs0 = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
-    const rest = jobs0.filter(
-      (j) => String(j?.source || "") !== "manual_insert",
-    );
-    const jobId = `${mid}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
-    const manualJob = {
-      id: jobId,
-      kind: "requested_file",
-      fileName,
-      bridgePath: "",
-      s3Key,
-      s3Bucket: s3Bucket || "",
-      fileSize: null,
-      contentType: "",
-      requestId: "",
-      programNo: null,
-      programName: "",
-      qty: 1,
-      createdAtUtc: new Date(),
-      source: "manual_insert",
-      paused: true,
-    };
-    await saveBridgeQueueSnapshot(mid, [manualJob, ...rest]);
-
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify(payload),
-    });
-    const body = await resp.json().catch(() => ({}));
-    if (!resp.ok || body?.success === false) {
-      return res.status(resp.status).json({
-        success: false,
-        message:
-          body?.message ||
-          body?.error ||
-          "브리지 수동 끼워넣기 enqueue 중 오류가 발생했습니다.",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        jobId,
-        machineId: mid,
-        fileName,
-        s3Key,
-        s3Bucket: s3Bucket || null,
-      },
-    });
-  } catch (error) {
-    console.error("Error in enqueueBridgeManualInsertJob:", error);
-    return res.status(500).json({
-      success: false,
-      message: "브리지 수동 끼워넣기 enqueue 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

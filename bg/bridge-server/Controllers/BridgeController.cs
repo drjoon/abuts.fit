@@ -28,17 +28,8 @@ namespace HiLinkBridgeWebApi48.Controllers
         private static readonly TimeSpan ControlCooldownWindow = TimeSpan.FromMilliseconds(5000);
         private static readonly TimeSpan RawReadCooldownWindow = TimeSpan.FromMilliseconds(2000);
 
-        private const int MANUAL_SLOT_A = 4000;
-        private const int MANUAL_SLOT_B = 4001;
+        private const int SINGLE_SLOT = 4000;
         private static readonly Regex FanucRegex = new Regex(@"O(\d{1,5})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        private class ManualMachineState
-        {
-            public int NextSlot;
-            public int? LastPreloadedSlot;
-            public string LastPreloadedPath;
-            public DateTime LastPreloadedAtUtc;
-        }
 
         private class JobResult
         {
@@ -50,33 +41,6 @@ namespace HiLinkBridgeWebApi48.Controllers
 
         private static readonly ConcurrentDictionary<string, JobResult> JobResults = 
             new ConcurrentDictionary<string, JobResult>();
-
-        // POST /machines/{machineId}/manual/preload-mode2
-        // Mode2 DLL을 사용하여 프로그램 업로드(UpdateProgram)
-        [HttpPost]
-        [Route("machines/{machineId}/manual/preload-mode2")]
-        public async Task<HttpResponseMessage> ManualPreloadMode2(string machineId, [FromBody] ManualPreloadRequest req)
-        {
-            return Request.CreateResponse(HttpStatusCode.Gone, new
-            {
-                success = false,
-                message = "Mode2 is disabled. Use /manual/preload (Mode1)."
-            });
-        }
-
-        private static readonly ConcurrentDictionary<string, ManualMachineState> ManualStates =
-            new ConcurrentDictionary<string, ManualMachineState>(StringComparer.OrdinalIgnoreCase);
-
-        private static ManualMachineState GetOrCreateManualState(string machineId)
-        {
-            return ManualStates.GetOrAdd(machineId, _ => new ManualMachineState
-            {
-                NextSlot = MANUAL_SLOT_A,
-                LastPreloadedSlot = null,
-                LastPreloadedPath = null,
-                LastPreloadedAtUtc = DateTime.MinValue,
-            });
-        }
 
         private static string EnsureProgramHeader(string content, int programNo)
         {
@@ -196,21 +160,6 @@ namespace HiLinkBridgeWebApi48.Controllers
             }
 
             return string.Join("\r\n", lines);
-        }
-
-        private static int ChooseManualSlotForUpload(string machineId)
-        {
-            var active = 0;
-            if (Mode1Api.TryGetActivateProgInfo(machineId, out var info, out var _))
-            {
-                active = ParseProgramNoFromName(info.MainProgramName);
-                if (active <= 0) active = ParseProgramNoFromName(info.SubProgramName);
-            }
-
-            // 장비 상태(busy/가공중)와 무관하게, 현재 활성 슬롯(4000/4001)이면 덮어쓰지 않도록 반대 슬롯을 선택한다.
-            if (active == MANUAL_SLOT_A) return MANUAL_SLOT_B;
-            if (active == MANUAL_SLOT_B) return MANUAL_SLOT_A;
-            return MANUAL_SLOT_A;
         }
 
         private static void QueueUploadProgramData(string machineId, short headType, int slotNo, string processed, bool isNew)
@@ -594,54 +543,23 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return true;
             }
 
-            if (err != null && err.Contains("(rc=5)"))
-            {
-                var altSlot = initialSlot == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
-                Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)altSlot, out var _, out var _);
-                var preparedAlt = Prepare((short)altSlot);
-                if (UploadProgramDataBlocking(machineId, headType, (short)altSlot, preparedAlt, isNew, out usedMode, out err))
-                {
-                    finalSlot = (short)altSlot;
-                    return true;
-                }
-            }
-
             finalSlot = initialSlot;
             return false;
         }
 
-        // 옵션: 큐 삽입 전에 CNC로 미리 업로드(슬롯 A/B 두 개까지만 선업로드)
+        // 옵션: 큐 삽입 전에 CNC로 미리 업로드(단일 슬롯 O4000)
         private static PreUploadResult PreUploadProgramsForQueue(string machineId, short headType, List<string> paths)
         {
             if (paths == null || paths.Count == 0) return null;
-            var activeSlot = GetCurrentActiveSlotOrDefault(machineId);
-            var protectedSlot = (activeSlot == MANUAL_SLOT_A || activeSlot == MANUAL_SLOT_B) ? activeSlot : 0;
-
-            // 활성 슬롯 보호: 반대 슬롯을 우선 사용. 보호 슬롯만 있는 경우 1개만 업로드.
-            var slotOrder = new List<int>();
-            if (protectedSlot == MANUAL_SLOT_A)
+            var uploadSlots = new List<int> { SINGLE_SLOT };
+            if (paths.Count > 1)
             {
-                slotOrder.Add(MANUAL_SLOT_B);
-            }
-            else if (protectedSlot == MANUAL_SLOT_B)
-            {
-                slotOrder.Add(MANUAL_SLOT_A);
-            }
-            else
-            {
-                slotOrder.Add(MANUAL_SLOT_A);
-                slotOrder.Add(MANUAL_SLOT_B);
-            }
-
-            var uploadSlots = slotOrder.Take(paths.Count).ToList();
-            if (uploadSlots.Count < paths.Count)
-            {
-                throw new InvalidOperationException("Not enough uploadable slots (protected active slot)");
+                throw new InvalidOperationException("only single slot upload is supported");
             }
 
             var deletedSlots = new List<int>();
             var logInfo = new StringBuilder();
-            logInfo.Append($"[PreUpload] machine={machineId} headType={headType} active={activeSlot} protected={protectedSlot} uploadSlots=[{string.Join(",", uploadSlots)}]");
+            logInfo.Append($"[PreUpload] machine={machineId} headType={headType} uploadSlots=[{string.Join(",", uploadSlots)}]");
             var fileInfos = new List<object>();
 
             for (int i = 0; i < paths.Count; i++)
@@ -655,17 +573,13 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 var slot = uploadSlots[i];
 
-                // 보호되지 않은 슬롯은 업로드 전에 삭제하여 메모리 확보(EW_DATA/Busy 완화)
-                if (slot != protectedSlot)
+                if (Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slot, out var _, out var delErr))
                 {
-                    if (Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slot, out var _, out var delErr))
-                    {
-                        deletedSlots.Add(slot);
-                    }
-                    else
-                    {
-                        logInfo.Append($" delErr(slot={slot})={delErr}");
-                    }
+                    deletedSlots.Add(slot);
+                }
+                else
+                {
+                    logInfo.Append($" delErr(slot={slot})={delErr}");
                 }
 
                 var content = File.ReadAllText(full);
@@ -837,8 +751,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return;
             }
 
-            // 시작 슬롯 결정(현재 활성/가공중 프로그램 피하기)
-            job.CurrentSlot = job.PreUploadedSlot ?? ChooseManualSlotForUpload(machineId);
+            // 단일 슬롯 사용
+            job.CurrentSlot = SINGLE_SLOT;
             job.PreviousSlot = 0;
 
             // 첫 파일을 현재 슬롯에 업로드(가공 전)
@@ -871,7 +785,6 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 job.Index = 0;
                 var thisSlot = job.CurrentSlot;
-                var nextSlot = thisSlot == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
 
                 // 현재 슬롯 프로그램이 존재하는지 확인
                 if (!Mode1Api.TryGetProgListInfo(machineId, job.HeadType, out var progListCheck, out var progErr))
@@ -1322,20 +1235,6 @@ namespace HiLinkBridgeWebApi48.Controllers
             return false;
         }
 
-        public class ManualPreloadRequest
-        {
-            public string path { get; set; }
-            public int? slotNo { get; set; }
-            public short? headType { get; set; }
-        }
-
-        public class ManualPlayRequest
-        {
-            public int? slotNo { get; set; }
-            public string path { get; set; }
-            public bool? skipAlarmCheck { get; set; }
-        }
-
         private static int ParseProgramNoFromName(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return 0;
@@ -1355,135 +1254,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                 return n;
             }
             return 0;
-        }
-
-        // POST /machines/{machineId}/manual/preload
-        [HttpPost]
-        [Route("machines/{machineId}/manual/preload")]
-        public HttpResponseMessage ManualPreload(string machineId, [FromBody] ManualPreloadRequest req)
-        {
-            return Request.CreateResponse(HttpStatusCode.Gone, new
-            {
-                success = false,
-                message = "manual_file is disabled"
-            });
-
-            if (string.IsNullOrWhiteSpace(machineId))
-            {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
-            }
-
-            var relPath = (req?.path ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(relPath))
-            {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
-            }
-
-            var desired = req?.slotNo;
-            if (desired.HasValue && desired.Value != MANUAL_SLOT_A && desired.Value != MANUAL_SLOT_B)
-            {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "invalid slotNo" });
-            }
-
-            try
-            {
-                var st = GetOrCreateManualState(machineId);
-                var slotNo = desired.HasValue
-                    ? desired.Value
-                    : (st.NextSlot == MANUAL_SLOT_B ? MANUAL_SLOT_B : MANUAL_SLOT_A);
-                var nextSlotNo = slotNo == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
-
-                var fullPath = GetSafeBridgeStorePath(relPath);
-                if (!File.Exists(fullPath))
-                {
-                    return Request.CreateResponse(HttpStatusCode.NotFound, new
-                    {
-                        success = false,
-                        message = "file not found",
-                        path = relPath
-                    });
-                }
-
-                var content = File.ReadAllText(fullPath);
-                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(EnsureProgramHeader(content, slotNo)));
-
-                // 프로그램 업로드를 백그라운드에서 비동기로 처리 (응답 지연 방지)
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        // CNC 메모리 제약 대응: 대상 슬롯은 삭제 후 업로드 (메인 headType=1)
-                        try
-                        {
-                            Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)slotNo, out var _, out var _);
-                        }
-                        catch { }
-
-                        if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
-                        {
-                            Console.WriteLine("[ManualPreload] handle error: " + errUp);
-                            return;
-                        }
-
-                        var info = new UpdateMachineProgramInfo
-                        {
-                            headType = 1, // Main
-                            programNo = (short)slotNo,
-                            programData = processed,
-                            isNew = true,
-                        };
-                        var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.ManualPreload");
-                        if (upRc == -8)
-                        {
-                            Mode1HandleStore.Invalidate(machineId);
-                            if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
-                            {
-                                upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.ManualPreload.retry");
-                                if (upRc == -8)
-                                {
-                                    Mode1HandleStore.Invalidate(machineId);
-                                }
-                            }
-                            else
-                            {
-                                Console.WriteLine("[ManualPreload] handle retry error: " + errUp2);
-                            }
-                        }
-                        if (upRc != 0)
-                        {
-                            Console.WriteLine("[ManualPreload] upload failed rc={0} for {1}", upRc, machineId);
-                            return;
-                        }
-
-                        st.LastPreloadedSlot = slotNo;
-                        st.LastPreloadedPath = relPath;
-                        st.LastPreloadedAtUtc = DateTime.UtcNow;
-                        if (!desired.HasValue)
-                        {
-                            st.NextSlot = nextSlotNo;
-                        }
-                        Console.WriteLine("[ManualPreload] success: {0} slot={1}", machineId, slotNo);
-                    }
-                    catch (Exception bgEx)
-                    {
-                        Console.WriteLine("[ManualPreload] background error: " + bgEx);
-                    }
-                });
-
-                // 즉시 응답 반환 (업로드는 백그라운드에서 진행)
-                return Request.CreateResponse(HttpStatusCode.OK, new
-                {
-                    success = true,
-                    message = "Manual preload queued",
-                    slotNo,
-                    nextSlotNo,
-                    path = relPath,
-                });
-            }
-            catch (Exception ex)
-            {
-                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
-            }
         }
 
         // POST /machines/{machineId}/smart/upload
@@ -1532,7 +1302,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             {
                 try
                 {
-                    var slotNo = ChooseManualSlotForUpload(machineId);
+                    var slotNo = 4000;
                     var content = File.ReadAllText(fullPath);
                     var enforced = EnsurePercentAndHeaderSecondLine(content, slotNo);
                     var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
@@ -1540,29 +1310,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                     var processedLen = (processed ?? string.Empty).Length;
                     var processedBytes = Encoding.ASCII.GetByteCount(processed ?? string.Empty);
 
-                    var activeSlot = 0;
-                    if (Mode1Api.TryGetActivateProgInfo(machineId, out var activeInfo0, out var _))
-                    {
-                        activeSlot = ParseProgramNoFromName(activeInfo0.MainProgramName);
-                        if (activeSlot <= 0) activeSlot = ParseProgramNoFromName(activeInfo0.SubProgramName);
-                    }
-
-                    var protectedSlot = (activeSlot == MANUAL_SLOT_A || activeSlot == MANUAL_SLOT_B) ? activeSlot : 0;
-
-                    var deletedSlots = new List<int>();
-                    foreach (var s in new[] { MANUAL_SLOT_A, MANUAL_SLOT_B })
-                    {
-                        if (protectedSlot == s) continue;
-                        try
-                        {
-                            Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)s, out var _, out var _);
-                            deletedSlots.Add(s);
-                        }
-                        catch { }
-                    }
-
-                    if (protectedSlot == MANUAL_SLOT_A) slotNo = MANUAL_SLOT_B;
-                    else if (protectedSlot == MANUAL_SLOT_B) slotNo = MANUAL_SLOT_A;
+                    Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)slotNo, out var _, out var _);
 
                     enforced = EnsurePercentAndHeaderSecondLine(content, slotNo);
                     processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforced));
@@ -1583,38 +1331,15 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                     if (!UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var usedMode, out var upErr))
                     {
-                        var isRc5 = (upErr ?? string.Empty).Contains("(rc=5)");
-                        var triedFallback = false;
-                        if (isRc5)
+                        Console.WriteLine($"[SmartUpload] jobId={jobId} failed: {upErr}");
+                        JobResults[jobId] = new JobResult
                         {
-                            var altSlot = slotNo == MANUAL_SLOT_A ? MANUAL_SLOT_B : MANUAL_SLOT_A;
-                            if (protectedSlot != altSlot)
-                            {
-                                // 다른 슬롯 삭제 후 재업로드 시도
-                                Mode1Api.TryDeleteMachineProgramInfo(machineId, headType, (short)altSlot, out var _, out var _);
-                                var enforcedAlt = EnsurePercentAndHeaderSecondLine(content, altSlot);
-                                var processedAlt = SanitizeProgramTextForCnc(EnsureProgramEnvelope(enforcedAlt));
-                                if (UploadProgramDataBlocking(machineId, headType, altSlot, processedAlt, req?.isNew ?? true, out usedMode, out upErr))
-                                {
-                                    slotNo = altSlot;
-                                    processed = processedAlt;
-                                    triedFallback = true;
-                                }
-                            }
-                        }
-
-                        if (!triedFallback)
-                        {
-                            Console.WriteLine($"[SmartUpload] jobId={jobId} failed: {upErr}");
-                            JobResults[jobId] = new JobResult
-                            {
-                                JobId = jobId,
-                                Status = "FAILED",
-                                Result = new { success = false, message = upErr ?? "upload failed", usedMode },
-                                CreatedAtUtc = DateTime.UtcNow
-                            };
-                            return;
-                        }
+                            JobId = jobId,
+                            Status = "FAILED",
+                            Result = new { success = false, message = upErr ?? "upload failed", usedMode },
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        return;
                     }
 
                     Console.WriteLine($"[SmartUpload] jobId={jobId} completed. slotNo={slotNo} bytes={processedBytes}");
@@ -1650,30 +1375,6 @@ namespace HiLinkBridgeWebApi48.Controllers
             });
 
             return immediateResponse;
-        }
-
-        // GET /machines/{machineId}/jobs/{jobId}
-        [HttpGet]
-        [Route("machines/{machineId}/jobs/{jobId}")]
-        public HttpResponseMessage GetJobResult(string machineId, string jobId)
-        {
-            if (!JobResults.TryGetValue(jobId, out var result))
-            {
-                return Request.CreateResponse(HttpStatusCode.NotFound, new
-                {
-                    success = false,
-                    message = "job not found",
-                    jobId
-                });
-            }
-
-            return Request.CreateResponse(HttpStatusCode.OK, new
-            {
-                jobId = result.JobId,
-                status = result.Status,
-                result = result.Result,
-                createdAtUtc = result.CreatedAtUtc
-            });
         }
 
         public class SmartStartEnqueueRequest
@@ -1887,9 +1588,28 @@ namespace HiLinkBridgeWebApi48.Controllers
             return immediateResponse;
         }
 
-        public class SmartDequeueRequest
+        // GET /machines/{machineId}/jobs/{jobId}
+        [HttpGet]
+        [Route("machines/{machineId}/jobs/{jobId}")]
+        public HttpResponseMessage GetJobResult(string machineId, string jobId)
         {
-            public string jobId { get; set; }
+            if (!JobResults.TryGetValue(jobId, out var result))
+            {
+                return Request.CreateResponse(HttpStatusCode.NotFound, new
+                {
+                    success = false,
+                    message = "job not found",
+                    jobId
+                });
+            }
+
+            return Request.CreateResponse(HttpStatusCode.OK, new
+            {
+                jobId = result.JobId,
+                status = result.Status,
+                result = result.Result,
+                createdAtUtc = result.CreatedAtUtc
+            });
         }
 
         // POST /machines/{machineId}/smart/dequeue (이중 응답 방식)
@@ -2125,316 +1845,6 @@ namespace HiLinkBridgeWebApi48.Controllers
                 });
             }
         }
-
-        // POST /machines/{machineId}/manual/play
-        [HttpPost]
-        [Route("machines/{machineId}/manual/play")]
-        public async Task<HttpResponseMessage> ManualPlay(string machineId, [FromBody] ManualPlayRequest req)
-        {
-            return Request.CreateResponse(HttpStatusCode.Gone, new
-            {
-                success = false,
-                message = "manual_file is disabled"
-            });
-
-            if (string.IsNullOrWhiteSpace(machineId))
-            {
-                return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "machineId is required" });
-            }
-
-            var cooldownKey = $"manualPlay:{machineId}";
-            if (IsControlOnCooldown(cooldownKey))
-            {
-                return Request.CreateResponse((HttpStatusCode)429, new { success = false, message = "Too many requests" });
-            }
-
-            try
-            {
-                var st = GetOrCreateManualState(machineId);
-                var desired = req?.slotNo;
-                if (desired.HasValue && desired.Value != MANUAL_SLOT_A && desired.Value != MANUAL_SLOT_B)
-                {
-                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "invalid slotNo" });
-                }
-
-                // path는 필수
-                var relPath = (req?.path ?? string.Empty).Trim();
-                if (string.IsNullOrWhiteSpace(relPath))
-                {
-                    return Request.CreateResponse(HttpStatusCode.BadRequest, new { success = false, message = "path is required" });
-                }
-
-                // skipAlarmCheck=true이면 Alarm 체크를 건너뛴다 (에디터 로드용, 기본값)
-                // skipAlarmCheck=false이면 Alarm 체크를 수행한다 (가공 시작 시)
-                // mock 모드면 알람을 무시한다.
-                bool skipAlarmCheck = req?.skipAlarmCheck != false;
-                if (!IsMockCncMachiningEnabled() && !skipAlarmCheck && Mode1Api.TryGetMachineStatus(machineId, out var status, out var statusErr))
-                {
-                    if (status == MachineStatusType.Alarm)
-                    {
-                        var alarms = new List<object>();
-                        try
-                        {
-                            if (Mode1Api.TryGetMachineAlarmInfo(machineId, 0, out var alarmInfo0, out var alarmErr0))
-                            {
-                                if (alarmInfo0.alarmArray != null)
-                                {
-                                    foreach (var a in alarmInfo0.alarmArray)
-                                    {
-                                        alarms.Add(new { type = a.type, no = a.no });
-                                    }
-                                }
-                            }
-                            else if (Mode1Api.TryGetMachineAlarmInfo(machineId, 1, out var alarmInfo1, out var alarmErr1))
-                            {
-                                if (alarmInfo1.alarmArray != null)
-                                {
-                                    foreach (var a in alarmInfo1.alarmArray)
-                                    {
-                                        alarms.Add(new { type = a.type, no = a.no });
-                                    }
-                                }
-                            }
-                        }
-                        catch { }
-
-                        if (alarms.Count > 0)
-                        {
-                            Console.WriteLine("[ManualPlay] blocked by ALARM machine={0}", machineId);
-                            return Request.CreateResponse((HttpStatusCode)409, new
-                            {
-                                success = false,
-                                message = "machine is in ALARM state; clear alarm before manual play",
-                                status = status.ToString(),
-                                alarms = alarms
-                            });
-                        }
-                    }
-                }
-
-                // 슬롯 결정: 요청 slotNo 우선, 없으면 현재 활성 슬롯을 피해서 4000/4001 중 선택
-                int slotNo;
-                if (desired.HasValue)
-                {
-                    slotNo = desired.Value;
-                }
-                else
-                {
-                    var active = GetCurrentActiveSlotOrDefault(machineId);
-                    if (active == MANUAL_SLOT_A) slotNo = MANUAL_SLOT_B;
-                    else if (active == MANUAL_SLOT_B) slotNo = MANUAL_SLOT_A;
-                    else slotNo = MANUAL_SLOT_A; // 기본 4000
-                }
-
-                // 선택된 슬롯이 현재 활성 슬롯과 같으면 반대 슬롯 사용 (활성 슬롯 모를 경우 그대로)
-                var currentActive = GetCurrentActiveSlotOrDefault(machineId);
-                if (currentActive > 0 && slotNo == currentActive)
-                {
-                    slotNo = (slotNo == MANUAL_SLOT_A) ? MANUAL_SLOT_B : MANUAL_SLOT_A;
-                }
-
-                var fullPath = GetSafeBridgeStorePath(relPath);
-                if (!File.Exists(fullPath))
-                {
-                    return Request.CreateResponse(HttpStatusCode.NotFound, new
-                    {
-                        success = false,
-                        message = "file not found",
-                        path = relPath
-                    });
-                }
-
-                // 파일을 즉시 업로드 (headType=1 메인)
-                var content = File.ReadAllText(fullPath);
-                Console.WriteLine("[ManualPlay] file read machine={0} path={1} contentLen={2}", machineId, relPath, content?.Length ?? 0);
-                
-                var processed = SanitizeProgramTextForCnc(EnsureProgramEnvelope(EnsureProgramHeader(content, slotNo)));
-                Console.WriteLine("[ManualPlay] file processed machine={0} processedLen={1}", machineId, processed?.Length ?? 0);
-
-                try
-                {
-                    // Main(headType=1)
-                    Mode1Api.TryDeleteMachineProgramInfo(machineId, 1, (short)slotNo, out var _, out var _);
-                }
-                catch { }
-
-                if (!Mode1HandleStore.TryGetHandle(machineId, out var handle, out var errUp))
-                {
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = "handle error: " + errUp });
-                }
-
-                // O4000/O4001 슬롯에 업로드할 때는 programNo를 4000/4001로 설정
-                short programNo = (short)slotNo;
-
-                var info = new UpdateMachineProgramInfo
-                {
-                    headType = 1, // Main (사용자 확인: 1=Main, 2=Sub)
-                    programNo = programNo,
-                    programData = processed,
-                    isNew = true,  // 새 프로그램으로 생성 (기존 프로그램이 없을 수 있으므로)
-                };
-                
-                Console.WriteLine("[ManualPlay] uploading machine={0} slot=O{1} programNo={2} dataLen={3}", 
-                    machineId, slotNo, programNo, processed?.Length ?? 0);
-                
-                var upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle, info), "SetMachineProgramInfo.ManualPlay");
-                if (upRc == -8)
-                {
-                    Mode1HandleStore.Invalidate(machineId);
-                    if (Mode1HandleStore.TryGetHandle(machineId, out var handle2, out var errUp2))
-                    {
-                        upRc = HiLinkDllGate.Run(Mode1Api.DllLock, () => Hi_Link.HiLink.SetMachineProgramInfo(handle2, info), "SetMachineProgramInfo.ManualPlay.retry");
-                        if (upRc == -8)
-                        {
-                            Mode1HandleStore.Invalidate(machineId);
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine("[ManualPlay] handle retry error: " + errUp2);
-                    }
-                }
-                if (upRc != 0)
-                {
-                    Console.WriteLine("[ManualPlay] upload failed machine={0} slot=O{1} programNo={2} rc={3}", 
-                        machineId, slotNo, programNo, upRc);
-                    return Request.CreateResponse((HttpStatusCode)500, new
-                    {
-                        success = false,
-                        message = "upload failed rc=" + upRc,
-                        slotNo,
-                        programNo
-                    });
-                }
-
-                Console.WriteLine("[ManualPlay] upload ok machine={0} slot=O{1} programNo={2}", machineId, slotNo, programNo);
-
-                // 업로드 기록 갱신
-                st.LastPreloadedSlot = slotNo;
-                st.LastPreloadedPath = relPath;
-                st.LastPreloadedAtUtc = DateTime.UtcNow;
-
-                // 업로드 완료 폴링 (최대 20초 대기)
-                bool programExists = false;
-                int maxRetries = 80;  // 40초 (500ms * 80)
-                int retryCount = 0;
-                while (retryCount < maxRetries)
-                {
-                    await Task.Delay(500);
-                    retryCount++;
-
-                    if (!Mode1Api.TryGetProgListInfo(machineId, 0, out var progList, out var progErr))
-                    {
-                        Console.WriteLine("[ManualPlay] TryGetProgListInfo retry={0} failed machine={1} err={2}", retryCount, machineId, progErr);
-                        continue;
-                    }
-
-                    var found = progList.programArray?.FirstOrDefault(p => p.no == programNo);
-                    if (found != null)
-                    {
-                        programExists = true;
-                        Console.WriteLine("[ManualPlay] program verified machine={0} programNo={1} after {2}ms", 
-                            machineId, programNo, retryCount * 500);
-                        break;
-                    }
-                }
-
-                // 프로그램이 없으면 업로드 실패로 처리
-                if (!programExists)
-                {
-                    Console.WriteLine("[ManualPlay] program NOT found after polling machine={0} programNo={1} maxRetries={2}", 
-                        machineId, programNo, maxRetries);
-                    return Request.CreateResponse((HttpStatusCode)500, new
-                    {
-                        success = false,
-                        message = "program not found after upload (timeout)",
-                        programNo,
-                        slotNo
-                    });
-                }
-
-                // EDIT 모드로 변경 (프로그램 활성화를 위해 필요)
-                if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
-                {
-                    Console.WriteLine("[ManualPlay] SetMachineMode(EDIT) failed machine={0} err={1}", machineId, modeErr);
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = modeErr ?? "SetMachineMode(EDIT) failed" });
-                }
-
-                // 모드 변경 후 약간의 지연
-                await Task.Delay(300);
-
-                // 모드 변경 후 핸들이 무효화될 수 있으므로 핸들 갱신
-                Mode1HandleStore.Invalidate(machineId);
-
-                // Hi-Link 장비/컨트롤러별 headType 매핑 차이 대응:
-                // 활성화 시도 (사용자 확인: Main=1, Sub=2)
-                var dto = new PayloadUpdateActivateProg
-                {
-                    headType = 1,
-                    programNo = programNo,
-                };
-
-                var act = Mode1HandleStore.SetActivateProgram(machineId, dto, out var actErr);
-                if (act != 0)
-                {
-                    Console.WriteLine("[ManualPlay] SetActivateProgram failed (try headType=1) machine={0} programNo={1} result={2} err={3}",
-                        machineId, programNo, act, actErr);
-
-                    // fallback: 0 재시도 (혹시 모를 구버전 대응)
-                    dto.headType = 0;
-                    Mode1HandleStore.Invalidate(machineId);
-                    act = Mode1HandleStore.SetActivateProgram(machineId, dto, out actErr);
-                }
-
-                if (act != 0)
-                {
-                    Console.WriteLine("[ManualPlay] SetActivateProgram failed machine={0} programNo={1} headType={2} result={3} err={4}",
-                        machineId, programNo, dto.headType, act, actErr);
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = actErr ?? ("SetActivateProgram failed (result=" + act + ")") });
-                }
-
-                Console.WriteLine("[ManualPlay] activate ok machine={0} programNo={1} headType={2}", machineId, programNo, dto.headType);
-
-                // AUTO 모드로 변경 (가공 모드)
-                if (!Mode1Api.TrySetMachineMode(machineId, "AUTO", out var autoModeErr))
-                {
-                    Console.WriteLine("[ManualPlay] SetMachineMode(AUTO) failed machine={0} err={1}", machineId, autoModeErr);
-                    return Request.CreateResponse((HttpStatusCode)500, new { success = false, message = autoModeErr ?? "SetMachineMode(AUTO) failed" });
-                }
-
-                // 모드 변경 후 약간의 지연
-                await Task.Delay(300);
-
-                // Start
-                short ioUid = 61;
-                short panelType = 0;
-                if (!Mode1Api.TrySetMachinePanelIO(machineId, panelType, ioUid, true, out var startErr))
-                {
-                    return Request.CreateResponse((HttpStatusCode)500, new
-                    {
-                        success = false,
-                        message = startErr ?? "SetMachinePanelIO failed"
-                    });
-                }
-
-                Console.WriteLine("[ManualPlay] start signal sent machine={0} slot=O{1}", machineId, slotNo);
-
-                // 주의: 다음 파일 preload는 CncContinuousMachining.PreloadNextJob에서 통합 관리됨
-                // Manual play와 continuous machining이 동일한 preload 로직을 공유함
-
-                return Request.CreateResponse(HttpStatusCode.OK, new
-                {
-                    success = true,
-                    message = "Manual start ok",
-                    slotNo,
-                });
-            }
-            catch (Exception ex)
-            {
-                return Request.CreateResponse(HttpStatusCode.InternalServerError, new { success = false, message = ex.Message });
-            }
-        }
-
         // POST /raw (Mode1 only)
         [HttpPost]
         [Route("raw")]

@@ -23,9 +23,6 @@ export const CAM_RETRY_BATCH_LIMIT = Number(
 export const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://localhost:8002";
 export const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
-export const MANUAL_SLOT_NOW = 4000;
-export const MANUAL_SLOT_NEXT = 4000;
-
 export const toNumberOrNull = (v) => {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -45,7 +42,7 @@ export function makeSafeFileStem(input) {
   return safe;
 }
 
-export function makeManualCardFilePath({ machineId, originalFilename }) {
+export function makeCncUploadFilePath({ machineId, originalFilename }) {
   const mid = String(machineId || "").trim();
   const stem = makeSafeFileStem(originalFilename);
   const rand = Math.random().toString(36).slice(2, 10);
@@ -96,7 +93,7 @@ export function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
-export const manualCardUploadMulter = multer({
+export const cncUploadMulter = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024,
@@ -284,13 +281,10 @@ export async function getDbBridgeQueueSnapshot(machineId) {
   const mid = String(machineId || "").trim();
   if (!mid) return { jobs: [], updatedAt: null, syncedAt: null };
   const machine = await CncMachine.findOne({ machineId: mid })
-    .select("bridgeQueueSnapshot bridgeQueueSyncedAt manualCard.fileNameMap")
+    .select("bridgeQueueSnapshot bridgeQueueSyncedAt")
     .lean();
   const snapshot = machine?.bridgeQueueSnapshot || null;
   const jobs = Array.isArray(snapshot?.jobs) ? snapshot.jobs : [];
-  const fileNameMap = Array.isArray(machine?.manualCard?.fileNameMap)
-    ? machine.manualCard.fileNameMap
-    : [];
 
   // requestId -> 원본 파일명 매핑 (Request SSOT)
   const requestIdToOriginal = new Map();
@@ -314,33 +308,17 @@ export async function getDbBridgeQueueSnapshot(machineId) {
     // ignore
   }
 
-  // 저장명 -> 원본명 매핑 생성
-  const storedNameToOriginal = new Map();
-  for (const entry of fileNameMap) {
-    if (entry?.storedName && entry?.originalName) {
-      storedNameToOriginal.set(
-        String(entry.storedName),
-        String(entry.originalName),
-      );
-    }
-  }
-
-  // 각 job에 originalFileName 추가 (저장명으로 매핑)
+  // 각 job에 originalFileName 추가 (Request SSOT)
   const jobsWithMeta = jobs.map((job) => {
     const rid = String(job?.requestId || "").trim();
     const fromRequest = rid ? requestIdToOriginal.get(rid) : null;
-    const bridgePath = String(job?.bridgePath || "").trim();
-    const storedName = bridgePath.split("/").pop(); // 마지막 경로 부분 = 저장명
-    const originalName = storedNameToOriginal.get(storedName);
     return {
       ...job,
       ...(job?.originalFileName
         ? { originalFileName: job.originalFileName }
         : fromRequest
           ? { originalFileName: fromRequest }
-          : originalName
-            ? { originalFileName: originalName }
-            : {}),
+          : {}),
     };
   });
 
@@ -379,30 +357,6 @@ export async function fetchBridgeQueueFromBridge(machineId) {
   const list = Array.isArray(body?.data) ? body.data : body?.data || [];
   const jobs = Array.isArray(list) ? list : [];
   return { ok: true, status: resp.status, error: null, jobs };
-}
-
-export async function saveManualCardStatus(machineId, patch) {
-  const mid = String(machineId || "").trim();
-  if (!mid) return;
-  try {
-    const now = new Date();
-    const set = { "manualCard.updatedAt": now };
-    if (patch?.lastUpload) {
-      set["manualCard.lastUpload"] = patch.lastUpload;
-    }
-    if (patch?.lastPlay) {
-      set["manualCard.lastPlay"] = patch.lastPlay;
-    }
-    await CncMachine.updateOne(
-      { machineId: mid },
-      {
-        $set: set,
-      },
-      { upsert: false },
-    );
-  } catch (e) {
-    console.warn("manualCard status update failed", e);
-  }
 }
 
 export async function rollbackRequestToCamByRequestId(requestId) {

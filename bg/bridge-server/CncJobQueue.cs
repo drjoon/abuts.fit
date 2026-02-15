@@ -15,7 +15,7 @@ namespace HiLinkBridgeWebApi48
     {
         public string id { get; set; }
         public CncJobKind kind { get; set; }
-        // backend snapshot raw kind (e.g., "manual_file", "requested_file", "dummy")
+        // backend snapshot raw kind (e.g., "file", "requested_file", "dummy")
         public string kindRaw { get; set; }
         public string machineId { get; set; }
 
@@ -110,7 +110,7 @@ namespace HiLinkBridgeWebApi48
                 allowAutoStart = true,
                 priority = 2,
                 createdAtUtc = DateTime.UtcNow,
-                source = "manual_insert"
+                source = "bridge_insert"
             };
 
             var q = GetQueue(job.machineId);

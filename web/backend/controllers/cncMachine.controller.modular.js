@@ -18,7 +18,6 @@ import {
 import {
   enqueueBridgeContinuousJob,
   enqueueBridgeContinuousJobFromDb,
-  enqueueBridgeManualInsertJob,
   getBridgeContinuousState,
   uploadAndEnqueueContinuousForMachine,
 } from "./cncMachine/continuous.js";
@@ -49,7 +48,6 @@ export {
   getBridgeActiveProgram,
   enqueueBridgeContinuousJob,
   enqueueBridgeContinuousJobFromDb,
-  enqueueBridgeManualInsertJob,
   uploadAndEnqueueContinuousForMachine,
   createCncDirectUploadPresign,
   enqueueCncDirectToDb,

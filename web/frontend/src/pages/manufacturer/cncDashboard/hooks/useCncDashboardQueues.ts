@@ -16,27 +16,27 @@ import type { CncJobItem } from "../../cnc/components/CncReservationModal";
 import type { PlaylistJobItem } from "../../cnc/components/CncPlaylistDrawer";
 
 interface Params {
-  token: string | null;
   machines: Machine[];
-  ensureCncWriteAllowed: () => Promise<boolean>;
-  toast: (args: any) => void;
-  setError: (msg: string | null) => void;
+  setMachines: any;
+  token: string;
+  toast: any;
+  ensureCncWriteAllowed: any;
+  setError: any;
   callRaw: (uid: string, method: string, payload?: any) => Promise<any>;
   refreshStatusFor: (uid: string) => Promise<void>;
   fetchProgramList: () => Promise<void>;
-  handleManualCardPlay: (machineId: string, itemId?: string) => Promise<void>;
 }
 
 export function useCncDashboardQueues({
-  token,
   machines,
-  ensureCncWriteAllowed,
+  setMachines,
+  token,
   toast,
+  ensureCncWriteAllowed,
   setError,
   callRaw,
   refreshStatusFor,
   fetchProgramList,
-  handleManualCardPlay,
 }: Params) {
   const queueBatchRef = useRef<{
     t: any | null;
@@ -153,15 +153,8 @@ export function useCncDashboardQueues({
           return {
             id,
             jobId: id as any,
-            source:
-              metaSource === "db"
-                ? "db"
-                : jobSourceRaw === "manual_insert"
-                  ? "manual_insert"
-                  : "bridge",
-            kind:
-              kindRaw ||
-              (jobSourceRaw === "manual_insert" ? "manual_file" : ""),
+            source: metaSource === "db" ? "db" : "bridge",
+            kind: kindRaw || "",
             programNo,
             name: String(nameRaw || "-"),
             qty,
@@ -219,7 +212,7 @@ export function useCncDashboardQueues({
     [setError, toast, token],
   );
 
-  const uploadManualCardFiles = useCallback(
+  const uploadContinuousFiles = useCallback(
     async (machineId: string, files: FileList | File[]) => {
       const mid = String(machineId || "").trim();
       if (!mid) throw new Error("장비 ID가 올바르지 않습니다.");
@@ -285,8 +278,7 @@ export function useCncDashboardQueues({
               `장비카드 업로드에 실패했습니다. (HTTP ${xhr.status})`;
             reject(new Error(msg));
           };
-          xhr.onerror = () =>
-            reject(new Error("장비카드 업로드에 실패했습니다."));
+          xhr.onerror = () => reject(new Error("업로드에 실패했습니다."));
           xhr.onabort = () => reject(new Error("업로드가 취소되었습니다."));
           xhr.ontimeout = () =>
             reject(new Error("업로드 시간이 초과되었습니다."));
@@ -1230,34 +1222,29 @@ export function useCncDashboardQueues({
   );
 
   return {
+    loadBridgeQueueForMachine,
+    loadQueueForMachine,
+    uploadContinuousFiles,
+    uploadProgress,
+    machiningElapsedSecondsMap,
+    refreshDbQueuesForAllMachines,
+    worksheetQueueCountMap,
     queueBatchRef,
     scheduleQueueBatchCommit,
-
-    reservationSummaryMap,
+    onTogglePause,
+    setReservationJobsMap,
+    setReservationSummaryMap,
+    setReservationTotalQtyMap,
     reservationJobsMap,
-    worksheetQueueCountMap,
+    reservationSummaryMap,
     reservationTotalQtyMap,
-
     playlistOpen,
     setPlaylistOpen,
     playlistTarget,
     setPlaylistTarget,
+    playlistJobs,
     playlistReadOnly,
     setPlaylistReadOnly,
-    playlistJobs,
-
-    loadBridgeQueueForMachine,
-    loadQueueForMachine,
-    uploadManualCardFiles,
-    uploadProgress,
-    machiningElapsedSecondsMap,
-    refreshDbQueuesForAllMachines,
-
-    setReservationJobsMap,
-    setReservationSummaryMap,
-    setReservationTotalQtyMap,
-
-    onTogglePause,
     handlePlayNextUp,
     handlePlayNowPlaying,
     playingNextMap,

@@ -145,106 +145,115 @@ Console.WriteLine("[CncMachining] NotifyMachiningFailed error: {0}", ex.Message)
 }
 }
 
-private static int GetManualWatcherTimeoutMs()
-{
-var raw = (Environment.GetEnvironmentVariable("MANUAL_FILE_WATCHER_TIMEOUT_MS") ?? string.Empty).Trim();
-if (string.IsNullOrEmpty(raw))
-{
-raw = (Environment.GetEnvironmentVariable("MANUAL_CARD_WATCHER_TIMEOUT_MS") ?? "500").Trim();
-}
-if (int.TryParse(raw, out var ms) && ms >= 50 && ms <= 10000)
-{
-return ms;
-}
-return 500;
-}
-
-private static async Task DetectAndNotifyManualFileCompleted(string machineId, MachineState state)
-{
-if (state == null) return;
-var mid = (machineId ?? string.Empty).Trim();
-if (string.IsNullOrEmpty(mid)) return;
-
-// 큐 헤드가 manual_file일 때만 watcher 동작
-var head = CncJobQueue.Peek(mid);
-if (head == null) return;
-if (!string.Equals((head.kindRaw ?? string.Empty).Trim(), "manual_file", StringComparison.OrdinalIgnoreCase)) return;
-
-// busy 체크는 timeout으로 감싼다(네이티브 hang 방지)
-var timeoutMs = GetManualWatcherTimeoutMs();
-var busyTask = Task.Run(() =>
+private static async Task DetectMachiningCompletion(string machineId, MachineState state)
 {
 try
 {
-if (TryGetMachineBusy(mid, out var b))
+// 1) Busy IO 기반 완료 감지 (가공 시작(busy=1)을 한번이라도 봤고, 이후 busy=0이면 완료 후보)
+if (TryGetMachineBusy(machineId, out var busy))
 {
-return (ok: true, busy: b);
-}
-return (ok: false, busy: false);
-}
-catch
+if (busy) state.SawBusy = true;
+if (state.SawBusy && !busy)
 {
-return (ok: false, busy: false);
-}
-});
-
-var completed = await Task.WhenAny(busyTask, Task.Delay(timeoutMs));
-if (completed != busyTask)
+// 2) 생산 수량 확인 (카운트 +1)
+if (TryGetProductCount(machineId, out var currentCount))
 {
-Console.WriteLine("[CncMachining] manual busy check timeout machine={0} timeoutMs={1}", mid, timeoutMs);
-return;
-}
-
-(bool ok, bool busy) busyResult;
-try
+if (currentCount > state.ProductCountBefore)
 {
-busyResult = await busyTask;
+Console.WriteLine("[CncMachining] production count increased machine={0} jobId={1} before={2} after={3}",
+machineId, state.CurrentJob?.id, state.ProductCountBefore, currentCount);
+return true;
 }
-catch
-{
-return;
 }
-if (!busyResult.ok) return;
-
-var busy = busyResult.busy;
-var prevBusy = state.LastBusy;
-state.LastBusy = busy;
-
-if (prevBusy && !busy)
+// 수량 확인이 실패하더라도, busy가 내려가면 일정 시간 후 완료로 간주
+var elapsed = DateTime.UtcNow - state.StartedAtUtc;
+if (elapsed > TimeSpan.FromMinutes(1)) return true;
+}
+}
+// fallback: 일정 시간 지나면 완료로 간주
+var elapsedFallback = DateTime.UtcNow - state.StartedAtUtc;
+if (elapsedFallback > TimeSpan.FromMinutes(60)) return true;
+return false;
+}
+catch (Exception ex)
 {
-var nowUtc = DateTime.UtcNow;
-if ((nowUtc - state.LastManualNotifyUtc).TotalSeconds < 2) return;
-state.LastManualNotifyUtc = nowUtc;
-
-_ = Task.Run(() => NotifyBackendManualFileComplete(mid));
+Console.WriteLine("[CncMachining] DetectMachiningCompletion error machine={0} err={1}", machineId, ex.Message);
+return false;
 }
 }
 
-private static async Task NotifyBackendManualFileComplete(string machineId)
+private static async Task NotifyMachiningStarted(CncJobItem job, string machineId)
 {
 try
 {
-var backendBase = Config.BackendBase;
-if (string.IsNullOrEmpty(backendBase)) return;
-var mid = (machineId ?? string.Empty).Trim();
-if (string.IsNullOrEmpty(mid)) return;
-
-var url = backendBase.TrimEnd('/') + "/cnc-machines/bridge/manual-file/complete/" + Uri.EscapeDataString(mid);
-var req = new HttpRequestMessage(HttpMethod.Post, url);
-AddSecretHeader(req);
-req.Content = new StringContent("{}", Encoding.UTF8, "application/json");
-var resp = await BackendClient.SendAsync(req);
+var backend = GetBackendBase();
+if (string.IsNullOrEmpty(backend)) return;
+var url = backend + "/bg/register-file";
+var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
+? job?.fileName
+: job.originalFileName;
+var payload = new
+{
+sourceStep = "cnc",
+fileName = job?.fileName,
+originalFileName = canonical,
+requestId = job?.requestId,
+status = "started",
+metadata = new { machineId = machineId }
+};
+var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+{
+AddAuthHeader(req);
+req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+using (var resp = await Http.SendAsync(req))
+{
 _ = await resp.Content.ReadAsStringAsync();
-if (!resp.IsSuccessStatusCode)
-{
-Console.WriteLine("[CncMachining] backend manual-file complete failed machine={0} status={1}", mid, (int)resp.StatusCode);
+}
 }
 }
 catch (Exception ex)
 {
-Console.WriteLine("[CncMachining] NotifyBackendManualFileComplete error machine={0} err={1}", machineId, ex.Message);
+Console.WriteLine("[CncMachining] NotifyMachiningStarted error: {0}", ex.Message);
 }
 }
+
+private static async Task NotifyNcPreloadStatus(CncJobItem job, string machineId, string status, string error)
+{
+try
+{
+var backend = GetBackendBase();
+if (string.IsNullOrEmpty(backend)) return;
+var url = backend + "/bg/register-file";
+var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
+? job?.fileName
+: job.originalFileName;
+var payload = new
+{
+sourceStep = "cnc",
+fileName = job?.fileName,
+originalFileName = canonical,
+requestId = job?.requestId,
+status = status,
+metadata = new { machineId = machineId, error = error }
+};
+var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+{
+AddAuthHeader(req);
+req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+using (var resp = await Http.SendAsync(req))
+{
+_ = await resp.Content.ReadAsStringAsync();
+}
+}
+}
+catch (Exception ex)
+{
+Console.WriteLine("[CncMachining] NotifyNcPreloadStatus error: {0}", ex.Message);
+}
+}
+
 private static readonly Dictionary<string, MachineFlags> MachineFlagsCache = new Dictionary<string, MachineFlags>(StringComparer.OrdinalIgnoreCase);
 private const int MACHINE_FLAGS_CACHE_SEC = 5;
 private const int BACKEND_SYNC_INTERVAL_SEC = 10;
@@ -255,7 +264,6 @@ private static int GetJobPriority(CncJobItem job)
 {
 if (job == null) return 0;
 var src = (job.source ?? string.Empty).Trim();
-if (string.Equals(src, "manual_insert", StringComparison.OrdinalIgnoreCase)) return 2;
 if (string.Equals(src, "cam_approve", StringComparison.OrdinalIgnoreCase)) return 1;
 return 0;
 }
@@ -272,8 +280,6 @@ public int ConsumeFailCount;
 public DateTime NextConsumeAttemptUtc;
 public int ProductCountBefore; // 가공 시작 전 생산 수량
 public bool SawBusy;
-public bool LastBusy;
-public DateTime LastManualNotifyUtc;
 public string LastMachiningFailJobId;
 public string LastMachiningCompleteJobId;
 public string LastStartFailJobId;
@@ -427,8 +433,6 @@ CurrentSlot = SLOT_A,
 IsRunning = false,
 AwaitingStart = false,
 SawBusy = false,
-LastBusy = false,
-LastManualNotifyUtc = DateTime.MinValue,
 LastMachiningFailJobId = null,
 LastMachiningCompleteJobId = null,
 StartFailCount = 0,
@@ -472,13 +476,6 @@ if (!string.IsNullOrEmpty(state.PendingConsumeJobId))
     return;
 }
 // 슬롯 동기화 폴링은 하지 않는다. (항상 O4000만 사용)
-
-// manual_file 전용 완료 감지: busy 1->0 전환 시 백엔드에 complete 통보
-try
-{
-await DetectAndNotifyManualFileCompleted(machineId, state);
-}
-catch { }
 
 // 1. 현재 가공 중인지 확인
 if (state.IsRunning)
@@ -526,7 +523,7 @@ Console.WriteLine("[CncMachining] alarm read failed machine={0} err={1}", machin
 }
 
 // 가공 완료 체크
-var done = await CheckJobCompleted(machineId, state);
+var done = await DetectMachiningCompletion(machineId, state);
 if (done)
 {
 Console.WriteLine("[CncMachining] job completed machine={0} slot=O{1}",
@@ -615,11 +612,6 @@ return;
 // 2. Idle 상태: 새 작업 시작
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
-{
-    return;
-}
-// manual_file은 브리지에서 자동 Start/Upload를 하지 않는다. (백엔드가 preload/play를 관리)
-if (string.Equals((nextJob.kindRaw ?? string.Empty).Trim(), "manual_file", StringComparison.OrdinalIgnoreCase))
 {
     return;
 }

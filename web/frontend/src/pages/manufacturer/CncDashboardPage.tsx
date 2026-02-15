@@ -156,17 +156,6 @@ export const CncDashboardPage = () => {
   const { toast } = useToast();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
 
-  const handleManualCardPlay = useCallback(
-    async (machineId: string, itemId?: string) => {
-      const mid = String(machineId || "").trim();
-      if (!mid) return;
-      // legacy manual-file/play removed: continuous queue UI now directly controls machining
-      // keep function to satisfy existing props; no-op.
-      void itemId;
-    },
-    [ensureCncWriteAllowed, toast, token],
-  );
-
   const materials = useCncDashboardMaterials({
     token,
     machines,
@@ -497,15 +486,15 @@ export const CncDashboardPage = () => {
   });
 
   const queues = useCncDashboardQueues({
-    token,
     machines,
-    ensureCncWriteAllowed,
+    setMachines,
+    token,
     toast,
+    ensureCncWriteAllowed,
     setError,
     callRaw,
     refreshStatusFor,
     fetchProgramList,
-    handleManualCardPlay,
   });
 
   const handleBackgroundRefresh = useCallback(() => {
@@ -593,11 +582,16 @@ export const CncDashboardPage = () => {
       uploadProgress={queues.uploadProgress}
       updateMachineFlags={updateMachineFlags}
       updateMachineDummyEnabled={materials.updateMachineDummyEnabled}
-      uploadManualCardFiles={queues.uploadManualCardFiles}
+      uploadContinuousFiles={queues.uploadContinuousFiles}
       setWorkUid={(uid: string) => {
         setWorkUid(uid);
         if (token && uid) {
-          void refreshMachineStatuses({ token, uids: [uid] });
+          void queues.loadBridgeQueueForMachine(
+            machines.find((m) => m.uid === uid)!,
+            {
+              silent: true,
+            },
+          );
         }
       }}
       refreshStatusFor={refreshStatusFor}
@@ -619,7 +613,6 @@ export const CncDashboardPage = () => {
       queueBatchRef={queues.queueBatchRef}
       scheduleQueueBatchCommit={queues.scheduleQueueBatchCommit}
       onTogglePause={queues.onTogglePause}
-      handleManualCardPlay={handleManualCardPlay}
       setReservationJobsMap={queues.setReservationJobsMap}
       setReservationSummaryMap={queues.setReservationSummaryMap}
       setReservationTotalQtyMap={queues.setReservationTotalQtyMap}

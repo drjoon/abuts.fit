@@ -23,7 +23,6 @@ import {
 import {
   enqueueBridgeContinuousJob,
   enqueueBridgeContinuousJobFromDb,
-  enqueueBridgeManualInsertJob,
   getBridgeContinuousState,
   getJobResult,
   uploadAndEnqueueContinuousForMachine,
@@ -76,7 +75,6 @@ export {
   getBridgeActiveProgram,
   enqueueBridgeContinuousJob,
   enqueueBridgeContinuousJobFromDb,
-  enqueueBridgeManualInsertJob,
   uploadAndEnqueueContinuousForMachine,
   createCncDirectUploadPresign,
   enqueueCncDirectToDb,

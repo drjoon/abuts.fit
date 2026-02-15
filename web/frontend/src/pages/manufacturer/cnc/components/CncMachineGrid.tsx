@@ -50,7 +50,6 @@ interface CncMachineGridProps {
   onCancelNowPlaying?: (machine: Machine, jobId?: string) => void;
   onToggleAllowJobStart?: (machine: Machine, next: boolean) => void;
   onToggleDummyMachining?: (machine: Machine, next: boolean) => void;
-  onPlayManualCard?: (machineId: string, itemId: string) => void;
   playingNextMap?: Record<string, boolean>;
   nowPlayingMap?: Record<string, boolean>;
   onReloadBridgeQueueForMachine?: (machine: Machine) => void;
@@ -89,7 +88,6 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
   onCancelNowPlaying,
   onToggleAllowJobStart,
   onToggleDummyMachining,
-  onPlayManualCard,
   playingNextMap,
   nowPlayingMap,
   onReloadBridgeQueueForMachine,
@@ -293,13 +291,6 @@ export const CncMachineGrid: React.FC<CncMachineGridProps> = ({
                 ? (next, e) => {
                     e.stopPropagation();
                     onToggleDummyMachining(m, next);
-                  }
-                : undefined
-            }
-            onPlayManualCard={
-              onPlayManualCard
-                ? (itemId) => {
-                    onPlayManualCard(m.uid, itemId);
                   }
                 : undefined
             }
