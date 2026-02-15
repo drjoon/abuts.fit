@@ -61,9 +61,31 @@ export async function consumeBridgeQueueJobForBridge(req, res) {
       });
     }
 
-    const snap = await getDbBridgeQueueSnapshot(mid);
-    const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
-    const removedJob = jobs.find((j) => String(j?.id || "") === jid) || null;
+    const loadFromDb = async () => {
+      const snap = await getDbBridgeQueueSnapshot(mid);
+      const jobs = Array.isArray(snap.jobs) ? snap.jobs.slice() : [];
+      const removedJob = jobs.find((j) => String(j?.id || "") === jid) || null;
+      return { snap, jobs, removedJob };
+    };
+
+    let { jobs, removedJob } = await loadFromDb();
+
+    // 브리지에서 먼저 큐가 갱신됐는데 백엔드 DB 스냅샷이 늦게 반영되면 404가 발생할 수 있다.
+    // 1회만 브리지에서 큐를 재조회하여 스냅샷을 동기화한 뒤 재시도한다.
+    if (!removedJob) {
+      try {
+        const q = await fetchBridgeQueueFromBridge(mid);
+        if (q.ok) {
+          await saveBridgeQueueSnapshot(mid, q.jobs);
+          const after = await loadFromDb();
+          jobs = after.jobs;
+          removedJob = after.removedJob;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     if (!removedJob) {
       return res.status(404).json({
         success: false,

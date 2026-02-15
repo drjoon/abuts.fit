@@ -23,6 +23,8 @@ export const CAM_RETRY_BATCH_LIMIT = Number(
 export const BRIDGE_BASE = process.env.BRIDGE_BASE || "http://localhost:8002";
 export const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
+let warnedMissingBridgeSecret = false;
+
 export const toNumberOrNull = (v) => {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -89,6 +91,11 @@ export function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
+  } else if (!warnedMissingBridgeSecret) {
+    warnedMissingBridgeSecret = true;
+    console.warn(
+      "[Bridge] BRIDGE_SHARED_SECRET is not configured. Bridge requests will be sent without X-Bridge-Secret.",
+    );
   }
   return { ...base, ...extra };
 }
