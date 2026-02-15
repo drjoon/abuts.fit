@@ -1099,8 +1099,8 @@ try
 paused = j?["paused"]?.Value<bool?>() ?? false;
 }
 catch { paused = false; }
-// 백엔드 allowAutoStart가 오면 그대로 사용, 없으면 '재생 상태'(paused == false)로부터 추론하여 장비페이지 Play도 자동시작 허용
-var allowAutoStart = j?["allowAutoStart"]?.Value<bool?>() ?? (!paused);
+// 백엔드 allowAutoStart가 오면 그대로 사용, 없으면 기본 false (Play로만 시작)
+var allowAutoStart = j?["allowAutoStart"]?.Value<bool?>() ?? false;
 var qty = 1;
 try
 {
