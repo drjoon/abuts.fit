@@ -149,6 +149,14 @@ private static Task<bool> DetectMachiningCompletion(string machineId, MachineSta
 {
     try
     {
+        if (Config.MockCncMachining)
+        {
+            var started = state.StartedAtUtc;
+            if (started == DateTime.MinValue) return Task.FromResult(false);
+            var elapsed = DateTime.UtcNow - started;
+            return Task.FromResult(elapsed >= TimeSpan.FromSeconds(8));
+        }
+
         // 1) Busy IO 기반 완료 감지 (가공 시작(busy=1)을 한번이라도 봤고, 이후 busy=0이면 완료 후보)
         if (TryGetMachineBusy(machineId, out var busy))
         {
@@ -280,7 +288,7 @@ public static void Stop()
 try { _timer?.Dispose(); } catch { }
 _timer = null;
 }
-public static CncJobItem EnqueueFileJob(string machineId, string fileName, string requestId, string bridgePath = null, string s3Key = null, string s3Bucket = null, bool enqueueFront = false, string originalFileName = null)
+public static CncJobItem EnqueueFileJob(string machineId, string fileName, string requestId, string bridgePath = null, string s3Key = null, string s3Bucket = null, bool enqueueFront = false, string originalFileName = null, bool paused = true, bool allowAutoStart = false)
 {
 var mid = (machineId ?? string.Empty).Trim();
 if (string.IsNullOrEmpty(mid)) return null;
@@ -289,8 +297,14 @@ if (string.IsNullOrEmpty(fn)) return null;
 var rid = string.IsNullOrWhiteSpace(requestId) ? null : requestId;
 var ofn = string.IsNullOrWhiteSpace(originalFileName) ? fn : originalFileName;
 var job = enqueueFront
-                ? CncJobQueue.EnqueueFileFront(mid, fn, rid, ofn)
-                : CncJobQueue.EnqueueFileBack(mid, fn, rid, ofn);
+                ? CncJobQueue.EnqueueFileFront(mid, fn, rid, ofn, allowAutoStart)
+                : CncJobQueue.EnqueueFileBack(mid, fn, rid, ofn, allowAutoStart);
+try
+            {
+                job.paused = paused;
+                job.allowAutoStart = allowAutoStart;
+            }
+            catch { }
 try
             {
                 var bp = (bridgePath ?? string.Empty).Trim();
@@ -410,6 +424,8 @@ if (state.IsRunning)
 {
 // Alarm(Mode1) 기반 실패 감지 (알람이 1개 이상이면 실패로 간주)
 if (state.CurrentJob != null)
+{
+if (!Config.MockCncMachining)
 {
 if (TryGetMachineAlarms(machineId, out var alarmList, out var alarmErr))
 {
@@ -632,9 +648,9 @@ if (Config.MockCncMachining)
     {
         state.CurrentJob = job;
         state.CurrentSlot = SLOT_A; // 임의 슬롯
-        state.IsRunning = false;
-        state.AwaitingStart = true;
-        state.StartedAtUtc = DateTime.MinValue;
+        state.IsRunning = true;
+        state.AwaitingStart = false;
+        state.StartedAtUtc = DateTime.UtcNow;
         state.ProductCountBefore = 0;
         state.SawBusy = false;
     }

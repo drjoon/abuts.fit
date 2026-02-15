@@ -2014,6 +2014,8 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var s3Key = payload.Value<string>("s3Key");
                 var s3Bucket = payload.Value<string>("s3Bucket");
                 var enqueueFront = payload.Value<bool?>("enqueueFront") ?? false;
+                var paused = payload.Value<bool?>("paused") ?? true;
+                var allowAutoStart = payload.Value<bool?>("allowAutoStart") ?? false;
 
                 if (string.IsNullOrEmpty(fileName))
                 {
@@ -2036,7 +2038,9 @@ namespace HiLinkBridgeWebApi48.Controllers
                     s3Key,
                     s3Bucket,
                     enqueueFront,
-                    originalFileName
+                    originalFileName,
+                    paused,
+                    allowAutoStart
                 );
                 if (enqueued == null)
                 {

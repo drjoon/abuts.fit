@@ -83,8 +83,6 @@ export async function uploadAndEnqueueContinuousForMachine(req, res) {
 
     const savedPath = String(storeBody?.path || bridgePath).trim();
 
-    const allowAutoStart = Boolean(req.body?.allowAutoStart);
-
     const enqueueUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
       mid,
     )}/continuous/enqueue`;
@@ -94,7 +92,8 @@ export async function uploadAndEnqueueContinuousForMachine(req, res) {
       requestId: null,
       bridgePath: savedPath,
       enqueueFront: false,
-      allowAutoStart,
+      paused: true,
+      allowAutoStart: false,
     };
     const enqueueResp = await fetch(enqueueUrl, {
       method: "POST",
