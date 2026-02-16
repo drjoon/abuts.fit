@@ -683,7 +683,7 @@ export async function recognizeLotNumber(req, res) {
 
     const model = genAI.getGenerativeModel({
       // gemini-1.5-flash deprecated on v1beta; gemini-2.0-flash is current
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
         temperature: 0.1,

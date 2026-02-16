@@ -241,6 +241,11 @@ export const CncDashboardPageView = (props: any) => {
                   workUid={workUid}
                   loading={loading}
                   onSelectMachine={handleSelectMachine}
+                  onOpenMaterial={(machine) => {
+                    if (!machine) return;
+                    setMaterialModalTarget(machine);
+                    setMaterialModalOpen(true);
+                  }}
                   tempTooltipMap={tempTooltipMap}
                   toolTooltipMap={toolTooltipMap}
                   programSummary={programSummary}

@@ -613,10 +613,15 @@ export const getPresignedUploadUrl = asyncHandler(async (req, res) => {
       ? "application/octet-stream"
       : "application/octet-stream";
   const presign = await getPresignedPutUrl(key, contentType, 3600);
+  const s3Url = `https://${presign.bucket}.s3.amazonaws.com/${presign.key}`;
   return res
     .status(200)
     .json(
-      new ApiResponse(200, { ...presign, contentType }, "Presigned URL issued"),
+      new ApiResponse(
+        200,
+        { ...presign, s3Url, contentType },
+        "Presigned URL issued",
+      ),
     );
 });
 

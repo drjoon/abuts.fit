@@ -9,6 +9,7 @@ import {
   Pause,
   Play,
   Cylinder,
+  Layers,
   Plus,
   Minus,
 } from "lucide-react";
@@ -395,6 +396,27 @@ export const MachineCard = (props: MachineCardProps) => {
       ? worksheetQueueCount
       : 0;
   const statusLabel = getMachineStatusLabel(effectiveStatus);
+  const materialDiameterLabel = (() => {
+    const diameter = machine.currentMaterial?.diameter;
+    if (
+      typeof diameter === "number" &&
+      Number.isFinite(diameter) &&
+      diameter > 0
+    ) {
+      return Number.isInteger(diameter)
+        ? String(diameter)
+        : diameter.toFixed(1);
+    }
+    const group = machine.currentMaterial?.diameterGroup;
+    if (!group) return null;
+    if (group === "10+") return "12";
+    const parsed = Number.parseInt(group, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return String(parsed);
+    }
+    const numeric = group.replace(/[^0-9.]/g, "");
+    return numeric || null;
+  })();
 
   const showContinuousInfo =
     continuousState && (continuousState.isRunning || continuousState.nextJob);
@@ -703,6 +725,25 @@ export const MachineCard = (props: MachineCardProps) => {
                 }}
               />
             </>
+          )}
+          {onMaterialClick && (
+            <button
+              type="button"
+              className="relative inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMaterialClick(e);
+              }}
+              title="소재 선택"
+              disabled={loading}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              {materialDiameterLabel && (
+                <span className="absolute -top-1 -right-1 rounded-full bg-blue-600 px-1 text-[10px] font-black leading-none text-white shadow-sm">
+                  {materialDiameterLabel}
+                </span>
+              )}
+            </button>
           )}
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"
