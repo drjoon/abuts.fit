@@ -32,6 +32,7 @@ import { useQueueSlots } from "../hooks/useQueueSlots";
 import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { getMockCncMachiningEnabled } from "@/lib/bridgeSettings";
+import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/cnc/components/CompletedMachiningRecordsModal";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
 
@@ -165,6 +166,7 @@ export const MachineCard = (props: MachineCardProps) => {
   const effectiveStatus = statusByUid[machine.uid] ?? machine.status ?? "";
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dropping, setDropping] = useState(false);
+  const [completedModalOpen, setCompletedModalOpen] = useState(false);
   const [dummyOpen, setDummyOpen] = useState(false);
   const [dummyProgram, setDummyProgram] = useState("O0100");
   const [dummySchedules, setDummySchedules] = useState<
@@ -891,10 +893,18 @@ export const MachineCard = (props: MachineCardProps) => {
         </div>
 
         <div className="grid grid-cols-1 gap-2">
-          <div className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200">
+          <div
+            role="button"
+            tabIndex={0}
+            className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200 hover:bg-white/85 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCompletedModalOpen(true);
+            }}
+          >
             <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold text-slate-500">
                   Complete
                   <span className="ml-4 mr-4">
                     종료 {lastCompletedSummary?.completedAtLabel || ""}
@@ -914,7 +924,7 @@ export const MachineCard = (props: MachineCardProps) => {
                     : "없음"}
                 </div>
               </div>
-              <div className="flex items-center gap-1" />
+              <div className="flex items-center gap-2 shrink-0" />
             </div>
           </div>
 
@@ -1387,6 +1397,14 @@ export const MachineCard = (props: MachineCardProps) => {
           </DialogContent>
         </Dialog>
       )}
+
+      <CompletedMachiningRecordsModal
+        open={completedModalOpen}
+        onOpenChange={setCompletedModalOpen}
+        machineId={String(machine.uid || "").trim()}
+        title={`${String(machine.name || machine.uid || "").trim()} 가공 완료`}
+        pageSize={5}
+      />
     </div>
   );
 };

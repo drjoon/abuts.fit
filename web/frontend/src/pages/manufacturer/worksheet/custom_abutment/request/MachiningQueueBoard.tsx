@@ -23,6 +23,7 @@ import {
   CncPlaylistDrawer,
   type PlaylistJobItem,
 } from "@/pages/manufacturer/cnc/components/CncPlaylistDrawer";
+import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/cnc/components/CompletedMachiningRecordsModal";
 
 type QueueItem = {
   requestId?: string;
@@ -90,6 +91,7 @@ type NowPlayingHint = {
 type MachineQueueCardProps = {
   machineId: string;
   machineName?: string;
+  machine?: any;
   queue: QueueItem[];
   onOpenRequestLog?: (requestId: string) => void;
   autoEnabled: boolean;
@@ -101,6 +103,7 @@ type MachineQueueCardProps = {
   machiningElapsedSeconds?: number | null;
   lastCompleted?: LastCompletedMachining | null;
   nowPlayingHint?: NowPlayingHint | null;
+  onOpenCompleted?: (machineId: string, machineName?: string) => void;
 };
 
 const getStatusDotColor = (status?: string) => getMachineStatusDotClass(status);
@@ -172,6 +175,7 @@ const getNcPreloadBadge = (item?: QueueItem | null) => {
 const MachineQueueCard = ({
   machineId,
   machineName,
+  machine,
   queue,
   onOpenRequestLog,
   autoEnabled,
@@ -183,6 +187,7 @@ const MachineQueueCard = ({
   machiningElapsedSeconds,
   lastCompleted,
   nowPlayingHint,
+  onOpenCompleted,
 }: MachineQueueCardProps) => {
   const { toast } = useToast();
   const token = useAuthStore((s) => s.token);
@@ -244,6 +249,23 @@ const MachineQueueCard = ({
 
   const headerTitle = machineName || machineId;
   const badgeIsMock = isMockFromBackend === true;
+
+  const materialDiameterLabel = useMemo(() => {
+    const dia = machine?.currentMaterial?.diameter;
+    if (typeof dia === "number" && Number.isFinite(dia) && dia > 0) {
+      const v = Number.isInteger(dia) ? String(dia) : dia.toFixed(1);
+      return `Ø ${v}mm`;
+    }
+    const group = machine?.currentMaterial?.diameterGroup;
+    const numeric = Number.parseFloat(
+      String(group || "").replace(/[^0-9.]/g, ""),
+    );
+    if (Number.isFinite(numeric) && numeric > 0) {
+      const v = numeric > 10 ? 12 : numeric;
+      return `Ø ${Number.isInteger(v) ? v : v.toFixed(1)}mm`;
+    }
+    return "";
+  }, [machine]);
 
   // Now Playing: currentSlot의 파일명 또는 machineStatus.currentProgram
   const nowPlayingLabel = currentSlot
@@ -363,6 +385,15 @@ const MachineQueueCard = ({
                 MOCK
               </Badge>
             ) : null}
+            {!!materialDiameterLabel && (
+              <Badge
+                variant="outline"
+                className="shrink-0 bg-white text-[10px] font-extrabold text-slate-700 border-slate-200 px-2 py-0.5"
+                title="현재 소재 직경"
+              >
+                {materialDiameterLabel}
+              </Badge>
+            )}
             <span
               className={`w-3 h-3 rounded-full ${statusColor} ${
                 statusRefreshing ? "animate-pulse" : ""
@@ -415,7 +446,15 @@ const MachineQueueCard = ({
 
       <div className="app-glass-card-content mt-4 flex flex-col gap-2 text-sm">
         <div className="grid grid-cols-1 gap-2">
-          <div className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200">
+          <div
+            role="button"
+            tabIndex={0}
+            className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200 hover:bg-white/85 transition-colors cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenCompleted?.(machineId, machineName);
+            }}
+          >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold text-slate-500">
@@ -637,6 +676,57 @@ export const MachiningQueueBoard = ({
     null,
   );
   const [workUid, setWorkUid] = useState<string>("");
+
+  const [completedModalOpen, setCompletedModalOpen] = useState(false);
+  const [completedModalMachineId, setCompletedModalMachineId] = useState("");
+  const [completedModalTitle, setCompletedModalTitle] = useState<string>("");
+
+  const [cncMachineMetaMap, setCncMachineMetaMap] = useState<
+    Record<string, any>
+  >({});
+
+  useEffect(() => {
+    if (!token) return;
+    let mounted = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/cnc-machines", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) return;
+        const list: any[] = Array.isArray(body?.data) ? body.data : [];
+        const next: Record<string, any> = {};
+        for (const item of list) {
+          const machineId = String(item?.machineId || "");
+          if (!machineId) continue;
+          next[machineId] = item;
+        }
+        if (mounted) setCncMachineMetaMap(next);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
+  const mergedMachines = useMemo(() => {
+    return (machines || []).map((m: any) => {
+      const meta = cncMachineMetaMap[m.uid];
+      if (!meta) return m;
+      return {
+        ...m,
+        currentMaterial: meta.currentMaterial || m.currentMaterial,
+        scheduledMaterialChange:
+          meta.scheduledMaterialChange || m.scheduledMaterialChange,
+        maxModelDiameterGroups:
+          meta.maxModelDiameterGroups || m.maxModelDiameterGroups,
+        dummySettings: meta.dummySettings || m.dummySettings,
+      };
+    });
+  }, [cncMachineMetaMap, machines]);
 
   const {
     programEditorOpen,
@@ -992,13 +1082,13 @@ export const MachiningQueueBoard = ({
     const q = String(searchQuery || "")
       .trim()
       .toLowerCase();
-    const list = Array.isArray(machines) ? machines : [];
+    const list = Array.isArray(mergedMachines) ? mergedMachines : [];
     if (!q) return list;
     return list.filter((m) => {
       const fields = [m.name, m.uid, m.ip].filter(Boolean);
       return fields.some((f) => String(f).toLowerCase().indexOf(q) >= 0);
     });
-  }, [machines, searchQuery]);
+  }, [mergedMachines, searchQuery]);
 
   const openReservationForMachine = useCallback(
     (uid: string) => {
@@ -1243,6 +1333,7 @@ export const MachiningQueueBoard = ({
                 key={m.uid}
                 machineId={m.uid}
                 machineName={m.name}
+                machine={m}
                 queue={Array.isArray(queueMap?.[m.uid]) ? queueMap[m.uid] : []}
                 machiningElapsedSeconds={
                   typeof machiningElapsedSecondsMap?.[m.uid] === "number"
@@ -1265,11 +1356,26 @@ export const MachiningQueueBoard = ({
                   setWorkUid(machineId);
                   openProgramDetail(prog, machineId);
                 }}
+                onOpenCompleted={(mid, name) => {
+                  setCompletedModalMachineId(String(mid || "").trim());
+                  setCompletedModalTitle(
+                    `${String(name || mid || "").trim()} 가공 완료`,
+                  );
+                  setCompletedModalOpen(true);
+                }}
               />
             );
           })(),
         )}
       </div>
+
+      <CompletedMachiningRecordsModal
+        open={completedModalOpen}
+        onOpenChange={setCompletedModalOpen}
+        machineId={completedModalMachineId}
+        title={completedModalTitle}
+        pageSize={5}
+      />
 
       {eventLogRequestId ? (
         <CncEventLogModal

@@ -366,6 +366,55 @@ export const RequestPage = ({
     (req: ManufacturerRequest) => {
       if (!req?._id) return;
 
+      const stage = deriveStageForFilter(req);
+
+      // 항상 "현재 카드 단계"에서 직전 단계로 롤백
+      if (stage === "가공") {
+        void handleDeleteStageFile({
+          req,
+          stage: "machining",
+          rollbackOnly: true,
+        });
+        return;
+      }
+
+      if (stage === "CAM") {
+        void handleDeleteNc(req, {
+          nextStage: "request",
+          rollbackOnly: true,
+          navigate: false,
+        });
+        return;
+      }
+
+      if (stage === "세척.포장") {
+        void handleDeleteStageFile({
+          req,
+          stage: "packaging",
+          rollbackOnly: true,
+        });
+        return;
+      }
+
+      if (stage === "발송") {
+        // 발송 단계 롤백: 세척.포장 단계로 되돌리기
+        void handleUpdateReviewStatus({
+          req,
+          status: "PENDING",
+          stageOverride: "shipping",
+        });
+        return;
+      }
+
+      if (stage === "추적관리") {
+        void handleDeleteStageFile({
+          req,
+          stage: "tracking",
+          rollbackOnly: true,
+        });
+        return;
+      }
+
       if (tabStage === "machining") {
         void handleDeleteStageFile({
           req,

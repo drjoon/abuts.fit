@@ -91,6 +91,13 @@ router.get(
   cncMachineController.getLastCompletedMachiningMap,
 );
 
+// 가공 완료 목록 조회 (제조사, 관리자)
+router.get(
+  "/machining/completed",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getCompletedMachiningRecords,
+);
+
 // 장비 목록 조회 (제조사, 관리자)
 router.get(
   "/",

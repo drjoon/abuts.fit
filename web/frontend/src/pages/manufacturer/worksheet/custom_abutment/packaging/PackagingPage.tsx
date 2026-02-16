@@ -402,13 +402,45 @@ export const PackagingPage = ({
     (req: ManufacturerRequest) => {
       if (!req?._id) return;
 
-      void handleDeleteStageFile({
-        req,
-        stage: "packaging",
-        rollbackOnly: true,
-      });
+      const stage = deriveStageForFilter(req);
+
+      if (stage === "가공") {
+        void handleDeleteStageFile({
+          req,
+          stage: "machining",
+          rollbackOnly: true,
+        });
+        return;
+      }
+
+      if (stage === "세척.포장") {
+        void handleDeleteStageFile({
+          req,
+          stage: "packaging",
+          rollbackOnly: true,
+        });
+        return;
+      }
+
+      if (stage === "발송") {
+        void handleUpdateReviewStatus({
+          req,
+          status: "PENDING",
+          stageOverride: "shipping",
+        });
+        return;
+      }
+
+      if (stage === "추적관리") {
+        void handleDeleteStageFile({
+          req,
+          stage: "tracking",
+          rollbackOnly: true,
+        });
+        return;
+      }
     },
-    [handleDeleteStageFile],
+    [handleDeleteStageFile, handleUpdateReviewStatus],
   );
 
   const handlePageDrop = useCallback(

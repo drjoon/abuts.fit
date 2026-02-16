@@ -26,6 +26,108 @@ function makeStartedEmitKey({ machineId, jobId, requestId, bridgePath }) {
   ].join("|");
 }
 
+export async function getCompletedMachiningRecords(req, res) {
+  try {
+    const machineId = String(req.query.machineId || "").trim();
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(50, Math.max(1, limitRaw))
+      : 5;
+    const cursor = String(req.query.cursor || "").trim();
+
+    if (!machineId) {
+      return res.status(400).json({
+        success: false,
+        message: "machineId is required",
+      });
+    }
+
+    const query = {
+      machineId,
+      status: "COMPLETED",
+    };
+
+    if (cursor) {
+      const [cursorAt, cursorId] = cursor.split("|");
+      const at = cursorAt ? new Date(cursorAt) : null;
+      if (at && !Number.isNaN(at.getTime())) {
+        query.$or = [
+          { completedAt: { $lt: at } },
+          { completedAt: at, _id: { $lt: cursorId } },
+        ];
+      }
+    }
+
+    const recs = await MachiningRecord.find(query)
+      .sort({ completedAt: -1, _id: -1 })
+      .limit(limit + 1)
+      .lean();
+
+    const slice = recs.slice(0, limit);
+    const hasMore = recs.length > limit;
+
+    const requestIds = slice
+      .map((r) => String(r?.requestId || "").trim())
+      .filter(Boolean);
+    const uniqueRequestIds = Array.from(new Set(requestIds));
+
+    const reqDocs = uniqueRequestIds.length
+      ? await Request.find({ requestId: { $in: uniqueRequestIds } })
+          .select("requestId caseInfos.clinicName caseInfos.patientName")
+          .lean()
+      : [];
+
+    const reqById = new Map();
+    for (const r of Array.isArray(reqDocs) ? reqDocs : []) {
+      const rid = String(r?.requestId || "").trim();
+      if (rid) reqById.set(rid, r);
+    }
+
+    const items = slice.map((r) => {
+      const rid = String(r?.requestId || "").trim();
+      const reqDoc = rid ? reqById.get(rid) : null;
+      const displayLabel = formatRequestLabelForCompleted(reqDoc, rid);
+      return {
+        id: String(r?._id || ""),
+        machineId: String(r?.machineId || "").trim(),
+        requestId: rid || null,
+        jobId: r?.jobId != null ? String(r.jobId) : null,
+        status: String(r?.status || "").trim(),
+        completedAt: r?.completedAt
+          ? new Date(r.completedAt).toISOString()
+          : null,
+        durationSeconds:
+          typeof r?.durationSeconds === "number" && r.durationSeconds >= 0
+            ? Math.floor(r.durationSeconds)
+            : typeof r?.elapsedSeconds === "number" && r.elapsedSeconds >= 0
+              ? Math.floor(r.elapsedSeconds)
+              : 0,
+        displayLabel: String(displayLabel || "").trim() || null,
+      };
+    });
+
+    const last = slice[slice.length - 1] || null;
+    const nextCursor =
+      hasMore && last?.completedAt
+        ? `${new Date(last.completedAt).toISOString()}|${String(last._id)}`
+        : null;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        items,
+        nextCursor,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "가공 완료 목록 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 function shouldEmitStarted(key) {
   const now = Date.now();
   const last = startedEmitCache.get(key);
