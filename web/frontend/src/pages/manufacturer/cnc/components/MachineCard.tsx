@@ -51,6 +51,7 @@ interface MachineCardProps {
     machineId: string;
     jobId: string | null;
     requestId: string | null;
+    displayLabel?: string | null;
     completedAt: string;
     durationSeconds: number;
   } | null;
@@ -506,6 +507,7 @@ export const MachineCard = (props: MachineCardProps) => {
       machineId: machine.uid,
       jobId,
       requestId,
+      displayLabel: null,
       completedAt,
       durationSeconds,
     };
@@ -875,11 +877,14 @@ export const MachineCard = (props: MachineCardProps) => {
                     </span>
                   </div>
                   <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                    {derivedCompleted.requestId
-                      ? `의뢰 (${String(derivedCompleted.requestId)})`
-                      : derivedCompleted.jobId
-                        ? `작업 (${String(derivedCompleted.jobId)})`
-                        : "-"}
+                    {String(
+                      (derivedCompleted as any)?.displayLabel || "",
+                    ).trim() ||
+                      (derivedCompleted.requestId
+                        ? `의뢰 (${String(derivedCompleted.requestId)})`
+                        : derivedCompleted.jobId
+                          ? `작업 (${String(derivedCompleted.jobId)})`
+                          : "-")}
                   </div>
                 </div>
                 <div className="flex items-center gap-1" />

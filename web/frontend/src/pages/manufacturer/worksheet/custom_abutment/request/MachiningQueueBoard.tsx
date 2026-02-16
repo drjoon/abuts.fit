@@ -58,6 +58,11 @@ type QueueItem = {
 
 type QueueMap = Record<string, QueueItem[]>;
 
+const resolveCompletedDisplayLabel = (q: QueueItem | null) => {
+  if (!q) return "-";
+  return formatLabel(q);
+};
+
 type MachineStatus = {
   uid: string;
   status?: string;
@@ -69,6 +74,7 @@ type LastCompletedMachining = {
   machineId: string;
   jobId: string | null;
   requestId: string | null;
+  displayLabel: string | null;
   completedAt: string;
   durationSeconds: number;
 };
@@ -319,6 +325,7 @@ const MachineQueueCard = ({
       machineId,
       jobId: null,
       requestId: rid || null,
+      displayLabel: resolveCompletedDisplayLabel(currentSlot || null),
       completedAt,
       durationSeconds,
     } satisfies LastCompletedMachining;
@@ -420,9 +427,7 @@ const MachineQueueCard = ({
                 <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-semibold text-slate-500">
                     가공 완료
-                  </div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
-                    <span className="mr-2">
+                    <span className="ml-4 mr-4">
                       종료 {lastCompletedSummary?.completedAtLabel || "-"}
                     </span>
                     <span>
@@ -430,11 +435,12 @@ const MachineQueueCard = ({
                     </span>
                   </div>
                   <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                    {derivedCompleted.requestId
-                      ? `의뢰 (${String(derivedCompleted.requestId)})`
-                      : derivedCompleted.jobId
-                        ? `작업 (${String(derivedCompleted.jobId)})`
-                        : "-"}
+                    {String(derivedCompleted.displayLabel || "").trim() ||
+                      (derivedCompleted.requestId
+                        ? `의뢰 (${String(derivedCompleted.requestId)})`
+                        : derivedCompleted.jobId
+                          ? `작업 (${String(derivedCompleted.jobId)})`
+                          : "-")}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0" />
@@ -572,6 +578,25 @@ export const MachiningQueueBoard = ({
   const [loading, setLoading] = useState(false);
 
   const [queueMap, setQueueMap] = useState<QueueMap>({});
+  const queueMapRef = useRef<QueueMap>({});
+  useEffect(() => {
+    queueMapRef.current = queueMap;
+  }, [queueMap]);
+
+  const refreshProductionQueues = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/cnc-machines/queues", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) return;
+      const map = body?.data && typeof body.data === "object" ? body.data : {};
+      setQueueMap(map);
+    } catch {
+      // ignore
+    }
+  }, [token]);
   const [machineStatusMap, setMachineStatusMap] = useState<
     Record<string, MachineStatus>
   >({});
@@ -800,6 +825,7 @@ export const MachiningQueueBoard = ({
         tickAtMs: Date.now(),
       };
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
+      void refreshProductionQueues();
     });
 
     const offTick = onCncMachiningTick((data: any) => {
@@ -820,6 +846,21 @@ export const MachiningQueueBoard = ({
     const offCompleted = onCncMachiningCompleted((data: any) => {
       const mid = String(data?.machineId || "").trim();
       if (!mid) return;
+
+      const rid = data?.requestId != null ? String(data.requestId).trim() : "";
+      const jid = data?.jobId != null ? String(data.jobId).trim() : "";
+      const jobs = Array.isArray(queueMapRef.current?.[mid])
+        ? queueMapRef.current[mid]
+        : [];
+      const found = jobs.find((j) => {
+        if (!j || typeof j !== "object") return false;
+        const qRid = String((j as any)?.requestId || "").trim();
+        if (rid && qRid === rid) return true;
+        const qJobId = String((j as any)?.jobId || (j as any)?.id || "").trim();
+        if (jid && qJobId === jid) return true;
+        return false;
+      });
+      const displayLabel = found ? resolveCompletedDisplayLabel(found) : rid;
 
       const durationSeconds = (() => {
         const fromDuration =
@@ -853,6 +894,7 @@ export const MachiningQueueBoard = ({
           machineId: mid,
           jobId: data?.jobId != null ? String(data.jobId) : null,
           requestId: data?.requestId != null ? String(data.requestId) : null,
+          displayLabel: String(displayLabel || "").trim() || null,
           completedAt: String(data?.completedAt || new Date().toISOString()),
           durationSeconds,
         },
@@ -860,6 +902,7 @@ export const MachiningQueueBoard = ({
 
       delete machiningElapsedBaseRef.current[mid];
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
+      void refreshProductionQueues();
     });
 
     return () => {
@@ -867,7 +910,7 @@ export const MachiningQueueBoard = ({
       offTick?.();
       offCompleted?.();
     };
-  }, [token]);
+  }, [token, refreshProductionQueues]);
 
   const refreshMachineStatuses = useCallback(async () => {
     if (!token) return;
@@ -963,7 +1006,7 @@ export const MachiningQueueBoard = ({
           name: target.name,
           ip: target.ip,
           port: target.port,
-          allowJobStart: target.allowJobStart !== false,
+          allowJobStart: next ? true : target.allowJobStart !== false,
           allowProgramDelete: target.allowProgramDelete === true,
           allowAutoMachining: next,
         },

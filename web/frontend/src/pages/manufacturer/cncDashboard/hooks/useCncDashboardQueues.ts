@@ -18,6 +18,7 @@ type LastCompletedMachining = {
   machineId: string;
   jobId: string | null;
   requestId: string | null;
+  displayLabel: string | null;
   completedAt: string;
   durationSeconds: number;
 };
@@ -72,6 +73,10 @@ export function useCncDashboardQueues({
   const [reservationJobsMap, setReservationJobsMap] = useState<
     Record<string, CncJobItem[]>
   >({});
+  const reservationJobsMapRef = useRef<Record<string, CncJobItem[]>>({});
+  useEffect(() => {
+    reservationJobsMapRef.current = reservationJobsMap;
+  }, [reservationJobsMap]);
   const [worksheetQueueCountMap, setWorksheetQueueCountMap] = useState<
     Record<string, number>
   >({});
@@ -366,6 +371,24 @@ export function useCncDashboardQueues({
       const mid = resolveMachineId(data?.machineId);
       if (!mid) return;
 
+      const rid =
+        (data as any)?.requestId != null
+          ? String((data as any).requestId).trim()
+          : "";
+      const jid =
+        (data as any)?.jobId != null ? String((data as any).jobId).trim() : "";
+      const jobs = reservationJobsMapRef.current?.[mid] || [];
+      const found = jobs.find((j) => {
+        if (!j || typeof j !== "object") return false;
+        const jId = String((j as any)?.id || "").trim();
+        const jReq = String((j as any)?.requestId || "").trim();
+        if (rid && jReq === rid) return true;
+        if (jid && jId === jid) return true;
+        return false;
+      });
+      const displayLabelRaw = String((found as any)?.name || "").trim();
+      const displayLabel = displayLabelRaw || rid || jid;
+
       const durationSeconds = (() => {
         const fromDuration =
           typeof (data as any)?.durationSeconds === "number" &&
@@ -399,6 +422,7 @@ export function useCncDashboardQueues({
             (data as any)?.requestId != null
               ? String((data as any).requestId)
               : null,
+          displayLabel: String(displayLabel || "").trim() || null,
           completedAt: String(
             (data as any)?.completedAt || new Date().toISOString(),
           ),

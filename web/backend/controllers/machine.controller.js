@@ -497,10 +497,14 @@ export async function upsertMachine(req, res) {
       ip,
       port,
       name: displayName,
-      allowJobStart: normalizeBool(
-        allowJobStart,
-        existing?.allowJobStart ?? true,
-      ),
+      allowJobStart: (() => {
+        const nextAuto = normalizeBool(
+          allowAutoMachining,
+          existing?.allowAutoMachining ?? false,
+        );
+        if (nextAuto === true) return true;
+        return normalizeBool(allowJobStart, existing?.allowJobStart ?? true);
+      })(),
       allowProgramDelete: normalizeBool(
         allowProgramDelete,
         existing?.allowProgramDelete ?? false,
