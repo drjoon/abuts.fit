@@ -42,6 +42,10 @@ const machineSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    allowRequestAssign: {
+      type: Boolean,
+      default: true,
+    },
     allowAutoMachining: {
       type: Boolean,
       default: false,
@@ -53,7 +57,7 @@ const machineSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const Machine = mongoose.model("Machine", machineSchema);

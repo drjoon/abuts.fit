@@ -15,6 +15,7 @@ export const useCncMachines = () => {
     ip: "192.168.0.10",
     allowJobStart: false,
     allowProgramDelete: false,
+    allowRequestAssign: true,
     allowAutoMachining: false,
   });
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -46,6 +47,7 @@ export const useCncMachines = () => {
             : undefined,
           allowJobStart: m.allowJobStart !== false,
           allowProgramDelete: m.allowProgramDelete === true,
+          allowRequestAssign: m.allowRequestAssign !== false,
           allowAutoMachining: m.allowAutoMachining === true,
         } as Machine;
       });
@@ -61,6 +63,7 @@ export const useCncMachines = () => {
             ip: fresh.ip ?? "",
             allowJobStart: fresh.allowJobStart !== false,
             allowProgramDelete: fresh.allowProgramDelete === true,
+            allowRequestAssign: fresh.allowRequestAssign !== false,
             allowAutoMachining: fresh.allowAutoMachining === true,
           });
         }
@@ -96,6 +99,7 @@ export const useCncMachines = () => {
       ip: m.ip ?? "",
       allowJobStart: m.allowJobStart !== false,
       allowProgramDelete: m.allowProgramDelete === true,
+      allowRequestAssign: m.allowRequestAssign !== false,
       allowAutoMachining: m.allowAutoMachining === true,
     });
     setAddModalMode("edit");
@@ -165,6 +169,7 @@ export const useCncMachines = () => {
           port: 8193,
           allowJobStart: submit.allowJobStart,
           allowProgramDelete: submit.allowProgramDelete,
+          allowRequestAssign: submit.allowRequestAssign !== false,
           allowAutoMachining: submit.allowAutoMachining,
         },
       });
@@ -191,6 +196,7 @@ export const useCncMachines = () => {
               : undefined,
             allowJobStart: saved.allowJobStart !== false,
             allowProgramDelete: saved.allowProgramDelete === true,
+            allowRequestAssign: saved.allowRequestAssign !== false,
             allowAutoMachining: saved.allowAutoMachining === true,
           } as Machine;
           if (exists) {
@@ -206,6 +212,7 @@ export const useCncMachines = () => {
           ip: saved.ip ?? "",
           allowJobStart: saved.allowJobStart !== false,
           allowProgramDelete: saved.allowProgramDelete === true,
+          allowRequestAssign: saved.allowRequestAssign !== false,
           allowAutoMachining: saved.allowAutoMachining === true,
         });
       }

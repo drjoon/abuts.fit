@@ -299,8 +299,11 @@ async function screenCamMachineForRequest({ request }) {
     throw err;
   }
 
-  // 1) 장비 제어 허용(가공 가능) ON
-  const machinable = await Machine.find({ allowJobStart: { $ne: false } })
+  // 1) 장비 제어 허용(가공 가능) ON + 의뢰 배정 ON
+  const machinable = await Machine.find({
+    allowJobStart: { $ne: false },
+    allowRequestAssign: { $ne: false },
+  })
     .lean()
     .catch(() => []);
   const machinableIdSet = new Set(
@@ -402,8 +405,10 @@ async function chooseMachineForRequest({ request }) {
 
   const machines = await CncMachine.find({ status: "active" }).lean();
 
-  // 자동 가공 허용(allowAutoMachining=true)인 장비만 자동 선택 후보에 포함한다.
-  const autoMachines = await Machine.find({ allowAutoMachining: true })
+  // 의뢰 배정 허용(allowRequestAssign=true)인 장비만 자동 선택 후보에 포함한다.
+  const autoMachines = await Machine.find({
+    allowRequestAssign: { $ne: false },
+  })
     .lean()
     .catch(() => []);
   const autoMachineIdSet = new Set(
@@ -521,7 +526,13 @@ async function chooseMachineForCamMachining({ request }) {
 
   const machines = await CncMachine.find({ status: "active" }).lean();
   const machineMetas = await Machine.find({})
-    .select({ uid: 1, name: 1, allowJobStart: 1, allowAutoMachining: 1 })
+    .select({
+      uid: 1,
+      name: 1,
+      allowJobStart: 1,
+      allowRequestAssign: 1,
+      allowAutoMachining: 1,
+    })
     .lean()
     .catch(() => []);
   const metaById = new Map(
@@ -546,6 +557,7 @@ async function chooseMachineForCamMachining({ request }) {
 
       const meta = metaById.get(m.machineId);
       if (meta?.allowJobStart === false) return false;
+      if (meta?.allowRequestAssign === false) return false;
 
       if (!Number.isFinite(m.materialDiameter) || m.materialDiameter <= 0)
         return false;

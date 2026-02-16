@@ -10,6 +10,7 @@ export interface Machine {
   lastError?: string | null;
   allowJobStart?: boolean;
   allowProgramDelete?: boolean;
+  allowRequestAssign?: boolean;
   allowAutoMachining?: boolean;
 
   maxModelDiameterGroups?: ("6" | "8" | "10" | "12")[];
@@ -43,5 +44,6 @@ export interface MachineForm {
   ip: string;
   allowJobStart: boolean;
   allowProgramDelete: boolean;
+  allowRequestAssign?: boolean;
   allowAutoMachining: boolean;
 }

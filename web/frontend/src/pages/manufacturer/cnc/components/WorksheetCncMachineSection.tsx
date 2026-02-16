@@ -87,13 +87,13 @@ const formatMachineDiameterLabel = (machine: Machine): string => {
     Number.isFinite(diameter) &&
     diameter > 0
   ) {
-    return `${Number.isInteger(diameter) ? diameter : diameter.toFixed(1)}mm`;
+    return `${Number.isInteger(diameter) ? diameter : diameter.toFixed(1)}`;
   }
   const group = machine.currentMaterial?.diameterGroup;
   if (group) {
     const numeric = Number.parseFloat(String(group).replace(/[^0-9.]/g, ""));
     if (Number.isFinite(numeric) && numeric > 0) {
-      return `${Number.isInteger(numeric) ? numeric : numeric.toFixed(1)}mm`;
+      return `${Number.isInteger(numeric) ? numeric : numeric.toFixed(1)}`;
     }
   }
   return "-";
@@ -274,7 +274,7 @@ const WorksheetCncMachineCard = ({
             className="inline-flex items-center rounded-full border border-gray-200 bg-white/80 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-gray-700 shadow-sm"
             title="현재 소재 직경"
           >
-            Ø {readOnlyDiameterLabel}
+            {readOnlyDiameterLabel}
           </span>
           <button
             type="button"

@@ -457,7 +457,6 @@ export async function callRawProxy(req, res) {
   }
 }
 
-// POST /api/machines - 장비 등록/수정
 export async function upsertMachine(req, res) {
   try {
     const {
@@ -468,6 +467,7 @@ export async function upsertMachine(req, res) {
       name,
       allowJobStart,
       allowProgramDelete,
+      allowRequestAssign,
       allowAutoMachining,
     } = req.body;
     const finalUid = uid;
@@ -508,6 +508,10 @@ export async function upsertMachine(req, res) {
       allowProgramDelete: normalizeBool(
         allowProgramDelete,
         existing?.allowProgramDelete ?? false,
+      ),
+      allowRequestAssign: normalizeBool(
+        allowRequestAssign,
+        existing?.allowRequestAssign ?? true,
       ),
       allowAutoMachining: normalizeBool(
         allowAutoMachining,

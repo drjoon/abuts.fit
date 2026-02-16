@@ -96,6 +96,7 @@ type MachineQueueCardProps = {
   onOpenRequestLog?: (requestId: string) => void;
   autoEnabled: boolean;
   onToggleAuto: (next: boolean) => void;
+  onToggleRequestAssign?: (next: boolean) => void;
   machineStatus?: MachineStatus | null;
   statusRefreshing?: boolean;
   onOpenReservation: () => void;
@@ -180,6 +181,7 @@ const MachineQueueCard = ({
   onOpenRequestLog,
   autoEnabled,
   onToggleAuto,
+  onToggleRequestAssign,
   machineStatus,
   statusRefreshing,
   onOpenReservation,
@@ -254,7 +256,7 @@ const MachineQueueCard = ({
     const dia = machine?.currentMaterial?.diameter;
     if (typeof dia === "number" && Number.isFinite(dia) && dia > 0) {
       const v = Number.isInteger(dia) ? String(dia) : dia.toFixed(1);
-      return `Ø ${v}mm`;
+      return v;
     }
     const group = machine?.currentMaterial?.diameterGroup;
     const numeric = Number.parseFloat(
@@ -262,7 +264,7 @@ const MachineQueueCard = ({
     );
     if (Number.isFinite(numeric) && numeric > 0) {
       const v = numeric > 10 ? 12 : numeric;
-      return `Ø ${Number.isInteger(v) ? v : v.toFixed(1)}mm`;
+      return `${Number.isInteger(v) ? v : v.toFixed(1)}`;
     }
     return "";
   }, [machine]);
@@ -422,6 +424,31 @@ const MachineQueueCard = ({
           className="flex items-center gap-2"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
+          <div className="text-[11px] font-extrabold text-slate-700">
+            의뢰 배정
+          </div>
+          <button
+            type="button"
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              machine?.allowRequestAssign !== false
+                ? "bg-emerald-500"
+                : "bg-gray-300"
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              const next = machine?.allowRequestAssign === false;
+              onToggleRequestAssign?.(next);
+            }}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                machine?.allowRequestAssign !== false
+                  ? "translate-x-5"
+                  : "translate-x-1"
+              }`}
+            />
+          </button>
+
           <div className="text-[11px] font-extrabold text-slate-700">
             자동 가공
           </div>
@@ -1147,6 +1174,7 @@ export const MachiningQueueBoard = ({
           port: target.port,
           allowJobStart: next ? true : target.allowJobStart !== false,
           allowProgramDelete: target.allowProgramDelete === true,
+          allowRequestAssign: target.allowRequestAssign !== false,
           allowAutoMachining: next,
         },
       });
@@ -1175,6 +1203,54 @@ export const MachiningQueueBoard = ({
       setMachines((prevList) =>
         prevList.map((m) =>
           m.uid === uid ? { ...m, allowAutoMachining: prev } : m,
+        ),
+      );
+      toast({
+        title: "설정 저장 실패",
+        description: e?.message || "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const updateMachineRequestAssign = async (uid: string, next: boolean) => {
+    if (!token) return;
+    const target = (Array.isArray(machines) ? machines : []).find(
+      (m) => m.uid === uid,
+    );
+    if (!target) return;
+
+    const prev = target.allowRequestAssign !== false;
+    setMachines((prevList) =>
+      prevList.map((m) =>
+        m.uid === uid ? { ...m, allowRequestAssign: next } : m,
+      ),
+    );
+
+    try {
+      const res = await apiFetch({
+        path: "/api/machines",
+        method: "POST",
+        token,
+        jsonBody: {
+          uid: target.uid,
+          name: target.name,
+          ip: target.ip,
+          port: target.port,
+          allowJobStart: target.allowJobStart !== false,
+          allowProgramDelete: target.allowProgramDelete === true,
+          allowRequestAssign: next,
+          allowAutoMachining: target.allowAutoMachining === true,
+        },
+      });
+      const body: any = res.data ?? {};
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || "의뢰 배정 설정 저장 실패");
+      }
+    } catch (e: any) {
+      setMachines((prevList) =>
+        prevList.map((m) =>
+          m.uid === uid ? { ...m, allowRequestAssign: prev } : m,
         ),
       );
       toast({
@@ -1243,6 +1319,7 @@ export const MachiningQueueBoard = ({
             port: m.port,
             allowJobStart: m.allowJobStart !== false,
             allowProgramDelete: m.allowProgramDelete === true,
+            allowRequestAssign: m.allowRequestAssign !== false,
             allowAutoMachining: enabled,
           },
         });
@@ -1348,6 +1425,9 @@ export const MachiningQueueBoard = ({
                 autoEnabled={m.allowAutoMachining === true}
                 onToggleAuto={(next) => {
                   requestToggleMachineAuto(m.uid, next);
+                }}
+                onToggleRequestAssign={(next) => {
+                  void updateMachineRequestAssign(m.uid, next);
                 }}
                 machineStatus={mergedStatus}
                 statusRefreshing={statusRefreshing}
