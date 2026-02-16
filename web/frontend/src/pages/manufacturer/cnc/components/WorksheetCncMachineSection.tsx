@@ -15,7 +15,6 @@ import { useCncContinuous } from "@/features/manufacturer/cnc/hooks/useCncContin
 import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempDetailModal";
 import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
 import { useCncWriteGuard } from "@/features/manufacturer/cnc/hooks/useCncWriteGuard";
-import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/lib/apiClient";
 import { WorksheetDiameterQueueBar } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
@@ -24,6 +23,7 @@ import {
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
+import { useToast } from "@/hooks/use-toast";
 
 const getMachineStatusChip = (status: string) => {
   const s = (status || "").toUpperCase();
@@ -78,6 +78,26 @@ const getDiameterBucketIndex = (diameter: string | null | undefined) => {
 };
 
 type DiameterBucketKey = "6" | "8" | "10" | "10+";
+
+const formatMachineDiameterLabel = (machine: Machine): string => {
+  const diameter = machine.currentMaterial?.diameter;
+  if (
+    typeof diameter === "number" &&
+    Number.isFinite(diameter) &&
+    diameter > 0
+  ) {
+    return `${Number.isInteger(diameter) ? diameter : diameter.toFixed(1)}mm`;
+  }
+  const group = machine.currentMaterial?.diameterGroup;
+  if (group) {
+    const numeric =
+      group === "10+" ? 12 : Number.parseFloat(group.replace(/[^0-9.]/g, ""));
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return `${Number.isInteger(numeric) ? numeric : numeric.toFixed(1)}mm`;
+    }
+  }
+  return "-";
+};
 
 type MockQueueItem = {
   id: string;
@@ -148,8 +168,6 @@ interface WorksheetMachineCardProps {
   toolHealth: HealthLevel;
   statusOverride?: string;
   onCardClick: () => void;
-  diameter?: string | null;
-  onChangeDiameter: (value: string) => void;
   continuousEnabled?: boolean;
 }
 
@@ -162,8 +180,6 @@ const WorksheetCncMachineCard = ({
   toolHealth,
   statusOverride,
   onCardClick,
-  diameter,
-  onChangeDiameter,
   continuousEnabled,
 }: WorksheetMachineCardProps) => {
   const { state: continuousState } = useCncContinuous(
@@ -172,7 +188,6 @@ const WorksheetCncMachineCard = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const statusForChip = statusOverride ?? (machine.status as string);
-  const [diameterMenuOpen, setDiameterMenuOpen] = useState(false);
   const showContinuousInfo =
     continuousEnabled &&
     continuousState &&
@@ -180,6 +195,10 @@ const WorksheetCncMachineCard = ({
   const continuousElapsedMin = continuousState?.isRunning
     ? Math.floor(continuousState.elapsedSeconds / 60)
     : 0;
+  const readOnlyDiameterLabel = useMemo(
+    () => formatMachineDiameterLabel(machine),
+    [machine],
+  );
 
   const handlePlayPauseClick = useCallback(
     async (e: React.MouseEvent) => {
@@ -251,18 +270,12 @@ const WorksheetCncMachineCard = ({
           {getMachineStatusChip(statusForChip)}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40 text-sm font-semibold"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (loading) return;
-              setDiameterMenuOpen((prev) => !prev);
-            }}
-            disabled={loading}
+          <span
+            className="inline-flex items-center rounded-full border border-gray-200 bg-white/80 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-gray-700 shadow-sm"
+            title="현재 소재 직경"
           >
-            {diameter ? (diameter === "10+" ? "12" : diameter) : "Ø"}
-          </button>
+            Ø {readOnlyDiameterLabel}
+          </span>
           <button
             type="button"
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
@@ -316,41 +329,6 @@ const WorksheetCncMachineCard = ({
       )}
 
       <div className="flex-1" />
-
-      {diameterMenuOpen && (
-        <>
-          {/* 카드 밖 아무 곳이나 클릭해도 메뉴가 닫히도록 전체 오버레이 */}
-          <div
-            className="fixed inset-0 z-30"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDiameterMenuOpen(false);
-            }}
-          />
-          <div
-            className="absolute right-4 top-14 z-40 rounded-xl border border-gray-200 bg-white shadow-lg py-1 text-sm"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {["6", "8", "10", "10+"].map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`block w-full px-3 py-1.5 text-left hover:bg-gray-100 ${
-                  diameter === value
-                    ? "font-semibold text-gray-900"
-                    : "text-gray-700"
-                }`}
-                onClick={() => {
-                  onChangeDiameter(value);
-                  setDiameterMenuOpen(false);
-                }}
-              >
-                {value === "10+" ? "최대 12mm" : `최대 ${value}mm`}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
 
       <div className="app-glass-card-content mb-2 text-sm text-muted-foreground space-y-1">
         {machine.lastUpdated && (
@@ -433,9 +411,6 @@ export const WorksheetCncMachineSection = ({
     Record<string, HealthLevel>
   >({});
   const [statusByUid, setStatusByUid] = useState<Record<string, string>>({});
-  const [diameterByUid, setDiameterByUid] = useState<Record<string, string>>(
-    {},
-  );
 
   const { tempModalOpen, tempModalBody, setTempModalOpen, openTempDetail } =
     useCncTempPanel({
@@ -472,8 +447,7 @@ export const WorksheetCncMachineSection = ({
     setToolTooltip: (_: string) => {},
   });
 
-  const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
-  const { toast } = useToast();
+  const { PinModal } = useCncWriteGuard();
 
   const [queueModalOpen, setQueueModalOpen] = useState(false);
   const [selectedBucket, setSelectedBucket] =
@@ -596,35 +570,6 @@ export const WorksheetCncMachineSection = ({
     }
   };
 
-  const handleChangeDiameter = async (uid: string, value: string) => {
-    const machine = machines.find((m) => m.uid === uid);
-    const rawStatus =
-      (statusByUid[uid] as string | undefined) ?? (machine?.status as string);
-    const s = (rawStatus || "").toUpperCase();
-
-    // RUN/OK 계열은 실제로 "생산 중" 상태로 보고 직경 변경을 막는다.
-    if (["RUN", "RUNNING", "ONLINE", "OK"].some((k) => s.includes(k))) {
-      toast({
-        title: "생산 중에는 소재 직경을 변경할 수 없습니다.",
-        description:
-          "생산이 완료되면 직경을 변경하고, 다음 생산 리스트는 대기 큐로 올려 같은 소재 직경 장비로 옮겨주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const ok = await ensureCncWriteAllowed();
-    if (!ok) return;
-
-    setDiameterByUid((prev) => ({ ...prev, [uid]: value }));
-
-    toast({
-      title: "소재 직경이 변경되었습니다.",
-      description:
-        "이 장비의 다음 생산 리스트는 대기 큐로 되돌리고, 새로운 소재 직경에 맞는 다른 장비로 재배치할 수 있습니다.",
-    });
-  };
-
   const handleQueueClick = () => {
     setQueueModalOpen(true);
   };
@@ -656,10 +601,6 @@ export const WorksheetCncMachineSection = ({
                 toolHealth={toolHealthByUid[m.uid] ?? "unknown"}
                 statusOverride={statusByUid[m.uid]}
                 onCardClick={() => void handleCardClick(m)}
-                diameter={diameterByUid[m.uid] ?? null}
-                onChangeDiameter={(value) => {
-                  void handleChangeDiameter(m.uid, value);
-                }}
                 continuousEnabled={m.allowAutoMachining === true}
               />
             ))}
