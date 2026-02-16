@@ -269,86 +269,95 @@ export const PackagingPage = ({
         const uploadResult = await uploadToS3(resizedFiles);
         setOcrStage("recognize");
 
-        await Promise.all(
+        await Promise.allSettled(
           uploadResult.map(async (uploaded, index) => {
-            const resizedFile = resizedFiles[index] ?? imageFiles[index];
+            try {
+              const resizedFile = resizedFiles[index] ?? imageFiles[index];
 
-            if (!uploaded?.key) {
-              toast({
-                title: "이미지 업로드에 실패했습니다",
-                description: "잠시 후 다시 시도해주세요.",
-                variant: "destructive",
+              if (!uploaded?.key) {
+                toast({
+                  title: "이미지 업로드에 실패했습니다",
+                  description: "잠시 후 다시 시도해주세요.",
+                  variant: "destructive",
+                });
+                return;
+              }
+
+              const aiRes = await fetch("/api/ai/recognize-lot-number", {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  s3Key: uploaded.key,
+                  originalName: uploaded.originalName,
+                }),
               });
-              return;
-            }
 
-            const aiRes = await fetch("/api/ai/recognize-lot-number", {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                s3Key: uploaded.key,
-                originalName: uploaded.originalName,
-              }),
-            });
+              if (!aiRes.ok) {
+                toast({
+                  title: "LOT 번호 인식에 실패했습니다",
+                  description: "AI 인식 서버 응답이 올바르지 않습니다.",
+                  variant: "destructive",
+                });
+                return;
+              }
 
-            if (!aiRes.ok) {
-              toast({
-                title: "LOT 번호 인식에 실패했습니다",
-                description: "AI 인식 서버 응답이 올바르지 않습니다.",
-                variant: "destructive",
+              const aiData = await aiRes.json();
+              const rawLot: string = aiData?.data?.lotNumber || "";
+
+              const recognizedSuffix = extractLotSuffix3(rawLot || "");
+              if (!recognizedSuffix) {
+                toast({
+                  title: "LOT 코드를 인식하지 못했습니다",
+                  description:
+                    "이미지 내 영문 대문자 3글자가 보이도록 다시 촬영해주세요.",
+                  variant: "destructive",
+                });
+                return;
+              }
+
+              const matchingRequest = requests.find((req) => {
+                const part = String(req.lotNumber?.part || "");
+                const partSuffix = extractLotSuffix3(part);
+                return partSuffix === recognizedSuffix;
               });
-              return;
-            }
 
-            const aiData = await aiRes.json();
-            const rawLot: string = aiData?.data?.lotNumber || "";
+              if (!matchingRequest) {
+                toast({
+                  title: "누락",
+                  description: `일치하는 의뢰 없음: ${recognizedSuffix}`,
+                });
+                return;
+              }
 
-            const recognizedSuffix = extractLotSuffix3(rawLot || "");
-            if (!recognizedSuffix) {
+              await handleUploadStageFile({
+                req: matchingRequest,
+                stage: "packaging",
+                file: resizedFile || imageFiles[index] || imageFiles[0],
+                source: "manual",
+              });
+
+              await handleUpdateReviewStatus({
+                req: matchingRequest,
+                status: "APPROVED",
+                stageOverride: "packaging",
+              });
+
               toast({
-                title: "LOT 코드를 인식하지 못했습니다",
+                title: "세척·포장 완료",
+                description: `LOT 코드 ${recognizedSuffix} 의뢰를 발송 단계로 이동했습니다.`,
+              });
+            } catch (error) {
+              toast({
+                title: "이미지 처리 실패",
                 description:
-                  "이미지 내 영문 대문자 3글자가 보이도록 다시 촬영해주세요.",
+                  (error as Error)?.message ||
+                  "세척·포장 이미지 처리 중 오류가 발생했습니다.",
                 variant: "destructive",
               });
-              return;
             }
-
-            const matchingRequest = requests.find((req) => {
-              const part = String(req.lotNumber?.part || "");
-              const partSuffix = extractLotSuffix3(part);
-              return partSuffix === recognizedSuffix;
-            });
-
-            if (!matchingRequest) {
-              toast({
-                title: "일치하는 의뢰를 찾을 수 없습니다",
-                description: `인식된 LOT 코드: ${recognizedSuffix}`,
-                variant: "destructive",
-              });
-              return;
-            }
-
-            await handleUploadStageFile({
-              req: matchingRequest,
-              stage: "packaging",
-              file: resizedFile || imageFiles[index] || imageFiles[0],
-              source: "manual",
-            });
-
-            await handleUpdateReviewStatus({
-              req: matchingRequest,
-              status: "APPROVED",
-              stageOverride: "packaging",
-            });
-
-            toast({
-              title: "세척·포장 완료",
-              description: `LOT 코드 ${recognizedSuffix} 의뢰를 발송 단계로 이동했습니다.`,
-            });
           }),
         );
       } catch (error: any) {
