@@ -295,41 +295,7 @@ const MachineQueueCard = ({
     };
   })();
 
-  const derivedCompleted = (() => {
-    if (lastCompleted) return lastCompleted;
-    const rec = currentSlot?.machiningRecord ?? null;
-    if (!rec) return null;
-    const status = String(rec.status || "")
-      .trim()
-      .toUpperCase();
-    if (!status || !["COMPLETED", "FAILED", "CANCELED"].includes(status)) {
-      return null;
-    }
-    const completedAt = rec.completedAt
-      ? String(rec.completedAt)
-      : (rec as any)?.lastTickAt
-        ? String((rec as any).lastTickAt)
-        : new Date().toISOString();
-    const durationSecondsRaw =
-      typeof rec.durationSeconds === "number"
-        ? rec.durationSeconds
-        : typeof rec.elapsedSeconds === "number"
-          ? rec.elapsedSeconds
-          : null;
-    const durationSeconds =
-      typeof durationSecondsRaw === "number" && durationSecondsRaw >= 0
-        ? Math.floor(durationSecondsRaw)
-        : 0;
-    const rid = currentSlot?.requestId ? String(currentSlot.requestId) : null;
-    return {
-      machineId,
-      jobId: null,
-      requestId: rid || null,
-      displayLabel: resolveCompletedDisplayLabel(currentSlot || null),
-      completedAt,
-      durationSeconds,
-    } satisfies LastCompletedMachining;
-  })();
+  const derivedCompleted = lastCompleted;
 
   const lastCompletedSummary = (() => {
     const base = derivedCompleted;
@@ -426,7 +392,7 @@ const MachineQueueCard = ({
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-semibold text-slate-500">
-                    가공 완료
+                    Complete
                     <span className="ml-4 mr-4">
                       종료 {lastCompletedSummary?.completedAtLabel || "-"}
                     </span>
@@ -587,7 +553,12 @@ export const MachiningQueueBoard = ({
     if (!token) return;
     try {
       const res = await fetch("/api/cnc-machines/queues", {
-        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
       });
       const body: any = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) return;
@@ -597,6 +568,7 @@ export const MachiningQueueBoard = ({
       // ignore
     }
   }, [token]);
+
   const [machineStatusMap, setMachineStatusMap] = useState<
     Record<string, MachineStatus>
   >({});

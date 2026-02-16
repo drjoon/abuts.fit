@@ -87,9 +87,10 @@ export async function consumeBridgeQueueJobForBridge(req, res) {
     }
 
     if (!removedJob) {
-      return res.status(404).json({
-        success: false,
-        message: "job not found",
+      return res.status(200).json({
+        success: true,
+        data: { removedJob: null },
+        meta: { skipped: true, reason: "job not found" },
       });
     }
 
