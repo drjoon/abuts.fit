@@ -484,7 +484,18 @@ const result = await enqueueTaxInvoiceIssue({
   request.lotNumber.part = undefined;
   request.lotNumber.final = undefined;
   request.lotNumber.material = "";
+  }
   ```
+
+## 11. CNC 장비 '의뢰 배정' 정책 (allowRequestAssign)
+
+- CNC 장비의 **의뢰 배정 후보 여부**는 `Machine.allowRequestAssign` 단일 옵션으로 결정한다.
+- 이 옵션은 다음 로직에서 **장비 후보 필터**로 사용한다.
+  - **의뢰 → CAM** 승인 시 CAM 소재 직경 확정/스크리닝 대상
+  - **CAM → 가공** 승인 시 가공 장비 자동 선택 대상
+- `allowAutoMachining`(자동 가공 시작) 및 `allowJobStart`(원격가공/제어) 옵션은
+  - **의뢰 배정 후보 필터링에 사용하지 않는다.**
+  - 자동 시작(브리지 트리거) 등 **실행 동작 제어**에만 사용한다.
 
 ### 9.4 알림 큐 헬퍼
 

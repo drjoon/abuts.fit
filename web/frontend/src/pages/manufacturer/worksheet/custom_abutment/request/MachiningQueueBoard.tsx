@@ -128,10 +128,10 @@ const formatLabel = (q: QueueItem) => {
   return rid ? `${base} (${rid})` : base;
 };
 
-const getNcPreloadBadge = (item?: QueueItem | null) => {
-  const s = String(item?.ncPreload?.status || "")
-    .trim()
-    .toUpperCase();
+const getNcPreloadBadge = (slot: QueueItem | null) => {
+  const status = String(slot?.ncPreload?.status || "").trim();
+  if (!status) return null;
+  const s = status.toUpperCase();
   if (!s || s === "NONE") return null;
   if (s === "UPLOADING") {
     return (
@@ -192,23 +192,6 @@ const MachineQueueCard = ({
   onOpenCompleted,
 }: MachineQueueCardProps) => {
   const { toast } = useToast();
-  const token = useAuthStore((s) => s.token);
-  const [isMockFromBackend, setIsMockFromBackend] = useState<boolean | null>(
-    null,
-  );
-
-  useEffect(() => {
-    if (!token) return;
-    void (async () => {
-      try {
-        const enabled = await getMockCncMachiningEnabled(token);
-        if (enabled === true) setIsMockFromBackend(true);
-        else if (enabled === false) setIsMockFromBackend(false);
-      } catch {
-        // keep previous state on failure
-      }
-    })();
-  }, [token]);
 
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q?.status),
@@ -250,7 +233,6 @@ const MachineQueueCard = ({
   const statusColor = getStatusDotColor(machineStatus?.status);
 
   const headerTitle = machineName || machineId;
-  const badgeIsMock = isMockFromBackend === true;
 
   const materialDiameterLabel = useMemo(() => {
     const dia = machine?.currentMaterial?.diameter;
@@ -379,14 +361,6 @@ const MachineQueueCard = ({
             <div className="truncate text-[15px] font-extrabold text-slate-900">
               {headerTitle}
             </div>
-            {badgeIsMock ? (
-              <Badge
-                variant="outline"
-                className="shrink-0 bg-violet-50 text-[10px] font-extrabold text-violet-700 border-violet-200 px-2 py-0.5"
-              >
-                MOCK
-              </Badge>
-            ) : null}
             {!!materialDiameterLabel && (
               <Badge
                 variant="outline"
@@ -618,20 +592,30 @@ const MachineQueueCard = ({
   );
 };
 
-type MachiningQueueBoardProps = {
-  searchQuery?: string;
-};
-
-export const MachiningQueueBoard = ({
-  searchQuery,
-}: MachiningQueueBoardProps) => {
+const MachiningQueueBoard = ({ searchQuery }: { searchQuery?: string }) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const [isMockFromBackend, setIsMockFromBackend] = useState<boolean | null>(
+    null,
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const { machines, setMachines } = useCncMachines();
   const { callRaw } = useCncRaw();
   const statusByUid = useMachineStatusStore((s) => s.statusByUid);
   const refreshStatuses = useMachineStatusStore((s) => s.refresh);
+
+  useEffect(() => {
+    if (!token) return;
+    void (async () => {
+      try {
+        const enabled = await getMockCncMachiningEnabled(token);
+        if (enabled === true) setIsMockFromBackend(true);
+        else if (enabled === false) setIsMockFromBackend(false);
+      } catch {
+        // keep previous state on failure
+      }
+    })();
+  }, [token]);
 
   const [loading, setLoading] = useState(false);
 
@@ -1350,16 +1334,34 @@ export const MachiningQueueBoard = ({
       onTouchStartCapture={handleBoardClickCapture}
     >
       <div className="flex items-center justify-between">
-        <div className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 border border-slate-200 truncate">
-          {statusRefreshing
-            ? "장비 상태 조회중…"
-            : statusRefreshError
-              ? `장비 상태 조회 실패${
-                  statusRefreshErroredAt ? ` ${statusRefreshErroredAt}` : ""
-                } (${statusRefreshError})`
-              : statusRefreshedAt
-                ? `장비 상태 갱신 ${statusRefreshedAt}`
-                : ""}
+        <div className="flex items-center gap-2 min-w-0">
+          {isMockFromBackend != null ? (
+            <Badge
+              variant="outline"
+              className={`shrink-0 text-[11px] font-extrabold px-2.5 py-1 border ${
+                isMockFromBackend === true
+                  ? "bg-violet-50 text-violet-700 border-violet-200"
+                  : "bg-slate-50 text-slate-700 border-slate-200"
+              }`}
+              title={
+                isMockFromBackend === true ? "더미(모의) 가공" : "실제 가공"
+              }
+            >
+              {isMockFromBackend === true ? "MOCK" : "REAL"}
+            </Badge>
+          ) : null}
+
+          <div className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 border border-slate-200 truncate">
+            {statusRefreshing
+              ? "장비 상태 조회중…"
+              : statusRefreshError
+                ? `장비 상태 조회 실패${
+                    statusRefreshErroredAt ? ` ${statusRefreshErroredAt}` : ""
+                  } (${statusRefreshError})`
+                : statusRefreshedAt
+                  ? `장비 상태 갱신 ${statusRefreshedAt}`
+                  : ""}
+          </div>
         </div>
         <div
           className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3"
@@ -1662,3 +1664,5 @@ export const MachiningQueueBoard = ({
     </div>
   );
 };
+
+export default MachiningQueueBoard;

@@ -110,6 +110,15 @@ function extractCamDiameterFromNcText(text) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function toDiameterGroup(diameter) {
+  const d = Number(diameter);
+  if (!Number.isFinite(d) || d <= 0) return null;
+  if (d <= 6) return "6";
+  if (d <= 8) return "8";
+  if (d <= 10) return "10";
+  return "12";
+}
+
 function makeDirectRootNcName({ requestId, fileName }) {
   const rid = String(requestId || "").trim();
   const raw = String(fileName || "").trim() || "program.nc";
@@ -299,9 +308,8 @@ async function screenCamMachineForRequest({ request }) {
     throw err;
   }
 
-  // 1) 장비 제어 허용(가공 가능) ON + 의뢰 배정 ON
+  // 1) 의뢰 배정 ON
   const machinable = await Machine.find({
-    allowJobStart: { $ne: false },
     allowRequestAssign: { $ne: false },
   })
     .lean()
@@ -466,7 +474,7 @@ async function chooseMachineForRequest({ request }) {
 
   if (!candidates.length) {
     const err = new Error(
-      "조건에 맞는 CNC 장비가 없습니다. (자동 가공 허용 ON 이면서 소재 직경이 최대 직경 이상이고, 차이가 2mm 미만인 장비가 필요합니다.)",
+      "조건에 맞는 CNC 장비가 없습니다. (의뢰 배정 ON 이면서 소재 직경이 최대 직경 이상이고, 차이가 2mm 미만인 장비가 필요합니다.)",
     );
     err.statusCode = 400;
     throw err;
@@ -529,7 +537,6 @@ async function chooseMachineForCamMachining({ request }) {
     .select({
       uid: 1,
       name: 1,
-      allowJobStart: 1,
       allowRequestAssign: 1,
       allowAutoMachining: 1,
     })
@@ -556,7 +563,6 @@ async function chooseMachineForCamMachining({ request }) {
       if (!m.machineId) return false;
 
       const meta = metaById.get(m.machineId);
-      if (meta?.allowJobStart === false) return false;
       if (meta?.allowRequestAssign === false) return false;
 
       if (!Number.isFinite(m.materialDiameter) || m.materialDiameter <= 0)
@@ -1276,12 +1282,12 @@ export async function updateReviewStatusByStage(req, res) {
           }
           request.assignedMachine = selected.machineId;
           const meta = await Machine.findOne({ uid: selected.machineId })
-            .select({ allowAutoMachining: 1, allowJobStart: 1 })
+            .select({ allowAutoMachining: 1, allowRequestAssign: 1 })
             .lean()
             .session(session)
             .catch(() => null);
           if (
-            meta?.allowJobStart === true &&
+            meta?.allowRequestAssign !== false &&
             meta?.allowAutoMachining === true
           ) {
             triggerBridgeForCnc({ request }).catch(() => {

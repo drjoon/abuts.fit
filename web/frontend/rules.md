@@ -104,6 +104,15 @@
   - 추적관리/UDI 페이지: `lotNumber.material`, `lotNumber.part`, `lotNumber.final` 모두 표시
   - OCR 매칭: 인식된 로트번호를 `lotNumber.part`와 비교
 
+### 7.4 CNC 장비 '의뢰 배정' 스위치 (allowRequestAssign)
+
+- 제조사 가공 보드의 장비 카드에는 `자동 가공` 스위치와 별개로 **`의뢰 배정` 스위치**가 있다.
+- UI 위치: **`자동 가공` 스위치 왼쪽**
+- `의뢰 배정`이 ON인 장비만
+  - 의뢰 → CAM 단계에서 CAM 소재 직경 확정 시 **조회/스크리닝 대상 장비**로 사용되고
+  - CAM → 가공 단계에서 **자동 배정 대상 장비**로 사용된다.
+- 자동 가공(allowAutoMachining), 원격가공(allowJobStart) 등의 옵션과 역할을 혼동하지 않는다.
+
 ### 7.1 크레딧 관리 정책
 
 - **표시 단위**: 조직(Organization) 단위로 크레딧 표시
