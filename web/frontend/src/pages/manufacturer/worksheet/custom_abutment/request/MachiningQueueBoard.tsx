@@ -592,7 +592,11 @@ const MachineQueueCard = ({
   );
 };
 
-const MachiningQueueBoard = ({ searchQuery }: { searchQuery?: string }) => {
+export const MachiningQueueBoard = ({
+  searchQuery,
+}: {
+  searchQuery?: string;
+}) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [isMockFromBackend, setIsMockFromBackend] = useState<boolean | null>(

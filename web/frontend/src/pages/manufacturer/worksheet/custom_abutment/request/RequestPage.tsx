@@ -1002,9 +1002,9 @@ export const RequestPage = ({
                 return (
                   <div
                     key={key}
-                    className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3"
+                    className="app-glass-card app-glass-card--xl flex flex-col space-y-3"
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2 px-4 pt-4">
                       <div className="flex items-center gap-2">
                         <div className="text-sm font-semibold text-slate-800">
                           {title}
@@ -1057,29 +1057,32 @@ export const RequestPage = ({
                         </button>
                       </div>
                     </div>
-                    <WorksheetCardGrid
-                      requests={reqs}
-                      onDownload={handleDownloadOriginal}
-                      onOpenPreview={handleOpenPreview}
-                      onDeleteCam={handleDeleteCam}
-                      onDeleteNc={handleDeleteNc}
-                      onRollback={
-                        enableCardRollback ? handleCardRollback : undefined
-                      }
-                      onApprove={
-                        tabStage === "shipping" ? handleCardApprove : undefined
-                      }
-                      onUploadNc={handleUploadNc}
-                      uploadProgress={uploadProgress}
-                      uploading={uploading}
-                      deletingCam={deletingCam}
-                      deletingNc={deletingNc}
-                      isCamStage={isCamStage}
-                      isMachiningStage={isMachiningStage}
-                      downloading={downloading}
-                      currentStageOrder={currentStageOrder}
-                      tabStage={tabStage}
-                    />
+                    <div className="px-4 pb-4">
+                      <WorksheetCardGrid
+                        requests={reqs}
+                        onDownload={handleDownloadOriginal}
+                        onOpenPreview={handleOpenPreview}
+                        onDeleteCam={handleDeleteCam}
+                        onDeleteNc={handleDeleteNc}
+                        onRollback={
+                          enableCardRollback ? handleCardRollback : undefined
+                        }
+                        onApprove={
+                          tabStage === "shipping"
+                            ? handleCardApprove
+                            : undefined
+                        }
+                        onUploadNc={handleUploadNc}
+                        uploadProgress={uploadProgress}
+                        uploading={uploading}
+                        deletingCam={deletingCam}
+                        deletingNc={deletingNc}
+                        isCamStage={isCamStage}
+                        isMachiningStage={isMachiningStage}
+                        downloading={downloading}
+                        currentStageOrder={currentStageOrder}
+                      />
+                    </div>
                   </div>
                 );
               },
