@@ -408,14 +408,15 @@ export const MachineCard = (props: MachineCardProps) => {
         : diameter.toFixed(1);
     }
     const group = machine.currentMaterial?.diameterGroup;
-    if (!group) return null;
-    if (group === "10+") return "12";
-    const parsed = Number.parseInt(group, 10);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return String(parsed);
+    if (group) {
+      const parsed = Number.parseInt(group, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return String(parsed);
+      }
+      const numeric = group.replace(/[^0-9.]/g, "");
+      if (numeric) return numeric;
     }
-    const numeric = group.replace(/[^0-9.]/g, "");
-    return numeric || null;
+    return "0";
   })();
 
   const showContinuousInfo =
@@ -729,7 +730,7 @@ export const MachineCard = (props: MachineCardProps) => {
           {onMaterialClick && (
             <button
               type="button"
-              className="relative inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm"
+              className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm text-[11px] font-extrabold"
               onClick={(e) => {
                 e.stopPropagation();
                 onMaterialClick(e);
@@ -737,12 +738,7 @@ export const MachineCard = (props: MachineCardProps) => {
               title="소재 선택"
               disabled={loading}
             >
-              <Layers className="h-3.5 w-3.5" />
-              {materialDiameterLabel && (
-                <span className="absolute -top-1 -right-1 rounded-full bg-blue-600 px-1 text-[10px] font-black leading-none text-white shadow-sm">
-                  {materialDiameterLabel}
-                </span>
-              )}
+              {materialDiameterLabel}
             </button>
           )}
           <button

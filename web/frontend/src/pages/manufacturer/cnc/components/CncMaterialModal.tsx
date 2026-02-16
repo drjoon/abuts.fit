@@ -315,7 +315,9 @@ export const CncMaterialModal = ({
                           checked={isChecked}
                           onCheckedChange={() => toggleMaxDiaGroup(g)}
                         />
-                        <span className="select-none">{g}</span>
+                        <span className="select-none">
+                          {g === "10+" ? "12" : g}
+                        </span>
                       </label>
                     );
                   })}
