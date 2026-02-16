@@ -213,7 +213,7 @@ export const CncMaterialChangeModal = ({
                     <SelectItem value="6">6mm</SelectItem>
                     <SelectItem value="8">8mm</SelectItem>
                     <SelectItem value="10">10mm</SelectItem>
-                    <SelectItem value="10+">10mm+</SelectItem>
+                    <SelectItem value="10+">12mm</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -41,7 +41,7 @@ export const WorksheetDiameterQueueBar = ({
             >
               <div className="flex items-center justify-between mb-1 px-2">
                 <span className="font-semibold text-slate-800 text-lg">
-                  {label === "10+" ? "10mm+" : `${label}mm`}
+                  {label === "10+" ? "12mm" : `${label}mm`}
                 </span>
                 <span className="text-lg text-slate-600 px-1">{count}</span>
               </div>

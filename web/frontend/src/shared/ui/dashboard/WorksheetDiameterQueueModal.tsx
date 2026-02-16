@@ -204,7 +204,7 @@ export const WorksheetDiameterQueueModal = ({
                   onSelectBucket(label);
                 }}
               >
-                {label === "10+" ? "10mm+" : `${label}mm`}
+                {label === "10+" ? "12mm" : `${label}mm`}
               </button>
             ))}
           </div>

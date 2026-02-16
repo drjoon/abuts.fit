@@ -1162,7 +1162,7 @@ async function computeAdminDiameterStats(requests, leadDays) {
     },
     {
       id: "d10plus",
-      diameter: "10+",
+      diameter: 12,
       shipLabel: shipLabelD10plus,
     },
   ];

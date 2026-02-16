@@ -261,7 +261,7 @@ const WorksheetCncMachineCard = ({
             }}
             disabled={loading}
           >
-            {diameter ? (diameter === "10+" ? "10+" : diameter) : "Ø"}
+            {diameter ? (diameter === "10+" ? "12" : diameter) : "Ø"}
           </button>
           <button
             type="button"
@@ -345,7 +345,7 @@ const WorksheetCncMachineCard = ({
                   setDiameterMenuOpen(false);
                 }}
               >
-                {value === "10+" ? "최대 10mm 이상" : `최대 ${value}mm`}
+                {value === "10+" ? "최대 12mm" : `최대 ${value}mm`}
               </button>
             ))}
           </div>

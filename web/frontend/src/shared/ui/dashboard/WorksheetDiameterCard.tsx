@@ -46,8 +46,7 @@ export const WorksheetDiameterCard = ({ stats }: { stats?: DiameterStats }) => {
       <CardContent>
         <div className="flex items-end justify-center gap-3 max-w-md mx-auto">
           {buckets.map((bucket, index) => {
-            const isLast = index === buckets.length - 1;
-            const label = isLast ? "10+mm" : `${bucket.diameter}mm`;
+            const label = `${bucket.diameter}mm`;
 
             return (
               <div

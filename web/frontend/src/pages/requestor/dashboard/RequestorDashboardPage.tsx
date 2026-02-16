@@ -494,7 +494,7 @@ export const RequestorDashboardPage = () => {
             ? 8
             : stat.range?.includes("8-10")
               ? 10
-              : 10,
+              : 12,
         shipLabel: stat.leadDays ? `${stat.leadDays}일` : "-",
         ratio: 0, // 계산 필요
         count: stat.count || 0,

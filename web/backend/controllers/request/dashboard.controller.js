@@ -205,7 +205,7 @@ export async function getDiameterStats(req, res) {
         leadDays: leadDays.d10,
       }),
       toBucket({
-        diameter: "10+",
+        diameter: 12,
         count: result.d10plusCount,
         leadDays: leadDays.d10plus,
       }),

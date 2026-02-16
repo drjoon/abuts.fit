@@ -14,11 +14,14 @@ async function fetchBridgeMachineStatusMap() {
   const timeoutMs = Number(process.env.BRIDGE_STATUS_TIMEOUT_MS || 2500);
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const resp = await fetch(`${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/status`, {
-      method: "GET",
-      headers: withBridgeHeaders(),
-      signal: controller.signal,
-    });
+    const resp = await fetch(
+      `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/status`,
+      {
+        method: "GET",
+        headers: withBridgeHeaders(),
+        signal: controller.signal,
+      },
+    );
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok || body?.success === false) return null;
     const list = Array.isArray(body?.data) ? body.data : [];
@@ -37,7 +40,9 @@ async function fetchBridgeMachineStatusMap() {
 }
 
 function isBridgeOnlineStatus(status) {
-  const s = String(status || "").trim().toUpperCase();
+  const s = String(status || "")
+    .trim()
+    .toUpperCase();
   return ["OK", "ONLINE", "RUN", "RUNNING", "IDLE", "STOP"].includes(s);
 }
 
@@ -58,7 +63,8 @@ async function syncMachineMaterialToBridge(machineId, material) {
         diameter: dia,
         diameterGroup: String(material?.diameterGroup || "").trim(),
         remainingLength:
-          typeof material?.remainingLength === "number" && Number.isFinite(material.remainingLength)
+          typeof material?.remainingLength === "number" &&
+          Number.isFinite(material.remainingLength)
             ? material.remainingLength
             : null,
       }),
@@ -73,7 +79,10 @@ export async function updateMaterialRemaining(req, res) {
     const { machineId } = req.params;
     const { remainingLength } = req.body;
 
-    if (typeof remainingLength !== "number" || !Number.isFinite(remainingLength)) {
+    if (
+      typeof remainingLength !== "number" ||
+      !Number.isFinite(remainingLength)
+    ) {
       return res.status(400).json({
         success: false,
         message: "유효한 remainingLength 값이 필요합니다.",
@@ -126,7 +135,10 @@ export async function updateMachineMaterial(req, res) {
     const rawGroup = String(diameterGroup || "").trim();
     const normalizedGroup = rawGroup.replace(/mm$/i, "");
 
-    if (!normalizedGroup || !["6", "8", "10", "10+"].includes(normalizedGroup)) {
+    if (
+      !normalizedGroup ||
+      !["6", "8", "10", "10+"].includes(normalizedGroup)
+    ) {
       return res.status(400).json({
         success: false,
         message: "유효하지 않은 직경 그룹입니다.",
@@ -143,7 +155,11 @@ export async function updateMachineMaterial(req, res) {
 
     const normalizedMaxGroups = Array.isArray(maxModelDiameterGroups)
       ? maxModelDiameterGroups
-          .map((v) => String(v || "").trim().replace(/mm$/i, ""))
+          .map((v) =>
+            String(v || "")
+              .trim()
+              .replace(/mm$/i, ""),
+          )
           .filter(Boolean)
       : [];
 
@@ -169,7 +185,10 @@ export async function updateMachineMaterial(req, res) {
       setAt: new Date(),
       setBy: req.user?._id,
     };
-    if (typeof remainingLength === "number" && Number.isFinite(remainingLength)) {
+    if (
+      typeof remainingLength === "number" &&
+      Number.isFinite(remainingLength)
+    ) {
       nextMaterial.remainingLength = remainingLength;
     }
     machine.currentMaterial = nextMaterial;
@@ -177,7 +196,10 @@ export async function updateMachineMaterial(req, res) {
 
     syncMachineMaterialToBridge(machineId, machine.currentMaterial);
 
-    const assignedCount = await recalculateQueueOnMaterialChange(machineId, normalizedGroup);
+    const assignedCount = await recalculateQueueOnMaterialChange(
+      machineId,
+      normalizedGroup,
+    );
 
     try {
       const matDia = toNumberOrNull(machine.currentMaterial?.diameter);
@@ -235,9 +257,11 @@ export async function updateMachineMaterial(req, res) {
       });
     }
 
+    const displayGroup = normalizedGroup === "10+" ? "12" : normalizedGroup;
+
     res.status(200).json({
       success: true,
-      message: `${machineId} 소재 세팅이 ${diameterGroup}mm로 변경되었습니다.`,
+      message: `${machineId} 소재 세팅이 ${displayGroup}mm로 변경되었습니다.`,
       data: {
         machine,
         assignedCount,
