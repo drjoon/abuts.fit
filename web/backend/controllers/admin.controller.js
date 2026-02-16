@@ -1129,7 +1129,7 @@ async function changeUserRole(req, res) {
   }
 }
 
-// 최대 직경 기준 4개 구간(<=6, <=8, <=10, 10+mm) 통계를 계산하는 헬퍼 (관리자용)
+// 최대 직경 기준 4개 구간(<=6, <=8, <=10, 12mm) 통계를 계산하는 헬퍼 (관리자용)
 async function computeAdminDiameterStats(requests, leadDays) {
   const effectiveLeadDays = {
     ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,

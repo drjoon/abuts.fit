@@ -53,6 +53,18 @@ async function syncMachineMaterialToBridge(machineId, material) {
     const dia = Number(material?.diameter);
     if (!Number.isFinite(dia) || dia <= 0) return;
 
+    const normalizeGroupValue = (v) => {
+      const raw = String(v || "").trim();
+      if (!raw) return "";
+      if (raw.includes("+")) return "12";
+      if (raw === "6" || raw === "8" || raw === "10") return raw;
+      const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ""));
+      if (Number.isFinite(numeric) && numeric > 10) return "12";
+      if (Number.isFinite(numeric) && numeric > 0)
+        return String(Math.trunc(numeric));
+      return "";
+    };
+
     await fetch(`${BRIDGE_BASE.replace(/\/$/, "")}/api/bridge/material`, {
       method: "POST",
       headers: withBridgeHeaders({ "Content-Type": "application/json" }),
@@ -61,7 +73,7 @@ async function syncMachineMaterialToBridge(machineId, material) {
         materialType: String(material?.materialType || "").trim(),
         heatNo: String(material?.heatNo || "").trim(),
         diameter: dia,
-        diameterGroup: String(material?.diameterGroup || "").trim(),
+        diameterGroup: normalizeGroupValue(material?.diameterGroup),
         remainingLength:
           typeof material?.remainingLength === "number" &&
           Number.isFinite(material.remainingLength)
@@ -135,10 +147,7 @@ export async function updateMachineMaterial(req, res) {
     const rawGroup = String(diameterGroup || "").trim();
     const normalizedGroup = rawGroup.replace(/mm$/i, "");
 
-    if (
-      !normalizedGroup ||
-      !["6", "8", "10", "10+"].includes(normalizedGroup)
-    ) {
+    if (!normalizedGroup || !["6", "8", "10", "12"].includes(normalizedGroup)) {
       return res.status(400).json({
         success: false,
         message: "유효하지 않은 직경 그룹입니다.",
@@ -165,7 +174,7 @@ export async function updateMachineMaterial(req, res) {
 
     if (normalizedMaxGroups.length > 0) {
       const uniq = Array.from(new Set(normalizedMaxGroups));
-      const ok = uniq.every((g) => ["6", "8", "10", "10+"].includes(g));
+      const ok = uniq.every((g) => ["6", "8", "10", "12"].includes(g));
       if (!ok) {
         return res.status(400).json({
           success: false,
@@ -257,7 +266,7 @@ export async function updateMachineMaterial(req, res) {
       });
     }
 
-    const displayGroup = normalizedGroup === "10+" ? "12" : normalizedGroup;
+    const displayGroup = normalizedGroup;
 
     res.status(200).json({
       success: true,
@@ -289,7 +298,7 @@ export async function scheduleMaterialChange(req, res) {
       });
     }
 
-    if (!["6", "8", "10", "10+"].includes(newDiameterGroup)) {
+    if (!["6", "8", "10", "12"].includes(newDiameterGroup)) {
       return res.status(400).json({
         success: false,
         message: "유효하지 않은 직경 그룹입니다.",

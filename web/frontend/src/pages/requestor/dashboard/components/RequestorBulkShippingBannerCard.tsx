@@ -399,7 +399,7 @@ export const RequestorBulkShippingBannerCard = ({
     if (shippingMode === "express" && rejectedIds.length) {
       toast({
         title: "일부 제품은 신속배송 제외",
-        description: `10mm 이상(10mm, 10+mm) ${rejectedIds.length}건은 묶음 배송으로 유지됩니다.`,
+        description: `10mm 이상(10mm, 12mm) ${rejectedIds.length}건은 묶음 배송으로 유지됩니다.`,
         duration: 3500,
       });
     }

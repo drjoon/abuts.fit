@@ -1,5 +1,14 @@
 import mongoose from "mongoose";
 
+const normalizeDiameterGroup = (v) => {
+  const raw = String(v || "").trim();
+  if (!raw) return raw;
+  if (raw.includes("+")) return "12";
+  const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ""));
+  if (Number.isFinite(numeric) && numeric > 10) return "12";
+  return raw;
+};
+
 const cncMachineSchema = new mongoose.Schema(
   {
     machineId: {
@@ -22,10 +31,11 @@ const cncMachineSchema = new mongoose.Schema(
       type: [
         {
           type: String,
-          enum: ["6", "8", "10", "10+"],
+          enum: ["6", "8", "10", "12"],
+          set: normalizeDiameterGroup,
         },
       ],
-      default: ["10+"],
+      default: ["12"],
     },
     currentMaterial: {
       materialType: {
@@ -44,7 +54,8 @@ const cncMachineSchema = new mongoose.Schema(
       },
       diameterGroup: {
         type: String,
-        enum: ["6", "8", "10", "10+"],
+        enum: ["6", "8", "10", "12"],
+        set: normalizeDiameterGroup,
         required: true,
       },
       remainingLength: {
@@ -62,7 +73,8 @@ const cncMachineSchema = new mongoose.Schema(
       newDiameter: Number,
       newDiameterGroup: {
         type: String,
-        enum: ["6", "8", "10", "10+"],
+        enum: ["6", "8", "10", "12"],
+        set: normalizeDiameterGroup,
       },
       scheduledBy: {
         type: mongoose.Schema.Types.ObjectId,

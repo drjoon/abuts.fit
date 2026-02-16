@@ -389,7 +389,7 @@ const requestSchema = new mongoose.Schema(
 
       // 직경 정보
       diameter: Number, // 실제 직경 (mm)
-      diameterGroup: String, // "6" | "8" | "10" | "10+"
+      diameterGroup: String, // "6" | "8" | "10" | "12"
 
       ncPreload: {
         status: {

@@ -707,7 +707,7 @@ export const CncDashboardPageView = (props: any) => {
           machineName={materialModalTarget?.name || ""}
           currentMaterial={materialModalTarget?.currentMaterial || null}
           maxModelDiameterGroups={
-            (materialModalTarget?.maxModelDiameterGroups as any) || ["10+"]
+            (materialModalTarget?.maxModelDiameterGroups as any) || ["12"]
           }
           onReplace={handleReplaceMaterial}
           onAdd={handleAddMaterial}

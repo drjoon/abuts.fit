@@ -206,7 +206,7 @@
   - `assignedMachine`: 할당된 CNC 장비 (String, "M3" | "M4" | null)
   - `queuePosition`: 해당 장비 큐에서의 위치 (Number)
   - `diameter`: 실제 직경 (Number, mm)
-  - `diameterGroup`: 직경 그룹 (String, "6" | "8" | "10" | "10+")
+  - `diameterGroup`: 직경 그룹 (String, "6" | "8" | "10" | "12")
 
 **배송 옵션 변경 규칙 (Fire & Forget)**:
 
@@ -237,17 +237,17 @@
 
 **소재 세팅 변경**:
 
-- 제조사가 M3 또는 M4의 소재를 10mm/12mm로 변경 시
+- 제조사가 M3 또는 M4의 소재를 12mm로 변경 시
 - 해당 직경 그룹의 unassigned 의뢰를 자동으로 장비에 할당
 - 도착 예정시각 순으로 큐에 추가
 
 **소재 교체 예약 기능**:
 
-- **목적**: 10mm/12mm 의뢰가 쌓여있을 때, 특정 시각에 소재를 교체하여 대기 중인 의뢰를 처리
+- **목적**: 12mm 의뢰가 쌓여있을 때, 특정 시각에 소재를 교체하여 대기 중인 의뢰를 처리
 - **예약 방법**: `POST /api/cnc-machines/:machineId/schedule-material-change`
   - `targetTime`: 교체 목표 시각 (Date)
   - `newDiameter`: 새 소재 직경 (Number)
-  - `newDiameterGroup`: 새 직경 그룹 (String, "6" | "8" | "10" | "10+")
+  - `newDiameterGroup`: 새 직경 그룹 (String, "6" | "8" | "10" | "12")
   - `notes`: 메모 (String, optional)
 - **예약 취소**: `DELETE /api/cnc-machines/:machineId/schedule-material-change`
 - **자동 처리 로직** (productionScheduler 워커):

@@ -12,21 +12,21 @@ export interface Machine {
   allowProgramDelete?: boolean;
   allowAutoMachining?: boolean;
 
-  maxModelDiameterGroups?: ("6" | "8" | "10" | "10+")[];
+  maxModelDiameterGroups?: ("6" | "8" | "10" | "12")[];
 
   // cnc-machines 연동(소재/스케줄)
   currentMaterial?: {
     materialType?: string;
     heatNo?: string;
     diameter: number;
-    diameterGroup: "6" | "8" | "10" | "10+";
+    diameterGroup: "6" | "8" | "10" | "12";
     remainingLength?: number;
     setAt?: string;
   };
   scheduledMaterialChange?: {
     targetTime?: string;
     newDiameter?: number;
-    newDiameterGroup?: "6" | "8" | "10" | "10+";
+    newDiameterGroup?: "6" | "8" | "10" | "12";
     notes?: string;
   };
   dummySettings?: {

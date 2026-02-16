@@ -12,7 +12,7 @@ interface CncMachineMeta {
     schedules?: any[];
     excludeHolidays?: boolean;
   };
-  maxModelDiameterGroups?: ("6" | "8" | "10" | "10+")[];
+  maxModelDiameterGroups?: ("6" | "8" | "10" | "12")[];
 }
 
 interface Params {
@@ -22,14 +22,23 @@ interface Params {
   toast: (args: any) => void;
 }
 
-export function useCncDashboardMaterials({ token, machines, setMachines, toast }: Params) {
+export function useCncDashboardMaterials({
+  token,
+  machines,
+  setMachines,
+  toast,
+}: Params) {
   const [materialChangeModalOpen, setMaterialChangeModalOpen] = useState(false);
-  const [materialChangeTarget, setMaterialChangeTarget] = useState<Machine | null>(null);
+  const [materialChangeTarget, setMaterialChangeTarget] =
+    useState<Machine | null>(null);
 
   const [materialModalOpen, setMaterialModalOpen] = useState(false);
-  const [materialModalTarget, setMaterialModalTarget] = useState<Machine | null>(null);
+  const [materialModalTarget, setMaterialModalTarget] =
+    useState<Machine | null>(null);
 
-  const [cncMachineMetaMap, setCncMachineMetaMap] = useState<Record<string, CncMachineMeta>>({});
+  const [cncMachineMetaMap, setCncMachineMetaMap] = useState<
+    Record<string, CncMachineMeta>
+  >({});
 
   const refreshCncMachineMeta = useCallback(async () => {
     if (!token) return;
@@ -97,7 +106,9 @@ export function useCncDashboardMaterials({ token, machines, setMachines, toast }
     };
   }, [materialChangeTarget?.scheduledMaterialChange]);
 
-  const debounceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | null>>({});
+  const debounceTimersRef = useRef<
+    Record<string, ReturnType<typeof setTimeout> | null>
+  >({});
   const debounceBaselineRef = useRef<Record<string, any>>({});
   const debounceLatestRef = useRef<Record<string, any>>({});
 
@@ -140,7 +151,9 @@ export function useCncDashboardMaterials({ token, machines, setMachines, toast }
   const globalDummyEnabled = useMemo(() => {
     const list = Array.isArray(machines) ? machines : [];
     if (list.length === 0) return false;
-    return list.every((m) => cncMachineMetaMap[m.uid]?.dummySettings?.enabled !== false);
+    return list.every(
+      (m) => cncMachineMetaMap[m.uid]?.dummySettings?.enabled !== false,
+    );
   }, [cncMachineMetaMap, machines]);
 
   const setGlobalRemoteEnabled = useCallback(
@@ -150,48 +163,54 @@ export function useCncDashboardMaterials({ token, machines, setMachines, toast }
       const list = Array.isArray(machines) ? machines : [];
       if (list.length === 0) return;
 
-      const prevMap = new Map(list.map((m) => [m.uid, m.allowJobStart !== false]));
+      const prevMap = new Map(
+        list.map((m) => [m.uid, m.allowJobStart !== false]),
+      );
       const baselineEnabled = globalRemoteEnabled;
 
-      setMachines((prev) => prev.map((m) => ({ ...m, allowJobStart: enabled })));
-
-      scheduleDebounced(
-        "global-remote",
-        enabled,
-        baselineEnabled,
-        () => {
-          void (async () => {
-            try {
-              const res = await fetch("/api/cnc-machines/allow-job-start", {
-                method: "PATCH",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ enabled }),
-              });
-              const body: any = await res.json().catch(() => ({}));
-              if (!res.ok || body?.success === false) {
-                throw new Error(body?.message || "원격 가공 설정 저장 실패");
-              }
-            } catch (e: any) {
-              setMachines((prev) =>
-                prev.map((m) => ({
-                  ...m,
-                  allowJobStart: prevMap.get(m.uid) !== false,
-                })),
-              );
-              toast({
-                title: "설정 저장 실패",
-                description: e?.message || "잠시 후 다시 시도해주세요.",
-                variant: "destructive",
-              });
-            }
-          })();
-        },
+      setMachines((prev) =>
+        prev.map((m) => ({ ...m, allowJobStart: enabled })),
       );
+
+      scheduleDebounced("global-remote", enabled, baselineEnabled, () => {
+        void (async () => {
+          try {
+            const res = await fetch("/api/cnc-machines/allow-job-start", {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ enabled }),
+            });
+            const body: any = await res.json().catch(() => ({}));
+            if (!res.ok || body?.success === false) {
+              throw new Error(body?.message || "원격 가공 설정 저장 실패");
+            }
+          } catch (e: any) {
+            setMachines((prev) =>
+              prev.map((m) => ({
+                ...m,
+                allowJobStart: prevMap.get(m.uid) !== false,
+              })),
+            );
+            toast({
+              title: "설정 저장 실패",
+              description: e?.message || "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+          }
+        })();
+      });
     },
-    [globalRemoteEnabled, machines, scheduleDebounced, setMachines, toast, token],
+    [
+      globalRemoteEnabled,
+      machines,
+      scheduleDebounced,
+      setMachines,
+      toast,
+      token,
+    ],
   );
 
   const setGlobalDummyEnabled = useCallback(
@@ -202,7 +221,10 @@ export function useCncDashboardMaterials({ token, machines, setMachines, toast }
       if (list.length === 0) return;
 
       const prevMap = new Map(
-        list.map((m) => [m.uid, cncMachineMetaMap[m.uid]?.dummySettings?.enabled !== false]),
+        list.map((m) => [
+          m.uid,
+          cncMachineMetaMap[m.uid]?.dummySettings?.enabled !== false,
+        ]),
       );
       const baselineEnabled = globalDummyEnabled;
 
@@ -221,52 +243,55 @@ export function useCncDashboardMaterials({ token, machines, setMachines, toast }
         return next;
       });
 
-      scheduleDebounced(
-        "global-dummy",
-        enabled,
-        baselineEnabled,
-        () => {
-          void (async () => {
-            try {
-              const res = await fetch("/api/cnc-machines/dummy/enabled", {
-                method: "PATCH",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ enabled }),
-              });
-              const body: any = await res.json().catch(() => ({}));
-              if (!res.ok || body?.success === false) {
-                throw new Error(body?.message || "더미 가공 설정 저장 실패");
-              }
-              await refreshCncMachineMeta();
-            } catch (e: any) {
-              setCncMachineMetaMap((prev) => {
-                const next = { ...prev };
-                for (const m of list) {
-                  const existing = next[m.uid] || {};
-                  next[m.uid] = {
-                    ...existing,
-                    dummySettings: {
-                      ...(existing as any).dummySettings,
-                      enabled: prevMap.get(m.uid) !== false,
-                    },
-                  } as any;
-                }
-                return next;
-              });
-              toast({
-                title: "설정 저장 실패",
-                description: e?.message || "잠시 후 다시 시도해주세요.",
-                variant: "destructive",
-              });
+      scheduleDebounced("global-dummy", enabled, baselineEnabled, () => {
+        void (async () => {
+          try {
+            const res = await fetch("/api/cnc-machines/dummy/enabled", {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ enabled }),
+            });
+            const body: any = await res.json().catch(() => ({}));
+            if (!res.ok || body?.success === false) {
+              throw new Error(body?.message || "더미 가공 설정 저장 실패");
             }
-          })();
-        },
-      );
+            await refreshCncMachineMeta();
+          } catch (e: any) {
+            setCncMachineMetaMap((prev) => {
+              const next = { ...prev };
+              for (const m of list) {
+                const existing = next[m.uid] || {};
+                next[m.uid] = {
+                  ...existing,
+                  dummySettings: {
+                    ...(existing as any).dummySettings,
+                    enabled: prevMap.get(m.uid) !== false,
+                  },
+                } as any;
+              }
+              return next;
+            });
+            toast({
+              title: "설정 저장 실패",
+              description: e?.message || "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+          }
+        })();
+      });
     },
-    [cncMachineMetaMap, globalDummyEnabled, machines, refreshCncMachineMeta, scheduleDebounced, toast, token],
+    [
+      cncMachineMetaMap,
+      globalDummyEnabled,
+      machines,
+      refreshCncMachineMeta,
+      scheduleDebounced,
+      toast,
+      token,
+    ],
   );
 
   const updateMachineDummyEnabled = useCallback(
@@ -274,7 +299,8 @@ export function useCncDashboardMaterials({ token, machines, setMachines, toast }
       const uid = String(machineId || "").trim();
       if (!uid || !token) return;
 
-      const prevEnabled = cncMachineMetaMap[uid]?.dummySettings?.enabled !== false;
+      const prevEnabled =
+        cncMachineMetaMap[uid]?.dummySettings?.enabled !== false;
 
       setCncMachineMetaMap((prev) => {
         const next = { ...prev };
@@ -289,57 +315,57 @@ export function useCncDashboardMaterials({ token, machines, setMachines, toast }
         return next;
       });
 
-      scheduleDebounced(
-        `dummy:${uid}`,
-        enabled,
-        prevEnabled,
-        () => {
-          void (async () => {
-            try {
-              const res = await fetch(
-                `/api/cnc-machines/${encodeURIComponent(uid)}/dummy/enabled`,
-                {
-                  method: "PATCH",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                  },
-                  body: JSON.stringify({ enabled }),
+      scheduleDebounced(`dummy:${uid}`, enabled, prevEnabled, () => {
+        void (async () => {
+          try {
+            const res = await fetch(
+              `/api/cnc-machines/${encodeURIComponent(uid)}/dummy/enabled`,
+              {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
                 },
-              );
-              const body: any = await res.json().catch(() => ({}));
-              if (!res.ok || body?.success === false) {
-                throw new Error(body?.message || "더미 가공 설정 저장 실패");
-              }
-              await refreshCncMachineMeta();
-            } catch (e: any) {
-              setCncMachineMetaMap((prev) => {
-                const next = { ...prev };
-                const existing = next[uid] || {};
-                next[uid] = {
-                  ...existing,
-                  dummySettings: {
-                    ...(existing as any).dummySettings,
-                    enabled: prevEnabled,
-                  },
-                } as any;
-                return next;
-              });
-              toast({
-                title: "설정 저장 실패",
-                description: e?.message || "잠시 후 다시 시도해주세요.",
-                variant: "destructive",
-              });
+                body: JSON.stringify({ enabled }),
+              },
+            );
+            const body: any = await res.json().catch(() => ({}));
+            if (!res.ok || body?.success === false) {
+              throw new Error(body?.message || "더미 가공 설정 저장 실패");
             }
-          })();
-        },
-      );
+            await refreshCncMachineMeta();
+          } catch (e: any) {
+            setCncMachineMetaMap((prev) => {
+              const next = { ...prev };
+              const existing = next[uid] || {};
+              next[uid] = {
+                ...existing,
+                dummySettings: {
+                  ...(existing as any).dummySettings,
+                  enabled: prevEnabled,
+                },
+              } as any;
+              return next;
+            });
+            toast({
+              title: "설정 저장 실패",
+              description: e?.message || "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+          }
+        })();
+      });
     },
     [cncMachineMetaMap, refreshCncMachineMeta, scheduleDebounced, toast, token],
   );
 
   const handleScheduleMaterialChange = useCallback(
-    async (data: { targetTime: Date; newDiameter: number; newDiameterGroup: string; notes?: string }) => {
+    async (data: {
+      targetTime: Date;
+      newDiameter: number;
+      newDiameterGroup: string;
+      notes?: string;
+    }) => {
       if (!materialChangeTarget || !token) return;
 
       const res = await fetch(
@@ -388,9 +414,9 @@ export function useCncDashboardMaterials({ token, machines, setMachines, toast }
       materialType: string;
       heatNo: string;
       diameter: number;
-      diameterGroup: "6" | "8" | "10" | "10+";
+      diameterGroup: "6" | "8" | "10" | "12";
       remainingLength: number;
-      maxModelDiameterGroups: ("6" | "8" | "10" | "10+")[];
+      maxModelDiameterGroups: ("6" | "8" | "10" | "12")[];
     }) => {
       if (!materialModalTarget || !token) return;
       const res = await fetch(

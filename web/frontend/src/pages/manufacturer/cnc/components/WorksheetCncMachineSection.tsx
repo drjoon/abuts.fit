@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { Thermometer, Wrench, Play, Pause, X } from "lucide-react";
 import {
   Dialog,
@@ -24,6 +24,7 @@ import {
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
 import { useToast } from "@/hooks/use-toast";
+import type { DiameterBucketKey as UiDiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 
 const getMachineStatusChip = (status: string) => {
   const s = (status || "").toUpperCase();
@@ -77,7 +78,7 @@ const getDiameterBucketIndex = (diameter: string | null | undefined) => {
   return 3;
 };
 
-type DiameterBucketKey = "6" | "8" | "10" | "10+";
+type ApiDiameterBucketKey = "6" | "8" | "10" | "12";
 
 const formatMachineDiameterLabel = (machine: Machine): string => {
   const diameter = machine.currentMaterial?.diameter;
@@ -90,8 +91,7 @@ const formatMachineDiameterLabel = (machine: Machine): string => {
   }
   const group = machine.currentMaterial?.diameterGroup;
   if (group) {
-    const numeric =
-      group === "10+" ? 12 : Number.parseFloat(group.replace(/[^0-9.]/g, ""));
+    const numeric = Number.parseFloat(String(group).replace(/[^0-9.]/g, ""));
     if (Number.isFinite(numeric) && numeric > 0) {
       return `${Number.isInteger(numeric) ? numeric : numeric.toFixed(1)}mm`;
     }
@@ -108,7 +108,7 @@ type MockQueueItem = {
   qty: number;
 };
 
-const mockDiameterQueues: Record<DiameterBucketKey, MockQueueItem[]> = {
+const mockDiameterQueues: Record<UiDiameterBucketKey, MockQueueItem[]> = {
   "6": [
     {
       id: "Q-601",
@@ -147,7 +147,7 @@ const mockDiameterQueues: Record<DiameterBucketKey, MockQueueItem[]> = {
       qty: 3,
     },
   ],
-  "10+": [
+  "12": [
     {
       id: "Q-10P1",
       client: "서울프리미엄기공소",
@@ -404,6 +404,7 @@ export const WorksheetCncMachineSection = ({
   const { machines, loading } = useCncMachines();
   const { callRaw } = useCncRaw();
   const [error, setError] = useState<string | null>(null);
+  const { token } = useAuthStore();
   const [tempHealthByUid, setTempHealthByUid] = useState<
     Record<string, HealthLevel>
   >({});
@@ -451,7 +452,81 @@ export const WorksheetCncMachineSection = ({
 
   const [queueModalOpen, setQueueModalOpen] = useState(false);
   const [selectedBucket, setSelectedBucket] =
-    useState<DiameterBucketKey | null>(null);
+    useState<UiDiameterBucketKey | null>(null);
+
+  const [cncMachineMetaMap, setCncMachineMetaMap] = useState<
+    Record<string, any>
+  >({});
+
+  useEffect(() => {
+    if (!token) return;
+    let mounted = true;
+    void (async () => {
+      try {
+        const res = await fetch("/api/cnc-machines", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) return;
+        const list: any[] = Array.isArray(body?.data) ? body.data : [];
+        const next: Record<string, any> = {};
+        for (const item of list) {
+          const machineId = String(item?.machineId || "");
+          if (!machineId) continue;
+          next[machineId] = item;
+        }
+        if (mounted) setCncMachineMetaMap(next);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
+  const mergedMachines: Machine[] = useMemo(() => {
+    return (machines || []).map((m) => {
+      const meta = cncMachineMetaMap[m.uid];
+      if (!meta) return m;
+
+      const normalizeGroup = (g: any) => {
+        const raw = String(g || "").trim();
+        const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ""));
+        if (Number.isFinite(numeric) && numeric > 10) return "12";
+        if (Number.isFinite(numeric) && numeric > 0)
+          return String(Math.trunc(numeric));
+        return raw;
+      };
+      const normalizedCurrent = meta.currentMaterial
+        ? {
+            ...meta.currentMaterial,
+            diameterGroup: normalizeGroup(meta.currentMaterial?.diameterGroup),
+          }
+        : undefined;
+      const normalizedSchedule = meta.scheduledMaterialChange
+        ? {
+            ...meta.scheduledMaterialChange,
+            newDiameterGroup: normalizeGroup(
+              meta.scheduledMaterialChange?.newDiameterGroup,
+            ),
+          }
+        : undefined;
+      const normalizedMaxGroups = Array.isArray(meta.maxModelDiameterGroups)
+        ? meta.maxModelDiameterGroups.map(normalizeGroup)
+        : undefined;
+
+      return {
+        ...m,
+        currentMaterial: normalizedCurrent || (m as any).currentMaterial,
+        scheduledMaterialChange:
+          normalizedSchedule || (m as any).scheduledMaterialChange,
+        maxModelDiameterGroups:
+          normalizedMaxGroups || (m as any).maxModelDiameterGroups,
+        dummySettings: meta.dummySettings || (m as any).dummySettings,
+      } as any;
+    });
+  }, [cncMachineMetaMap, machines]);
 
   const filteredMachines = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -462,14 +537,23 @@ export const WorksheetCncMachineSection = ({
     });
   }, [machines, searchQuery]);
 
+  const filteredMergedMachines = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return mergedMachines;
+    return mergedMachines.filter((m) => {
+      const fields = [m.name, m.uid as string, m.ip as string].filter(Boolean);
+      return fields.some((f) => String(f).toLowerCase().includes(q));
+    });
+  }, [mergedMachines, searchQuery]);
+
   const diameterQueueSummary = useMemo(() => {
-    const labels: DiameterBucketKey[] = ["6", "8", "10", "10+"];
+    const labels: UiDiameterBucketKey[] = ["6", "8", "10", "12"];
     const counts = labels.map((label) => mockDiameterQueues[label].length);
     const total = counts.reduce((sum, c) => sum + c, 0);
     return { labels, counts, total };
   }, []);
 
-  const machiningQueues: Record<DiameterBucketKey, WorksheetQueueItem[]> =
+  const machiningQueues: Record<UiDiameterBucketKey, WorksheetQueueItem[]> =
     useMemo(
       () => ({
         "6": mockDiameterQueues["6"].map((q) => ({
@@ -496,7 +580,7 @@ export const WorksheetCncMachineSection = ({
           programText: q.programName,
           qty: q.qty,
         })),
-        "10+": mockDiameterQueues["10+"].map((q) => ({
+        "12": mockDiameterQueues["12"].map((q) => ({
           id: q.id,
           client: q.client,
           patient: q.patient,
@@ -590,7 +674,7 @@ export const WorksheetCncMachineSection = ({
           />
 
           <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-            {filteredMachines.map((m) => (
+            {filteredMergedMachines.map((m) => (
               <WorksheetCncMachineCard
                 key={m.uid}
                 machine={m}

@@ -409,12 +409,11 @@ export const MachineCard = (props: MachineCardProps) => {
     }
     const group = machine.currentMaterial?.diameterGroup;
     if (group) {
-      const parsed = Number.parseInt(group, 10);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        return String(parsed);
+      const numeric = Number.parseFloat(String(group).replace(/[^0-9.]/g, ""));
+      if (Number.isFinite(numeric) && numeric > 10) return "12";
+      if (Number.isFinite(numeric) && numeric > 0) {
+        return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
       }
-      const numeric = group.replace(/[^0-9.]/g, "");
-      if (numeric) return numeric;
     }
     return "0";
   })();

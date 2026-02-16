@@ -518,13 +518,13 @@ export const PackagingPage = ({
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
   const diameterQueueForPackaging = useMemo(() => {
-    const labels: DiameterBucketKey[] = ["6", "8", "10", "10+"];
+    const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];
     const counts = labels.map(() => 0);
     const buckets: Record<DiameterBucketKey, WorksheetQueueItem[]> = {
       "6": [],
       "8": [],
       "10": [],
-      "10+": [],
+      "12": [],
     };
 
     for (const req of filteredAndSorted) {
@@ -565,7 +565,7 @@ export const PackagingPage = ({
         buckets["10"].push(item);
       } else {
         counts[3]++;
-        buckets["10+"].push(item);
+        buckets["12"].push(item);
       }
     }
 

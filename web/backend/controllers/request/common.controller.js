@@ -124,13 +124,13 @@ function makeDirectRootNcName({ requestId, fileName }) {
   return `${head}.nc`;
 }
 
-function toDiameterGroup(diameter) {
+function getDiameterGroupByDiameter(diameter) {
   const d = Number(diameter);
-  if (!Number.isFinite(d) || d <= 0) return null;
+  if (!Number.isFinite(d) || d <= 0) return "";
   if (d <= 6) return "6";
   if (d <= 8) return "8";
   if (d <= 10) return "10";
-  return "10+";
+  return "12";
 }
 
 function isBridgeOnlineStatus(status) {
@@ -330,7 +330,7 @@ async function screenCamMachineForRequest({ request }) {
       if (!m.machineId) return false;
       if (!machinableIdSet.has(m.machineId)) return false;
 
-      // 4) 모델 최대직경 그룹(6/8/10/10+)에 해당 그룹이 포함되어야 함
+      // 4) 모델 최대직경 그룹(6/8/10/12)에 해당 그룹이 포함되어야 함
       if (!m.maxGroups.includes(reqGroup)) return false;
 
       // 5) 소재 직경은 maxDiameter 이상이어야 함

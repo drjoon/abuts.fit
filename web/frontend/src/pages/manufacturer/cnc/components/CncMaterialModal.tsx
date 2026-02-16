@@ -25,13 +25,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type DiameterGroup = "6" | "8" | "10" | "10+";
+type DiameterGroup = "6" | "8" | "10" | "12";
 
 const diameterRank: Record<DiameterGroup, number> = {
   "6": 6,
   "8": 8,
   "10": 10,
-  "10+": 999,
+  "12": 12,
 };
 
 export type CncMaterialInfo = {
@@ -66,7 +66,7 @@ const toDiameterGroup = (d: number): DiameterGroup => {
   if (d <= 6) return "6";
   if (d <= 8) return "8";
   if (d <= 10) return "10";
-  return "10+";
+  return "12";
 };
 
 export const CncMaterialModal = ({
@@ -144,12 +144,7 @@ export const CncMaterialModal = ({
       throw new Error("잔여량을 올바른 숫자로 입력해주세요.");
     }
 
-    let diaNum: number;
-    if (diameterGroup === "10+") {
-      diaNum = 12;
-    } else {
-      diaNum = Number(diameterGroup);
-    }
+    const diaNum = Number(diameterGroup);
 
     return { diaNum, remNum };
   };
@@ -293,7 +288,7 @@ export const CncMaterialModal = ({
                     <SelectItem value="6">6mm</SelectItem>
                     <SelectItem value="8">8mm</SelectItem>
                     <SelectItem value="10">10mm</SelectItem>
-                    <SelectItem value="10+">12mm</SelectItem>
+                    <SelectItem value="12">12mm</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -301,7 +296,7 @@ export const CncMaterialModal = ({
               <div className="space-y-1.5">
                 <Label>가공 가능한 최대직경</Label>
                 <div className="grid grid-cols-4 gap-2">
-                  {(["6", "8", "10", "10+"] as DiameterGroup[]).map((g) => {
+                  {(["6", "8", "10", "12"] as DiameterGroup[]).map((g) => {
                     const isBase = g === diameterGroup;
                     const isChecked = isBase || maxDiaGroups.includes(g);
                     const isDisabled = isBase || !canCheckMaxDiaGroup(g);
@@ -315,9 +310,7 @@ export const CncMaterialModal = ({
                           checked={isChecked}
                           onCheckedChange={() => toggleMaxDiaGroup(g)}
                         />
-                        <span className="select-none">
-                          {g === "10+" ? "12" : g}
-                        </span>
+                        <span className="select-none">{g}</span>
                       </label>
                     );
                   })}

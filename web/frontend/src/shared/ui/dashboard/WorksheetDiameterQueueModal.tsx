@@ -37,10 +37,7 @@ export const WorksheetDiameterQueueModal = ({
 }: WorksheetDiameterQueueModalProps) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
-  const labels: DiameterBucketKey[] = useMemo(
-    () => ["6", "8", "10", "10+"],
-    [],
-  );
+  const labels: DiameterBucketKey[] = useMemo(() => ["6", "8", "10", "12"], []);
 
   const effectiveBucket: DiameterBucketKey = useMemo(() => {
     if (selectedBucket && labels.includes(selectedBucket))
@@ -204,7 +201,7 @@ export const WorksheetDiameterQueueModal = ({
                   onSelectBucket(label);
                 }}
               >
-                {label === "10+" ? "12mm" : `${label}mm`}
+                {`${label}mm`}
               </button>
             ))}
           </div>
