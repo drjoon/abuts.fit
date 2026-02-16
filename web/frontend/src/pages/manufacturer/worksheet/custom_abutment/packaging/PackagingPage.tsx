@@ -211,16 +211,17 @@ export const PackagingPage = ({
     return match ? match[0] : "";
   }, []);
 
-  const resizeImageFile = useCallback((file: File, ratio: number) => {
+  const resizeImageFile = useCallback((file: File) => {
     return new Promise<File>((resolve) => {
       const reader = new FileReader();
       const image = new Image();
 
       reader.onload = () => {
         image.onload = () => {
+          const SCALE_RATIO = 0.2; // 원본 대비 1/5 크기
           const canvas = document.createElement("canvas");
-          canvas.width = image.width * ratio;
-          canvas.height = image.height * ratio;
+          canvas.width = image.width * SCALE_RATIO;
+          canvas.height = image.height * SCALE_RATIO;
           const ctx = canvas.getContext("2d");
           if (!ctx) {
             resolve(file);
@@ -263,7 +264,7 @@ export const PackagingPage = ({
       setOcrStage("upload");
       try {
         const resizedFiles = await Promise.all(
-          imageFiles.map((file) => resizeImageFile(file, 0.2)),
+          imageFiles.map((file) => resizeImageFile(file)),
         );
 
         const uploadResult = await uploadToS3(resizedFiles);
