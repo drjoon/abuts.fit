@@ -8,9 +8,9 @@ import {
   onCncMachiningTick,
   onCncMachiningStarted,
 } from "@/lib/socket";
-import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
-import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
-import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
+import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
+import { useCncProgramEditor } from "@/features/manufacturer/cnc/hooks/useCncProgramEditor";
+import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
 import { apiFetch } from "@/lib/apiClient";
 import { getMockCncMachiningEnabled } from "@/lib/bridgeSettings";
 import { Badge } from "@/components/ui/badge";

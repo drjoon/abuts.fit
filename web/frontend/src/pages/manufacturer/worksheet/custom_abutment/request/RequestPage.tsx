@@ -42,13 +42,13 @@ import {
   stageOrder,
   getAcceptByStage,
   getDiameterBucketIndex,
-} from "./utils";
+} from "@/features/manufacturer/worksheet/customAbutment/request/utils";
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
 import { MachiningQueueBoard } from "./MachiningQueueBoard";
 import { PreviewModal } from "./PreviewModal";
-import { useRequestFileHandlers } from "./useRequestFileHandlers";
-import { usePreviewLoader } from "./usePreviewLoader";
-import { useStageDropHandlers } from "./useStageDropHandlers";
+import { useRequestFileHandlers } from "@/features/manufacturer/worksheet/customAbutment/request/useRequestFileHandlers";
+import { usePreviewLoader } from "@/features/manufacturer/worksheet/customAbutment/request/usePreviewLoader";
+import { useStageDropHandlers } from "@/features/manufacturer/worksheet/customAbutment/request/useStageDropHandlers";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { useSocket } from "@/shared/hooks/useSocket";
 import { onCncMachiningCompleted, onCncMachiningTick } from "@/lib/socket";

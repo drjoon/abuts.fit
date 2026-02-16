@@ -6,15 +6,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
+import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
 import type { Machine } from "@/pages/manufacturer/cnc/types";
-import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
-import { useCncTempPanel } from "@/pages/manufacturer/cnc/hooks/useCncTempPanel";
-import { useCncToolPanels } from "@/pages/manufacturer/cnc/hooks/useCncToolPanels";
-import { useCncContinuous } from "@/pages/manufacturer/cnc/hooks/useCncContinuous";
+import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
+import { useCncTempPanel } from "@/features/manufacturer/cnc/hooks/useCncTempPanel";
+import { useCncToolPanels } from "@/features/manufacturer/cnc/hooks/useCncToolPanels";
+import { useCncContinuous } from "@/features/manufacturer/cnc/hooks/useCncContinuous";
 import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempDetailModal";
 import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
-import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
+import { useCncWriteGuard } from "@/features/manufacturer/cnc/hooks/useCncWriteGuard";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/lib/apiClient";
