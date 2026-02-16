@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import {
   type ManufacturerRequest,
   computeStageLabel,
+  deriveStageForFilter,
   getAcceptByStage,
   getDiameterBucketIndex,
   stageOrder,
@@ -113,6 +114,10 @@ export const WorksheetCardGrid = ({
       const requestStageOrder = stageOrder[requestStageLabel] ?? 0;
       const isCompletedForCurrentStage = requestStageOrder > currentStageOrder;
 
+      const stageForRollback = deriveStageForFilter(request);
+      const canRollback =
+        stageForRollback !== "의뢰" && stageForRollback !== "추적관리";
+
       const machiningElapsedLabel = (() => {
         if (!isMachiningStage) return "";
         const secRaw = (request as any)?.productionSchedule?.machiningProgress
@@ -203,7 +208,7 @@ export const WorksheetCardGrid = ({
           onDragOver={handleDragOver}
         >
           <div className="absolute right-2 top-2 z-20 hidden gap-1 group-hover/card:flex">
-            {onRollback && !isCompletedForCurrentStage && (
+            {onRollback && canRollback && (
               <button
                 type="button"
                 className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
