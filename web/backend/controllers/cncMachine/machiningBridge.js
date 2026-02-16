@@ -44,6 +44,101 @@ function normalizeBridgePath(raw) {
     .trim();
 }
 
+function formatRequestLabelForCompleted(reqDoc, fallbackRequestId) {
+  const rid = String(reqDoc?.requestId || fallbackRequestId || "").trim();
+  const clinicName = String(reqDoc?.caseInfos?.clinicName || "").trim();
+  const patientName = String(reqDoc?.caseInfos?.patientName || "").trim();
+  const base = `${clinicName} ${patientName}`.trim();
+  if (base && rid) return `${base} (${rid})`;
+  if (rid) return `의뢰 (${rid})`;
+  return "-";
+}
+
+export async function getLastCompletedMachiningMap(req, res) {
+  try {
+    const activeMachines = await CncMachine.find({ status: "active" })
+      .select("machineId")
+      .lean();
+    const machineIds = (Array.isArray(activeMachines) ? activeMachines : [])
+      .map((m) => String(m?.machineId || "").trim())
+      .filter(Boolean);
+
+    if (machineIds.length === 0) {
+      return res.status(200).json({ success: true, data: {} });
+    }
+
+    const recs = await MachiningRecord.find({
+      machineId: { $in: machineIds },
+      status: "COMPLETED",
+    })
+      .sort({ completedAt: -1, updatedAt: -1, createdAt: -1 })
+      .limit(200)
+      .lean();
+
+    const byMachine = new Map();
+    for (const r of Array.isArray(recs) ? recs : []) {
+      const mid = String(r?.machineId || "").trim();
+      if (!mid) continue;
+      if (byMachine.has(mid)) continue;
+      byMachine.set(mid, r);
+    }
+
+    const requestIds = Array.from(byMachine.values())
+      .map((r) => String(r?.requestId || "").trim())
+      .filter(Boolean);
+    const uniqueRequestIds = Array.from(new Set(requestIds));
+
+    const reqDocs = uniqueRequestIds.length
+      ? await Request.find({ requestId: { $in: uniqueRequestIds } })
+          .select("requestId caseInfos.clinicName caseInfos.patientName")
+          .lean()
+      : [];
+    const reqById = new Map();
+    for (const r of Array.isArray(reqDocs) ? reqDocs : []) {
+      const rid = String(r?.requestId || "").trim();
+      if (rid) reqById.set(rid, r);
+    }
+
+    const data = {};
+    for (const mid of machineIds) {
+      const rec = byMachine.get(mid) || null;
+      if (!rec) continue;
+
+      const rid = String(rec?.requestId || "").trim();
+      const reqDoc = rid ? reqById.get(rid) : null;
+      const displayLabel = formatRequestLabelForCompleted(reqDoc, rid);
+      const completedAt = rec?.completedAt
+        ? new Date(rec.completedAt).toISOString()
+        : rec?.updatedAt
+          ? new Date(rec.updatedAt).toISOString()
+          : new Date().toISOString();
+      const durationSeconds =
+        typeof rec?.durationSeconds === "number" && rec.durationSeconds >= 0
+          ? Math.floor(rec.durationSeconds)
+          : typeof rec?.elapsedSeconds === "number" && rec.elapsedSeconds >= 0
+            ? Math.floor(rec.elapsedSeconds)
+            : 0;
+
+      data[mid] = {
+        machineId: mid,
+        jobId: rec?.jobId != null ? String(rec.jobId) : null,
+        requestId: rid || null,
+        displayLabel: String(displayLabel || "").trim() || null,
+        completedAt,
+        durationSeconds,
+      };
+    }
+
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "마지막 가공 완료 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 async function triggerNextAutoMachiningAfterComplete({
   machineId,
   completedRequestId,

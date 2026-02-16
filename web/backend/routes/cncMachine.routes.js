@@ -84,6 +84,13 @@ router.patch(
 // 모든 라우트에 인증 필요
 router.use(authenticate);
 
+// 장비별 마지막 가공 완료 조회 (제조사, 관리자)
+router.get(
+  "/machining/last-completed",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getLastCompletedMachiningMap,
+);
+
 // 장비 목록 조회 (제조사, 관리자)
 router.get(
   "/",

@@ -858,14 +858,12 @@ export const MachineCard = (props: MachineCardProps) => {
           <div className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-slate-500">
-                  가공 완료
-                </div>
                 <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
-                  <span className="mr-2">
-                    종료 {lastCompletedSummary?.completedAtLabel || "-"}
+                  Complete
+                  <span className="ml-4 mr-4">
+                    종료 {lastCompletedSummary?.completedAtLabel || ""}
                   </span>
-                  <span>소요 {lastCompletedSummary?.durationLabel || "-"}</span>
+                  <span>소요 {lastCompletedSummary?.durationLabel || ""}</span>
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {derivedCompleted
@@ -876,7 +874,7 @@ export const MachineCard = (props: MachineCardProps) => {
                         ? `의뢰 (${String(derivedCompleted.requestId)})`
                         : derivedCompleted.jobId
                           ? `작업 (${String(derivedCompleted.jobId)})`
-                          : "-")
+                          : "")
                     : "없음"}
                 </div>
               </div>

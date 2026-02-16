@@ -51,6 +51,7 @@ import {
   cancelMachiningForMachine,
   recordMachiningFailForBridge,
   recordMachiningTickForBridge,
+  getLastCompletedMachiningMap,
 } from "./cncMachine/machiningBridge.js";
 
 export {
@@ -92,4 +93,5 @@ export {
   updateDummySettings,
   updateDummyEnabledBulk,
   initializeMachines,
+  getLastCompletedMachiningMap,
 };

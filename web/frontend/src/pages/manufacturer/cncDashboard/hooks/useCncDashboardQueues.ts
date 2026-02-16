@@ -92,6 +92,35 @@ export function useCncDashboardQueues({
     Record<string, LastCompletedMachining>
   >({});
 
+  useEffect(() => {
+    let mounted = true;
+    if (!token) return;
+
+    fetch("/api/cnc-machines/machining/last-completed", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) =>
+        res
+          .json()
+          .catch(() => ({}))
+          .then((body: any) => ({ res, body })),
+      )
+      .then(({ res, body }) => {
+        if (!mounted) return;
+        if (!res.ok || body?.success === false) return;
+        const map =
+          body?.data && typeof body.data === "object" ? (body.data as any) : {};
+        setLastCompletedMap((prev) => ({ ...map, ...prev }));
+      })
+      .catch(() => {
+        // ignore
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
   const [playlistOpen, setPlaylistOpen] = useState(false);
   const [playlistTarget, setPlaylistTarget] = useState<Machine | null>(null);
   const [playlistReadOnly, setPlaylistReadOnly] = useState(false);

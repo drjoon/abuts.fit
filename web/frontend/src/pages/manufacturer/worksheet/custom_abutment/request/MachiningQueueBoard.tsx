@@ -815,6 +815,35 @@ export const MachiningQueueBoard = ({
   }, [token, toast]);
 
   useEffect(() => {
+    let mounted = true;
+    if (!token) return;
+
+    fetch("/api/cnc-machines/machining/last-completed", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) =>
+        res
+          .json()
+          .catch(() => ({}))
+          .then((body: any) => ({ res, body })),
+      )
+      .then(({ res, body }) => {
+        if (!mounted) return;
+        if (!res.ok || body?.success === false) return;
+        const map =
+          body?.data && typeof body.data === "object" ? (body.data as any) : {};
+        setLastCompletedMap((prev) => ({ ...map, ...prev }));
+      })
+      .catch(() => {
+        // ignore
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
     if (!token) return;
 
     initializeSocket(token);
