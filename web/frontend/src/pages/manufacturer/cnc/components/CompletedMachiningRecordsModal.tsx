@@ -41,6 +41,24 @@ export const CompletedMachiningRecordsModal = ({
   const [error, setError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
+  const inFlightRef = useRef(false);
+  const cursorRef = useRef<string | null>(null);
+  const hasMoreRef = useRef(true);
+  const errorRef = useRef<string | null>(null);
+  const cooldownUntilRef = useRef<number>(0);
+
+  useEffect(() => {
+    cursorRef.current = cursor;
+  }, [cursor]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  useEffect(() => {
+    errorRef.current = error;
+  }, [error]);
+
   const effectiveTitle = useMemo(() => {
     const mid = String(machineId || "").trim();
     return title || (mid ? `${mid} 가공 완료` : "가공 완료");
@@ -51,12 +69,17 @@ export const CompletedMachiningRecordsModal = ({
       if (!token) return;
       const mid = String(machineId || "").trim();
       if (!mid) return;
-      if (loading) return;
 
+      const now = Date.now();
+      if (now < cooldownUntilRef.current) return;
+      if (inFlightRef.current) return;
+      if (!opts?.reset && (!hasMoreRef.current || !!errorRef.current)) return;
+
+      inFlightRef.current = true;
       setLoading(true);
       setError(null);
       try {
-        const nextCursor = opts?.reset ? null : cursor;
+        const nextCursor = opts?.reset ? null : cursorRef.current;
         const url = new URL(
           "/api/cnc-machines/machining/completed",
           window.location.origin,
@@ -93,6 +116,9 @@ export const CompletedMachiningRecordsModal = ({
           setError(
             body?.message || body?.error || "완료 목록을 불러오지 못했습니다.",
           );
+          if (res.status === 429) {
+            cooldownUntilRef.current = Date.now() + 2000;
+          }
           return;
         }
 
@@ -123,9 +149,10 @@ export const CompletedMachiningRecordsModal = ({
         setError(msg);
       } finally {
         setLoading(false);
+        inFlightRef.current = false;
       }
     },
-    [cursor, loading, machineId, pageSize, token],
+    [machineId, pageSize, token],
   );
 
   useEffect(() => {
@@ -145,7 +172,10 @@ export const CompletedMachiningRecordsModal = ({
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
-        if (!hasMore || loading) return;
+        if (!hasMoreRef.current) return;
+        if (inFlightRef.current) return;
+        if (Date.now() < cooldownUntilRef.current) return;
+        if (!!errorRef.current) return;
         void fetchPage();
       },
       { root: null, threshold: 1 },
