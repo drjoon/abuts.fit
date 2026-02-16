@@ -228,12 +228,16 @@ export function usePreviewLoader({
           previewStageKey === "shipping" ||
           previewStageKey === "tracking"
         ) {
-          const stageMeta = req.caseInfos?.stageFiles?.[previewStageKey];
+          // 발송 탭에서는 포장 단계(stage="packaging")의 이미지를 재사용한다.
+          const effectiveStageKey =
+            previewStageKey === "shipping" ? "packaging" : previewStageKey;
+
+          const stageMeta = req.caseInfos?.stageFiles?.[effectiveStageKey];
           if (stageMeta?.s3Key) {
             const stageUrlRes = await fetch(
               `/api/requests/${
                 req._id
-              }/stage-file-url?stage=${encodeURIComponent(previewStageKey)}`,
+              }/stage-file-url?stage=${encodeURIComponent(effectiveStageKey)}`,
               { headers: { Authorization: `Bearer ${token}` } },
             );
             if (stageUrlRes.ok) {
@@ -242,7 +246,7 @@ export function usePreviewLoader({
               if (signedUrl) {
                 setPreviewStageUrl(signedUrl);
                 setPreviewStageName(
-                  stageMeta?.filePath || `${previewStageKey}-file`,
+                  stageMeta?.filePath || `${effectiveStageKey}-file`,
                 );
               }
             }

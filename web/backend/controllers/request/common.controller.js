@@ -1151,7 +1151,7 @@ export async function updateReviewStatusByStage(req, res) {
   const session = await mongoose.startSession();
   try {
     const { id } = req.params;
-    const { stage, status, reason } = req.body || {};
+    const { stage, status, reason, stageOverride } = req.body || {};
 
     if (!Types.ObjectId.isValid(id)) {
       return res
@@ -1173,7 +1173,9 @@ export async function updateReviewStatusByStage(req, res) {
       "shipping",
       "tracking",
     ];
-    if (!allowedStages.includes(String(stage || "").trim())) {
+    // stageOverride가 있으면 이를 사용, 없으면 stage 사용
+    const effectiveStage = String(stageOverride || stage || "").trim();
+    if (!allowedStages.includes(effectiveStage)) {
       return res.status(400).json({
         success: false,
         message: "유효하지 않은 stage 입니다.",
@@ -1208,7 +1210,7 @@ export async function updateReviewStatusByStage(req, res) {
       }
 
       ensureReviewByStageDefaults(request);
-      request.caseInfos.reviewByStage[stage] = {
+      request.caseInfos.reviewByStage[effectiveStage] = {
         status,
         updatedAt: new Date(),
         updatedBy: req.user?._id,
@@ -1217,15 +1219,13 @@ export async function updateReviewStatusByStage(req, res) {
 
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
       if (status === "APPROVED") {
-        const stageKey = String(stage || "").trim();
-
-        if (stageKey === "request") {
+        if (effectiveStage === "request") {
           // b3: 사전 스크리닝 통과한 경우에만 CAM로 전환 + CAM 소재 직경 확정
           const screening = await screenCamMachineForRequest({ request });
           request.caseInfos.reviewByStage.request.reason = "";
           await advanceManufacturerStageByReviewStage({
             request,
-            stage,
+            stage: effectiveStage,
             userId: req.user?._id,
             session,
           });
@@ -1241,17 +1241,17 @@ export async function updateReviewStatusByStage(req, res) {
         } else {
           await advanceManufacturerStageByReviewStage({
             request,
-            stage,
+            stage: effectiveStage,
             userId: req.user?._id,
             session,
           });
         }
 
-        if (stageKey === "packaging") {
+        if (effectiveStage === "packaging") {
           await ensureFinishedLotNumberForPackaging(request);
         }
 
-        if (stageKey === "cam") {
+        if (effectiveStage === "cam") {
           const selected = await chooseMachineForCamMachining({ request });
           request.productionSchedule = request.productionSchedule || {};
           request.productionSchedule.assignedMachine = selected.machineId;
@@ -1278,7 +1278,7 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
       } else if (status === "PENDING") {
-        revertManufacturerStageByReviewStage(request, stage);
+        revertManufacturerStageByReviewStage(request, effectiveStage);
       }
 
       await request.save({ session });
@@ -1510,8 +1510,9 @@ export async function getAllRequests(req, res) {
     // 의뢰 조회
     const rawRequests = await Request.find(filter)
       .select("-messages")
-      .populate("requestor", "name email organization")
+      .populate("requestor", "name email organization phoneNumber address")
       .populate("deliveryInfoRef")
+      .populate("requestorOrganizationId", "name extracted")
       .sort(sort)
       .skip(skip)
       .limit(limit)
@@ -1524,7 +1525,12 @@ export async function getAllRequests(req, res) {
           request: r,
           now,
         });
-        return { ...r, shippingPriority };
+        const reqOrg = r?.requestorOrganizationId || null;
+        return {
+          ...r,
+          requestorOrganization: reqOrg,
+          shippingPriority,
+        };
       }),
     );
 

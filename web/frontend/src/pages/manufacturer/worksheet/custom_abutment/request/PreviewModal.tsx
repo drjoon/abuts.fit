@@ -140,6 +140,13 @@ export const PreviewModal = ({
     currentReviewStageKey === "tracking";
 
   const isRequestStage = currentReviewStageKey === "request";
+  const isNcStage = currentReviewStageKey === "machining";
+  const isImageStage =
+    currentReviewStageKey === "packaging" ||
+    currentReviewStageKey === "shipping" ||
+    currentReviewStageKey === "tracking";
+  const imageStageKey =
+    currentReviewStageKey === "shipping" ? "packaging" : currentReviewStageKey;
 
   const canApprove = (() => {
     if (isStageFileStage) {
@@ -196,24 +203,25 @@ export const PreviewModal = ({
     previewNcName ||
     "program.nc";
 
-  const leftTitle = isStageFileStage
+  const leftTitle = isNcStage
     ? ncName
-    : isCamStage
+    : isCamStage || isImageStage
       ? camName
       : originalName;
   const rightTitle = isStageFileStage
     ? currentReviewStageKey === "machining"
       ? "로트번호 이미지"
-      : "증빙 이미지"
+      : "각인 이미지"
     : isCamStage
       ? ncName
       : camName;
 
-  const leftViewer = isCamStage
-    ? previewFiles.cam
-    : isStageFileStage
-      ? null
-      : previewFiles.original;
+  const leftViewer =
+    isCamStage || isImageStage
+      ? previewFiles.cam || previewFiles.original || null
+      : !isStageFileStage
+        ? previewFiles.original
+        : null;
 
   const rightViewer =
     !isCamStage && !isStageFileStage ? previewFiles.cam : null;
@@ -262,11 +270,7 @@ export const PreviewModal = ({
 
   const rightMeta = isStageFileStage
     ? req.caseInfos?.stageFiles?.[
-        currentReviewStageKey as
-          | "machining"
-          | "packaging"
-          | "shipping"
-          | "tracking"
+        imageStageKey as "machining" | "packaging" | "shipping" | "tracking"
       ]
     : isCamStage
       ? req.caseInfos?.ncFile
@@ -286,7 +290,7 @@ export const PreviewModal = ({
   const onDownload = () => {
     if (!hasRightFile) return;
     if (isStageFileStage) {
-      void onDownloadStageFile(req, currentReviewStageKey);
+      void onDownloadStageFile(req, imageStageKey);
       return;
     }
     if (isCamStage) {
@@ -301,7 +305,7 @@ export const PreviewModal = ({
     if (isStageFileStage) {
       void onDeleteStageFile({
         req,
-        stage: currentReviewStageKey as
+        stage: imageStageKey as
           | "machining"
           | "packaging"
           | "shipping"
@@ -329,6 +333,7 @@ export const PreviewModal = ({
           의뢰 파일과 NC 내용을 확인하는 영역입니다.
         </DialogDescription>
 
+        {/* 상단 컨트롤 버튼들 */}
         <div className="absolute right-4 top-4 flex items-center gap-2">
           {!isRequestStage && (
             <button
@@ -460,6 +465,7 @@ export const PreviewModal = ({
           </DialogClose>
         </div>
 
+        {/* 본문 영역 */}
         <div className="h-full flex flex-col gap-4 overflow-hidden">
           {/* 모달 제목 영역 */}
           <div className="flex items-center gap-2 pb-2 border-b">
@@ -478,6 +484,16 @@ export const PreviewModal = ({
                 </span>
               </>
             )}
+            {req.lotNumber?.final && (
+              <span className="inline-flex items-center px-2 py-1 rounded text-sm font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                {String(req.lotNumber.final).slice(-3)}
+              </span>
+            )}
+            {req.lotNumber?.part && !req.lotNumber?.final && (
+              <span className="inline-flex items-center px-2 py-1 rounded text-sm font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                {String(req.lotNumber.part).slice(-3)}
+              </span>
+            )}
             <span className="text-sm text-slate-600">
               {req.requestor?.organization || req.requestor?.name} •{" "}
               {req.caseInfos?.patientName || "미지정"} •{" "}
@@ -492,16 +508,17 @@ export const PreviewModal = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
+              {/* 왼쪽: STL 뷰어 (가공 단계만 NC 텍스트) */}
               <div className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden">
                 <button
                   type="button"
-                  className="text-sm font-semibold text-blue-700 hover:underline text-left"
+                  className="text-sm font-semibold text-blue-700 hover:underline text-left max-w-[320px] truncate"
                   onClick={() => {
                     if (isMachiningStage) {
                       void onDownloadNcFile(req);
                       return;
                     }
-                    if (isCamStage) {
+                    if (isCamStage || isImageStage) {
                       void onDownloadCamStl(req);
                       return;
                     }
@@ -510,7 +527,7 @@ export const PreviewModal = ({
                 >
                   {leftTitle}
                 </button>
-                {isStageFileStage ? (
+                {isNcStage ? (
                   <textarea
                     className="w-full flex-1 min-h-0 rounded-md border border-slate-200 p-3 font-mono text-xs text-slate-700 resize-none overflow-auto"
                     value={previewNcText}
@@ -531,6 +548,7 @@ export const PreviewModal = ({
                 )}
               </div>
 
+              {/* 오른쪽: 단계별 이미지/NC/캠 뷰어 */}
               <div
                 className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden"
                 onDragOver={(e) => {
@@ -552,11 +570,16 @@ export const PreviewModal = ({
                     type="button"
                     className="text-sm font-semibold text-blue-700 hover:underline text-left max-w-[320px] truncate"
                     onClick={onDownload}
-                    title={fileLabel}
+                    title={
+                      stage === "packaging" || stage === "shipping"
+                        ? "각인 이미지"
+                        : fileLabel
+                    }
                   >
-                    {stage === "packaging" ? "완료 이미지" : fileLabel}
+                    {stage === "packaging" || stage === "shipping"
+                      ? "각인 이미지"
+                      : fileLabel}
                   </button>
-
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -640,7 +663,7 @@ export const PreviewModal = ({
                     />
                   </div>
                 ) : (
-                  <div className="flex-1 min-h-0 flex items-center justify-center text-xs text-slate-500 border rounded-md">
+                  <div className="h-[300px] flex items-center justify-center text-xs text-slate-500">
                     파일 없음
                   </div>
                 )}
@@ -652,3 +675,5 @@ export const PreviewModal = ({
     </Dialog>
   );
 };
+
+export default PreviewModal;

@@ -5,6 +5,14 @@ export interface RequestUserSummary {
   email?: string;
   organization?: string;
   phone?: string;
+  phoneNumber?: string;
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+    country?: string;
+  };
 }
 
 export interface DeliveryInfoSummary {
@@ -12,6 +20,13 @@ export interface DeliveryInfoSummary {
   carrier?: string;
   shippedAt?: string;
   deliveredAt?: string;
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+    country?: string;
+  };
 }
 
 export interface RequestCaseInfos {
@@ -166,6 +181,14 @@ export interface RequestBase {
 
   // 관계 정보 (간단 summary)
   requestor?: RequestUserSummary;
+  requestorOrganization?: {
+    _id?: string;
+    name?: string;
+    extracted?: {
+      phoneNumber?: string;
+      address?: string;
+    };
+  };
 
   // 백엔드 Request.caseInfos 매핑 (단일 케이스 기준)
   caseInfos?: RequestCaseInfos;

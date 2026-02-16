@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import {
   type ManufacturerRequest,
   computeStageLabel,
@@ -16,6 +16,7 @@ type WorksheetCardGridProps = {
   onDeleteCam: (req: ManufacturerRequest) => void;
   onDeleteNc: (req: ManufacturerRequest) => void;
   onRollback?: (req: ManufacturerRequest) => void;
+  onApprove?: (req: ManufacturerRequest) => void;
   onUploadNc?: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   uploadProgress: Record<string, number>;
   isCamStage: boolean;
@@ -25,6 +26,7 @@ type WorksheetCardGridProps = {
   deletingCam: Record<string, boolean>;
   deletingNc: Record<string, boolean>;
   currentStageOrder: number;
+  tabStage?: string;
 };
 
 export const WorksheetCardGrid = ({
@@ -34,6 +36,7 @@ export const WorksheetCardGrid = ({
   onDeleteCam,
   onDeleteNc,
   onRollback,
+  onApprove,
   onUploadNc,
   uploadProgress,
   uploading,
@@ -43,6 +46,7 @@ export const WorksheetCardGrid = ({
   isCamStage,
   isMachiningStage,
   currentStageOrder,
+  tabStage,
 }: WorksheetCardGridProps) => (
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
     {requests.map((request) => {
@@ -198,20 +202,38 @@ export const WorksheetCardGrid = ({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
-          {onRollback && !isCompletedForCurrentStage && (
-            <button
-              type="button"
-              className="absolute right-2 top-2 z-20 hidden h-7 w-7 items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50 group-hover/card:flex"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onRollback(request);
-              }}
-              aria-label="롤백"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-          )}
+          <div className="absolute right-2 top-2 z-20 hidden gap-1 group-hover/card:flex">
+            {onRollback && !isCompletedForCurrentStage && (
+              <button
+                type="button"
+                className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onRollback(request);
+                }}
+                aria-label="롤백"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            )}
+            {onApprove &&
+              !isCompletedForCurrentStage &&
+              tabStage !== "shipping" && (
+                <button
+                  type="button"
+                  className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onApprove(request);
+                  }}
+                  aria-label="승인"
+                >
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              )}
+          </div>
           {isUploading && progress !== undefined && (
             <div className="absolute inset-0 z-10 bg-white/80 flex flex-col items-center justify-center p-4 rounded-xl">
               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-2">
@@ -292,7 +314,7 @@ export const WorksheetCardGrid = ({
                   </>
                 )}
               </div>
-              {isCamStage && (maxDiameter != null || camDiameter != null) && (
+              {(maxDiameter != null || camDiameter != null) && (
                 <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
                   {maxDiameter != null && (
                     <span>최대 직경 {maxDiameter.toFixed(3)}</span>

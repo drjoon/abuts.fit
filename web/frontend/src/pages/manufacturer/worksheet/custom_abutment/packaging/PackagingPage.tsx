@@ -627,7 +627,7 @@ export const PackagingPage = ({
           <WorksheetCardGrid
             requests={paginatedRequests}
             onDownload={handleDownloadOriginalStl}
-            onOpenPreview={() => {}}
+            onOpenPreview={handleOpenPreview}
             onDeleteCam={() => {}}
             onDeleteNc={handleDeleteNc}
             onRollback={handleCardRollback}
@@ -715,11 +715,21 @@ export const PackagingPage = ({
         onSelectBucket={(bucket) => setSelectedBucket(bucket)}
       />
 
-      {isDraggingOver && (
+      {(isDraggingOver || ocrProcessing) && (
         <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-slate-900/20">
-          <div className="rounded-xl bg-white/90 px-4 py-2 text-sm font-semibold text-slate-800 shadow">
-            이미지 파일을 놓으면 세척·포장 완료 후 발송 단계로 이동합니다.
-            {ocrProcessing && " (인식 중...)"}
+          <div className="rounded-xl bg-white/90 px-4 py-3 text-sm font-semibold text-slate-800 shadow flex items-center gap-2">
+            {ocrProcessing && (
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+            )}
+            <span>
+              {ocrProcessing
+                ? ocrStage === "upload"
+                  ? "이미지 업로드 중..."
+                  : ocrStage === "recognize"
+                    ? "LOT 인식 중..."
+                    : "처리 중..."
+                : "이미지 파일을 놓으면 세척·포장 완료 후 발송 단계로 이동합니다."}
+            </span>
           </div>
         </div>
       )}

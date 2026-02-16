@@ -385,10 +385,11 @@ export const RequestPage = ({
       }
 
       if (tabStage === "shipping") {
-        void handleDeleteStageFile({
+        // 발송 탭에서 롤백: 세척.포장 단계로 되돌리기
+        void handleUpdateReviewStatus({
           req,
-          stage: "shipping",
-          rollbackOnly: true,
+          status: "PENDING",
+          stageOverride: "shipping",
         });
         return;
       }
@@ -402,7 +403,21 @@ export const RequestPage = ({
         return;
       }
     },
-    [tabStage, handleDeleteStageFile, handleDeleteNc],
+    [tabStage, handleDeleteStageFile, handleDeleteNc, handleUpdateReviewStatus],
+  );
+
+  const handleCardApprove = useCallback(
+    (req: ManufacturerRequest) => {
+      if (!req?._id || tabStage !== "shipping") return;
+
+      // 발송 탭에서 승인: 추적관리 단계로 넘어가기
+      void handleUpdateReviewStatus({
+        req,
+        status: "APPROVED",
+        stageOverride: "shipping",
+      });
+    },
+    [tabStage, handleUpdateReviewStatus],
   );
 
   const enableCardRollback =
@@ -491,16 +506,45 @@ export const RequestPage = ({
     ? "가공"
     : isCamStage
       ? "CAM"
-      : "의뢰";
+      : tabStage === "shipping"
+        ? "발송"
+        : tabStage === "tracking"
+          ? "추적관리"
+          : "의뢰";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const filteredBase = (() => {
     // 완료포함: 탭 기준 단계 이상 모든 건 포함 (CAM 탭=CAM~추적관리, 생산 탭=생산~추적관리)
     if (showCompleted) {
+      // 발송 탭에서는 "발송" 단계만 보여주되(WorkSheet.tsx filterRequests), 완료 포함은 status 기준 숨김을 해제하는 의미다.
+      if (tabStage === "shipping") {
+        return requests.filter((req) => {
+          if (!filterRequests) return true;
+          try {
+            return filterRequests(req);
+          } catch {
+            return false;
+          }
+        });
+      }
       return requests.filter((req) => {
         const stage = deriveStageForFilter(req);
         const order = stageOrder[stage] ?? 0;
         return order >= currentStageOrder;
+      });
+    }
+
+    // 발송 탭 기본: 완료 건은 숨김 (헤더의 완료포함 체크 시에만 노출)
+    if (tabStage === "shipping") {
+      return requests.filter((req) => {
+        const status = String(req.status || "").trim();
+        const status2 = String((req as any).status2 || "").trim();
+        if (status === "완료" || status2 === "완료") return false;
+        try {
+          return filterRequests ? filterRequests(req) : true;
+        } catch {
+          return false;
+        }
       });
     }
 
@@ -584,46 +628,145 @@ export const RequestPage = ({
   }, [paginatedRequests, tabStage]);
 
   const handleDownloadShippingToday = useCallback(async () => {
-    const { utils, writeFileXLSX } = await import("xlsx");
-    const today = new Date().toISOString().slice(0, 10);
-    const rows =
-      tabStage === "shipping"
-        ? filteredAndSorted.filter((r) => {
-            const base = r.createdAt ? String(r.createdAt).slice(0, 10) : "";
-            return base === today;
-          })
-        : [];
+    if (tabStage !== "shipping") return;
 
-    const header = [
-      "기공소명",
-      "전화1",
-      "",
-      "전화2",
-      "",
-      "주소",
-      "박스수량",
-      "종류",
-      "",
-      "결제",
-    ];
-
-    const aoa: (string | number)[][] = [header];
-
-    for (const r of rows) {
-      const ci: any = r.caseInfos || {};
-      const name =
-        ci.clinicName || r.requestor?.organization || r.requestor?.name || "";
-      const phone = ci?.phone || r.requestor?.phone || "";
-      const addr = ci?.address || "";
-
-      aoa.push([name, phone, "", phone, "", addr, "1", "의료기기", "", "신용"]);
+    // 박스 단위 그룹핑: shippingPackageId 기준, 미배정(unassigned)은 제외
+    const boxMap = new Map<string, ManufacturerRequest[]>();
+    for (const r of filteredAndSorted) {
+      const rawKey = String(r.shippingPackageId || "").trim();
+      if (!rawKey) continue;
+      if (!boxMap.has(rawKey)) boxMap.set(rawKey, []);
+      boxMap.get(rawKey)!.push(r);
     }
 
-    const sheet = utils.aoa_to_sheet(aoa);
-    const wb = utils.book_new();
-    utils.book_append_sheet(wb, sheet, "배송");
-    writeFileXLSX(wb, `애크로덴트-${today}.xlsx`);
-  }, [filteredAndSorted, tabStage]);
+    const totalBoxCount = boxMap.size;
+    const totalRequestCount = Array.from(boxMap.values()).reduce(
+      (sum, reqs) => sum + reqs.length,
+      0,
+    );
+
+    // 컨펌 모달 띄우기
+    setConfirmTitle("모든 박스 접수 확인");
+    setConfirmDescription(
+      <div className="space-y-2">
+        <p>
+          총 <span className="font-semibold">{totalBoxCount}개 박스</span>(
+          {totalRequestCount}건)를 접수하시겠습니까?
+        </p>
+        <p className="text-sm text-slate-600">
+          접수하면 모든 의뢰건이 일괄 승인되어 추적관리 탭으로 이동합니다.
+        </p>
+      </div>,
+    );
+    setConfirmAction(() => async () => {
+      try {
+        // 1. 모든 의뢰건 일괄 승인
+        const allRequests = Array.from(boxMap.values()).flat();
+        for (const req of allRequests) {
+          await handleUpdateReviewStatus({
+            req,
+            status: "APPROVED",
+            stageOverride: "shipping",
+          });
+        }
+
+        // 2. 엑셀 다운로드
+        const { utils, writeFileXLSX } = await import("xlsx");
+        const today = new Date().toISOString().slice(0, 10);
+
+        const header = [
+          "기공소명",
+          "전화1",
+          "",
+          "전화2",
+          "",
+          "주소",
+          "박스수량",
+          "종류",
+          "",
+          "결제",
+        ];
+
+        const aoa: (string | number)[][] = [header];
+
+        for (const [, reqs] of boxMap.entries()) {
+          const sample = reqs[0];
+          if (!sample) continue;
+
+          const ci: any = sample.caseInfos || {};
+          const name =
+            ci.clinicName ||
+            sample.requestor?.organization ||
+            sample.requestor?.name ||
+            "";
+
+          const orgPhone = (sample as any)?.requestorOrganization?.extracted
+            ?.phoneNumber as string | undefined;
+          const userPhone = sample.requestor?.phoneNumber as string | undefined;
+          const phone = (ci as any)?.phone || orgPhone || userPhone || "";
+
+          const di = (sample.deliveryInfoRef || null) as any;
+          const addrObj = di?.address as
+            | {
+                street?: string;
+                city?: string;
+                state?: string;
+                zipCode?: string;
+                country?: string;
+              }
+            | undefined;
+          const diAddr = addrObj
+            ? [
+                addrObj.street,
+                addrObj.city,
+                addrObj.state,
+                addrObj.zipCode,
+                addrObj.country,
+              ]
+                .filter(Boolean)
+                .join(" ")
+            : "";
+
+          const orgAddr = (sample as any)?.requestorOrganization?.extracted
+            ?.address as string | undefined;
+
+          const addr = (ci as any)?.address || diAddr || orgAddr || "";
+
+          aoa.push([
+            name,
+            phone,
+            "",
+            phone,
+            "",
+            addr,
+            "1",
+            "의료기기",
+            "",
+            "신용",
+          ]);
+        }
+
+        const sheet = utils.aoa_to_sheet(aoa);
+        const wb = utils.book_new();
+        utils.book_append_sheet(wb, sheet, "배송");
+        writeFileXLSX(wb, `애크로덴트-${today}.xlsx`);
+
+        toast({
+          title: "접수 완료",
+          description: `${totalBoxCount}개 박스가 접수되었습니다.`,
+          duration: 3000,
+        });
+      } catch (error) {
+        toast({
+          title: "접수 실패",
+          description:
+            (error as Error)?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    });
+    setConfirmOpen(true);
+  }, [filteredAndSorted, tabStage, handleUpdateReviewStatus, toast]);
 
   const loadMore = useCallback(() => {
     setVisibleCount((prev) =>
@@ -812,28 +955,58 @@ export const RequestPage = ({
                     key={key}
                     className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="text-sm font-semibold text-slate-800">
-                        {title}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-semibold text-slate-800">
+                          {title}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
+                        >
+                          {org}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
+                        >
+                          출고 {shipYmd}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-[11px] bg-blue-50 text-blue-700 border-blue-200 font-semibold"
+                        >
+                          {reqs.length}건
+                        </Badge>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
-                      >
-                        {org}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
-                      >
-                        출고 {shipYmd}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className="text-[11px] bg-blue-50 text-blue-700 border-blue-200 font-semibold"
-                      >
-                        {reqs.length}건
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            reqs.forEach((req) => handleCardRollback(req));
+                          }}
+                          aria-label="롤백"
+                          title="모든 의뢰 롤백"
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            reqs.forEach((req) => handleCardApprove(req));
+                          }}
+                          aria-label="승인"
+                          title="모든 의뢰 승인"
+                        >
+                          →
+                        </button>
+                      </div>
                     </div>
                     <WorksheetCardGrid
                       requests={reqs}
@@ -844,6 +1017,9 @@ export const RequestPage = ({
                       onRollback={
                         enableCardRollback ? handleCardRollback : undefined
                       }
+                      onApprove={
+                        tabStage === "shipping" ? handleCardApprove : undefined
+                      }
                       onUploadNc={handleUploadNc}
                       uploadProgress={uploadProgress}
                       uploading={uploading}
@@ -853,6 +1029,7 @@ export const RequestPage = ({
                       isMachiningStage={isMachiningStage}
                       downloading={downloading}
                       currentStageOrder={currentStageOrder}
+                      tabStage={tabStage}
                     />
                   </div>
                 );
@@ -867,6 +1044,7 @@ export const RequestPage = ({
             onDeleteCam={handleDeleteCam}
             onDeleteNc={handleDeleteNc}
             onRollback={enableCardRollback ? handleCardRollback : undefined}
+            onApprove={tabStage === "shipping" ? handleCardApprove : undefined}
             onUploadNc={handleUploadNc}
             uploadProgress={uploadProgress}
             uploading={uploading}
@@ -876,6 +1054,7 @@ export const RequestPage = ({
             isMachiningStage={isMachiningStage}
             downloading={downloading}
             currentStageOrder={currentStageOrder}
+            tabStage={tabStage}
           />
         )}
         {!isEmpty && paginatedRequests.length < filteredAndSorted.length && (
