@@ -30,6 +30,7 @@ import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 import { useQueueSlots } from "../hooks/useQueueSlots";
 import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { getMockCncMachiningEnabled } from "@/lib/bridgeSettings";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
 
@@ -222,14 +223,7 @@ export const MachineCard = (props: MachineCardProps) => {
     if (!token) return;
     void (async () => {
       try {
-        const res = await fetch(`/api/bg/bridge-settings`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) {
-          return;
-        }
-        const enabled = body?.data?.mockCncMachiningEnabled;
+        const enabled = await getMockCncMachiningEnabled(token);
         if (enabled === true) setIsMockFromBackend(true);
         else if (enabled === false) setIsMockFromBackend(false);
       } catch {

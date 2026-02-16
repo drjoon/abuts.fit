@@ -11,8 +11,8 @@ import {
 import { useCncMachines } from "@/pages/manufacturer/cnc/hooks/useCncMachines";
 import { useCncProgramEditor } from "@/pages/manufacturer/cnc/hooks/useCncProgramEditor";
 import { useCncRaw } from "@/pages/manufacturer/cnc/hooks/useCncRaw";
-import { useQueueSlots } from "@/pages/manufacturer/cnc/hooks/useQueueSlots";
 import { apiFetch } from "@/lib/apiClient";
+import { getMockCncMachiningEnabled } from "@/lib/bridgeSettings";
 import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";
 import { CncEventLogModal } from "@/components/CncEventLogModal";
@@ -79,6 +79,14 @@ type LastCompletedMachining = {
   durationSeconds: number;
 };
 
+type NowPlayingHint = {
+  machineId: string;
+  jobId: string | null;
+  requestId: string | null;
+  bridgePath: string | null;
+  startedAt: string;
+};
+
 type MachineQueueCardProps = {
   machineId: string;
   machineName?: string;
@@ -92,6 +100,7 @@ type MachineQueueCardProps = {
   onOpenProgramCode?: (prog: any, machineId: string) => void;
   machiningElapsedSeconds?: number | null;
   lastCompleted?: LastCompletedMachining | null;
+  nowPlayingHint?: NowPlayingHint | null;
 };
 
 const getStatusDotColor = (status?: string) => getMachineStatusDotClass(status);
@@ -173,6 +182,7 @@ const MachineQueueCard = ({
   onOpenProgramCode,
   machiningElapsedSeconds,
   lastCompleted,
+  nowPlayingHint,
 }: MachineQueueCardProps) => {
   const { toast } = useToast();
   const token = useAuthStore((s) => s.token);
@@ -184,14 +194,7 @@ const MachineQueueCard = ({
     if (!token) return;
     void (async () => {
       try {
-        const res = await fetch(`/api/bg/bridge-settings`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) {
-          return;
-        }
-        const enabled = body?.data?.mockCncMachiningEnabled;
+        const enabled = await getMockCncMachiningEnabled(token);
         if (enabled === true) setIsMockFromBackend(true);
         else if (enabled === false) setIsMockFromBackend(false);
       } catch {
@@ -203,7 +206,32 @@ const MachineQueueCard = ({
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q?.status),
   );
-  const { currentSlot, nextSlot } = useQueueSlots(machiningQueueAll);
+
+  const { currentSlot, nextSlot } = useMemo(() => {
+    const items = Array.isArray(machiningQueueAll) ? machiningQueueAll : [];
+    const hintRid = String(nowPlayingHint?.requestId || "").trim();
+    const hintJid = String(nowPlayingHint?.jobId || "").trim();
+    const hintPath = String(nowPlayingHint?.bridgePath || "").trim();
+
+    const idx =
+      hintRid || hintJid || hintPath
+        ? items.findIndex((j: any) => {
+            const rid = String(j?.requestId || "").trim();
+            if (hintRid && rid && rid === hintRid) return true;
+            const jid = String(j?.jobId || j?.id || "").trim();
+            if (hintJid && jid && jid === hintJid) return true;
+            const bp = String(
+              j?.ncFile?.filePath || j?.bridgePath || "",
+            ).trim();
+            if (hintPath && bp && bp === hintPath) return true;
+            return false;
+          })
+        : -1;
+
+    const current = idx >= 0 ? (items[idx] ?? null) : (items[0] ?? null);
+    const next = idx >= 0 ? (items[idx + 1] ?? null) : (items[1] ?? null);
+    return { currentSlot: current, nextSlot: next };
+  }, [machiningQueueAll, nowPlayingHint]);
 
   const headPreloadBadge = getNcPreloadBadge(currentSlot);
   const headRequestId = currentSlot?.requestId
@@ -584,6 +612,10 @@ export const MachiningQueueBoard = ({
     Record<string, LastCompletedMachining>
   >({});
 
+  const [nowPlayingHintMap, setNowPlayingHintMap] = useState<
+    Record<string, NowPlayingHint>
+  >({});
+
   const [statusRefreshing, setStatusRefreshing] = useState(false);
   const [statusRefreshedAt, setStatusRefreshedAt] = useState<string | null>(
     null,
@@ -792,6 +824,18 @@ export const MachiningQueueBoard = ({
     const offStarted = onCncMachiningStarted((data: any) => {
       const mid = String(data?.machineId || "").trim();
       if (!mid) return;
+      setNowPlayingHintMap((prev) => ({
+        ...prev,
+        [mid]: {
+          machineId: mid,
+          jobId: data?.jobId != null ? String(data.jobId).trim() : null,
+          requestId:
+            data?.requestId != null ? String(data.requestId).trim() : null,
+          bridgePath:
+            data?.bridgePath != null ? String(data.bridgePath).trim() : null,
+          startedAt: String(data?.startedAt || new Date().toISOString()),
+        },
+      }));
       machiningElapsedBaseRef.current[mid] = {
         elapsedSeconds: 0,
         tickAtMs: Date.now(),
@@ -871,6 +915,12 @@ export const MachiningQueueBoard = ({
           durationSeconds,
         },
       }));
+
+      setNowPlayingHintMap((prev) => {
+        const next = { ...prev };
+        delete next[mid];
+        return next;
+      });
 
       delete machiningElapsedBaseRef.current[mid];
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
@@ -1173,6 +1223,7 @@ export const MachiningQueueBoard = ({
                     : null
                 }
                 lastCompleted={lastCompletedMap?.[m.uid] || null}
+                nowPlayingHint={nowPlayingHintMap?.[m.uid] || null}
                 onOpenRequestLog={(requestId) =>
                   setEventLogRequestId(requestId)
                 }
