@@ -4,6 +4,13 @@ import CncMachine from "../../models/cncMachine.model.js";
 import MachiningRecord from "../../models/machiningRecord.model.js";
 import { getIO } from "../../socket.js";
 import { applyStatusMapping } from "../request/utils.js";
+import Machine from "../../models/machine.model.js";
+import {
+  BRIDGE_BASE,
+  withBridgeHeaders,
+  fetchBridgeQueueFromBridge,
+  saveBridgeQueueSnapshot,
+} from "./shared.js";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 
@@ -35,6 +42,132 @@ function normalizeBridgePath(raw) {
     .replace(/^nc\//i, "")
     .replace(/\.(nc|stl)$/i, "")
     .trim();
+}
+
+async function triggerNextAutoMachiningAfterComplete({
+  machineId,
+  completedRequestId,
+}) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return;
+
+  try {
+    const m = await Machine.findOne({ uid: mid })
+      .select({ allowAutoMachining: 1 })
+      .lean()
+      .catch(() => null);
+    if (m?.allowAutoMachining !== true) return;
+
+    const pending = await Request.find({
+      status: { $in: ["CAM", "가공", "생산"] },
+      "productionSchedule.assignedMachine": mid,
+    })
+      .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
+      .limit(3)
+      .lean();
+
+    const pick = (Array.isArray(pending) ? pending : []).find((r) => {
+      const rid = String(r?.requestId || "").trim();
+      if (!rid) return false;
+      if (completedRequestId && rid === completedRequestId) return false;
+      const path = String(r?.caseInfos?.ncFile?.filePath || "").trim();
+      return !!path;
+    });
+    if (!pick) return;
+
+    const requestId = String(pick.requestId || "").trim();
+    const bridgePath = String(pick?.caseInfos?.ncFile?.filePath || "").trim();
+    const rawFileName = String(pick?.caseInfos?.ncFile?.fileName || "").trim();
+    const derivedFileName = bridgePath ? bridgePath.split(/[/\\]/).pop() : "";
+    const fileName = rawFileName || derivedFileName;
+    if (!fileName || !bridgePath) return;
+
+    const base =
+      process.env.BRIDGE_NODE_URL ||
+      process.env.BRIDGE_PROCESS_BASE ||
+      process.env.CNC_BRIDGE_BASE ||
+      process.env.BRIDGE_BASE ||
+      BRIDGE_BASE;
+    if (!base) return;
+    const base0 = String(base).replace(/\/$/, "");
+
+    // if job already exists in bridge queue but paused, unpause it.
+    try {
+      const qResp = await fetch(
+        `${base0}/api/bridge/queue/${encodeURIComponent(mid)}`,
+        {
+          method: "GET",
+          headers: withBridgeHeaders(),
+        },
+      );
+      const qBody = await qResp.json().catch(() => ({}));
+      const list = Array.isArray(qBody?.data) ? qBody.data : [];
+      const found = list.find((j) => {
+        const rid = String(j?.requestId || "").trim();
+        if (rid && rid === requestId) return true;
+        const p = String(j?.bridgePath || "").trim();
+        if (p && bridgePath && p === bridgePath) return true;
+        return false;
+      });
+      if (found?.id && found?.paused === true) {
+        await fetch(
+          `${base0}/api/bridge/queue/${encodeURIComponent(mid)}/${encodeURIComponent(
+            String(found.id),
+          )}/pause`,
+          {
+            method: "PATCH",
+            headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ paused: false }),
+          },
+        );
+        return;
+      }
+      if (found?.id) {
+        return;
+      }
+    } catch {
+      // ignore and try process-file
+    }
+
+    const triggerUrl = `${base0}/api/bridge/process-file`;
+    const triggerResp = await fetch(triggerUrl, {
+      method: "POST",
+      headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        fileName: fileName || null,
+        requestId,
+        machineId: mid,
+        bridgePath: bridgePath || null,
+      }),
+    });
+    if (!triggerResp.ok) {
+      const txt = await triggerResp.text().catch(() => "");
+      console.warn(
+        "[bridge:auto-next] process-file failed",
+        JSON.stringify({
+          machineId: mid,
+          requestId,
+          status: triggerResp.status,
+          txt,
+        }),
+      );
+      return;
+    }
+
+    try {
+      const q = await fetchBridgeQueueFromBridge(mid);
+      if (q.ok) {
+        await saveBridgeQueueSnapshot(mid, q.jobs);
+      }
+    } catch {
+      // ignore
+    }
+  } catch (e) {
+    console.warn(
+      "[bridge:auto-next] triggerNextAutoMachiningAfterComplete failed",
+      e?.message || e,
+    );
+  }
 }
 
 async function resolveJobMetaFromSnapshot({ machineId, jobId, bridgePath }) {
@@ -821,6 +954,16 @@ export async function recordMachiningCompleteForBridge(req, res) {
         io.to(`cnc:${mid}:${jobId}`).emit("cnc-machining-completed", payload);
       }
       io.emit("cnc-machining-completed", payload);
+    } catch {
+      // ignore
+    }
+
+    // 완료 이후 다음 작업 자동 트리거(베스트 에포트)
+    try {
+      void triggerNextAutoMachiningAfterComplete({
+        machineId: mid,
+        completedRequestId: requestId || requestIdRaw || "",
+      });
     } catch {
       // ignore
     }

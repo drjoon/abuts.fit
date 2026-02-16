@@ -33,29 +33,38 @@ try
 {
 var backend = GetBackendBase();
 if (string.IsNullOrEmpty(backend)) return;
-var url = backend + "/bg/register-file";
-var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
-? job?.fileName
-: job.originalFileName;
-var payload = new
+
+// legacy: register-file (best-effort)
+try
 {
-sourceStep = "cnc",
-fileName = job?.fileName,
-originalFileName = canonical,
-requestId = job?.requestId,
-status = "success",
-metadata = new { machineId = machineId }
-};
-var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
-{
-AddAuthHeader(req);
-AddSecretHeader(req);
-req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-using (var resp = await Http.SendAsync(req))
-{
-_ = await resp.Content.ReadAsStringAsync();
+    var url = backend + "/bg/register-file";
+    var canonical = string.IsNullOrWhiteSpace(job?.originalFileName)
+    ? job?.fileName
+    : job.originalFileName;
+    var payload = new
+    {
+    sourceStep = "cnc",
+    fileName = job?.fileName,
+    originalFileName = canonical,
+    requestId = job?.requestId,
+    status = "success",
+    metadata = new { machineId = machineId }
+    };
+    var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+    using (var req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, url))
+    {
+    AddAuthHeader(req);
+    AddSecretHeader(req);
+    req.Content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+    using (var resp = await Http.SendAsync(req))
+    {
+        _ = await resp.Content.ReadAsStringAsync();
+    }
+    }
 }
+catch (Exception regEx)
+{
+    Console.WriteLine("[CncMachining] register-file notify failed machine={0} err={1}", machineId, regEx.Message);
 }
 
 // CNC machining completed notify (bridge -> backend)
@@ -64,6 +73,12 @@ try
     if (!string.IsNullOrEmpty(backend))
     {
         var completeUrl = backend + "/cnc-machines/bridge/machining/complete/" + Uri.EscapeDataString(machineId);
+        Console.WriteLine(
+            "[CncMachining] machining-complete notify start machine={0} jobId={1} requestId={2}",
+            machineId,
+            job?.id,
+            job?.requestId
+        );
         var completePayload = new
         {
             machineId = machineId,
@@ -83,10 +98,12 @@ try
             using (var completeResp = await Http.SendAsync(completeReq))
             {
                 var completeBody = await completeResp.Content.ReadAsStringAsync();
-                if (!completeResp.IsSuccessStatusCode)
-                {
-                    Console.WriteLine("[CncMachining] NotifyMachiningComplete endpoint failed status={0} body={1}", (int)completeResp.StatusCode, completeBody);
-                }
+                Console.WriteLine(
+                    "[CncMachining] machining-complete notify done machine={0} status={1} body={2}",
+                    machineId,
+                    (int)completeResp.StatusCode,
+                    completeBody
+                );
             }
         }
     }

@@ -855,36 +855,34 @@ export const MachineCard = (props: MachineCardProps) => {
         </div>
 
         <div className="grid grid-cols-1 gap-2">
-          {derivedCompleted ? (
-            <div className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold text-slate-500">
-                    가공 완료
-                  </div>
-                  <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
-                    <span className="mr-2">
-                      종료 {lastCompletedSummary?.completedAtLabel || "-"}
-                    </span>
-                    <span>
-                      소요 {lastCompletedSummary?.durationLabel || "-"}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                    {String(
-                      (derivedCompleted as any)?.displayLabel || "",
-                    ).trim() ||
+          <div className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-slate-500">
+                  가공 완료
+                </div>
+                <div className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                  <span className="mr-2">
+                    종료 {lastCompletedSummary?.completedAtLabel || "-"}
+                  </span>
+                  <span>소요 {lastCompletedSummary?.durationLabel || "-"}</span>
+                </div>
+                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                  {derivedCompleted
+                    ? String(
+                        (derivedCompleted as any)?.displayLabel || "",
+                      ).trim() ||
                       (derivedCompleted.requestId
                         ? `의뢰 (${String(derivedCompleted.requestId)})`
                         : derivedCompleted.jobId
                           ? `작업 (${String(derivedCompleted.jobId)})`
-                          : "-")}
-                  </div>
+                          : "-")
+                    : "없음"}
                 </div>
-                <div className="flex items-center gap-1" />
               </div>
+              <div className="flex items-center gap-1" />
             </div>
-          ) : null}
+          </div>
 
           <div
             role="button"
