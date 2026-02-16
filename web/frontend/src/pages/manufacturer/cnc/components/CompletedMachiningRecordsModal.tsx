@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type CompletedMachiningItem = {
@@ -33,6 +38,7 @@ export const CompletedMachiningRecordsModal = ({
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const effectiveTitle = useMemo(() => {
@@ -48,21 +54,33 @@ export const CompletedMachiningRecordsModal = ({
       if (loading) return;
 
       setLoading(true);
+      setError(null);
       try {
         const nextCursor = opts?.reset ? null : cursor;
-        const url = new URL("/api/cnc-machines/machining/completed", window.location.origin);
+        const url = new URL(
+          "/api/cnc-machines/machining/completed",
+          window.location.origin,
+        );
         url.searchParams.set("machineId", mid);
         url.searchParams.set("limit", String(pageSize));
         if (nextCursor) url.searchParams.set("cursor", nextCursor);
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 8000);
 
         const res = await fetch(url.pathname + url.search, {
           method: "GET",
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
+          signal: controller.signal,
         });
+        window.clearTimeout(timeoutId);
         const body: any = await res.json().catch(() => ({}));
         if (!res.ok || body?.success === false) {
           setHasMore(false);
+          setError(
+            body?.message || body?.error || "완료 목록을 불러오지 못했습니다.",
+          );
           return;
         }
 
@@ -70,7 +88,8 @@ export const CompletedMachiningRecordsModal = ({
         const list: CompletedMachiningItem[] = Array.isArray(data?.items)
           ? data.items
           : [];
-        const next = typeof data?.nextCursor === "string" ? data.nextCursor : null;
+        const next =
+          typeof data?.nextCursor === "string" ? data.nextCursor : null;
 
         setItems((prev) => {
           const base = opts?.reset ? [] : prev;
@@ -83,6 +102,13 @@ export const CompletedMachiningRecordsModal = ({
         });
         setCursor(next);
         setHasMore(!!next);
+      } catch (e: any) {
+        const msg =
+          e?.name === "AbortError"
+            ? "완료 목록 조회가 지연되어 중단했습니다. 잠시 후 다시 시도해 주세요."
+            : e?.message || "완료 목록을 불러오지 못했습니다.";
+        setHasMore(false);
+        setError(msg);
       } finally {
         setLoading(false);
       }
@@ -95,6 +121,7 @@ export const CompletedMachiningRecordsModal = ({
     setItems([]);
     setCursor(null);
     setHasMore(true);
+    setError(null);
     void fetchPage({ reset: true });
   }, [open, machineId, fetchPage]);
 
@@ -155,6 +182,12 @@ export const CompletedMachiningRecordsModal = ({
         </DialogHeader>
 
         <div className="mt-1 flex flex-col gap-2 overflow-auto pr-1 max-h-[62vh]">
+          {!!error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+
           {items.length === 0 && !loading && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
               표시할 완료 기록이 없습니다.

@@ -118,6 +118,70 @@ export const WorksheetCardGrid = ({
       const canRollback =
         stageForRollback !== "의뢰" && stageForRollback !== "추적관리";
 
+      const stageBadge = (() => {
+        const s = String(stageForRollback || "").trim();
+        const base =
+          "text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border";
+        if (s === "CAM") {
+          return (
+            <Badge
+              variant="outline"
+              className={`${base} bg-indigo-50 text-indigo-700 border-indigo-200`}
+            >
+              CAM
+            </Badge>
+          );
+        }
+        if (s === "가공") {
+          return (
+            <Badge
+              variant="outline"
+              className={`${base} bg-blue-50 text-blue-700 border-blue-200`}
+            >
+              가공
+            </Badge>
+          );
+        }
+        if (s === "세척.포장") {
+          return (
+            <Badge
+              variant="outline"
+              className={`${base} bg-emerald-50 text-emerald-700 border-emerald-200`}
+            >
+              세척·포장
+            </Badge>
+          );
+        }
+        if (s === "발송") {
+          return (
+            <Badge
+              variant="outline"
+              className={`${base} bg-amber-50 text-amber-700 border-amber-200`}
+            >
+              발송
+            </Badge>
+          );
+        }
+        if (s === "추적관리") {
+          return (
+            <Badge
+              variant="outline"
+              className={`${base} bg-slate-50 text-slate-700 border-slate-200`}
+            >
+              추적관리
+            </Badge>
+          );
+        }
+        return (
+          <Badge
+            variant="outline"
+            className={`${base} bg-slate-50 text-slate-700 border-slate-200`}
+          >
+            {s || "의뢰"}
+          </Badge>
+        );
+      })();
+
       const machiningElapsedLabel = (() => {
         if (!isMachiningStage) return "";
         const secRaw = (request as any)?.productionSchedule?.machiningProgress
@@ -254,6 +318,9 @@ export const WorksheetCardGrid = ({
           )}
           <CardContent className="p-3 flex-1 flex flex-col gap-2">
             <div className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">{stageBadge}</div>
+              </div>
               {request.referenceIds && request.referenceIds.length > 0 && (
                 <div className="mb-1">
                   {(() => {
