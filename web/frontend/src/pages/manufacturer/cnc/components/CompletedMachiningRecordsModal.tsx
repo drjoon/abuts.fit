@@ -66,14 +66,26 @@ export const CompletedMachiningRecordsModal = ({
         if (nextCursor) url.searchParams.set("cursor", nextCursor);
 
         const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+        const timeoutMs = 8000;
+        const timeoutId = window.setTimeout(
+          () => controller.abort(),
+          timeoutMs,
+        );
 
-        const res = await fetch(url.pathname + url.search, {
+        const fetchPromise = fetch(url.pathname + url.search, {
           method: "GET",
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
           signal: controller.signal,
         });
+
+        const timeoutPromise = new Promise<Response>((_, reject) => {
+          window.setTimeout(() => {
+            reject(new Error("timeout"));
+          }, timeoutMs + 200);
+        });
+
+        const res = await Promise.race([fetchPromise, timeoutPromise]);
         window.clearTimeout(timeoutId);
         const body: any = await res.json().catch(() => ({}));
         if (!res.ok || body?.success === false) {
@@ -104,7 +116,7 @@ export const CompletedMachiningRecordsModal = ({
         setHasMore(!!next);
       } catch (e: any) {
         const msg =
-          e?.name === "AbortError"
+          e?.message === "timeout" || e?.name === "AbortError"
             ? "완료 목록 조회가 지연되어 중단했습니다. 잠시 후 다시 시도해 주세요."
             : e?.message || "완료 목록을 불러오지 못했습니다.";
         setHasMore(false);

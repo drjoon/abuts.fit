@@ -95,6 +95,9 @@ export const WorksheetCardGrid = ({
       const hasNcFile = !!caseInfos.ncFile?.s3Key;
       const isDeletingNc = !!deletingNc[request._id];
       const lotPart = String(request.lotNumber?.part || "").trim();
+      const lotPartDisplay = lotPart.startsWith("CAP")
+        ? lotPart.slice(3)
+        : lotPart;
       const camMaterialDiameter = request.productionSchedule?.diameter;
       const camMaterialDiameterGroup =
         request.productionSchedule?.diameterGroup;
@@ -423,12 +426,12 @@ export const WorksheetCardGrid = ({
                         {sp.label}
                       </Badge>
                     )}
-                  {lotPart && (
+                  {lotPartDisplay && (
                     <Badge
                       variant="outline"
                       className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
                     >
-                      {lotPart}
+                      {lotPartDisplay}
                     </Badge>
                   )}
                 </div>
