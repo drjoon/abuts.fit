@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../utils/rateGuard.js";
 import RequestorOrganization from "../models/requestorOrganization.model.js";
-import s3Utils from "../utils/s3.utils.js";
+import s3Utils, { getObjectBufferFromS3 } from "../utils/s3.utils.js";
 
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
 let _apiKey = null;
@@ -14,7 +14,7 @@ const getGenAI = () => {
     _apiKey = process.env.GOOGLE_API_KEY;
     if (!_apiKey) {
       console.warn(
-        "[AI] GOOGLE_API_KEY is not set. Gemini filename parsing will be disabled."
+        "[AI] GOOGLE_API_KEY is not set. Gemini filename parsing will be disabled.",
       );
     } else {
       try {
@@ -22,7 +22,7 @@ const getGenAI = () => {
       } catch (e) {
         console.warn(
           "[AI] Failed to initialize GoogleGenerativeAI:",
-          e?.message || e
+          e?.message || e,
         );
       }
     }
@@ -258,13 +258,13 @@ export async function parseBusinessLicense(req, res) {
     const extracted = {
       companyName: String((parseOk ? parsed.companyName : "") || "").trim(),
       businessNumber: String(
-        (parseOk ? parsed.businessNumber : "") || ""
+        (parseOk ? parsed.businessNumber : "") || "",
       ).trim(),
       address: String((parseOk ? parsed.address : "") || "").trim(),
       phoneNumber: String((parseOk ? parsed.phoneNumber : "") || "").trim(),
       email: String((parseOk ? parsed.email : "") || "").trim(),
       representativeName: String(
-        (parseOk ? parsed.representativeName : "") || ""
+        (parseOk ? parsed.representativeName : "") || "",
       ).trim(),
       businessType: String((parseOk ? parsed.businessType : "") || "").trim(),
       businessItem: String((parseOk ? parsed.businessItem : "") || "").trim(),
@@ -279,7 +279,7 @@ export async function parseBusinessLicense(req, res) {
     };
 
     const normalizedBusinessNumber = normalizeBusinessNumber(
-      extracted.businessNumber
+      extracted.businessNumber,
     );
 
     const verification = {
@@ -355,7 +355,7 @@ export async function parseBusinessLicense(req, res) {
                   checkedAt: new Date(),
                 },
               },
-            }
+            },
           );
 
           return res.json({
@@ -588,7 +588,7 @@ export async function parseFilenames(req, res) {
     } catch (error) {
       console.error(
         "[AI] parseFilenames: gemini call failed, fallback to basic",
-        error
+        error,
       );
 
       const fallback = buildFallbackFromFilenames(filenames);
@@ -657,8 +657,8 @@ export async function recognizeLotNumber(req, res) {
     }
 
     // S3에서 이미지 다운로드
-    const buffer = await s3Utils.downloadFile(s3Key);
-    if (!buffer) {
+    const buffer = await getObjectBufferFromS3(s3Key);
+    if (!buffer || buffer.length === 0) {
       return res.status(404).json({
         success: false,
         message: "S3에서 파일을 찾을 수 없습니다.",
@@ -697,13 +697,16 @@ export async function recognizeLotNumber(req, res) {
       : "image/jpeg";
 
     const prompt =
-      "너는 치과 임플란트 어벗먼트 생산 이미지에서 각인된 로트넘버(Lot Number)를 읽어 JSON으로 추출하는 도우미야.\n" +
-      "로트넘버는 보통 'L' 또는 'LOT'으로 시작하고 뒤에 숫자가 따라온다. 예: L250101-001, LOT250101-002 등\n" +
-      "이미지에서 로트넘버로 보이는 텍스트를 찾아서 정확히 추출해줘.\n" +
+      "너는 치과 임플란트 어벗먼트(또는 유사한 금속 부품) 생산 이미지에서 각인된 시리얼 코드를 읽어 JSON으로 추출하는 도우미야.\n" +
+      "이 시리얼 코드는 보통 영문 대문자 3글자로 구성된 코드(예: ACZ, BDF, QJK 등)이며,\n" +
+      "앞뒤에 다른 문자나 숫자가 섞여 있을 수도 있고, 오직 3글자만 보일 수도 있어.\n" +
+      "이미지 안에서 금속 표면에 가장 뚜렷하게 각인된 3글자 영문 대문자 코드를 찾아서 그대로 lotNumber 로 반환해줘.\n" +
+      "만약 여러 개가 보이면 가장 중요한(가장 크게, 중앙에, 선명하게 보이는) 코드를 1개만 선택해.\n" +
+      "적절한 3글자 영문 대문자 코드가 전혀 없으면 lotNumber 는 빈 문자열로 둬.\n" +
       "반드시 JSON만 반환하고 다른 설명은 하지 마.\n\n" +
       "스키마:\n" +
       "{\n" +
-      '  "lotNumber": string,  // 인식된 로트넘버, 없으면 빈 문자열\n' +
+      '  "lotNumber": string,  // 인식된 3글자 영문 대문자 코드, 없으면 빈 문자열\n' +
       '  "confidence": string  // "high", "medium", "low" 중 하나\n' +
       "}";
 

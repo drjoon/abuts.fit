@@ -5,6 +5,7 @@ import {
   useRef,
   useMemo,
   type ReactNode,
+  type DragEvent,
 } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -29,6 +30,7 @@ import { PreviewModal } from "../request/PreviewModal";
 import { useRequestFileHandlers } from "@/features/manufacturer/worksheet/customAbutment/request/useRequestFileHandlers";
 import { usePreviewLoader } from "@/features/manufacturer/worksheet/customAbutment/request/usePreviewLoader";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
+import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 
 type FilePreviewInfo = {
   originalName: string;
@@ -82,6 +84,11 @@ export const PackagingPage = ({
   const [queueModalOpen, setQueueModalOpen] = useState(false);
   const [selectedBucket, setSelectedBucket] =
     useState<DiameterBucketKey | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
+  const [ocrStage, setOcrStage] = useState<"idle" | "upload" | "recognize">(
+    "idle",
+  );
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -97,20 +104,7 @@ export const PackagingPage = ({
 
   const { toast } = useToast();
 
-  const { handleOpenPreview } = usePreviewLoader({
-    token,
-    isCamStage: false,
-    isMachiningStage: false,
-    tabStage,
-    decodeNcText,
-    setPreviewLoading,
-    setPreviewNcText,
-    setPreviewNcName,
-    setPreviewStageUrl,
-    setPreviewStageName,
-    setPreviewFiles,
-    setPreviewOpen,
-  });
+  const { uploadFiles: uploadToS3 } = useS3TempUpload({ token });
 
   const fetchRequests = useCallback(async () => {
     if (!token) return;
@@ -196,6 +190,192 @@ export const PackagingPage = ({
     decodeNcText,
   });
 
+  const { handleOpenPreview } = usePreviewLoader({
+    token,
+    isCamStage: false,
+    isMachiningStage: false,
+    tabStage,
+    decodeNcText,
+    setPreviewLoading,
+    setPreviewNcText,
+    setPreviewNcName,
+    setPreviewStageUrl,
+    setPreviewStageName,
+    setPreviewFiles,
+    setPreviewOpen,
+  });
+
+  const extractLotSuffix3 = useCallback((value: string | null | undefined) => {
+    const s = String(value || "").toUpperCase();
+    const match = s.match(/[A-Z]{3}(?!.*[A-Z])/);
+    return match ? match[0] : "";
+  }, []);
+
+  const resizeImageFile = useCallback((file: File, ratio: number) => {
+    return new Promise<File>((resolve) => {
+      const reader = new FileReader();
+      const image = new Image();
+
+      reader.onload = () => {
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = image.width * ratio;
+          canvas.height = image.height * ratio;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(file);
+            return;
+          }
+
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            const resizedFile = new File([blob], file.name, {
+              type: file.type,
+            });
+            resolve(resizedFile);
+          }, file.type || "image/jpeg");
+        };
+
+        image.onerror = () => {
+          resolve(file);
+        };
+
+        image.src = reader.result as string;
+      };
+
+      reader.onerror = () => {
+        resolve(file);
+      };
+
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handlePackagingImageDrop = useCallback(
+    async (imageFiles: File[]) => {
+      if (!token || imageFiles.length === 0) return;
+
+      setOcrProcessing(true);
+      setOcrStage("upload");
+      try {
+        const resizedFiles = await Promise.all(
+          imageFiles.map((file) => resizeImageFile(file, 0.2)),
+        );
+
+        const uploadResult = await uploadToS3(resizedFiles);
+        setOcrStage("recognize");
+
+        await Promise.all(
+          uploadResult.map(async (uploaded, index) => {
+            const resizedFile = resizedFiles[index] ?? imageFiles[index];
+
+            if (!uploaded?.key) {
+              toast({
+                title: "이미지 업로드에 실패했습니다",
+                description: "잠시 후 다시 시도해주세요.",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            const aiRes = await fetch("/api/ai/recognize-lot-number", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                s3Key: uploaded.key,
+                originalName: uploaded.originalName,
+              }),
+            });
+
+            if (!aiRes.ok) {
+              toast({
+                title: "LOT 번호 인식에 실패했습니다",
+                description: "AI 인식 서버 응답이 올바르지 않습니다.",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            const aiData = await aiRes.json();
+            const rawLot: string = aiData?.data?.lotNumber || "";
+
+            const recognizedSuffix = extractLotSuffix3(rawLot || "");
+            if (!recognizedSuffix) {
+              toast({
+                title: "LOT 코드를 인식하지 못했습니다",
+                description:
+                  "이미지 내 영문 대문자 3글자가 보이도록 다시 촬영해주세요.",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            const matchingRequest = requests.find((req) => {
+              const part = String(req.lotNumber?.part || "");
+              const partSuffix = extractLotSuffix3(part);
+              return partSuffix === recognizedSuffix;
+            });
+
+            if (!matchingRequest) {
+              toast({
+                title: "일치하는 의뢰를 찾을 수 없습니다",
+                description: `인식된 LOT 코드: ${recognizedSuffix}`,
+                variant: "destructive",
+              });
+              return;
+            }
+
+            await handleUploadStageFile({
+              req: matchingRequest,
+              stage: "packaging",
+              file: resizedFile || imageFiles[index] || imageFiles[0],
+              source: "manual",
+            });
+
+            await handleUpdateReviewStatus({
+              req: matchingRequest,
+              status: "APPROVED",
+              stageOverride: "packaging",
+            });
+
+            toast({
+              title: "세척·포장 완료",
+              description: `LOT 코드 ${recognizedSuffix} 의뢰를 발송 단계로 이동했습니다.`,
+            });
+          }),
+        );
+      } catch (error: any) {
+        console.error("Packaging LOT 인식 처리 오류:", error);
+        toast({
+          title: "이미지 처리 실패",
+          description:
+            error?.message || "세척·포장 이미지 처리 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setOcrProcessing(false);
+        setOcrStage("idle");
+      }
+    },
+    [
+      extractLotSuffix3,
+      handleUpdateReviewStatus,
+      handleUploadStageFile,
+      requests,
+      toast,
+      token,
+      uploadToS3,
+      resizeImageFile,
+    ],
+  );
+
   const handleUploadByStage = useCallback(
     (req: ManufacturerRequest, files: File[]) => {
       return handleUploadStageFile({
@@ -206,26 +386,6 @@ export const PackagingPage = ({
       });
     },
     [handleUploadStageFile],
-  );
-
-  const handleUploadFromModal = useCallback(
-    (req: ManufacturerRequest, file: File) => {
-      if (!req?._id) return;
-      void (async () => {
-        await handleUploadByStage(req, [file]);
-        await handleUpdateReviewStatus({
-          req,
-          status: "APPROVED",
-          stageOverride: "packaging",
-        });
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("stage", "shipping");
-          return next;
-        });
-      })();
-    },
-    [handleUpdateReviewStatus, handleUploadByStage, setSearchParams],
   );
 
   const handleCardRollback = useCallback(
@@ -240,6 +400,43 @@ export const PackagingPage = ({
     },
     [handleDeleteStageFile],
   );
+
+  const handlePageDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingOver(false);
+
+      const files = Array.from(e.dataTransfer.files || []);
+      if (files.length === 0) return;
+
+      const imageFiles = files.filter((file) => {
+        const name = file.name.toLowerCase();
+        return (
+          name.endsWith(".jpg") ||
+          name.endsWith(".jpeg") ||
+          name.endsWith(".png")
+        );
+      });
+
+      if (imageFiles.length === 0) return;
+
+      void handlePackagingImageDrop(imageFiles);
+    },
+    [handlePackagingImageDrop],
+  );
+
+  const handlePageDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  }, []);
+
+  const handlePageDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  }, []);
 
   useEffect(() => {
     fetchRequests();
@@ -391,7 +588,12 @@ export const PackagingPage = ({
   }, [visibleCount, filteredAndSorted.length]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      className="flex flex-col gap-4 relative"
+      onDrop={handlePageDrop}
+      onDragOver={handlePageDragOver}
+      onDragLeave={handlePageDragLeave}
+    >
       {showQueueBar && (
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
           <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
@@ -425,7 +627,7 @@ export const PackagingPage = ({
           <WorksheetCardGrid
             requests={paginatedRequests}
             onDownload={handleDownloadOriginalStl}
-            onOpenPreview={handleOpenPreview}
+            onOpenPreview={() => {}}
             onDeleteCam={() => {}}
             onDeleteNc={handleDeleteNc}
             onRollback={handleCardRollback}
@@ -512,6 +714,15 @@ export const PackagingPage = ({
         selectedBucket={selectedBucket}
         onSelectBucket={(bucket) => setSelectedBucket(bucket)}
       />
+
+      {isDraggingOver && (
+        <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-slate-900/20">
+          <div className="rounded-xl bg-white/90 px-4 py-2 text-sm font-semibold text-slate-800 shadow">
+            이미지 파일을 놓으면 세척·포장 완료 후 발송 단계로 이동합니다.
+            {ocrProcessing && " (인식 중...)"}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
