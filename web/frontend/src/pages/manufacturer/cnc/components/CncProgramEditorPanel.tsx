@@ -2,7 +2,7 @@ import React from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { RotateCcw, Save, X } from "lucide-react";
 import { useCncWriteGuard } from "@/pages/manufacturer/cnc/hooks/useCncWriteGuard";
-import { MultiActionDialog } from "@/components/MultiActionDialog";
+import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { useAuthStore } from "@/store/useAuthStore";
 
 interface CncProgramEditorPanelProps {

@@ -22,7 +22,7 @@ import {
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { FunctionalItemCard } from "@/components/FunctionalItemCard";
+import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Dialog } from "@/components/ui/dialog";
 import {
   DialogContent,
@@ -31,7 +31,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { DialogClose } from "@radix-ui/react-dialog";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   type ManufacturerRequest,
   type ReviewStageKey,

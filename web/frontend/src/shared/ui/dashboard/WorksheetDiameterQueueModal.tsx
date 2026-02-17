@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
-import { StlPreviewViewer } from "@/components/StlPreviewViewer";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { DiameterBucketKey } from "./WorksheetDiameterQueueBar";

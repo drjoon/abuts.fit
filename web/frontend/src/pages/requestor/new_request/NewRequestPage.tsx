@@ -13,14 +13,14 @@ import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useExpressShipping } from "./hooks/useExpressShipping";
 import { useFileVerification } from "./hooks/useFileVerification";
 import { apiFetch } from "@/shared/api/apiClient";
-import { MultiActionDialog } from "@/components/MultiActionDialog";
-import { PageFileDropZone } from "@/components/PageFileDropZone";
+import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
+import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { GuideFocus } from "@/features/guidetour/GuideFocus";
 import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestUploadSection } from "./components/NewRequestUploadSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
-import { NewRequestPageSkeleton } from "@/components/common/NewRequestPageSkeleton";
+import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkeleton";
 
 /**
  * New Request 페이지 (리팩터링 버전)

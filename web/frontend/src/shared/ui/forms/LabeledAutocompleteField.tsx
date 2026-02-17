@@ -1,7 +1,7 @@
 import React from "react";
 import AutocompleteInput, {
   type AutocompleteOption,
-} from "@/components/AutocompleteInput";
+} from "@/shared/ui/forms/AutocompleteInput";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 

@@ -17,8 +17,8 @@ import { CncTempDetailModal } from "../cnc/components/CncTempDetailModal";
 import { CncMachineInfoModal } from "../cnc/components/CncMachineInfoModal";
 import { CncMaterialChangeModal } from "../cnc/components/CncMaterialChangeModal";
 import { CncMaterialModal } from "../cnc/components/CncMaterialModal";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { CncEventLogModal } from "@/components/CncEventLogModal";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { CncEventLogModal } from "@/features/cnc/components/CncEventLogModal";
 
 export const CncDashboardPageView = (props: any) => {
   const {

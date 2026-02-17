@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { StlPreviewViewer } from "@/components/StlPreviewViewer";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
 import { apiFetch } from "@/shared/api/apiClient";

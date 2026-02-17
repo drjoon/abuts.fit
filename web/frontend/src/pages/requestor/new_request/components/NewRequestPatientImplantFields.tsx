@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import LabeledAutocompleteField from "@/components/LabeledAutocompleteField";
+import LabeledAutocompleteField from "@/shared/ui/forms/LabeledAutocompleteField";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 
 type Option = { id: string; label: string };

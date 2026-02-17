@@ -3,7 +3,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useCallback, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";
-import { CncEventLogModal } from "@/components/CncEventLogModal";
+import { CncEventLogModal } from "@/features/cnc/components/CncEventLogModal";
 import { CncProgramEditorPanel } from "@/pages/manufacturer/cnc/components/CncProgramEditorPanel";
 import { CncPlaylistDrawer } from "@/pages/manufacturer/cnc/components/CncPlaylistDrawer";
 import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/cnc/components/CompletedMachiningRecordsModal";

@@ -50,7 +50,7 @@ import {
 import {
   RequestDetailDialog,
   type RequestDetailDialogRequest,
-} from "@/components/RequestDetailDialog";
+} from "@/features/requests/components/RequestDetailDialog";
 
 type DashboardOutletContext = {
   creditBalance: number | null;

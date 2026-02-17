@@ -9,7 +9,7 @@ import { Building2, RotateCcw } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { GuideFocus } from "@/features/guidetour/GuideFocus";
 import { useGuideTour } from "@/features/guidetour/GuideTourProvider";
-import { PageFileDropZone } from "@/components/PageFileDropZone";
+import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import {
   AlertDialog,
   AlertDialogAction,

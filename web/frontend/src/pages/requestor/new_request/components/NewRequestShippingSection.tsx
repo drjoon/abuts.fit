@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { FunctionalItemCard } from "@/components/FunctionalItemCard";
+import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Truck, Zap } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 

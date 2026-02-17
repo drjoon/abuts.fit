@@ -30,7 +30,7 @@ import {
 import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 import { useQueueSlots } from "../hooks/useQueueSlots";
 import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getMockCncMachiningEnabled } from "@/shared/bridge/bridgeSettings";
 import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/cnc/components/CompletedMachiningRecordsModal";
 import {

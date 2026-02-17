@@ -1,5 +1,5 @@
 import { useState, type ReactNode, type MouseEvent } from "react";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 
 interface FunctionalItemCardProps {
   children: ReactNode;

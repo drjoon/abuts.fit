@@ -25,7 +25,7 @@ import {
 import {
   ChatComposer,
   type RequestPickItem,
-} from "@/components/chat/ChatComposer";
+} from "@/features/chat/components/ChatComposer";
 
 const getStatusBadge = (status: string) => {
   switch (status) {

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FunctionalItemCard } from "@/components/FunctionalItemCard";
+import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Badge } from "@/components/ui/badge";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
-import { RequestDetailDialog } from "@/components/RequestDetailDialog";
+import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
 
 const EDITABLE_STATUSES = new Set(["의뢰", "CAM", "의뢰접수", "가공전"]); // 의뢰, CAM 단계만 수정 가능
 

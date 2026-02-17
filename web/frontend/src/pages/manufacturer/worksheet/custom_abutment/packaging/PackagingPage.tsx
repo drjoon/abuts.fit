@@ -10,7 +10,7 @@ import {
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   type ManufacturerRequest,
   stageOrder,

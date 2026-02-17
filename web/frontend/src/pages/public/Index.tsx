@@ -5,7 +5,7 @@ import { FeaturesSection } from "@/features/landing/FeaturesSection";
 import { AnnouncementSection } from "@/features/landing/AnnouncementSection";
 import { CustomerSupportSection } from "@/features/landing/CustomerSupportSection";
 import { Footer } from "@/features/landing/Footer";
-import { GuestChatModal } from "@/components/GuestChatModal";
+import { GuestChatModal } from "@/features/support/components/GuestChatModal";
 
 const Index = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);

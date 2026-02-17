@@ -15,7 +15,7 @@ import {
 import {
   ChatComposer,
   type RequestPickItem,
-} from "@/components/chat/ChatComposer";
+} from "@/features/chat/components/ChatComposer";
 
 type ViewMode = "chats";
 

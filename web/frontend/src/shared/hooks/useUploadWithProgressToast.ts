@@ -4,7 +4,7 @@ import {
   useS3TempUpload,
   TempUploadedFile,
 } from "@/shared/hooks/useS3TempUpload";
-import { UploadProgressToast } from "@/components/UploadProgressToast";
+import { UploadProgressToast } from "@/features/requests/components/UploadProgressToast";
 
 interface UseUploadWithProgressToastOptions {
   token?: string | null;

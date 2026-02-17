@@ -15,7 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { cn } from "@/shared/ui/cn";
-import { MultiActionDialog } from "@/components/MultiActionDialog";
+import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import {
   User,
   Camera,
