@@ -616,6 +616,8 @@ export const RequestPage = ({
       // 발송 탭에서는 "발송" 단계만 보여주되(WorkSheet.tsx filterRequests), 완료 포함은 status 기준 숨김을 해제하는 의미다.
       if (tabStage === "shipping") {
         return requests.filter((req) => {
+          const stage = String(req.manufacturerStage || "").trim();
+          if (stage === "추적관리") return true;
           if (!filterRequests) return true;
           try {
             return filterRequests(req);
