@@ -10,8 +10,8 @@ import { SettingsTabsSkeleton } from "@/features/components/SettingsSkeletons";
 import { AccountTab } from "./components/AccountTab";
 import { BusinessTab } from "./components/BusinessTab";
 import { StaffTab } from "./components/StaffTab";
-import { PaymentTab } from "./components/PaymentTab";
-import { NotificationsTab } from "./components/NotificationsTab";
+import { PaymentTab } from "@/components/settings/CreditPaymentTab";
+import { NotificationsTab } from "@/components/settings/NotificationsTab";
 import { ShippingTab } from "./components/ShippingTab";
 import { User, Building2, CreditCard, Bell, Truck, Users } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
@@ -172,7 +172,7 @@ export const RequestorSettingsPage = () => {
         label: "보안",
         icon: Shield,
         content: <RequestorSecurity />,
-      }
+      },
     );
 
     return base;
