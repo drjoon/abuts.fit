@@ -211,7 +211,7 @@ def canonicalize_input_name(original: str) -> str:
     return settings.sanitize_filename(Path(original).name)
 
 
-async def process_single_stl(p: Path):
+async def process_single_stl(p: Path, force_reprocess: bool = False):
     if isinstance(p, str):
         p = Path(p)
     if not p.exists():
@@ -243,6 +243,12 @@ async def process_single_stl(p: Path):
                         out_path.unlink()
                     except Exception as e:
                         log(f"Force-fill delete failed ({out_path}): {e}")
+                elif force_reprocess:
+                    log("Force reprocess: 기존 out 파일을 삭제하고 다시 생성합니다.")
+                    try:
+                        out_path.unlink()
+                    except Exception as e:
+                        log(f"Force reprocess delete failed ({out_path}): {e}")
                 else:
                     if upload_via_presign(
                         out_path,

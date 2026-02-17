@@ -37,7 +37,7 @@ async def process_file_api(req: ProcessFileRequest, background_tasks: Background
         if req.fileName in state.in_flight and not (req.force or False):
             return {"ok": True, "message": "Already processing", "jobId": "existing"}
 
-    background_tasks.add_task(process_single_stl, p)
+    background_tasks.add_task(process_single_stl, p, bool(req.force or False))
     return {"ok": True, "message": "Processing started", "fileName": req.fileName}
 
 
