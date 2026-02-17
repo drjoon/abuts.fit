@@ -2,11 +2,7 @@ import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import GuideProgress from "../../models/guideProgress.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
-import {
-  ensureUniqueReferralCode,
-  generateToken,
-  generateRefreshToken,
-} from "../../utils/jwt.util.js";
+import { generateToken, generateRefreshToken } from "../../utils/jwt.util.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
