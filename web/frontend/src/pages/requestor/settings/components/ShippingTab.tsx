@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Truck } from "lucide-react";
-import { request } from "@/lib/apiClient";
+import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
 interface ShippingTabProps {

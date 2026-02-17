@@ -9,8 +9,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Shield } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { apiFetch } from "@/lib/apiClient";
-import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/shared/api/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
 
 const getStatusBadge = (status: string) => {
   if (!status) return null;

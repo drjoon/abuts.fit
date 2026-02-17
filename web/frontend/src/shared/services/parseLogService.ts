@@ -3,7 +3,7 @@
  * 백엔드의 파싱 로그 API와 통신
  */
 
-import { request } from "@/lib/apiClient";
+import { request } from "@/shared/api/apiClient";
 
 export interface ParseLogPayload {
   filename: string;

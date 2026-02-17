@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { Machine } from "@/pages/manufacturer/cnc/types";
 import {
   getMachineStatusDotClass,
@@ -31,7 +31,7 @@ import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 import { useQueueSlots } from "../hooks/useQueueSlots";
 import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { getMockCncMachiningEnabled } from "@/lib/bridgeSettings";
+import { getMockCncMachiningEnabled } from "@/shared/bridge/bridgeSettings";
 import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/cnc/components/CompletedMachiningRecordsModal";
 import {
   MACHINING_SECTION_LABELS,

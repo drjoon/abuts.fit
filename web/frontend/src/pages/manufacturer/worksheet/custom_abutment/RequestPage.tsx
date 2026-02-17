@@ -20,7 +20,7 @@ import {
   WorksheetDiameterQueueModal,
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { FunctionalItemCard } from "@/components/FunctionalItemCard";
 import { Dialog } from "@/components/ui/dialog";
@@ -55,7 +55,7 @@ import {
   onCncMachiningCompleted,
   onCncMachiningTick,
   onNotification,
-} from "@/lib/socket";
+} from "@/shared/realtime/socket";
 
 type FilePreviewInfo = {
   originalName: string;

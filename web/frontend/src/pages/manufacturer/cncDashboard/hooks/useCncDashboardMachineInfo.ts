@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 
 interface Params {
   token: string | null;

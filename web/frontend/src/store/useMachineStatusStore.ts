@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 
 type MachineStatusMap = Record<string, string>;
 

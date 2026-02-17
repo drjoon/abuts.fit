@@ -4,7 +4,7 @@ import { MessageSquare, Phone, Mail } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNavigate } from "react-router-dom";
 import { ToastAction } from "@/components/ui/toast";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { COMPANY_PHONE, SUPPORT_EMAIL } from "@/shared/lib/contactInfo";
 
 interface CustomerSupportSectionProps {

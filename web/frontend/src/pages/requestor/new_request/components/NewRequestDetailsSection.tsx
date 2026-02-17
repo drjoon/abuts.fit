@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { StlPreviewViewer } from "@/components/StlPreviewViewer";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 
 type ToastFn = (props: {
   title?: React.ReactNode;

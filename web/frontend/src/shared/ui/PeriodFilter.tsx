@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/ui/cn";
 
 export type PeriodFilterValue =
   | "7d"

@@ -14,8 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
-import { request } from "@/lib/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Eye, RefreshCw, RotateCcw, X } from "lucide-react";
 import clsx from "clsx";

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useSocket } from "@/shared/hooks/useSocket";
 
 export interface ContinuousMachiningState {

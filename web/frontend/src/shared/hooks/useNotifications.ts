@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "./use-toast";
-import { onNotification, SocketNotification } from "@/lib/socket";
+import { onNotification, SocketNotification } from "@/shared/realtime/socket";
 
 export interface Notification {
   _id: string;

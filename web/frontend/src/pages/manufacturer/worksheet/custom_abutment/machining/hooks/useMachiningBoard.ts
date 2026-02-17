@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import {
   initializeSocket,
   onCncMachiningCompleted,
   onCncMachiningTick,
   onCncMachiningStarted,
-} from "@/lib/socket";
-import { apiFetch } from "@/lib/apiClient";
-import { getMockCncMachiningEnabled } from "@/lib/bridgeSettings";
+} from "@/shared/realtime/socket";
+import { apiFetch } from "@/shared/api/apiClient";
+import { getMockCncMachiningEnabled } from "@/shared/bridge/bridgeSettings";
 import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
 import { useCncProgramEditor } from "@/features/manufacturer/cnc/hooks/useCncProgramEditor";
 import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";

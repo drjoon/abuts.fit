@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 
-import { request } from "@/lib/apiClient";
+import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
 export type GuideTourId = "requestor-onboarding" | "requestor-new-request";

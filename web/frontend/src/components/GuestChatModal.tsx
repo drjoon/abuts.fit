@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { MessageSquare, Send } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { apiFetch } from "@/lib/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
+import { apiFetch } from "@/shared/api/apiClient";
 
 interface GuestChatModalProps {
   open: boolean;

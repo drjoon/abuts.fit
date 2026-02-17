@@ -16,14 +16,14 @@ import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempD
 import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
 import { useCncWriteGuard } from "@/features/manufacturer/cnc/hooks/useCncWriteGuard";
 import { useAuthStore } from "@/store/useAuthStore";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { WorksheetDiameterQueueBar } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import {
   WorksheetDiameterQueueModal,
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import type { DiameterBucketKey as UiDiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 
 const getMachineStatusChip = (status: string) => {

@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Bell } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { request } from "@/lib/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type NotificationSettingsV2 = {

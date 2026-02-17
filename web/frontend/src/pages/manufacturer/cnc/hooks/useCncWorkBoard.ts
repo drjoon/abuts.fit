@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Machine } from "@/pages/manufacturer/cnc/types";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 
 export const useCncWorkBoard = (
   workUid: string,

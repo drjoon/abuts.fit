@@ -1,8 +1,8 @@
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { type ClinicPreset, type CaseInfos } from "./newRequestTypes";
-import { clearFileCache } from "@/utils/fileCache";
-import { createParseLog } from "@/services/parseLogService";
-import { parseFilenameWithRules } from "@/utils/parseFilenameWithRules";
+import { clearFileCache } from "@/shared/files/fileCache";
+import { createParseLog } from "@/shared/services/parseLogService";
+import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 
 const NEW_REQUEST_DRAFT_ID_STORAGE_KEY = "abutsfit:new-request-draft-id:v1";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";

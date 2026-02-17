@@ -1,4 +1,4 @@
-import { request } from "@/lib/apiClient";
+import { request } from "@/shared/api/apiClient";
 import {
   normalizeBusinessNumber,
   normalizePhoneNumber,

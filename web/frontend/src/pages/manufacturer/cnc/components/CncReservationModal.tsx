@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Machine } from "@/pages/manufacturer/cnc/types";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { useManUpload } from "../hooks/useManUpload";
 
 type CncReservationMode = "immediate" | "reserved";

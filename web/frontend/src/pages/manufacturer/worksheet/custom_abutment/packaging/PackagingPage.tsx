@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   type ManufacturerRequest,

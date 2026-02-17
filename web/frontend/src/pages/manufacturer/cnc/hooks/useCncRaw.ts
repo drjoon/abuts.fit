@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const RAW_READ_COOLDOWN_MS = 5000; // 서버 측 CONTROL_COOLDOWN_MS(5000ms)와 정렬

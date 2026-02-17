@@ -1,5 +1,5 @@
 import { useAuthStore } from "@/store/useAuthStore";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { useCallback, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";

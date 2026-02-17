@@ -14,7 +14,7 @@ import { PaymentTab } from "./components/PaymentTab";
 import { NotificationsTab } from "./components/NotificationsTab";
 import { ShippingTab } from "./components/ShippingTab";
 import { User, Building2, CreditCard, Bell, Truck, Users } from "lucide-react";
-import { request } from "@/lib/apiClient";
+import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
 import { Shield } from "lucide-react";
 

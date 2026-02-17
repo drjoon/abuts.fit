@@ -6,9 +6,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useInView } from "react-intersection-observer";
 import { useOutletContext } from "react-router-dom";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { DashboardShellSkeleton } from "@/shared/ui/dashboard/DashboardShellSkeleton";
 import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";

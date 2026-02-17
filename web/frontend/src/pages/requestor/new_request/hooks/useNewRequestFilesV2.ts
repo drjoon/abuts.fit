@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
-import { type TempUploadedFile } from "@/hooks/useS3TempUpload";
-import { useUploadWithProgressToast } from "@/hooks/useUploadWithProgressToast";
-import { useToast } from "@/hooks/use-toast";
+import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { type DraftCaseInfo, type CaseInfos } from "./newRequestTypes";
-import { getCachedUrl, setCachedUrl, removeCachedUrl } from "@/utils/fileCache";
-import { getStlBlob, setStlBlob, setFileBlob } from "@/utils/fileBlobCache";
-import { parseFilenames } from "@/utils/parseFilename";
-import { parseFilenameWithRules } from "@/utils/parseFilenameWithRules";
-import { request } from "@/lib/apiClient";
+import { getCachedUrl, setCachedUrl, removeCachedUrl } from "@/shared/files/fileCache";
+import { getStlBlob, setStlBlob, setFileBlob } from "@/shared/files/fileBlobCache";
+import { parseFilenames } from "@/shared/filename/parseFilename";
+import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
+import { request } from "@/shared/api/apiClient";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
 

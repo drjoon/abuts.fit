@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
 
 import type { Machine } from "@/pages/manufacturer/cnc/types";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { getFileBlob, setFileBlob } from "@/utils/fileBlobCache";
+import { getFileBlob, setFileBlob } from "@/shared/files/fileBlobCache";
 
 const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
 

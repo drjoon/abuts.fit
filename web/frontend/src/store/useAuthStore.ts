@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { request } from "@/lib/apiClient";
+import { request } from "@/shared/api/apiClient";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";

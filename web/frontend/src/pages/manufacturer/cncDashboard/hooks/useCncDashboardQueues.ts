@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import {
   onCncMachiningCompleted,
   onCncMachiningTimeout,
@@ -8,7 +8,7 @@ import {
   onCncMachiningTick,
   onCncMachiningStarted,
   initializeSocket,
-} from "@/lib/socket";
+} from "@/shared/realtime/socket";
 
 import type { Machine } from "../../cnc/types";
 import type { CncJobItem } from "../../cnc/components/CncReservationModal";

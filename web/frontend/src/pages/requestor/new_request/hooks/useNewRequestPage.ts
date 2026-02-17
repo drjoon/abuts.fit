@@ -7,8 +7,8 @@ import { useDraftMeta } from "./useDraftMeta";
 import { useNewRequestFilesV2 } from "./useNewRequestFilesV2";
 import { useNewRequestImplant } from "./useNewRequestImplant";
 import { type DraftCaseInfo } from "./newRequestTypes";
-import { useToast } from "@/hooks/use-toast";
-import { request } from "@/lib/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";

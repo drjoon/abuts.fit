@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CaseInfos } from "./newRequestTypes";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
 const addWeekdays = (startDate: Date, days: number) => {

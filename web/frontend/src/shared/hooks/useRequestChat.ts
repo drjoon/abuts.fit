@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
 export type ChatSenderRole = "requestor" | "manufacturer" | "admin";

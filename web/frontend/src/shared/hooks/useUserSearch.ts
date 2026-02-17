@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 
 export interface SearchUser {

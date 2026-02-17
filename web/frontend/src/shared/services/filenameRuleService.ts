@@ -3,8 +3,8 @@
  * 백엔드의 파일명 파싱 룰 API와 통신
  */
 
-import { request } from "@/lib/apiClient";
-import { FilenameRule } from "@/utils/filenameRules";
+import { request } from "@/shared/api/apiClient";
+import { FilenameRule } from "@/shared/filename/filenameRules";
 
 /**
  * 활성 룰 조회

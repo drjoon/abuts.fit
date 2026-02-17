@@ -6,7 +6,7 @@ import {
   getSocket,
   onNotification,
   SocketNotification,
-} from "@/lib/socket";
+} from "@/shared/realtime/socket";
 
 export const useSocket = () => {
   const { token } = useAuthStore();

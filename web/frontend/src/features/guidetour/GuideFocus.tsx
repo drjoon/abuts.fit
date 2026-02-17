@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Sparkles } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/ui/cn";
 import { useGuideTour } from "./GuideTourProvider";
 
 type GuideFocusProps = {

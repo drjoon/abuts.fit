@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
-import { request } from "@/lib/apiClient";
-import { useToast } from "@/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

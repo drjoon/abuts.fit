@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 
 import type { Machine } from "@/pages/manufacturer/cnc/types";
 

@@ -14,7 +14,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/ui/cn";
 import { Check, ChevronsUpDown } from "lucide-react";
 
 export type InternationalPhoneParts = {

@@ -23,11 +23,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useNavigate } from "react-router-dom";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/ui/cn";
 
 type CreditLedgerType = "CHARGE" | "BONUS" | "SPEND" | "REFUND" | "ADJUST";
 

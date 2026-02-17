@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 
 export type ManUploadProgress = {
   machineId: string;

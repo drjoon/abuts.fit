@@ -13,9 +13,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Phone, Send, History, MessageCircle, Info } from "lucide-react";
-import { request } from "@/lib/apiClient";
+import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { PopbillQueuePanel } from "@/features/admin/popbill/PopbillQueuePanel";
 

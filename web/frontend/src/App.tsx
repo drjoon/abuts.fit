@@ -8,7 +8,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { NewChatWidget } from "@/components/chat/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
-import { loadRulesFromBackend } from "@/utils/filenameRules";
+import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { GuideTourProvider } from "@/features/guidetour/GuideTourProvider";
 
 const Index = lazy(() => import("./pages/public/Index"));

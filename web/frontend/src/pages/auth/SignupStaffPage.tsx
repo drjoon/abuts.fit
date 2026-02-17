@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Footer } from "@/features/landing/Footer";
 import { Navigation } from "@/features/layout/Navigation";
-import { useToast } from "@/hooks/use-toast";
-import { request } from "@/lib/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNavigate, useSearchParams } from "react-router-dom";
 

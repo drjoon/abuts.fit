@@ -12,11 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, Send } from "lucide-react";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import type { ChatRoom } from "@/shared/hooks/useChatRooms";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/ui/cn";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   useS3TempUpload,

@@ -6,10 +6,10 @@ import {
   useCallback,
   Fragment,
 } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { Machine, type MachineForm } from "./cnc/types";
 import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
 import { useCncWorkBoard } from "@/features/manufacturer/cnc/hooks/useCncWorkBoard";

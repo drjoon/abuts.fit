@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { request } from "@/lib/apiClient";
-import { useToast } from "@/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
 import {
   Card,
   CardContent,

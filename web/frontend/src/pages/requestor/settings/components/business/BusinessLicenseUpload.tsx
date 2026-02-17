@@ -1,10 +1,10 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, X, ShieldCheck } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/shared/ui/cn";
 import { GuideFocus } from "@/features/guidetour/GuideFocus";
 import { LicenseStatus, MembershipStatus } from "./types";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 
 interface BusinessLicenseUploadProps {
   membership: MembershipStatus;

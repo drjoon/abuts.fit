@@ -4,8 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Building2 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { request } from "@/lib/apiClient";
-import { useToast } from "@/hooks/use-toast";
+import { request } from "@/shared/api/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
 
 export const SalesmanBusinessTab = () => {
   const { toast } = useToast();

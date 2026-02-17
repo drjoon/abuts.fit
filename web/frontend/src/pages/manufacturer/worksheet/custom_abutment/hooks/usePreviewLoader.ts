@@ -1,10 +1,10 @@
 import { useCallback } from "react";
-import { getFileBlob, setFileBlob } from "@/utils/stlIndexedDb";
+import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 import {
   getReviewStageKeyByTab,
   type ManufacturerRequest,
 } from "../utils/request";
-import { toast as toastFn, useToast } from "@/hooks/use-toast";
+import { toast as toastFn, useToast } from "@/shared/hooks/use-toast";
 
 type PreviewLoaderParams = {
   token: string | null;

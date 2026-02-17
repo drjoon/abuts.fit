@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { apiFetch } from "@/lib/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 
 export interface TempUploadedFile {
   _id: string;

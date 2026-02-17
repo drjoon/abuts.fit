@@ -10,7 +10,7 @@ import {
   trashMail,
   type MailItem,
 } from "@/features/admin/mail/mailApi";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "@/shared/hooks/use-toast";
 
 export type MailTab = "inbox" | "sent" | "trash" | "spam" | "compose";
 
