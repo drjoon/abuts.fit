@@ -242,9 +242,29 @@ export function sendMessageToRoom(roomId, event, data) {
   }
 }
 
+export function sendNotificationToRoles(roles, notification) {
+  if (!io) return;
+  const roleSet = new Set(
+    (Array.isArray(roles) ? roles : [roles]).map((r) => String(r || "")),
+  );
+  if (roleSet.size === 0) return;
+
+  for (const socket of io.sockets.sockets.values()) {
+    try {
+      const role = String(socket.userRole || "");
+      if (roleSet.has(role)) {
+        socket.emit("notification", notification);
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export default {
   initializeSocket,
   getIO,
   sendNotificationToUser,
+  sendNotificationToRoles,
   sendMessageToRoom,
 };

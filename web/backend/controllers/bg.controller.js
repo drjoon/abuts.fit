@@ -3,6 +3,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { ApiError } from "../utils/ApiError.js";
 import BridgeSetting from "../models/bridgeSetting.model.js";
+import { sendNotificationToRoles } from "../socket.js";
 import path from "path";
 import fs from "fs/promises";
 import Request from "../models/request.model.js";
@@ -586,6 +587,23 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       updatedRequest?.caseInfos?.camFile,
     )}`,
   );
+
+  try {
+    sendNotificationToRoles(["manufacturer", "admin"], {
+      type: "bg-file-processed",
+      title: "BG 처리 완료",
+      message: "파일 처리 결과가 반영되었습니다.",
+      data: {
+        requestId: request?.requestId || null,
+        sourceStep: String(sourceStep || "").trim() || null,
+        status: String(status || "").trim() || null,
+        fileName: String(fileName || "").trim() || null,
+      },
+      timestamp: new Date(),
+    });
+  } catch {
+    // ignore
+  }
 
   return res
     .status(200)

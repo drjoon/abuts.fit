@@ -51,7 +51,11 @@ import { usePreviewLoader } from "@/features/manufacturer/worksheet/customAbutme
 import { useStageDropHandlers } from "@/features/manufacturer/worksheet/customAbutment/request/useStageDropHandlers";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { useSocket } from "@/shared/hooks/useSocket";
-import { onCncMachiningCompleted, onCncMachiningTick } from "@/lib/socket";
+import {
+  onCncMachiningCompleted,
+  onCncMachiningTick,
+  onNotification,
+} from "@/lib/socket";
 
 type FilePreviewInfo = {
   originalName: string;
@@ -142,8 +146,8 @@ export const RequestPage = ({
     setPreviewOpen,
   });
 
-  const fetchRequests = useCallback(async () => {
-    if (!token) return;
+  const fetchRequestsCore = useCallback(async () => {
+    if (!token) return null;
 
     try {
       setIsLoading(true);
@@ -207,6 +211,8 @@ export const RequestPage = ({
       if (data?.success && Array.isArray(list)) {
         setRequests(list);
       }
+
+      return list as ManufacturerRequest[];
     } catch (error) {
       console.error("Error fetching requests:", error);
       toast({
@@ -214,10 +220,15 @@ export const RequestPage = ({
         description: "네트워크 오류가 발생했습니다.",
         variant: "destructive",
       });
+      return null;
     } finally {
       setIsLoading(false);
     }
   }, [token, user?.role, toast]);
+
+  const fetchRequests = useCallback(async () => {
+    await fetchRequestsCore();
+  }, [fetchRequestsCore]);
 
   const {
     handleDownloadOriginalStl,
@@ -256,6 +267,35 @@ export const RequestPage = ({
 
   useEffect(() => {
     if (!token) return;
+
+    const unsubBg = onNotification((notification: any) => {
+      const type = String(notification?.type || "").trim();
+      if (type !== "bg-file-processed") return;
+
+      const requestId = String(notification?.data?.requestId || "").trim();
+      if (!requestId) {
+        void fetchRequests();
+        return;
+      }
+
+      void (async () => {
+        const list = await fetchRequestsCore();
+        if (!previewOpen) return;
+        if (!list || !Array.isArray(list) || list.length === 0) return;
+
+        const updated = list.find(
+          (r: any) => String(r?.requestId || "").trim() === requestId,
+        );
+        if (!updated) return;
+
+        const currentRid = String(
+          (previewFiles as any)?.request?.requestId || "",
+        ).trim();
+        if (currentRid && currentRid !== requestId) return;
+
+        await handleOpenPreview(updated as any);
+      })();
+    });
 
     const unsubTick = onCncMachiningTick((data: any) => {
       const requestId = data?.requestId ? String(data.requestId).trim() : "";
@@ -313,10 +353,18 @@ export const RequestPage = ({
     });
 
     return () => {
+      if (typeof unsubBg === "function") unsubBg();
       if (typeof unsubTick === "function") unsubTick();
       if (typeof unsubCompleted === "function") unsubCompleted();
     };
-  }, [fetchRequests, token]);
+  }, [
+    fetchRequests,
+    fetchRequestsCore,
+    handleOpenPreview,
+    previewFiles,
+    previewOpen,
+    token,
+  ]);
 
   const {
     handlePageDrop,
