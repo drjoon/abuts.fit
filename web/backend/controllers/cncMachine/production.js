@@ -9,7 +9,7 @@ export async function getProductionQueues(req, res) {
     const requests = await Request.find({
       status: { $in: ["의뢰", "CAM", "생산", "가공"] },
     })
-      .select("requestId status productionSchedule caseInfos")
+      .select("requestId status productionSchedule caseInfos lotNumber")
       .populate({
         path: "productionSchedule.machiningRecord",
         select:
@@ -22,6 +22,7 @@ export async function getProductionQueues(req, res) {
       queues[machineId] = queues[machineId].map((reqItem, index) => ({
         requestId: reqItem.requestId,
         status: reqItem.status,
+        lotNumber: reqItem.lotNumber || {},
         queuePosition:
           reqItem.productionSchedule?.queuePosition != null
             ? reqItem.productionSchedule.queuePosition
@@ -66,6 +67,7 @@ export async function getProductionQueues(req, res) {
           : null,
         clinicName: reqItem.caseInfos?.clinicName,
         patientName: reqItem.caseInfos?.patientName,
+        tooth: reqItem.caseInfos?.tooth,
       }));
     }
 

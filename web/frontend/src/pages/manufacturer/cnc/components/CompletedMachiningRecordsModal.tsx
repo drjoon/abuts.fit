@@ -188,7 +188,12 @@ export const CompletedMachiningRecordsModal = ({
   const formatRow = (it: CompletedMachiningItem) => {
     const done = it.completedAt ? new Date(it.completedAt) : null;
     const hhmm = done
-      ? `${String(done.getHours()).padStart(2, "0")}:${String(
+      ? `${String(done.getMonth() + 1).padStart(2, "0")}-${String(
+          done.getDate(),
+        ).padStart(
+          2,
+          "0",
+        )} ${String(done.getHours()).padStart(2, "0")}:${String(
           done.getMinutes(),
         ).padStart(2, "0")}`
       : "-";
@@ -204,14 +209,28 @@ export const CompletedMachiningRecordsModal = ({
             sec % 60,
           ).padStart(2, "0")}`;
 
-    const label = String(it.displayLabel || "").trim();
-    const fallback = it.requestId
-      ? `의뢰 (${String(it.requestId)})`
+    const labelFromBackend = String(it.displayLabel || "").trim();
+
+    const lotPartRaw = String((it as any)?.lotNumber?.part || "").trim();
+    const lotPart = lotPartRaw.replace(/^CAP/i, "").trim();
+    const clinic = String((it as any)?.clinicName || "").trim();
+    const patient = String((it as any)?.patientName || "").trim();
+    const tooth = String((it as any)?.tooth || "").trim();
+    const rid = String(it.requestId || "").trim();
+    const ridSuffix = rid.includes("-") ? rid.split("-").pop() || rid : rid;
+
+    const parts = [clinic, patient, tooth, lotPart, ridSuffix]
+      .map((s) => String(s || "").trim())
+      .filter(Boolean);
+
+    const composed = parts.length ? parts.join(" ") : "";
+    const fallback = rid
+      ? `의뢰 (${rid})`
       : it.jobId
-        ? `작업 (${String(it.jobId)})`
+        ? `작업 (${it.jobId})`
         : "-";
 
-    return { hhmm, mmss, label: label || fallback };
+    return { hhmm, mmss, label: composed || labelFromBackend || fallback };
   };
 
   return (

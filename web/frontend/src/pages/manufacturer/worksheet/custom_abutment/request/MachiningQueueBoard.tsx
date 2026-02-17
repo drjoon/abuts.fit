@@ -55,6 +55,11 @@ type QueueItem = {
   } | null;
   clinicName?: string;
   patientName?: string;
+  lotNumber?: {
+    part?: string;
+    material?: string;
+    final?: string;
+  } | null;
 };
 
 type QueueMap = Record<string, QueueItem[]>;
@@ -117,15 +122,27 @@ const isMachiningStatus = (status?: string) => {
 };
 
 const formatLabel = (q: QueueItem) => {
+  const lotPartRaw = String(
+    q?.lotNumber?.part ||
+      (q as any)?.lotPart ||
+      (q as any)?.lotNumberPart ||
+      "",
+  ).trim();
+  const lotPartDisplay = lotPartRaw
+    .replace(/^CAP/i, "")
+    .replace(/-/g, " ")
+    .trim();
   const clinic = String(q.clinicName || "").trim();
   const patient = String(q.patientName || "").trim();
+  const tooth = String((q as any)?.tooth || "").trim();
   const rid = String(q.requestId || "").trim();
-  const base =
-    clinic || patient
-      ? `${clinic}${clinic && patient ? " " : ""}${patient}`
-      : rid;
-  if (!base) return "-";
-  return rid ? `${base} (${rid})` : base;
+  const ridSuffix = rid.includes("-") ? rid.split("-").pop() || rid : rid;
+
+  const parts = [clinic, patient, tooth, lotPartDisplay, ridSuffix]
+    .map((s) => String(s || "").trim())
+    .filter(Boolean);
+
+  return parts.length ? parts.join(" ") : "-";
 };
 
 const getNcPreloadBadge = (slot: QueueItem | null) => {
@@ -643,7 +660,27 @@ export const MachiningQueueBoard = ({
       const body: any = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) return;
       const map = body?.data && typeof body.data === "object" ? body.data : {};
-      setQueueMap(map);
+
+      // lotNumber가 비어 있는 큐 아이템에 lotPart/lotNumberPart를 lotNumber.part로 보정
+      const normalized: QueueMap = {};
+      Object.entries(map || {}).forEach(([mid, list]) => {
+        const arr = Array.isArray(list) ? list : [];
+        normalized[mid] = arr.map((item: any) => {
+          const lotPart = String(
+            item?.lotNumber?.part || item?.lotPart || item?.lotNumberPart || "",
+          ).trim();
+          if (!lotPart) return item;
+          return {
+            ...item,
+            lotNumber: {
+              ...(item?.lotNumber || {}),
+              part: lotPart,
+            },
+          } satisfies QueueItem;
+        });
+      });
+
+      setQueueMap(normalized);
     } catch {
       // ignore
     }

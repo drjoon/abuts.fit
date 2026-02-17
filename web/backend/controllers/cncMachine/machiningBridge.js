@@ -61,6 +61,9 @@ export async function getCompletedMachiningRecords(req, res) {
     const recs = await MachiningRecord.find(query)
       .sort({ completedAt: -1, _id: -1 })
       .limit(limit + 1)
+      .select(
+        "requestId jobId status completedAt durationSeconds displayLabel lotNumber clinicName patientName tooth",
+      )
       .lean();
 
     const slice = recs.slice(0, limit);
@@ -71,22 +74,34 @@ export async function getCompletedMachiningRecords(req, res) {
       .filter(Boolean);
     const uniqueRequestIds = Array.from(new Set(requestIds));
 
-    const reqDocs = uniqueRequestIds.length
-      ? await Request.find({ requestId: { $in: uniqueRequestIds } })
-          .select("requestId caseInfos.clinicName caseInfos.patientName")
-          .lean()
-      : [];
+    // request 정보 병합 (lotNumber, clinic/patient/tooth)
+    const reqDocs = await Request.find({
+      requestId: { $in: uniqueRequestIds },
+    })
+      .select(
+        "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth",
+      )
+      .lean();
+    const reqMap = new Map(
+      (Array.isArray(reqDocs) ? reqDocs : [])
+        .map((doc) => [String(doc?.requestId || "").trim(), doc])
+        .filter(([k]) => !!k),
+    );
 
-    const reqById = new Map();
-    for (const r of Array.isArray(reqDocs) ? reqDocs : []) {
-      const rid = String(r?.requestId || "").trim();
-      if (rid) reqById.set(rid, r);
-    }
+    const merged = slice.map((r) => {
+      const req = reqMap.get(String(r?.requestId || "").trim());
+      return {
+        ...r,
+        lotNumber: req?.lotNumber || r?.lotNumber || {},
+        clinicName: req?.caseInfos?.clinicName || r?.clinicName,
+        patientName: req?.caseInfos?.patientName || r?.patientName,
+        tooth: req?.caseInfos?.tooth || r?.tooth,
+      };
+    });
 
-    const items = slice.map((r) => {
+    const items = merged.map((r) => {
       const rid = String(r?.requestId || "").trim();
-      const reqDoc = rid ? reqById.get(rid) : null;
-      const displayLabel = formatRequestLabelForCompleted(reqDoc, rid);
+      const displayLabel = formatRequestLabelForCompleted(r, rid);
       return {
         id: String(r?._id || ""),
         machineId: String(r?.machineId || "").trim(),
@@ -103,6 +118,10 @@ export async function getCompletedMachiningRecords(req, res) {
               ? Math.floor(r.elapsedSeconds)
               : 0,
         displayLabel: String(displayLabel || "").trim() || null,
+        lotNumber: r?.lotNumber || null,
+        clinicName: r?.clinicName || null,
+        patientName: r?.patientName || null,
+        tooth: r?.tooth || null,
       };
     });
 
@@ -114,10 +133,7 @@ export async function getCompletedMachiningRecords(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: {
-        items,
-        nextCursor,
-      },
+      data: { items, nextCursor },
     });
   } catch (error) {
     return res.status(500).json({
@@ -150,8 +166,16 @@ function formatRequestLabelForCompleted(reqDoc, fallbackRequestId) {
   const rid = String(reqDoc?.requestId || fallbackRequestId || "").trim();
   const clinicName = String(reqDoc?.caseInfos?.clinicName || "").trim();
   const patientName = String(reqDoc?.caseInfos?.patientName || "").trim();
-  const base = `${clinicName} ${patientName}`.trim();
-  if (base && rid) return `${base} (${rid})`;
+  const tooth = String(reqDoc?.caseInfos?.tooth || "").trim();
+  const lotPartRaw = String(reqDoc?.lotNumber?.part || "").trim();
+  const lotPart = lotPartRaw.replace(/^CAP/i, "").replace(/-/g, " ").trim();
+  const ridSuffix = rid.includes("-") ? rid.split("-").pop() || rid : rid;
+
+  const parts = [clinicName, patientName, tooth, lotPart, ridSuffix]
+    .map((s) => String(s || "").trim())
+    .filter(Boolean);
+
+  if (parts.length) return parts.join(" ");
   if (rid) return `의뢰 (${rid})`;
   return "-";
 }
@@ -192,7 +216,9 @@ export async function getLastCompletedMachiningMap(req, res) {
 
     const reqDocs = uniqueRequestIds.length
       ? await Request.find({ requestId: { $in: uniqueRequestIds } })
-          .select("requestId caseInfos.clinicName caseInfos.patientName")
+          .select(
+            "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth",
+          )
           .lean()
       : [];
     const reqById = new Map();
