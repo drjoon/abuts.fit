@@ -42,9 +42,11 @@ const NewRequestPage = lazy(() =>
   })),
 );
 const ManufacturerWorksheetPage = lazy(() =>
-  import("./pages/manufacturer/WorkSheet").then((m) => ({
-    default: m.ManufacturerWorksheetPage,
-  })),
+  import("./pages/manufacturer/worksheet/ManufacturerWorksheetPage").then(
+    (m) => ({
+      default: m.ManufacturerWorksheetPage,
+    }),
+  ),
 );
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((m) => ({
