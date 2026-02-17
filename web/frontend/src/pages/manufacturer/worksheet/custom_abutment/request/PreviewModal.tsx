@@ -1,5 +1,6 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { DialogClose } from "@radix-ui/react-dialog";
+import { RefreshCw, Trash2, Upload } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +9,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { StlPreviewViewer } from "@/components/StlPreviewViewer";
+import { useToast } from "@/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   type ManufacturerRequest,
@@ -120,6 +122,8 @@ export const PreviewModal = ({
   setConfirmOpen,
 }: PreviewModalProps) => {
   const { token } = useAuthStore();
+  const { toast } = useToast();
+  const [regenerating, setRegenerating] = useState(false);
   const req = previewFiles.request as ManufacturerRequest | null;
   if (!req) return null;
 
@@ -276,6 +280,62 @@ export const PreviewModal = ({
       ? req.caseInfos?.ncFile
       : req.caseInfos?.camFile;
   const hasRightFile = !!rightMeta?.s3Key;
+
+  const canRegenerateFilledStl = !isCamStage && !isStageFileStage;
+
+  const onRegenerate = async () => {
+    if (!canRegenerateFilledStl) return;
+    if (!token) {
+      toast({
+        title: "실패",
+        description: "로그인이 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (regenerating || isUploading) return;
+
+    const fileName = String(req.caseInfos?.file?.filePath || "").trim();
+    if (!fileName) {
+      toast({
+        title: "실패",
+        description: "원본 STL 파일명이 없어 재생성을 진행할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRegenerating(true);
+    try {
+      const res = await fetch("/api/rhino/process-file", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ fileName, force: true }),
+      });
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(
+          body?.message || body?.error || "재생성 요청에 실패했습니다.",
+        );
+      }
+
+      toast({
+        title: "재생성 요청",
+        description: "filled.stl 재처리를 시작했습니다.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "재생성 실패",
+        description: err?.message || "재생성 요청에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   const accept = isStageFileStage
     ? ".png,.jpg,.jpeg,.webp,.bmp"
@@ -581,6 +641,31 @@ export const PreviewModal = ({
                       : fileLabel}
                   </button>
                   <div className="flex items-center gap-2">
+                    {canRegenerateFilledStl && (
+                      <button
+                        type="button"
+                        className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                          regenerating || isUploading
+                            ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                        disabled={regenerating || isUploading}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void onRegenerate();
+                        }}
+                        aria-label="재생성"
+                        title="재생성"
+                      >
+                        <RefreshCw
+                          className={
+                            regenerating ? "h-4 w-4 animate-spin" : "h-4 w-4"
+                          }
+                        />
+                      </button>
+                    )}
+
                     <button
                       type="button"
                       className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
@@ -597,7 +682,7 @@ export const PreviewModal = ({
                       aria-label="삭제"
                       title="삭제"
                     >
-                      X
+                      <Trash2 className="h-4 w-4" />
                     </button>
 
                     <label
@@ -609,7 +694,7 @@ export const PreviewModal = ({
                       }`}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {isUploading ? "…" : "U"}
+                      {isUploading ? "…" : <Upload className="h-4 w-4" />}
                     </label>
                     <input
                       id={pickInputId}

@@ -6,7 +6,7 @@ import * as rhinoController from "../controllers/rhino.controller.js";
 const router = Router();
 
 router.use(authenticate);
-router.use(authorize(["requestor", "admin"]));
+router.use(authorize(["requestor", "manufacturer", "admin"]));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -21,9 +21,11 @@ const upload = multer({
 router.post(
   "/fillhole",
   upload.single("file"),
-  rhinoController.fillholeFromUpload
+  rhinoController.fillholeFromUpload,
 );
 
 router.post("/fillhole/by-name", rhinoController.fillholeFromStoreName);
+
+router.post("/process-file", rhinoController.processFileByName);
 
 export default router;

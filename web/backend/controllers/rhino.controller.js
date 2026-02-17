@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
 
 const RHINO_STORE_IN_DIR = resolve(__dirname, "../../../rhino/Stl-Stores/in");
 const RHINO_COMPUTE_BASE_URL = String(
-  process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000"
+  process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000",
 ).replace(/\/+$/, "");
 
 // [추가] 과도한 병렬 요청 방지를 위한 세마포어/큐 관리
@@ -52,6 +52,29 @@ const sanitizeStlName = (name) => {
   return cleaned.toLowerCase().endsWith(".stl") ? cleaned : `${cleaned}.stl`;
 };
 
+export const processFileByName = asyncHandler(async (req, res) => {
+  const rawName = req.body?.fileName || req.body?.name;
+  if (!rawName) {
+    throw new ApiError(400, "fileName is required");
+  }
+
+  const safeName = sanitizeStlName(String(rawName));
+  const force = Boolean(req.body?.force);
+
+  const resp = await enqueueTask(() =>
+    axios.post(
+      `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`,
+      { fileName: safeName, force },
+      { timeout: 1000 * 60 * 1 },
+    ),
+  );
+
+  return res.status(200).json({
+    success: true,
+    data: resp.data,
+  });
+});
+
 export const fillholeFromUpload = asyncHandler(async (req, res) => {
   const file = req.file;
   if (!file) {
@@ -82,8 +105,8 @@ export const fillholeFromUpload = asyncHandler(async (req, res) => {
     axios.post(
       `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
       { name: safeName },
-      { responseType: "arraybuffer", timeout: 1000 * 60 * 5 }
-    )
+      { responseType: "arraybuffer", timeout: 1000 * 60 * 5 },
+    ),
   );
 
   const contentType = resp.headers?.["content-type"] || "application/sla";
@@ -110,8 +133,8 @@ export const fillholeFromStoreName = asyncHandler(async (req, res) => {
     axios.post(
       `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
       { name: safeName },
-      { responseType: "arraybuffer", timeout: 1000 * 60 * 5 }
-    )
+      { responseType: "arraybuffer", timeout: 1000 * 60 * 5 },
+    ),
   );
 
   const contentType = resp.headers?.["content-type"] || "application/sla";
