@@ -295,13 +295,13 @@ export const PreviewModal = ({
     }
     if (regenerating || isUploading) return;
 
-    const fileName = String(
+    const filePath = String(
       req.caseInfos?.file?.filePath ||
         req.caseInfos?.file?.originalName ||
         previewFiles.original?.name ||
         "",
     ).trim();
-    if (!fileName) {
+    if (!filePath) {
       toast({
         title: "실패",
         description: "원본 STL 파일명이 없어 재생성을 진행할 수 없습니다.",
@@ -318,13 +318,53 @@ export const PreviewModal = ({
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ fileName, force: true }),
+        body: JSON.stringify({
+          filePath,
+          fileName: filePath,
+          force: true,
+        }),
       });
       const body: any = await res.json().catch(() => ({}));
+
       if (!res.ok || body?.success === false) {
-        throw new Error(
-          body?.message || body?.error || "재생성 요청에 실패했습니다.",
-        );
+        const status = res.status;
+
+        const mapped = (() => {
+          if (status === 401) {
+            return {
+              title: "재생성 실패",
+              description: "Rhino 서버 인증 실패(Secret 확인)",
+            };
+          }
+          if (status === 404) {
+            return {
+              title: "재생성 실패",
+              description:
+                "Rhino 서버가 구버전입니다. 서버 업데이트 후 다시 시도하세요.",
+            };
+          }
+          if (status === 503) {
+            return {
+              title: "재생성 실패",
+              description: "Rhino 서비스가 중지 상태입니다.",
+            };
+          }
+          return null;
+        })();
+
+        const msg =
+          body?.message ||
+          body?.error ||
+          body?.detail ||
+          body?.data?.error ||
+          "재생성 요청에 실패했습니다.";
+
+        toast({
+          title: mapped?.title || "재생성 실패",
+          description: mapped?.description || msg,
+          variant: "destructive",
+        });
+        return;
       }
 
       toast({

@@ -19,7 +19,8 @@ router = APIRouter()
 
 
 class ProcessFileRequest(BaseModel):
-    fileName: str
+    filePath: Optional[str] = None
+    fileName: Optional[str] = None
     requestId: Optional[str] = None
     force: Optional[bool] = False
 
@@ -29,16 +30,21 @@ async def process_file_api(req: ProcessFileRequest, background_tasks: Background
     if not state.is_running:
         raise HTTPException(status_code=503, detail="Service is stopped")
 
-    p = settings.STORE_IN_DIR / req.fileName
+    name = (req.filePath or req.fileName or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="filePath or fileName is required")
+
+    safe_name = settings.sanitize_filename(name)
+    p = settings.STORE_IN_DIR / safe_name
     if not p.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {req.fileName}")
+        raise HTTPException(status_code=404, detail=f"File not found: {safe_name}")
 
     with state.in_flight_lock:
-        if req.fileName in state.in_flight and not (req.force or False):
+        if safe_name in state.in_flight and not (req.force or False):
             return {"ok": True, "message": "Already processing", "jobId": "existing"}
 
     background_tasks.add_task(process_single_stl, p, bool(req.force or False))
-    return {"ok": True, "message": "Processing started", "fileName": req.fileName}
+    return {"ok": True, "message": "Processing started", "filePath": safe_name}
 
 
 @router.post("/api/rhino/upload-stl")

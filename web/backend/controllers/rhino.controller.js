@@ -62,7 +62,7 @@ const sanitizeStlName = (name) => {
 };
 
 export const processFileByName = asyncHandler(async (req, res) => {
-  const rawName = req.body?.fileName || req.body?.name;
+  const rawName = req.body?.filePath || req.body?.fileName || req.body?.name;
   if (!rawName) {
     throw new ApiError(400, "fileName is required");
   }
