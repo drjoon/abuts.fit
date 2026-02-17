@@ -30,16 +30,26 @@
 
 ```
 /src
-|-- /assets         # 정적 에셋
-|-- /components     # 공통 UI 컴포넌트
-|   `-- /ui         # shadcn/ui 기본 컴포넌트
-|-- /features       # 도메인/기능 단위 컴포넌트 (requestor, manufacturer 등)
-|-- /shared         # 공유 컴포넌트/훅/유틸
-|-- /pages          # 라우팅 단위 페이지
-|-- /routes         # 라우팅 설정
-|-- /store          # 전역 상태 (Zustand 등)
-`-- /types          # 전역 타입
+|-- /assets          # 정적 에셋
+|-- /components      # 공통 UI(shadcn)만 위치 (재export 래퍼 금지)
+|   `-- /ui          # shadcn/ui 기본 컴포넌트
+|-- /features        # 도메인/기능 단위 컴포넌트 (chat, requests, support, cnc, notifications 등)
+|-- /shared          # 공유 컴포넌트/훅/유틸 (예: shared/ui/forms, shared/ui/components, shared/api)
+|-- /pages           # 라우팅 단위 페이지
+|-- /store           # 전역 상태 (Zustand 등)
+`-- /types           # 전역 타입
 ```
+
+### 3.1 이동/정리 원칙 (2026-02 리팩터링)
+
+- `components`에는 shadcn 기반 공통 UI만 남기고, 도메인/기능 컴포넌트는 모두 `features/*`로 이동.
+- 공용 폼/피드백/스켈레톤/카드 등은 `shared/ui/*`로 승격해 직접 import (`@/shared/...`).
+- 채팅/의뢰/지원/장비/알림 관련 컴포넌트 경로 예시
+  - chat: `@/features/chat/components/*`
+  - requests: `@/features/requests/components/*`
+  - support: `@/features/support/components/*`
+  - cnc: `@/features/cnc/components/*`
+  - notifications: `@/features/notifications/components/*`
 
 ## 4. 페이지 및 컴포넌트 구조
 
@@ -62,7 +72,7 @@
 
 ## 5. API 호출 규칙
 
-- `src/lib/apiClient.ts`의 `apiFetch`를 사용하여 호출합니다.
+- `src/shared/api/apiClient.ts`의 `apiFetch`를 사용하여 호출합니다.
 - 직접적인 `fetch` 호출은 지양합니다.
 
 ## 5.1 전역 상태 관리 규칙 (Zustand)
@@ -185,7 +195,7 @@
 ## 9. 드래그 앤 드롭(파일 업로드) 규칙
 
 - 파일 드래그&드롭을 지원해야 하는 화면에서는 **개별 페이지에서 drag/drop 이벤트를 직접 구현하지 않습니다.**
-- 반드시 공용 컴포넌트 `components/PageFileDropZone.tsx`를 사용해 **페이지 전체 드롭**을 기본으로 지원합니다.
+- 공용 컴포넌트 `@/features/requests/components/PageFileDropZone`을 사용해 **페이지 전체 드롭**을 기본으로 지원합니다.
 - 드롭존 내부 UI(버튼 업로드 등)는 페이지 전용 컴포넌트로 유지하되, drop 이벤트 수신/파일 추출/전파는 `PageFileDropZone`에서 처리합니다.
 
 ### 8.1 채팅 타입
