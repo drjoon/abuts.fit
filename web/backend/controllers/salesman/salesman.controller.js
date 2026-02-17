@@ -122,7 +122,7 @@ export async function getSalesmanDashboard(req, res) {
     };
 
     const commissionRate = 0.05;
-    const indirectCommissionRate = 0.02;
+    const indirectCommissionRate = commissionRate * 0.5;
     const payoutDayOfMonth = 1;
 
     const { start, end } = period

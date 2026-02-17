@@ -225,6 +225,7 @@ async function getReferralGroups(req, res) {
     ).length;
 
     const commissionRate = 0.05;
+    const level1CommissionRate = commissionRate * 0.5;
     const last30Cutoff = new Date(now);
     last30Cutoff.setDate(last30Cutoff.getDate() - 30);
 
@@ -242,8 +243,42 @@ async function getReferralGroups(req, res) {
           .lean()
       : [];
 
+    const referredSalesmen = salesmanLeaderIds.length
+      ? await User.find({
+          referredByUserId: { $in: salesmanLeaderIds },
+          role: "salesman",
+          active: true,
+        })
+          .select({ _id: 1, referredByUserId: 1 })
+          .lean()
+      : [];
+
+    const referredSalesmanIds = (referredSalesmen || [])
+      .map((u) => String(u?._id || ""))
+      .filter(Boolean);
+
+    const referredSalesmanObjectIds = referredSalesmanIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const level1Requestors = referredSalesmanObjectIds.length
+      ? await User.find({
+          referredByUserId: { $in: referredSalesmanObjectIds },
+          role: "requestor",
+          active: true,
+        })
+          .select({ _id: 1, organizationId: 1, referredByUserId: 1 })
+          .lean()
+      : [];
+
     const orgIdByRequestorId = new Map(
       (directRequestors || [])
+        .filter((u) => u?.organizationId)
+        .map((u) => [String(u._id), String(u.organizationId)]),
+    );
+
+    const level1OrgIdByRequestorId = new Map(
+      (level1Requestors || [])
         .filter((u) => u?.organizationId)
         .map((u) => [String(u._id), String(u.organizationId)]),
     );
@@ -257,7 +292,32 @@ async function getReferralGroups(req, res) {
       requestorIdsBySalesmanLeaderId.set(leaderId, arr);
     }
 
-    const orgIds = Array.from(new Set(Array.from(orgIdByRequestorId.values())));
+    const leaderIdByReferredSalesmanId = new Map();
+    for (const s of referredSalesmen || []) {
+      const sid = String(s?._id || "");
+      const leaderId = String(s?.referredByUserId || "");
+      if (!sid || !leaderId) continue;
+      leaderIdByReferredSalesmanId.set(sid, leaderId);
+    }
+
+    const level1RequestorIdsBySalesmanLeaderId = new Map();
+    for (const u of level1Requestors || []) {
+      const refSalesmanId = String(u?.referredByUserId || "");
+      const leaderId = String(
+        leaderIdByReferredSalesmanId.get(refSalesmanId) || "",
+      );
+      if (!leaderId) continue;
+      const arr = level1RequestorIdsBySalesmanLeaderId.get(leaderId) || [];
+      arr.push(String(u._id));
+      level1RequestorIdsBySalesmanLeaderId.set(leaderId, arr);
+    }
+
+    const orgIds = Array.from(
+      new Set([
+        ...Array.from(orgIdByRequestorId.values()),
+        ...Array.from(level1OrgIdByRequestorId.values()),
+      ]),
+    );
     const orgObjectIds = orgIds
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
@@ -292,13 +352,23 @@ async function getReferralGroups(req, res) {
       const leaderId = String(g?.leader?._id || "");
       if (!leaderId) continue;
       const requestorIds = requestorIdsBySalesmanLeaderId.get(leaderId) || [];
-      let revenue = 0;
+      const level1RequestorIds =
+        level1RequestorIdsBySalesmanLeaderId.get(leaderId) || [];
+      let directRevenue = 0;
+      let level1Revenue = 0;
       for (const rid of requestorIds) {
         const orgId = orgIdByRequestorId.get(String(rid));
         if (!orgId) continue;
-        revenue += Number(revenueByOrgId.get(String(orgId)) || 0);
+        directRevenue += Number(revenueByOrgId.get(String(orgId)) || 0);
       }
-      salesmanTotalCommissionAmount += revenue * commissionRate;
+      for (const rid of level1RequestorIds) {
+        const orgId = level1OrgIdByRequestorId.get(String(rid));
+        if (!orgId) continue;
+        level1Revenue += Number(revenueByOrgId.get(String(orgId)) || 0);
+      }
+      const directCommission = directRevenue * commissionRate;
+      const level1Commission = level1Revenue * level1CommissionRate;
+      salesmanTotalCommissionAmount += directCommission + level1Commission;
     }
 
     const salesmanAvgCommissionPerGroup = salesmanGroupCount

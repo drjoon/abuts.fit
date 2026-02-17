@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,6 +74,13 @@ const formatMoney = (n: number) => {
 export const SalesmanDashboardPage = () => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
+  const referralLink = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const origin = window.location.origin;
+    const code = String(user?.referralCode || "").trim();
+    if (!code) return "";
+    return `${origin}/signup?ref=${encodeURIComponent(code)}`;
+  }, [user?.referralCode]);
   const [data, setData] = useState<ApiDashboard | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -195,12 +202,16 @@ export const SalesmanDashboardPage = () => {
                     size="sm"
                     variant="outline"
                     className="h-9 border border-indigo-500 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 hover:border-indigo-600"
-                    disabled={!referralCode}
+                    disabled={!referralLink}
                     onClick={async () => {
                       try {
-                        if (!referralCode) return;
-                        await navigator.clipboard.writeText(referralCode);
-                        toast({ title: "복사되었습니다", duration: 2000 });
+                        if (!referralLink) return;
+                        await navigator.clipboard.writeText(referralLink);
+                        toast({
+                          title: "URL 복사됨",
+                          description: referralLink,
+                          duration: 2000,
+                        });
                       } catch {
                         toast({
                           title: "복사 실패",
@@ -212,7 +223,7 @@ export const SalesmanDashboardPage = () => {
                     }}
                   >
                     <Copy className="h-4 w-4" />
-                    복사
+                    링크 복사
                   </Button>
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -269,7 +280,7 @@ export const SalesmanDashboardPage = () => {
               </CardHeader>
               <CardContent className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="font-semibold">합계 수수료 (7%)</div>
+                  <div className="font-semibold">합계 수수료 (7.5%)</div>
                   <div className="text-base font-bold">
                     {formatMoney(payableGross)}원
                   </div>
@@ -282,11 +293,16 @@ export const SalesmanDashboardPage = () => {
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="text-muted-foreground">
-                    리퍼럴 수수료 (2%)
+                    리퍼럴 수수료 (2.5%)
                   </div>
                   <div className="font-semibold">
                     {formatMoney(level1Commission)}원
                   </div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  직계 의뢰자 매출의 5%를 기본 수수료로 받고, 직계 1단계
+                  영업자가 벌어들인 본인 수수료(5%)의 50%(=2.5%)를 추가로
+                  받습니다.
                 </div>
               </CardContent>
             </Card>
@@ -307,7 +323,7 @@ export const SalesmanDashboardPage = () => {
               </CardHeader>
               <CardContent className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <div className="font-semibold">합계 수수료 (7%)</div>
+                  <div className="font-semibold">합계 수수료 (7.5%)</div>
                   <div className="text-base font-bold">
                     {formatMoney(paidNet)}원
                   </div>
@@ -318,7 +334,7 @@ export const SalesmanDashboardPage = () => {
                 </div>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <div className="text-muted-foreground">
-                    리퍼럴 수수료 (2%)
+                    리퍼럴 수수료 (2.5%)
                   </div>
                   <div className="font-semibold">0원</div>
                 </div>
@@ -335,7 +351,7 @@ export const SalesmanDashboardPage = () => {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                 <Card className="app-glass-card app-glass-card--lg">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-semibold">
@@ -402,47 +418,6 @@ export const SalesmanDashboardPage = () => {
                               </div>
                               <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground">
                                 연결된 소개 영업자입니다.
-                              </div>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card className="app-glass-card app-glass-card--lg">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">
-                      리퍼럴 소개 의뢰자 ({level1List.length}개소)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {level1List.length === 0 ? (
-                      <div className="py-4 text-sm text-muted-foreground">
-                        리퍼럴 소개 의뢰자가 없습니다.
-                      </div>
-                    ) : (
-                      <ul className="space-y-2">
-                        {level1List.map((org) => (
-                          <li
-                            key={org.organizationId}
-                            className="flex items-start gap-2"
-                          >
-                            <div className="mt-1 h-2 w-2 rounded-full bg-sky-500" />
-                            <div className="flex-1">
-                              <div className="font-semibold text-sm">
-                                {org.name || "의뢰자"}
-                              </div>
-                              <div className="mt-0.5 pl-3 border-l text-xs text-muted-foreground space-y-0.5">
-                                <div>
-                                  매출: {formatMoney(org.monthRevenueAmount)}원
-                                </div>
-                                <div>
-                                  수수료:{" "}
-                                  {formatMoney(org.monthCommissionAmount)}원
-                                </div>
-                                <div>완료 건수: {org.monthOrderCount}건</div>
                               </div>
                             </div>
                           </li>
