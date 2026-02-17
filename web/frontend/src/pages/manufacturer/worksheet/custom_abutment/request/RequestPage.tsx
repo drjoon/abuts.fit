@@ -44,7 +44,7 @@ import {
   getDiameterBucketIndex,
 } from "@/features/manufacturer/worksheet/customAbutment/request/utils";
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
-import { MachiningQueueBoard } from "./MachiningQueueBoard";
+import { MachiningQueueBoard } from "../machining/MachiningQueueBoard";
 import { PreviewModal } from "./PreviewModal";
 import { useRequestFileHandlers } from "@/features/manufacturer/worksheet/customAbutment/request/useRequestFileHandlers";
 import { usePreviewLoader } from "@/features/manufacturer/worksheet/customAbutment/request/usePreviewLoader";
