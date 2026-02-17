@@ -1,7 +1,7 @@
 import express from "express";
 const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";
-import * as cncEventController from "../../controllers/cncEvent.controller.js";
+import * as cncEventController from "../../controllers/cnc/cncEvent.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 
 // 모든 라우트에 인증 미들웨어 적용
