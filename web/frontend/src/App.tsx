@@ -11,25 +11,25 @@ import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/utils/filenameRules";
 import { GuideTourProvider } from "@/features/guidetour/GuideTourProvider";
 
-const Index = lazy(() => import("./pages/Index"));
+const Index = lazy(() => import("./pages/public/Index"));
 const LoginPage = lazy(() =>
-  import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })),
+  import("./pages/auth/LoginPage").then((m) => ({ default: m.LoginPage })),
 );
 const SignupPage = lazy(() =>
-  import("./pages/SignupPage").then((m) => ({ default: m.SignupPage })),
+  import("./pages/auth/SignupPage").then((m) => ({ default: m.SignupPage })),
 );
 const SignupStaffPage = lazy(() =>
-  import("./pages/SignupStaffPage").then((m) => ({
+  import("./pages/auth/SignupStaffPage").then((m) => ({
     default: m.SignupStaffPage,
   })),
 );
 const ForgotPasswordPage = lazy(() =>
-  import("./pages/ForgotPasswordPage").then((m) => ({
+  import("./pages/auth/ForgotPasswordPage").then((m) => ({
     default: m.ForgotPasswordPage,
   })),
 );
 const ResetPasswordPage = lazy(() =>
-  import("./pages/ResetPasswordPage").then((m) => ({
+  import("./pages/auth/ResetPasswordPage").then((m) => ({
     default: m.ResetPasswordPage,
   })),
 );
@@ -39,7 +39,9 @@ const DashboardLayout = lazy(() =>
   })),
 );
 const DashboardHome = lazy(() =>
-  import("./pages/DashboardHome").then((m) => ({ default: m.DashboardHome })),
+  import("./pages/dashboard/DashboardHome").then((m) => ({
+    default: m.DashboardHome,
+  })),
 );
 const NewRequestPage = lazy(() =>
   import("./pages/requestor/new_request/NewRequestPage").then((m) => ({
@@ -54,7 +56,7 @@ const ManufacturerWorksheetPage = lazy(() =>
   ),
 );
 const SettingsPage = lazy(() =>
-  import("./pages/SettingsPage").then((m) => ({
+  import("./pages/dashboard/SettingsPage").then((m) => ({
     default: m.SettingsPage,
   })),
 );
@@ -75,43 +77,57 @@ const CncDashboardPage = lazy(() =>
   })),
 );
 const HelpPage = lazy(() =>
-  import("./pages/HelpPage").then((m) => ({ default: m.HelpPage })),
+  import("./pages/public/HelpPage").then((m) => ({ default: m.HelpPage })),
 );
 const ContactPage = lazy(() =>
-  import("./pages/ContactPage").then((m) => ({ default: m.ContactPage })),
+  import("./pages/public/ContactPage").then((m) => ({
+    default: m.ContactPage,
+  })),
 );
 const OAuthCallbackPage = lazy(() =>
-  import("./pages/OAuthCallbackPage").then((m) => ({
+  import("./pages/auth/OAuthCallbackPage").then((m) => ({
     default: m.OAuthCallbackPage,
   })),
 );
 const TermsPage = lazy(() =>
-  import("./pages/TermsPage").then((m) => ({ default: m.TermsPage })),
+  import("./pages/public/TermsPage").then((m) => ({ default: m.TermsPage })),
 );
 const PrivacyPage = lazy(() =>
-  import("./pages/PrivacyPage").then((m) => ({ default: m.PrivacyPage })),
+  import("./pages/public/PrivacyPage").then((m) => ({
+    default: m.PrivacyPage,
+  })),
 );
 const SecurityPage = lazy(() =>
-  import("./pages/SecurityPage").then((m) => ({ default: m.SecurityPage })),
+  import("./pages/public/SecurityPage").then((m) => ({
+    default: m.SecurityPage,
+  })),
 );
 const CookiesPage = lazy(() =>
-  import("./pages/CookiesPage").then((m) => ({ default: m.CookiesPage })),
+  import("./pages/public/CookiesPage").then((m) => ({
+    default: m.CookiesPage,
+  })),
 );
 const ServicePage = lazy(() =>
-  import("./pages/ServicePage").then((m) => ({ default: m.ServicePage })),
+  import("./pages/public/ServicePage").then((m) => ({
+    default: m.ServicePage,
+  })),
 );
 const BusinessPage = lazy(() =>
-  import("./pages/BusinessPage").then((m) => ({ default: m.BusinessPage })),
+  import("./pages/public/BusinessPage").then((m) => ({
+    default: m.BusinessPage,
+  })),
 );
 const CreditsPage = lazy(() =>
-  import("./pages/CreditsPage").then((m) => ({ default: m.CreditsPage })),
+  import("./pages/public/CreditsPage").then((m) => ({
+    default: m.CreditsPage,
+  })),
 );
 const RefundPolicyPage = lazy(() =>
-  import("./pages/RefundPolicyPage").then((m) => ({
+  import("./pages/public/RefundPolicyPage").then((m) => ({
     default: m.RefundPolicyPage,
   })),
 );
-const NotFound = lazy(() => import("./pages/NotFound"));
+const NotFound = lazy(() => import("./pages/public/NotFound"));
 
 const queryClient = new QueryClient();
 
