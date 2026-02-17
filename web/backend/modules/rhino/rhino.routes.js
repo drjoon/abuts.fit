@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
-import { authenticate, authorize } from "../middlewares/auth.middleware.js";
-import * as rhinoController from "../controllers/rhino.controller.js";
+import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import * as rhinoController from "../../controllers/rhino.controller.js";
 
 const router = Router();
 

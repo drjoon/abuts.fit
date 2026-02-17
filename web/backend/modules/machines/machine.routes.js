@@ -11,8 +11,8 @@ import {
   callRawProxy,
   startMachineProxy,
   stopMachineProxy,
-} from "../controllers/machine.controller.js";
-import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+} from "../../controllers/machine.controller.js";
+import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 
 const router = express.Router();
 

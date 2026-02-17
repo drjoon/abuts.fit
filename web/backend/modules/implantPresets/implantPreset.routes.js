@@ -1,6 +1,6 @@
 import { Router } from "express";
-import implantPresetController from "../controllers/implantPreset.controller.js";
-import { authenticate } from "../middlewares/auth.middleware.js";
+import implantPresetController from "../../controllers/implantPreset.controller.js";
+import { authenticate } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
 

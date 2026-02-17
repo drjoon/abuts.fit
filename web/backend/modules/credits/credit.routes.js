@@ -1,12 +1,12 @@
 import { Router } from "express";
 const router = Router();
 
-import { authenticate } from "../middlewares/auth.middleware.js";
+import { authenticate } from "../../middlewares/auth.middleware.js";
 import {
   getMyCreditBalance,
   getMyCreditSpendInsights,
-} from "../controllers/credit.controller.js";
-import { listMyCreditLedger } from "../controllers/creditLedger.controller.js";
+} from "../../controllers/credit.controller.js";
+import { listMyCreditLedger } from "../../controllers/creditLedger.controller.js";
 import {
   createChargeOrder,
   listMyChargeOrders,
@@ -14,11 +14,11 @@ import {
   requestTaxInvoice,
   listMyTaxInvoices,
   getMyTaxInvoice,
-} from "../controllers/creditBPlan.controller.js";
+} from "../../controllers/creditBPlan.controller.js";
 import {
   sendVerificationCode,
   verifyCode,
-} from "../controllers/phoneVerification.controller.js";
+} from "../../controllers/phoneVerification.controller.js";
 
 router.use(authenticate);
 

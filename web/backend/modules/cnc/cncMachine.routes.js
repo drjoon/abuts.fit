@@ -1,11 +1,11 @@
 import express from "express";
-import * as cncMachineController from "../controllers/cncMachine.controller.js";
-import * as cncEventController from "../controllers/cncEvent.controller.js";
-import * as machiningCallbackController from "../controllers/cncMachine/machiningCallback.js";
-import { authenticate } from "../middlewares/auth.middleware.js";
-import { authorizeRoles } from "../middlewares/role.middleware.js";
-import { requireBridgeSecret } from "../middlewares/bridgeSecret.middleware.js";
-import { requireBridgeIpAllowlist } from "../middlewares/bridgeIpAllowlist.middleware.js";
+import * as cncMachineController from "../../controllers/cncMachine.controller.js";
+import * as cncEventController from "../../controllers/cncEvent.controller.js";
+import * as machiningCallbackController from "../../controllers/cncMachine/machiningCallback.js";
+import { authenticate } from "../../middlewares/auth.middleware.js";
+import { authorizeRoles } from "../../middlewares/role.middleware.js";
+import { requireBridgeSecret } from "../../middlewares/bridgeSecret.middleware.js";
+import { requireBridgeIpAllowlist } from "../../middlewares/bridgeIpAllowlist.middleware.js";
 
 const router = express.Router();
 

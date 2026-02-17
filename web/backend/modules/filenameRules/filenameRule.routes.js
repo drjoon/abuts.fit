@@ -3,8 +3,8 @@
  */
 
 import { Router } from "express";
-import * as filenameRuleController from "../controllers/filenameRule.controller.js";
-import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import * as filenameRuleController from "../../controllers/filenameRule.controller.js";
+import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 
 const router = Router();
 

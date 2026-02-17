@@ -1,5 +1,5 @@
 import express from "express";
-import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   createDraft,
   getDraft,
@@ -7,7 +7,7 @@ import {
   addFileToDraft,
   removeFileFromDraft,
   deleteDraft,
-} from "../controllers/draftRequest.controller.js";
+} from "../../controllers/draftRequest.controller.js";
 
 const router = express.Router();
 

@@ -1,7 +1,7 @@
 import { Router } from "express";
 const router = Router();
-import adminController from "../controllers/admin.controller.js";
-import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import adminController from "../../controllers/admin.controller.js";
+import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   adminListBankTransactions,
   adminListChargeOrders,
@@ -14,11 +14,11 @@ import {
   adminUnlockChargeOrder,
   adminApproveChargeOrder,
   adminRejectChargeOrder,
-} from "../controllers/adminCreditBPlan.controller.js";
+} from "../../controllers/adminCreditBPlan.controller.js";
 import {
   adminListBonusGrants,
   adminOverrideWelcomeBonus,
-} from "../controllers/adminBonusGrant.controller.js";
+} from "../../controllers/adminBonusGrant.controller.js";
 import {
   adminListMails,
   adminGetMail,
@@ -33,7 +33,7 @@ import {
   adminEmptyTrash,
   adminEmptySpam,
   adminEmptySent,
-} from "../controllers/mail.controller.js";
+} from "../../controllers/mail.controller.js";
 import {
   adminListTaxInvoiceDrafts,
   adminGetTaxInvoiceDraft,
@@ -44,26 +44,26 @@ import {
   adminIssueTaxInvoice,
   adminGetTaxInvoiceStatus,
   adminCancelIssuedTaxInvoice,
-} from "../controllers/adminTaxInvoice.controller.js";
-import { adminOverrideOrganizationVerification } from "../controllers/admin.controller.js";
+} from "../../controllers/adminTaxInvoice.controller.js";
+import { adminOverrideOrganizationVerification } from "../../controllers/admin.controller.js";
 import {
   adminSendSms,
   adminListSms,
   adminSendKakaoOrSms,
   adminListKakaoTemplates,
-} from "../controllers/adminSms.controller.js";
+} from "../../controllers/adminSms.controller.js";
 import {
   adminGetCreditStats,
   adminGetOrganizationCredits,
   adminGetOrganizationCreditDetail,
-} from "../controllers/adminCredit.controller.js";
+} from "../../controllers/adminCredit.controller.js";
 import {
   adminGetQueueStats,
   adminListQueueTasks,
   adminGetQueueTask,
   adminRetryQueueTask,
   adminCancelQueueTask,
-} from "../controllers/adminPopbillQueue.controller.js";
+} from "../../controllers/adminPopbillQueue.controller.js";
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
 router.use(authorize(["admin"]));

@@ -1,7 +1,7 @@
 import { Router } from "express";
 const router = Router();
-import * as userController from "../controllers/user.controller.js";
-import { authenticate } from "../middlewares/auth.middleware.js";
+import * as userController from "../../controllers/user.controller.js";
+import { authenticate } from "../../middlewares/auth.middleware.js";
 
 // 모든 라우트에 인증 미들웨어 적용
 router.use(authenticate);

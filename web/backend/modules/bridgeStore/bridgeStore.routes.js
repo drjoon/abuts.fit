@@ -1,6 +1,6 @@
 import express from "express";
-import { authenticate, authorize } from "../middlewares/auth.middleware.js";
-import { proxyToBridge } from "../utils/bridgeProxy.js";
+import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
+import { proxyToBridge } from "../../utils/bridgeProxy.js";
 
 const router = express.Router();
 

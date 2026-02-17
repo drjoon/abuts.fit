@@ -1,14 +1,14 @@
 import { Router } from "express";
-import { authenticate, authorize } from "../middlewares/auth.middleware.js";
+import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   recordManufacturerPayment,
   listManufacturerPayments,
   sendUrgentMessage,
-} from "../controllers/manufacturer.controller.js";
+} from "../../controllers/manufacturer.controller.js";
 import {
   sendVerificationCode,
   verifyCode,
-} from "../controllers/phoneVerification.controller.js";
+} from "../../controllers/phoneVerification.controller.js";
 
 const router = Router();
 

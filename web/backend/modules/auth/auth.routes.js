@@ -1,12 +1,12 @@
 import { Router } from "express";
 const router = Router();
-import authController from "../controllers/auth.controller.js";
-import oauthController from "../controllers/oauth.controller.js";
-import { authenticate } from "../middlewares/auth.middleware.js";
+import authController from "../../controllers/auth.controller.js";
+import oauthController from "../../controllers/oauth.controller.js";
+import { authenticate } from "../../middlewares/auth.middleware.js";
 import {
   sendSignupEmailVerification,
   verifySignupEmailVerification,
-} from "../controllers/signupVerification.controller.js";
+} from "../../controllers/signupVerification.controller.js";
 
 // 회원가입
 router.post("/register", authController.register);
