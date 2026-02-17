@@ -399,7 +399,9 @@
 <a name='L334'></a><a href='#L334'>334</a>
 <a name='L335'></a><a href='#L335'>335</a>
 <a name='L336'></a><a href='#L336'>336</a>
-<a name='L337'></a><a href='#L337'>337</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L337'></a><a href='#L337'>337</a>
+<a name='L338'></a><a href='#L338'>338</a>
+<a name='L339'></a><a href='#L339'>339</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -411,6 +413,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -619,6 +625,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -650,8 +657,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -686,13 +691,12 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -704,6 +708,8 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -718,8 +724,6 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -745,7 +749,11 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { applyStatusMapping, ensureFinishedLotNumberForPackaging, getTodayYmdInKst } from "./request/utils.js";
+import {
+  applyStatusMapping,
+  ensureFinishedLotNumberForPackaging,
+  getTodayYmdInKst,
+} from "../../controllers/requests/utils.js";
 &nbsp;
 let _apiKey = <span class="cstat-no" title="statement not covered" >null;</span>
 let _genAI = <span class="cstat-no" title="statement not covered" >null;</span>
@@ -955,7 +963,8 @@ async function <span class="fstat-no" title="function not covered" >recognizeLot
   };
 &nbsp;
   const parsed = <span class="cstat-no" title="statement not covered" >tryParseJsonObject(cleaned);</span>
-  const parseOk = <span class="cstat-no" title="statement not covered" >!!parsed &amp;&amp; typeof parsed === "object" &amp;&amp; !Array.isArray(parsed);</span>
+  const parseOk =
+<span class="cstat-no" title="statement not covered" >    !!parsed &amp;&amp; typeof parsed === "object" &amp;&amp; !Array.isArray(parsed);</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  if (!parseOk) {</span>
 <span class="cstat-no" title="statement not covered" >    return { lotNumber: "", confidence: "low", provider: "gemini" };</span>
@@ -985,20 +994,18 @@ export const handlePackagingCapture = <span class="cstat-no" title="statement no
 &nbsp;
   const recognizedSuffix = <span class="cstat-no" title="statement not covered" >extractLotSuffix3(recognized?.lotNumber || "");</span>
 <span class="cstat-no" title="statement not covered" >  if (!recognizedSuffix) {</span>
-<span class="cstat-no" title="statement not covered" >    return res</span>
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          {
-            ok: false,
-            recognized: recognized || null,
-            matched: false,
-            reason: "no_lot_suffix",
-          },
-          "LOT 코드를 인식하지 못했습니다.",
-        ),
-      );
+<span class="cstat-no" title="statement not covered" >    return res.status(200).json(</span>
+      new ApiResponse(
+        200,
+        {
+          ok: false,
+          recognized: recognized || null,
+          matched: false,
+          reason: "no_lot_suffix",
+        },
+        "LOT 코드를 인식하지 못했습니다.",
+      ),
+    );
   }
 &nbsp;
   const regex = <span class="cstat-no" title="statement not covered" >new RegExp(`${recognizedSuffix}$`, "i");</span>
@@ -1008,20 +1015,18 @@ export const handlePackagingCapture = <span class="cstat-no" title="statement no
   });
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  if (!request) {</span>
-<span class="cstat-no" title="statement not covered" >    return res</span>
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          {
-            ok: true,
-            recognized: recognized || null,
-            matched: false,
-            suffix: recognizedSuffix,
-          },
-          "일치하는 의뢰가 없습니다.",
-        ),
-      );
+<span class="cstat-no" title="statement not covered" >    return res.status(200).json(</span>
+      new ApiResponse(
+        200,
+        {
+          ok: true,
+          recognized: recognized || null,
+          matched: false,
+          suffix: recognizedSuffix,
+        },
+        "일치하는 의뢰가 없습니다.",
+      ),
+    );
   }
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  request.caseInfos = request.caseInfos || {};</span>
@@ -1030,7 +1035,10 @@ export const handlePackagingCapture = <span class="cstat-no" title="statement no
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  request.caseInfos.stageFiles.packaging = {</span>
     fileName: name,
-    fileType: s3Utils.getFileType(name) === "image" ? "image/jpeg" : "application/octet-stream",
+    fileType:
+      s3Utils.getFileType(name) === "image"
+        ? "image/jpeg"
+        : "application/octet-stream",
     fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : undefined,
     filePath: name,
     s3Key: key,
@@ -1053,21 +1061,19 @@ export const handlePackagingCapture = <span class="cstat-no" title="statement no
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  await request.save();</span>
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return res</span>
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        {
-          ok: true,
-          matched: true,
-          requestId: request.requestId,
-          suffix: recognizedSuffix,
-          recognized: recognized || null,
-        },
-        "포장 캡쳐 처리 완료",
-      ),
-    );
+<span class="cstat-no" title="statement not covered" >  return res.status(200).json(</span>
+    new ApiResponse(
+      200,
+      {
+        ok: true,
+        matched: true,
+        requestId: request.requestId,
+        suffix: recognizedSuffix,
+        recognized: recognized || null,
+      },
+      "포장 캡쳐 처리 완료",
+    ),
+  );
 });
 &nbsp;
 export default { handlePackagingCapture };
@@ -1078,7 +1084,7 @@ export default { handlePackagingCapture };
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T08:13:21.383Z
+                at 2026-02-17T08:32:43.052Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

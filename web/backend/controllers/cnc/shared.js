@@ -14,7 +14,7 @@ import {
 import {
   getAllProductionQueues,
   recalculateQueueOnMaterialChange,
-} from "../request/production.utils.js";
+} from "../../controllers/requests/production.utils.js";
 
 export const CAM_RETRY_BATCH_LIMIT = Number(
   process.env.CAM_RETRY_BATCH_LIMIT || 30,

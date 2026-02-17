@@ -11,7 +11,10 @@ import {
   assertSignupVerifications,
   consumeSignupVerifications,
 } from "./signupVerification.controller.js";
-import { logSecurityEvent, logAuthFailure } from "./admin.controller.js";
+import {
+  logSecurityEvent,
+  logAuthFailure,
+} from "../../controllers/admin/admin.controller.js";
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 

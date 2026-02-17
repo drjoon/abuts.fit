@@ -1,6 +1,6 @@
 import Notification from "../../models/notification.model.js";
 import User from "../../models/user.model.js";
-import { sendNotificationToUser } from "../socket.js";
+import { sendNotificationToUser } from "../../socket.js";
 import { sendNotificationViaQueue } from "../../utils/notificationQueue.js";
 
 /**
@@ -128,7 +128,7 @@ export async function markNotificationAsRead(req, res) {
     const notification = await Notification.findOneAndUpdate(
       { _id: id, recipient: userId },
       { isRead: true },
-      { new: true }
+      { new: true },
     );
 
     if (!notification) {
@@ -161,7 +161,7 @@ export async function markAllNotificationsAsRead(req, res) {
 
     await Notification.updateMany(
       { recipient: userId, isRead: false },
-      { isRead: true }
+      { isRead: true },
     );
 
     res.status(200).json({

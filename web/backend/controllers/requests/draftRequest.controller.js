@@ -8,8 +8,8 @@ import { ApiError } from "../../utils/ApiError.js";
 import {
   uploadToRhinoServer,
   buildStandardStlFileName,
-} from "./request/creation.controller.js";
-import { normalizeCaseInfosImplantFields } from "./request/utils.js";
+} from "./creation.controller.js";
+import { normalizeCaseInfosImplantFields } from "./utils.js";
 
 // 새 드래프트 생성
 export const createDraft = asyncHandler(async (req, res) => {
@@ -28,7 +28,7 @@ export const createDraft = asyncHandler(async (req, res) => {
           ...normalized,
           workType: (ci && ci.workType) || "abutment",
         };
-      })
+      }),
     ),
   });
 
@@ -114,14 +114,14 @@ export const updateDraft = asyncHandler(async (req, res) => {
         let prev = null;
         if (incoming._id) {
           prev = prevCaseInfos.find(
-            (p) => String(p._id) === String(incoming._id)
+            (p) => String(p._id) === String(incoming._id),
           );
         }
 
         // 2. ID로 못 찾은 경우 파일 정보(s3Key 등)로 매칭 시도
         if (!prev && incoming.file?.s3Key) {
           prev = prevCaseInfos.find(
-            (p) => p.file?.s3Key === incoming.file.s3Key
+            (p) => p.file?.s3Key === incoming.file.s3Key,
           );
         }
 
@@ -143,14 +143,14 @@ export const updateDraft = asyncHandler(async (req, res) => {
             ...ci,
             ...normalized,
           };
-        })
+        }),
       );
 
       // findByIdAndUpdate로 원자적 업데이트
       updatedDraft = await DraftRequest.findByIdAndUpdate(
         id,
         { caseInfos: normalizedCaseInfos },
-        { new: true, runValidators: false }
+        { new: true, runValidators: false },
       );
 
       if (!updatedDraft) {
@@ -257,7 +257,7 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
   return res
     .status(201)
     .json(
-      new ApiResponse(201, addedCaseInfo, "Case (file+info) added to draft")
+      new ApiResponse(201, addedCaseInfo, "Case (file+info) added to draft"),
     );
 });
 
@@ -283,7 +283,7 @@ export const removeFileFromDraft = asyncHandler(async (req, res) => {
 
   const beforeLength = draft.caseInfos.length;
   draft.caseInfos = draft.caseInfos.filter(
-    (ci) => ci._id.toString() !== fileId
+    (ci) => ci._id.toString() !== fileId,
   );
 
   if (draft.caseInfos.length === beforeLength) {

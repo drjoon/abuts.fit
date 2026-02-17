@@ -3,7 +3,7 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import BridgeSetting from "../../models/bridgeSetting.model.js";
-import { sendNotificationToRoles } from "../socket.js";
+import { sendNotificationToRoles } from "../../socket.js";
 import path from "path";
 import fs from "fs/promises";
 import Request from "../../models/request.model.js";

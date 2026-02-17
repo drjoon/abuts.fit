@@ -8,7 +8,11 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { applyStatusMapping, ensureFinishedLotNumberForPackaging, getTodayYmdInKst } from "./request/utils.js";
+import {
+  applyStatusMapping,
+  ensureFinishedLotNumberForPackaging,
+  getTodayYmdInKst,
+} from "../../controllers/requests/utils.js";
 
 let _apiKey = null;
 let _genAI = null;
@@ -218,7 +222,8 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
   };
 
   const parsed = tryParseJsonObject(cleaned);
-  const parseOk = !!parsed && typeof parsed === "object" && !Array.isArray(parsed);
+  const parseOk =
+    !!parsed && typeof parsed === "object" && !Array.isArray(parsed);
 
   if (!parseOk) {
     return { lotNumber: "", confidence: "low", provider: "gemini" };
@@ -248,20 +253,18 @@ export const handlePackagingCapture = asyncHandler(async (req, res) => {
 
   const recognizedSuffix = extractLotSuffix3(recognized?.lotNumber || "");
   if (!recognizedSuffix) {
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          {
-            ok: false,
-            recognized: recognized || null,
-            matched: false,
-            reason: "no_lot_suffix",
-          },
-          "LOT 코드를 인식하지 못했습니다.",
-        ),
-      );
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          ok: false,
+          recognized: recognized || null,
+          matched: false,
+          reason: "no_lot_suffix",
+        },
+        "LOT 코드를 인식하지 못했습니다.",
+      ),
+    );
   }
 
   const regex = new RegExp(`${recognizedSuffix}$`, "i");
@@ -271,20 +274,18 @@ export const handlePackagingCapture = asyncHandler(async (req, res) => {
   });
 
   if (!request) {
-    return res
-      .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          {
-            ok: true,
-            recognized: recognized || null,
-            matched: false,
-            suffix: recognizedSuffix,
-          },
-          "일치하는 의뢰가 없습니다.",
-        ),
-      );
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          ok: true,
+          recognized: recognized || null,
+          matched: false,
+          suffix: recognizedSuffix,
+        },
+        "일치하는 의뢰가 없습니다.",
+      ),
+    );
   }
 
   request.caseInfos = request.caseInfos || {};
@@ -293,7 +294,10 @@ export const handlePackagingCapture = asyncHandler(async (req, res) => {
 
   request.caseInfos.stageFiles.packaging = {
     fileName: name,
-    fileType: s3Utils.getFileType(name) === "image" ? "image/jpeg" : "application/octet-stream",
+    fileType:
+      s3Utils.getFileType(name) === "image"
+        ? "image/jpeg"
+        : "application/octet-stream",
     fileSize: Number.isFinite(Number(fileSize)) ? Number(fileSize) : undefined,
     filePath: name,
     s3Key: key,
@@ -316,21 +320,19 @@ export const handlePackagingCapture = asyncHandler(async (req, res) => {
 
   await request.save();
 
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        {
-          ok: true,
-          matched: true,
-          requestId: request.requestId,
-          suffix: recognizedSuffix,
-          recognized: recognized || null,
-        },
-        "포장 캡쳐 처리 완료",
-      ),
-    );
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        ok: true,
+        matched: true,
+        requestId: request.requestId,
+        suffix: recognizedSuffix,
+        recognized: recognized || null,
+      },
+      "포장 캡쳐 처리 완료",
+    ),
+  );
 });
 
 export default { handlePackagingCapture };

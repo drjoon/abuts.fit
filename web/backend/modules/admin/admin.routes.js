@@ -33,7 +33,7 @@ import {
   adminEmptyTrash,
   adminEmptySpam,
   adminEmptySent,
-} from "../../controllers/mail.controller.js";
+} from "../../controllers/notifications/mail.controller.js";
 import {
   adminListTaxInvoiceDrafts,
   adminGetTaxInvoiceDraft,

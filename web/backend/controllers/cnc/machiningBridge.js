@@ -3,7 +3,12 @@ import CncEvent from "../../models/cncEvent.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import MachiningRecord from "../../models/machiningRecord.model.js";
 import { getIO } from "../../socket.js";
-import { applyStatusMapping } from "../request/utils.js";
+import {
+  applyStatusMapping,
+  ensureFinishedLotNumberForPackaging,
+  ensureLotNumberForMachining,
+  normalizeRequestForResponse,
+} from "../../controllers/requests/utils.js";
 import Machine from "../../models/machine.model.js";
 import {
   BRIDGE_BASE,

@@ -8,7 +8,7 @@ import {
 import {
   sendVerificationCode,
   verifyCode,
-} from "../../controllers/phoneVerification.controller.js";
+} from "../../controllers/auth/phoneVerification.controller.js";
 
 const router = Router();
 
@@ -19,7 +19,7 @@ router.use(authorize(["manufacturer", "admin"]));
 router.post(
   "/payments",
   authorize(["manufacturer", "admin"], { manufacturerRoles: ["owner"] }),
-  recordManufacturerPayment
+  recordManufacturerPayment,
 );
 // 조회는 staff 가능
 router.get(
@@ -27,7 +27,7 @@ router.get(
   authorize(["manufacturer", "admin"], {
     manufacturerRoles: ["owner", "staff"],
   }),
-  listManufacturerPayments
+  listManufacturerPayments,
 );
 
 // 긴급 메시지 발송
@@ -36,7 +36,7 @@ router.post(
   authorize(["manufacturer", "admin"], {
     manufacturerRoles: ["owner", "staff"],
   }),
-  sendUrgentMessage
+  sendUrgentMessage,
 );
 
 // 전화번호 인증
@@ -45,14 +45,14 @@ router.post(
   authorize(["manufacturer", "admin"], {
     manufacturerRoles: ["owner", "staff"],
   }),
-  sendVerificationCode
+  sendVerificationCode,
 );
 router.post(
   "/phone/verify-code",
   authorize(["manufacturer", "admin"], {
     manufacturerRoles: ["owner", "staff"],
   }),
-  verifyCode
+  verifyCode,
 );
 
 export default router;

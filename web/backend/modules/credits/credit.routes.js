@@ -6,7 +6,7 @@ import {
   getMyCreditBalance,
   getMyCreditSpendInsights,
 } from "../../controllers/credits/credit.controller.js";
-import { listMyCreditLedger } from "../../controllers/creditLedger.controller.js";
+import { listMyCreditLedger } from "../../controllers/credits/creditLedger.controller.js";
 import {
   createChargeOrder,
   listMyChargeOrders,
@@ -18,7 +18,7 @@ import {
 import {
   sendVerificationCode,
   verifyCode,
-} from "../../controllers/phoneVerification.controller.js";
+} from "../../controllers/auth/phoneVerification.controller.js";
 
 router.use(authenticate);
 

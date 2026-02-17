@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
-import { ensureLotNumberForMachining } from "./request/utils.js";
+import { ensureLotNumberForMachining } from "../../controllers/requests/utils.js";
 
 export async function handleMachiningStartedWebhook(req, res) {
   try {

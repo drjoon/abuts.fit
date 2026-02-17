@@ -1,6 +1,6 @@
 import { Router } from "express";
 import * as bgController from "../../controllers/bg/bg.controller.js";
-import lotCaptureController from "../../controllers/lotCapture.controller.js";
+import { handlePackagingCapture } from "../../controllers/ai/lotCapture.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { requireBridgeSecret } from "../../middlewares/bridgeSecret.middleware.js";
 import { requireBridgeIpAllowlist } from "../../middlewares/bridgeIpAllowlist.middleware.js";
@@ -31,7 +31,7 @@ router.post(
   "/lot-capture/packaging",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
-  lotCaptureController.handlePackagingCapture,
+  handlePackagingCapture,
 );
 router.get(
   "/file-status",

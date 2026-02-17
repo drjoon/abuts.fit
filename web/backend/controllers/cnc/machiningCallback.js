@@ -1,7 +1,7 @@
 import { getIO } from "../../socket.js";
 import mongoose from "mongoose";
 import Request from "../../models/request.model.js";
-import { applyStatusMapping } from "../request/utils.js";
+import { applyStatusMapping } from "../../controllers/requests/utils.js";
 
 /**
  * 브리지 서버에서 가공 완료 시 호출하는 콜백 엔드포인트

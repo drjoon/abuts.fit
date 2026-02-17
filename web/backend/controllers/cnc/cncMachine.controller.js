@@ -8,18 +8,18 @@ import {
   reorderBridgeQueueForMachine,
   updateBridgeQueueJobPause,
   updateBridgeQueueJobQty,
-} from "./cncMachine/bridgeQueue.js";
+} from "../../controllers/cnc/bridgeQueue.js";
 import {
   getBridgeActiveProgram,
   getMachineFlagsForBridge,
   getMachines,
-} from "./cncMachine/machines.js";
+} from "../../controllers/cnc/machines.js";
 import {
   createCncDirectDownloadPresign,
   createCncDirectDownloadPresignForBridge,
   createCncDirectUploadPresign,
   enqueueCncDirectToDb,
-} from "./cncMachine/direct.js";
+} from "../../controllers/cnc/direct.js";
 import {
   enqueueBridgeContinuousJob,
   enqueueBridgeContinuousJobFromDb,
@@ -27,24 +27,24 @@ import {
   getJobResult,
   uploadAndEnqueueContinuousForMachine,
   smartUpload,
-} from "./cncMachine/continuous.js";
+} from "../../controllers/cnc/continuous.js";
 import {
   applyProductionQueueBatchForMachine,
   getProductionQueues,
-} from "./cncMachine/production.js";
+} from "../../controllers/cnc/production.js";
 import {
   cancelScheduledMaterialChange,
   scheduleMaterialChange,
   updateMachineMaterial,
   updateMaterialRemaining,
-} from "./cncMachine/material.js";
+} from "../../controllers/cnc/material.js";
 import {
   getDummySettingsForBridge,
   updateDummyLastRunKeyForBridge,
   updateDummySettings,
   updateDummyEnabledBulk,
-} from "./cncMachine/dummy.js";
-import { initializeMachines } from "./cncMachine/dev.js";
+} from "../../controllers/cnc/dummy.js";
+import { initializeMachines } from "../../controllers/cnc/dev.js";
 import {
   recordMachiningCompleteForBridge,
   recordMachiningStartForBridge,
@@ -53,7 +53,7 @@ import {
   recordMachiningTickForBridge,
   getLastCompletedMachiningMap,
   getCompletedMachiningRecords,
-} from "./cncMachine/machiningBridge.js";
+} from "../../controllers/cnc/machiningBridge.js";
 
 export {
   getDummySettingsForBridge,
