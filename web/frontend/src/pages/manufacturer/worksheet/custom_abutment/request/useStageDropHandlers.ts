@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type DragEvent } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
-import type { ManufacturerRequest } from "./utils";
+import type { ManufacturerRequest } from "../utils/request";
 
 type StageDropParams = {
   isMachiningStage: boolean;

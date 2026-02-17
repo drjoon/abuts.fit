@@ -1,6 +1,9 @@
 import { useCallback } from "react";
 import { getFileBlob, setFileBlob } from "@/utils/stlIndexedDb";
-import { getReviewStageKeyByTab, type ManufacturerRequest } from "./utils";
+import {
+  getReviewStageKeyByTab,
+  type ManufacturerRequest,
+} from "../utils/request";
 import { toast as toastFn, useToast } from "@/hooks/use-toast";
 
 type PreviewLoaderParams = {

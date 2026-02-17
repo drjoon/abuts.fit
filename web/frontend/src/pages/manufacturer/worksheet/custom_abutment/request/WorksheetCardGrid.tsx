@@ -8,7 +8,7 @@ import {
   getAcceptByStage,
   getDiameterBucketIndex,
   stageOrder,
-} from "./utils";
+} from "../utils/request";
 
 type WorksheetCardGridProps = {
   requests: ManufacturerRequest[];

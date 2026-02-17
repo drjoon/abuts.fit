@@ -5,7 +5,7 @@ import {
   type ManufacturerRequest,
   type ReviewStageKey,
   getReviewStageKeyByTab,
-} from "./utils";
+} from "../utils/request";
 
 type UseRequestFileHandlersProps = {
   token: string | null;

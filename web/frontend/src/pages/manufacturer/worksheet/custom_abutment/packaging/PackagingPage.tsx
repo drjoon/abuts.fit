@@ -25,8 +25,8 @@ import {
   WorksheetDiameterQueueModal,
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
-import { WorksheetCardGrid } from "../request/WorksheetCardGrid";
-import { PreviewModal } from "../request/PreviewModal";
+import { WorksheetCardGrid } from "../components/WorksheetCardGrid";
+import { PreviewModal } from "../components/PreviewModal";
 import { useRequestFileHandlers } from "@/features/manufacturer/worksheet/customAbutment/request/useRequestFileHandlers";
 import { usePreviewLoader } from "@/features/manufacturer/worksheet/customAbutment/request/usePreviewLoader";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
