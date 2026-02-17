@@ -742,6 +742,14 @@ export const RequestPage = ({
       0,
     );
 
+    if (totalBoxCount === 0 || totalRequestCount === 0) {
+      toast({
+        title: "접수할 박스가 없습니다",
+        description: "발송 박스가 배정된 의뢰가 없습니다.",
+      });
+      return;
+    }
+
     // 컨펌 모달 띄우기
     setConfirmTitle("모든 박스 접수 확인");
     setConfirmDescription(
@@ -755,16 +763,42 @@ export const RequestPage = ({
         </p>
       </div>,
     );
+    setConfirmOpen(true);
     setConfirmAction(() => async () => {
       try {
-        // 1. 모든 의뢰건 일괄 승인
+        if (!token) {
+          throw new Error("로그인이 필요합니다.");
+        }
+
+        // 1. 모든 의뢰건 일괄 승인 (토스트/리프레시 없이 직접 호출)
+        //    - 택배 접수 완료 시 다음 단계(추적관리)로 이동해야 하므로 tracking 을 승인한다.
         const allRequests = Array.from(boxMap.values()).flat();
-        for (const req of allRequests) {
-          await handleUpdateReviewStatus({
-            req,
-            status: "APPROVED",
-            stageOverride: "shipping",
-          });
+        const tasks = await Promise.allSettled(
+          allRequests.map(async (req) => {
+            const res = await fetch(`/api/requests/${req._id}/review-status`, {
+              method: "PATCH",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                stage: "tracking",
+                status: "APPROVED",
+                reason: "",
+              }),
+            });
+            if (!res.ok) {
+              const body: any = await res.json().catch(() => ({}));
+              throw new Error(body?.message || body?.error || "승인 실패");
+            }
+          }),
+        );
+
+        const failedCount = tasks.filter((t) => t.status === "rejected").length;
+        if (failedCount > 0) {
+          throw new Error(
+            `${failedCount}건 승인에 실패했습니다. 잠시 후 다시 시도해주세요.`,
+          );
         }
 
         // 2. 엑셀 다운로드
@@ -848,53 +882,36 @@ export const RequestPage = ({
         utils.book_append_sheet(wb, sheet, "배송");
         writeFileXLSX(wb, `애크로덴트-${today}.xlsx`);
 
+        await fetchRequests();
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("stage", "tracking");
+          return next;
+        });
+
         toast({
           title: "접수 완료",
-          description: `${totalBoxCount}개 박스가 접수되었습니다.`,
-          duration: 3000,
+          description: `총 ${totalBoxCount}개 박스(${totalRequestCount}건) 접수 완료`,
         });
-      } catch (error) {
+      } catch (err: any) {
         toast({
           title: "접수 실패",
           description:
-            (error as Error)?.message || "잠시 후 다시 시도해주세요.",
+            err?.message || "접수/다운로드 처리 중 오류가 발생했습니다.",
           variant: "destructive",
         });
+      } finally {
+        setConfirmAction(null);
       }
     });
-    setConfirmOpen(true);
-  }, [filteredAndSorted, tabStage, handleUpdateReviewStatus, toast]);
-
-  const loadMore = useCallback(() => {
-    setVisibleCount((prev) =>
-      Math.min(prev + 9, filteredAndSorted.length || 0),
-    );
-  }, [filteredAndSorted.length]);
-
-  useEffect(() => {
-    setVisibleCount(Math.min(3, filteredAndSorted.length));
   }, [
-    filteredAndSorted.length,
-    worksheetSearch,
-    showCompleted,
-    isCamStage,
-    isMachiningStage,
+    filteredAndSorted,
+    fetchRequests,
+    setSearchParams,
+    tabStage,
+    toast,
+    token,
   ]);
-
-  useEffect(() => {
-    if (!sentinelRef.current) return;
-    const el = sentinelRef.current;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          loadMore();
-        }
-      },
-      { root: null, threshold: 1 },
-    );
-    observer.observe(el);
-    return () => observer.unobserve(el);
-  }, [loadMore]);
 
   const diameterQueueForReceive = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];
