@@ -283,6 +283,19 @@ export const PreviewModal = ({
 
   const canRegenerateFilledStl = !isCamStage && !isStageFileStage;
 
+  const buildStandardStlFileName = (args: {
+    requestId: string;
+    clinicName?: string;
+    patientName?: string;
+    tooth?: string;
+    originalFileName?: string;
+  }) => {
+    const ext = args.originalFileName?.includes(".")
+      ? `.${String(args.originalFileName).split(".").pop()?.toLowerCase()}`
+      : ".stl";
+    return `${args.requestId}-${args.clinicName || ""}-${args.patientName || ""}-${args.tooth || ""}${ext}`;
+  };
+
   const onRegenerate = async () => {
     if (!canRegenerateFilledStl) return;
     if (!token) {
@@ -295,8 +308,24 @@ export const PreviewModal = ({
     }
     if (regenerating || isUploading) return;
 
+    const standardFilePath =
+      req?.requestId &&
+      req?.caseInfos?.clinicName &&
+      req?.caseInfos?.patientName &&
+      req?.caseInfos?.tooth
+        ? buildStandardStlFileName({
+            requestId: String(req.requestId),
+            clinicName: String(req.caseInfos.clinicName || ""),
+            patientName: String(req.caseInfos.patientName || ""),
+            tooth: String(req.caseInfos.tooth || ""),
+            originalFileName:
+              req.caseInfos?.file?.originalName || previewFiles.original?.name,
+          })
+        : "";
+
     const filePath = String(
-      req.caseInfos?.file?.filePath ||
+      standardFilePath ||
+        req.caseInfos?.file?.filePath ||
         req.caseInfos?.file?.originalName ||
         previewFiles.original?.name ||
         "",
@@ -340,7 +369,7 @@ export const PreviewModal = ({
             return {
               title: "재생성 실패",
               description:
-                "Rhino 서버가 구버전입니다. 서버 업데이트 후 다시 시도하세요.",
+                "Rhino 서버에서 파일을 찾지 못했습니다. (filePath 확인)",
             };
           }
           if (status === 503) {

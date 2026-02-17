@@ -73,7 +73,7 @@ export const processFileByName = asyncHandler(async (req, res) => {
   const resp = await enqueueTask(() =>
     axios.post(
       `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`,
-      { fileName: safeName, force },
+      { filePath: safeName, fileName: safeName, force },
       {
         timeout: 1000 * 60 * 1,
         headers: rhinoAuthHeaders(),
