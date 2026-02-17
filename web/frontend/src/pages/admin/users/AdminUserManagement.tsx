@@ -224,6 +224,27 @@ export const AdminUserManagement = () => {
     [token],
   );
 
+  const toggleUserActive = useCallback(
+    async (userId: string) => {
+      if (!token) return false;
+      const res = await request<any>({
+        path: `/api/admin/users/${encodeURIComponent(userId)}/toggle-active`,
+        method: "PATCH",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        toast({
+          title: "사용자 상태 변경 실패",
+          description: res.data?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
+    },
+    [toast, token],
+  );
+
   useEffect(() => {
     void fetchUsers();
   }, [fetchUsers]);
@@ -258,10 +279,22 @@ export const AdminUserManagement = () => {
       void fetchUserDetail(userId);
       return;
     }
-    toast({
-      title: `사용자 ${action} 완료`,
-      description: `${userName}님의 상태가 변경되었습니다.`,
-    });
+
+    const run = async () => {
+      const ok = await toggleUserActive(userId);
+      if (!ok) return;
+
+      toast({
+        title: `사용자 ${action} 완료`,
+        description: `${userName}님의 상태가 변경되었습니다.`,
+      });
+      await fetchUsers();
+      if (selectedUserId === userId) {
+        await fetchUserDetail(userId);
+      }
+    };
+
+    void run();
   };
 
   const totalUsers = sourceUsers.length;

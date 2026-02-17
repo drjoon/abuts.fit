@@ -303,7 +303,7 @@ async function register(req, res) {
       .toLowerCase();
 
     // 필수 필드 검증
-    if (!name || !normalizedEmail || !password) {
+    if (!name || !normalizedEmail || (!password && !socialProvider)) {
       return res.status(400).json({
         success: false,
         message: "필수 필드가 누락되었습니다.",
@@ -431,7 +431,7 @@ async function register(req, res) {
     const userDoc = {
       name,
       email: normalizedEmail,
-      password,
+      password: password || generateRandomPassword(),
       role: normalizedRole,
       requestorRole: normalizedRole === "requestor" ? "owner" : null,
       manufacturerRole: normalizedRole === "manufacturer" ? "owner" : null,
@@ -440,7 +440,8 @@ async function register(req, res) {
       referralCode,
       referredByUserId: referredByObjectId,
       referralGroupLeaderId,
-      approvedAt: new Date(),
+      approvedAt: null,
+      active: false,
       ...(normalizedRole === "requestor" && !socialProvider
         ? { isVerified: true }
         : {}),
@@ -483,13 +484,17 @@ async function register(req, res) {
     };
     delete userWithoutPassword.password;
 
-    // 토큰 생성
-    const token = generateToken({ userId: user._id, role: user.role });
-    const refreshToken = generateRefreshToken(user._id);
+    const isApproved = Boolean(userWithoutPassword.approvedAt);
+    const token = isApproved
+      ? generateToken({ userId: user._id, role: user.role })
+      : null;
+    const refreshToken = isApproved ? generateRefreshToken(user._id) : null;
 
     res.status(201).json({
       success: true,
-      message: "회원가입이 완료되었습니다.",
+      message: isApproved
+        ? "회원가입이 완료되었습니다."
+        : "가입 신청이 접수되었습니다. 관리자가 승인하면 로그인할 수 있습니다.",
       data: {
         user: userWithoutPassword,
         token,
@@ -579,8 +584,8 @@ async function login(req, res) {
       });
     }
 
-    // 비활성화된 계정 확인
-    if (!user.active) {
+    // 비활성화 또는 미승인 계정 확인
+    if (!user.active || !user.approvedAt) {
       await logSecurityEvent({
         userId: user._id,
         action: "LOGIN_FAILED_INACTIVE_USER",
@@ -591,7 +596,7 @@ async function login(req, res) {
       });
       return res.status(401).json({
         success: false,
-        message: "비활성화된 계정입니다.",
+        message: "승인 대기 중인 계정입니다. 관리자 승인이 필요합니다.",
       });
     }
 

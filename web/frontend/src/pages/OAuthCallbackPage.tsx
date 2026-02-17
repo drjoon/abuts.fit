@@ -55,9 +55,18 @@ export const OAuthCallbackPage = () => {
         sessionStorage.setItem("socialToken", socialToken);
         const qs = new URLSearchParams();
         qs.set("mode", "social_new");
-        if (signupRole) qs.set("role", signupRole);
-        if (ref) qs.set("ref", ref);
-        navigate(`/signup?${qs.toString()}`, { replace: true });
+        const effectiveRole = signupRole || oauthSignupRole || "";
+        const effectiveRef = ref || oauthSignupRef || "";
+        if (effectiveRole) qs.set("role", effectiveRole);
+        if (effectiveRef) qs.set("ref", effectiveRef);
+
+        const target =
+          oauthIntent === "signup" && oauthReturnTo ? oauthReturnTo : "/signup";
+        sessionStorage.removeItem("oauthIntent");
+        sessionStorage.removeItem("oauthReturnTo");
+        sessionStorage.removeItem("oauthSignupRole");
+        sessionStorage.removeItem("oauthSignupRef");
+        navigate(`${target}?${qs.toString()}`, { replace: true });
         return;
       }
 
