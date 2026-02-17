@@ -12,11 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Search,
-  Filter,
   MoreHorizontal,
   UserCheck,
   UserX,
   Shield,
+  Users,
+  Briefcase,
   Building2,
   FileText,
   Eye,
@@ -297,6 +298,28 @@ export const AdminUserManagement = () => {
     void run();
   };
 
+  const changeUserRole = useCallback(
+    async (userId: string, role: string) => {
+      if (!token) return false;
+      const res = await request<any>({
+        path: `/api/admin/users/${encodeURIComponent(userId)}/change-role`,
+        method: "PATCH",
+        token,
+        jsonBody: { role },
+      });
+      if (!res.ok || !res.data?.success) {
+        toast({
+          title: "사용자 역할 변경 실패",
+          description: res.data?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
+    },
+    [toast, token],
+  );
+
   const totalUsers = sourceUsers.length;
   const totalRequestor = sourceUsers.filter(
     (u) => u.role === "requestor",
@@ -305,89 +328,19 @@ export const AdminUserManagement = () => {
   const totalManufacturer = sourceUsers.filter(
     (u) => u.role === "manufacturer",
   ).length;
+  const totalAdmin = sourceUsers.filter((u) => u.role === "admin").length;
   const totalPending = sourceUsers.filter((u) => u.status === "pending").length;
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="space-y-4">
-          {/* Search and Filter */}
-          <div className="flex gap-4 flex-wrap">
-            <div className="relative flex-1 min-w-[300px]">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="사용자 검색..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant={selectedRole === "all" ? "default" : "outline"}
-                onClick={() => setSelectedRole("all")}
-                size="sm"
-              >
-                전체
-              </Button>
-              <Button
-                variant={selectedRole === "requestor" ? "default" : "outline"}
-                onClick={() => setSelectedRole("requestor")}
-                size="sm"
-              >
-                의뢰자
-              </Button>
-              <Button
-                variant={selectedRole === "salesman" ? "default" : "outline"}
-                onClick={() => setSelectedRole("salesman")}
-                size="sm"
-              >
-                영업자
-              </Button>
-              <Button
-                variant={
-                  selectedRole === "manufacturer" ? "default" : "outline"
-                }
-                onClick={() => setSelectedRole("manufacturer")}
-                size="sm"
-              >
-                제조사
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant={selectedStatus === "all" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("all")}
-                size="sm"
-              >
-                전체 상태
-              </Button>
-              <Button
-                variant={selectedStatus === "active" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("active")}
-                size="sm"
-              >
-                활성
-              </Button>
-              <Button
-                variant={selectedStatus === "pending" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("pending")}
-                size="sm"
-              >
-                대기
-              </Button>
-            </div>
-          </div>
-        </div>
-
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-primary/10 rounded-lg">
-                  <Shield className="h-4 w-4 text-primary" />
+                  <Users className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">총 사용자</p>
@@ -416,6 +369,21 @@ export const AdminUserManagement = () => {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-100 rounded-lg">
+                  <Briefcase className="h-4 w-4 text-slate-700" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">영업자</p>
+                  <p className="text-2xl font-bold">
+                    {totalSalesman.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-100 rounded-lg">
                   <Building2 className="h-4 w-4 text-green-600" />
                 </div>
@@ -423,6 +391,21 @@ export const AdminUserManagement = () => {
                   <p className="text-sm text-muted-foreground">제조사</p>
                   <p className="text-2xl font-bold">
                     {totalManufacturer.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <Shield className="h-4 w-4 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">관리자</p>
+                  <p className="text-2xl font-bold">
+                    {totalAdmin.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -445,6 +428,81 @@ export const AdminUserManagement = () => {
           </Card>
         </div>
 
+        {/* Search and Filter (moved below summary cards) */}
+        <div className="flex gap-4 flex-wrap">
+          <div className="relative flex-1 min-w-[280px]">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="사용자 검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant={selectedRole === "all" ? "default" : "outline"}
+              onClick={() => setSelectedRole("all")}
+              size="sm"
+            >
+              전체
+            </Button>
+            <Button
+              variant={selectedRole === "requestor" ? "default" : "outline"}
+              onClick={() => setSelectedRole("requestor")}
+              size="sm"
+            >
+              의뢰자
+            </Button>
+            <Button
+              variant={selectedRole === "salesman" ? "default" : "outline"}
+              onClick={() => setSelectedRole("salesman")}
+              size="sm"
+            >
+              영업자
+            </Button>
+            <Button
+              variant={selectedRole === "manufacturer" ? "default" : "outline"}
+              onClick={() => setSelectedRole("manufacturer")}
+              size="sm"
+            >
+              제조사
+            </Button>
+            <Button
+              variant={selectedRole === "admin" ? "default" : "outline"}
+              onClick={() => setSelectedRole("admin")}
+              size="sm"
+            >
+              관리자
+            </Button>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant={selectedStatus === "all" ? "default" : "outline"}
+              onClick={() => setSelectedStatus("all")}
+              size="sm"
+            >
+              전체 상태
+            </Button>
+            <Button
+              variant={selectedStatus === "active" ? "default" : "outline"}
+              onClick={() => setSelectedStatus("active")}
+              size="sm"
+            >
+              활성
+            </Button>
+            <Button
+              variant={selectedStatus === "pending" ? "default" : "outline"}
+              onClick={() => setSelectedStatus("pending")}
+              size="sm"
+            >
+              대기
+            </Button>
+          </div>
+        </div>
+
         {/* Users List */}
         <Card>
           <CardHeader>
@@ -459,51 +517,41 @@ export const AdminUserManagement = () => {
                 불러오는 중...
               </div>
             )}
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredUsers.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                  className="p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
                 >
-                  <div className="flex items-center gap-4">
-                    <Avatar>
-                      <AvatarFallback>
-                        {String(user.name || "?")[0]}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium">{user.name}</h3>
-                        <Badge variant={getRoleBadgeVariant(user.role)}>
-                          {getRoleLabel(user.role)}
-                        </Badge>
-                        {getStatusBadge(user.status)}
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        {user.email}
-                      </p>
-                      {!!(user as any).originalEmail && (
-                        <p className="text-xs text-muted-foreground">
-                          원본 이메일: {(user as any).originalEmail}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar>
+                        <AvatarFallback>
+                          {String(user.name || "?")[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-medium truncate max-w-[180px]">
+                            {user.name}
+                          </h3>
+                          <Badge variant={getRoleBadgeVariant(user.role)}>
+                            {getRoleLabel(user.role)}
+                          </Badge>
+                          {getStatusBadge(user.status)}
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {user.email}
                         </p>
-                      )}
-                      <p className="text-sm text-muted-foreground">
-                        {user.companyName}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="text-right text-sm">
-                      <p className="text-muted-foreground">
-                        가입일: {user.joinDate}
-                      </p>
-                      <p className="text-muted-foreground">
-                        최종접속: {user.lastLogin}
-                      </p>
-                      <p className="text-muted-foreground">
-                        의뢰수: {user.totalRequests ?? "-"}
-                      </p>
+                        {!!(user as any).originalEmail && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            원본 이메일: {(user as any).originalEmail}
+                          </p>
+                        )}
+                        <p className="text-sm text-muted-foreground truncate">
+                          {user.companyName}
+                        </p>
+                      </div>
                     </div>
 
                     <DropdownMenu>
@@ -521,6 +569,69 @@ export const AdminUserManagement = () => {
                           <Eye className="mr-2 h-4 w-4" />
                           상세보기
                         </DropdownMenuItem>
+
+                        <DropdownMenuItem
+                          onClick={async () => {
+                            const ok = await changeUserRole(
+                              user.id,
+                              "requestor",
+                            );
+                            if (!ok) return;
+                            toast({
+                              title: "역할 변경 완료",
+                              description: `${user.name}님을 의뢰자로 변경했습니다.`,
+                            });
+                            await fetchUsers();
+                          }}
+                        >
+                          의뢰자로 변경
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={async () => {
+                            const ok = await changeUserRole(
+                              user.id,
+                              "salesman",
+                            );
+                            if (!ok) return;
+                            toast({
+                              title: "역할 변경 완료",
+                              description: `${user.name}님을 영업자로 변경했습니다.`,
+                            });
+                            await fetchUsers();
+                          }}
+                        >
+                          영업자로 변경
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={async () => {
+                            const ok = await changeUserRole(
+                              user.id,
+                              "manufacturer",
+                            );
+                            if (!ok) return;
+                            toast({
+                              title: "역할 변경 완료",
+                              description: `${user.name}님을 제조사로 변경했습니다.`,
+                            });
+                            await fetchUsers();
+                          }}
+                        >
+                          제조사로 변경
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={async () => {
+                            const ok = await changeUserRole(user.id, "admin");
+                            if (!ok) return;
+                            toast({
+                              title: "역할 변경 완료",
+                              description: `${user.name}님을 관리자로 변경했습니다.`,
+                            });
+                            await fetchUsers();
+                          }}
+                        >
+                          관리자로 변경
+                        </DropdownMenuItem>
+
                         {user.status === "pending" && (
                           <DropdownMenuItem
                             onClick={() =>
@@ -553,6 +664,17 @@ export const AdminUserManagement = () => {
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                  </div>
+
+                  <div className="mt-3 text-sm text-muted-foreground">
+                    <div className="flex items-center justify-between">
+                      <span>가입일</span>
+                      <span>{user.joinDate}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>최종접속</span>
+                      <span>{user.lastLogin}</span>
+                    </div>
                   </div>
                 </div>
               ))}
