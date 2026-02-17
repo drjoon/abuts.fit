@@ -13,6 +13,15 @@ const RHINO_COMPUTE_BASE_URL = String(
   process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000",
 ).replace(/\/+$/, "");
 
+const RHINO_SHARED_SECRET = String(
+  process.env.BRIDGE_SHARED_SECRET || "",
+).trim();
+
+const rhinoAuthHeaders = () => {
+  if (!RHINO_SHARED_SECRET) return {};
+  return { "X-Bridge-Secret": RHINO_SHARED_SECRET };
+};
+
 // [추가] 과도한 병렬 요청 방지를 위한 세마포어/큐 관리
 const MAX_CONCURRENT_FILLHOLE = 1; // Rhino가 1대이므로 1개씩 순차 처리
 let activeRequests = 0;
@@ -65,7 +74,10 @@ export const processFileByName = asyncHandler(async (req, res) => {
     axios.post(
       `${RHINO_COMPUTE_BASE_URL}/api/rhino/process-file`,
       { fileName: safeName, force },
-      { timeout: 1000 * 60 * 1 },
+      {
+        timeout: 1000 * 60 * 1,
+        headers: rhinoAuthHeaders(),
+      },
     ),
   );
 
@@ -105,7 +117,11 @@ export const fillholeFromUpload = asyncHandler(async (req, res) => {
     axios.post(
       `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
       { name: safeName },
-      { responseType: "arraybuffer", timeout: 1000 * 60 * 5 },
+      {
+        responseType: "arraybuffer",
+        timeout: 1000 * 60 * 5,
+        headers: rhinoAuthHeaders(),
+      },
     ),
   );
 
@@ -133,7 +149,11 @@ export const fillholeFromStoreName = asyncHandler(async (req, res) => {
     axios.post(
       `${RHINO_COMPUTE_BASE_URL}/api/rhino/store/fillhole`,
       { name: safeName },
-      { responseType: "arraybuffer", timeout: 1000 * 60 * 5 },
+      {
+        responseType: "arraybuffer",
+        timeout: 1000 * 60 * 5,
+        headers: rhinoAuthHeaders(),
+      },
     ),
   );
 

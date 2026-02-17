@@ -295,7 +295,12 @@ export const PreviewModal = ({
     }
     if (regenerating || isUploading) return;
 
-    const fileName = String(req.caseInfos?.file?.filePath || "").trim();
+    const fileName = String(
+      req.caseInfos?.file?.filePath ||
+        req.caseInfos?.file?.originalName ||
+        previewFiles.original?.name ||
+        "",
+    ).trim();
     if (!fileName) {
       toast({
         title: "실패",
