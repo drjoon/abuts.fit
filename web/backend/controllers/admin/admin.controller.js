@@ -347,6 +347,7 @@ async function getReferralGroups(req, res) {
       ]),
     );
 
+    const commissionBySalesmanLeaderId = new Map();
     let salesmanTotalCommissionAmount = 0;
     for (const g of salesmanGroups) {
       const leaderId = String(g?.leader?._id || "");
@@ -368,19 +369,33 @@ async function getReferralGroups(req, res) {
       }
       const directCommission = directRevenue * commissionRate;
       const level1Commission = level1Revenue * level1CommissionRate;
-      salesmanTotalCommissionAmount += directCommission + level1Commission;
+      const totalCommission = directCommission + level1Commission;
+      commissionBySalesmanLeaderId.set(leaderId, totalCommission);
+      salesmanTotalCommissionAmount += totalCommission;
     }
 
     const salesmanAvgCommissionPerGroup = salesmanGroupCount
       ? Math.round(salesmanTotalCommissionAmount / salesmanGroupCount)
       : 0;
 
-    const totalGroups = groups.length;
+    const groupsWithCommission = groups.map((g) => {
+      const role = String(g?.leader?.role || "");
+      if (role !== "salesman") return g;
+      const leaderId = String(g?.leader?._id || "");
+      return {
+        ...g,
+        commissionAmount: Math.round(
+          Number(commissionBySalesmanLeaderId.get(leaderId) || 0),
+        ),
+      };
+    });
+
+    const totalGroups = groupsWithCommission.length;
     const totalAccounts = groups.reduce(
       (acc, g) => acc + Number(g.memberCount || 0),
       0,
     );
-    const totalGroupOrders = groups.reduce(
+    const totalGroupOrders = groupsWithCommission.reduce(
       (acc, g) => acc + Number(g.groupTotalOrders || 0),
       0,
     );
@@ -414,9 +429,10 @@ async function getReferralGroups(req, res) {
             avgAccountsPerGroup: salesmanAvgAccountsPerGroup,
             netNewGroups: salesmanNetNewGroups,
             avgCommissionPerGroup: salesmanAvgCommissionPerGroup,
+            totalCommissionAmount: Math.round(salesmanTotalCommissionAmount),
           },
         },
-        groups,
+        groups: groupsWithCommission,
       },
     });
   } catch (error) {
@@ -442,9 +458,11 @@ async function getReferralGroupTree(req, res) {
     const leader = await User.findById(leaderId)
       .select({
         _id: 1,
+        role: 1,
         name: 1,
         email: 1,
         organization: 1,
+        organizationId: 1,
         active: 1,
         createdAt: 1,
         approvedAt: 1,
@@ -481,9 +499,11 @@ async function getReferralGroupTree(req, res) {
     })
       .select({
         _id: 1,
+        role: 1,
         name: 1,
         email: 1,
         organization: 1,
+        organizationId: 1,
         active: 1,
         createdAt: 1,
         approvedAt: 1,
@@ -533,9 +553,11 @@ async function getReferralGroupTree(req, res) {
 
     const nodes = (members || []).map((u) => ({
       _id: u._id,
+      role: u.role,
       name: u.name,
       email: u.email,
       organization: u.organization,
+      organizationId: u.organizationId,
       active: u.active,
       createdAt: u.createdAt,
       approvedAt: u.approvedAt,
@@ -632,6 +654,80 @@ async function getReferralGroupTree(req, res) {
     const effectiveUnitPrice =
       computeVolumeEffectiveUnitPrice(groupTotalOrders);
 
+    let commissionAmount = 0;
+    if (String(leader?.role || "") === "salesman") {
+      const commissionRate = 0.05;
+      const level1CommissionRate = commissionRate * 0.5;
+
+      const directRequestors = (nodes || []).filter(
+        (n) =>
+          String(n?.role || "") === "requestor" &&
+          String(n?.referredByUserId || "") === String(leader._id),
+      );
+
+      const directSalesmen = (nodes || []).filter(
+        (n) =>
+          String(n?.role || "") === "salesman" &&
+          String(n?.referredByUserId || "") === String(leader._id),
+      );
+      const directSalesmanIdSet = new Set(
+        directSalesmen.map((n) => String(n._id)),
+      );
+      const level1Requestors = (nodes || []).filter(
+        (n) =>
+          String(n?.role || "") === "requestor" &&
+          directSalesmanIdSet.has(String(n?.referredByUserId || "")),
+      );
+
+      const directOrgIds = directRequestors
+        .map((r) => String(r.organizationId || ""))
+        .filter(Boolean);
+      const level1OrgIds = level1Requestors
+        .map((r) => String(r.organizationId || ""))
+        .filter(Boolean);
+      const allOrgIds = Array.from(new Set([...directOrgIds, ...level1OrgIds]));
+
+      const orgObjectIds = allOrgIds
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+
+      const revenueRows = orgObjectIds.length
+        ? await Request.aggregate([
+            {
+              $match: {
+                requestorOrganizationId: { $in: orgObjectIds },
+                status: "완료",
+                createdAt: { $gte: last30Cutoff },
+              },
+            },
+            {
+              $group: {
+                _id: "$requestorOrganizationId",
+                revenueAmount: { $sum: "$price.amount" },
+              },
+            },
+          ])
+        : [];
+      const revenueByOrgId = new Map(
+        (revenueRows || []).map((r) => [
+          String(r._id),
+          Number(r.revenueAmount || 0),
+        ]),
+      );
+
+      let directRevenue = 0;
+      let level1Revenue = 0;
+      for (const oid of directOrgIds) {
+        directRevenue += Number(revenueByOrgId.get(String(oid)) || 0);
+      }
+      for (const oid of level1OrgIds) {
+        level1Revenue += Number(revenueByOrgId.get(String(oid)) || 0);
+      }
+      commissionAmount = Math.round(
+        directRevenue * commissionRate + level1Revenue * level1CommissionRate,
+      );
+    }
+
     return res.status(200).json({
       success: true,
       data: {
@@ -639,6 +735,7 @@ async function getReferralGroupTree(req, res) {
         memberCount: computedTierMemberCount,
         groupTotalOrders,
         effectiveUnitPrice,
+        commissionAmount,
         snapshot: snapshot
           ? {
               ymd,

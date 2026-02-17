@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Card,
@@ -36,6 +36,7 @@ type ApiGroupRow = {
   groupMemberCount?: number;
   groupTotalOrders?: number;
   effectiveUnitPrice?: number;
+  commissionAmount?: number;
   snapshotComputedAt?: string | null;
 };
 
@@ -69,9 +70,15 @@ type ApiGroupListResponse = {
 
 const roleBadge = (role?: string) => {
   if (role === "salesman") {
-    return <Badge variant="secondary">영업자</Badge>;
+    return (
+      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+        영업자
+      </Badge>
+    );
   }
-  return <Badge variant="outline">의뢰자</Badge>;
+  return (
+    <Badge className="bg-blue-600 text-white hover:bg-blue-600">의뢰자</Badge>
+  );
 };
 
 const formatMoney = (n: number) => {
@@ -104,6 +111,7 @@ type ApiGroupTreeResponse = {
     memberCount?: number;
     groupTotalOrders?: number;
     effectiveUnitPrice?: number;
+    commissionAmount?: number;
     snapshot?: {
       ymd?: string;
       groupMemberCount?: number;
@@ -171,8 +179,13 @@ const TreeNode = ({
 export default function AdminReferralGroupsPage() {
   const { token } = useAuthStore();
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<
+    "all" | "requestor" | "salesman"
+  >("all");
   const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<ApiTreeNode | null>(null);
+  const [visibleCount, setVisibleCount] = useState(8);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
 
   const { data: groupList, isLoading: isGroupListLoading } = useQuery({
     queryKey: ["admin-referral-groups"],
@@ -207,19 +220,55 @@ export default function AdminReferralGroupsPage() {
 
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return groups;
     return groups.filter((g) => {
       const leader = g.leader || ({} as any);
+      if (roleFilter !== "all" && String(leader.role || "") !== roleFilter) {
+        return false;
+      }
+      if (!q) return true;
       const hay =
         `${leader.organization || ""} ${leader.name || ""} ${leader.email || ""}`
           .trim()
           .toLowerCase();
       return hay.includes(q);
     });
-  }, [groups, search]);
+  }, [groups, roleFilter, search]);
+
+  const visibleGroups = useMemo(() => {
+    return filteredGroups.slice(0, Math.max(0, visibleCount));
+  }, [filteredGroups, visibleCount]);
+
+  useEffect(() => {
+    setVisibleCount(8);
+    setSelectedLeaderId(null);
+    setSelectedNode(null);
+  }, [roleFilter, search]);
+
+  useEffect(() => {
+    const sentinel = document.querySelector(
+      '[data-infinite-sentinel="admin-referral-groups"]',
+    );
+    if (!sentinel) return;
+    if (visibleGroups.length >= filteredGroups.length) return;
+
+    const root = listScrollRef.current;
+    if (!root) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (!hit) return;
+        setVisibleCount((prev) => Math.min(prev + 8, filteredGroups.length));
+      },
+      { root, rootMargin: "200px", threshold: 0 },
+    );
+
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [filteredGroups.length, visibleGroups.length]);
 
   const effectiveLeaderId =
-    selectedLeaderId || (filteredGroups[0]?.leader?._id ?? null);
+    selectedLeaderId || (visibleGroups[0]?.leader?._id ?? null);
 
   const { data: treeData, isLoading: isTreeLoading } = useQuery({
     queryKey: ["admin-referral-group-tree", effectiveLeaderId],
@@ -248,16 +297,6 @@ export default function AdminReferralGroupsPage() {
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">리퍼럴그룹</h1>
-          <p className="text-sm text-muted-foreground">
-            리더 기준으로 멤버 추천 계층도를 표시합니다. (단가/주문 합산은 리더
-            본인+직계 기준)
-          </p>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
@@ -338,18 +377,43 @@ export default function AdminReferralGroupsPage() {
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="text-base">그룹 목록</CardTitle>
-            <CardDescription className="text-xs">
-              리더(최상위) 계정 기준
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={roleFilter === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setRoleFilter("all")}
+              >
+                전체
+              </Button>
+              <Button
+                type="button"
+                variant={roleFilter === "requestor" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setRoleFilter("requestor")}
+              >
+                의뢰자
+              </Button>
+              <Button
+                type="button"
+                variant={roleFilter === "salesman" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setRoleFilter("salesman")}
+              >
+                영업자
+              </Button>
+            </div>
             <Input
-              placeholder="조직/이름/이메일 검색"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              placeholder="조직/이름/이메일 검색"
             />
-
-            <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
+            <div
+              ref={listScrollRef}
+              className="space-y-2 max-h-[65vh] overflow-y-auto pr-1"
+            >
               {isGroupListLoading ? (
                 <div className="text-sm text-muted-foreground">로딩중...</div>
               ) : filteredGroups.length === 0 ? (
@@ -357,52 +421,62 @@ export default function AdminReferralGroupsPage() {
                   표시할 그룹이 없습니다.
                 </div>
               ) : (
-                filteredGroups.map((g) => {
-                  const isActive =
-                    String(g.leader?._id) === String(effectiveLeaderId);
-                  const title =
-                    g.leader?.organization ||
-                    g.leader?.name ||
-                    g.leader?.email ||
-                    "";
-                  const groupTotalOrders = Number(g.groupTotalOrders || 0);
-                  const effectiveUnitPrice = Number(g.effectiveUnitPrice || 0);
+                visibleGroups.map((g) => {
+                  const leader = g.leader || ({} as any);
+                  const isSelected =
+                    String(leader._id) === String(effectiveLeaderId);
+                  const isSalesman = String(leader.role || "") === "salesman";
+                  const orders = Number(g.groupTotalOrders || 0);
+                  const unit = Number(g.effectiveUnitPrice || 0);
+                  const commission = Number(g.commissionAmount || 0);
                   return (
-                    <Button
-                      key={g.leader?._id}
+                    <button
+                      key={String(leader._id)}
                       type="button"
-                      variant={isActive ? "default" : "outline"}
-                      className="w-full justify-between h-auto py-2 px-3"
-                      onClick={() => setSelectedLeaderId(String(g.leader?._id))}
+                      className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                        isSelected ? "border-primary" : "border-border"
+                      }`}
+                      onClick={() => {
+                        setSelectedLeaderId(String(leader._id));
+                        setSelectedNode(null);
+                      }}
                     >
-                      <div className="text-left min-w-0">
-                        <div className="flex items-center gap-2">
-                          <div className="truncate text-sm font-medium">
-                            {title}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">
+                            {leader.organization ||
+                              leader.name ||
+                              leader.email ||
+                              leader._id}
                           </div>
-                          {roleBadge(g.leader?.role)}
+                          <div className="truncate text-xs text-muted-foreground">
+                            {leader.email || ""}
+                          </div>
+                          <div className="mt-1 text-[11px] text-muted-foreground">
+                            최근30일 {orders.toLocaleString()}건 ·{" "}
+                            {isSalesman ? "수수료" : "단가"}{" "}
+                            {formatMoney(isSalesman ? commission : unit)}원
+                          </div>
                         </div>
-                        <div className="truncate text-[11px] opacity-80">
-                          {g.leader?.email || ""}
-                        </div>
-                        <div className="flex items-center gap-2 text-[11px] opacity-80">
-                          <span>
-                            최근30일(리더+직계){" "}
-                            {groupTotalOrders.toLocaleString()}건 · 단가{" "}
-                            {effectiveUnitPrice.toLocaleString()}원
-                          </span>
-                          {!g.snapshotComputedAt ? (
-                            <Badge variant="outline" className="text-[10px]">
-                              미생성
-                            </Badge>
-                          ) : null}
+                        <div className="flex items-center gap-2">
+                          {roleBadge(leader.role)}
+                          <Badge variant="outline">
+                            {Number(g.memberCount || 0)}
+                          </Badge>
                         </div>
                       </div>
-                      <Badge variant="secondary">{g.memberCount}</Badge>
-                    </Button>
+                    </button>
                   );
                 })
               )}
+
+              {visibleGroups.length < filteredGroups.length ? (
+                <div
+                  data-infinite-sentinel="admin-referral-groups"
+                  className="h-8"
+                  aria-hidden="true"
+                />
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -410,9 +484,6 @@ export default function AdminReferralGroupsPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">계층도</CardTitle>
-            <CardDescription className="text-xs">
-              추천 관계(`referredByUserId`) 기준 (그룹 전체 구조)
-            </CardDescription>
           </CardHeader>
           <CardContent>
             {isTreeLoading ? (
@@ -432,11 +503,20 @@ export default function AdminReferralGroupsPage() {
                     주문(최근30일, 리더+직계):{" "}
                     {Number(treeData.groupTotalOrders || 0).toLocaleString()}건
                   </div>
-                  <div className="text-sm font-medium">
-                    당일 단가:{" "}
-                    {Number(treeData.effectiveUnitPrice || 0).toLocaleString()}
-                    원
-                  </div>
+                  {String(treeData?.leader?.role || "") === "salesman" ? (
+                    <div className="text-sm font-medium">
+                      수수료(최근30일 추정):{" "}
+                      {formatMoney(Number(treeData.commissionAmount || 0))}원
+                    </div>
+                  ) : (
+                    <div className="text-sm font-medium">
+                      당일 단가:{" "}
+                      {Number(
+                        treeData.effectiveUnitPrice || 0,
+                      ).toLocaleString()}
+                      원
+                    </div>
+                  )}
                 </div>
                 <TreeNode
                   node={treeData.tree}
