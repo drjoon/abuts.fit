@@ -1,6 +1,7 @@
 // BANK_WEBHOOK은 큐/워커를 거치지 않고 웹 백엔드에서 바로 처리
 // EasyFin 등 은행 웹훅으로 전달된 거래를 즉시 저장/업서트한다.
 import { upsertBankTransaction } from "../../utils/creditBPlanMatching.js";
+import { autoMatchBankTransactionsOnce } from "../../utils/creditBPlanMatching.js";
 
 export async function handleBankWebhook(req, res) {
   try {
@@ -20,7 +21,11 @@ export async function handleBankWebhook(req, res) {
       raw: payload,
     });
 
-    return res.json({ success: true, data: doc });
+    const matchResult = await autoMatchBankTransactionsOnce({
+      limit: 50,
+    }).catch(() => null);
+
+    return res.json({ success: true, data: doc, matchResult });
   } catch (error) {
     console.error("[bankWebhook] error:", error);
     const status = error.statusCode || 500;

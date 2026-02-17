@@ -46,16 +46,18 @@ async function getBalanceBreakdown(scope) {
 
     if (!Number.isFinite(amount)) continue;
 
+    const absAmount = Math.abs(amount);
+
     if (type === "CHARGE") {
-      paid += amount;
+      paid += absAmount;
       continue;
     }
     if (type === "BONUS") {
-      bonus += amount;
+      bonus += absAmount;
       continue;
     }
     if (type === "REFUND") {
-      paid += amount;
+      paid += absAmount;
       continue;
     }
     if (type === "ADJUST") {
@@ -63,7 +65,7 @@ async function getBalanceBreakdown(scope) {
       continue;
     }
     if (type === "SPEND") {
-      let spend = Math.abs(amount);
+      let spend = absAmount;
       const fromBonus = Math.min(bonus, spend);
       bonus -= fromBonus;
       spend -= fromBonus;
@@ -90,9 +92,8 @@ export async function getMyCreditBalance(req, res) {
   }
 
   const scope = await getCreditScope(req);
-  const { balance, paidBalance, bonusBalance } = await getBalanceBreakdown(
-    scope
-  );
+  const { balance, paidBalance, bonusBalance } =
+    await getBalanceBreakdown(scope);
   return res.json({
     success: true,
     data: { balance, paidBalance, bonusBalance },
@@ -148,16 +149,16 @@ export async function getMyCreditSpendInsights(req, res) {
   const recommendedOneMonthSupply = roundUpUnit(avgMonthlySpendSupply, 500000);
   const recommendedThreeMonthsSupply = roundUpUnit(
     avgMonthlySpendSupply * 3,
-    500000
+    500000,
   );
 
   const oneMonthSupply = Math.min(
     MAX,
-    Math.max(MIN, recommendedOneMonthSupply || 0)
+    Math.max(MIN, recommendedOneMonthSupply || 0),
   );
   const threeMonthsSupply = Math.min(
     MAX,
-    Math.max(MIN, recommendedThreeMonthsSupply || 0)
+    Math.max(MIN, recommendedThreeMonthsSupply || 0),
   );
 
   return res.json({

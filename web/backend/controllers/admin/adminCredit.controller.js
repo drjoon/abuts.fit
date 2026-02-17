@@ -99,17 +99,24 @@ export async function adminGetOrganizationCredits(req, res) {
     ledgerData.forEach((item) => {
       let paid = 0;
       let bonus = 0;
+      let spent = 0;
 
       item.entries.forEach((entry) => {
         const type = entry.type;
         const amount = Number(entry.amount || 0);
+        if (!Number.isFinite(amount)) return;
 
-        if (type === "CHARGE" || type === "REFUND" || type === "ADJUST") {
-          paid += amount;
+        const absAmount = Math.abs(amount);
+
+        if (type === "CHARGE" || type === "REFUND") {
+          paid += absAmount;
         } else if (type === "BONUS") {
-          bonus += amount;
+          bonus += absAmount;
+        } else if (type === "ADJUST") {
+          paid += amount;
         } else if (type === "SPEND") {
-          let spend = Math.abs(amount);
+          let spend = absAmount;
+          spent += spend;
           const fromBonus = Math.min(bonus, spend);
           bonus -= fromBonus;
           spend -= fromBonus;
@@ -121,6 +128,7 @@ export async function adminGetOrganizationCredits(req, res) {
         balance: Math.max(0, paid + bonus),
         paidBalance: Math.max(0, paid),
         bonusBalance: Math.max(0, bonus),
+        spentAmount: Math.max(0, spent),
       };
     });
 
@@ -130,6 +138,7 @@ export async function adminGetOrganizationCredits(req, res) {
         balance: 0,
         paidBalance: 0,
         bonusBalance: 0,
+        spentAmount: 0,
       };
 
       return {
@@ -182,18 +191,24 @@ export async function adminGetOrganizationCreditDetail(req, res) {
 
     let paid = 0;
     let bonus = 0;
+    let spent = 0;
     const history = [];
 
     for (const ledger of ledgers.reverse()) {
       const type = ledger.type;
       const amount = Number(ledger.amount || 0);
+      if (!Number.isFinite(amount)) continue;
+      const absAmount = Math.abs(amount);
 
-      if (type === "CHARGE" || type === "REFUND" || type === "ADJUST") {
-        paid += amount;
+      if (type === "CHARGE" || type === "REFUND") {
+        paid += absAmount;
       } else if (type === "BONUS") {
-        bonus += amount;
+        bonus += absAmount;
+      } else if (type === "ADJUST") {
+        paid += amount;
       } else if (type === "SPEND") {
-        let spend = Math.abs(amount);
+        let spend = absAmount;
+        spent += spend;
         const fromBonus = Math.min(bonus, spend);
         bonus -= fromBonus;
         spend -= fromBonus;
@@ -215,6 +230,7 @@ export async function adminGetOrganizationCreditDetail(req, res) {
         balance: Math.max(0, paid + bonus),
         paidBalance: Math.max(0, paid),
         bonusBalance: Math.max(0, bonus),
+        spentAmount: Math.max(0, spent),
         history: history.reverse(),
       },
     });

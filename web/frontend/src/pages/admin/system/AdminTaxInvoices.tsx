@@ -20,9 +20,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { FileText, Info } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { PopbillQueuePanel } from "@/features/admin/popbill/PopbillQueuePanel";
 
 type DraftStatus =
   | "PENDING_APPROVAL"
@@ -117,7 +116,7 @@ export const AdminTaxInvoices = () => {
         "REJECTED",
         "CANCELLED",
       ] as DraftStatus[],
-    []
+    [],
   );
 
   const load = useCallback(async () => {
@@ -206,7 +205,7 @@ export const AdminTaxInvoices = () => {
         setActionLoadingId(null);
       }
     },
-    [load, toast, token]
+    [load, toast, token],
   );
 
   const openReject = (id: string) => {
@@ -229,24 +228,6 @@ export const AdminTaxInvoices = () => {
 
   return (
     <div className="p-4 space-y-4">
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <div className="text-sm font-medium text-blue-900">
-                세금계산서 발행은 큐 기반으로 처리됩니다
-              </div>
-              <div className="text-xs text-blue-700">
-                "팝빌 발행" 버튼 클릭 시 작업이 큐에 등록되며, 백그라운드 워커가
-                비동기로 처리합니다. 이 페이지 상단 탭의 "큐 모니터링"에서 현재
-                상태를 바로 확인할 수 있습니다.
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="flex flex-wrap">
           {statusTabs.map((s) => (
@@ -259,7 +240,6 @@ export const AdminTaxInvoices = () => {
               {s === "CANCELLED" && "취소"}
             </TabsTrigger>
           ))}
-          <TabsTrigger value="QUEUE">큐 모니터링</TabsTrigger>
         </TabsList>
 
         {statusTabs.map((s) => (
@@ -419,17 +399,6 @@ export const AdminTaxInvoices = () => {
               })}
           </TabsContent>
         ))}
-
-        <TabsContent value="QUEUE" className="pt-4">
-          <PopbillQueuePanel
-            allowedTaskTypes={[
-              "TAX_INVOICE_ISSUE",
-              "TAX_INVOICE_CANCEL",
-              "EASYFIN_BANK_REQUEST",
-              "EASYFIN_BANK_CHECK",
-            ]}
-          />
-        </TabsContent>
       </Tabs>
 
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>

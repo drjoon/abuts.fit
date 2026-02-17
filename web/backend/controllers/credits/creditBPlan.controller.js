@@ -72,6 +72,14 @@ export async function createChargeOrder(req, res) {
     });
   }
 
+  const now = new Date();
+  await ChargeOrder.deleteMany({
+    organizationId,
+    status: "PENDING",
+    bankTransactionId: null,
+    expiresAt: { $lte: now },
+  });
+
   const validated = validateSupplyAmount(req.body?.supplyAmount);
   if (!validated.ok) {
     return res.status(400).json({ success: false, message: validated.message });
@@ -82,7 +90,6 @@ export async function createChargeOrder(req, res) {
   const amountTotal = supplyAmount + vatAmount;
 
   // 기존 대기 건이 있으면 재사용 (유효기간 연장/코드 재발급 방지)
-  const now = new Date();
   const existing = await ChargeOrder.findOne({
     organizationId,
     status: "PENDING",
@@ -108,7 +115,7 @@ export async function createChargeOrder(req, res) {
           expiresAt: { $gt: now },
         },
         { $set: { depositCode: migratedCode, depositorName: migratedCode } },
-        { new: true }
+        { new: true },
       ).lean();
 
       const doc = migrated || existing;
@@ -187,6 +194,14 @@ export async function listMyChargeOrders(req, res) {
     });
   }
 
+  const now = new Date();
+  await ChargeOrder.deleteMany({
+    organizationId,
+    status: "PENDING",
+    bankTransactionId: null,
+    expiresAt: { $lte: now },
+  });
+
   const items = await ChargeOrder.find({ organizationId })
     .sort({ createdAt: -1, _id: -1 })
     .select({
@@ -254,7 +269,7 @@ export async function cancelMyChargeOrder(req, res) {
 
   await ChargeOrder.updateOne(
     { _id: order._id, status: "PENDING", bankTransactionId: null },
-    { $set: { status: "CANCELED" } }
+    { $set: { status: "CANCELED" } },
   );
 
   const updated = await ChargeOrder.findById(order._id).lean();

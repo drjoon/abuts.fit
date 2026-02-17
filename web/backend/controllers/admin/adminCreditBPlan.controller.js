@@ -6,8 +6,10 @@ import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
-import { upsertBankTransaction } from "../../utils/creditBPlanMatching.js";
-import { enqueueEasyFinBankRequest } from "../../utils/queueClient.js";
+import {
+  upsertBankTransaction,
+  autoMatchBankTransactionsOnce,
+} from "../../utils/creditBPlanMatching.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -64,6 +66,13 @@ async function logActivity({
 }
 
 export async function adminListChargeOrders(req, res) {
+  const now = new Date();
+  await ChargeOrder.deleteMany({
+    status: "PENDING",
+    bankTransactionId: null,
+    expiresAt: { $lte: now },
+  });
+
   const status = String(req.query.status || "")
     .trim()
     .toUpperCase();
@@ -132,7 +141,7 @@ export async function adminApproveChargeOrder(req, res) {
         adminApprovalAt: new Date(),
         adminApprovalBy: actorUserId,
       },
-    }
+    },
   );
 
   const updated = await ChargeOrder.findById(order._id)
@@ -231,7 +240,7 @@ export async function adminRejectChargeOrder(req, res) {
         adminApprovalAt: new Date(),
         adminApprovalBy: actorUserId,
       },
-    }
+    },
   );
 
   const updated = await ChargeOrder.findById(order._id)
@@ -300,6 +309,8 @@ export async function adminUpsertBankTransaction(req, res) {
     occurredAt: req.body?.occurredAt,
     raw: req.body?.raw,
   });
+
+  await autoMatchBankTransactionsOnce({ limit: 200 }).catch(() => null);
 
   await writeAuditLog({
     req,
@@ -411,7 +422,7 @@ export async function adminManualMatch(req, res) {
             matchedByUserId: req.user?._id || null,
           },
         },
-        { session }
+        { session },
       );
 
       await ChargeOrder.updateOne(
@@ -430,7 +441,7 @@ export async function adminManualMatch(req, res) {
             note,
           },
         },
-        { session }
+        { session },
       );
 
       const uniqueKey = `bplan:bankTx:${String(tx._id)}:charge`;
@@ -447,13 +458,13 @@ export async function adminManualMatch(req, res) {
             uniqueKey,
           },
         },
-        { upsert: true, session }
+        { upsert: true, session },
       );
 
       const existingDraft = await TaxInvoiceDraft.findOne(
         { chargeOrderId: order._id },
         null,
-        { session }
+        { session },
       );
       if (!existingDraft) {
         const org = await RequestorOrganization.findById(order.organizationId)
@@ -491,7 +502,7 @@ export async function adminManualMatch(req, res) {
               },
             },
           ],
-          { session }
+          { session },
         );
       }
 
@@ -524,41 +535,6 @@ export async function adminManualMatch(req, res) {
     success: true,
     data: { chargeOrder: updatedOrder, bankTransaction: updatedTx },
   });
-}
-
-export async function adminRequestBankTransactions(req, res) {
-  try {
-    const { corpNum, bankCode, accountNumber } = req.body;
-
-    if (!corpNum || !bankCode || !accountNumber) {
-      return res.status(400).json({
-        success: false,
-        message: "사업자번호, 은행코드, 계좌번호가 필요합니다.",
-      });
-    }
-
-    const jobResult = await requestBankAccountList(
-      corpNum,
-      bankCode,
-      accountNumber
-    );
-
-    await writeAuditLog({
-      req,
-      action: "BANK_TRANSACTION_REQUEST",
-      refType: "POPBILL_JOB",
-      refId: jobResult?.jobID,
-      details: { corpNum, bankCode, accountNumber },
-    });
-
-    return res.json({ success: true, data: jobResult });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "계좌 거래내역 요청 실패",
-      error: error.message,
-    });
-  }
 }
 
 export async function adminVerifyChargeOrder(req, res) {
@@ -603,7 +579,7 @@ export async function adminVerifyChargeOrder(req, res) {
           adminVerifiedAt: new Date(),
           adminVerifiedBy: adminUserId,
         },
-      }
+      },
     );
 
     await writeAuditLog({
@@ -669,7 +645,7 @@ export async function adminLockChargeOrder(req, res) {
           lockedAt: new Date(),
           lockedReason: reason || "관리자 검토 필요",
         },
-      }
+      },
     );
 
     await writeAuditLog({
@@ -735,7 +711,7 @@ export async function adminUnlockChargeOrder(req, res) {
           lockedAt: null,
           lockedReason: "",
         },
-      }
+      },
     );
 
     await writeAuditLog({
