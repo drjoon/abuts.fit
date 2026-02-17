@@ -78,12 +78,14 @@ export default function ReferralGroupsPage() {
 
   const isRequestor = user?.role === "requestor";
 
-  const referralCode = String(user?.referralCode || "").trim();
+  const referralCode = String(user?.referralCode || "")
+    .trim()
+    .toUpperCase();
 
   const referralLink = useMemo(() => {
     if (!referralCode) return "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}/signup?ref=${referralCode}`;
+    return `${origin}/signup?ref=${encodeURIComponent(referralCode)}`;
   }, [referralCode]);
 
   useEffect(() => {

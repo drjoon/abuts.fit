@@ -2,6 +2,8 @@ import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
+import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
   buildRequestorOrgFilter,
@@ -252,10 +254,38 @@ export async function getMyReferralDirectMembers(req, res) {
     const last30Cutoff = new Date(now);
     last30Cutoff.setDate(last30Cutoff.getDate() - 30);
 
+    const groupLeaderId = await getReferralGroupLeaderId(requestorId);
+
+    const leader = await User.findById(groupLeaderId)
+      .select({ organizationId: 1 })
+      .lean();
+
+    const orgMemberIds = [];
+    if (leader?.organizationId) {
+      const org = await RequestorOrganization.findById(leader.organizationId)
+        .select({ owner: 1, owners: 1, members: 1 })
+        .lean();
+
+      const ownerId = String(org?.owner || "");
+      const ownerIds = Array.isArray(org?.owners) ? org.owners.map(String) : [];
+      const memberIds = Array.isArray(org?.members)
+        ? org.members.map(String)
+        : [];
+      orgMemberIds.push(ownerId, ...ownerIds, ...memberIds);
+    }
+
+    const orgMemberObjectIds = Array.from(new Set(orgMemberIds))
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
     const members = await User.find({
-      referredByUserId: requestorId,
+      referredByUserId:
+        orgMemberObjectIds.length > 0
+          ? { $in: orgMemberObjectIds }
+          : requestorId,
       active: true,
       role: { $in: ["requestor", "salesman"] },
+      referralGroupLeaderId: groupLeaderId,
     })
       .select({
         _id: 1,
@@ -1062,7 +1092,7 @@ export async function getMyPricingReferralStats(req, res) {
     const cachedSnapshot = await PricingReferralStatsSnapshot.findOne({
       $or: [
         { ownerUserId: requestorId, ymd },
-        { groupLeaderId: requestorId, ymd, ownerUserId: null },
+        { groupLeaderId, ymd, ownerUserId: null },
       ],
     })
       .select({
@@ -1076,16 +1106,43 @@ export async function getMyPricingReferralStats(req, res) {
     const cachedGroupMemberCount = cachedSnapshot?.groupMemberCount;
     const cachedGroupTotalOrders = cachedSnapshot?.groupTotalOrders;
 
-    // 다단계 구조: 본인 + 직계 1단계(내가 추천한 계정)만 합산
+    // 조직 단위: 조직 구성원(대표/직원) + 조직 구성원이 추천한 1단계만 합산
+    const leader = await User.findById(groupLeaderId)
+      .select({ organizationId: 1 })
+      .lean();
+
+    let orgMemberObjectIds = [];
+    if (leader?.organizationId) {
+      const org = await RequestorOrganization.findById(leader.organizationId)
+        .select({ owner: 1, owners: 1, members: 1 })
+        .lean();
+
+      const ownerId = String(org?.owner || "");
+      const ownerIds = Array.isArray(org?.owners) ? org.owners.map(String) : [];
+      const memberIds = Array.isArray(org?.members)
+        ? org.members.map(String)
+        : [];
+      const allIds = [ownerId, ...ownerIds, ...memberIds]
+        .map(String)
+        .filter((id) => Types.ObjectId.isValid(id));
+      orgMemberObjectIds = allIds.map((id) => new Types.ObjectId(id));
+    }
+
     const directChildren = await User.find({
-      referredByUserId: requestorId,
+      referredByUserId:
+        orgMemberObjectIds.length > 0
+          ? { $in: orgMemberObjectIds }
+          : requestorId,
       active: true,
+      referralGroupLeaderId: groupLeaderId,
     })
       .select({ _id: 1 })
       .lean();
 
+    const baseMemberIds =
+      orgMemberObjectIds.length > 0 ? orgMemberObjectIds : [requestorId];
     const groupMemberIds = [
-      requestorId,
+      ...baseMemberIds,
       ...(directChildren || []).map((c) => c._id).filter(Boolean),
     ];
 
@@ -1124,11 +1181,11 @@ export async function getMyPricingReferralStats(req, res) {
 
     if (shouldComputeGroupTotals) {
       await PricingReferralStatsSnapshot.findOneAndUpdate(
-        { groupLeaderId: requestorId, ymd },
+        { ownerUserId: requestorId, ymd },
         {
           $set: {
             ownerUserId: requestorId,
-            groupLeaderId: requestorId,
+            groupLeaderId,
             groupMemberCount,
             groupTotalOrders: totalLast30DaysOrders,
             computedAt: now,

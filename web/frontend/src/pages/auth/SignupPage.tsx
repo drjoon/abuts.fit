@@ -101,10 +101,9 @@ export const SignupPage = () => {
     }
   }, [isSocialNewMode, searchParams]);
 
-  const shouldAskReferralInput =
-    signupRole === "requestor" && !referredByReferralCode;
+  const shouldAskReferralInput = !referredByReferralCode;
 
-  const shouldShowReferralStepForSocial = signupRole === "requestor";
+  const shouldShowReferralStepForSocial = true;
 
   useEffect(() => {
     if (!isWizardMode) return;

@@ -681,6 +681,20 @@ export async function getReferralGroupLeaderId(userIdObj, userLean) {
 
   if (!user) return userId;
 
+  // 의뢰자 조직 단위 보상: 조직이 있으면 조직 owner를 그룹 리더로 사용
+  if (user?.organizationId) {
+    const orgIdStr = String(user.organizationId);
+    if (Types.ObjectId.isValid(orgIdStr)) {
+      const org = await RequestorOrganization.findById(orgIdStr)
+        .select({ owner: 1 })
+        .lean();
+      const ownerId = org?.owner ? String(org.owner) : "";
+      if (ownerId && Types.ObjectId.isValid(ownerId)) {
+        return new Types.ObjectId(ownerId);
+      }
+    }
+  }
+
   let groupLeaderId = user.referralGroupLeaderId;
 
   if (!groupLeaderId && user.referredByUserId) {

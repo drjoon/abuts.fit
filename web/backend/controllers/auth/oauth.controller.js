@@ -45,8 +45,22 @@ function redirectToFrontend(req, res, params) {
   return res.redirect(url.toString());
 }
 
-function createReferralCode() {
-  return crypto.randomBytes(9).toString("base64url");
+function createReferralCode(length) {
+  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let code = "";
+  for (let i = 0; i < length; i += 1) {
+    code += alphabet[crypto.randomInt(0, alphabet.length)];
+  }
+  return code;
+}
+
+async function ensureUniqueReferralCode(length) {
+  for (let i = 0; i < 200; i += 1) {
+    const code = createReferralCode(length);
+    const exists = await User.exists({ referralCode: code });
+    if (!exists) return code;
+  }
+  throw new Error("Failed to create referralCode after 200 attempts");
 }
 
 function encodeOAuthState(input) {
@@ -67,15 +81,6 @@ function decodeOAuthState(raw) {
   } catch {
     return null;
   }
-}
-
-async function ensureUniqueReferralCode() {
-  for (let i = 0; i < 5; i += 1) {
-    const code = createReferralCode();
-    const exists = await User.exists({ referralCode: code });
-    if (!exists) return code;
-  }
-  throw new Error("리퍼럴 코드 생성에 실패했습니다.");
 }
 
 function generateRandomPassword() {
@@ -118,6 +123,7 @@ async function completeSignup(req, res) {
     user.role = "requestor";
     user.organization = "";
     user.approvedAt = new Date();
+    user.active = true;
 
     await user.save();
 
@@ -199,7 +205,7 @@ async function findOrCreateUserFromSocial({
       );
     }
 
-    const referralCode = await ensureUniqueReferralCode();
+    const referralCode = await ensureUniqueReferralCode(5);
 
     const newUser = new User({
       name: String(name || "사용자"),
@@ -229,7 +235,10 @@ async function findOrCreateUserFromSocial({
     return user;
   }
 
-  const referralCode = await ensureUniqueReferralCode();
+  const referralCode =
+    role === "salesman"
+      ? await ensureUniqueReferralCode(4)
+      : await ensureUniqueReferralCode(5);
 
   const newUser = new User({
     name: String(name || "사용자"),

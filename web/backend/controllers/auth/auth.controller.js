@@ -1,9 +1,12 @@
 import User from "../../models/user.model.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
+import SignupVerification from "../../models/signupVerification.model.js";
 import GuideProgress from "../../models/guideProgress.model.js";
-import jwt from "jsonwebtoken";
-import { generateToken, generateRefreshToken } from "../../utils/jwt.util.js";
+import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import {
+  ensureUniqueReferralCode,
+  generateToken,
+  generateRefreshToken,
+} from "../../utils/jwt.util.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -18,21 +21,22 @@ import {
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 
-const createReferralCode = () => {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const a = alphabet[crypto.randomInt(0, alphabet.length)];
-  const b = alphabet[crypto.randomInt(0, alphabet.length)];
-  const c = alphabet[crypto.randomInt(0, alphabet.length)];
-  return `${a}${b}${c}`;
+const createReferralCode = (length) => {
+  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let code = "";
+  for (let i = 0; i < length; i += 1) {
+    code += alphabet[crypto.randomInt(0, alphabet.length)];
+  }
+  return code;
 };
 
-const ensureUniqueReferralCode = async () => {
+const ensureUniqueReferralCode = async (length) => {
   for (let i = 0; i < 200; i += 1) {
-    const code = createReferralCode();
+    const code = createReferralCode(length);
     const exists = await User.exists({ referralCode: code });
     if (!exists) return code;
   }
-  throw new Error("리퍼럴 코드 생성에 실패했습니다.");
+  throw new Error("Failed to create referralCode after 200 attempts");
 };
 
 const isStrongPassword = (password) => {
@@ -359,7 +363,7 @@ async function register(req, res) {
 
       referredByObjectId = new Types.ObjectId(referredByUserId);
     } else if (referredByReferralCode) {
-      const code = String(referredByReferralCode).trim();
+      const code = String(referredByReferralCode).trim().toUpperCase();
       if (!code) {
         return res.status(400).json({
           success: false,
@@ -388,9 +392,14 @@ async function register(req, res) {
       referredByObjectId = new Types.ObjectId(refUser._id);
     }
 
-    const referralCode = await ensureUniqueReferralCode();
-
     const normalizedRole = role || "requestor";
+
+    const referralCode =
+      normalizedRole === "requestor"
+        ? await ensureUniqueReferralCode(5)
+        : normalizedRole === "salesman"
+          ? await ensureUniqueReferralCode(4)
+          : await ensureUniqueReferralCode(5);
 
     if (
       normalizedRole !== "requestor" &&
@@ -421,13 +430,28 @@ async function register(req, res) {
     const effectiveOrganization = "";
 
     // 그룹 리더 결정: 리퍼럴로 가입하면 추천인의 그룹 리더를 상속
+    // 의뢰자 추천인의 경우(대표/직원 이메일 모두), 보상은 조직 단위로 귀속되도록 조직 owner를 그룹 리더로 사용
     let referralGroupLeaderId = null;
     if (referredByObjectId) {
       const referrer = await User.findById(referredByObjectId)
-        .select({ referralGroupLeaderId: 1 })
+        .select({ role: 1, referralGroupLeaderId: 1, organizationId: 1 })
         .lean();
-      referralGroupLeaderId =
-        referrer?.referralGroupLeaderId || referredByObjectId;
+
+      if (
+        String(referrer?.role || "") === "requestor" &&
+        referrer?.organizationId
+      ) {
+        const org = await RequestorOrganization.findById(
+          referrer.organizationId,
+        )
+          .select({ owner: 1 })
+          .lean();
+        referralGroupLeaderId =
+          org?.owner || referrer?.referralGroupLeaderId || referredByObjectId;
+      } else {
+        referralGroupLeaderId =
+          referrer?.referralGroupLeaderId || referredByObjectId;
+      }
     }
 
     // 사용자 생성
@@ -609,7 +633,8 @@ async function login(req, res) {
     // 마지막 로그인 시간 업데이트 + 리퍼럴 코드 보장
     user.lastLogin = Date.now();
     if (!user.referralCode) {
-      user.referralCode = await ensureUniqueReferralCode();
+      const len = String(user.role || "") === "salesman" ? 4 : 5;
+      user.referralCode = await ensureUniqueReferralCode(len);
     }
     await user.save();
 

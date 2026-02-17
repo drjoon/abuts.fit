@@ -28,12 +28,14 @@ export const RequestorPricingReferralPolicyCard = () => {
   const { toast } = useToast();
 
   const userId = (user as any)?._id || (user as any)?.id || "";
-  const referralCode = (user as any)?.referralCode || "";
+  const referralCode = String((user as any)?.referralCode || "")
+    .trim()
+    .toUpperCase();
 
   const referralLink = useMemo(() => {
     if (!referralCode) return "";
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}/signup?ref=${referralCode}`;
+    return `${origin}/signup?ref=${encodeURIComponent(referralCode)}`;
   }, [referralCode]);
 
   const { data, isLoading, isFetching, isError, error } = useQuery({
