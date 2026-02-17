@@ -81,18 +81,50 @@ function generateRandomPassword() {
   return crypto.randomBytes(18).toString("base64url");
 }
 
+const ADMIN_REFERRAL_CACHE_TTL_MS = 60 * 60 * 1000;
+const adminReferralCache = new Map();
+
+function getAdminReferralCache(key) {
+  const hit = adminReferralCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > ADMIN_REFERRAL_CACHE_TTL_MS) {
+    adminReferralCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function setAdminReferralCache(key, value) {
+  adminReferralCache.set(key, { ts: Date.now(), value });
+}
+
 async function getReferralGroups(req, res) {
   try {
+    const refresh = String(req.query.refresh || "") === "1";
+    if (!refresh) {
+      const cached = getAdminReferralCache("referral-groups:v3");
+      if (cached) {
+        return res.status(200).json(cached);
+      }
+    }
+
     const leaders = await User.find({
-      $or: [
-        { referralGroupLeaderId: null },
-        { referralGroupLeaderId: { $exists: false } },
+      $and: [
+        { role: { $in: ["requestor", "salesman"] } },
+        {
+          $or: [
+            { referralGroupLeaderId: null },
+            { referralGroupLeaderId: { $exists: false } },
+            // 조직 대표(owner)는 그룹 리더 후보로 항상 포함(추천 체인 하위에 있어도 별도 그룹으로 조회)
+            { role: "requestor", requestorRole: "owner" },
+          ],
+        },
       ],
-      role: { $in: ["requestor", "salesman"] },
     })
       .select({
         _id: 1,
         role: 1,
+        requestorRole: 1,
         name: 1,
         email: 1,
         organization: 1,
@@ -140,6 +172,7 @@ async function getReferralGroups(req, res) {
       directCountByLeaderId.set(String(r._id), Number(r.count || 0));
     }
 
+    const isDev = process.env.NODE_ENV !== "production";
     const groups = leaders.map((leader) => {
       const directCount = directCountByLeaderId.get(String(leader._id)) || 0;
 
@@ -148,8 +181,40 @@ async function getReferralGroups(req, res) {
       );
       const groupTotalOrders = Number(snapshot?.groupTotalOrders || 0);
       const groupMemberCount = Number(snapshot?.groupMemberCount || 0);
-      const effectiveUnitPrice =
-        computeVolumeEffectiveUnitPrice(groupTotalOrders);
+      const now = new Date();
+      const baseUnitPrice = 15000;
+      const discountPerOrder = 10;
+      const maxDiscountPerUnit = 5000;
+      const discountAmount = Math.min(
+        groupTotalOrders * discountPerOrder,
+        maxDiscountPerUnit,
+      );
+      let effectiveUnitPrice = Math.max(0, baseUnitPrice - discountAmount);
+      let unitPriceDebug = null;
+
+      if (String(leader?.role || "") === "requestor") {
+        const baseDate =
+          leader?.approvedAt ||
+          (leader?.active ? leader?.updatedAt : null) ||
+          leader?.createdAt;
+        if (baseDate) {
+          const fixedUntil = new Date(baseDate);
+          fixedUntil.setDate(fixedUntil.getDate() + 90);
+          if (now < fixedUntil) {
+            effectiveUnitPrice = 10000;
+          }
+          if (isDev) {
+            unitPriceDebug = {
+              baseDate,
+              fixedUntil,
+              now,
+              applied: now < fixedUntil,
+              discountAmount,
+              groupTotalOrders,
+            };
+          }
+        }
+      }
 
       return {
         leader,
@@ -158,6 +223,7 @@ async function getReferralGroups(req, res) {
         groupTotalOrders,
         effectiveUnitPrice,
         snapshotComputedAt: snapshot?.computedAt || null,
+        ...(isDev ? { unitPriceDebug } : {}),
       };
     });
 
@@ -409,7 +475,7 @@ async function getReferralGroups(req, res) {
           )
         : BASE_UNIT_PRICE;
 
-    return res.status(200).json({
+    const payload = {
       success: true,
       data: {
         overview: {
@@ -434,7 +500,12 @@ async function getReferralGroups(req, res) {
         },
         groups: groupsWithCommission,
       },
-    });
+    };
+
+    if (!refresh) {
+      setAdminReferralCache("referral-groups:v3", payload);
+    }
+    return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -447,6 +518,15 @@ async function getReferralGroups(req, res) {
 async function getReferralGroupTree(req, res) {
   try {
     const { leaderId } = req.params;
+
+    const cacheKey = `referral-group-tree:v3:${leaderId}`;
+    const refresh = String(req.query.refresh || "") === "1";
+    if (!refresh) {
+      const cached = getAdminReferralCache(cacheKey);
+      if (cached) {
+        return res.status(200).json(cached);
+      }
+    }
 
     if (!Types.ObjectId.isValid(leaderId)) {
       return res.status(400).json({
@@ -651,8 +731,38 @@ async function getReferralGroupTree(req, res) {
     const groupTotalOrders = snapshot
       ? snapshotGroupTotalOrders
       : computedTierTotalOrders;
-    const effectiveUnitPrice =
-      computeVolumeEffectiveUnitPrice(groupTotalOrders);
+    const baseUnitPrice = 15000;
+    const discountPerOrder = 10;
+    const maxDiscountPerUnit = 5000;
+    const discountAmount = Math.min(
+      groupTotalOrders * discountPerOrder,
+      maxDiscountPerUnit,
+    );
+    const isDev = process.env.NODE_ENV !== "production";
+    let effectiveUnitPrice = Math.max(0, baseUnitPrice - discountAmount);
+    let unitPriceDebug = null;
+
+    if (String(leader?.role || "") === "requestor") {
+      const baseDate =
+        leader?.approvedAt ||
+        (leader?.active ? leader?.updatedAt : null) ||
+        leader?.createdAt;
+      if (baseDate) {
+        const fixedUntil = new Date(baseDate);
+        fixedUntil.setDate(fixedUntil.getDate() + 90);
+        if (now < fixedUntil) {
+          effectiveUnitPrice = 10000;
+        }
+        if (isDev) {
+          unitPriceDebug = {
+            baseDate,
+            fixedUntil,
+            now,
+            applied: now < fixedUntil,
+          };
+        }
+      }
+    }
 
     let commissionAmount = 0;
     if (String(leader?.role || "") === "salesman") {
@@ -728,7 +838,7 @@ async function getReferralGroupTree(req, res) {
       );
     }
 
-    return res.status(200).json({
+    const payload = {
       success: true,
       data: {
         leader,
@@ -745,8 +855,14 @@ async function getReferralGroupTree(req, res) {
             }
           : null,
         tree,
+        ...(isDev ? { unitPriceDebug } : {}),
       },
-    });
+    };
+
+    if (!refresh) {
+      setAdminReferralCache(cacheKey, payload);
+    }
+    return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({
       success: false,

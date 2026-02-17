@@ -38,6 +38,7 @@ type ApiGroupRow = {
   effectiveUnitPrice?: number;
   commissionAmount?: number;
   snapshotComputedAt?: string | null;
+  unitPriceDebug?: any;
 };
 
 type ApiGroupListResponse = {
@@ -92,6 +93,7 @@ const formatMoney = (n: number) => {
 
 type ApiTreeNode = {
   _id: string;
+  role?: "requestor" | "salesman";
   name?: string;
   email?: string;
   organization?: string;
@@ -112,6 +114,7 @@ type ApiGroupTreeResponse = {
     groupTotalOrders?: number;
     effectiveUnitPrice?: number;
     commissionAmount?: number;
+    unitPriceDebug?: any;
     snapshot?: {
       ymd?: string;
       groupMemberCount?: number;
@@ -137,7 +140,13 @@ const TreeNode = ({
   const last30DaysOrders = Number(node.last30DaysOrders || 0);
 
   return (
-    <div style={{ paddingLeft: indent }} className="space-y-1">
+    <div style={{ paddingLeft: indent }} className="relative">
+      {depth > 0 ? (
+        <>
+          <div className="absolute left-[7px] top-0 bottom-0 w-px bg-border" />
+          <div className="absolute left-[7px] top-1/2 h-px w-3 -translate-y-1/2 bg-border" />
+        </>
+      ) : null}
       <button
         type="button"
         onClick={() => onSelect(node)}
@@ -155,44 +164,44 @@ const TreeNode = ({
               최근30일 {last30DaysOrders.toLocaleString()}건
             </div>
           </div>
-          <Badge variant={node.active ? "default" : "secondary"}>
-            {node.active ? "활성" : "비활성"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {roleBadge(node.role)}
+            <Badge variant={node.active ? "default" : "secondary"}>
+              {node.active ? "활성" : "비활성"}
+            </Badge>
+          </div>
         </div>
       </button>
-      {Array.isArray(node.children) && node.children.length > 0 ? (
-        <div className="space-y-2">
-          {node.children.map((c) => (
-            <TreeNode
-              key={c._id}
-              node={c}
-              depth={depth + 1}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 };
 
 export default function AdminReferralGroupsPage() {
   const { token } = useAuthStore();
+  const isDev = import.meta.env.DEV;
+  const refreshSuffix = isDev ? "?refresh=1" : "";
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<
     "all" | "requestor" | "salesman"
   >("all");
   const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<ApiTreeNode | null>(null);
-  const [visibleCount, setVisibleCount] = useState(8);
+  const [visibleCount, setVisibleCount] = useState(6);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const listSentinelRef = useRef<HTMLDivElement | null>(null);
+  const treeScrollRef = useRef<HTMLDivElement | null>(null);
+  const treeSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [treeVisibleCount, setTreeVisibleCount] = useState(10);
+  const [sortKey, setSortKey] = useState<"members" | "orders" | "created">(
+    "members",
+  );
 
   const { data: groupList, isLoading: isGroupListLoading } = useQuery({
     queryKey: ["admin-referral-groups"],
     enabled: Boolean(token),
     queryFn: async () => {
       const res = await apiFetch<ApiGroupListResponse>({
-        path: "/api/admin/referral-groups",
+        path: `/api/admin/referral-groups${refreshSuffix}`,
         method: "GET",
         token,
         headers:
@@ -220,7 +229,7 @@ export default function AdminReferralGroupsPage() {
 
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return groups.filter((g) => {
+    const base = groups.filter((g) => {
       const leader = g.leader || ({} as any);
       if (roleFilter !== "all" && String(leader.role || "") !== roleFilter) {
         return false;
@@ -232,22 +241,38 @@ export default function AdminReferralGroupsPage() {
           .toLowerCase();
       return hay.includes(q);
     });
-  }, [groups, roleFilter, search]);
+
+    const arr = [...base];
+    arr.sort((a, b) => {
+      if (sortKey === "orders") {
+        return (
+          Number(b.groupTotalOrders || 0) - Number(a.groupTotalOrders || 0)
+        );
+      }
+      if (sortKey === "created") {
+        const at = new Date(a?.leader?.createdAt || 0).getTime();
+        const bt = new Date(b?.leader?.createdAt || 0).getTime();
+        return bt - at;
+      }
+      const am = Number(a.groupMemberCount || a.memberCount || 0);
+      const bm = Number(b.groupMemberCount || b.memberCount || 0);
+      return bm - am;
+    });
+    return arr;
+  }, [groups, roleFilter, search, sortKey]);
 
   const visibleGroups = useMemo(() => {
     return filteredGroups.slice(0, Math.max(0, visibleCount));
   }, [filteredGroups, visibleCount]);
 
   useEffect(() => {
-    setVisibleCount(8);
+    setVisibleCount(6);
     setSelectedLeaderId(null);
     setSelectedNode(null);
   }, [roleFilter, search]);
 
   useEffect(() => {
-    const sentinel = document.querySelector(
-      '[data-infinite-sentinel="admin-referral-groups"]',
-    );
+    const sentinel = listSentinelRef.current;
     if (!sentinel) return;
     if (visibleGroups.length >= filteredGroups.length) return;
 
@@ -258,7 +283,7 @@ export default function AdminReferralGroupsPage() {
       (entries) => {
         const hit = entries.some((e) => e.isIntersecting);
         if (!hit) return;
-        setVisibleCount((prev) => Math.min(prev + 8, filteredGroups.length));
+        setVisibleCount((prev) => Math.min(prev + 6, filteredGroups.length));
       },
       { root, rootMargin: "200px", threshold: 0 },
     );
@@ -275,7 +300,7 @@ export default function AdminReferralGroupsPage() {
     enabled: Boolean(token && effectiveLeaderId),
     queryFn: async () => {
       const res = await apiFetch<ApiGroupTreeResponse>({
-        path: `/api/admin/referral-groups/${effectiveLeaderId}`,
+        path: `/api/admin/referral-groups/${effectiveLeaderId}${refreshSuffix}`,
         method: "GET",
         token,
         headers:
@@ -295,8 +320,64 @@ export default function AdminReferralGroupsPage() {
     retry: false,
   });
 
+  const flattenedTree = useMemo(() => {
+    const root = treeData?.tree;
+    if (!root) return [] as Array<{ node: ApiTreeNode; depth: number }>;
+    const out: Array<{ node: ApiTreeNode; depth: number }> = [];
+    const stack: Array<{ node: ApiTreeNode; depth: number }> = [
+      { node: root, depth: 0 },
+    ];
+    while (stack.length) {
+      const cur = stack.shift();
+      if (!cur) break;
+      out.push(cur);
+      const children = Array.isArray(cur.node.children)
+        ? cur.node.children
+        : [];
+      const sortedChildren = [...children].sort(
+        (a, b) =>
+          Number(b?.last30DaysOrders || 0) - Number(a?.last30DaysOrders || 0),
+      );
+      for (let i = 0; i < sortedChildren.length; i += 1) {
+        stack.push({ node: sortedChildren[i], depth: cur.depth + 1 });
+      }
+    }
+    return out;
+  }, [treeData?.tree]);
+
+  const visibleTreeRows = useMemo(() => {
+    return flattenedTree.slice(0, Math.max(0, treeVisibleCount));
+  }, [flattenedTree, treeVisibleCount]);
+
+  useEffect(() => {
+    setTreeVisibleCount(10);
+  }, [effectiveLeaderId]);
+
+  useEffect(() => {
+    const sentinel = treeSentinelRef.current;
+    if (!sentinel) return;
+    if (visibleTreeRows.length >= flattenedTree.length) return;
+
+    const root = treeScrollRef.current;
+    if (!root) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (!hit) return;
+        setTreeVisibleCount((prev) =>
+          Math.min(prev + 10, flattenedTree.length),
+        );
+      },
+      { root, rootMargin: "200px", threshold: 0 },
+    );
+
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [flattenedTree.length, visibleTreeRows.length]);
+
   return (
-    <div className="p-4 space-y-4">
+    <div className="min-h-[100dvh] p-4 flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
@@ -308,7 +389,7 @@ export default function AdminReferralGroupsPage() {
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">그룹수</div>
-              <div className="text-lg font-semibold">
+              <div className="text-2xl font-semibold tracking-tight">
                 {Number(overview?.requestor?.groupCount || 0).toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">
@@ -326,7 +407,7 @@ export default function AdminReferralGroupsPage() {
               <div className="text-xs text-muted-foreground">
                 그룹당 평균 매출액(추정)
               </div>
-              <div className="text-lg font-semibold">
+              <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.requestor?.avgRevenuePerGroup || 0),
                 )}
@@ -346,7 +427,7 @@ export default function AdminReferralGroupsPage() {
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">그룹수</div>
-              <div className="text-lg font-semibold">
+              <div className="text-2xl font-semibold tracking-tight">
                 {Number(overview?.salesman?.groupCount || 0).toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">
@@ -362,7 +443,7 @@ export default function AdminReferralGroupsPage() {
               <div className="text-xs text-muted-foreground">
                 그룹당 평균 수수료(추정)
               </div>
-              <div className="text-lg font-semibold">
+              <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.salesman?.avgCommissionPerGroup || 0),
                 )}
@@ -373,12 +454,45 @@ export default function AdminReferralGroupsPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 flex-1 min-h-0">
         <Card className="lg:col-span-1">
           <CardHeader>
-            <CardTitle className="text-base">그룹 목록</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base">그룹 목록</CardTitle>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant={sortKey === "members" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSortKey("members")}
+                >
+                  규모
+                </Button>
+                <Button
+                  type="button"
+                  variant={sortKey === "orders" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSortKey("orders")}
+                >
+                  주문
+                </Button>
+                <Button
+                  type="button"
+                  variant={sortKey === "created" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSortKey("created")}
+                >
+                  최신
+                </Button>
+              </div>
+            </div>
+            {isDev ? (
+              <CardDescription className="text-[11px]">
+                dev: refresh=1 · unitPriceDebug.applied 확인 가능
+              </CardDescription>
+            ) : null}
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 flex flex-col min-h-0">
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -412,7 +526,7 @@ export default function AdminReferralGroupsPage() {
             />
             <div
               ref={listScrollRef}
-              className="space-y-2 max-h-[65vh] overflow-y-auto pr-1"
+              className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1"
             >
               {isGroupListLoading ? (
                 <div className="text-sm text-muted-foreground">로딩중...</div>
@@ -429,6 +543,9 @@ export default function AdminReferralGroupsPage() {
                   const orders = Number(g.groupTotalOrders || 0);
                   const unit = Number(g.effectiveUnitPrice || 0);
                   const commission = Number(g.commissionAmount || 0);
+                  const debugApplied = Boolean(
+                    (g as any)?.unitPriceDebug?.applied,
+                  );
                   return (
                     <button
                       key={String(leader._id)}
@@ -457,6 +574,11 @@ export default function AdminReferralGroupsPage() {
                             {isSalesman ? "수수료" : "단가"}{" "}
                             {formatMoney(isSalesman ? commission : unit)}원
                           </div>
+                          {isDev && !isSalesman ? (
+                            <div className="mt-0.5 text-[10px] text-muted-foreground">
+                              debug: applied={String(debugApplied)}
+                            </div>
+                          ) : null}
                         </div>
                         <div className="flex items-center gap-2">
                           {roleBadge(leader.role)}
@@ -471,11 +593,7 @@ export default function AdminReferralGroupsPage() {
               )}
 
               {visibleGroups.length < filteredGroups.length ? (
-                <div
-                  data-infinite-sentinel="admin-referral-groups"
-                  className="h-8"
-                  aria-hidden="true"
-                />
+                <div ref={listSentinelRef} className="h-8" aria-hidden="true" />
               ) : null}
             </div>
           </CardContent>
@@ -483,9 +601,17 @@ export default function AdminReferralGroupsPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">계층도</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base">계층도</CardTitle>
+              {isDev ? (
+                <div className="text-[11px] text-muted-foreground">
+                  debug: applied=
+                  {String(Boolean((treeData as any)?.unitPriceDebug?.applied))}
+                </div>
+              ) : null}
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col min-h-0">
             {isTreeLoading ? (
               <div className="text-sm text-muted-foreground">로딩중...</div>
             ) : !treeData?.tree ? (
@@ -493,7 +619,10 @@ export default function AdminReferralGroupsPage() {
                 그룹을 선택해주세요.
               </div>
             ) : (
-              <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+              <div
+                ref={treeScrollRef}
+                className="space-y-3 flex-1 min-h-0 overflow-y-auto pr-1"
+              >
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium">
                     멤버 수(리더+직계):{" "}
@@ -504,12 +633,12 @@ export default function AdminReferralGroupsPage() {
                     {Number(treeData.groupTotalOrders || 0).toLocaleString()}건
                   </div>
                   {String(treeData?.leader?.role || "") === "salesman" ? (
-                    <div className="text-sm font-medium">
+                    <div className="text-sm font-semibold">
                       수수료(최근30일 추정):{" "}
                       {formatMoney(Number(treeData.commissionAmount || 0))}원
                     </div>
                   ) : (
-                    <div className="text-sm font-medium">
+                    <div className="text-sm font-semibold">
                       당일 단가:{" "}
                       {Number(
                         treeData.effectiveUnitPrice || 0,
@@ -518,11 +647,24 @@ export default function AdminReferralGroupsPage() {
                     </div>
                   )}
                 </div>
-                <TreeNode
-                  node={treeData.tree}
-                  depth={0}
-                  onSelect={(n) => setSelectedNode(n)}
-                />
+                <div className="space-y-2">
+                  {visibleTreeRows.map(({ node, depth }) => (
+                    <TreeNode
+                      key={String(node._id)}
+                      node={node}
+                      depth={depth}
+                      onSelect={(n) => setSelectedNode(n)}
+                    />
+                  ))}
+
+                  {visibleTreeRows.length < flattenedTree.length ? (
+                    <div
+                      ref={treeSentinelRef}
+                      className="h-8"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </div>
               </div>
             )}
           </CardContent>
