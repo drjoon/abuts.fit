@@ -1,6 +1,6 @@
 import express from "express";
 const router = express.Router();
-import notificationController from "../../controllers/notification.controller.js";
+import notificationController from "../../controllers/notifications/notification.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
 // 모든 라우트에 인증 미들웨어 적용

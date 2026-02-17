@@ -5,7 +5,7 @@ import {
   getTodayYmdInKst,
   addKoreanBusinessDays,
   applyStatusMapping,
-} from "../controllers/request/utils.js";
+} from "../controllers/requests/utils.js";
 
 /**
  * 공정 단계 자동 진행 워커

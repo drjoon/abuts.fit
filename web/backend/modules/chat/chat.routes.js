@@ -1,6 +1,6 @@
 import express from "express";
 const router = express.Router();
-import chatController from "../../controllers/chat.controller.js";
+import chatController from "../../controllers/chats/chat.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 
 // 모든 라우트에 인증 미들웨어 적용

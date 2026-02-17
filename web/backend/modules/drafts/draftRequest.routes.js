@@ -7,7 +7,7 @@ import {
   addFileToDraft,
   removeFileFromDraft,
   deleteDraft,
-} from "../../controllers/draftRequest.controller.js";
+} from "../../controllers/requests/draftRequest.controller.js";
 
 const router = express.Router();
 

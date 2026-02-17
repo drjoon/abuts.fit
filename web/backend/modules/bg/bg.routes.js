@@ -1,5 +1,5 @@
 import { Router } from "express";
-import * as bgController from "../../controllers/bg.controller.js";
+import * as bgController from "../../controllers/bg/bg.controller.js";
 import lotCaptureController from "../../controllers/lotCapture.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { requireBridgeSecret } from "../../middlewares/bridgeSecret.middleware.js";

@@ -4,7 +4,7 @@ import {
   recordManufacturerPayment,
   listManufacturerPayments,
   sendUrgentMessage,
-} from "../../controllers/manufacturer.controller.js";
+} from "../../controllers/manufacturers/manufacturer.controller.js";
 import {
   sendVerificationCode,
   verifyCode,

@@ -4,7 +4,7 @@ import {
   getGuideProgress,
   patchGuideStep,
   resetGuideProgress,
-} from "../../controllers/guideProgress.controller.js";
+} from "../../controllers/guideProgress/guideProgress.controller.js";
 
 const router = Router();
 

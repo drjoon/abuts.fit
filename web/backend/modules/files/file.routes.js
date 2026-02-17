@@ -2,7 +2,7 @@ import { Router } from "express";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 import { upload } from "../../middlewares/upload.middleware.js";
 import { s3Upload } from "../../utils/s3.utils.js";
-import * as fileController from "../../controllers/file.controller.js";
+import * as fileController from "../../controllers/files/file.controller.js";
 
 const router = Router();
 

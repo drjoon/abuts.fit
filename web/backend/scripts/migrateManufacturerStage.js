@@ -1,7 +1,7 @@
 import "../bootstrap/env.js";
 import mongoose from "mongoose";
 import Request from "../models/request.model.js";
-import { applyStatusMapping } from "../controllers/request/utils.js";
+import { applyStatusMapping } from "../controllers/requests/utils.js";
 
 async function migrate() {
   const mongoUri = process.env.MONGODB_URI;

@@ -3,7 +3,7 @@
  */
 
 import { Router } from "express";
-import * as parseLogController from "../../controllers/parseLog.controller.js";
+import * as parseLogController from "../../controllers/ai/parseLog.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 
 const router = Router();

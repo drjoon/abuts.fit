@@ -1,6 +1,6 @@
 import { Router } from "express";
 const router = Router();
-import adminController from "../../controllers/admin.controller.js";
+import adminController from "../../controllers/admin/admin.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   adminListBankTransactions,
@@ -14,11 +14,11 @@ import {
   adminUnlockChargeOrder,
   adminApproveChargeOrder,
   adminRejectChargeOrder,
-} from "../../controllers/adminCreditBPlan.controller.js";
+} from "../../controllers/admin/adminCreditBPlan.controller.js";
 import {
   adminListBonusGrants,
   adminOverrideWelcomeBonus,
-} from "../../controllers/adminBonusGrant.controller.js";
+} from "../../controllers/admin/adminBonusGrant.controller.js";
 import {
   adminListMails,
   adminGetMail,
@@ -44,26 +44,26 @@ import {
   adminIssueTaxInvoice,
   adminGetTaxInvoiceStatus,
   adminCancelIssuedTaxInvoice,
-} from "../../controllers/adminTaxInvoice.controller.js";
-import { adminOverrideOrganizationVerification } from "../../controllers/admin.controller.js";
+} from "../../controllers/admin/adminTaxInvoice.controller.js";
+import { adminOverrideOrganizationVerification } from "../../controllers/admin/admin.controller.js";
 import {
   adminSendSms,
   adminListSms,
   adminSendKakaoOrSms,
   adminListKakaoTemplates,
-} from "../../controllers/adminSms.controller.js";
+} from "../../controllers/admin/adminSms.controller.js";
 import {
   adminGetCreditStats,
   adminGetOrganizationCredits,
   adminGetOrganizationCreditDetail,
-} from "../../controllers/adminCredit.controller.js";
+} from "../../controllers/admin/adminCredit.controller.js";
 import {
   adminGetQueueStats,
   adminListQueueTasks,
   adminGetQueueTask,
   adminRetryQueueTask,
   adminCancelQueueTask,
-} from "../../controllers/adminPopbillQueue.controller.js";
+} from "../../controllers/admin/adminPopbillQueue.controller.js";
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
 router.use(authorize(["admin"]));

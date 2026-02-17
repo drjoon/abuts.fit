@@ -5,7 +5,7 @@ import { authenticate } from "../../middlewares/auth.middleware.js";
 import {
   getMyCreditBalance,
   getMyCreditSpendInsights,
-} from "../../controllers/credit.controller.js";
+} from "../../controllers/credits/credit.controller.js";
 import { listMyCreditLedger } from "../../controllers/creditLedger.controller.js";
 import {
   createChargeOrder,
@@ -14,7 +14,7 @@ import {
   requestTaxInvoice,
   listMyTaxInvoices,
   getMyTaxInvoice,
-} from "../../controllers/creditBPlan.controller.js";
+} from "../../controllers/credits/creditBPlan.controller.js";
 import {
   sendVerificationCode,
   verifyCode,

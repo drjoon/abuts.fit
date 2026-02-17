@@ -20,19 +20,25 @@
 
 ```
 /backend
-|-- /controllers    # API 핸들러 (레거시/점진 정리)
+|-- /controllers    # API 핸들러 (도메인별 폴더: controllers/auth, controllers/requests 등)
 |-- /models         # Mongoose 모델
 |-- /modules        # 도메인 단위 라우트(modules/*/*.routes.js)
-|-- /routes         # 레거시 라우트 (점진적으로 modules로 이동)
 |-- /middlewares    # 미들웨어
 |-- /utils          # 유틸리티 함수
-`-- /config         # 설정 파일
+`-- /jobs           # 백그라운드 워커
 ```
 
-### 3.1 라우트 구성 원칙
+### 3.1 라우트 구성 원칙 (2026-02 리팩터링)
 
+- 모든 라우트는 `modules/<domain>/*.routes.js` 구조로 통합됨.
 - `app.js`는 `modules/*`에 있는 라우트를 import해서 `/api/...` prefix에 mount한다.
-- 새로 추가/변경하는 도메인 라우트는 `routes/`가 아니라 `modules/<domain>/` 아래에 둔다.
+- 새로 추가/변경하는 도메인 라우트는 `modules/<domain>/` 아래에 둔다.
+
+### 3.2 컨트롤러 구성 원칙 (2026-02 리팩터링)
+
+- 컨트롤러는 `controllers/<domain>/` 폴더로 그룹화한다.
+- 예: `controllers/auth/auth.controller.js`, `controllers/requests/creation.controller.js`
+- 도메인별 barrel 파일(index 역할)로 재export하여 import 간결화.
 
 ## 4. API 규칙
 

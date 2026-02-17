@@ -1,6 +1,6 @@
 import express from "express";
 const router = express.Router();
-import requestController from "../../controllers/request.controller.js";
+import requestController from "../../controllers/requests/request.controller.js";
 import * as cncEventController from "../../controllers/cncEvent.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 

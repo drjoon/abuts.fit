@@ -4,7 +4,7 @@
  */
 
 import cache, { CacheKeys, CacheTTL } from "./cache.utils.js";
-import { getDeliveryEtaLeadDays } from "../controllers/request/utils.js";
+import { getDeliveryEtaLeadDays } from "../controllers/requests/utils.js";
 
 /**
  * 배송 리드타임 캐시 워밍
@@ -17,7 +17,7 @@ async function warmDeliveryLeadDays() {
   } catch (error) {
     console.error(
       "[CacheWarming] ❌ Failed to cache delivery lead days:",
-      error.message
+      error.message,
     );
   }
 }
@@ -45,11 +45,14 @@ export async function warmupCache() {
  */
 export function startPeriodicCacheRefresh() {
   // 30분마다 배송 리드타임 갱신
-  setInterval(() => {
-    warmDeliveryLeadDays();
-  }, 30 * 60 * 1000);
+  setInterval(
+    () => {
+      warmDeliveryLeadDays();
+    },
+    30 * 60 * 1000,
+  );
 
   console.log(
-    "[CacheWarming] 🔄 Periodic cache refresh started (every 30 minutes)"
+    "[CacheWarming] 🔄 Periodic cache refresh started (every 30 minutes)",
   );
 }
