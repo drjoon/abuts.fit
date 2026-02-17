@@ -20,13 +20,19 @@
 
 ```
 /backend
-|-- /controllers    # API 핸들러
+|-- /controllers    # API 핸들러 (레거시/점진 정리)
 |-- /models         # Mongoose 모델
-|-- /routes         # Express 라우트
+|-- /modules        # 도메인 단위 라우트(modules/*/*.routes.js)
+|-- /routes         # 레거시 라우트 (점진적으로 modules로 이동)
 |-- /middlewares    # 미들웨어
 |-- /utils          # 유틸리티 함수
 `-- /config         # 설정 파일
 ```
+
+### 3.1 라우트 구성 원칙
+
+- `app.js`는 `modules/*`에 있는 라우트를 import해서 `/api/...` prefix에 mount한다.
+- 새로 추가/변경하는 도메인 라우트는 `routes/`가 아니라 `modules/<domain>/` 아래에 둔다.
 
 ## 4. API 규칙
 

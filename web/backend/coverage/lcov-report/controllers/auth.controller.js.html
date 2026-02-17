@@ -25,14 +25,14 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/263</span>
+                <span class='fraction'>0/264</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>0/179</span>
+                <span class='fraction'>0/190</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/258</span>
+                <span class='fraction'>0/259</span>
             </div>
         
             
@@ -1113,7 +1113,12 @@
 <a name='L1048'></a><a href='#L1048'>1048</a>
 <a name='L1049'></a><a href='#L1049'>1049</a>
 <a name='L1050'></a><a href='#L1050'>1050</a>
-<a name='L1051'></a><a href='#L1051'>1051</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L1051'></a><a href='#L1051'>1051</a>
+<a name='L1052'></a><a href='#L1052'>1052</a>
+<a name='L1053'></a><a href='#L1053'>1053</a>
+<a name='L1054'></a><a href='#L1054'>1054</a>
+<a name='L1055'></a><a href='#L1055'>1055</a>
+<a name='L1056'></a><a href='#L1056'>1056</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1562,6 +1567,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1598,11 +1604,15 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -2468,7 +2478,7 @@ async function <span class="fstat-no" title="function not covered" >register(</s
       .toLowerCase();
 &nbsp;
     // 필수 필드 검증
-<span class="cstat-no" title="statement not covered" >    if (!name || !normalizedEmail || !password) {</span>
+<span class="cstat-no" title="statement not covered" >    if (!name || !normalizedEmail || (!password &amp;&amp; !socialProvider)) {</span>
 <span class="cstat-no" title="statement not covered" >      return res.status(400).json({</span>
         success: false,
         message: "필수 필드가 누락되었습니다.",
@@ -2596,7 +2606,7 @@ async function <span class="fstat-no" title="function not covered" >register(</s
     const userDoc = <span class="cstat-no" title="statement not covered" >{</span>
       name,
       email: normalizedEmail,
-      password,
+      password: password || generateRandomPassword(),
       role: normalizedRole,
       requestorRole: normalizedRole === "requestor" ? "owner" : null,
       manufacturerRole: normalizedRole === "manufacturer" ? "owner" : null,
@@ -2605,7 +2615,8 @@ async function <span class="fstat-no" title="function not covered" >register(</s
       referralCode,
       referredByUserId: referredByObjectId,
       referralGroupLeaderId,
-      approvedAt: new Date(),
+      approvedAt: null,
+      active: false,
       ...(normalizedRole === "requestor" &amp;&amp; !socialProvider
         ? { isVerified: true }
         : {}),
@@ -2648,13 +2659,17 @@ async function <span class="fstat-no" title="function not covered" >register(</s
     };
 <span class="cstat-no" title="statement not covered" >    delete userWithoutPassword.password;</span>
 &nbsp;
-    // 토큰 생성
-    const token = <span class="cstat-no" title="statement not covered" >generateToken({ userId: user._id, role: user.role });</span>
-    const refreshToken = <span class="cstat-no" title="statement not covered" >generateRefreshToken(user._id);</span>
+    const isApproved = <span class="cstat-no" title="statement not covered" >Boolean(userWithoutPassword.approvedAt);</span>
+    const token = <span class="cstat-no" title="statement not covered" >isApproved</span>
+      ? generateToken({ userId: user._id, role: user.role })
+      : null;
+    const refreshToken = <span class="cstat-no" title="statement not covered" >isApproved ? generateRefreshToken(user._id) : null;</span>
 &nbsp;
 <span class="cstat-no" title="statement not covered" >    res.status(201).json({</span>
       success: true,
-      message: "회원가입이 완료되었습니다.",
+      message: isApproved
+        ? "회원가입이 완료되었습니다."
+        : "가입 신청이 접수되었습니다. 관리자가 승인하면 로그인할 수 있습니다.",
       data: {
         user: userWithoutPassword,
         token,
@@ -2744,8 +2759,8 @@ async function <span class="fstat-no" title="function not covered" >login(</span
       });
     }
 &nbsp;
-    // 비활성화된 계정 확인
-<span class="cstat-no" title="statement not covered" >    if (!user.active) {</span>
+    // 비활성화 또는 미승인 계정 확인
+<span class="cstat-no" title="statement not covered" >    if (!user.active || !user.approvedAt) {</span>
 <span class="cstat-no" title="statement not covered" >      await logSecurityEvent({</span>
         userId: user._id,
         action: "LOGIN_FAILED_INACTIVE_USER",
@@ -2756,7 +2771,7 @@ async function <span class="fstat-no" title="function not covered" >login(</span
       });
 <span class="cstat-no" title="statement not covered" >      return res.status(401).json({</span>
         success: false,
-        message: "비활성화된 계정입니다.",
+        message: "승인 대기 중인 계정입니다. 관리자 승인이 필요합니다.",
       });
     }
 &nbsp;
@@ -3220,7 +3235,7 @@ export default {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-02-17T04:36:50.659Z
+                at 2026-02-17T07:43:33.587Z
             </div>
         <script src="../prettify.js"></script>
         <script>

@@ -1,8 +1,7 @@
 import { createServer } from "http";
 import "./bootstrap/env.js";
 import app, { dbReady } from "./app.js";
-import supportRoutes from "./routes/support.routes.js";
-import implantPresetRoutes from "./routes/implantPreset.routes.js";
+import implantPresetRoutes from "./modules/implantPresets/implantPreset.routes.js";
 import { initializeSocket } from "./socket.js";
 import {
   warmupCache,

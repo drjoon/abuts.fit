@@ -203,31 +203,33 @@ app.use("/api", requestFloodBlocker);
 app.use("/uploads", staticMiddleware(resolve(__dirname, "uploads")));
 
 // 라우트 모듈 가져오기
-import authRoutes from "./routes/auth.routes.js";
-import userRoutes from "./routes/user.routes.js";
-import requestRoutes from "./routes/request.routes.js";
-import draftRequestRoutes from "./routes/draftRequest.routes.js";
-import adminRoutes from "./routes/admin.routes.js";
-import machineRoutes from "./routes/machine.routes.js";
-import bridgeStoreRoutes from "./routes/bridgeStore.routes.js";
-import supportRoutes from "./routes/support.routes.js";
-import connectionRoutes from "./routes/connection.routes.js";
-import fileRoutes from "./routes/file.routes.js";
-import aiRoutes from "./routes/ai.routes.js";
-import parseLogRoutes from "./routes/parseLog.routes.js";
-import filenameRuleRoutes from "./routes/filenameRule.routes.js";
-import requestorOrganizationRoutes from "./routes/requestorOrganization.routes.js";
-import guideProgressRoutes from "./routes/guideProgress.routes.js";
-import rhinoRoutes from "./routes/rhino.routes.js";
-import bgRoutes from "./routes/bg.routes.js";
+import authRoutes from "./modules/auth/auth.routes.js";
+import userRoutes from "./modules/users/user.routes.js";
+import requestRoutes from "./modules/requests/request.routes.js";
+import draftRequestRoutes from "./modules/drafts/draftRequest.routes.js";
+import adminRoutes from "./modules/admin/admin.routes.js";
+import machineRoutes from "./modules/machines/machine.routes.js";
+import bridgeStoreRoutes from "./modules/bridgeStore/bridgeStore.routes.js";
+import connectionRoutes from "./modules/connections/connection.routes.js";
+import supportRoutes from "./modules/support/support.routes.js";
+import fileRoutes from "./modules/files/file.routes.js";
+import aiRoutes from "./modules/ai/ai.routes.js";
+import parseLogRoutes from "./modules/parselogs/parseLog.routes.js";
+import filenameRuleRoutes from "./modules/filenameRules/filenameRule.routes.js";
+import requestorOrganizationRoutes from "./modules/organizations/requestorOrganization.routes.js";
+import guideProgressRoutes from "./modules/guideProgress/guideProgress.routes.js";
+import rhinoRoutes from "./modules/rhino/rhino.routes.js";
+import bgRoutes from "./modules/bg/bg.routes.js";
+import clinicRoutes from "./modules/clinic/clinic.routes.js";
+import implantPresetRoutes from "./modules/implantPresets/implantPreset.routes.js";
 
-import creditRoutes from "./routes/credit.routes.js";
-import webhookRoutes from "./routes/webhook.routes.js";
-import chatRoutes from "./routes/chat.routes.js";
-import notificationRoutes from "./routes/notification.routes.js";
-import manufacturerRoutes from "./routes/manufacturer.routes.js";
-import cncMachineRoutes from "./routes/cncMachine.routes.js";
-import salesmanRoutes from "./routes/salesman.routes.js";
+import creditRoutes from "./modules/credits/credit.routes.js";
+import webhookRoutes from "./modules/webhooks/webhook.routes.js";
+import chatRoutes from "./modules/chat/chat.routes.js";
+import notificationRoutes from "./modules/notifications/notification.routes.js";
+import manufacturerRoutes from "./modules/manufacturer/manufacturer.routes.js";
+import cncMachineRoutes from "./modules/cnc/cncMachine.routes.js";
+import salesmanRoutes from "./modules/salesman/salesman.routes.js";
 
 // 라우트 설정
 app.use("/api/auth", authRoutes);
@@ -247,6 +249,9 @@ app.use("/api/requestor-organizations", requestorOrganizationRoutes);
 app.use("/api/guide-progress", guideProgressRoutes);
 app.use("/api/rhino", rhinoRoutes);
 app.use("/api/bg", bgRoutes);
+
+app.use("/api/clinics", clinicRoutes);
+app.use("/api/implant-presets", implantPresetRoutes);
 
 app.use("/api/credits", creditRoutes);
 app.use("/api/webhooks", webhookRoutes);
