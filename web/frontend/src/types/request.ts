@@ -20,6 +20,20 @@ export interface DeliveryInfoSummary {
   carrier?: string;
   shippedAt?: string;
   deliveredAt?: string;
+  tracking?: {
+    lastStatusCode?: string;
+    lastStatusText?: string;
+    lastEventAt?: string;
+    lastSyncedAt?: string;
+  };
+
+  events?: {
+    statusCode?: string;
+    statusText?: string;
+    occurredAt?: string;
+    location?: string;
+    description?: string;
+  }[];
   address?: {
     street?: string;
     city?: string;
