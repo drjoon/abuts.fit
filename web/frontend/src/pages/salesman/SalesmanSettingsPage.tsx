@@ -4,8 +4,8 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { AccountTab } from "@/components/settings/AccountTab";
-import { NotificationsTab } from "@/components/settings/NotificationsTab";
+import { AccountTab } from "@/features/settings/tabs/AccountTab";
+import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity } from "@/pages/requestor/settings/Security";
 import { SalesmanBusinessTab } from "./components/SalesmanBusinessTab";
 import { SalesmanPayoutAccountTab } from "./components/SalesmanPayoutAccountTab";

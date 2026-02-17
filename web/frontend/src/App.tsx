@@ -34,7 +34,7 @@ const ResetPasswordPage = lazy(() =>
   })),
 );
 const DashboardLayout = lazy(() =>
-  import("./components/DashboardLayout").then((m) => ({
+  import("./features/layout/DashboardLayout").then((m) => ({
     default: m.DashboardLayout,
   })),
 );

@@ -5,9 +5,9 @@ import {
   SettingsScaffold,
   type SettingsTabDef,
 } from "@/features/components/SettingsScaffold";
-import { AccountTab } from "@/components/settings/AccountTab";
-import { StaffTab } from "@/components/settings/StaffTab";
-import { NotificationsTab } from "@/components/settings/NotificationsTab";
+import { AccountTab } from "@/features/settings/tabs/AccountTab";
+import { StaffTab } from "@/features/settings/tabs/StaffTab";
+import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { User, Users, Bell, Shield } from "lucide-react";
 import { ManufacturerSecurity } from "./Security";
 
