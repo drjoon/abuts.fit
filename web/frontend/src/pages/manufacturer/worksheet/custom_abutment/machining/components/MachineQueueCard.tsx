@@ -2,6 +2,11 @@ import { useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { getMachineStatusDotClass } from "@/pages/manufacturer/cnc/lib/machineStatus";
+import {
+  MACHINING_SECTION_LABELS,
+  buildLastCompletedSummary,
+  formatElapsedMMSS,
+} from "@/features/manufacturer/cnc/lib/machiningUi";
 import type { MachineQueueCardProps, QueueItem } from "../types";
 import { formatMachiningLabel } from "../utils/label";
 
@@ -92,7 +97,9 @@ export const MachineQueueCard = ({
             if (hintRid && rid && rid === hintRid) return true;
             const jid = String(j?.jobId || j?.id || "").trim();
             if (hintJid && jid && jid === hintJid) return true;
-            const bp = String(j?.ncFile?.filePath || j?.bridgePath || "").trim();
+            const bp = String(
+              j?.ncFile?.filePath || j?.bridgePath || "",
+            ).trim();
             if (hintPath && bp && bp === hintPath) return true;
             return false;
           })
@@ -104,7 +111,9 @@ export const MachineQueueCard = ({
   }, [machiningQueueAll, nowPlayingHint]);
 
   const headPreloadBadge = getNcPreloadBadge(currentSlot);
-  const headRequestId = currentSlot?.requestId ? String(currentSlot.requestId) : "";
+  const headRequestId = currentSlot?.requestId
+    ? String(currentSlot.requestId)
+    : "";
 
   const totalMachiningCount = machiningQueueAll.length;
 
@@ -119,7 +128,9 @@ export const MachineQueueCard = ({
       return v;
     }
     const group = machine?.currentMaterial?.diameterGroup;
-    const numeric = Number.parseFloat(String(group || "").replace(/[^0-9.]/g, ""));
+    const numeric = Number.parseFloat(
+      String(group || "").replace(/[^0-9.]/g, ""),
+    );
     if (Number.isFinite(numeric) && numeric > 0) {
       const v = numeric > 10 ? 12 : numeric;
       return `${Number.isInteger(v) ? v : v.toFixed(1)}`;
@@ -140,37 +151,11 @@ export const MachineQueueCard = ({
       : "없음";
 
   const elapsedLabel = (() => {
-    const sec =
-      typeof machiningElapsedSeconds === "number" && machiningElapsedSeconds >= 0
-        ? Math.floor(machiningElapsedSeconds)
-        : null;
-    if (sec == null) return "";
-    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-    const ss = String(sec % 60).padStart(2, "0");
-    return `${mm}:${ss}`;
+    return formatElapsedMMSS(machiningElapsedSeconds);
   })();
 
-  const lastCompletedSummary = (() => {
-    const base = lastCompleted;
-    if (!base) return null;
-    const completedAt = base.completedAt ? new Date(base.completedAt) : null;
-    const durationSec =
-      typeof base.durationSeconds === "number" && base.durationSeconds >= 0
-        ? Math.floor(base.durationSeconds)
-        : null;
-    const hhmm = completedAt
-      ? `${String(completedAt.getHours()).padStart(2, "0")}:${String(
-          completedAt.getMinutes(),
-        ).padStart(2, "0")}`
-      : "-";
-    const mmss =
-      durationSec == null
-        ? "-"
-        : `${String(Math.floor(durationSec / 60)).padStart(2, "0")}:${String(
-            durationSec % 60,
-          ).padStart(2, "0")}`;
-    return { completedAtLabel: hhmm, durationLabel: mmss };
-  })();
+  const lastCompletedSummary = (() =>
+    buildLastCompletedSummary(lastCompleted))();
 
   return (
     <div className="app-glass-card app-glass-card--xl flex flex-col">
@@ -205,11 +190,15 @@ export const MachineQueueCard = ({
           className="flex items-center gap-2"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
-          <div className="text-[11px] font-extrabold text-slate-700">의뢰배정</div>
+          <div className="text-[11px] font-extrabold text-slate-700">
+            의뢰배정
+          </div>
           <button
             type="button"
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              machine?.allowRequestAssign !== false ? "bg-emerald-500" : "bg-gray-300"
+              machine?.allowRequestAssign !== false
+                ? "bg-emerald-500"
+                : "bg-gray-300"
             }`}
             onClick={(e) => {
               e.stopPropagation();
@@ -219,12 +208,16 @@ export const MachineQueueCard = ({
           >
             <span
               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                machine?.allowRequestAssign !== false ? "translate-x-5" : "translate-x-1"
+                machine?.allowRequestAssign !== false
+                  ? "translate-x-5"
+                  : "translate-x-1"
               }`}
             />
           </button>
 
-          <div className="text-[11px] font-extrabold text-slate-700">자동가공</div>
+          <div className="text-[11px] font-extrabold text-slate-700">
+            자동가공
+          </div>
           <button
             type="button"
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
@@ -258,7 +251,7 @@ export const MachineQueueCard = ({
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold text-slate-500">
-                  Complete
+                  {MACHINING_SECTION_LABELS.complete}
                   <span className="ml-4 mr-4">
                     종료 {lastCompletedSummary?.completedAtLabel || "-"}
                   </span>
@@ -306,7 +299,7 @@ export const MachineQueueCard = ({
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold text-slate-500">
-                  Now Playing
+                  {MACHINING_SECTION_LABELS.nowPlaying}
                   {!!elapsedLabel ? (
                     <span className="ml-2 text-blue-600 font-extrabold">
                       {elapsedLabel}
@@ -361,7 +354,9 @@ export const MachineQueueCard = ({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold text-slate-500">Next Up</div>
+                <div className="text-[11px] font-semibold text-slate-500">
+                  {MACHINING_SECTION_LABELS.nextUp}
+                </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {nextUpLabel}
                 </div>

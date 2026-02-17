@@ -33,6 +33,11 @@ import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { getMockCncMachiningEnabled } from "@/lib/bridgeSettings";
 import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/cnc/components/CompletedMachiningRecordsModal";
+import {
+  MACHINING_SECTION_LABELS,
+  buildLastCompletedSummary,
+  formatElapsedMMSS,
+} from "@/features/manufacturer/cnc/lib/machiningUi";
 
 export type HealthLevel = "ok" | "warn" | "alarm" | "unknown";
 
@@ -427,15 +432,7 @@ export const MachineCard = (props: MachineCardProps) => {
     : 0;
 
   const elapsedLabel = (() => {
-    const sec =
-      typeof machiningElapsedSeconds === "number" &&
-      machiningElapsedSeconds >= 0
-        ? Math.floor(machiningElapsedSeconds)
-        : null;
-    if (sec == null) return "";
-    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-    const ss = String(sec % 60).padStart(2, "0");
-    return `${mm}:${ss}`;
+    return formatElapsedMMSS(machiningElapsedSeconds);
   })();
 
   const recordLabel = (() => {
@@ -532,28 +529,7 @@ export const MachineCard = (props: MachineCardProps) => {
   })();
 
   const lastCompletedSummary = (() => {
-    const base = derivedCompleted;
-    if (!base) return null;
-    const completedAt = base.completedAt ? new Date(base.completedAt) : null;
-    const durationSec =
-      typeof base.durationSeconds === "number" && base.durationSeconds >= 0
-        ? Math.floor(base.durationSeconds)
-        : null;
-
-    const hhmm = completedAt
-      ? `${String(completedAt.getHours()).padStart(2, "0")}:${String(
-          completedAt.getMinutes(),
-        ).padStart(2, "0")}`
-      : "-";
-
-    const mmss =
-      durationSec == null
-        ? "-"
-        : `${String(Math.floor(durationSec / 60)).padStart(2, "0")}:${String(
-            durationSec % 60,
-          ).padStart(2, "0")}`;
-
-    return { completedAtLabel: hhmm, durationLabel: mmss };
+    return buildLastCompletedSummary(derivedCompleted);
   })();
 
   return (
@@ -905,7 +881,7 @@ export const MachineCard = (props: MachineCardProps) => {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold text-slate-500">
-                  Complete
+                  {MACHINING_SECTION_LABELS.complete}
                   <span className="ml-4 mr-4">
                     종료 {lastCompletedSummary?.completedAtLabel || ""}
                   </span>
@@ -944,7 +920,7 @@ export const MachineCard = (props: MachineCardProps) => {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
-                  <span>Now Playing</span>
+                  <span>{MACHINING_SECTION_LABELS.nowPlaying}</span>
                   {!!elapsedLabel && (
                     <span className="text-blue-600 font-bold">
                       {elapsedLabel}
@@ -1023,7 +999,7 @@ export const MachineCard = (props: MachineCardProps) => {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-[11px] font-semibold text-slate-500">
-                  Next Up
+                  {MACHINING_SECTION_LABELS.nextUp}
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {nextProg ? String(nextProg.name ?? "") : "없음"}
