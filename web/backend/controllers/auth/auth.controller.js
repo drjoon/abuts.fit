@@ -431,6 +431,9 @@ async function register(req, res) {
     }
 
     // 사용자 생성
+    const isInstantApprove =
+      normalizedRole === "requestor" || normalizedRole === "salesman";
+
     const userDoc = {
       name,
       email: normalizedEmail,
@@ -443,8 +446,8 @@ async function register(req, res) {
       referralCode,
       referredByUserId: referredByObjectId,
       referralGroupLeaderId,
-      approvedAt: null,
-      active: false,
+      approvedAt: isInstantApprove ? new Date() : null,
+      active: isInstantApprove,
       ...(normalizedRole === "requestor" && !socialProvider
         ? { isVerified: true }
         : {}),
