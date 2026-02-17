@@ -471,6 +471,13 @@ export const useMachiningBoard = ({
       });
       const displayLabel = found ? resolveCompletedDisplayLabel(found) : rid;
 
+      const lotPart = found
+        ? String((found as any)?.lotNumber?.part || "").trim()
+        : "";
+      const lotFinal = found
+        ? String((found as any)?.lotNumber?.final || "").trim()
+        : "";
+
       const durationSeconds = (() => {
         const fromDuration =
           typeof data?.durationSeconds === "number" && data.durationSeconds >= 0
@@ -502,6 +509,17 @@ export const useMachiningBoard = ({
           jobId: data?.jobId != null ? String(data.jobId) : null,
           requestId: data?.requestId != null ? String(data.requestId) : null,
           displayLabel: String(displayLabel || "").trim() || null,
+          clinicName: found
+            ? String((found as any)?.clinicName || "").trim()
+            : "",
+          patientName: found
+            ? String((found as any)?.patientName || "").trim()
+            : "",
+          tooth: found ? String((found as any)?.tooth || "").trim() : "",
+          lotNumber: {
+            part: lotPart || undefined,
+            final: lotFinal || undefined,
+          },
           completedAt: String(data?.completedAt || new Date().toISOString()),
           durationSeconds,
         },

@@ -50,6 +50,13 @@ export type LastCompletedMachining = {
   jobId: string | null;
   requestId: string | null;
   displayLabel: string | null;
+  clinicName?: string;
+  patientName?: string;
+  tooth?: string;
+  lotNumber?: {
+    part?: string;
+    final?: string;
+  } | null;
   completedAt: string;
   durationSeconds: number;
 };

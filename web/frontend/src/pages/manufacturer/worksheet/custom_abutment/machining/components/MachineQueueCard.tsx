@@ -9,6 +9,7 @@ import {
 } from "@/features/manufacturer/cnc/lib/machiningUi";
 import type { MachineQueueCardProps, QueueItem } from "../types";
 import { formatMachiningLabel } from "../utils/label";
+import { MachiningRequestLabel } from "./MachiningRequestLabel";
 
 const isMachiningStatus = (status?: string) => {
   const s = String(status || "").trim();
@@ -157,6 +158,12 @@ export const MachineQueueCard = ({
   const lastCompletedSummary = (() =>
     buildLastCompletedSummary(lastCompleted))();
 
+  const lastCompletedLotRaw = String(
+    (lastCompleted as any)?.lotNumber?.final ||
+      (lastCompleted as any)?.lotNumber?.part ||
+      "",
+  ).trim();
+
   return (
     <div className="app-glass-card app-glass-card--xl flex flex-col">
       <div className="app-glass-card-content flex items-start justify-between gap-3">
@@ -258,14 +265,18 @@ export const MachineQueueCard = ({
                   <span>소요 {lastCompletedSummary?.durationLabel || "-"}</span>
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                  {lastCompleted
-                    ? String(lastCompleted.displayLabel || "").trim() ||
-                      (lastCompleted.requestId
-                        ? `의뢰 (${String(lastCompleted.requestId)})`
-                        : lastCompleted.jobId
-                          ? `작업 (${String(lastCompleted.jobId)})`
-                          : "-")
-                    : "없음"}
+                  {lastCompleted ? (
+                    <MachiningRequestLabel
+                      clinicName={(lastCompleted as any)?.clinicName}
+                      patientName={(lastCompleted as any)?.patientName}
+                      tooth={(lastCompleted as any)?.tooth}
+                      requestId={(lastCompleted as any)?.requestId}
+                      lotNumber={lastCompletedLotRaw}
+                      className="text-[15px]"
+                    />
+                  ) : (
+                    "없음"
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0" />
@@ -307,7 +318,22 @@ export const MachineQueueCard = ({
                   ) : null}
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                  {nowPlayingLabel}
+                  {currentSlot ? (
+                    <MachiningRequestLabel
+                      clinicName={currentSlot?.clinicName}
+                      patientName={currentSlot?.patientName}
+                      tooth={(currentSlot as any)?.tooth}
+                      requestId={currentSlot?.requestId}
+                      lotNumber={String(
+                        currentSlot?.lotNumber?.final ||
+                          currentSlot?.lotNumber?.part ||
+                          "",
+                      ).trim()}
+                      className="text-[15px]"
+                    />
+                  ) : (
+                    nowPlayingLabel
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -358,7 +384,22 @@ export const MachineQueueCard = ({
                   {MACHINING_SECTION_LABELS.nextUp}
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                  {nextUpLabel}
+                  {nextSlot ? (
+                    <MachiningRequestLabel
+                      clinicName={nextSlot?.clinicName}
+                      patientName={nextSlot?.patientName}
+                      tooth={(nextSlot as any)?.tooth}
+                      requestId={nextSlot?.requestId}
+                      lotNumber={String(
+                        nextSlot?.lotNumber?.final ||
+                          nextSlot?.lotNumber?.part ||
+                          "",
+                      ).trim()}
+                      className="text-[15px]"
+                    />
+                  ) : (
+                    nextUpLabel
+                  )}
                 </div>
               </div>
 

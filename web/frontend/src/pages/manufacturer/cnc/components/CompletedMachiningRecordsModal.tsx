@@ -6,6 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
+import { MachiningRequestLabel } from "@/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel";
 
 type CompletedMachiningItem = {
   id: string;
@@ -209,28 +210,15 @@ export const CompletedMachiningRecordsModal = ({
             sec % 60,
           ).padStart(2, "0")}`;
 
-    const labelFromBackend = String(it.displayLabel || "").trim();
-
-    const lotPartRaw = String((it as any)?.lotNumber?.part || "").trim();
-    const lotPart = lotPartRaw.replace(/^CAP/i, "").trim();
+    const lotRaw = String(
+      (it as any)?.lotNumber?.final || (it as any)?.lotNumber?.part || "",
+    ).trim();
     const clinic = String((it as any)?.clinicName || "").trim();
     const patient = String((it as any)?.patientName || "").trim();
     const tooth = String((it as any)?.tooth || "").trim();
     const rid = String(it.requestId || "").trim();
-    const ridSuffix = rid.includes("-") ? rid.split("-").pop() || rid : rid;
 
-    const parts = [clinic, patient, tooth, lotPart, ridSuffix]
-      .map((s) => String(s || "").trim())
-      .filter(Boolean);
-
-    const composed = parts.length ? parts.join(" ") : "";
-    const fallback = rid
-      ? `의뢰 (${rid})`
-      : it.jobId
-        ? `작업 (${it.jobId})`
-        : "-";
-
-    return { hhmm, mmss, label: composed || labelFromBackend || fallback };
+    return { hhmm, mmss, clinic, patient, tooth, rid, lotRaw };
   };
 
   return (
@@ -269,7 +257,14 @@ export const CompletedMachiningRecordsModal = ({
                       <span className="ml-4">소요 {row.mmss}</span>
                     </div>
                     <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                      {row.label}
+                      <MachiningRequestLabel
+                        clinicName={row.clinic}
+                        patientName={row.patient}
+                        tooth={row.tooth}
+                        requestId={row.rid}
+                        lotNumber={row.lotRaw}
+                        className="text-[15px]"
+                      />
                     </div>
                   </div>
                 </div>

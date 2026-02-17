@@ -532,6 +532,17 @@ export const MachineCard = (props: MachineCardProps) => {
     return buildLastCompletedSummary(derivedCompleted);
   })();
 
+  const requestInfo = (machine as any)?.requestInfo || {};
+  const org = requestInfo.organization || "";
+  const clinic = requestInfo.clinicName || "";
+  const patient = requestInfo.patientName || "미지정";
+  const tooth = requestInfo.tooth || "-";
+  const requestId = requestInfo.requestId || "";
+  const lotRaw = (requestInfo.lotNumberFinal ??
+    requestInfo.lotNumberPart ??
+    "") as string | number;
+  const lotBadge = String(lotRaw || "").slice(-3);
+
   return (
     <div
       onClick={onSelect}
@@ -560,9 +571,9 @@ export const MachineCard = (props: MachineCardProps) => {
       }`}
     >
       <div className="app-glass-card-content mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1 min-w-0">
           <div className="flex items-center gap-2">
-            <div className="text-[16px] font-extrabold text-slate-900">
+            <div className="text-[16px] font-extrabold text-slate-900 truncate max-w-[200px]">
               {machine.name}
             </div>
             {getMachineStatusChip(String(effectiveStatus || ""), isRunningUi)}
@@ -577,6 +588,57 @@ export const MachineCard = (props: MachineCardProps) => {
               {isMockUi ? "MOCK" : "REAL"}
             </div>
           </div>
+
+          {requestId ? (
+            <div className="flex flex-col gap-0.5 min-w-0">
+              {/* 데스크탑 */}
+              <div className="hidden md:flex flex-wrap items-center gap-1 text-[12px] text-slate-700">
+                <span className="truncate max-w-[180px]" title={org}>
+                  {org || "-"}
+                </span>
+                <span className="text-slate-400">/</span>
+                <span className="truncate max-w-[150px]" title={clinic}>
+                  {clinic || "-"}
+                </span>
+                <span className="text-slate-400">/</span>
+                <span className="truncate max-w-[120px]" title={patient}>
+                  {patient}
+                </span>
+                <span className="text-slate-400">/</span>
+                <span>{tooth}</span>
+                <span className="text-slate-400">/</span>
+                <span
+                  className="font-semibold text-slate-900"
+                  title={requestId}
+                >
+                  {requestId}
+                </span>
+                {lotBadge && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                    {lotBadge}
+                  </span>
+                )}
+              </div>
+
+              {/* 모바일 */}
+              <div className="flex md:hidden flex-wrap items-center gap-1 text-[12px] text-slate-700">
+                <span className="truncate max-w-[140px]" title={clinic}>
+                  {clinic || "-"}
+                </span>
+                <span className="text-slate-400">/</span>
+                <span className="truncate max-w-[120px]" title={patient}>
+                  {patient}
+                </span>
+                <span className="text-slate-400">/</span>
+                <span>{tooth}</span>
+                {lotBadge && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+                    {lotBadge}
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
