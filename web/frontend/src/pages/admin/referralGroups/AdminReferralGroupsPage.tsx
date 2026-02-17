@@ -22,6 +22,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 
 type ApiGroupLeader = {
   _id: string;
+  role?: "requestor" | "salesman";
   name?: string;
   email?: string;
   organization?: string;
@@ -47,11 +48,39 @@ type ApiGroupListResponse = {
       totalAccounts?: number;
       totalGroupOrders?: number;
       avgEffectiveUnitPrice?: number;
+      requestor?: {
+        groupCount?: number;
+        avgAccountsPerGroup?: number;
+        netNewGroups?: number;
+        avgRevenuePerGroup?: number;
+      };
+      salesman?: {
+        groupCount?: number;
+        avgAccountsPerGroup?: number;
+        netNewGroups?: number;
+        avgCommissionPerGroup?: number;
+      };
     };
     groups?: ApiGroupRow[];
   };
   message?: string;
   error?: string;
+};
+
+const roleBadge = (role?: string) => {
+  if (role === "salesman") {
+    return <Badge variant="secondary">영업자</Badge>;
+  }
+  return <Badge variant="outline">의뢰자</Badge>;
+};
+
+const formatMoney = (n: number) => {
+  const v = Number(n || 0);
+  try {
+    return v.toLocaleString("ko-KR");
+  } catch {
+    return String(v);
+  }
 };
 
 type ApiTreeNode = {
@@ -229,44 +258,79 @@ export default function AdminReferralGroupsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription className="text-xs">
-              그룹 주문 합산(최근30일)
-            </CardDescription>
-            <CardTitle className="text-lg">
-              {Number(overview?.totalGroupOrders || 0).toLocaleString()}건
-            </CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base">의뢰자 그룹</CardTitle>
+              {roleBadge("requestor")}
+            </div>
           </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-xl border p-3">
+              <div className="text-xs text-muted-foreground">그룹수</div>
+              <div className="text-lg font-semibold">
+                {Number(overview?.requestor?.groupCount || 0).toLocaleString()}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                평균 계정수{" "}
+                {Number(
+                  overview?.requestor?.avgAccountsPerGroup || 0,
+                ).toLocaleString()}{" "}
+                · 순증가{" "}
+                {Number(
+                  overview?.requestor?.netNewGroups || 0,
+                ).toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-xl border p-3">
+              <div className="text-xs text-muted-foreground">
+                그룹당 평균 매출액(추정)
+              </div>
+              <div className="text-lg font-semibold">
+                {formatMoney(
+                  Number(overview?.requestor?.avgRevenuePerGroup || 0),
+                )}
+                원
+              </div>
+            </div>
+          </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription className="text-xs">계정 수</CardDescription>
-            <CardTitle className="text-lg">
-              {Number(overview?.totalAccounts || 0).toLocaleString()}
-            </CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base">영업자 그룹</CardTitle>
+              {roleBadge("salesman")}
+            </div>
           </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs">
-              그룹 주문 합산(최근30일)
-            </CardDescription>
-            <CardTitle className="text-lg">
-              {Number(overview?.totalGroupOrders || 0).toLocaleString()}건
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs">
-              평균 당일 단가
-            </CardDescription>
-            <CardTitle className="text-lg">
-              {Number(overview?.avgEffectiveUnitPrice || 0).toLocaleString()}원
-            </CardTitle>
-          </CardHeader>
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-xl border p-3">
+              <div className="text-xs text-muted-foreground">그룹수</div>
+              <div className="text-lg font-semibold">
+                {Number(overview?.salesman?.groupCount || 0).toLocaleString()}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                평균 계정수{" "}
+                {Number(
+                  overview?.salesman?.avgAccountsPerGroup || 0,
+                ).toLocaleString()}{" "}
+                · 순증가{" "}
+                {Number(overview?.salesman?.netNewGroups || 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="rounded-xl border p-3">
+              <div className="text-xs text-muted-foreground">
+                그룹당 평균 수수료(추정)
+              </div>
+              <div className="text-lg font-semibold">
+                {formatMoney(
+                  Number(overview?.salesman?.avgCommissionPerGroup || 0),
+                )}
+                원
+              </div>
+            </div>
+          </CardContent>
         </Card>
       </div>
 
@@ -312,8 +376,11 @@ export default function AdminReferralGroupsPage() {
                       onClick={() => setSelectedLeaderId(String(g.leader?._id))}
                     >
                       <div className="text-left min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {title}
+                        <div className="flex items-center gap-2">
+                          <div className="truncate text-sm font-medium">
+                            {title}
+                          </div>
+                          {roleBadge(g.leader?.role)}
                         </div>
                         <div className="truncate text-[11px] opacity-80">
                           {g.leader?.email || ""}

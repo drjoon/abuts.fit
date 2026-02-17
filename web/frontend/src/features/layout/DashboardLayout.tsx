@@ -54,6 +54,7 @@ const sidebarItems = {
   requestor: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
+    { icon: Users2, label: "리퍼럴그룹", href: "/dashboard/referral-groups" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   salesman: [

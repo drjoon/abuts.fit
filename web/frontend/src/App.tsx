@@ -69,6 +69,7 @@ import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
+import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/CncDashboardPage").then((m) => ({
@@ -152,6 +153,15 @@ const RoleProtectedRoute = ({
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
+};
+
+const ReferralGroupsRoute = () => {
+  const { user } = useAuthStore();
+
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.role === "admin") return <AdminReferralGroupsPage />;
+  if (user.role === "requestor") return <ReferralGroupsPage />;
+  return <Navigate to="/dashboard" replace />;
 };
 
 const App = () => {
@@ -295,8 +305,8 @@ const App = () => {
                     <Route
                       path="referral-groups"
                       element={
-                        <RoleProtectedRoute roles={["admin"]}>
-                          <AdminReferralGroupsPage />
+                        <RoleProtectedRoute roles={["admin", "requestor"]}>
+                          <ReferralGroupsRoute />
                         </RoleProtectedRoute>
                       }
                     />

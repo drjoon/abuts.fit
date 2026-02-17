@@ -235,6 +235,77 @@ export async function getDiameterStats(req, res) {
 }
 
 /**
+ * 리퍼럴 직계 멤버 목록 (의뢰자용)
+ * @route GET /api/requests/my/referral-direct-members
+ */
+export async function getMyReferralDirectMembers(req, res) {
+  try {
+    const requestorId = req.user?._id;
+    if (!requestorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사용자 ID가 없습니다.",
+      });
+    }
+
+    const now = new Date();
+    const last30Cutoff = new Date(now);
+    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+
+    const members = await User.find({
+      referredByUserId: requestorId,
+      active: true,
+      role: { $in: ["requestor", "salesman"] },
+    })
+      .select({
+        _id: 1,
+        name: 1,
+        email: 1,
+        organization: 1,
+        active: 1,
+        createdAt: 1,
+        approvedAt: 1,
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const memberIds = (members || []).map((m) => m._id).filter(Boolean);
+    const orderRows = memberIds.length
+      ? await Request.aggregate([
+          {
+            $match: {
+              requestor: { $in: memberIds },
+              status: "완료",
+              createdAt: { $gte: last30Cutoff },
+            },
+          },
+          { $group: { _id: "$requestor", count: { $sum: 1 } } },
+        ])
+      : [];
+    const ordersByUserId = new Map(
+      (orderRows || []).map((r) => [String(r._id), Number(r.count || 0)]),
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        members: (members || []).map((m) => ({
+          ...m,
+          last30DaysOrders: ordersByUserId.get(String(m._id)) || 0,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Error in getMyReferralDirectMembers:", error);
+    return res.status(500).json({
+      success: false,
+      message: "직계 멤버 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 내 대시보드 요약 (의뢰자용)
  * @route GET /api/requests/my/dashboard-summary
  */

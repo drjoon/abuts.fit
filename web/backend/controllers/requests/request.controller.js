@@ -38,6 +38,7 @@ export const {
   getMyDashboardSummary,
   getDashboardRiskSummary,
   getMyPricingReferralStats,
+  getMyReferralDirectMembers,
 } = dashboardController;
 
 export const {

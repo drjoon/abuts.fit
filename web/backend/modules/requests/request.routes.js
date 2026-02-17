@@ -74,6 +74,13 @@ router.get(
   requestController.getMyPricingReferralStats,
 );
 
+// 리퍼럴 직계 멤버 목록 (의뢰자용)
+router.get(
+  "/my/referral-direct-members",
+  authorize(["requestor", "admin"], { requestorRoles: ["owner", "staff"] }),
+  requestController.getMyReferralDirectMembers,
+);
+
 // 동일 환자/치아 커스텀 어벗 의뢰 존재 여부 확인 (재의뢰 판단용)
 router.get(
   "/my/has-duplicate",

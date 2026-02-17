@@ -88,9 +88,11 @@ async function getReferralGroups(req, res) {
         { referralGroupLeaderId: null },
         { referralGroupLeaderId: { $exists: false } },
       ],
+      role: { $in: ["requestor", "salesman"] },
     })
       .select({
         _id: 1,
+        role: 1,
         name: 1,
         email: 1,
         organization: 1,
@@ -111,7 +113,13 @@ async function getReferralGroups(req, res) {
 
     const [directCounts, snapshots] = await Promise.all([
       User.aggregate([
-        { $match: { referredByUserId: { $in: leaderIds }, active: true } },
+        {
+          $match: {
+            referredByUserId: { $in: leaderIds },
+            active: true,
+            role: { $in: ["requestor", "salesman"] },
+          },
+        },
         { $group: { _id: "$referredByUserId", count: { $sum: 1 } } },
       ]),
       PricingReferralStatsSnapshot.find({
@@ -153,6 +161,150 @@ async function getReferralGroups(req, res) {
       };
     });
 
+    const requestorGroups = groups.filter(
+      (g) => String(g?.leader?.role || "") === "requestor",
+    );
+    const salesmanGroups = groups.filter(
+      (g) => String(g?.leader?.role || "") === "salesman",
+    );
+
+    const requestorGroupCount = requestorGroups.length;
+    const salesmanGroupCount = salesmanGroups.length;
+
+    const requestorTotalAccounts = requestorGroups.reduce(
+      (acc, g) => acc + Number(g.memberCount || 0),
+      0,
+    );
+    const salesmanTotalAccounts = salesmanGroups.reduce(
+      (acc, g) => acc + Number(g.memberCount || 0),
+      0,
+    );
+
+    const requestorAvgAccountsPerGroup = requestorGroupCount
+      ? Math.round(requestorTotalAccounts / requestorGroupCount)
+      : 0;
+    const salesmanAvgAccountsPerGroup = salesmanGroupCount
+      ? Math.round(salesmanTotalAccounts / salesmanGroupCount)
+      : 0;
+
+    const requestorTotalRevenueAmount = requestorGroups.reduce((acc, g) => {
+      const orders = Number(g.groupTotalOrders || 0);
+      const unit = Number(g.effectiveUnitPrice || 0);
+      return acc + orders * unit;
+    }, 0);
+    const requestorAvgRevenuePerGroup = requestorGroupCount
+      ? Math.round(requestorTotalRevenueAmount / requestorGroupCount)
+      : 0;
+
+    const now = new Date();
+    const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const kstStartOfDayUtc = new Date(
+      Date.UTC(
+        kstNow.getUTCFullYear(),
+        kstNow.getUTCMonth(),
+        kstNow.getUTCDate(),
+        -9,
+        0,
+        0,
+        0,
+      ),
+    );
+
+    const requestorNetNewGroups = leaders.filter(
+      (l) =>
+        String(l?.role || "") === "requestor" &&
+        l.createdAt &&
+        new Date(l.createdAt).getTime() >= kstStartOfDayUtc.getTime(),
+    ).length;
+
+    const salesmanNetNewGroups = leaders.filter(
+      (l) =>
+        String(l?.role || "") === "salesman" &&
+        l.createdAt &&
+        new Date(l.createdAt).getTime() >= kstStartOfDayUtc.getTime(),
+    ).length;
+
+    const commissionRate = 0.05;
+    const last30Cutoff = new Date(now);
+    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+
+    const salesmanLeaderIds = salesmanGroups
+      .map((g) => g.leader?._id)
+      .filter(Boolean);
+
+    const directRequestors = salesmanLeaderIds.length
+      ? await User.find({
+          referredByUserId: { $in: salesmanLeaderIds },
+          role: "requestor",
+          active: true,
+        })
+          .select({ _id: 1, organizationId: 1, referredByUserId: 1 })
+          .lean()
+      : [];
+
+    const orgIdByRequestorId = new Map(
+      (directRequestors || [])
+        .filter((u) => u?.organizationId)
+        .map((u) => [String(u._id), String(u.organizationId)]),
+    );
+
+    const requestorIdsBySalesmanLeaderId = new Map();
+    for (const u of directRequestors || []) {
+      const leaderId = String(u?.referredByUserId || "");
+      if (!leaderId) continue;
+      const arr = requestorIdsBySalesmanLeaderId.get(leaderId) || [];
+      arr.push(String(u._id));
+      requestorIdsBySalesmanLeaderId.set(leaderId, arr);
+    }
+
+    const orgIds = Array.from(new Set(Array.from(orgIdByRequestorId.values())));
+    const orgObjectIds = orgIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const revenueRows = orgObjectIds.length
+      ? await Request.aggregate([
+          {
+            $match: {
+              requestorOrganizationId: { $in: orgObjectIds },
+              status: "완료",
+              createdAt: { $gte: last30Cutoff },
+            },
+          },
+          {
+            $group: {
+              _id: "$requestorOrganizationId",
+              revenueAmount: { $sum: "$price.amount" },
+            },
+          },
+        ])
+      : [];
+
+    const revenueByOrgId = new Map(
+      (revenueRows || []).map((r) => [
+        String(r._id),
+        Number(r.revenueAmount || 0),
+      ]),
+    );
+
+    let salesmanTotalCommissionAmount = 0;
+    for (const g of salesmanGroups) {
+      const leaderId = String(g?.leader?._id || "");
+      if (!leaderId) continue;
+      const requestorIds = requestorIdsBySalesmanLeaderId.get(leaderId) || [];
+      let revenue = 0;
+      for (const rid of requestorIds) {
+        const orgId = orgIdByRequestorId.get(String(rid));
+        if (!orgId) continue;
+        revenue += Number(revenueByOrgId.get(String(orgId)) || 0);
+      }
+      salesmanTotalCommissionAmount += revenue * commissionRate;
+    }
+
+    const salesmanAvgCommissionPerGroup = salesmanGroupCount
+      ? Math.round(salesmanTotalCommissionAmount / salesmanGroupCount)
+      : 0;
+
     const totalGroups = groups.length;
     const totalAccounts = groups.reduce(
       (acc, g) => acc + Number(g.memberCount || 0),
@@ -181,6 +333,18 @@ async function getReferralGroups(req, res) {
           totalAccounts,
           totalGroupOrders,
           avgEffectiveUnitPrice,
+          requestor: {
+            groupCount: requestorGroupCount,
+            avgAccountsPerGroup: requestorAvgAccountsPerGroup,
+            netNewGroups: requestorNetNewGroups,
+            avgRevenuePerGroup: requestorAvgRevenuePerGroup,
+          },
+          salesman: {
+            groupCount: salesmanGroupCount,
+            avgAccountsPerGroup: salesmanAvgAccountsPerGroup,
+            netNewGroups: salesmanNetNewGroups,
+            avgCommissionPerGroup: salesmanAvgCommissionPerGroup,
+          },
         },
         groups,
       },
@@ -227,6 +391,13 @@ async function getReferralGroupTree(req, res) {
       });
     }
 
+    if (!["requestor", "salesman"].includes(String(leader.role || ""))) {
+      return res.status(404).json({
+        success: false,
+        message: "리더를 찾을 수 없습니다.",
+      });
+    }
+
     const members = await User.find({
       $or: [
         { _id: leader._id },
@@ -236,6 +407,7 @@ async function getReferralGroupTree(req, res) {
           referralGroupLeaderId: { $exists: false },
         },
       ],
+      role: { $in: ["requestor", "salesman"] },
     })
       .select({
         _id: 1,
