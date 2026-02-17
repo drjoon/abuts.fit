@@ -6,6 +6,7 @@ import ActivityLog from "../../models/activityLog.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
 import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -36,20 +37,28 @@ async function getMongoHealth() {
   const start = performance.now();
   try {
     const adminDb = mongoose.connection.db.admin();
-    const [pingResult, serverStatus] = await Promise.all([
-      adminDb.command({ ping: 1 }),
-      adminDb.command({ serverStatus: 1 }),
-    ]);
+    const pingResult = await adminDb.command({ ping: 1 });
+
+    let serverStatus = null;
+    try {
+      serverStatus = await adminDb.command({ serverStatus: 1 });
+    } catch {
+      // serverStatus는 권한이 없는 환경에서 실패할 수 있으므로 무시한다.
+    }
+
     const latencyMs = Math.round(performance.now() - start);
-    const connections = serverStatus?.connections || {};
-    const current = Number(connections.current || 0);
-    const available = Number(connections.available || 0);
-    const total = current + available || 1;
-    const usageRatio = current / total;
-    const status = latencyMs > 500 || usageRatio > 0.8 ? "warning" : "ok";
-    const message = `ping ${latencyMs}ms, connections ${current}/${
-      current + available
-    }`;
+    const connections = serverStatus?.connections || null;
+    const current = Number(connections?.current || 0);
+    const available = Number(connections?.available || 0);
+    const total = current + available || 0;
+    const usageRatio = total > 0 ? current / total : 0;
+
+    const status =
+      latencyMs > 500 || (total > 0 && usageRatio > 0.8) ? "warning" : "ok";
+    const message =
+      total > 0
+        ? `ping ${latencyMs}ms, connections ${current}/${current + available}`
+        : `ping ${latencyMs}ms`;
 
     return {
       ok: true,
@@ -57,8 +66,8 @@ async function getMongoHealth() {
       status,
       message,
       metrics: {
-        connections: { current, available, usageRatio },
-        opCounters: serverStatus?.opcounters || {},
+        connections: total > 0 ? { current, available, usageRatio } : null,
+        opCounters: serverStatus?.opcounters || null,
       },
       raw: { ping: pingResult },
     };
@@ -598,6 +607,32 @@ async function getPricingStats(req, res) {
     const totalBaseAmount = summary.totalBaseAmount || 0;
     const totalDiscountAmount = summary.totalDiscountAmount || 0;
 
+    const shippingRows = await ShippingPackage.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: start, $lte: end },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          packageCount: { $sum: 1 },
+          totalShippingFeeSupply: {
+            $sum: { $ifNull: ["$shippingFeeSupply", 0] },
+          },
+        },
+      },
+    ]);
+    const shipSummary =
+      shippingRows && shippingRows.length > 0 ? shippingRows[0] : {};
+    const packageCount = Number(shipSummary.packageCount || 0);
+    const totalShippingFeeSupply = Number(
+      shipSummary.totalShippingFeeSupply || 0,
+    );
+    const avgShippingFeeSupply = packageCount
+      ? Math.round(totalShippingFeeSupply / packageCount)
+      : 0;
+
     // 추천인(referrer) 기준으로, 추천받은 유저들의 주문을 합산 집계
     const referralRows = await Request.aggregate([
       { $match: match },
@@ -633,6 +668,8 @@ async function getPricingStats(req, res) {
         totalRevenue,
         totalBaseAmount,
         totalDiscountAmount,
+        totalShippingFeeSupply,
+        avgShippingFeeSupply,
         avgUnitPrice: totalOrders ? Math.round(totalRevenue / totalOrders) : 0,
         avgDiscountPerOrder: totalOrders
           ? Math.round(totalDiscountAmount / totalOrders)
@@ -1213,6 +1250,25 @@ async function computeAdminDiameterStats(requests, leadDays) {
  */
 async function getDashboardStats(req, res) {
   try {
+    const systemAlerts = [];
+
+    const mongoHealth = await getMongoHealth();
+    if (!mongoHealth?.ok) {
+      systemAlerts.push({
+        id: "mongo:down",
+        type: "warning",
+        message: mongoHealth?.message || "MongoDB 상태 확인 실패",
+        date: new Date().toISOString(),
+      });
+    } else if (mongoHealth.status !== "ok") {
+      systemAlerts.push({
+        id: "mongo:warning",
+        type: "warning",
+        message: mongoHealth.message,
+        date: new Date().toISOString(),
+      });
+    }
+
     // 사용자 통계
     const userStats = await User.aggregate([
       {
@@ -1332,6 +1388,7 @@ async function getDashboardStats(req, res) {
         requestStats: dashboardData.requests,
         recentActivity: dashboardData.files,
         diameterStats: dashboardData.diameterStats,
+        systemAlerts,
       },
     });
   } catch (error) {

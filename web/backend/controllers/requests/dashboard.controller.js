@@ -793,8 +793,10 @@ export async function getDashboardRiskSummary(req, res) {
       ],
     };
 
+    const role = String(req.user?.role || "");
+
     const filter =
-      req.user?.role === "manufacturer"
+      role === "manufacturer"
         ? {
             $and: [
               baseFilter,
@@ -808,13 +810,17 @@ export async function getDashboardRiskSummary(req, res) {
               completionWindowFilter,
             ],
           }
-        : {
-            $and: [
-              baseFilter,
-              await buildRequestorOrgScopeFilter(req),
-              completionWindowFilter,
-            ],
-          };
+        : role === "admin"
+          ? {
+              $and: [baseFilter, completionWindowFilter],
+            }
+          : {
+              $and: [
+                baseFilter,
+                await buildRequestorOrgScopeFilter(req),
+                completionWindowFilter,
+              ],
+            };
 
     const requests = await Request.find(filter)
       .populate("requestor", "name organization")

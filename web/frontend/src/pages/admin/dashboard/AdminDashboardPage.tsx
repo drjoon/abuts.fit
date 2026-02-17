@@ -6,10 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
@@ -20,10 +17,8 @@ import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import {
   Users,
   FileText,
-  TrendingUp,
   CheckCircle,
   AlertCircle,
-  MessageSquare,
   DollarSign,
 } from "lucide-react";
 
@@ -32,24 +27,10 @@ type PricingSummary = {
   totalRevenue?: number;
   totalBaseAmount?: number;
   totalDiscountAmount?: number;
+  totalShippingFeeSupply?: number;
+  avgShippingFeeSupply?: number;
   avgUnitPrice?: number;
   avgDiscountPerOrder?: number;
-};
-
-type PricingUserRow = {
-  user?: {
-    _id?: string;
-    name?: string;
-    email?: string;
-    organization?: string;
-  };
-  orders?: number;
-  referralLast30DaysOrders?: number;
-  totalOrders?: number;
-  revenue?: number;
-  baseAmount?: number;
-  discountAmount?: number;
-  avgUnitPrice?: number;
 };
 
 type DashboardStat = {
@@ -69,6 +50,46 @@ type DashboardData = {
   }>;
 };
 
+type PeriodKey = "7d" | "30d" | "lastMonth" | "thisMonth" | "90d" | "all";
+
+const periodToRange = (period: PeriodKey) => {
+  const end = new Date();
+  const start = new Date(end);
+
+  if (period === "all") return null;
+
+  if (period === "7d") {
+    start.setDate(start.getDate() - 7);
+    return { startDate: start.toISOString(), endDate: end.toISOString() };
+  }
+  if (period === "30d") {
+    start.setDate(start.getDate() - 30);
+    return { startDate: start.toISOString(), endDate: end.toISOString() };
+  }
+  if (period === "90d") {
+    start.setDate(start.getDate() - 90);
+    return { startDate: start.toISOString(), endDate: end.toISOString() };
+  }
+
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+  if (period === "thisMonth") {
+    return {
+      startDate: thisMonthStart.toISOString(),
+      endDate: thisMonthEnd.toISOString(),
+    };
+  }
+
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1);
+  return {
+    startDate: lastMonthStart.toISOString(),
+    endDate: lastMonthEnd.toISOString(),
+  };
+};
+
 const getAlertIcon = (type: string) => {
   switch (type) {
     case "success":
@@ -83,69 +104,14 @@ const getAlertIcon = (type: string) => {
 
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
-  const navigate = useNavigate();
   const [pricingSummary, setPricingSummary] = useState<PricingSummary | null>(
     null,
   );
-  const [pricingRows, setPricingRows] = useState<PricingUserRow[]>([]);
   const [pricingLoading, setPricingLoading] = useState(false);
-
-  const headers = useMemo(() => {
-    const h: Record<string, string> = {};
-    if (token === "MOCK_DEV_TOKEN") {
-      h["x-mock-role"] = "admin";
-    }
-    if (token) {
-      h["Authorization"] = `Bearer ${token}`;
-    }
-    return h;
-  }, [token]);
 
   if (!user || user.role !== "admin") return null;
 
-  const {
-    data: diameterStatsResponse,
-    isError: isDiameterStatsError,
-    error: diameterStatsError,
-    isFetching: isDiameterStatsFetching,
-  } = useQuery({
-    queryKey: ["admin-diameter-stats"],
-    enabled: Boolean(token),
-    queryFn: async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-
-      try {
-        const res = await apiFetch<any>({
-          path: "/api/requests/diameter-stats",
-          method: "GET",
-          token,
-          signal: controller.signal,
-          headers: token
-            ? {
-                "x-mock-role": "admin",
-              }
-            : undefined,
-        });
-        if (!res.ok || !res.data?.success) {
-          throw new Error("직경별 통계 조회에 실패했습니다.");
-        }
-        return res.data;
-      } catch (e: any) {
-        if (e?.name === "AbortError") {
-          throw new Error("요청 시간이 초과되었습니다.");
-        }
-        throw e;
-      } finally {
-        clearTimeout(timer);
-      }
-    },
-    retry: false,
-  });
-
-  const [period, setPeriod] = useState<
-    "7d" | "30d" | "lastMonth" | "thisMonth" | "90d" | "all"
-  >("30d");
+  const [period, setPeriod] = useState<PeriodKey>("30d");
 
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
@@ -160,11 +126,6 @@ export const AdminDashboardPage = () => {
           method: "GET",
           token,
           signal: controller.signal,
-          headers: token
-            ? {
-                "x-mock-role": "admin",
-              }
-            : undefined,
         });
         if (!res.ok || !res.data?.success) {
           throw new Error("지연 위험 요약 조회에 실패했습니다.");
@@ -195,11 +156,6 @@ export const AdminDashboardPage = () => {
           method: "GET",
           token,
           signal: controller.signal,
-          headers: token
-            ? {
-                "x-mock-role": "admin",
-              }
-            : undefined,
         });
         if (!res.ok || !res.data?.success) {
           throw new Error("관리자 대시보드 조회에 실패했습니다.");
@@ -218,41 +174,64 @@ export const AdminDashboardPage = () => {
   });
 
   useEffect(() => {
-    const run = async () => {
-      if (!token || !user || user.role !== "admin") return;
-      setPricingLoading(true);
-      try {
-        const [sRes, uRes] = await Promise.all([
-          request<any>({
-            path: "/api/admin/pricing-stats",
-            method: "GET",
-            headers,
-            token,
-          }),
-          request<any>({
-            path: "/api/admin/pricing-stats/users",
-            method: "GET",
-            headers,
-            token,
-          }),
-        ]);
+    setPricingLoading(false);
+  }, []);
 
-        if (sRes.ok && sRes.data?.success) setPricingSummary(sRes.data.data);
-        if (uRes.ok && uRes.data?.success)
-          setPricingRows(uRes.data.data?.items || []);
-      } finally {
-        setPricingLoading(false);
-      }
-    };
+  const rangeQuery = useMemo(() => {
+    const r = periodToRange(period);
+    if (!r) return "";
+    const qs = new URLSearchParams({
+      startDate: r.startDate,
+      endDate: r.endDate,
+    });
+    return `?${qs.toString()}`;
+  }, [period]);
 
-    void run();
-  }, [headers, token, user]);
+  const { data: pricingSummaryResponse, isFetching: isPricingSummaryFetching } =
+    useQuery({
+      queryKey: ["admin-pricing-summary", period],
+      enabled: Boolean(token),
+      queryFn: async () => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+
+        try {
+          const res = await request<any>({
+            path: `/api/admin/pricing-stats${rangeQuery}`,
+            method: "GET",
+            signal: controller.signal,
+            token,
+          });
+          if (!res.ok || !res.data?.success) {
+            throw new Error("가격 통계 조회에 실패했습니다.");
+          }
+          return res.data;
+        } catch (e: any) {
+          if (e?.name === "AbortError") {
+            throw new Error("요청 시간이 초과되었습니다.");
+          }
+          throw e;
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      retry: false,
+    });
+
+  useEffect(() => {
+    const s = pricingSummaryResponse?.success
+      ? pricingSummaryResponse.data
+      : null;
+    setPricingSummary(s);
+    setPricingLoading(isPricingSummaryFetching);
+  }, [pricingSummaryResponse, isPricingSummaryFetching]);
 
   const baseData: DashboardData = {
     stats: [
       { label: "총 사용자", value: "0", change: "+0%", icon: Users },
-      { label: "활성 의뢰", value: "0", change: "+0%", icon: FileText },
-      { label: "월 거래량", value: "0", change: "+0%", icon: TrendingUp },
+      { label: "진행중 의뢰", value: "0", change: "+0%", icon: FileText },
+      { label: "완료", value: "0", change: "+0%", icon: CheckCircle },
+      { label: "취소", value: "0", change: "+0%", icon: AlertCircle },
       {
         label: "시스템 상태",
         value: "정상",
@@ -265,8 +244,10 @@ export const AdminDashboardPage = () => {
 
   let data: DashboardData = baseData;
   const diameterStatsFromApi: DiameterStats | undefined =
-    diameterStatsResponse?.success
-      ? diameterStatsResponse.data?.diameterStats
+    adminDashboardResponse?.success
+      ? (adminDashboardResponse.data?.diameterStats as
+          | DiameterStats
+          | undefined)
       : undefined;
 
   const riskSummary = riskSummaryResponse?.success
@@ -286,23 +267,7 @@ export const AdminDashboardPage = () => {
         </div>
       </CardContent>
     </Card>
-  ) : isDiameterStatsError ? (
-    <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium mb-2">
-          커스텀 어벗먼트 최대 직경별 진행 현황
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-center text-muted-foreground text-sm py-10">
-          직경별 통계 조회에 실패했습니다.
-          {diameterStatsError instanceof Error
-            ? ` (${diameterStatsError.message})`
-            : ""}
-        </div>
-      </CardContent>
-    </Card>
-  ) : !isDiameterStatsFetching && !diameterStatsFromApi ? (
+  ) : !diameterStatsFromApi ? (
     <Card className="app-glass-card app-glass-card--lg">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium mb-2">
@@ -318,7 +283,7 @@ export const AdminDashboardPage = () => {
   ) : (
     <WorksheetDiameterCard
       stats={diameterStatsFromApi}
-      key={isDiameterStatsFetching ? "fetching" : "idle"}
+      key={"admin-dashboard"}
     />
   );
 
@@ -326,31 +291,42 @@ export const AdminDashboardPage = () => {
     const userStats = adminDashboardResponse.data.userStats || {};
     const requestStats = adminDashboardResponse.data.requestStats || {};
     const systemAlerts = adminDashboardResponse.data.systemAlerts || [];
-    const monthlyVolume = adminDashboardResponse.data.monthlyVolume ?? 0;
-    const systemUptime = adminDashboardResponse.data.systemUptime ?? "99.9%";
 
     const totalUsers = userStats.total ?? 0;
-    const activeRequests = requestStats.total ?? 0;
+
+    const byStatus = requestStats.byStatus || {};
+    const totalRequests = requestStats.total ?? 0;
+    const completed = byStatus["완료"] ?? 0;
+    const canceled = byStatus["취소"] ?? 0;
+    const inProgress = Math.max(totalRequests - completed - canceled, 0);
+
+    const systemUptime = "99.9%";
 
     data = {
       stats: [
         {
           label: "총 사용자",
           value: String(totalUsers),
-          change: userStats.change ?? "+0%",
+          change: "+0%",
           icon: Users,
         },
         {
-          label: "활성 의뢰",
-          value: String(activeRequests),
-          change: requestStats.change ?? "+0%",
+          label: "진행중 의뢰",
+          value: String(inProgress),
+          change: "+0%",
           icon: FileText,
         },
         {
-          label: "월 거래량",
-          value: String(monthlyVolume),
-          change: requestStats.monthlyChange ?? "+0%",
-          icon: TrendingUp,
+          label: "완료",
+          value: String(completed),
+          change: "+0%",
+          icon: CheckCircle,
+        },
+        {
+          label: "취소",
+          value: String(canceled),
+          change: "+0%",
+          icon: AlertCircle,
         },
         {
           label: "시스템 상태",
@@ -372,8 +348,9 @@ export const AdminDashboardPage = () => {
           <PeriodFilter value={period} onChange={setPeriod} />
         </div>
       }
+      statsGridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3"
       topSection={
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
           {diameterTopSection}
           <RequestorRiskSummaryCard riskSummary={riskSummary} />
         </div>
@@ -408,6 +385,22 @@ export const AdminDashboardPage = () => {
               </div>
               <p className="text-xs text-muted-foreground">
                 {pricingLoading ? "조회 중..." : "기간 내 주문(취소 제외)"}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="app-glass-card app-glass-card--lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">배송비 합계</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                ₩
+                {(pricingSummary?.totalShippingFeeSupply ?? 0).toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                평균 배송비: ₩
+                {(pricingSummary?.avgShippingFeeSupply ?? 0).toLocaleString()}
               </p>
             </CardContent>
           </Card>
@@ -464,121 +457,30 @@ export const AdminDashboardPage = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {data.systemAlerts?.map((alert: any) => (
-                  <div
-                    key={alert.id}
-                    className="flex items-start space-x-3 p-3 border border-border rounded-lg"
-                  >
-                    {getAlertIcon(alert.type)}
-                    <div className="flex-1">
-                      <div className="font-medium">{alert.message}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {alert.date}
+                {data.systemAlerts?.length ? (
+                  data.systemAlerts?.map((alert: any) => (
+                    <div
+                      key={alert.id}
+                      className="flex items-start space-x-3 p-3 border border-border rounded-lg"
+                    >
+                      {getAlertIcon(alert.type)}
+                      <div className="flex-1">
+                        <div className="font-medium">{alert.message}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {alert.date}
+                        </div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="flex h-28 items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg">
+                    시스템 알림이 없습니다.
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader>
-              <CardTitle>사용자별 주문/할인</CardTitle>
-              <CardDescription>
-                주문 수 및 할인 내역을 확인하세요.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left border-b">
-                      <th className="py-2 pr-4">사용자</th>
-                      <th className="py-2 pr-4">소속</th>
-                      <th className="py-2 pr-4">주문</th>
-                      <th className="py-2 pr-4">리퍼럴 주문</th>
-                      <th className="py-2 pr-4">합산</th>
-                      <th className="py-2 pr-4">매출</th>
-                      <th className="py-2 pr-4">할인</th>
-                      <th className="py-2 pr-4">평균 단가</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pricingRows.map((r) => (
-                      <tr
-                        key={r.user?._id}
-                        className="border-b last:border-b-0"
-                      >
-                        <td className="py-2 pr-4">
-                          <div className="font-medium">
-                            {r.user?.name || r.user?._id}
-                          </div>
-                          {r.user?.email ? (
-                            <div className="text-xs text-muted-foreground">
-                              {r.user.email}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="py-2 pr-4">
-                          {r.user?.organization || "-"}
-                        </td>
-                        <td className="py-2 pr-4">
-                          {(r.orders || 0).toLocaleString()}건
-                        </td>
-                        <td className="py-2 pr-4">
-                          {(r.referralLast30DaysOrders || 0).toLocaleString()}건
-                        </td>
-                        <td className="py-2 pr-4">
-                          {(r.totalOrders || 0).toLocaleString()}건
-                        </td>
-                        <td className="py-2 pr-4">
-                          ₩{(r.revenue || 0).toLocaleString()}
-                        </td>
-                        <td className="py-2 pr-4">
-                          <Badge variant="outline">
-                            ₩{(r.discountAmount || 0).toLocaleString()}
-                          </Badge>
-                        </td>
-                        <td className="py-2 pr-4">
-                          ₩{(r.avgUnitPrice || 0).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
-      }
-      mainRight={
-        <Card className="app-glass-card app-glass-card--lg">
-          <CardHeader>
-            <CardTitle>빠른 작업</CardTitle>
-            <CardDescription>자주 사용하는 기능들입니다.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => navigate("/dashboard/request-monitoring")}
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                의뢰 모니터링
-              </Button>
-              <Button
-                className="w-full justify-start"
-                variant="outline"
-                onClick={() => navigate("/dashboard/chat-management")}
-              >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                채팅 관리
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       }
     />
   );
