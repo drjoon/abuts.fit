@@ -246,7 +246,12 @@ export const TrackingInquiryPage = () => {
 
   const baseFiltered = useMemo(() => {
     return requests
-      .filter((r) => (showCompleted ? true : !isDone(r)))
+      .filter((r) => {
+        // 추적관리 단계는 '완료' 성격이므로, 완료포함 토글과 무관하게 항상 표시
+        const stage = String(r.manufacturerStage || "").trim();
+        if (stage === "추적관리") return true;
+        return showCompleted ? true : !isDone(r);
+      })
       .filter((r) => {
         // 추적관리 화면에서는 기본적으로 발송/출고된 건만 표시.
         // 단, DB상 제조사 단계가 '추적관리'로 이미 넘어간 건은 배송정보가 없어도 표시해야 한다.

@@ -6,6 +6,7 @@ import Machine from "../../models/machine.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -48,6 +49,39 @@ function withBridgeHeaders(extra = {}) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+async function ensureDeliveryInfoShippedAtNow({ request, session }) {
+  if (!request) return;
+
+  const existingRef = request.deliveryInfoRef;
+  const now = new Date();
+
+  if (existingRef) {
+    const di = await DeliveryInfo.findById(existingRef)
+      .session(session || null)
+      .catch(() => null);
+    if (di && !di.shippedAt) {
+      di.shippedAt = now;
+      await di.save({ session });
+    }
+    return;
+  }
+
+  const created = await DeliveryInfo.create(
+    [
+      {
+        request: request._id,
+        shippedAt: now,
+      },
+    ],
+    { session },
+  ).catch(() => null);
+
+  const doc = Array.isArray(created) ? created[0] : null;
+  if (doc?._id) {
+    request.deliveryInfoRef = doc._id;
+  }
 }
 
 export async function getRequestSummaryByRequestId(req, res) {
@@ -1156,11 +1190,13 @@ const advanceManufacturerStageByReviewStage = async ({
 
   if (stage === "shipping") {
     await ensureShippingPackageAndChargeFee({ request, userId, session });
+    await ensureDeliveryInfoShippedAtNow({ request, session });
     applyStatusMapping(request, "발송"); // '발송' 상태 내에서 상세 단계(status2)만 변경됨
     return;
   }
 
   if (stage === "tracking") {
+    await ensureDeliveryInfoShippedAtNow({ request, session });
     applyStatusMapping(request, "추적관리");
   }
 };
