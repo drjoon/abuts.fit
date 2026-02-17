@@ -18,6 +18,11 @@ const LoginPage = lazy(() =>
 const SignupPage = lazy(() =>
   import("./pages/SignupPage").then((m) => ({ default: m.SignupPage })),
 );
+const SignupStaffPage = lazy(() =>
+  import("./pages/SignupStaffPage").then((m) => ({
+    default: m.SignupStaffPage,
+  })),
+);
 const ForgotPasswordPage = lazy(() =>
   import("./pages/ForgotPasswordPage").then((m) => ({
     default: m.ForgotPasswordPage,
@@ -162,6 +167,7 @@ const App = () => {
                   <Route path="/" element={<Index />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/signup" element={<SignupPage />} />
+                  <Route path="/signup/staff" element={<SignupStaffPage />} />
                   <Route
                     path="/forgot-password"
                     element={<ForgotPasswordPage />}
