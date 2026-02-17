@@ -70,11 +70,14 @@ router.use(authorize(["admin"]));
 
 // 사용자 관리
 router.get("/users", adminController.getAllUsers);
+router.post("/users", adminController.createUser);
 router.get("/users/:id", adminController.getUserById);
 router.put("/users/:id", adminController.updateUser);
 router.delete("/users/:id", adminController.deleteUser);
 router.patch("/users/:id/toggle-active", adminController.toggleUserActive);
 router.patch("/users/:id/change-role", adminController.changeUserRole);
+router.post("/users/:id/approve", adminController.approveUser);
+router.post("/users/:id/reject", adminController.rejectUser);
 
 // 의뢰 관리
 router.get("/requests", adminController.getAllRequests);

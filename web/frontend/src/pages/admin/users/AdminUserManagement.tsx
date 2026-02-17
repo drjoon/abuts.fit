@@ -11,6 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Search,
   MoreHorizontal,
   UserCheck,
@@ -81,6 +88,7 @@ type ApiUser = {
   approvedAt?: string | null;
   createdAt?: string;
   lastLogin?: string;
+  totalRequests?: number;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
 };
@@ -130,7 +138,10 @@ const toUiUser = (u: ApiUser): UiUserRow => {
     status,
     joinDate: formatDate(u.createdAt),
     lastLogin: formatDate(u.lastLogin),
-    totalRequests: null,
+    totalRequests:
+      typeof u.totalRequests === "number" && !Number.isNaN(u.totalRequests)
+        ? u.totalRequests
+        : null,
     replacesUserId: u.replacesUserId || null,
     replacedByUserId: u.replacedByUserId || null,
   };
@@ -170,6 +181,18 @@ export const AdminUserManagement = () => {
   const [selectedUser, setSelectedUser] = useState<UiUserRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [createdTempPassword, setCreatedTempPassword] = useState<string | null>(
+    null,
+  );
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    email: "",
+    role: "requestor",
+    organization: "",
+  });
 
   const fetchUsers = useCallback(async () => {
     if (!token) return;
@@ -246,6 +269,109 @@ export const AdminUserManagement = () => {
     [toast, token],
   );
 
+  const createUser = useCallback(async () => {
+    if (!token) return;
+
+    const email = createForm.email.trim().toLowerCase();
+    if (!email) {
+      toast({
+        title: "입력 오류",
+        description: "이메일은 필수입니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingUser(true);
+    setCreatedTempPassword(null);
+    try {
+      const res = await request<any>({
+        path: "/api/admin/users",
+        method: "POST",
+        token,
+        jsonBody: {
+          name: createForm.name,
+          email,
+          role: createForm.role,
+          organization: createForm.organization,
+          autoActivate: true,
+        },
+      });
+
+      if (!res.ok || !res.data?.success) {
+        toast({
+          title: "사용자 생성 실패",
+          description: res.data?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const tempPassword = res.data?.data?.tempPassword || null;
+      setCreatedTempPassword(tempPassword);
+
+      toast({
+        title: "사용자 생성 완료",
+        description: tempPassword
+          ? "임시 비밀번호가 발급되었습니다. 복사 후 전달하세요."
+          : "사용자가 생성되었습니다.",
+      });
+      await fetchUsers();
+    } finally {
+      setCreatingUser(false);
+    }
+  }, [
+    createForm.email,
+    createForm.name,
+    createForm.organization,
+    createForm.role,
+    fetchUsers,
+    toast,
+    token,
+  ]);
+
+  const approveUser = useCallback(
+    async (userId: string) => {
+      if (!token) return false;
+      const res = await request<any>({
+        path: `/api/admin/users/${encodeURIComponent(userId)}/approve`,
+        method: "POST",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        toast({
+          title: "승인 실패",
+          description: res.data?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
+    },
+    [toast, token],
+  );
+
+  const rejectUser = useCallback(
+    async (userId: string) => {
+      if (!token) return false;
+      const res = await request<any>({
+        path: `/api/admin/users/${encodeURIComponent(userId)}/reject`,
+        method: "POST",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        toast({
+          title: "거절 실패",
+          description: res.data?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      return true;
+    },
+    [toast, token],
+  );
+
   useEffect(() => {
     void fetchUsers();
   }, [fetchUsers]);
@@ -282,8 +408,16 @@ export const AdminUserManagement = () => {
     }
 
     const run = async () => {
-      const ok = await toggleUserActive(userId);
-      if (!ok) return;
+      if (action === "승인") {
+        const ok = await approveUser(userId);
+        if (!ok) return;
+      } else if (action === "거절") {
+        const ok = await rejectUser(userId);
+        if (!ok) return;
+      } else {
+        const ok = await toggleUserActive(userId);
+        if (!ok) return;
+      }
 
       toast({
         title: `사용자 ${action} 완료`,
@@ -430,6 +564,25 @@ export const AdminUserManagement = () => {
 
         {/* Search and Filter (moved below summary cards) */}
         <div className="flex gap-4 flex-wrap">
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              size="sm"
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+              onClick={() => {
+                setCreateOpen(true);
+                setCreatedTempPassword(null);
+                setCreateForm({
+                  name: "",
+                  email: "",
+                  role: "requestor",
+                  organization: "",
+                });
+              }}
+            >
+              사용자 추가
+            </Button>
+          </div>
+
           <div className="relative flex-1 min-w-[280px]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -525,7 +678,7 @@ export const AdminUserManagement = () => {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <Avatar>
+                      <Avatar className="shrink-0">
                         <AvatarFallback>
                           {String(user.name || "?")[0]}
                         </AvatarFallback>
@@ -543,14 +696,11 @@ export const AdminUserManagement = () => {
                         <p className="text-sm text-muted-foreground truncate">
                           {user.email}
                         </p>
-                        {!!(user as any).originalEmail && (
+                        {user.companyName ? (
                           <p className="text-xs text-muted-foreground truncate">
-                            원본 이메일: {(user as any).originalEmail}
+                            {user.companyName}
                           </p>
-                        )}
-                        <p className="text-sm text-muted-foreground truncate">
-                          {user.companyName}
-                        </p>
+                        ) : null}
                       </div>
                     </div>
 
@@ -569,111 +719,56 @@ export const AdminUserManagement = () => {
                           <Eye className="mr-2 h-4 w-4" />
                           상세보기
                         </DropdownMenuItem>
-
-                        <DropdownMenuItem
-                          onClick={async () => {
-                            const ok = await changeUserRole(
-                              user.id,
-                              "requestor",
-                            );
-                            if (!ok) return;
-                            toast({
-                              title: "역할 변경 완료",
-                              description: `${user.name}님을 의뢰자로 변경했습니다.`,
-                            });
-                            await fetchUsers();
-                          }}
-                        >
-                          의뢰자로 변경
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={async () => {
-                            const ok = await changeUserRole(
-                              user.id,
-                              "salesman",
-                            );
-                            if (!ok) return;
-                            toast({
-                              title: "역할 변경 완료",
-                              description: `${user.name}님을 영업자로 변경했습니다.`,
-                            });
-                            await fetchUsers();
-                          }}
-                        >
-                          영업자로 변경
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={async () => {
-                            const ok = await changeUserRole(
-                              user.id,
-                              "manufacturer",
-                            );
-                            if (!ok) return;
-                            toast({
-                              title: "역할 변경 완료",
-                              description: `${user.name}님을 제조사로 변경했습니다.`,
-                            });
-                            await fetchUsers();
-                          }}
-                        >
-                          제조사로 변경
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={async () => {
-                            const ok = await changeUserRole(user.id, "admin");
-                            if (!ok) return;
-                            toast({
-                              title: "역할 변경 완료",
-                              description: `${user.name}님을 관리자로 변경했습니다.`,
-                            });
-                            await fetchUsers();
-                          }}
-                        >
-                          관리자로 변경
-                        </DropdownMenuItem>
-
-                        {user.status === "pending" && (
-                          <DropdownMenuItem
-                            onClick={() =>
-                              handleUserAction("승인", user.id, user.name)
-                            }
-                          >
-                            <UserCheck className="mr-2 h-4 w-4" />
-                            승인하기
-                          </DropdownMenuItem>
-                        )}
-                        {user.status === "active" && (
-                          <DropdownMenuItem
-                            onClick={() =>
-                              handleUserAction("일시정지", user.id, user.name)
-                            }
-                          >
-                            <UserX className="mr-2 h-4 w-4" />
-                            일시정지
-                          </DropdownMenuItem>
-                        )}
-                        {user.status === "suspended" && (
-                          <DropdownMenuItem
-                            onClick={() =>
-                              handleUserAction("활성화", user.id, user.name)
-                            }
-                          >
-                            <UserCheck className="mr-2 h-4 w-4" />
-                            활성화
-                          </DropdownMenuItem>
-                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
 
-                  <div className="mt-3 text-sm text-muted-foreground">
-                    <div className="flex items-center justify-between">
-                      <span>가입일</span>
-                      <span>{user.joinDate}</span>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <div className="text-xs text-muted-foreground">
+                      의뢰 {user.totalRequests ?? "-"}
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span>최종접속</span>
-                      <span>{user.lastLogin}</span>
+
+                    <div className="flex items-center gap-2">
+                      {user.status === "pending" ? (
+                        <>
+                          <Button
+                            size="sm"
+                            className="h-8"
+                            onClick={() =>
+                              handleUserAction("승인", user.id, user.name)
+                            }
+                          >
+                            승인
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            onClick={() =>
+                              handleUserAction("거절", user.id, user.name)
+                            }
+                          >
+                            거절
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant={
+                            user.status === "active" ? "outline" : "default"
+                          }
+                          className="h-8"
+                          onClick={() =>
+                            handleUserAction(
+                              user.status === "active" ? "일시정지" : "활성화",
+                              user.id,
+                              user.name,
+                            )
+                          }
+                        >
+                          {user.status === "active" ? "비활성화" : "활성화"}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -681,6 +776,102 @@ export const AdminUserManagement = () => {
             </div>
           </CardContent>
         </Card>
+
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>사용자 추가</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">이름</div>
+                  <Input
+                    value={createForm.name}
+                    onChange={(e) =>
+                      setCreateForm((p) => ({ ...p, name: e.target.value }))
+                    }
+                    placeholder="이름"
+                  />
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground mb-1">역할</div>
+                  <Select
+                    value={createForm.role}
+                    onValueChange={(v) =>
+                      setCreateForm((p) => ({ ...p, role: v }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="역할 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="requestor">의뢰자</SelectItem>
+                      <SelectItem value="salesman">영업자</SelectItem>
+                      <SelectItem value="manufacturer">제조사</SelectItem>
+                      <SelectItem value="admin">관리자</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-sm text-muted-foreground mb-1">이메일</div>
+                <Input
+                  value={createForm.email}
+                  onChange={(e) =>
+                    setCreateForm((p) => ({ ...p, email: e.target.value }))
+                  }
+                  placeholder="email@example.com"
+                />
+              </div>
+
+              <div>
+                <div className="text-sm text-muted-foreground mb-1">조직</div>
+                <Input
+                  value={createForm.organization}
+                  onChange={(e) =>
+                    setCreateForm((p) => ({
+                      ...p,
+                      organization: e.target.value,
+                    }))
+                  }
+                  placeholder="조직명(선택)"
+                />
+              </div>
+
+              {createdTempPassword && (
+                <div className="p-3 rounded-lg border border-orange-200 bg-orange-50">
+                  <div className="text-sm font-semibold text-orange-800">
+                    임시 비밀번호
+                  </div>
+                  <div className="mt-1 font-mono text-sm break-all text-orange-900">
+                    {createdTempPassword}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCreateOpen(false)}
+                  disabled={creatingUser}
+                >
+                  닫기
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void createUser()}
+                  disabled={creatingUser}
+                >
+                  {creatingUser ? "생성 중..." : "생성"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
           <DialogContent className="max-w-xl">
@@ -732,6 +923,46 @@ export const AdminUserManagement = () => {
                 </div>
 
                 <div className="flex flex-wrap gap-2 justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={loadingDetail}
+                    onClick={async () => {
+                      if (!selectedUser) return;
+                      const ok = await toggleUserActive(selectedUser.id);
+                      if (!ok) return;
+                      await fetchUsers();
+                      await fetchUserDetail(selectedUser.id);
+                    }}
+                  >
+                    {selectedUser.status === "active" ? "비활성화" : "활성화"}
+                  </Button>
+
+                  <Select
+                    value={selectedUser.role}
+                    onValueChange={async (v) => {
+                      if (!selectedUser) return;
+                      const ok = await changeUserRole(selectedUser.id, v);
+                      if (!ok) return;
+                      toast({
+                        title: "역할 변경 완료",
+                        description: `${selectedUser.name}님의 역할이 변경되었습니다.`,
+                      });
+                      await fetchUsers();
+                      await fetchUserDetail(selectedUser.id);
+                    }}
+                  >
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="역할" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="requestor">의뢰자</SelectItem>
+                      <SelectItem value="salesman">영업자</SelectItem>
+                      <SelectItem value="manufacturer">제조사</SelectItem>
+                      <SelectItem value="admin">관리자</SelectItem>
+                    </SelectContent>
+                  </Select>
+
                   {!!selectedUser.replacesUserId && (
                     <Button
                       type="button"

@@ -1,4 +1,5 @@
 import mongoose, { Types } from "mongoose";
+import crypto from "crypto";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import File from "../../models/file.model.js";
@@ -74,6 +75,10 @@ async function getMongoHealth() {
   } catch (error) {
     return { ok: false, message: error.message, status: "critical" };
   }
+}
+
+function generateRandomPassword() {
+  return crypto.randomBytes(18).toString("base64url");
 }
 
 async function getReferralGroups(req, res) {
@@ -874,7 +879,35 @@ async function getAllUsers(req, res) {
       .select("-password")
       .sort(sort)
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    const userIds = users
+      .map((u) => u?._id)
+      .filter((id) => Types.ObjectId.isValid(String(id)));
+
+    const requestCounts = await Request.aggregate([
+      {
+        $match: {
+          requestor: { $in: userIds },
+          status: { $ne: "취소" },
+        },
+      },
+      {
+        $group: {
+          _id: "$requestor",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    const countMap = new Map(
+      requestCounts.map((r) => [String(r._id), Number(r.count || 0)]),
+    );
+
+    const usersWithStats = users.map((u) => ({
+      ...u,
+      totalRequests: countMap.get(String(u._id)) || 0,
+    }));
 
     // 전체 사용자 수
     const total = await User.countDocuments(filter);
@@ -882,7 +915,7 @@ async function getAllUsers(req, res) {
     res.status(200).json({
       success: true,
       data: {
-        users,
+        users: usersWithStats,
         pagination: {
           total,
           page,
@@ -895,6 +928,156 @@ async function getAllUsers(req, res) {
     res.status(500).json({
       success: false,
       message: "사용자 목록 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function createUser(req, res) {
+  try {
+    const name = String(req.body?.name || "").trim() || "사용자";
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
+    const role = String(req.body?.role || "requestor").trim();
+    const organization = String(req.body?.organization || "").trim();
+    const passwordRaw = String(req.body?.password || "");
+    const autoActivate = Boolean(req.body?.autoActivate);
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "이메일은 필수입니다.",
+      });
+    }
+
+    const validRoles = ["requestor", "manufacturer", "admin", "salesman"];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 역할입니다.",
+      });
+    }
+
+    const existing = await User.findOne({ email }).select({ _id: 1 }).lean();
+    if (existing?._id) {
+      return res.status(409).json({
+        success: false,
+        message: "이미 존재하는 이메일입니다.",
+      });
+    }
+
+    const tempPassword = passwordRaw || generateRandomPassword();
+
+    const approvedAt = autoActivate ? new Date() : null;
+    const active = autoActivate ? true : false;
+
+    const user = new User({
+      name,
+      email,
+      password: tempPassword,
+      role,
+      organization,
+      requestorRole: role === "requestor" ? "owner" : null,
+      manufacturerRole: role === "manufacturer" ? "owner" : null,
+      adminRole: role === "admin" ? "owner" : null,
+      approvedAt,
+      active,
+    });
+    await user.save();
+
+    const fresh = await User.findById(user._id).select("-password").lean();
+    return res.status(201).json({
+      success: true,
+      data: {
+        user: fresh,
+        tempPassword: passwordRaw ? null : tempPassword,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "사용자 생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function approveUser(req, res) {
+  try {
+    const userId = req.params.id;
+    if (!Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 사용자 ID입니다.",
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    if (!user.approvedAt) {
+      user.approvedAt = new Date();
+    }
+    user.active = true;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        userId: user._id,
+        approvedAt: user.approvedAt,
+        active: user.active,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "사용자 승인 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function rejectUser(req, res) {
+  try {
+    const userId = req.params.id;
+    if (!Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 사용자 ID입니다.",
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    user.active = false;
+    user.approvedAt = null;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        userId: user._id,
+        approvedAt: user.approvedAt,
+        active: user.active,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "사용자 거절 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -2309,6 +2492,9 @@ async function getSecurityLogs(req, res) {
 
 export default {
   getAllUsers,
+  createUser,
+  approveUser,
+  rejectUser,
   getUserById,
   updateUser,
   deleteUser,
