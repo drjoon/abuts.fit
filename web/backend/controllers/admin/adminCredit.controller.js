@@ -650,7 +650,7 @@ export async function adminGetSalesmanCredits(req, res) {
         bonus30d += Number(row.bonusAmount || 0);
         orders30d += Number(row.orderCount || 0);
       }
-      const commission30d = Math.round(Number(ledger30d.earn || 0));
+      const commission30d = Math.round(revenue30d * commissionRate);
 
       return {
         salesmanId: sid,

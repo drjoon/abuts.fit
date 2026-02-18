@@ -470,7 +470,7 @@ export async function getReferralGroups(req, res) {
           role: "requestor",
           active: true,
         })
-          .select({ _id: 1, referredByUserId: 1 })
+          .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
           .lean()
       : [];
 
@@ -498,27 +498,35 @@ export async function getReferralGroups(req, res) {
           role: "requestor",
           active: true,
         })
-          .select({ _id: 1, referredByUserId: 1 })
+          .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
           .lean()
       : [];
 
-    const commissionRequestorIds = [
-      ...(directRequestors || []).map((u) => u._id),
-      ...(level1Requestors || []).map((u) => u._id),
-    ].filter(Boolean);
+    // 수수료/주문 집계는 조직 단위(organizationId)로 통일한다.
+    const commissionOrgIdStrings = [
+      ...(directRequestors || [])
+        .map((u) => String(u?.organizationId || ""))
+        .filter(Boolean),
+      ...(level1Requestors || [])
+        .map((u) => String(u?.organizationId || ""))
+        .filter(Boolean),
+    ];
+    const commissionOrgObjectIds = Array.from(new Set(commissionOrgIdStrings))
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
 
-    const commissionRequestRows = commissionRequestorIds.length
+    const commissionOrgRows = commissionOrgObjectIds.length
       ? await Request.aggregate([
           {
             $match: {
-              requestor: { $in: commissionRequestorIds },
+              requestorOrganizationId: { $in: commissionOrgObjectIds },
               status: "완료",
               createdAt: { $gte: last30Cutoff },
             },
           },
           {
             $group: {
-              _id: "$requestor",
+              _id: "$requestorOrganizationId",
               orderCount: { $sum: 1 },
               revenueAmount: {
                 $sum: {
@@ -533,26 +541,27 @@ export async function getReferralGroups(req, res) {
         ])
       : [];
 
-    const commissionOrdersByUserId = new Map(
-      (commissionRequestRows || []).map((r) => [
+    const commissionOrdersByOrgId = new Map(
+      (commissionOrgRows || []).map((r) => [
         String(r._id),
         Number(r.orderCount || 0),
       ]),
     );
-    const commissionRevenueByUserId = new Map(
-      (commissionRequestRows || []).map((r) => [
+    const commissionRevenueByOrgId = new Map(
+      (commissionOrgRows || []).map((r) => [
         String(r._id),
         Number(r.revenueAmount || 0),
       ]),
     );
 
-    const requestorIdsBySalesmanLeaderId = new Map();
+    const requestorOrgIdsBySalesmanLeaderId = new Map();
     for (const u of directRequestors || []) {
       const leaderId = String(u?.referredByUserId || "");
-      if (!leaderId) continue;
-      const arr = requestorIdsBySalesmanLeaderId.get(leaderId) || [];
-      arr.push(String(u._id));
-      requestorIdsBySalesmanLeaderId.set(leaderId, arr);
+      const orgId = String(u?.organizationId || "");
+      if (!leaderId || !orgId) continue;
+      const arr = requestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
+      arr.push(orgId);
+      requestorOrgIdsBySalesmanLeaderId.set(leaderId, arr);
     }
 
     const leaderIdByReferredSalesmanId = new Map();
@@ -563,16 +572,17 @@ export async function getReferralGroups(req, res) {
       leaderIdByReferredSalesmanId.set(sid, leaderId);
     }
 
-    const level1RequestorIdsBySalesmanLeaderId = new Map();
+    const level1RequestorOrgIdsBySalesmanLeaderId = new Map();
     for (const u of level1Requestors || []) {
       const refSalesmanId = String(u?.referredByUserId || "");
       const leaderId = String(
         leaderIdByReferredSalesmanId.get(refSalesmanId) || "",
       );
-      if (!leaderId) continue;
-      const arr = level1RequestorIdsBySalesmanLeaderId.get(leaderId) || [];
-      arr.push(String(u._id));
-      level1RequestorIdsBySalesmanLeaderId.set(leaderId, arr);
+      const orgId = String(u?.organizationId || "");
+      if (!leaderId || !orgId) continue;
+      const arr = level1RequestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
+      arr.push(orgId);
+      level1RequestorOrgIdsBySalesmanLeaderId.set(leaderId, arr);
     }
 
     const commissionBySalesmanLeaderId = new Map();
@@ -582,25 +592,22 @@ export async function getReferralGroups(req, res) {
     for (const g of salesmanGroups) {
       const leaderId = String(g?.leader?._id || "");
       if (!leaderId) continue;
-      const requestorIds = requestorIdsBySalesmanLeaderId.get(leaderId) || [];
-      const level1RequestorIds =
-        level1RequestorIdsBySalesmanLeaderId.get(leaderId) || [];
+      const requestorOrgIds =
+        requestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
+      const level1RequestorOrgIds =
+        level1RequestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
       let directRevenue = 0;
       let level1Revenue = 0;
-      for (const rid of requestorIds) {
-        directRevenue += Number(
-          commissionRevenueByUserId.get(String(rid)) || 0,
-        );
+      for (const oid of requestorOrgIds) {
+        directRevenue += Number(commissionRevenueByOrgId.get(String(oid)) || 0);
         salesmanTotalReferralOrders += Number(
-          commissionOrdersByUserId.get(String(rid)) || 0,
+          commissionOrdersByOrgId.get(String(oid)) || 0,
         );
       }
-      for (const rid of level1RequestorIds) {
-        level1Revenue += Number(
-          commissionRevenueByUserId.get(String(rid)) || 0,
-        );
+      for (const oid of level1RequestorOrgIds) {
+        level1Revenue += Number(commissionRevenueByOrgId.get(String(oid)) || 0);
         salesmanTotalReferralOrders += Number(
-          commissionOrdersByUserId.get(String(rid)) || 0,
+          commissionOrdersByOrgId.get(String(oid)) || 0,
         );
       }
       salesmanTotalReferredRevenueAmount += directRevenue + level1Revenue;

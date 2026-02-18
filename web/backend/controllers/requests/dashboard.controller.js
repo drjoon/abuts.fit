@@ -285,7 +285,6 @@ export async function getMyReferralDirectMembers(req, res) {
           : requestorId,
       active: true,
       role: { $in: ["requestor", "salesman"] },
-      referralGroupLeaderId: groupLeaderId,
     })
       .select({
         _id: 1,

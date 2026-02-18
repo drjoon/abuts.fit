@@ -374,7 +374,7 @@ async function seedBulkUsersAndData() {
 
     // 입금: 50만/100만/200만/300만원 4종 중 랜덤
     let remainingPaid = pick([500000, 1000000, 2000000, 3000000]);
-    let remainingBonus = 30000;
+    let remainingBonus = 25000;
 
     await CreditLedger.create({
       organizationId: org._id,
