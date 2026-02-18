@@ -1673,6 +1673,15 @@ export async function getMyRequests(req, res) {
     // 기본 필터: 로그인한 의뢰자 소속 기공소(조직) 기준
     const filter = await buildRequestorOrgScopeFilter(req);
     if (req.query.status) filter.status = req.query.status;
+    if (req.query.statusIn) {
+      const raw = Array.isArray(req.query.statusIn)
+        ? req.query.statusIn
+        : [req.query.statusIn];
+      const values = raw.map((v) => String(v || "").trim()).filter(Boolean);
+      if (values.length) {
+        filter.status = { $in: values };
+      }
+    }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
     // 정렬 파라미터

@@ -45,6 +45,13 @@
 - RESTful 원칙을 따르되, 실용적인 관점에서 설계합니다.
 - 명확한 HTTP 상태 코드를 반환합니다.
 
+### 4.2 의뢰자 내 의뢰 목록 조회 필터
+
+- Endpoint: `GET /api/requests/my`
+- `status`: 단일 상태 필터
+- `statusIn`: 복수 상태 필터 (query string 반복 허용)
+  - 예: `/api/requests/my?statusIn=완료&statusIn=취소`
+
 ## 4.1 requestId 생성 규칙
 
 - `Request.requestId`는 **서버에서 생성**하며, 클라이언트가 임의로 지정하지 않습니다.

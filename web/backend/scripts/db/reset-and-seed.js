@@ -272,20 +272,25 @@ async function seedBulkUsersAndData() {
   const BULK_NOW = new Date();
   const REQUESTOR_PW = "Abc!1234";
   const SALESMAN_PW = "Abc!1234";
+  const TWO_MONTHS_AGO = new Date(
+    BULK_NOW.getTime() - 60 * 24 * 60 * 60 * 1000,
+  );
 
   const requestors = []; // owner만 (추천인 후보)
   const salesmen = [];
   const salesmanRoots = [];
   const ROOT_COUNT = 3;
 
-  // 영업자 4명 s001~s004 (리퍼럴 코드 4자리, 의뢰자보다 먼저 생성해 추천 관계 성립)
-  for (let i = 1; i <= 4; i += 1) {
+  // 영업자 10명 s001~s010 (리퍼럴 코드 4자리, 의뢰자보다 먼저 생성해 추천 관계 성립)
+  const SALESMAN_COUNT = 10;
+  for (let i = 1; i <= SALESMAN_COUNT; i += 1) {
     const email = `s${String(i).padStart(3, "0")}@gmail.com`;
     const referralCode = randomReferralCode(4);
     let referredByUserId = null;
     let referralGroupLeaderId = null;
     const isRoot = i <= ROOT_COUNT;
-    const isUnreferred = !isRoot && Math.random() < 0.1;
+    // root(1~3)은 미소개. 나머지는 기본적으로 소개 관계를 만들되, 일부만 미소개로 남김
+    const isUnreferred = !isRoot && i !== 4 && Math.random() < 0.2;
     if (!isRoot && !isUnreferred) {
       const root = salesmanRoots.length ? pick(salesmanRoots) : null;
       const candidates = salesmen.filter(
@@ -317,8 +322,8 @@ async function seedBulkUsersAndData() {
     if (isRoot) salesmanRoots.push({ id: salesman._id, email });
   }
 
-  // 의뢰자 20계정 r001~r020, 계정당 1조직(staff 없음), 의뢰 50~100건
-  for (let i = 1; i <= 20; i += 1) {
+  // 의뢰자 5계정 r001~r005, 계정당 1조직(staff 없음), 의뢰 100~500건, 2개월 전부터
+  for (let i = 1; i <= 5; i += 1) {
     const email = `r${String(i).padStart(3, "0")}@gmail.com`;
     const orgName = `org-${String(i).padStart(3, "0")}`;
     const referralCode = randomReferralCode();
@@ -391,11 +396,13 @@ async function seedBulkUsersAndData() {
       uniqueKey: `seed:bonus:${email}`,
     });
 
-    // 의뢰자 1명당 주문 50~100건, 그 중 80% 완료(APPROVED)
-    const requestCount = randInt(50, 100);
+    // 의뢰자 1명당 주문 100~500건, 그 중 80% 완료(APPROVED), 2개월 전부터
+    const requestCount = randInt(100, 500);
     const completedRequestIds = [];
+    // 첫 의뢰자(i===1)에서 무료 1건 신속배송 처리
+    let freeExpressAdded = false;
     for (let k = 0; k < requestCount; k += 1) {
-      const daysAgo = randInt(0, 30);
+      const daysAgo = randInt(0, 60);
       const createdAt = new Date(BULK_NOW);
       createdAt.setDate(createdAt.getDate() - daysAgo);
 
@@ -434,6 +441,12 @@ async function seedBulkUsersAndData() {
         return Math.min(Math.max(0, remainingBonus), price);
       })();
 
+      // 첫 의뢰자(i===1)에서 첫 번째 완료 건을 무료 신속배송으로 처리
+      const isFreeExpress = i === 1 && isCompleted && !freeExpressAdded;
+      if (isFreeExpress) freeExpressAdded = true;
+      const actualPaidAmount = isFreeExpress ? 0 : paidAmount;
+      const actualBonusAmount = isFreeExpress ? price : bonusAmount;
+
       const reqDoc = await Request.create({
         requestorOrganizationId: org._id,
         requestor: owner._id,
@@ -463,9 +476,9 @@ async function seedBulkUsersAndData() {
                 baseAmount: computedPrice.baseAmount,
                 discountAmount: computedPrice.discountAmount,
                 currency: "KRW",
-                rule: computedPrice.rule,
-                paidAmount,
-                bonusAmount,
+                rule: isFreeExpress ? "free_express" : computedPrice.rule,
+                paidAmount: actualPaidAmount,
+                bonusAmount: actualBonusAmount,
               },
             }
           : {}),
@@ -473,31 +486,48 @@ async function seedBulkUsersAndData() {
         updatedAt: createdAt,
       });
 
-      if (isCompleted && remainingBonus + remainingPaid >= price) {
-        const fromBonus = Math.min(Math.max(0, remainingBonus), price);
-        const fromPaid = price - fromBonus;
-        remainingBonus -= fromBonus;
-        remainingPaid -= fromPaid;
-        await CreditLedger.create({
-          organizationId: org._id,
-          userId: owner._id,
-          type: "SPEND",
-          amount: -price,
-          spentPaidAmount: fromPaid,
-          spentBonusAmount: fromBonus,
-          refType: "SEED_REQUEST",
-          refId: reqDoc._id,
-          uniqueKey: `seed:spend:${email}:${String(reqDoc._id)}`,
-        });
-        completedRequestIds.push(reqDoc._id);
+      if (isCompleted) {
+        if (isFreeExpress) {
+          // 무료 신속배송: 보너스에서만 차감
+          remainingBonus -= price;
+          await CreditLedger.create({
+            organizationId: org._id,
+            userId: owner._id,
+            type: "SPEND",
+            amount: -price,
+            spentPaidAmount: 0,
+            spentBonusAmount: price,
+            refType: "SEED_REQUEST",
+            refId: reqDoc._id,
+            uniqueKey: `seed:spend:${email}:${String(reqDoc._id)}`,
+          });
+          completedRequestIds.push(reqDoc._id);
+        } else if (remainingBonus + remainingPaid >= price) {
+          const fromBonus = Math.min(Math.max(0, remainingBonus), price);
+          const fromPaid = price - fromBonus;
+          remainingBonus -= fromBonus;
+          remainingPaid -= fromPaid;
+          await CreditLedger.create({
+            organizationId: org._id,
+            userId: owner._id,
+            type: "SPEND",
+            amount: -price,
+            spentPaidAmount: fromPaid,
+            spentBonusAmount: fromBonus,
+            refType: "SEED_REQUEST",
+            refId: reqDoc._id,
+            uniqueKey: `seed:spend:${email}:${String(reqDoc._id)}`,
+          });
+          completedRequestIds.push(reqDoc._id);
+        }
       }
 
-      if (isCompleted && parentId && paidAmount > 0) {
+      if (isCompleted && parentId && actualPaidAmount > 0) {
         const parentUser = salesmen.find(
           (s) => String(s.id) === String(parentId),
         );
         if (parentUser) {
-          const earnAmount = Math.round(paidAmount * 0.05);
+          const earnAmount = Math.round(actualPaidAmount * 0.05);
           if (earnAmount > 0) {
             await SalesmanLedger.create({
               salesmanId: parentId,
@@ -514,7 +544,7 @@ async function seedBulkUsersAndData() {
             ? salesmen.find((s) => String(s.id) === String(parentUser.parentId))
             : null;
           if (grandparentUser) {
-            const level1EarnAmount = Math.round(paidAmount * 0.025);
+            const level1EarnAmount = Math.round(actualPaidAmount * 0.025);
             if (level1EarnAmount > 0) {
               await SalesmanLedger.create({
                 salesmanId: grandparentUser.id,

@@ -1153,7 +1153,6 @@ export async function getMyPricingReferralStats(req, res) {
           ? { $in: orgMemberObjectIds }
           : requestorId,
       active: true,
-      referralGroupLeaderId: groupLeaderId,
     })
       .select({ _id: 1 })
       .lean();
@@ -1165,26 +1164,18 @@ export async function getMyPricingReferralStats(req, res) {
       ...(directChildren || []).map((c) => c._id).filter(Boolean),
     ];
 
-    const shouldComputeGroupTotals =
-      !Number.isFinite(cachedGroupTotalOrders) ||
-      !Number.isFinite(cachedGroupMemberCount);
+    const groupMemberCount = groupMemberIds.length;
 
-    const groupMemberCount = shouldComputeGroupTotals
-      ? groupMemberIds.length
-      : cachedGroupMemberCount;
-
-    // 그룹 내 모든 멤버의 지난 30일 주문량 합산
+    // 그룹 내 모든 멤버의 지난 30일 주문량 합산 (항상 실시간 계산)
     const [freshGroupTotalOrders, myLast30DaysOrders, user] = await Promise.all(
       [
-        shouldComputeGroupTotals
-          ? groupMemberIds.length
-            ? Request.countDocuments({
-                requestor: { $in: groupMemberIds },
-                status: "완료",
-                createdAt: { $gte: last30Cutoff },
-              })
-            : Promise.resolve(0)
-          : Promise.resolve(cachedGroupTotalOrders),
+        groupMemberIds.length
+          ? Request.countDocuments({
+              requestor: { $in: groupMemberIds },
+              status: "완료",
+              createdAt: { $gte: last30Cutoff },
+            })
+          : Promise.resolve(0),
         Request.countDocuments({
           requestor: requestorId,
           status: "완료",
@@ -1198,21 +1189,19 @@ export async function getMyPricingReferralStats(req, res) {
 
     const totalLast30DaysOrders = freshGroupTotalOrders;
 
-    if (shouldComputeGroupTotals) {
-      await PricingReferralStatsSnapshot.findOneAndUpdate(
-        { ownerUserId: requestorId, ymd },
-        {
-          $set: {
-            ownerUserId: requestorId,
-            groupLeaderId,
-            groupMemberCount,
-            groupTotalOrders: totalLast30DaysOrders,
-            computedAt: now,
-          },
+    await PricingReferralStatsSnapshot.findOneAndUpdate(
+      { ownerUserId: requestorId, ymd },
+      {
+        $set: {
+          ownerUserId: requestorId,
+          groupLeaderId,
+          groupMemberCount,
+          groupTotalOrders: totalLast30DaysOrders,
+          computedAt: now,
         },
-        { upsert: true, new: true },
-      );
-    }
+      },
+      { upsert: true, new: true },
+    );
 
     const totalOrders = totalLast30DaysOrders;
 

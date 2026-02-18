@@ -286,17 +286,50 @@ export async function adminGetCreditStats(req, res) {
     const totalSpent = Math.abs(ledgerByType.SPEND?.totalAmount || 0);
     const totalBonus = Math.abs(ledgerByType.BONUS?.totalAmount || 0);
 
-    // 구매/무료 차감 분해(무료 우선 차감) - 조직 단위로 시뮬레이션
-    const orgRows = await CreditLedger.aggregate([
+    const statsRows = await CreditLedger.aggregate([
       {
         $group: {
           _id: "$organizationId",
-          entries: {
-            $push: {
-              type: "$type",
-              amount: "$amount",
-              createdAt: "$createdAt",
-              _id: "$_id",
+          chargedPaid: {
+            $sum: {
+              $cond: [
+                { $in: ["$type", ["CHARGE", "REFUND"]] },
+                { $abs: "$amount" },
+                0,
+              ],
+            },
+          },
+          chargedBonus: {
+            $sum: {
+              $cond: [{ $eq: ["$type", "BONUS"] }, { $abs: "$amount" }, 0],
+            },
+          },
+          adjustSum: {
+            $sum: {
+              $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
+            },
+          },
+          spentTotal: {
+            $sum: {
+              $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
+            },
+          },
+          spentPaidSum: {
+            $sum: {
+              $cond: [
+                { $eq: ["$type", "SPEND"] },
+                { $ifNull: ["$spentPaidAmount", 0] },
+                0,
+              ],
+            },
+          },
+          spentBonusSum: {
+            $sum: {
+              $cond: [
+                { $eq: ["$type", "SPEND"] },
+                { $ifNull: ["$spentBonusAmount", 0] },
+                0,
+              ],
             },
           },
         },
@@ -308,49 +341,27 @@ export async function adminGetCreditStats(req, res) {
     let totalPaidBalance = 0;
     let totalBonusBalance = 0;
 
-    for (const org of orgRows || []) {
-      const entries = (org?.entries || []).slice().sort((a, b) => {
-        const at = new Date(a?.createdAt || 0).getTime();
-        const bt = new Date(b?.createdAt || 0).getTime();
-        if (at !== bt) return at - bt;
-        return String(a?._id || "").localeCompare(String(b?._id || ""));
-      });
+    for (const row of statsRows || []) {
+      const chargedPaid = Number(row.chargedPaid || 0);
+      const chargedBonus = Number(row.chargedBonus || 0);
+      const adjustSum = Number(row.adjustSum || 0);
+      const spentTotal = Number(row.spentTotal || 0);
+      const spentPaidRaw = Number(row.spentPaidSum || 0);
+      const spentBonusRaw = Number(row.spentBonusSum || 0);
 
-      let paid = 0;
-      let bonus = 0;
-
-      for (const e of entries) {
-        const type = String(e?.type || "");
-        const amount = Number(e?.amount || 0);
-        if (!Number.isFinite(amount)) continue;
-
-        if (type === "CHARGE" || type === "REFUND") {
-          paid += Math.abs(amount);
-          continue;
-        }
-        if (type === "BONUS") {
-          bonus += Math.abs(amount);
-          continue;
-        }
-        if (type === "ADJUST") {
-          paid += amount;
-          continue;
-        }
-        if (type === "SPEND") {
-          let spend = Math.abs(amount);
-          const fromBonus = Math.min(Math.max(0, bonus), spend);
-          bonus -= fromBonus;
-          totalSpentBonusAmount += fromBonus;
-          spend -= fromBonus;
-
-          const fromPaid = spend;
-          paid -= fromPaid;
-          totalSpentPaidAmount += fromPaid;
-        }
+      let spentPaid, spentBonus;
+      if (Math.round(spentPaidRaw + spentBonusRaw) === Math.round(spentTotal)) {
+        spentPaid = spentPaidRaw;
+        spentBonus = spentBonusRaw;
+      } else {
+        spentBonus = Math.min(chargedBonus, spentTotal);
+        spentPaid = spentTotal - spentBonus;
       }
 
-      totalPaidBalance += Math.max(0, paid);
-      totalBonusBalance += Math.max(0, bonus);
+      totalSpentPaidAmount += spentPaid;
+      totalSpentBonusAmount += spentBonus;
+      totalPaidBalance += Math.max(0, chargedPaid + adjustSum - spentPaid);
+      totalBonusBalance += Math.max(0, chargedBonus - spentBonus);
     }
 
     return res.json({
@@ -573,6 +584,36 @@ export async function adminGetSalesmanCredits(req, res) {
       ]),
     );
 
+    // 영업자별 소개한 영업자 수 집계
+    // referredByUserId가 ObjectId/문자열로 혼재해도 안정적으로 카운트되도록 toString 기반으로 통일
+    const salesmanIdStrings = salesmanIds.map((id) => String(id));
+    const referredSalesmanCountRows = await User.aggregate([
+      {
+        $match: {
+          role: "salesman",
+          active: true,
+          referredByUserId: { $ne: null },
+        },
+      },
+      {
+        $addFields: {
+          referredByKey: { $toString: "$referredByUserId" },
+        },
+      },
+      {
+        $match: {
+          referredByKey: { $in: salesmanIdStrings },
+        },
+      },
+      { $group: { _id: "$referredByKey", count: { $sum: 1 } } },
+    ]);
+    const referredSalesmanCountBySalesmanId = new Map(
+      (referredSalesmanCountRows || []).map((r) => [
+        String(r?._id || ""),
+        Number(r?.count || 0),
+      ]),
+    );
+
     const items = salesmen.map((s) => {
       const sid = String(s._id);
       const ledger = ledgerBySalesmanId.get(sid) || {
@@ -617,6 +658,7 @@ export async function adminGetSalesmanCredits(req, res) {
         email: String(s?.email || ""),
         referralCode: String(s?.referralCode || ""),
         active: Boolean(s?.active),
+        referredSalesmanCount: referredSalesmanCountBySalesmanId.get(sid) || 0,
         wallet: {
           earnedAmount: Math.round(Number(ledger.earn || 0)),
           paidOutAmount: Math.round(Number(ledger.payout || 0)),
@@ -814,54 +856,81 @@ export async function adminGetOrganizationCredits(req, res) {
       {
         $group: {
           _id: "$organizationId",
-          entries: { $push: { type: "$type", amount: "$amount" } },
+          chargedPaid: {
+            $sum: {
+              $cond: [
+                { $in: ["$type", ["CHARGE", "REFUND"]] },
+                { $abs: "$amount" },
+                0,
+              ],
+            },
+          },
+          chargedBonus: {
+            $sum: {
+              $cond: [{ $eq: ["$type", "BONUS"] }, { $abs: "$amount" }, 0],
+            },
+          },
+          adjustSum: {
+            $sum: {
+              $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
+            },
+          },
+          spentTotal: {
+            $sum: {
+              $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
+            },
+          },
+          spentPaidSum: {
+            $sum: {
+              $cond: [
+                { $eq: ["$type", "SPEND"] },
+                { $ifNull: ["$spentPaidAmount", 0] },
+                0,
+              ],
+            },
+          },
+          spentBonusSum: {
+            $sum: {
+              $cond: [
+                { $eq: ["$type", "SPEND"] },
+                { $ifNull: ["$spentBonusAmount", 0] },
+                0,
+              ],
+            },
+          },
         },
       },
     ]);
 
     const balanceMap = {};
     ledgerData.forEach((item) => {
-      let paid = 0;
-      let bonus = 0;
-      let spent = 0;
-      let chargedPaid = 0;
-      let chargedBonus = 0;
-      let spentPaid = 0;
-      let spentBonus = 0;
+      const chargedPaid = Number(item.chargedPaid || 0);
+      const chargedBonus = Number(item.chargedBonus || 0);
+      const adjustSum = Number(item.adjustSum || 0);
+      const spentTotal = Number(item.spentTotal || 0);
+      const spentPaidRaw = Number(item.spentPaidSum || 0);
+      const spentBonusRaw = Number(item.spentBonusSum || 0);
 
-      item.entries.forEach((entry) => {
-        const type = entry.type;
-        const amount = Number(entry.amount || 0);
-        if (!Number.isFinite(amount)) return;
+      // spentPaidAmount/spentBonusAmount가 저장된 경우 그걸 직접 사용
+      // 합이 spentTotal과 일치하면 신뢰, 아니면 전액 paid에서 차감으로 fallback
+      let spentPaid, spentBonus;
+      if (Math.round(spentPaidRaw + spentBonusRaw) === Math.round(spentTotal)) {
+        spentPaid = spentPaidRaw;
+        spentBonus = spentBonusRaw;
+      } else {
+        // fallback: 보너스 우선 차감 시뮬레이션(단순 총액 기준)
+        spentBonus = Math.min(chargedBonus, spentTotal);
+        spentPaid = spentTotal - spentBonus;
+      }
 
-        const absAmount = Math.abs(amount);
-
-        if (type === "CHARGE" || type === "REFUND") {
-          paid += absAmount;
-          chargedPaid += absAmount;
-        } else if (type === "BONUS") {
-          bonus += absAmount;
-          chargedBonus += absAmount;
-        } else if (type === "ADJUST") {
-          paid += amount;
-          if (amount > 0) chargedPaid += amount;
-        } else if (type === "SPEND") {
-          const spend = absAmount;
-          spent += spend;
-          const fromBonus = Math.min(Math.max(0, bonus), spend);
-          bonus -= fromBonus;
-          spentBonus += fromBonus;
-          const fromPaid = spend - fromBonus;
-          paid -= fromPaid;
-          spentPaid += fromPaid;
-        }
-      });
+      const paidBalance = chargedPaid + adjustSum - spentPaid;
+      const bonusBalance = chargedBonus - spentBonus;
 
       balanceMap[String(item._id)] = {
-        balance: Math.max(0, paid + bonus),
-        paidBalance: Math.max(0, paid),
-        bonusBalance: Math.max(0, bonus),
-        spentAmount: Math.max(0, spent),
+        balance: Math.max(0, paidBalance + bonusBalance),
+        paidBalance: Math.max(0, paidBalance),
+        bonusBalance: Math.max(0, bonusBalance),
+        spentAmount: Math.max(0, spentTotal),
         chargedPaidAmount: Math.max(0, chargedPaid),
         chargedBonusAmount: Math.max(0, chargedBonus),
         spentPaidAmount: Math.max(0, spentPaid),

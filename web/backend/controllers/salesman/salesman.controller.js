@@ -1,6 +1,7 @@
 import Request from "../../models/request.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import User from "../../models/user.model.js";
+import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
 
@@ -65,6 +66,127 @@ function roundMoney(n) {
   const v = Number(n || 0);
   if (!Number.isFinite(v)) return 0;
   return Math.round(v);
+}
+
+function safeRegex(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+  const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  try {
+    return new RegExp(escaped, "i");
+  } catch {
+    return null;
+  }
+}
+
+function parseLedgerPeriod(period) {
+  const p = String(period || "").trim();
+  if (!p || p === "all") return null;
+  const now = Date.now();
+  if (p === "7d") return new Date(now - 7 * 24 * 60 * 60 * 1000);
+  if (p === "30d") return new Date(now - 30 * 24 * 60 * 60 * 1000);
+  if (p === "90d") return new Date(now - 90 * 24 * 60 * 60 * 1000);
+  return null;
+}
+
+export async function getSalesmanLedger(req, res) {
+  try {
+    res.set("x-abuts-handler", "salesman.getSalesmanLedger");
+
+    const me = req.user;
+    if (!me || me.role !== "salesman") {
+      return res.status(403).json({
+        success: false,
+        message: "접근 권한이 없습니다.",
+      });
+    }
+
+    const salesmanId = new Types.ObjectId(String(me._id));
+
+    const typeRaw = String(req.query.type || "")
+      .trim()
+      .toUpperCase();
+    const periodRaw = String(req.query.period || "").trim();
+    const qRaw = String(req.query.q || "").trim();
+
+    const page = Math.max(1, Number(req.query.page || 1) || 1);
+    const pageSize = Math.min(
+      200,
+      Math.max(1, Number(req.query.pageSize || 50) || 50),
+    );
+
+    const match = { salesmanId };
+
+    if (
+      typeRaw &&
+      typeRaw !== "ALL" &&
+      ["EARN", "PAYOUT", "ADJUST"].includes(typeRaw)
+    ) {
+      match.type = typeRaw;
+    }
+
+    const createdAt = {};
+
+    const sinceFromPeriod = parseLedgerPeriod(periodRaw);
+    if (sinceFromPeriod) createdAt.$gte = sinceFromPeriod;
+
+    const fromRaw = String(req.query.from || "").trim();
+    const toRaw = String(req.query.to || "").trim();
+
+    if (fromRaw) {
+      const from = new Date(fromRaw);
+      if (!Number.isNaN(from.getTime())) createdAt.$gte = from;
+    }
+
+    if (toRaw) {
+      const to = new Date(toRaw);
+      if (!Number.isNaN(to.getTime())) createdAt.$lte = to;
+    }
+
+    if (Object.keys(createdAt).length) match.createdAt = createdAt;
+
+    if (qRaw) {
+      const rx = safeRegex(qRaw);
+      const ors = [];
+      if (rx) {
+        ors.push({ uniqueKey: rx });
+        ors.push({ refType: rx });
+      }
+      if (Types.ObjectId.isValid(qRaw)) {
+        ors.push({ refId: new Types.ObjectId(qRaw) });
+      }
+      if (ors.length) match.$or = ors;
+    }
+
+    const [total, items] = await Promise.all([
+      SalesmanLedger.countDocuments(match),
+      SalesmanLedger.find(match)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .select({
+          type: 1,
+          amount: 1,
+          refType: 1,
+          refId: 1,
+          uniqueKey: 1,
+          createdAt: 1,
+        })
+        .lean(),
+    ]);
+
+    return res.json({
+      success: true,
+      data: { items: Array.isArray(items) ? items : [], total, page, pageSize },
+    });
+  } catch (error) {
+    console.error("[salesman.getSalesmanLedger] error", error);
+    return res.status(500).json({
+      success: false,
+      message: "정산 내역 조회에 실패했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 function createReferralCode3() {

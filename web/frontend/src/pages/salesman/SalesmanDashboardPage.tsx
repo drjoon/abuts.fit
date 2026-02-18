@@ -7,26 +7,13 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { Copy, Users, Wallet, Coins, BadgeCheck, UserPlus } from "lucide-react";
+import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 type ApiDashboard = {
   ym: string;
@@ -433,70 +420,12 @@ export const SalesmanDashboardPage = () => {
         mainRight={null}
       />
 
-      <Dialog open={creditModalOpen} onOpenChange={setCreditModalOpen}>
-        <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader className="pb-2">
-            <DialogTitle className="text-lg">
-              보유 크레딧 (미지급 수수료)
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-3 min-h-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <PeriodFilter value={period} onChange={setPeriod} />
-              <div className="text-sm font-semibold">
-                합계: {formatMoney(payableGross)}원 / 내:{" "}
-                {formatMoney(directCommission)}원 / 리퍼럴:{" "}
-                {formatMoney(level1Commission)}원
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-scroll overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>의뢰자</TableHead>
-                    <TableHead className="w-[110px]">구분</TableHead>
-                    <TableHead className="w-[120px] text-right">매출</TableHead>
-                    <TableHead className="w-[120px] text-right">
-                      수수료
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {creditRows.map((r) => (
-                    <TableRow key={r.key}>
-                      <TableCell className="text-sm font-semibold">
-                        {r.name}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {r.referralLevel}
-                      </TableCell>
-                      <TableCell className="text-right text-xs">
-                        {formatMoney(r.revenue)}원
-                      </TableCell>
-                      <TableCell className="text-right text-xs font-semibold">
-                        {formatMoney(r.commission)}원
-                      </TableCell>
-                    </TableRow>
-                  ))}
-
-                  {creditRows.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={4}
-                        className="text-center text-sm text-muted-foreground py-8"
-                      >
-                        표시할 내역이 없습니다.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <SalesmanLedgerModal
+        open={creditModalOpen}
+        onOpenChange={setCreditModalOpen}
+        mode="self"
+        titleSuffix="보유 크레딧 (미지급 수수료)"
+      />
     </TooltipProvider>
   );
 };

@@ -974,6 +974,7 @@ async function getReferralGroupTree(req, res) {
       last30DaysOrders: ordersByUserId.get(String(u._id))?.total || 0,
       last30DaysPaidOrders: ordersByUserId.get(String(u._id))?.paid || 0,
       last30DaysBonusOrders: ordersByUserId.get(String(u._id))?.bonus || 0,
+      commissionAmount: 0, // 이후 루프에서 채워짐
     }));
 
     // 영업자 노드용 수수료 계산(최근 30일, 유료 매출 기준)
@@ -1035,6 +1036,16 @@ async function getReferralGroupTree(req, res) {
 
     const commissionRate = 0.05;
     const level1CommissionRate = commissionRate * 0.5;
+
+    // 의뢰자 노드: commissionAmount = 해당 조직의 30일 유료 매출 * 5%
+    for (const n of nodes) {
+      if (String(n?.role || "") !== "requestor") continue;
+      const oid = String(n.organizationId || "");
+      if (!oid) continue;
+      const rev = revenueByOrgIdInGroup.get(oid);
+      if (!rev) continue;
+      n.commissionAmount = Math.round(Number(rev.paid || 0) * commissionRate);
+    }
 
     for (const n of nodes) {
       if (String(n?.role || "") !== "salesman") continue;

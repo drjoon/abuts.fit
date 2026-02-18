@@ -136,6 +136,36 @@
   - `price.paidAmount`: 구매 크레딧에서 차감된 금액 (`amount - bonusAmount`)
   - UI 원장 모달에서 SPEND 금액은 **유료/무료를 2줄로 분리 표시**
 
+#### 7.1.1 CreditLedgerModal 전역 컴포넌트
+
+- **위치**: `src/shared/components/CreditLedgerModal.tsx`
+- **용도**: 의뢰자/관리자/영업자 공통 크레딧 원장 모달 (무한 스크롤, 페이지네이션 없음)
+- **Props**:
+  - `open`, `onOpenChange`: 모달 열림/닫힘 제어
+  - `organizationId`: 관리자가 특정 조직 원장 조회 시 사용 (없으면 로그인 유저 기준)
+  - `titleSuffix`: 모달 제목 suffix (예: 조직명)
+  - `chargeNavPath`: 충전하기 버튼 클릭 시 이동 경로 (없으면 버튼 숨김)
+- **기존 파일** `pages/requestor/dashboard/components/CreditLedgerModal.tsx`는 전역 컴포넌트 re-export만 남김
+
+#### 7.1.2 영업자 크레딧 카드 (AdminCreditPage)
+
+- **레이아웃**: 3열 (`md:grid-cols-3`)
+- **정렬 필터**: 잔액순 / 수수료순 / 매출순 / 이름순 (우측 상단 select)
+- **소개 영업자수**: 카드 헤더에 `소개 영업자 N명` 표시 (`referredSalesmanCount` 필드)
+
+#### 7.1.3 리퍼럴그룹 계층도 수수료 표시
+
+- **영업자 노드**: 최근 30일 수수료 표시 (`commissionAmount`)
+- **의뢰자 노드**: 해당 조직의 30일 유료 매출 × 5% 수수료 표시 (commissionAmount > 0인 경우만)
+
+#### 7.1.4 지난 의뢰(PastRequestsModal) 전역 모달
+
+- **위치**: `src/shared/components/PastRequestsModal.tsx`
+- **용도**: 의뢰자 대시보드에서 "지난 의뢰"를 크레딧 내역 모달과 동일한 레이아웃(필터 + 테이블 + 무한 스크롤)로 조회
+- **동작**:
+  - 기본 상태 필터: 완료/취소 (`statusIn=["완료","취소"]`)
+  - 항목 클릭 시 기존 의뢰 상세/수정 다이얼로그 흐름으로 연결 (`openEditDialogFromRequest`)
+
 ### 7.2 생산 프로세스 및 배송 옵션 정책 (UI)
 
 **생산 프로세스 이해**:

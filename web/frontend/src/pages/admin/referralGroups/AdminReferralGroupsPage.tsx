@@ -151,6 +151,7 @@ const TreeNode = ({
   const last30DaysOrders = Number(node.last30DaysOrders || 0);
   const commissionAmount = Number(node.commissionAmount || 0);
   const isSalesman = String(node.role || "") === "salesman";
+  const isRequestor = String(node.role || "") === "requestor";
 
   return (
     <div style={{ paddingLeft: indent }} className="relative">
@@ -175,7 +176,7 @@ const TreeNode = ({
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
               최근30일 {last30DaysOrders.toLocaleString()}건
-              {isSalesman ? (
+              {(isSalesman || isRequestor) && commissionAmount > 0 ? (
                 <> · 수수료 {formatMoney(commissionAmount)}원</>
               ) : null}
             </div>

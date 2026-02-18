@@ -33,9 +33,10 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { AutoMatchVerificationTab } from "./components/AutoMatchVerificationTab";
+import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
+import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 
 type AdminCreditLedgerType = "CHARGE" | "BONUS" | "SPEND" | "REFUND" | "ADJUST";
-type AdminSalesmanLedgerType = "EARN" | "PAYOUT" | "ADJUST";
 
 type AdminLedgerItem = {
   _id: string;
@@ -89,12 +90,6 @@ const creditTypeLabel = (t: AdminCreditLedgerType) => {
   return "조정";
 };
 
-const salesmanTypeLabel = (t: AdminSalesmanLedgerType) => {
-  if (t === "EARN") return "적립";
-  if (t === "PAYOUT") return "정산";
-  return "조정";
-};
-
 const refTypeLabel = (refType?: string) => {
   const t = String(refType || "").trim();
   if (!t) return "-";
@@ -126,6 +121,7 @@ type SalesmanCreditRow = {
   email: string;
   referralCode?: string;
   active: boolean;
+  referredSalesmanCount?: number;
   wallet: {
     earnedAmount: number;
     paidOutAmount: number;
@@ -217,6 +213,12 @@ export default function AdminCreditPage() {
   const [creditTab, setCreditTab] = useState<"requestor" | "salesman">(
     "requestor",
   );
+  const [salesmanSortKey, setSalesmanSortKey] = useState<
+    "balance" | "commission" | "revenue" | "name"
+  >("balance");
+  const [orgSortKey, setOrgSortKey] = useState<
+    "paidBalance" | "bonusBalance" | "spentPaid" | "name"
+  >("paidBalance");
 
   const [chargeOrders, setChargeOrders] = useState<ChargeOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -232,8 +234,8 @@ export default function AdminCreditPage() {
   const [txSkip, setTxSkip] = useState(0);
   const [txHasMore, setTxHasMore] = useState(true);
 
-  const ORG_PAGE_SIZE = 10;
-  const SALESMAN_PAGE_SIZE = 40;
+  const ORG_PAGE_SIZE = 9;
+  const SALESMAN_PAGE_SIZE = 9;
   const ORDER_PAGE_SIZE = 50;
   const TX_PAGE_SIZE = 50;
 
@@ -674,22 +676,6 @@ export default function AdminCreditPage() {
   const [orgLedgerItems, setOrgLedgerItems] = useState<AdminLedgerItem[]>([]);
   const [orgLedgerTotal, setOrgLedgerTotal] = useState(0);
 
-  const [salesLedgerPeriod, setSalesLedgerPeriod] = useState<
-    "7d" | "30d" | "90d" | "all"
-  >("30d");
-  const [salesLedgerType, setSalesLedgerType] = useState<
-    "all" | AdminSalesmanLedgerType
-  >("all");
-  const [salesLedgerQ, setSalesLedgerQ] = useState("");
-  const [salesLedgerFrom, setSalesLedgerFrom] = useState("");
-  const [salesLedgerTo, setSalesLedgerTo] = useState("");
-  const [salesLedgerPage, setSalesLedgerPage] = useState(1);
-  const [salesLedgerLoading, setSalesLedgerLoading] = useState(false);
-  const [salesLedgerItems, setSalesLedgerItems] = useState<AdminLedgerItem[]>(
-    [],
-  );
-  const [salesLedgerTotal, setSalesLedgerTotal] = useState(0);
-
   const LEDGER_PAGE_SIZE = 50;
 
   const resetOrgLedgerFilters = () => {
@@ -699,15 +685,6 @@ export default function AdminCreditPage() {
     setOrgLedgerFrom("");
     setOrgLedgerTo("");
     setOrgLedgerPage(1);
-  };
-
-  const resetSalesLedgerFilters = () => {
-    setSalesLedgerPeriod("30d");
-    setSalesLedgerType("all");
-    setSalesLedgerQ("");
-    setSalesLedgerFrom("");
-    setSalesLedgerTo("");
-    setSalesLedgerPage(1);
   };
 
   const loadOrgLedger = async () => {
@@ -752,61 +729,12 @@ export default function AdminCreditPage() {
     }
   };
 
-  const loadSalesmanLedger = async () => {
-    if (!token || !salesmanLedgerRow?.salesmanId) return;
-    setSalesLedgerLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (salesLedgerPeriod) params.set("period", salesLedgerPeriod);
-      if (salesLedgerType && salesLedgerType !== "all")
-        params.set("type", salesLedgerType);
-      if (salesLedgerQ.trim()) params.set("q", salesLedgerQ.trim());
-      if (salesLedgerFrom) params.set("from", salesLedgerFrom);
-      if (salesLedgerTo) params.set("to", salesLedgerTo);
-      params.set("page", String(salesLedgerPage));
-      params.set("pageSize", String(LEDGER_PAGE_SIZE));
-
-      const res = await request<AdminLedgerResponse>({
-        path: `/api/admin/credits/salesmen/${salesmanLedgerRow.salesmanId}/ledger?${params.toString()}`,
-        method: "GET",
-        token,
-      });
-
-      if (!res.ok || !res.data?.success) {
-        const msg = (res.data as any)?.message;
-        throw new Error(msg || "정산 내역 조회에 실패했습니다.");
-      }
-
-      const data = res.data.data;
-      setSalesLedgerItems(Array.isArray(data?.items) ? data.items : []);
-      setSalesLedgerTotal(Number(data?.total || 0));
-    } catch (e: any) {
-      setSalesLedgerItems([]);
-      setSalesLedgerTotal(0);
-      toast({
-        title: "정산 내역 조회 실패",
-        description: e?.message || "다시 시도해주세요.",
-        variant: "destructive",
-        duration: 3000,
-      });
-    } finally {
-      setSalesLedgerLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (!orgLedgerOpen) return;
     if (orgLedgerPage !== 1) return;
     loadOrgLedger();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgLedgerOpen]);
-
-  useEffect(() => {
-    if (!salesmanLedgerOpen) return;
-    if (salesLedgerPage !== 1) return;
-    loadSalesmanLedger();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [salesmanLedgerOpen]);
 
   useEffect(() => {
     if (!orgLedgerOpen) return;
@@ -821,21 +749,8 @@ export default function AdminCreditPage() {
     orgLedgerPage,
   ]);
 
-  useEffect(() => {
-    if (!salesmanLedgerOpen) return;
-    loadSalesmanLedger();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    salesLedgerPeriod,
-    salesLedgerType,
-    salesLedgerQ,
-    salesLedgerFrom,
-    salesLedgerTo,
-    salesLedgerPage,
-  ]);
-
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 overflow-hidden">
       <Tabs value={creditTab} onValueChange={(v) => setCreditTab(v as any)}>
         <div className="flex items-center justify-between">
           <TabsList className="h-12">
@@ -956,7 +871,21 @@ export default function AdminCreditPage() {
             <TabsContent value="organizations" className="space-y-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>조직별 크레딧 현황</CardTitle>
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle>조직별 크레딧 현황</CardTitle>
+                    <div className="w-[180px]">
+                      <select
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={orgSortKey}
+                        onChange={(e) => setOrgSortKey(e.target.value as any)}
+                      >
+                        <option value="paidBalance">정렬: 유료잔액순</option>
+                        <option value="bonusBalance">정렬: 무료잔액순</option>
+                        <option value="spentPaid">정렬: 유료사용순</option>
+                        <option value="name">정렬: 이름순</option>
+                      </select>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {loadingOrgs ? (
@@ -974,96 +903,120 @@ export default function AdminCreditPage() {
                         </div>
                       ) : (
                         <div className="grid gap-4 md:grid-cols-3">
-                          {organizations.map((org) => {
-                            const chargedPaid = Number(
-                              org.chargedPaidAmount || 0,
-                            );
-                            const chargedBonus = Number(
-                              org.chargedBonusAmount || 0,
-                            );
-                            const spentPaid = Number(org.spentPaidAmount || 0);
-                            const spentBonus = Number(
-                              org.spentBonusAmount || 0,
-                            );
-                            const paidRemain = Number(org.paidBalance || 0);
-                            const bonusRemain = Number(org.bonusBalance || 0);
-                            return (
-                              <Card
-                                key={org._id}
-                                className="border-muted cursor-pointer"
-                                onClick={() => {
-                                  setOrgLedgerOrg(org);
-                                  setOrgLedgerOpen(true);
-                                }}
-                              >
-                                <CardHeader className="pb-3">
-                                  <CardTitle className="text-base">
-                                    {org.name}
-                                  </CardTitle>
-                                  <CardDescription className="space-y-1">
-                                    <div>{org.companyName || "-"}</div>
-                                    <div className="font-mono text-xs">
-                                      {org.businessNumber || "-"}
+                          {[...organizations]
+                            .sort((a, b) => {
+                              if (orgSortKey === "paidBalance")
+                                return (
+                                  Number(b.paidBalance || 0) -
+                                  Number(a.paidBalance || 0)
+                                );
+                              if (orgSortKey === "bonusBalance")
+                                return (
+                                  Number(b.bonusBalance || 0) -
+                                  Number(a.bonusBalance || 0)
+                                );
+                              if (orgSortKey === "spentPaid")
+                                return (
+                                  Number(b.spentPaidAmount || 0) -
+                                  Number(a.spentPaidAmount || 0)
+                                );
+                              return String(a.name || "").localeCompare(
+                                String(b.name || ""),
+                                "ko",
+                              );
+                            })
+                            .map((org) => {
+                              const chargedPaid = Number(
+                                org.chargedPaidAmount || 0,
+                              );
+                              const chargedBonus = Number(
+                                org.chargedBonusAmount || 0,
+                              );
+                              const spentPaid = Number(
+                                org.spentPaidAmount || 0,
+                              );
+                              const spentBonus = Number(
+                                org.spentBonusAmount || 0,
+                              );
+                              const paidRemain = Number(org.paidBalance || 0);
+                              const bonusRemain = Number(org.bonusBalance || 0);
+                              return (
+                                <Card
+                                  key={org._id}
+                                  className="border-muted cursor-pointer"
+                                  onClick={() => {
+                                    setOrgLedgerOrg(org);
+                                    setOrgLedgerOpen(true);
+                                  }}
+                                >
+                                  <CardHeader className="pb-3">
+                                    <CardTitle className="text-base">
+                                      {org.name}
+                                    </CardTitle>
+                                    <CardDescription className="space-y-1">
+                                      <div>{org.companyName || "-"}</div>
+                                      <div className="font-mono text-xs">
+                                        {org.businessNumber || "-"}
+                                      </div>
+                                      <div className="text-xs">
+                                        {org.ownerName || "-"} ·{" "}
+                                        {org.ownerEmail || "-"}
+                                      </div>
+                                    </CardDescription>
+                                  </CardHeader>
+                                  <CardContent className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <div className="text-muted-foreground">
+                                        잔여크레딧(구매)
+                                      </div>
+                                      <div className="font-semibold">
+                                        {paidRemain.toLocaleString()}원
+                                      </div>
                                     </div>
-                                    <div className="text-xs">
-                                      {org.ownerName || "-"} ·{" "}
-                                      {org.ownerEmail || "-"}
+                                    <div>
+                                      <div className="text-muted-foreground">
+                                        잔여크레딧(무료)
+                                      </div>
+                                      <div className="font-semibold">
+                                        {bonusRemain.toLocaleString()}원
+                                      </div>
                                     </div>
-                                  </CardDescription>
-                                </CardHeader>
-                                <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                                  <div>
-                                    <div className="text-muted-foreground">
-                                      잔여크레딧(구매)
+                                    <div>
+                                      <div className="text-muted-foreground">
+                                        충전크레딧(구매)
+                                      </div>
+                                      <div className="font-medium">
+                                        {chargedPaid.toLocaleString()}원
+                                      </div>
                                     </div>
-                                    <div className="font-semibold">
-                                      {paidRemain.toLocaleString()}원
+                                    <div>
+                                      <div className="text-muted-foreground">
+                                        충전크레딧(무료)
+                                      </div>
+                                      <div className="font-medium">
+                                        {chargedBonus.toLocaleString()}원
+                                      </div>
                                     </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">
-                                      잔여크레딧(무료)
+                                    <div>
+                                      <div className="text-muted-foreground">
+                                        사용크레딧(구매)
+                                      </div>
+                                      <div className="font-medium">
+                                        {spentPaid.toLocaleString()}원
+                                      </div>
                                     </div>
-                                    <div className="font-semibold">
-                                      {bonusRemain.toLocaleString()}원
+                                    <div>
+                                      <div className="text-muted-foreground">
+                                        사용크레딧(무료)
+                                      </div>
+                                      <div className="font-medium">
+                                        {spentBonus.toLocaleString()}원
+                                      </div>
                                     </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">
-                                      충전크레딧(구매)
-                                    </div>
-                                    <div className="font-medium">
-                                      {chargedPaid.toLocaleString()}원
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">
-                                      충전크레딧(무료)
-                                    </div>
-                                    <div className="font-medium">
-                                      {chargedBonus.toLocaleString()}원
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">
-                                      사용크레딧(구매)
-                                    </div>
-                                    <div className="font-medium">
-                                      {spentPaid.toLocaleString()}원
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <div className="text-muted-foreground">
-                                      사용크레딧(무료)
-                                    </div>
-                                    <div className="font-medium">
-                                      {spentBonus.toLocaleString()}원
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            );
-                          })}
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
                         </div>
                       )}
                       <div ref={orgSentinelRef} className="h-6" />
@@ -1682,10 +1635,26 @@ export default function AdminCreditPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>영업자 크레딧(성과/정산 전 잔액)</CardTitle>
-              <CardDescription>
-                최근 30일 직접 소개 조직 기준 매출/수수료 + 영업자 지갑 잔액
-              </CardDescription>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <CardTitle>영업자 크레딧(성과/정산 전 잔액)</CardTitle>
+                  <CardDescription>
+                    최근 30일 직접 소개 조직 기준 매출/수수료 + 영업자 지갑 잔액
+                  </CardDescription>
+                </div>
+                <div className="w-[170px]">
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-muted/40 px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={salesmanSortKey}
+                    onChange={(e) => setSalesmanSortKey(e.target.value as any)}
+                  >
+                    <option value="balance">정렬: 잔액순</option>
+                    <option value="commission">정렬: 수수료순</option>
+                    <option value="revenue">정렬: 매출순</option>
+                    <option value="name">정렬: 이름순</option>
+                  </select>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {loadingSalesmen ? (
@@ -1701,129 +1670,163 @@ export default function AdminCreditPage() {
                   ref={salesmanScrollRef}
                   className="h-[60vh] overflow-y-auto pr-1"
                 >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {salesmen.map((s) => (
-                      <Card
-                        key={s.salesmanId}
-                        className="border-muted cursor-pointer"
-                        onClick={() => {
-                          setSalesmanLedgerRow(s);
-                          setSalesmanLedgerOpen(true);
-                        }}
-                      >
-                        <CardHeader className="pb-3">
-                          <div className="flex items-start justify-between gap-2">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    {[...salesmen]
+                      .sort((a, b) => {
+                        if (salesmanSortKey === "balance")
+                          return (
+                            Number(b.wallet?.balanceAmount || 0) -
+                            Number(a.wallet?.balanceAmount || 0)
+                          );
+                        if (salesmanSortKey === "commission")
+                          return (
+                            Number(b.performance30d?.commissionAmount || 0) -
+                            Number(a.performance30d?.commissionAmount || 0)
+                          );
+                        if (salesmanSortKey === "revenue")
+                          return (
+                            Number(b.performance30d?.revenueAmount || 0) -
+                            Number(a.performance30d?.revenueAmount || 0)
+                          );
+                        return String(a.name || "").localeCompare(
+                          String(b.name || ""),
+                          "ko",
+                        );
+                      })
+                      .map((s) => (
+                        <Card
+                          key={s.salesmanId}
+                          className="border-muted cursor-pointer"
+                          onClick={() => {
+                            setSalesmanLedgerRow(s);
+                            setSalesmanLedgerOpen(true);
+                          }}
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <CardTitle className="text-base">
+                                  {s.name}
+                                </CardTitle>
+                                <CardDescription className="space-y-1">
+                                  <div>{s.email}</div>
+                                  <div className="font-mono">
+                                    code: {s.referralCode || "-"}
+                                  </div>
+                                </CardDescription>
+                              </div>
+                              <Badge
+                                variant={s.active ? "default" : "secondary"}
+                              >
+                                {s.active ? "활성" : "비활성"}
+                              </Badge>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="grid grid-cols-2 gap-3 text-sm">
                             <div>
-                              <CardTitle className="text-base">
-                                {s.name}
-                              </CardTitle>
-                              <CardDescription className="space-y-1">
-                                <div>{s.email}</div>
-                                <div className="font-mono">
-                                  code: {s.referralCode || "-"}
-                                </div>
-                              </CardDescription>
+                              <div className="text-muted-foreground">잔액</div>
+                              <div className="font-semibold">
+                                {Number(
+                                  s.wallet?.balanceAmount || 0,
+                                ).toLocaleString()}
+                                원
+                              </div>
                             </div>
-                            <Badge variant={s.active ? "default" : "secondary"}>
-                              {s.active ? "활성" : "비활성"}
-                            </Badge>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                          <div>
-                            <div className="text-muted-foreground">잔액</div>
-                            <div className="font-semibold">
-                              {Number(
-                                s.wallet?.balanceAmount || 0,
-                              ).toLocaleString()}
-                              원
+                            <div>
+                              <div className="text-muted-foreground">
+                                누적 적립
+                              </div>
+                              <div className="font-medium">
+                                {Number(
+                                  s.wallet?.earnedAmount || 0,
+                                ).toLocaleString()}
+                                원
+                              </div>
                             </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              누적 적립
+                            <div>
+                              <div className="text-muted-foreground">
+                                누적 정산
+                              </div>
+                              <div className="font-medium">
+                                {Number(
+                                  s.wallet?.paidOutAmount || 0,
+                                ).toLocaleString()}
+                                원
+                              </div>
                             </div>
-                            <div className="font-medium">
-                              {Number(
-                                s.wallet?.earnedAmount || 0,
-                              ).toLocaleString()}
-                              원
+                            <div>
+                              <div className="text-muted-foreground">
+                                소개 조직수(30일)
+                              </div>
+                              <div className="font-medium">
+                                {Number(
+                                  s.performance30d?.referredOrgCount || 0,
+                                ).toLocaleString()}
+                              </div>
                             </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              누적 정산
+                            <div>
+                              <div className="text-muted-foreground">
+                                소개 영업자수
+                              </div>
+                              <div className="font-medium">
+                                {Number(
+                                  s.referredSalesmanCount || 0,
+                                ).toLocaleString()}
+                              </div>
                             </div>
-                            <div className="font-medium">
-                              {Number(
-                                s.wallet?.paidOutAmount || 0,
-                              ).toLocaleString()}
-                              원
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              소개 조직수(30일)
-                            </div>
-                            <div className="font-medium">
-                              {Number(
-                                s.performance30d?.referredOrgCount || 0,
-                              ).toLocaleString()}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              매출(30일)
-                            </div>
-                            <div className="font-medium">
-                              {(
-                                Number(s.performance30d?.revenueAmount || 0) +
-                                Number(s.performance30d?.bonusAmount || 0)
-                              ).toLocaleString()}
-                              원
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              유료{" "}
-                              {Number(
-                                s.performance30d?.revenueAmount || 0,
-                              ).toLocaleString()}
-                              원
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              무료{" "}
-                              {Number(
-                                s.performance30d?.bonusAmount || 0,
-                              ).toLocaleString()}
-                              원
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              수수료(30일)
-                            </div>
-                            <div className="font-medium">
-                              {Number(
-                                s.performance30d?.commissionAmount || 0,
-                              ).toLocaleString()}
-                              원
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              수수료율{" "}
-                              {(() => {
-                                const base = Number(
+                            <div>
+                              <div className="text-muted-foreground">
+                                매출(30일)
+                              </div>
+                              <div className="font-medium">
+                                {(
+                                  Number(s.performance30d?.revenueAmount || 0) +
+                                  Number(s.performance30d?.bonusAmount || 0)
+                                ).toLocaleString()}
+                                원
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                유료{" "}
+                                {Number(
                                   s.performance30d?.revenueAmount || 0,
-                                );
-                                const comm = Number(
-                                  s.performance30d?.commissionAmount || 0,
-                                );
-                                if (base <= 0) return "-";
-                                return `${((comm / base) * 100).toFixed(1)}%`;
-                              })()}
+                                ).toLocaleString()}
+                                원
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                무료{" "}
+                                {Number(
+                                  s.performance30d?.bonusAmount || 0,
+                                ).toLocaleString()}
+                                원
+                              </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                            <div>
+                              <div className="text-muted-foreground">
+                                수수료(30일)
+                              </div>
+                              <div className="font-medium">
+                                {Number(
+                                  s.performance30d?.commissionAmount || 0,
+                                ).toLocaleString()}
+                                원
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                수수료율{" "}
+                                {(() => {
+                                  const base = Number(
+                                    s.performance30d?.revenueAmount || 0,
+                                  );
+                                  const comm = Number(
+                                    s.performance30d?.commissionAmount || 0,
+                                  );
+                                  if (base <= 0) return "-";
+                                  return `${((comm / base) * 100).toFixed(1)}%`;
+                                })()}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
                   </div>
                   <div ref={salesmanSentinelRef} className="h-10" />
                 </div>
@@ -1896,390 +1899,25 @@ export default function AdminCreditPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <CreditLedgerModal
         open={orgLedgerOpen}
         onOpenChange={(open) => {
           setOrgLedgerOpen(open);
-          if (!open) {
-            setOrgLedgerOrg(null);
-            resetOrgLedgerFilters();
-            setOrgLedgerItems([]);
-            setOrgLedgerTotal(0);
-          }
+          if (!open) setOrgLedgerOrg(null);
         }}
-      >
-        <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader className="pb-2">
-            <DialogTitle className="text-lg">
-              크레딧 내역 · {orgLedgerOrg?.name || "-"}
-            </DialogTitle>
-          </DialogHeader>
+        organizationId={orgLedgerOrg?._id}
+        titleSuffix={orgLedgerOrg?.name}
+      />
 
-          <div className="flex flex-col gap-3 min-h-0 flex-1">
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2 py-0.5">
-                  <PeriodFilter
-                    value={orgLedgerPeriod as any}
-                    onChange={(v) => setOrgLedgerPeriod(v as any)}
-                  />
-
-                  <div className="w-[140px]">
-                    <select
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={orgLedgerType}
-                      onChange={(e) => setOrgLedgerType(e.target.value as any)}
-                      disabled={orgLedgerLoading}
-                    >
-                      <option value="all">전체</option>
-                      <option value="SPEND">사용</option>
-                      <option value="CHARGE">충전</option>
-                      <option value="REFUND">환불</option>
-                      <option value="BONUS">보너스</option>
-                      <option value="ADJUST">조정</option>
-                    </select>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9"
-                    onClick={resetOrgLedgerFilters}
-                    disabled={orgLedgerLoading}
-                  >
-                    초기화
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 py-0.5">
-                <Input
-                  type="date"
-                  value={orgLedgerFrom}
-                  onChange={(e) => setOrgLedgerFrom(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-                <span className="text-xs text-muted-foreground">~</span>
-                <Input
-                  type="date"
-                  value={orgLedgerTo}
-                  onChange={(e) => setOrgLedgerTo(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-
-                <Input
-                  value={orgLedgerQ}
-                  onChange={(e) => setOrgLedgerQ(e.target.value)}
-                  placeholder="검색 (참조/코드/refId)"
-                  className="h-9 w-full sm:w-[320px]"
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-scroll overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[170px]">일시</TableHead>
-                    <TableHead className="w-[90px]">유형</TableHead>
-                    <TableHead className="w-[110px] text-right">금액</TableHead>
-                    <TableHead className="w-[160px]">참조</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(orgLedgerItems || []).map((r) => {
-                    const amount = Number(r.amount || 0);
-                    const isMinus = amount < 0;
-                    const spentPaid = Number(r.spentPaidAmount || 0);
-                    const spentBonus = Number(r.spentBonusAmount || 0);
-                    const showSplit =
-                      String(r.type) === "SPEND" &&
-                      (spentPaid > 0 || spentBonus > 0);
-                    const safeRef = r.refRequestId
-                      ? String(r.refRequestId)
-                      : "";
-                    return (
-                      <TableRow key={r._id}>
-                        <TableCell className="text-xs">
-                          {formatLedgerDate(String(r.createdAt || ""))}
-                        </TableCell>
-                        <TableCell className="text-xs font-medium">
-                          {creditTypeLabel(r.type as any)}
-                        </TableCell>
-                        <TableCell
-                          className={`font-medium tabular-nums ${
-                            isMinus ? "text-rose-600" : "text-blue-700"
-                          }`}
-                        >
-                          {showSplit ? (
-                            <div className="flex flex-col leading-4">
-                              {spentPaid > 0 && (
-                                <div className="tabular-nums">
-                                  유료 -{spentPaid.toLocaleString()}원
-                                </div>
-                              )}
-                              {spentBonus > 0 && (
-                                <div className="tabular-nums">
-                                  무료 -{spentBonus.toLocaleString()}원
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            `${amount.toLocaleString()}원`
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <div className="flex flex-col leading-4">
-                            <span className="font-mono text-xs font-semibold">
-                              {safeRef ||
-                                formatShortCode(String(r.uniqueKey || ""))}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground">
-                              {refTypeLabel(r.refType)}
-                            </span>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-
-                  {!orgLedgerLoading && (orgLedgerItems || []).length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={4}
-                        className="text-center text-sm text-muted-foreground py-8"
-                      >
-                        조회 결과가 없습니다.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <div className="text-xs text-muted-foreground">
-                {(() => {
-                  const totalPages = Math.max(
-                    1,
-                    Math.ceil(Number(orgLedgerTotal || 0) / LEDGER_PAGE_SIZE),
-                  );
-                  return `${orgLedgerPage} / ${totalPages}`;
-                })()}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-8 px-3"
-                  onClick={() => setOrgLedgerPage((p) => Math.max(1, p - 1))}
-                  disabled={orgLedgerLoading || orgLedgerPage <= 1}
-                >
-                  이전
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-8 px-3"
-                  onClick={() => {
-                    const totalPages = Math.max(
-                      1,
-                      Math.ceil(Number(orgLedgerTotal || 0) / LEDGER_PAGE_SIZE),
-                    );
-                    setOrgLedgerPage((p) => Math.min(totalPages, p + 1));
-                  }}
-                  disabled={orgLedgerLoading}
-                >
-                  다음
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
+      <SalesmanLedgerModal
         open={salesmanLedgerOpen}
         onOpenChange={(open) => {
           setSalesmanLedgerOpen(open);
-          if (!open) {
-            setSalesmanLedgerRow(null);
-            resetSalesLedgerFilters();
-            setSalesLedgerItems([]);
-            setSalesLedgerTotal(0);
-          }
+          if (!open) setSalesmanLedgerRow(null);
         }}
-      >
-        <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader className="pb-2">
-            <DialogTitle className="text-lg">
-              정산 내역 · {salesmanLedgerRow?.name || "-"}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-3 min-h-0 flex-1">
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2 py-0.5">
-                  <PeriodFilter
-                    value={salesLedgerPeriod as any}
-                    onChange={(v) => setSalesLedgerPeriod(v as any)}
-                  />
-
-                  <div className="w-[140px]">
-                    <select
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={salesLedgerType}
-                      onChange={(e) =>
-                        setSalesLedgerType(e.target.value as any)
-                      }
-                      disabled={salesLedgerLoading}
-                    >
-                      <option value="all">전체</option>
-                      <option value="EARN">적립</option>
-                      <option value="PAYOUT">정산</option>
-                      <option value="ADJUST">조정</option>
-                    </select>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9"
-                    onClick={resetSalesLedgerFilters}
-                    disabled={salesLedgerLoading}
-                  >
-                    초기화
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 py-0.5">
-                <Input
-                  type="date"
-                  value={salesLedgerFrom}
-                  onChange={(e) => setSalesLedgerFrom(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-                <span className="text-xs text-muted-foreground">~</span>
-                <Input
-                  type="date"
-                  value={salesLedgerTo}
-                  onChange={(e) => setSalesLedgerTo(e.target.value)}
-                  className="h-9 w-[150px]"
-                />
-
-                <Input
-                  value={salesLedgerQ}
-                  onChange={(e) => setSalesLedgerQ(e.target.value)}
-                  placeholder="검색 (참조/코드/refId)"
-                  className="h-9 w-full sm:w-[320px]"
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-scroll overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[170px]">일시</TableHead>
-                    <TableHead className="w-[90px]">유형</TableHead>
-                    <TableHead className="w-[110px] text-right">금액</TableHead>
-                    <TableHead className="w-[160px]">참조</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(salesLedgerItems || []).map((r) => {
-                    const amount = Number(r.amount || 0);
-                    const isMinus = amount < 0;
-                    return (
-                      <TableRow key={r._id}>
-                        <TableCell className="text-xs">
-                          {formatLedgerDate(String(r.createdAt || ""))}
-                        </TableCell>
-                        <TableCell className="text-xs font-medium">
-                          {salesmanTypeLabel(r.type as any)}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right text-xs font-semibold ${
-                            isMinus ? "text-rose-600" : "text-blue-700"
-                          }`}
-                        >
-                          {amount.toLocaleString()}원
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <div className="flex flex-col leading-4">
-                            <span className="font-mono text-xs font-semibold">
-                              {formatShortCode(String(r.uniqueKey || ""))}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground">
-                              {refTypeLabel(r.refType)}
-                            </span>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-
-                  {!salesLedgerLoading &&
-                    (salesLedgerItems || []).length === 0 && (
-                      <TableRow>
-                        <TableCell
-                          colSpan={4}
-                          className="text-center text-sm text-muted-foreground py-8"
-                        >
-                          조회 결과가 없습니다.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <div className="text-xs text-muted-foreground">
-                {(() => {
-                  const totalPages = Math.max(
-                    1,
-                    Math.ceil(Number(salesLedgerTotal || 0) / LEDGER_PAGE_SIZE),
-                  );
-                  return `${salesLedgerPage} / ${totalPages}`;
-                })()}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-8 px-3"
-                  onClick={() => setSalesLedgerPage((p) => Math.max(1, p - 1))}
-                  disabled={salesLedgerLoading || salesLedgerPage <= 1}
-                >
-                  이전
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-8 px-3"
-                  onClick={() => {
-                    const totalPages = Math.max(
-                      1,
-                      Math.ceil(
-                        Number(salesLedgerTotal || 0) / LEDGER_PAGE_SIZE,
-                      ),
-                    );
-                    setSalesLedgerPage((p) => Math.min(totalPages, p + 1));
-                  }}
-                  disabled={salesLedgerLoading}
-                >
-                  다음
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        salesmanId={salesmanLedgerRow?.salesmanId}
+        titleSuffix={salesmanLedgerRow?.name}
+      />
 
       <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>
         <DialogContent>

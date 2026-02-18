@@ -40,6 +40,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { CreditLedgerModal } from "./components/CreditLedgerModal";
+import { PastRequestsModal } from "@/shared/components/PastRequestsModal";
 import {
   Dialog,
   DialogContent,
@@ -68,6 +69,7 @@ export const RequestorDashboardPage = () => {
     "7d" | "30d" | "lastMonth" | "thisMonth" | "90d" | "all"
   >("30d");
   const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
+  const [pastRequestsOpen, setPastRequestsOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
     useState<EditingRequestState>(null);
   const [editingDescription, setEditingDescription] = useState("");
@@ -553,6 +555,16 @@ export const RequestorDashboardPage = () => {
                 </Tooltip>
               </TooltipProvider>
             )}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => setPastRequestsOpen(true)}
+            >
+              지난 의뢰
+            </Button>
           </div>
         }
         stats={
@@ -717,6 +729,16 @@ export const RequestorDashboardPage = () => {
       <CreditLedgerModal
         open={creditLedgerOpen}
         onOpenChange={setCreditLedgerOpen}
+      />
+
+      <PastRequestsModal
+        open={pastRequestsOpen}
+        onOpenChange={setPastRequestsOpen}
+        title="지난 의뢰"
+        onSelectRequest={(r) => {
+          setPastRequestsOpen(false);
+          openEditDialogFromRequest(r);
+        }}
       />
 
       <RequestDetailDialog
