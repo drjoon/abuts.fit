@@ -1,14 +1,16 @@
 import { clearAllCollections, connectDb, disconnectDb } from "./_mongo.js";
 import Connection from "../../models/connection.model.js";
 import FilenameRule from "../../models/filenameRule.model.js";
+import { CONNECTIONS_SEED as CONNECTIONS_SEED_RAW } from "./data/connections.seed.js";
+import { FILENAME_RULES_SEED as FILENAME_RULES_SEED_RAW } from "./data/filenameRules.seed.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import User from "../../models/user.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import ImplantPreset from "../../models/implantPreset.model.js";
 import ClinicImplantPreset from "../../models/clinicImplantPreset.model.js";
-import { CONNECTIONS_SEED } from "./data/connections.seed.js";
-import { FILENAME_RULES_SEED } from "./data/filenameRules.seed.js";
+import Request from "../../models/request.model.js";
+import crypto from "crypto";
 
 const NOW = new Date();
 
@@ -23,8 +25,15 @@ async function ensureSystemSettings() {
 async function seedCore() {
   await ensureSystemSettings();
 
+  const connectionsSeed = Array.isArray(CONNECTIONS_SEED_RAW)
+    ? CONNECTIONS_SEED_RAW
+    : [];
+  const filenameRulesSeed = Array.isArray(FILENAME_RULES_SEED_RAW)
+    ? FILENAME_RULES_SEED_RAW
+    : [];
+
   await Connection.bulkWrite(
-    CONNECTIONS_SEED.map((c) => ({
+    connectionsSeed.map((c) => ({
       updateOne: {
         filter: {
           manufacturer: c.manufacturer,
@@ -40,7 +49,7 @@ async function seedCore() {
   );
 
   await FilenameRule.bulkWrite(
-    FILENAME_RULES_SEED.map((r) => ({
+    filenameRulesSeed.map((r) => ({
       updateOne: {
         filter: { ruleId: r.ruleId },
         update: r,
@@ -228,85 +237,38 @@ async function seedDev() {
     passwords,
   };
 }
+function randomReferralCode(len = 5) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789";
+  const bytes = crypto.randomBytes(len);
+  let out = "";
+  for (let i = 0; i < len; i += 1) {
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
 
-async function seedExtraRequestorsAndSalesmen() {
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+async function seedBulkUsersAndData() {
   const NOW = new Date();
-
-  // 짧고 로그인 친화적인 비밀번호 (정책 충족: 10자, 특수문자 포함)
-  const REQUESTOR_PW = "Rq!1111111"; // length 10
-  const SALESMAN_PW = "Sa!1111111"; // length 10
+  const REQUESTOR_PW = "Abc!1234";
+  const SALESMAN_PW = "Abc!1234";
 
   const requestors = [];
   const salesmen = [];
 
-  // 의뢰자: 5개 조직(owner+staff) = 10명
-  for (let i = 1; i <= 5; i += 1) {
-    const orgName = `demo-org-${i}`;
-    const ownerEmail = `req${i}.owner@demo.abuts.fit`;
-    const staffEmail = `req${i}.staff@demo.abuts.fit`;
-    const ownerReferral = `RQ${i}AA`;
-    const staffReferral = `RQ${i}BB`;
-
-    const owner = await User.create({
-      name: `데모 의뢰자${i} 대표`,
-      email: ownerEmail,
-      password: REQUESTOR_PW,
-      role: "requestor",
-      requestorRole: "owner",
-      organization: orgName,
-      referralCode: ownerReferral,
-      approvedAt: NOW,
-      active: true,
-    });
-
-    const org = await RequestorOrganization.create({
-      name: orgName,
-      owner: owner._id,
-      owners: [],
-      members: [owner._id],
-      joinRequests: [],
-    });
-
-    await User.updateOne(
-      { _id: owner._id },
-      { $set: { organizationId: org._id, organization: org.name } },
-    );
-
-    const staff = await User.create({
-      name: `데모 의뢰자${i} 직원`,
-      email: staffEmail,
-      password: REQUESTOR_PW,
-      role: "requestor",
-      requestorRole: "staff",
-      organization: orgName,
-      organizationId: org._id,
-      referralCode: staffReferral,
-      referredByUserId: owner._id,
-      referralGroupLeaderId: owner._id,
-      approvedAt: NOW,
-      active: true,
-    });
-
-    await RequestorOrganization.updateOne(
-      { _id: org._id },
-      { $addToSet: { members: { $each: [owner._id, staff._id] } } },
-    );
-
-    requestors.push({
-      ownerEmail,
-      staffEmail,
-      password: REQUESTOR_PW,
-      ownerReferral,
-      staffReferral,
-      orgId: String(org._id),
-    });
-  }
-
-  // 영업자: 10명, 체인형 추천 관계 (1번이 2번 추천, 2번이 3번 추천 ...)
-  let prevSalesman = null;
-  for (let i = 1; i <= 10; i += 1) {
-    const email = `sales${i}@demo.abuts.fit`;
-    const referralCode = `SA${String(i).padStart(2, "0")}`; // 4자리 base36-ish (SA00..)
+  // 영업자 20명 s001~s020 (리퍼럴 코드 4자리)
+  for (let i = 1; i <= 20; i += 1) {
+    const email = `s${String(i).padStart(3, "0")}@gmail.com`;
+    const referralCode = randomReferralCode(4);
+    const parentId = salesmen.length ? pick(salesmen).id : null;
+    const leaderId = parentId;
 
     const salesman = await User.create({
       name: `데모 영업자${i}`,
@@ -314,70 +276,34 @@ async function seedExtraRequestorsAndSalesmen() {
       password: SALESMAN_PW,
       role: "salesman",
       referralCode,
-      referredByUserId: prevSalesman?._id || null,
-      referralGroupLeaderId: prevSalesman?._id || null,
+      referredByUserId: parentId,
+      referralGroupLeaderId: leaderId,
       approvedAt: NOW,
       active: true,
     });
 
-    salesmen.push({
-      email,
-      password: SALESMAN_PW,
-      referralCode,
-      referredBy: prevSalesman ? String(prevSalesman._id) : null,
-    });
-
-    prevSalesman = salesman;
+    salesmen.push({ id: salesman._id, email });
   }
 
-  return { requestors, salesmen };
-}
-
-async function seedMorePatterns() {
-  const NOW = new Date();
-
-  const REQUESTOR_PW = "Rq!1111111"; // 10자, 특수문자 포함
-  const SALESMAN_PW = "Sa!1111111"; // 10자, 특수문자 포함
-
-  const requestors = [];
-  const salesmen = [];
-
-  // 새 의뢰자 20명: 10개 조직(owner+staff).
-  // 패턴: 짝수 org owner는 직전 org owner가 추천, 홀수 org owner는 영업자 체인 첫 번째(sales1) 추천.
-  for (let i = 6; i <= 15; i += 1) {
-    const orgName = `demo-org-${i}`;
-    const ownerEmail = `req${i}.owner@demo.abuts.fit`;
-    const staffEmail = `req${i}.staff@demo.abuts.fit`;
-    const ownerReferral = `RQ${i}CC`; // 5자리 base36
-    const staffReferral = `RQ${i}DD`;
-
-    // 추천인 결정
-    let referredByUserId = null;
-    if (i % 2 === 0) {
-      // 직전 org owner
-      const prevOwner = await User.findOne({
-        email: `req${i - 1}.owner@demo.abuts.fit`,
-      })
-        .select({ _id: 1 })
-        .lean();
-      referredByUserId = prevOwner?._id || null;
-    } else {
-      const sales1 = await User.findOne({ email: "sales1@demo.abuts.fit" })
-        .select({ _id: 1 })
-        .lean();
-      referredByUserId = sales1?._id || null;
-    }
+  // 의뢰자 100명 r001~r100, 조직 100개(owner만)
+  const depositOptions = [500_000, 1_000_000, 2_000_000, 3_000_000];
+  for (let i = 1; i <= 100; i += 1) {
+    const email = `r${String(i).padStart(3, "0")}@gmail.com`;
+    const orgName = `org-${String(i).padStart(3, "0")}`;
+    const referralCode = randomReferralCode();
+    const parent = pick([...salesmen, ...requestors].filter(Boolean)) || null;
+    const parentId = parent ? parent.id : null;
 
     const owner = await User.create({
-      name: `추가 의뢰자${i} 대표`,
-      email: ownerEmail,
+      name: `의뢰자 ${i}`,
+      email,
       password: REQUESTOR_PW,
       role: "requestor",
       requestorRole: "owner",
       organization: orgName,
-      referralCode: ownerReferral,
-      referredByUserId,
-      referralGroupLeaderId: referredByUserId,
+      referralCode,
+      referredByUserId: parentId,
+      referralGroupLeaderId: parentId,
       approvedAt: NOW,
       active: true,
     });
@@ -395,119 +321,52 @@ async function seedMorePatterns() {
       { $set: { organizationId: org._id, organization: org.name } },
     );
 
-    const staff = await User.create({
-      name: `추가 의뢰자${i} 직원`,
-      email: staffEmail,
-      password: REQUESTOR_PW,
-      role: "requestor",
-      requestorRole: "staff",
-      organization: orgName,
+    requestors.push({ id: owner._id, email, orgId: org._id });
+
+    // 입금: 무작위 금액
+    const amount = pick(depositOptions);
+    await CreditLedger.create({
       organizationId: org._id,
-      referralCode: staffReferral,
-      referredByUserId: owner._id,
-      referralGroupLeaderId: owner._id,
-      approvedAt: NOW,
-      active: true,
+      userId: owner._id,
+      type: "CHARGE",
+      amount,
+      refType: "SEED_DEPOSIT",
+      refId: null,
+      uniqueKey: `seed:deposit:${email}:${amount}`,
     });
 
-    await RequestorOrganization.updateOne(
-      { _id: org._id },
-      { $addToSet: { members: { $each: [owner._id, staff._id] } } },
-    );
+    // 지난 6개월 의뢰: 랜덤 건수/금액
+    const requestCount = randInt(1, 8);
+    for (let k = 0; k < requestCount; k += 1) {
+      const monthsAgo = randInt(0, 5);
+      const createdAt = new Date();
+      createdAt.setMonth(createdAt.getMonth() - monthsAgo);
+      const price = pick([120000, 150000, 180000, 200000, 250000]);
 
-    requestors.push({
-      ownerEmail,
-      staffEmail,
-      password: REQUESTOR_PW,
-      ownerReferral,
-      staffReferral,
-      orgId: String(org._id),
-      referredByUserId: referredByUserId ? String(referredByUserId) : null,
-    });
-  }
-
-  // 추가 영업자 20명: emails sales11~sales30
-  // 패턴 1: sales11~sales15는 sales1이 추천 (팬아웃)
-  for (let i = 11; i <= 15; i += 1) {
-    const email = `sales${i}@demo.abuts.fit`;
-    const referralCode = `SB${String(i).padStart(2, "0")}`;
-    const parent = await User.findOne({ email: "sales1@demo.abuts.fit" })
-      .select({ _id: 1 })
-      .lean();
-    const salesman = await User.create({
-      name: `추가 영업자${i}`,
-      email,
-      password: SALESMAN_PW,
-      role: "salesman",
-      referralCode,
-      referredByUserId: parent?._id || null,
-      referralGroupLeaderId: parent?._id || null,
-      approvedAt: NOW,
-      active: true,
-    });
-    salesmen.push({
-      email,
-      password: SALESMAN_PW,
-      referralCode,
-      referredBy: parent ? String(parent._id) : null,
-    });
-  }
-
-  // 패턴 2: sales16~sales20는 직렬 체인 (sales11 -> 12 -> ... -> 20)
-  let prev = await User.findOne({ email: "sales11@demo.abuts.fit" })
-    .select({ _id: 1 })
-    .lean();
-  for (let i = 16; i <= 20; i += 1) {
-    const email = `sales${i}@demo.abuts.fit`;
-    const referralCode = `SB${String(i).padStart(2, "0")}`;
-    const salesman = await User.create({
-      name: `추가 영업자${i}`,
-      email,
-      password: SALESMAN_PW,
-      role: "salesman",
-      referralCode,
-      referredByUserId: prev?._id || null,
-      referralGroupLeaderId: prev?._id || null,
-      approvedAt: NOW,
-      active: true,
-    });
-    salesmen.push({
-      email,
-      password: SALESMAN_PW,
-      referralCode,
-      referredBy: prev ? String(prev._id) : null,
-    });
-    prev = salesman;
-  }
-
-  // 패턴 3: sales21~sales30는 requestor 소유 조직과 교차(의뢰자 대표가 추천인 역할)
-  for (let i = 21; i <= 30; i += 1) {
-    const email = `sales${i}@demo.abuts.fit`;
-    const referralCode = `SB${String(i).padStart(2, "0")}`;
-    // 추천인은 demo-org-(i-15) 의 대표를 사용 (6~15 범위)
-    const refOrgIdx = i - 15;
-    const ref = await User.findOne({
-      email: `req${refOrgIdx}.owner@demo.abuts.fit`,
-    })
-      .select({ _id: 1 })
-      .lean();
-    const salesman = await User.create({
-      name: `추가 영업자${i}`,
-      email,
-      password: SALESMAN_PW,
-      role: "salesman",
-      referralCode,
-      referredByUserId: ref?._id || null,
-      referralGroupLeaderId: ref?._id || null,
-      approvedAt: NOW,
-      active: true,
-    });
-    salesmen.push({
-      email,
-      password: SALESMAN_PW,
-      referralCode,
-      referredBy: ref ? String(ref._id) : null,
-    });
+      await Request.create({
+        requestorOrganizationId: org._id,
+        requestor: owner._id,
+        manufacturer: null,
+        caseInfos: {
+          clinicName: "seed 치과",
+          patientName: `환자${i}-${k}`,
+          tooth: "11",
+          implantManufacturer: "OSSTEM",
+          implantSystem: "Regular",
+          implantType: "Hex",
+        },
+        status: "발송",
+        price: {
+          amount: price,
+          baseAmount: price,
+          discountAmount: 0,
+          currency: "KRW",
+          rule: "seed",
+        },
+        createdAt,
+        updatedAt: createdAt,
+      });
+    }
   }
 
   return { requestors, salesmen };
@@ -519,8 +378,7 @@ async function run() {
     await clearAllCollections();
     await seedCore();
     const seeded = await seedDev();
-    const extra = await seedExtraRequestorsAndSalesmen();
-    const extra2 = await seedMorePatterns();
+    const bulk = await seedBulkUsersAndData();
 
     console.log("[db] reset + seed done", {
       requestorOwner: {
@@ -555,10 +413,8 @@ async function run() {
         password: seeded.passwords.adminStaff,
         userId: String(seeded.adminStaff._id),
       },
-      requestorExtras: extra.requestors,
-      salesmanExtras: extra.salesmen,
-      requestorExtras2: extra2.requestors,
-      salesmanExtras2: extra2.salesmen,
+      requestorExtras: bulk.requestors,
+      salesmanExtras: bulk.salesmen,
     });
   } finally {
     await disconnectDb();
