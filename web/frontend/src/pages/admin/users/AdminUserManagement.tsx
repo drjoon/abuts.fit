@@ -44,6 +44,8 @@ import {
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 
 const getRoleLabel = (role: string) => {
   switch (role) {
@@ -171,6 +173,7 @@ const getStatusBadge = (status: string) => {
 export const AdminUserManagement = () => {
   const { toast } = useToast();
   const { token } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRole, setSelectedRole] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");

@@ -8,6 +8,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { DollarSign, FileText, Users } from "lucide-react";
 
 type PricingSummary = {
@@ -41,6 +43,7 @@ type PricingUserRow = {
 
 export const AdminAnalytics = () => {
   const { token, user } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const [summary, setSummary] = useState<PricingSummary | null>(null);
   const [rows, setRows] = useState<PricingUserRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,7 +80,7 @@ export const AdminAnalytics = () => {
     };
 
     run();
-  }, [headers, token, user]);
+  }, [headers, token, user, period]);
 
   if (!user || user.role !== "admin") return null;
 

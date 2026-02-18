@@ -16,6 +16,8 @@ import { Phone, Send, History, MessageCircle } from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { useNavigate } from "react-router-dom";
 
 type SmsHistoryItem = {
@@ -60,6 +62,7 @@ const statusBadge = (status: SmsHistoryItem["status"]) => {
 };
 
 export default function AdminSmsPage() {
+  const { period, setPeriod } = usePeriodStore();
   const [tab, setTab] = useState<"send" | "history" | "queue">("send");
   const [to, setTo] = useState("");
   const [body, setBody] = useState("");

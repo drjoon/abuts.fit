@@ -481,7 +481,7 @@ async function seedBulkUsersAndData() {
     if (completedRequestIds.length > 0) {
       const sortedIds = [...completedRequestIds];
       let cursor = 0;
-      let dayOffset = 0;
+      let pkgIdx = 0;
       while (cursor < sortedIds.length) {
         const chunkSize = Math.min(
           randInt(3, 20),
@@ -489,11 +489,13 @@ async function seedBulkUsersAndData() {
         );
         const chunk = sortedIds.slice(cursor, cursor + chunkSize);
         cursor += chunkSize;
+        pkgIdx += 1;
 
         const shipDate = new Date(NOW);
-        shipDate.setDate(shipDate.getDate() - randInt(0, 30) - dayOffset);
-        dayOffset += 1;
-        const shipDateYmd = toKstYmd(shipDate);
+        // 패키지마다 다른 날짜 보장: pkgIdx 기반 offset + 랜덤
+        shipDate.setDate(shipDate.getDate() - pkgIdx - randInt(0, 5));
+        // unique key: YMD + 패키지 인덱스 (index 충돌 방지)
+        const shipDateYmd = `${toKstYmd(shipDate)}-p${pkgIdx}`;
 
         const pkg = await ShippingPackage.create({
           organizationId: org._id,

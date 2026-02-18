@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -130,6 +132,7 @@ const getRoleBadgeVariant = (role: string) => {
 
 export const DashboardLayout = () => {
   const { user, logout, token, loginWithToken } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -822,6 +825,12 @@ export const DashboardLayout = () => {
             <div className="w-9" />
           </div>
 
+          {user.role === "admin" &&
+            !location.pathname.startsWith("/dashboard/settings") && (
+              <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 py-2">
+                <PeriodFilter value={period} onChange={setPeriod} />
+              </div>
+            )}
           <div className="flex-1 overflow-auto">
             {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
               <div className="border-b border-border bg-background/80 sticky top-0 z-10">

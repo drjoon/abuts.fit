@@ -319,14 +319,14 @@ export async function adminGetOrganizationCredits(req, res) {
           paid += amount;
           if (amount > 0) chargedPaid += amount;
         } else if (type === "SPEND") {
-          let spend = absAmount;
+          const spend = absAmount;
           spent += spend;
-          const fromBonus = Math.min(bonus, spend);
+          const fromBonus = Math.min(Math.max(0, bonus), spend);
           bonus -= fromBonus;
           spentBonus += fromBonus;
-          spend -= fromBonus;
-          paid -= spend;
-          spentPaid += spend;
+          const fromPaid = spend - fromBonus;
+          paid -= fromPaid;
+          spentPaid += fromPaid;
         }
       });
 

@@ -20,6 +20,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { FileText } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -92,6 +94,7 @@ function fmtMoney(n: number) {
 
 export const AdminTaxInvoices = () => {
   const { token } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const navigate = useNavigate();
 

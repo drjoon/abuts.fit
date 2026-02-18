@@ -8,9 +8,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 
 export default function AdminOrganizationVerification() {
   const { token } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const [orgId, setOrgId] = useState("");
   const [verified, setVerified] = useState(true);
@@ -64,7 +67,7 @@ export default function AdminOrganizationVerification() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-4">
       <Card className="max-w-3xl">
         <CardHeader>
           <CardTitle>사업자 검증 수동 처리</CardTitle>

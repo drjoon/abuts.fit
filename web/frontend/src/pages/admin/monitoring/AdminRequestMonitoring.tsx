@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
 import {
   Card,
@@ -135,6 +137,7 @@ const getStatusIcon = (
 
 export const AdminRequestMonitoring = () => {
   const { token } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const [requests, setRequests] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");

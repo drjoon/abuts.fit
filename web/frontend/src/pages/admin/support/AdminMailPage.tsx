@@ -13,6 +13,8 @@ import { useAdminMailBox } from "./mail/useAdminMailBox";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/shared/hooks/use-toast";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import {
   emptySent,
   emptySpam,
@@ -21,6 +23,7 @@ import {
 
 export const AdminMailPage = () => {
   const { toast } = useToast();
+  const { period, setPeriod } = usePeriodStore();
   const {
     tab,
     setTab,

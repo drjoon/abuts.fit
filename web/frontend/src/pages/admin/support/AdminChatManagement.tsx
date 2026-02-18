@@ -14,6 +14,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, Send } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import type { ChatRoom } from "@/shared/hooks/useChatRooms";
 import { cn } from "@/shared/ui/cn";
@@ -64,6 +66,7 @@ const formatTime = (iso?: string) => {
 
 export const AdminChatManagement = () => {
   const { token, user } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,7 +116,7 @@ export const AdminChatManagement = () => {
       }
     } catch (e: any) {
       setRoomsError(
-        e?.message || "채팅방 목록을 불러오는 중 오류가 발생했습니다."
+        e?.message || "채팅방 목록을 불러오는 중 오류가 발생했습니다.",
       );
     } finally {
       setRoomsLoading(false);
@@ -162,11 +165,11 @@ export const AdminChatManagement = () => {
       }
 
       const requestorId = String(
-        activeChat.participants?.find((p) => p.role === "requestor")?._id || ""
+        activeChat.participants?.find((p) => p.role === "requestor")?._id || "",
       ).trim();
 
       const fallbackRid = String(
-        (activeChat as any)?.relatedRequestId?.requestId || ""
+        (activeChat as any)?.relatedRequestId?.requestId || "",
       ).trim();
 
       if (!requestorId) {
@@ -214,7 +217,7 @@ export const AdminChatManagement = () => {
   }, [token, activeChat]);
 
   const handleUpdateStatus = async (
-    status: "active" | "monitored" | "suspended"
+    status: "active" | "monitored" | "suspended",
   ) => {
     if (!token || !selectedChatId) return;
     setUpdatingStatus(true);
@@ -424,7 +427,7 @@ export const AdminChatManagement = () => {
                             "w-full text-left rounded-lg border px-3 py-2 transition-colors",
                             isSelected
                               ? "bg-primary text-primary-foreground border-primary"
-                              : "hover:bg-muted"
+                              : "hover:bg-muted",
                           )}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -438,7 +441,7 @@ export const AdminChatManagement = () => {
                                     "text-xs truncate mt-1",
                                     isSelected
                                       ? "text-primary-foreground/80"
-                                      : "text-muted-foreground"
+                                      : "text-muted-foreground",
                                   )}
                                 >
                                   {subtitle}
@@ -481,7 +484,7 @@ export const AdminChatManagement = () => {
                         (p) =>
                           `${p.name}${
                             p.organization ? `(${p.organization})` : ""
-                          }`
+                          }`,
                       )
                       .join(" · ")}
                   </div>
@@ -546,7 +549,7 @@ export const AdminChatManagement = () => {
                             key={msg._id}
                             className={cn(
                               "flex mb-3",
-                              isMine ? "justify-end" : "justify-start"
+                              isMine ? "justify-end" : "justify-start",
                             )}
                           >
                             <div
@@ -554,7 +557,7 @@ export const AdminChatManagement = () => {
                                 "max-w-[75%] rounded-lg px-3 py-2 text-sm shadow-sm",
                                 isMine
                                   ? "bg-primary text-primary-foreground"
-                                  : "bg-muted"
+                                  : "bg-muted",
                               )}
                             >
                               <div className="flex items-center justify-between gap-2 mb-1">
@@ -581,12 +584,12 @@ export const AdminChatManagement = () => {
                                             "block text-xs underline",
                                             isMine
                                               ? "text-primary-foreground/90"
-                                              : "text-foreground"
+                                              : "text-foreground",
                                           )}
                                         >
                                           {a.fileName}
                                         </button>
-                                      )
+                                      ),
                                     )}
                                   </div>
                                 )}

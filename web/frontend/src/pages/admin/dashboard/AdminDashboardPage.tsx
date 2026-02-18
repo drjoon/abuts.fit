@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import {
   Card,
   CardContent,
@@ -50,46 +51,6 @@ type DashboardData = {
   }>;
 };
 
-type PeriodKey = "7d" | "30d" | "lastMonth" | "thisMonth" | "90d" | "all";
-
-const periodToRange = (period: PeriodKey) => {
-  const end = new Date();
-  const start = new Date(end);
-
-  if (period === "all") return null;
-
-  if (period === "7d") {
-    start.setDate(start.getDate() - 7);
-    return { startDate: start.toISOString(), endDate: end.toISOString() };
-  }
-  if (period === "30d") {
-    start.setDate(start.getDate() - 30);
-    return { startDate: start.toISOString(), endDate: end.toISOString() };
-  }
-  if (period === "90d") {
-    start.setDate(start.getDate() - 90);
-    return { startDate: start.toISOString(), endDate: end.toISOString() };
-  }
-
-  const now = new Date();
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-
-  if (period === "thisMonth") {
-    return {
-      startDate: thisMonthStart.toISOString(),
-      endDate: thisMonthEnd.toISOString(),
-    };
-  }
-
-  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1);
-  return {
-    startDate: lastMonthStart.toISOString(),
-    endDate: lastMonthEnd.toISOString(),
-  };
-};
-
 const getAlertIcon = (type: string) => {
   switch (type) {
     case "success":
@@ -104,14 +65,13 @@ const getAlertIcon = (type: string) => {
 
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const [pricingSummary, setPricingSummary] = useState<PricingSummary | null>(
     null,
   );
   const [pricingLoading, setPricingLoading] = useState(false);
 
   if (!user || user.role !== "admin") return null;
-
-  const [period, setPeriod] = useState<PeriodKey>("30d");
 
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
@@ -343,11 +303,7 @@ export const AdminDashboardPage = () => {
     <DashboardShell
       title={`안녕하세요, ${user.name}님!`}
       subtitle="시스템 관리 대시보드입니다."
-      headerRight={
-        <div className="flex flex-wrap items-center gap-2">
-          <PeriodFilter value={period} onChange={setPeriod} />
-        </div>
-      }
+      headerRight={undefined}
       statsGridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
       topSection={
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">

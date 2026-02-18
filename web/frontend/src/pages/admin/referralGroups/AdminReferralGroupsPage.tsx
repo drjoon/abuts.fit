@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 
 type ApiGroupLeader = {
   _id: string;
@@ -183,6 +185,7 @@ const TreeNode = ({
 
 export default function AdminReferralGroupsPage() {
   const { token } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const isDev = import.meta.env.DEV;
   const refreshSuffix = isDev ? "?refresh=1" : "";
   const [search, setSearch] = useState("");
@@ -202,7 +205,7 @@ export default function AdminReferralGroupsPage() {
   );
 
   const { data: groupList, isLoading: isGroupListLoading } = useQuery({
-    queryKey: ["admin-referral-groups"],
+    queryKey: ["admin-referral-groups", period],
     enabled: Boolean(token),
     queryFn: async () => {
       const res = await apiFetch<ApiGroupListResponse>({

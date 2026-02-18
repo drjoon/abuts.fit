@@ -21,6 +21,8 @@ import {
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import {
   Shield,
   Lock,
@@ -88,6 +90,7 @@ const getStatusBadge = (status: string) => {
 
 export const AdminSecurity = () => {
   const { token } = useAuthStore();
+  const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const [securitySettings, setSecuritySettings] = useState({
     twoFactorAuth: true,
