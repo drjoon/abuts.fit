@@ -489,6 +489,7 @@ async function getReferralGroups(req, res) {
             avgAccountsPerGroup: requestorAvgAccountsPerGroup,
             netNewGroups: requestorNetNewGroups,
             avgRevenuePerGroup: requestorAvgRevenuePerGroup,
+            totalRevenueAmount: Math.round(requestorTotalRevenueAmount),
           },
           salesman: {
             groupCount: salesmanGroupCount,

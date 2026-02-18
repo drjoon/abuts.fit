@@ -55,12 +55,14 @@ type ApiGroupListResponse = {
         avgAccountsPerGroup?: number;
         netNewGroups?: number;
         avgRevenuePerGroup?: number;
+        totalRevenueAmount?: number;
       };
       salesman?: {
         groupCount?: number;
         avgAccountsPerGroup?: number;
         netNewGroups?: number;
         avgCommissionPerGroup?: number;
+        totalCommissionAmount?: number;
       };
     };
     groups?: ApiGroupRow[];
@@ -227,6 +229,11 @@ export default function AdminReferralGroupsPage() {
   const groups = groupList?.groups || [];
   const overview = groupList?.overview || null;
 
+  // 데이터가 새로 바뀌면 기본 노출 개수 리셋
+  useEffect(() => {
+    setVisibleCount(6);
+  }, [groupList]);
+
   const filteredGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base = groups.filter((g) => {
@@ -285,7 +292,7 @@ export default function AdminReferralGroupsPage() {
         if (!hit) return;
         setVisibleCount((prev) => Math.min(prev + 6, filteredGroups.length));
       },
-      { root, rootMargin: "200px", threshold: 0 },
+      { root, rootMargin: "400px", threshold: 0 },
     );
 
     io.observe(sentinel);
@@ -351,7 +358,7 @@ export default function AdminReferralGroupsPage() {
 
   useEffect(() => {
     setTreeVisibleCount(10);
-  }, [effectiveLeaderId]);
+  }, [effectiveLeaderId, treeData]);
 
   useEffect(() => {
     const sentinel = treeSentinelRef.current;
@@ -377,7 +384,7 @@ export default function AdminReferralGroupsPage() {
   }, [flattenedTree.length, visibleTreeRows.length]);
 
   return (
-    <div className="min-h-[100dvh] p-4 flex flex-col gap-4">
+    <div className="h-screen max-h-screen overflow-hidden p-4 flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
@@ -386,7 +393,7 @@ export default function AdminReferralGroupsPage() {
               {roleBadge("requestor")}
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">그룹수</div>
               <div className="text-2xl font-semibold tracking-tight">
@@ -414,6 +421,15 @@ export default function AdminReferralGroupsPage() {
                 원
               </div>
             </div>
+            <div className="rounded-xl border p-3">
+              <div className="text-xs text-muted-foreground">매출 총액</div>
+              <div className="text-2xl font-semibold tracking-tight">
+                {formatMoney(
+                  Number(overview?.requestor?.totalRevenueAmount || 0),
+                )}
+                원
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -424,7 +440,7 @@ export default function AdminReferralGroupsPage() {
               {roleBadge("salesman")}
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">그룹수</div>
               <div className="text-2xl font-semibold tracking-tight">
@@ -443,9 +459,18 @@ export default function AdminReferralGroupsPage() {
               <div className="text-xs text-muted-foreground">
                 그룹당 평균 수수료(추정)
               </div>
-              <div className="text-2xl font-semibold tracking-tight">
+              <div className="text-2xl font-semibold tracking-tight text-center">
                 {formatMoney(
                   Number(overview?.salesman?.avgCommissionPerGroup || 0),
+                )}
+                원
+              </div>
+            </div>
+            <div className="rounded-xl border p-3 text-right">
+              <div className="text-xs text-muted-foreground">수수료 총액</div>
+              <div className="text-2xl font-semibold tracking-tight">
+                {formatMoney(
+                  Number(overview?.salesman?.totalCommissionAmount || 0),
                 )}
                 원
               </div>
@@ -455,7 +480,7 @@ export default function AdminReferralGroupsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 flex-1 min-h-0">
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-1 h-full flex flex-col min-h-0">
           <CardHeader>
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-base">그룹 목록</CardTitle>
@@ -492,7 +517,7 @@ export default function AdminReferralGroupsPage() {
               </CardDescription>
             ) : null}
           </CardHeader>
-          <CardContent className="space-y-3 flex flex-col min-h-0">
+          <CardContent className="space-y-3 flex flex-col min-h-0 flex-1">
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -595,11 +620,28 @@ export default function AdminReferralGroupsPage() {
               {visibleGroups.length < filteredGroups.length ? (
                 <div ref={listSentinelRef} className="h-8" aria-hidden="true" />
               ) : null}
+              {visibleGroups.length < filteredGroups.length ? (
+                <div className="pb-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() =>
+                      setVisibleCount((prev) =>
+                        Math.min(prev + 6, filteredGroups.length),
+                      )
+                    }
+                  >
+                    더 보기
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 h-full flex flex-col min-h-0">
           <CardHeader>
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-base">계층도</CardTitle>
@@ -611,7 +653,7 @@ export default function AdminReferralGroupsPage() {
               ) : null}
             </div>
           </CardHeader>
-          <CardContent className="flex flex-col min-h-0">
+          <CardContent className="flex flex-col min-h-0 flex-1">
             {isTreeLoading ? (
               <div className="text-sm text-muted-foreground">로딩중...</div>
             ) : !treeData?.tree ? (
@@ -663,6 +705,23 @@ export default function AdminReferralGroupsPage() {
                       className="h-8"
                       aria-hidden="true"
                     />
+                  ) : null}
+                  {visibleTreeRows.length < flattenedTree.length ? (
+                    <div className="pb-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() =>
+                          setTreeVisibleCount((prev) =>
+                            Math.min(prev + 10, flattenedTree.length),
+                          )
+                        }
+                      >
+                        더 보기
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
               </div>
