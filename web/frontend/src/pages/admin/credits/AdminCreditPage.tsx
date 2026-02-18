@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -114,9 +114,13 @@ export default function AdminCreditPage() {
 
   const [organizations, setOrganizations] = useState<OrganizationCredit[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
+  const [orgSkip, setOrgSkip] = useState(0);
+  const [orgHasMore, setOrgHasMore] = useState(true);
 
   const [salesmen, setSalesmen] = useState<SalesmanCreditRow[]>([]);
   const [loadingSalesmen, setLoadingSalesmen] = useState(false);
+  const [salesmanSkip, setSalesmanSkip] = useState(0);
+  const [salesmanHasMore, setSalesmanHasMore] = useState(true);
 
   const [creditTab, setCreditTab] = useState<"requestor" | "salesman">(
     "requestor",
@@ -125,12 +129,21 @@ export default function AdminCreditPage() {
   const [chargeOrders, setChargeOrders] = useState<ChargeOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>("");
+  const [orderSkip, setOrderSkip] = useState(0);
+  const [orderHasMore, setOrderHasMore] = useState(true);
 
   const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>(
     [],
   );
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [txStatusFilter, setTxStatusFilter] = useState<string>("");
+  const [txSkip, setTxSkip] = useState(0);
+  const [txHasMore, setTxHasMore] = useState(true);
+
+  const ORG_PAGE_SIZE = 40;
+  const SALESMAN_PAGE_SIZE = 40;
+  const ORDER_PAGE_SIZE = 50;
+  const TX_PAGE_SIZE = 50;
 
   const [txTab, setTxTab] = useState<"auto" | "manual">("auto");
 
@@ -143,6 +156,15 @@ export default function AdminCreditPage() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectNote, setRejectNote] = useState("");
   const [processingApproval, setProcessingApproval] = useState(false);
+
+  const orgScrollRef = useRef<HTMLDivElement | null>(null);
+  const orgSentinelRef = useRef<HTMLDivElement | null>(null);
+  const salesmanScrollRef = useRef<HTMLDivElement | null>(null);
+  const salesmanSentinelRef = useRef<HTMLDivElement | null>(null);
+  const orderScrollRef = useRef<HTMLDivElement | null>(null);
+  const orderSentinelRef = useRef<HTMLDivElement | null>(null);
+  const txScrollRef = useRef<HTMLDivElement | null>(null);
+  const txSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const loadStats = async () => {
     if (!token) return;
@@ -167,22 +189,35 @@ export default function AdminCreditPage() {
     }
   };
 
-  const loadSalesmen = async () => {
+  const loadSalesmen = async ({ reset = false } = {}) => {
     if (!token) return;
     setLoadingSalesmen(true);
     try {
+      const nextSkip = reset ? 0 : salesmanSkip;
+      const qs = new URLSearchParams({
+        limit: String(SALESMAN_PAGE_SIZE),
+        skip: String(nextSkip),
+      });
       const res = await request<{
         success: boolean;
-        data: { items: SalesmanCreditRow[] };
+        data: {
+          items: SalesmanCreditRow[];
+          total?: number;
+          skip?: number;
+          limit?: number;
+        };
       }>({
-        path: "/api/admin/credits/salesmen?limit=200",
+        path: `/api/admin/credits/salesmen?${qs.toString()}`,
         method: "GET",
         token,
       });
       if (res.ok && res.data?.data?.items) {
-        setSalesmen(
-          Array.isArray(res.data.data.items) ? res.data.data.items : [],
-        );
+        const items = Array.isArray(res.data.data.items)
+          ? res.data.data.items
+          : [];
+        setSalesmen((prev) => (reset ? items : [...prev, ...items]));
+        setSalesmanSkip(nextSkip + items.length);
+        setSalesmanHasMore(items.length >= SALESMAN_PAGE_SIZE);
       }
     } catch (error) {
       toast({
@@ -195,20 +230,31 @@ export default function AdminCreditPage() {
     }
   };
 
-  const loadOrganizations = async () => {
+  const loadOrganizations = async ({ reset = false } = {}) => {
     if (!token) return;
     setLoadingOrgs(true);
     try {
       const res = await request<{
         success: boolean;
-        data: { items: OrganizationCredit[] };
+        data: {
+          items: OrganizationCredit[];
+          total?: number;
+          skip?: number;
+          limit?: number;
+        };
       }>({
-        path: "/api/admin/credits/organizations?limit=100",
+        path: `/api/admin/credits/organizations?limit=${ORG_PAGE_SIZE}&skip=${reset ? 0 : orgSkip}`,
         method: "GET",
         token,
       });
       if (res.ok && res.data?.data?.items) {
-        setOrganizations(res.data.data.items);
+        const items = Array.isArray(res.data.data.items)
+          ? res.data.data.items
+          : [];
+        setOrganizations((prev) => (reset ? items : [...prev, ...items]));
+        const nextSkip = (reset ? 0 : orgSkip) + items.length;
+        setOrgSkip(nextSkip);
+        setOrgHasMore(items.length >= ORG_PAGE_SIZE);
       }
     } catch (error) {
       toast({
@@ -221,18 +267,37 @@ export default function AdminCreditPage() {
     }
   };
 
-  const loadChargeOrders = async (status?: string) => {
+  const loadChargeOrders = async (status?: string, { reset = false } = {}) => {
     if (!token) return;
     setLoadingOrders(true);
     try {
-      const query = status ? `?status=${status}` : "";
-      const res = await request<{ success: boolean; data: ChargeOrder[] }>({
-        path: `/api/admin/credits/b-plan/charge-orders${query}`,
+      const nextSkip = reset ? 0 : orderSkip;
+      const qs = new URLSearchParams({
+        limit: String(ORDER_PAGE_SIZE),
+        skip: String(nextSkip),
+      });
+      if (status) qs.set("status", status);
+
+      const res = await request<{
+        success: boolean;
+        data: {
+          items: ChargeOrder[];
+          total: number;
+          skip: number;
+          limit: number;
+        };
+      }>({
+        path: `/api/admin/credits/b-plan/charge-orders?${qs.toString()}`,
         method: "GET",
         token,
       });
-      if (res.ok && res.data?.data) {
-        setChargeOrders(Array.isArray(res.data.data) ? res.data.data : []);
+      if (res.ok && res.data?.data?.items) {
+        const items = Array.isArray(res.data.data.items)
+          ? res.data.data.items
+          : [];
+        setChargeOrders((prev) => (reset ? items : [...prev, ...items]));
+        setOrderSkip(nextSkip + items.length);
+        setOrderHasMore(items.length >= ORDER_PAGE_SIZE);
       }
     } catch (error) {
       toast({
@@ -245,18 +310,40 @@ export default function AdminCreditPage() {
     }
   };
 
-  const loadBankTransactions = async (status?: string) => {
+  const loadBankTransactions = async (
+    status?: string,
+    { reset = false } = {},
+  ) => {
     if (!token) return;
     setLoadingTransactions(true);
     try {
-      const query = status ? `?status=${status}` : "";
-      const res = await request<{ success: boolean; data: BankTransaction[] }>({
-        path: `/api/admin/credits/b-plan/bank-transactions${query}`,
+      const nextSkip = reset ? 0 : txSkip;
+      const qs = new URLSearchParams({
+        limit: String(TX_PAGE_SIZE),
+        skip: String(nextSkip),
+      });
+      if (status) qs.set("status", status);
+
+      const res = await request<{
+        success: boolean;
+        data: {
+          items: BankTransaction[];
+          total: number;
+          skip: number;
+          limit: number;
+        };
+      }>({
+        path: `/api/admin/credits/b-plan/bank-transactions?${qs.toString()}`,
         method: "GET",
         token,
       });
-      if (res.ok && res.data?.data) {
-        setBankTransactions(Array.isArray(res.data.data) ? res.data.data : []);
+      if (res.ok && res.data?.data?.items) {
+        const items = Array.isArray(res.data.data.items)
+          ? res.data.data.items
+          : [];
+        setBankTransactions((prev) => (reset ? items : [...prev, ...items]));
+        setTxSkip(nextSkip + items.length);
+        setTxHasMore(items.length >= TX_PAGE_SIZE);
       }
     } catch (error) {
       toast({
@@ -295,8 +382,12 @@ export default function AdminCreditPage() {
         setSelectedOrder(null);
         setMatchNote("");
         setMatchForce(false);
-        loadChargeOrders(orderStatusFilter);
-        loadBankTransactions(txStatusFilter);
+        setOrderSkip(0);
+        setOrderHasMore(true);
+        setTxSkip(0);
+        setTxHasMore(true);
+        loadChargeOrders(orderStatusFilter, { reset: true });
+        loadBankTransactions(txStatusFilter, { reset: true });
         loadStats();
       } else {
         throw new Error("매칭 실패");
@@ -314,11 +405,91 @@ export default function AdminCreditPage() {
 
   useEffect(() => {
     loadStats();
-    loadOrganizations();
-    loadChargeOrders();
-    loadBankTransactions();
-    loadSalesmen();
+    setOrgSkip(0);
+    setOrgHasMore(true);
+    setSalesmanSkip(0);
+    setSalesmanHasMore(true);
+    setOrderSkip(0);
+    setOrderHasMore(true);
+    setTxSkip(0);
+    setTxHasMore(true);
+    loadOrganizations({ reset: true });
+    loadChargeOrders(orderStatusFilter, { reset: true });
+    loadBankTransactions(txStatusFilter, { reset: true });
+    loadSalesmen({ reset: true });
   }, [token]);
+
+  useEffect(() => {
+    const sentinel = orgSentinelRef.current;
+    const root = orgScrollRef.current;
+    if (!sentinel || !root) return;
+    if (!orgHasMore || loadingOrgs) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (!hit) return;
+        if (loadingOrgs || !orgHasMore) return;
+        loadOrganizations({ reset: false });
+      },
+      { root, rootMargin: "400px", threshold: 0 },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [orgHasMore, loadingOrgs, orgSkip, token]);
+
+  useEffect(() => {
+    const sentinel = salesmanSentinelRef.current;
+    const root = salesmanScrollRef.current;
+    if (!sentinel || !root) return;
+    if (!salesmanHasMore || loadingSalesmen) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (!hit) return;
+        if (loadingSalesmen || !salesmanHasMore) return;
+        loadSalesmen({ reset: false });
+      },
+      { root, rootMargin: "400px", threshold: 0 },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [salesmanHasMore, loadingSalesmen, salesmanSkip, token]);
+
+  useEffect(() => {
+    const sentinel = orderSentinelRef.current;
+    const root = orderScrollRef.current;
+    if (!sentinel || !root) return;
+    if (!orderHasMore || loadingOrders) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (!hit) return;
+        if (loadingOrders || !orderHasMore) return;
+        loadChargeOrders(orderStatusFilter, { reset: false });
+      },
+      { root, rootMargin: "400px", threshold: 0 },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [orderHasMore, loadingOrders, orderSkip, orderStatusFilter, token]);
+
+  useEffect(() => {
+    const sentinel = txSentinelRef.current;
+    const root = txScrollRef.current;
+    if (!sentinel || !root) return;
+    if (!txHasMore || loadingTransactions) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (!hit) return;
+        if (loadingTransactions || !txHasMore) return;
+        loadBankTransactions(txStatusFilter, { reset: false });
+      },
+      { root, rootMargin: "400px", threshold: 0 },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [txHasMore, loadingTransactions, txSkip, txStatusFilter, token]);
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "-";
@@ -341,62 +512,182 @@ export default function AdminCreditPage() {
     return <Badge variant={variants[status] || "default"}>{status}</Badge>;
   };
 
+  const requestorTotalBalance = useMemo(() => {
+    return (organizations || []).reduce(
+      (acc, org) => acc + Number(org?.balance || 0),
+      0,
+    );
+  }, [organizations]);
+
+  const salesmanSummary = useMemo(() => {
+    const totalSalesmen = (salesmen || []).length;
+    const totalBalance = (salesmen || []).reduce(
+      (acc, s) => acc + Number(s?.wallet?.balanceAmount || 0),
+      0,
+    );
+    const totalEarned = (salesmen || []).reduce(
+      (acc, s) => acc + Number(s?.wallet?.earnedAmount || 0),
+      0,
+    );
+    const totalPaidOut = (salesmen || []).reduce(
+      (acc, s) => acc + Number(s?.wallet?.paidOutAmount || 0),
+      0,
+    );
+    const totalCommission30d = (salesmen || []).reduce(
+      (acc, s) => acc + Number(s?.performance30d?.commissionAmount || 0),
+      0,
+    );
+    return {
+      totalSalesmen,
+      totalBalance,
+      totalEarned,
+      totalPaidOut,
+      totalCommission30d,
+    };
+  }, [salesmen]);
+
   return (
     <div className="space-y-6 p-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 조직 수</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingStats ? "..." : stats?.totalOrgs.toLocaleString() || 0}
-            </div>
-          </CardContent>
-        </Card>
+      {creditTab === "salesman" ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">
+                총 영업자 수
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingSalesmen
+                  ? "..."
+                  : salesmanSummary.totalSalesmen.toLocaleString()}
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 충전액</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingStats
-                ? "..."
-                : `${(stats?.totalCharged || 0).toLocaleString()}원`}
-            </div>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">총 적립</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingSalesmen
+                  ? "..."
+                  : `${salesmanSummary.totalEarned.toLocaleString()}원`}
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 사용액</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {loadingStats
-                ? "..."
-                : `${(stats?.totalSpent || 0).toLocaleString()}원`}
-            </div>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">총 잔액</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingSalesmen
+                  ? "..."
+                  : `${salesmanSummary.totalBalance.toLocaleString()}원`}
+              </div>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">미매칭 입금</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600">
-              {loadingStats ? "..." : stats?.newBankTransactions || 0}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">총 정산</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingSalesmen
+                  ? "..."
+                  : `${salesmanSummary.totalPaidOut.toLocaleString()}원`}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">
+                수수료(30일)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingSalesmen
+                  ? "..."
+                  : `${salesmanSummary.totalCommission30d.toLocaleString()}원`}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">총 조직 수</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingStats ? "..." : stats?.totalOrgs.toLocaleString() || 0}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">총 충전액</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingStats
+                  ? "..."
+                  : `${(stats?.totalCharged || 0).toLocaleString()}원`}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">총 잔액</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingOrgs
+                  ? "..."
+                  : `${requestorTotalBalance.toLocaleString()}원`}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">총 사용액</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {loadingStats
+                  ? "..."
+                  : `${(stats?.totalSpent || 0).toLocaleString()}원`}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">미매칭 입금</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-600">
+                {loadingStats ? "..." : stats?.newBankTransactions || 0}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Tabs value={creditTab} onValueChange={(v) => setCreditTab(v as any)}>
         <TabsList>
-          <TabsTrigger value="requestor">크레딧:의뢰자</TabsTrigger>
-          <TabsTrigger value="salesman">크레딧:영업자</TabsTrigger>
+          <TabsTrigger value="requestor">의뢰자</TabsTrigger>
+          <TabsTrigger value="salesman">영업자</TabsTrigger>
         </TabsList>
 
         <TabsContent value="requestor" className="space-y-4">
@@ -423,59 +714,65 @@ export default function AdminCreditPage() {
                       조직이 없습니다.
                     </div>
                   ) : (
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {organizations.map((org) => {
-                        const spent = Number(org.spentAmount || 0);
-                        return (
-                          <Card key={org._id} className="border-muted">
-                            <CardHeader className="pb-3">
-                              <CardTitle className="text-base">
-                                {org.name}
-                              </CardTitle>
-                              <CardDescription className="space-y-1">
-                                <div>{org.companyName || "-"}</div>
-                                <div className="font-mono">
-                                  {org.businessNumber || "-"}
+                    <div
+                      ref={orgScrollRef}
+                      className="h-[70vh] overflow-y-auto pr-1"
+                    >
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {organizations.map((org) => {
+                          const spent = Number(org.spentAmount || 0);
+                          return (
+                            <Card key={org._id} className="border-muted">
+                              <CardHeader className="pb-3">
+                                <CardTitle className="text-base">
+                                  {org.name}
+                                </CardTitle>
+                                <CardDescription className="space-y-1">
+                                  <div>{org.companyName || "-"}</div>
+                                  <div className="font-mono">
+                                    {org.businessNumber || "-"}
+                                  </div>
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    총잔액
+                                  </div>
+                                  <div className="font-semibold">
+                                    {org.balance.toLocaleString()}원
+                                  </div>
                                 </div>
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                              <div>
-                                <div className="text-muted-foreground">
-                                  총잔액
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    사용액
+                                  </div>
+                                  <div className="font-semibold">
+                                    {spent.toLocaleString()}원
+                                  </div>
                                 </div>
-                                <div className="font-semibold">
-                                  {org.balance.toLocaleString()}원
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    구매 크레딧
+                                  </div>
+                                  <div className="font-medium">
+                                    {org.paidBalance.toLocaleString()}원
+                                  </div>
                                 </div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">
-                                  사용액
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    무료 크레딧
+                                  </div>
+                                  <div className="font-medium">
+                                    {org.bonusBalance.toLocaleString()}원
+                                  </div>
                                 </div>
-                                <div className="font-semibold">
-                                  {spent.toLocaleString()}원
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">
-                                  구매 크레딧
-                                </div>
-                                <div className="font-medium">
-                                  {org.paidBalance.toLocaleString()}원
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">
-                                  무료 크레딧
-                                </div>
-                                <div className="font-medium">
-                                  {org.bonusBalance.toLocaleString()}원
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                      <div ref={orgSentinelRef} className="h-10" />
                     </div>
                   )}
                 </CardContent>
@@ -501,7 +798,9 @@ export default function AdminCreditPage() {
                         size="sm"
                         onClick={() => {
                           setOrderStatusFilter("");
-                          loadChargeOrders();
+                          setOrderSkip(0);
+                          setOrderHasMore(true);
+                          loadChargeOrders(undefined, { reset: true });
                         }}
                       >
                         전체
@@ -515,7 +814,9 @@ export default function AdminCreditPage() {
                         size="sm"
                         onClick={() => {
                           setOrderStatusFilter("PENDING");
-                          loadChargeOrders("PENDING");
+                          setOrderSkip(0);
+                          setOrderHasMore(true);
+                          loadChargeOrders("PENDING", { reset: true });
                         }}
                       >
                         대기중
@@ -529,7 +830,9 @@ export default function AdminCreditPage() {
                         size="sm"
                         onClick={() => {
                           setOrderStatusFilter("MATCHED");
-                          loadChargeOrders("MATCHED");
+                          setOrderSkip(0);
+                          setOrderHasMore(true);
+                          loadChargeOrders("MATCHED", { reset: true });
                         }}
                       >
                         매칭완료
@@ -547,97 +850,107 @@ export default function AdminCreditPage() {
                       충전 주문이 없습니다.
                     </div>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>상태</TableHead>
-                          <TableHead>입금코드</TableHead>
-                          <TableHead className="text-right">공급가</TableHead>
-                          <TableHead className="text-right">총액</TableHead>
-                          <TableHead>승인 상태</TableHead>
-                          <TableHead>승인자/시각</TableHead>
-                          <TableHead>생성일</TableHead>
-                          <TableHead>만료일</TableHead>
-                          <TableHead>매칭일</TableHead>
-                          <TableHead className="text-right">액션</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {chargeOrders.map((order) => (
-                          <TableRow key={order._id}>
-                            <TableCell>
-                              {getStatusBadge(order.status)}
-                            </TableCell>
-                            <TableCell className="font-mono">
-                              {order.depositCode}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {order.supplyAmount.toLocaleString()}원
-                            </TableCell>
-                            <TableCell className="text-right font-semibold">
-                              {order.amountTotal.toLocaleString()}원
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  order.adminApprovalStatus === "APPROVED"
-                                    ? "default"
-                                    : order.adminApprovalStatus === "REJECTED"
-                                      ? "destructive"
-                                      : "outline"
-                                }
-                              >
-                                {order.adminApprovalStatus || "PENDING"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              {order.adminApprovalBy?.name
-                                ? `${order.adminApprovalBy.name} (${
-                                    order.adminApprovalBy.email || "-"
-                                  })`
-                                : "-"}
-                              <div className="text-xs text-muted-foreground">
-                                {formatDate(order.adminApprovalAt)}
-                              </div>
-                            </TableCell>
-                            <TableCell>{formatDate(order.createdAt)}</TableCell>
-                            <TableCell>{formatDate(order.expiresAt)}</TableCell>
-                            <TableCell>{formatDate(order.matchedAt)}</TableCell>
-                            <TableCell className="text-right space-x-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={
-                                  order.adminApprovalStatus !== "PENDING" ||
-                                  order.status === "CANCELED"
-                                }
-                                onClick={() => {
-                                  setSelectedOrder(order);
-                                  setApproveModalOpen(true);
-                                }}
-                              >
-                                승인
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={
-                                  order.adminApprovalStatus !== "PENDING" ||
-                                  order.status === "CANCELED"
-                                }
-                                onClick={() => {
-                                  setSelectedOrder(order);
-                                  setRejectNote("");
-                                  setRejectModalOpen(true);
-                                }}
-                              >
-                                거절
-                              </Button>
-                            </TableCell>
+                    <div
+                      ref={orderScrollRef}
+                      className="h-[70vh] overflow-y-auto pr-1"
+                    >
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>상태</TableHead>
+                            <TableHead>입금코드</TableHead>
+                            <TableHead className="text-right">공급가</TableHead>
+                            <TableHead className="text-right">총액</TableHead>
+                            <TableHead>승인 상태</TableHead>
+                            <TableHead>승인자/시각</TableHead>
+                            <TableHead>생성일</TableHead>
+                            <TableHead>만료일</TableHead>
+                            <TableHead>매칭일</TableHead>
+                            <TableHead className="text-right">액션</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {chargeOrders.map((order) => (
+                            <TableRow key={order._id}>
+                              <TableCell>
+                                {getStatusBadge(order.status)}
+                              </TableCell>
+                              <TableCell className="font-mono">
+                                {order.depositCode}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {order.supplyAmount.toLocaleString()}원
+                              </TableCell>
+                              <TableCell className="text-right font-semibold">
+                                {order.amountTotal.toLocaleString()}원
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    order.adminApprovalStatus === "APPROVED"
+                                      ? "default"
+                                      : order.adminApprovalStatus === "REJECTED"
+                                        ? "destructive"
+                                        : "outline"
+                                  }
+                                >
+                                  {order.adminApprovalStatus || "PENDING"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {order.adminApprovalBy?.name
+                                  ? `${order.adminApprovalBy.name} (${order.adminApprovalBy.email || "-"})`
+                                  : "-"}
+                                <div className="text-xs text-muted-foreground">
+                                  {formatDate(order.adminApprovalAt)}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {formatDate(order.createdAt)}
+                              </TableCell>
+                              <TableCell>
+                                {formatDate(order.expiresAt)}
+                              </TableCell>
+                              <TableCell>
+                                {formatDate(order.matchedAt)}
+                              </TableCell>
+                              <TableCell className="text-right space-x-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={
+                                    order.adminApprovalStatus !== "PENDING" ||
+                                    order.status === "CANCELED"
+                                  }
+                                  onClick={() => {
+                                    setSelectedOrder(order);
+                                    setApproveModalOpen(true);
+                                  }}
+                                >
+                                  승인
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  disabled={
+                                    order.adminApprovalStatus !== "PENDING" ||
+                                    order.status === "CANCELED"
+                                  }
+                                  onClick={() => {
+                                    setSelectedOrder(order);
+                                    setRejectNote("");
+                                    setRejectModalOpen(true);
+                                  }}
+                                >
+                                  거절
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <div ref={orderSentinelRef} className="h-10" />
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -672,7 +985,9 @@ export default function AdminCreditPage() {
                           size="sm"
                           onClick={() => {
                             setTxStatusFilter("");
-                            loadBankTransactions();
+                            setTxSkip(0);
+                            setTxHasMore(true);
+                            loadBankTransactions(undefined, { reset: true });
                           }}
                         >
                           전체
@@ -684,7 +999,9 @@ export default function AdminCreditPage() {
                           size="sm"
                           onClick={() => {
                             setTxStatusFilter("NEW");
-                            loadBankTransactions("NEW");
+                            setTxSkip(0);
+                            setTxHasMore(true);
+                            loadBankTransactions("NEW", { reset: true });
                           }}
                         >
                           미매칭
@@ -696,7 +1013,9 @@ export default function AdminCreditPage() {
                           size="sm"
                           onClick={() => {
                             setTxStatusFilter("MATCHED");
-                            loadBankTransactions("MATCHED");
+                            setTxSkip(0);
+                            setTxHasMore(true);
+                            loadBankTransactions("MATCHED", { reset: true });
                           }}
                         >
                           매칭완료
@@ -712,40 +1031,48 @@ export default function AdminCreditPage() {
                           입금 내역이 없습니다.
                         </div>
                       ) : (
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>상태</TableHead>
-                              <TableHead>입금코드</TableHead>
-                              <TableHead className="text-right">금액</TableHead>
-                              <TableHead>입금자</TableHead>
-                              <TableHead>발생일</TableHead>
-                              <TableHead>매칭일</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {bankTransactions.map((tx) => (
-                              <TableRow key={tx._id}>
-                                <TableCell>
-                                  {getStatusBadge(tx.status)}
-                                </TableCell>
-                                <TableCell className="font-mono">
-                                  {tx.depositCode || "-"}
-                                </TableCell>
-                                <TableCell className="text-right font-semibold">
-                                  {tx.tranAmt.toLocaleString()}원
-                                </TableCell>
-                                <TableCell>{tx.printedContent}</TableCell>
-                                <TableCell>
-                                  {formatDate(tx.occurredAt)}
-                                </TableCell>
-                                <TableCell>
-                                  {formatDate(tx.matchedAt)}
-                                </TableCell>
+                        <div
+                          ref={txScrollRef}
+                          className="h-[70vh] overflow-y-auto pr-1"
+                        >
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>상태</TableHead>
+                                <TableHead>입금코드</TableHead>
+                                <TableHead className="text-right">
+                                  금액
+                                </TableHead>
+                                <TableHead>입금자</TableHead>
+                                <TableHead>발생일</TableHead>
+                                <TableHead>매칭일</TableHead>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                            </TableHeader>
+                            <TableBody>
+                              {bankTransactions.map((tx) => (
+                                <TableRow key={tx._id}>
+                                  <TableCell>
+                                    {getStatusBadge(tx.status)}
+                                  </TableCell>
+                                  <TableCell className="font-mono">
+                                    {tx.depositCode || "-"}
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold">
+                                    {tx.tranAmt.toLocaleString()}원
+                                  </TableCell>
+                                  <TableCell>{tx.printedContent}</TableCell>
+                                  <TableCell>
+                                    {formatDate(tx.occurredAt)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatDate(tx.matchedAt)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                          <div ref={txSentinelRef} className="h-10" />
+                        </div>
                       )}
                     </TabsContent>
 
@@ -972,90 +1299,100 @@ export default function AdminCreditPage() {
                   영업자 데이터가 없습니다.
                 </div>
               ) : (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {salesmen.map((s) => (
-                    <Card key={s.salesmanId} className="border-muted">
-                      <CardHeader className="pb-3">
-                        <div className="flex items-start justify-between gap-2">
+                <div
+                  ref={salesmanScrollRef}
+                  className="h-[70vh] overflow-y-auto pr-1"
+                >
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {salesmen.map((s) => (
+                      <Card key={s.salesmanId} className="border-muted">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <CardTitle className="text-base">
+                                {s.name}
+                              </CardTitle>
+                              <CardDescription className="space-y-1">
+                                <div>{s.email}</div>
+                                <div className="font-mono">
+                                  code: {s.referralCode || "-"}
+                                </div>
+                              </CardDescription>
+                            </div>
+                            <Badge variant={s.active ? "default" : "secondary"}>
+                              {s.active ? "활성" : "비활성"}
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-2 gap-3 text-sm">
                           <div>
-                            <CardTitle className="text-base">
-                              {s.name}
-                            </CardTitle>
-                            <CardDescription className="space-y-1">
-                              <div>{s.email}</div>
-                              <div className="font-mono">
-                                code: {s.referralCode || "-"}
-                              </div>
-                            </CardDescription>
+                            <div className="text-muted-foreground">잔액</div>
+                            <div className="font-semibold">
+                              {Number(
+                                s.wallet?.balanceAmount || 0,
+                              ).toLocaleString()}
+                              원
+                            </div>
                           </div>
-                          <Badge variant={s.active ? "default" : "secondary"}>
-                            {s.active ? "활성" : "비활성"}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <div className="text-muted-foreground">잔액</div>
-                          <div className="font-semibold">
-                            {Number(
-                              s.wallet?.balanceAmount || 0,
-                            ).toLocaleString()}
-                            원
+                          <div>
+                            <div className="text-muted-foreground">
+                              누적 적립
+                            </div>
+                            <div className="font-medium">
+                              {Number(
+                                s.wallet?.earnedAmount || 0,
+                              ).toLocaleString()}
+                              원
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">누적 적립</div>
-                          <div className="font-medium">
-                            {Number(
-                              s.wallet?.earnedAmount || 0,
-                            ).toLocaleString()}
-                            원
+                          <div>
+                            <div className="text-muted-foreground">
+                              누적 정산
+                            </div>
+                            <div className="font-medium">
+                              {Number(
+                                s.wallet?.paidOutAmount || 0,
+                              ).toLocaleString()}
+                              원
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">누적 정산</div>
-                          <div className="font-medium">
-                            {Number(
-                              s.wallet?.paidOutAmount || 0,
-                            ).toLocaleString()}
-                            원
+                          <div>
+                            <div className="text-muted-foreground">
+                              소개 조직수(30일)
+                            </div>
+                            <div className="font-medium">
+                              {Number(
+                                s.performance30d?.referredOrgCount || 0,
+                              ).toLocaleString()}
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">
-                            소개 조직수(30일)
+                          <div>
+                            <div className="text-muted-foreground">
+                              매출(30일)
+                            </div>
+                            <div className="font-medium">
+                              {Number(
+                                s.performance30d?.revenueAmount || 0,
+                              ).toLocaleString()}
+                              원
+                            </div>
                           </div>
-                          <div className="font-medium">
-                            {Number(
-                              s.performance30d?.referredOrgCount || 0,
-                            ).toLocaleString()}
+                          <div>
+                            <div className="text-muted-foreground">
+                              수수료(30일)
+                            </div>
+                            <div className="font-medium">
+                              {Number(
+                                s.performance30d?.commissionAmount || 0,
+                              ).toLocaleString()}
+                              원
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">
-                            매출(30일)
-                          </div>
-                          <div className="font-medium">
-                            {Number(
-                              s.performance30d?.revenueAmount || 0,
-                            ).toLocaleString()}
-                            원
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-muted-foreground">
-                            수수료(30일)
-                          </div>
-                          <div className="font-medium">
-                            {Number(
-                              s.performance30d?.commissionAmount || 0,
-                            ).toLocaleString()}
-                            원
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  <div ref={salesmanSentinelRef} className="h-10" />
                 </div>
               )}
             </CardContent>
@@ -1105,7 +1442,9 @@ export default function AdminCreditPage() {
                   });
                   setApproveModalOpen(false);
                   setSelectedOrder(null);
-                  loadChargeOrders(orderStatusFilter);
+                  setOrderSkip(0);
+                  setOrderHasMore(true);
+                  loadChargeOrders(orderStatusFilter, { reset: true });
                 } catch (error: any) {
                   toast({
                     title: "승인 실패",
@@ -1184,7 +1523,9 @@ export default function AdminCreditPage() {
                   setRejectModalOpen(false);
                   setSelectedOrder(null);
                   setRejectNote("");
-                  loadChargeOrders(orderStatusFilter);
+                  setOrderSkip(0);
+                  setOrderHasMore(true);
+                  loadChargeOrders(orderStatusFilter, { reset: true });
                 } catch (error: any) {
                   toast({
                     title: "거절 실패",

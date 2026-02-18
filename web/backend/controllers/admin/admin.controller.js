@@ -154,7 +154,7 @@ export async function getReferralGroups(req, res) {
         },
         { $group: { _id: "$referredByUserId", count: { $sum: 1 } } },
       ]),
-      ReferralGroupSnapshot.find({
+      PricingReferralStatsSnapshot.find({
         ownerUserId: { $in: leaderIds },
         ymd,
       })
@@ -237,7 +237,6 @@ export async function getReferralGroups(req, res) {
       const snapshot = (snapshots || []).find(
         (s) => String(s.ownerUserId) === String(leader._id),
       );
-      const snapshotTotalOrders = Number(snapshot?.groupTotalOrders || 0);
       const snapshotGroupMemberCount = Number(snapshot?.groupMemberCount || 0);
 
       const fallbackChildIds = childIdsByLeaderId.get(String(leader._id)) || [];
@@ -247,9 +246,7 @@ export async function getReferralGroups(req, res) {
       const fallbackLeaderOrders = Number(
         ordersByUserId.get(String(leader._id)) || 0,
       );
-      const groupTotalOrders = snapshot
-        ? snapshotTotalOrders
-        : fallbackLeaderOrders + fallbackOrders;
+      const groupTotalOrders = fallbackLeaderOrders + fallbackOrders;
 
       const fallbackRevenue = fallbackChildIds.reduce((acc, cid) => {
         return acc + Number(revenueByUserId.get(String(cid)) || 0);
@@ -257,9 +254,7 @@ export async function getReferralGroups(req, res) {
       const fallbackLeaderRevenue = Number(
         revenueByUserId.get(String(leader._id)) || 0,
       );
-      const groupRevenueAmount = snapshot
-        ? null
-        : fallbackLeaderRevenue + fallbackRevenue;
+      const groupRevenueAmount = fallbackLeaderRevenue + fallbackRevenue;
 
       const baseUnitPrice = 15000;
       const discountPerOrder = 10;
@@ -301,7 +296,7 @@ export async function getReferralGroups(req, res) {
         groupMemberCount: snapshotGroupMemberCount || directCount + 1,
         groupTotalOrders,
         effectiveUnitPrice,
-        ...(groupRevenueAmount !== null ? { groupRevenueAmount } : {}),
+        groupRevenueAmount,
         snapshotComputedAt: snapshot?.computedAt || null,
         ...(isDev ? { unitPriceDebug } : {}),
       };
@@ -422,6 +417,43 @@ export async function getReferralGroups(req, res) {
           .lean()
       : [];
 
+    const commissionRequestorIds = [
+      ...(directRequestors || []).map((u) => u._id),
+      ...(level1Requestors || []).map((u) => u._id),
+    ].filter(Boolean);
+
+    const commissionRequestRows = commissionRequestorIds.length
+      ? await Request.aggregate([
+          {
+            $match: {
+              requestor: { $in: commissionRequestorIds },
+              status: "완료",
+              createdAt: { $gte: last30Cutoff },
+            },
+          },
+          {
+            $group: {
+              _id: "$requestor",
+              orderCount: { $sum: 1 },
+              revenueAmount: { $sum: { $ifNull: ["$price.amount", 0] } },
+            },
+          },
+        ])
+      : [];
+
+    const commissionOrdersByUserId = new Map(
+      (commissionRequestRows || []).map((r) => [
+        String(r._id),
+        Number(r.orderCount || 0),
+      ]),
+    );
+    const commissionRevenueByUserId = new Map(
+      (commissionRequestRows || []).map((r) => [
+        String(r._id),
+        Number(r.revenueAmount || 0),
+      ]),
+    );
+
     const requestorIdsBySalesmanLeaderId = new Map();
     for (const u of directRequestors || []) {
       const leaderId = String(u?.referredByUserId || "");
@@ -463,15 +495,19 @@ export async function getReferralGroups(req, res) {
       let directRevenue = 0;
       let level1Revenue = 0;
       for (const rid of requestorIds) {
-        directRevenue += Number(revenueByUserId.get(String(rid)) || 0);
+        directRevenue += Number(
+          commissionRevenueByUserId.get(String(rid)) || 0,
+        );
         salesmanTotalReferralOrders += Number(
-          ordersByUserId.get(String(rid)) || 0,
+          commissionOrdersByUserId.get(String(rid)) || 0,
         );
       }
       for (const rid of level1RequestorIds) {
-        level1Revenue += Number(revenueByUserId.get(String(rid)) || 0);
+        level1Revenue += Number(
+          commissionRevenueByUserId.get(String(rid)) || 0,
+        );
         salesmanTotalReferralOrders += Number(
-          ordersByUserId.get(String(rid)) || 0,
+          commissionOrdersByUserId.get(String(rid)) || 0,
         );
       }
       const directCommission = directRevenue * commissionRate;

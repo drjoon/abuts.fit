@@ -73,6 +73,9 @@ export async function adminListChargeOrders(req, res) {
     expiresAt: { $lte: now },
   });
 
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const skip = Math.max(Number(req.query.skip) || 0, 0);
+
   const status = String(req.query.status || "")
     .trim()
     .toUpperCase();
@@ -84,13 +87,17 @@ export async function adminListChargeOrders(req, res) {
     match.status = status;
   }
 
-  const items = await ChargeOrder.find(match)
-    .populate("adminApprovalBy", "name email")
-    .sort({ createdAt: -1, _id: -1 })
-    .limit(500)
-    .lean();
+  const [items, total] = await Promise.all([
+    ChargeOrder.find(match)
+      .populate("adminApprovalBy", "name email")
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    ChargeOrder.countDocuments(match),
+  ]);
 
-  return res.json({ success: true, data: items });
+  return res.json({ success: true, data: { items, total, skip, limit } });
 }
 
 export async function adminApproveChargeOrder(req, res) {
@@ -285,6 +292,9 @@ export async function adminRejectChargeOrder(req, res) {
 }
 
 export async function adminListBankTransactions(req, res) {
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const skip = Math.max(Number(req.query.skip) || 0, 0);
+
   const status = String(req.query.status || "")
     .trim()
     .toUpperCase();
@@ -293,12 +303,16 @@ export async function adminListBankTransactions(req, res) {
     match.status = status;
   }
 
-  const items = await BankTransaction.find(match)
-    .sort({ occurredAt: -1, createdAt: -1, _id: -1 })
-    .limit(500)
-    .lean();
+  const [items, total] = await Promise.all([
+    BankTransaction.find(match)
+      .sort({ occurredAt: -1, createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    BankTransaction.countDocuments(match),
+  ]);
 
-  return res.json({ success: true, data: items });
+  return res.json({ success: true, data: { items, total, skip, limit } });
 }
 
 export async function adminUpsertBankTransaction(req, res) {

@@ -324,13 +324,17 @@ async function seedBulkUsersAndData() {
     // - 30%: 의뢰자 소개
     let parentId = null;
     const roll = Math.random();
-    if (roll < 0.2) {
+    if (roll < 0.1) {
       parentId = null;
-    } else if (roll < 0.7) {
+    } else if (roll < 0.6) {
       parentId = salesmen.length ? pick(salesmen).id : null;
     } else {
       parentId = requestors.length ? pick(requestors).id : null;
     }
+
+    const approvedDaysAgo = randInt(0, 180);
+    const approvedAt = new Date(NOW);
+    approvedAt.setDate(approvedAt.getDate() - approvedDaysAgo);
 
     const owner = await User.create({
       name: `의뢰자 ${i}`,
@@ -342,7 +346,7 @@ async function seedBulkUsersAndData() {
       referralCode,
       referredByUserId: parentId,
       referralGroupLeaderId: parentId,
-      approvedAt: NOW,
+      approvedAt,
       active: true,
     });
 
@@ -382,8 +386,11 @@ async function seedBulkUsersAndData() {
       const createdAt = new Date(NOW);
       createdAt.setDate(createdAt.getDate() - daysAgo);
 
-      // 한 건당 1만원 전후로 수렴(대시보드 평균 정합)
-      const price = randInt(9500, 10500);
+      const fixedUntil = new Date(approvedAt);
+      fixedUntil.setDate(fixedUntil.getDate() + 90);
+
+      // 가입 이벤트(90일) 구간은 10,000원 고정
+      const price = createdAt < fixedUntil ? 10000 : randInt(10000, 11000);
       const isCompleted = Math.random() < 0.8;
       const status = isCompleted
         ? "완료"
