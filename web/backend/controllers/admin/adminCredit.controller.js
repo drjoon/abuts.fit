@@ -466,7 +466,7 @@ export async function adminGetSalesmanCredits(req, res) {
       ledger30dBySalesmanId.set(sid, prev);
     }
 
-    const referred = await User.find({
+    const directRequestors = await User.find({
       role: "requestor",
       referredByUserId: { $in: salesmanIds },
       active: true,
@@ -475,14 +475,55 @@ export async function adminGetSalesmanCredits(req, res) {
       .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
       .lean();
 
+    const childSalesmen = await User.find({
+      role: "salesman",
+      referredByUserId: { $in: salesmanIds },
+      active: true,
+    })
+      .select({ _id: 1, referredByUserId: 1 })
+      .lean();
+
+    const childSalesmanIds = (childSalesmen || [])
+      .map((s) => String(s?._id || ""))
+      .filter(Boolean)
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const level1Requestors =
+      childSalesmanIds.length === 0
+        ? []
+        : await User.find({
+            role: "requestor",
+            referredByUserId: { $in: childSalesmanIds },
+            active: true,
+            organizationId: { $ne: null },
+          })
+            .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+            .lean();
+
+    const leaderIdByChildSalesmanId = new Map(
+      (childSalesmen || [])
+        .map((s) => [String(s?._id || ""), String(s?.referredByUserId || "")])
+        .filter(([cid, pid]) => cid && pid),
+    );
+
     const orgIdsBySalesmanId = new Map();
-    for (const u of referred || []) {
+    for (const u of directRequestors || []) {
       const sid = String(u?.referredByUserId || "");
       const orgId = u?.organizationId ? String(u.organizationId) : "";
       if (!sid || !orgId) continue;
       const set = orgIdsBySalesmanId.get(sid) || new Set();
       set.add(orgId);
       orgIdsBySalesmanId.set(sid, set);
+    }
+    for (const u of level1Requestors || []) {
+      const childSid = String(u?.referredByUserId || "");
+      const leaderSid = String(leaderIdByChildSalesmanId.get(childSid) || "");
+      const orgId = u?.organizationId ? String(u.organizationId) : "";
+      if (!leaderSid || !orgId) continue;
+      const set = orgIdsBySalesmanId.get(leaderSid) || new Set();
+      set.add(orgId);
+      orgIdsBySalesmanId.set(leaderSid, set);
     }
 
     const allOrgIds = Array.from(

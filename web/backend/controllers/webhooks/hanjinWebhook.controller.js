@@ -1,6 +1,8 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import User from "../../models/user.model.js";
+import SalesmanLedger from "../../models/salesmanLedger.model.js";
 
 const toBool = (v) =>
   String(v || "")
@@ -37,7 +39,11 @@ export async function handleHanjinTrackingWebhook(req, res) {
     const secret = String(process.env.HANJIN_WEBHOOK_SECRET || "").trim();
     const provided = String(req.headers["x-webhook-secret"] || "").trim();
 
-    if (process.env.NODE_ENV === "production" && secret && provided !== secret) {
+    if (
+      process.env.NODE_ENV === "production" &&
+      secret &&
+      provided !== secret
+    ) {
       return res
         .status(401)
         .json({ success: false, message: "Unauthorized webhook" });
@@ -48,7 +54,9 @@ export async function handleHanjinTrackingWebhook(req, res) {
       payload.trackingNumber || payload.waybillNo || payload.wblNum || "",
     ).trim();
 
-    const requestIdRaw = String(payload.requestId || payload.request || "").trim();
+    const requestIdRaw = String(
+      payload.requestId || payload.request || "",
+    ).trim();
     const requestObjectId =
       requestIdRaw && Types.ObjectId.isValid(requestIdRaw)
         ? new Types.ObjectId(requestIdRaw)
@@ -61,7 +69,9 @@ export async function handleHanjinTrackingWebhook(req, res) {
       });
     }
 
-    const carrier = String(payload.carrier || payload.courier || "hanjin").trim();
+    const carrier = String(
+      payload.carrier || payload.courier || "hanjin",
+    ).trim();
 
     const events = normalizeEvents(payload.events);
     const last = events.length ? events[events.length - 1] : null;
@@ -81,7 +91,9 @@ export async function handleHanjinTrackingWebhook(req, res) {
           if (!r) return null;
           const di = r.deliveryInfoRef;
           if (!di || typeof di === "string") return null;
-          return String(di.trackingNumber || "").trim() === trackingNumber ? r : null;
+          return String(di.trackingNumber || "").trim() === trackingNumber
+            ? r
+            : null;
         });
 
       if (!request) {
@@ -93,7 +105,9 @@ export async function handleHanjinTrackingWebhook(req, res) {
     }
 
     if (!request) {
-      return res.status(404).json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
     let deliveryInfo = null;
@@ -112,13 +126,16 @@ export async function handleHanjinTrackingWebhook(req, res) {
 
     if (trackingNumber) deliveryInfo.trackingNumber = trackingNumber;
     if (carrier) deliveryInfo.carrier = carrier;
-    if (shippedAt && !deliveryInfo.shippedAt) deliveryInfo.shippedAt = shippedAt;
+    if (shippedAt && !deliveryInfo.shippedAt)
+      deliveryInfo.shippedAt = shippedAt;
     if (deliveredAt) deliveryInfo.deliveredAt = deliveredAt;
 
     if (last) {
       deliveryInfo.tracking = deliveryInfo.tracking || {};
-      if (last.statusCode) deliveryInfo.tracking.lastStatusCode = last.statusCode;
-      if (last.statusText) deliveryInfo.tracking.lastStatusText = last.statusText;
+      if (last.statusCode)
+        deliveryInfo.tracking.lastStatusCode = last.statusCode;
+      if (last.statusText)
+        deliveryInfo.tracking.lastStatusText = last.statusText;
       if (last.occurredAt) deliveryInfo.tracking.lastEventAt = last.occurredAt;
       deliveryInfo.tracking.lastSyncedAt = new Date();
     } else {
@@ -163,6 +180,108 @@ export async function handleHanjinTrackingWebhook(req, res) {
       if (!request.timeline.actualCompletion) {
         request.timeline.actualCompletion = deliveryInfo.deliveredAt;
       }
+
+      try {
+        const requestorIdRaw = request?.requestor
+          ? String(request.requestor)
+          : "";
+        const paidAmountRaw = Number(request?.price?.paidAmount || 0);
+        const paidAmount = Number.isFinite(paidAmountRaw)
+          ? Math.round(paidAmountRaw)
+          : 0;
+
+        if (
+          requestorIdRaw &&
+          Types.ObjectId.isValid(requestorIdRaw) &&
+          paidAmount > 0
+        ) {
+          const requestor = await User.findById(
+            new Types.ObjectId(requestorIdRaw),
+          )
+            .select({ _id: 1, role: 1, referredByUserId: 1 })
+            .lean();
+
+          const directSalesmanIdRaw = requestor?.referredByUserId
+            ? String(requestor.referredByUserId)
+            : "";
+
+          if (
+            directSalesmanIdRaw &&
+            Types.ObjectId.isValid(directSalesmanIdRaw)
+          ) {
+            const directSalesman = await User.findById(
+              new Types.ObjectId(directSalesmanIdRaw),
+            )
+              .select({ _id: 1, role: 1, referredByUserId: 1 })
+              .lean();
+
+            if (
+              directSalesman &&
+              String(directSalesman.role || "") === "salesman"
+            ) {
+              const directEarn = Math.round(paidAmount * 0.05);
+              if (directEarn > 0) {
+                const uniqueKey = `request:${String(request._id)}:salesmanEarn:direct:${String(directSalesman._id)}`;
+                await SalesmanLedger.updateOne(
+                  { uniqueKey },
+                  {
+                    $setOnInsert: {
+                      salesmanId: directSalesman._id,
+                      type: "EARN",
+                      amount: directEarn,
+                      refType: "REQUEST_DIRECT",
+                      refId: request._id,
+                      uniqueKey,
+                    },
+                  },
+                  { upsert: true },
+                );
+              }
+
+              const parentSalesmanIdRaw = directSalesman?.referredByUserId
+                ? String(directSalesman.referredByUserId)
+                : "";
+              if (
+                parentSalesmanIdRaw &&
+                Types.ObjectId.isValid(parentSalesmanIdRaw)
+              ) {
+                const parentSalesman = await User.findById(
+                  new Types.ObjectId(parentSalesmanIdRaw),
+                )
+                  .select({ _id: 1, role: 1 })
+                  .lean();
+                if (
+                  parentSalesman &&
+                  String(parentSalesman.role || "") === "salesman"
+                ) {
+                  const level1Earn = Math.round(paidAmount * 0.025);
+                  if (level1Earn > 0) {
+                    const uniqueKey = `request:${String(request._id)}:salesmanEarn:level1:${String(parentSalesman._id)}`;
+                    await SalesmanLedger.updateOne(
+                      { uniqueKey },
+                      {
+                        $setOnInsert: {
+                          salesmanId: parentSalesman._id,
+                          type: "EARN",
+                          amount: level1Earn,
+                          refType: "REQUEST_LEVEL1",
+                          refId: request._id,
+                          uniqueKey,
+                        },
+                      },
+                      { upsert: true },
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        if (debug) {
+          console.error("[hanjinWebhook] salesman earn update failed", e);
+        }
+      }
     }
 
     if (String(request.manufacturerStage || "").trim() !== "추적관리") {
@@ -177,7 +296,9 @@ export async function handleHanjinTrackingWebhook(req, res) {
         requestId: String(request._id),
         trackingNumber: deliveryInfo.trackingNumber,
         deliveredAt: deliveryInfo.deliveredAt || null,
-        events: Array.isArray(deliveryInfo.events) ? deliveryInfo.events.length : 0,
+        events: Array.isArray(deliveryInfo.events)
+          ? deliveryInfo.events.length
+          : 0,
       });
     }
 
