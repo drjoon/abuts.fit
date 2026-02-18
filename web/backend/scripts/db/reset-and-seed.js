@@ -10,6 +10,7 @@ import CreditLedger from "../../models/creditLedger.model.js";
 import ImplantPreset from "../../models/implantPreset.model.js";
 import ClinicImplantPreset from "../../models/clinicImplantPreset.model.js";
 import Request from "../../models/request.model.js";
+import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import crypto from "crypto";
 
 const NOW = new Date();
@@ -109,6 +110,8 @@ async function seedDev() {
     approvedAt: NOW,
     active: true,
     organizationId: org._id,
+    referredByUserId: requestorOwner._id,
+    referralGroupLeaderId: requestorOwner._id,
   });
 
   await RequestorOrganization.updateOne(
@@ -263,12 +266,31 @@ async function seedBulkUsersAndData() {
   const requestors = [];
   const salesmen = [];
 
+  const salesmanRoots = [];
+
   // 영업자 20명 s001~s020 (리퍼럴 코드 4자리)
+  // - 루트(미소개) 여러 명 생성해서 영업자 그룹이 여러 개 나오도록 구성
+  // - 일부는 다른 영업자가 소개
+  const ROOT_COUNT = 5;
   for (let i = 1; i <= 20; i += 1) {
     const email = `s${String(i).padStart(3, "0")}@gmail.com`;
     const referralCode = randomReferralCode(4);
-    const parentId = salesmen.length ? pick(salesmen).id : null;
-    const leaderId = parentId;
+
+    let referredByUserId = null;
+    let referralGroupLeaderId = null;
+
+    const isRoot = i <= ROOT_COUNT;
+    const isUnreferred = !isRoot && Math.random() < 0.1;
+    if (!isRoot && !isUnreferred) {
+      const root = salesmanRoots.length ? pick(salesmanRoots) : null;
+      const candidates = salesmen.filter(
+        (s) => String(s.leaderId) === String(root?.id),
+      );
+      const parent = candidates.length ? pick(candidates) : pick(salesmen);
+      referredByUserId = parent?.id || null;
+      referralGroupLeaderId =
+        root?.id || parent?.leaderId || parent?.id || null;
+    }
 
     const salesman = await User.create({
       name: `데모 영업자${i}`,
@@ -276,13 +298,16 @@ async function seedBulkUsersAndData() {
       password: SALESMAN_PW,
       role: "salesman",
       referralCode,
-      referredByUserId: parentId,
-      referralGroupLeaderId: leaderId,
+      referredByUserId,
+      referralGroupLeaderId,
       approvedAt: NOW,
       active: true,
     });
 
-    salesmen.push({ id: salesman._id, email });
+    const leaderId = referralGroupLeaderId || salesman._id;
+    const row = { id: salesman._id, email, leaderId };
+    salesmen.push(row);
+    if (isRoot) salesmanRoots.push({ id: salesman._id, email });
   }
 
   // 의뢰자 100명 r001~r100, 조직 100개(owner만)
@@ -291,8 +316,20 @@ async function seedBulkUsersAndData() {
     const email = `r${String(i).padStart(3, "0")}@gmail.com`;
     const orgName = `org-${String(i).padStart(3, "0")}`;
     const referralCode = randomReferralCode();
-    const parent = pick([...salesmen, ...requestors].filter(Boolean)) || null;
-    const parentId = parent ? parent.id : null;
+
+    // 소개 관계 다양화
+    // - 20%: 미소개
+    // - 50%: 영업자 소개
+    // - 30%: 의뢰자 소개
+    let parentId = null;
+    const roll = Math.random();
+    if (roll < 0.2) {
+      parentId = null;
+    } else if (roll < 0.7) {
+      parentId = salesmen.length ? pick(salesmen).id : null;
+    } else {
+      parentId = requestors.length ? pick(requestors).id : null;
+    }
 
     const owner = await User.create({
       name: `의뢰자 ${i}`,
@@ -335,6 +372,8 @@ async function seedBulkUsersAndData() {
       uniqueKey: `seed:deposit:${email}:${amount}`,
     });
 
+    let remainingCredit = amount;
+
     // 지난 6개월 의뢰: 랜덤 건수/금액
     const requestCount = randInt(1, 8);
     for (let k = 0; k < requestCount; k += 1) {
@@ -343,7 +382,7 @@ async function seedBulkUsersAndData() {
       createdAt.setMonth(createdAt.getMonth() - monthsAgo);
       const price = pick([120000, 150000, 180000, 200000, 250000]);
 
-      await Request.create({
+      const reqDoc = await Request.create({
         requestorOrganizationId: org._id,
         requestor: owner._id,
         manufacturer: null,
@@ -355,7 +394,7 @@ async function seedBulkUsersAndData() {
           implantSystem: "Regular",
           implantType: "Hex",
         },
-        status: "발송",
+        status: "완료",
         price: {
           amount: price,
           baseAmount: price,
@@ -366,6 +405,62 @@ async function seedBulkUsersAndData() {
         createdAt,
         updatedAt: createdAt,
       });
+
+      if (remainingCredit >= price) {
+        remainingCredit -= price;
+        await CreditLedger.create({
+          organizationId: org._id,
+          userId: owner._id,
+          type: "SPEND",
+          amount: price,
+          refType: "SEED_REQUEST",
+          refId: reqDoc._id,
+          uniqueKey: `seed:spend:${email}:${String(reqDoc._id)}`,
+        });
+      }
+
+      if (parentId) {
+        const parentUser = salesmen.find(
+          (s) => String(s.id) === String(parentId),
+        );
+        if (parentUser) {
+          const earnAmount = Math.round(price * 0.05);
+          if (earnAmount > 0) {
+            await SalesmanLedger.create({
+              salesmanId: parentId,
+              type: "EARN",
+              amount: earnAmount,
+              refType: "SEED_REQUEST",
+              refId: reqDoc._id,
+              uniqueKey: `seed:salesman:earn:${String(parentId)}:${String(reqDoc._id)}`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // 일부 영업자 랜덤 정산(PAYOUT)
+  for (const s of salesmen) {
+    if (Math.random() < 0.35) {
+      const earned = await SalesmanLedger.aggregate([
+        { $match: { salesmanId: s.id, type: "EARN" } },
+        { $group: { _id: "$salesmanId", total: { $sum: "$amount" } } },
+      ]);
+      const totalEarned = Number(earned?.[0]?.total || 0);
+      if (totalEarned > 0) {
+        const payout = Math.round(totalEarned * (0.3 + Math.random() * 0.4));
+        if (payout > 0) {
+          await SalesmanLedger.create({
+            salesmanId: s.id,
+            type: "PAYOUT",
+            amount: payout,
+            refType: "SEED_PAYOUT",
+            refId: null,
+            uniqueKey: `seed:salesman:payout:${String(s.id)}`,
+          });
+        }
+      }
     }
   }
 

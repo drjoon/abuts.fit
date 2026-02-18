@@ -55,6 +55,7 @@ import {
   adminGetCreditStats,
   adminGetOrganizationCredits,
   adminGetOrganizationCreditDetail,
+  adminGetSalesmanCredits,
 } from "../../controllers/admin/adminCredit.controller.js";
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
@@ -84,6 +85,7 @@ router.get("/dashboard", adminController.getDashboardStats);
 router.get("/credits/stats", adminGetCreditStats);
 router.get("/credits/organizations", adminGetOrganizationCredits);
 router.get("/credits/organizations/:id", adminGetOrganizationCreditDetail);
+router.get("/credits/salesmen", adminGetSalesmanCredits);
 router.get("/credits/b-plan/charge-orders", adminListChargeOrders);
 router.get("/credits/b-plan/bank-transactions", adminListBankTransactions);
 router.post(

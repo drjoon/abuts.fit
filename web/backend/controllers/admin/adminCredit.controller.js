@@ -3,6 +3,13 @@ import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import User from "../../models/user.model.js";
+import SalesmanLedger from "../../models/salesmanLedger.model.js";
+import Request from "../../models/request.model.js";
+import { Types } from "mongoose";
+
+function getLast30Cutoff() {
+  return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+}
 
 export async function adminGetCreditStats(req, res) {
   try {
@@ -67,6 +74,172 @@ export async function adminGetCreditStats(req, res) {
     return res.status(500).json({
       success: false,
       message: "크레딧 통계 조회에 실패했습니다.",
+    });
+  }
+}
+
+export async function adminGetSalesmanCredits(req, res) {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const skip = Math.max(Number(req.query.skip) || 0, 0);
+    const last30Cutoff = getLast30Cutoff();
+    const commissionRate = 0.05;
+
+    const salesmen = await User.find({ role: "salesman" })
+      .select({ _id: 1, name: 1, email: 1, referralCode: 1, active: 1 })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const salesmanIds = salesmen
+      .map((u) => String(u?._id || ""))
+      .filter(Boolean)
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    if (salesmanIds.length === 0) {
+      return res.json({
+        success: true,
+        data: { items: [], total: 0, skip, limit },
+      });
+    }
+
+    const ledgerRows = await SalesmanLedger.aggregate([
+      { $match: { salesmanId: { $in: salesmanIds } } },
+      {
+        $group: {
+          _id: { salesmanId: "$salesmanId", type: "$type" },
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+    const ledgerBySalesmanId = new Map();
+    for (const r of ledgerRows) {
+      const sid = String(r?._id?.salesmanId || "");
+      const type = String(r?._id?.type || "");
+      const total = Number(r?.total || 0);
+      if (!sid) continue;
+      const prev = ledgerBySalesmanId.get(sid) || {
+        earn: 0,
+        payout: 0,
+        adjust: 0,
+      };
+      if (type === "EARN") prev.earn += total;
+      else if (type === "PAYOUT") prev.payout += total;
+      else if (type === "ADJUST") prev.adjust += total;
+      ledgerBySalesmanId.set(sid, prev);
+    }
+
+    const referred = await User.find({
+      role: "requestor",
+      referredByUserId: { $in: salesmanIds },
+      active: true,
+      organizationId: { $ne: null },
+    })
+      .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+      .lean();
+
+    const orgIdsBySalesmanId = new Map();
+    for (const u of referred || []) {
+      const sid = String(u?.referredByUserId || "");
+      const orgId = u?.organizationId ? String(u.organizationId) : "";
+      if (!sid || !orgId) continue;
+      const set = orgIdsBySalesmanId.get(sid) || new Set();
+      set.add(orgId);
+      orgIdsBySalesmanId.set(sid, set);
+    }
+
+    const allOrgIds = Array.from(
+      new Set(
+        Array.from(orgIdsBySalesmanId.values()).flatMap((s) => Array.from(s)),
+      ),
+    )
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const revenueRows =
+      allOrgIds.length === 0
+        ? []
+        : await Request.aggregate([
+            {
+              $match: {
+                requestorOrganizationId: { $in: allOrgIds },
+                status: "완료",
+                createdAt: { $gte: last30Cutoff },
+              },
+            },
+            {
+              $group: {
+                _id: "$requestorOrganizationId",
+                revenueAmount: { $sum: "$price.amount" },
+                orderCount: { $sum: 1 },
+              },
+            },
+          ]);
+
+    const revenueByOrgId = new Map(
+      (revenueRows || []).map((r) => [
+        String(r._id),
+        {
+          revenueAmount: Number(r.revenueAmount || 0),
+          orderCount: Number(r.orderCount || 0),
+        },
+      ]),
+    );
+
+    const items = salesmen.map((s) => {
+      const sid = String(s._id);
+      const ledger = ledgerBySalesmanId.get(sid) || {
+        earn: 0,
+        payout: 0,
+        adjust: 0,
+      };
+      const balance = Math.round(
+        Number(ledger.earn || 0) -
+          Number(ledger.payout || 0) +
+          Number(ledger.adjust || 0),
+      );
+
+      const orgSet = orgIdsBySalesmanId.get(sid) || new Set();
+      let revenue30d = 0;
+      let orders30d = 0;
+      for (const orgId of orgSet) {
+        const row = revenueByOrgId.get(String(orgId));
+        if (!row) continue;
+        revenue30d += Number(row.revenueAmount || 0);
+        orders30d += Number(row.orderCount || 0);
+      }
+      const commission30d = Math.round(revenue30d * commissionRate);
+
+      return {
+        salesmanId: sid,
+        name: String(s?.name || ""),
+        email: String(s?.email || ""),
+        referralCode: String(s?.referralCode || ""),
+        active: Boolean(s?.active),
+        wallet: {
+          earnedAmount: Math.round(Number(ledger.earn || 0)),
+          paidOutAmount: Math.round(Number(ledger.payout || 0)),
+          adjustedAmount: Math.round(Number(ledger.adjust || 0)),
+          balanceAmount: balance,
+        },
+        performance30d: {
+          referredOrgCount: orgSet.size,
+          revenueAmount: Math.round(revenue30d),
+          orderCount: Math.round(orders30d),
+          commissionAmount: Math.round(commission30d),
+        },
+      };
+    });
+
+    const total = await User.countDocuments({ role: "salesman" });
+    return res.json({ success: true, data: { items, total, skip, limit } });
+  } catch (error) {
+    console.error("adminGetSalesmanCredits error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "영업자 크레딧 조회에 실패했습니다.",
     });
   }
 }

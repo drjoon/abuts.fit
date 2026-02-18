@@ -45,6 +45,26 @@ type CreditStats = {
   totalBonus: number;
 };
 
+type SalesmanCreditRow = {
+  salesmanId: string;
+  name: string;
+  email: string;
+  referralCode?: string;
+  active: boolean;
+  wallet: {
+    earnedAmount: number;
+    paidOutAmount: number;
+    adjustedAmount: number;
+    balanceAmount: number;
+  };
+  performance30d: {
+    referredOrgCount: number;
+    revenueAmount: number;
+    orderCount: number;
+    commissionAmount: number;
+  };
+};
+
 type OrganizationCredit = {
   _id: string;
   name: string;
@@ -95,6 +115,13 @@ export default function AdminCreditPage() {
   const [organizations, setOrganizations] = useState<OrganizationCredit[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
 
+  const [salesmen, setSalesmen] = useState<SalesmanCreditRow[]>([]);
+  const [loadingSalesmen, setLoadingSalesmen] = useState(false);
+
+  const [creditTab, setCreditTab] = useState<"requestor" | "salesman">(
+    "requestor",
+  );
+
   const [chargeOrders, setChargeOrders] = useState<ChargeOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>("");
@@ -137,6 +164,34 @@ export default function AdminCreditPage() {
       });
     } finally {
       setLoadingStats(false);
+    }
+  };
+
+  const loadSalesmen = async () => {
+    if (!token) return;
+    setLoadingSalesmen(true);
+    try {
+      const res = await request<{
+        success: boolean;
+        data: { items: SalesmanCreditRow[] };
+      }>({
+        path: "/api/admin/credits/salesmen?limit=200",
+        method: "GET",
+        token,
+      });
+      if (res.ok && res.data?.data?.items) {
+        setSalesmen(
+          Array.isArray(res.data.data.items) ? res.data.data.items : [],
+        );
+      }
+    } catch (error) {
+      toast({
+        title: "영업자 크레딧 조회 실패",
+        description: "영업자 크레딧을 불러오는데 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingSalesmen(false);
     }
   };
 
@@ -262,6 +317,7 @@ export default function AdminCreditPage() {
     loadOrganizations();
     loadChargeOrders();
     loadBankTransactions();
+    loadSalesmen();
   }, [token]);
 
   const formatDate = (dateStr?: string) => {
@@ -337,300 +393,158 @@ export default function AdminCreditPage() {
         </Card>
       </div>
 
-      <Tabs defaultValue="organizations" className="space-y-4">
+      <Tabs value={creditTab} onValueChange={(v) => setCreditTab(v as any)}>
         <TabsList>
-          <TabsTrigger value="organizations">조직별 크레딧</TabsTrigger>
-          <TabsTrigger value="verification">자동 매칭 검증</TabsTrigger>
-          <TabsTrigger value="orders">충전 주문</TabsTrigger>
-          <TabsTrigger value="transactions">입금 내역</TabsTrigger>
+          <TabsTrigger value="requestor">크레딧:의뢰자</TabsTrigger>
+          <TabsTrigger value="salesman">크레딧:영업자</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="organizations" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>조직별 크레딧 현황</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingOrgs ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  불러오는 중...
-                </div>
-              ) : organizations.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  조직이 없습니다.
-                </div>
-              ) : (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {organizations.map((org) => {
-                    const spent = Number(org.spentAmount || 0);
-                    return (
-                      <Card key={org._id} className="border-muted">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-base">
-                            {org.name}
-                          </CardTitle>
-                          <CardDescription className="space-y-1">
-                            <div>{org.companyName || "-"}</div>
-                            <div className="font-mono">
-                              {org.businessNumber || "-"}
-                            </div>
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                          <div>
-                            <div className="text-muted-foreground">총잔액</div>
-                            <div className="font-semibold">
-                              {org.balance.toLocaleString()}원
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">사용액</div>
-                            <div className="font-semibold">
-                              {spent.toLocaleString()}원
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              구매 크레딧
-                            </div>
-                            <div className="font-medium">
-                              {org.paidBalance.toLocaleString()}원
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted-foreground">
-                              무료 크레딧
-                            </div>
-                            <div className="font-medium">
-                              {org.bonusBalance.toLocaleString()}원
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        <TabsContent value="requestor" className="space-y-4">
+          <Tabs defaultValue="organizations" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="organizations">조직별 크레딧</TabsTrigger>
+              <TabsTrigger value="verification">자동 매칭 검증</TabsTrigger>
+              <TabsTrigger value="orders">충전 주문</TabsTrigger>
+              <TabsTrigger value="transactions">입금 내역</TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="verification" className="space-y-4">
-          <AutoMatchVerificationTab />
-        </TabsContent>
-
-        <TabsContent value="orders" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="text-sm text-muted-foreground">
-                  승인 상태: 대기(PENDING), 승인(APPROVED), 거절(REJECTED)
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    variant={orderStatusFilter === "" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => {
-                      setOrderStatusFilter("");
-                      loadChargeOrders();
-                    }}
-                  >
-                    전체
-                  </Button>
-                  <Button
-                    variant={
-                      orderStatusFilter === "PENDING" ? "default" : "outline"
-                    }
-                    size="sm"
-                    onClick={() => {
-                      setOrderStatusFilter("PENDING");
-                      loadChargeOrders("PENDING");
-                    }}
-                  >
-                    대기중
-                  </Button>
-                  <Button
-                    variant={
-                      orderStatusFilter === "MATCHED" ? "default" : "outline"
-                    }
-                    size="sm"
-                    onClick={() => {
-                      setOrderStatusFilter("MATCHED");
-                      loadChargeOrders("MATCHED");
-                    }}
-                  >
-                    매칭완료
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loadingOrders ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  불러오는 중...
-                </div>
-              ) : chargeOrders.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  충전 주문이 없습니다.
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>상태</TableHead>
-                      <TableHead>입금코드</TableHead>
-                      <TableHead className="text-right">공급가</TableHead>
-                      <TableHead className="text-right">총액</TableHead>
-                      <TableHead>승인 상태</TableHead>
-                      <TableHead>승인자/시각</TableHead>
-                      <TableHead>생성일</TableHead>
-                      <TableHead>만료일</TableHead>
-                      <TableHead>매칭일</TableHead>
-                      <TableHead className="text-right">액션</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {chargeOrders.map((order) => (
-                      <TableRow key={order._id}>
-                        <TableCell>{getStatusBadge(order.status)}</TableCell>
-                        <TableCell className="font-mono">
-                          {order.depositCode}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {order.supplyAmount.toLocaleString()}원
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {order.amountTotal.toLocaleString()}원
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              order.adminApprovalStatus === "APPROVED"
-                                ? "default"
-                                : order.adminApprovalStatus === "REJECTED"
-                                  ? "destructive"
-                                  : "outline"
-                            }
-                          >
-                            {order.adminApprovalStatus || "PENDING"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {order.adminApprovalBy?.name
-                            ? `${order.adminApprovalBy.name} (${
-                                order.adminApprovalBy.email || "-"
-                              })`
-                            : "-"}
-                          <div className="text-xs text-muted-foreground">
-                            {formatDate(order.adminApprovalAt)}
-                          </div>
-                        </TableCell>
-                        <TableCell>{formatDate(order.createdAt)}</TableCell>
-                        <TableCell>{formatDate(order.expiresAt)}</TableCell>
-                        <TableCell>{formatDate(order.matchedAt)}</TableCell>
-                        <TableCell className="text-right space-x-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={
-                              order.adminApprovalStatus !== "PENDING" ||
-                              order.status === "CANCELED"
-                            }
-                            onClick={() => {
-                              setSelectedOrder(order);
-                              setApproveModalOpen(true);
-                            }}
-                          >
-                            승인
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            disabled={
-                              order.adminApprovalStatus !== "PENDING" ||
-                              order.status === "CANCELED"
-                            }
-                            onClick={() => {
-                              setSelectedOrder(order);
-                              setRejectNote("");
-                              setRejectModalOpen(true);
-                            }}
-                          >
-                            거절
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="transactions" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
-                  <CardTitle>입금 내역</CardTitle>
-                  <CardDescription>
-                    팝빌 웹훅으로 수신된 입금 내역을 기반으로 자동 매칭을
-                    처리합니다.
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Tabs value={txTab} onValueChange={(v) => setTxTab(v as any)}>
-                <TabsList>
-                  <TabsTrigger value="auto">자동 매칭</TabsTrigger>
-                  <TabsTrigger value="manual">수동 연결(예외)</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="auto" className="pt-4">
-                  <div className="flex gap-2 flex-wrap justify-end pb-3">
-                    <Button
-                      variant={txStatusFilter === "" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setTxStatusFilter("");
-                        loadBankTransactions();
-                      }}
-                    >
-                      전체
-                    </Button>
-                    <Button
-                      variant={txStatusFilter === "NEW" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setTxStatusFilter("NEW");
-                        loadBankTransactions("NEW");
-                      }}
-                    >
-                      미매칭
-                    </Button>
-                    <Button
-                      variant={
-                        txStatusFilter === "MATCHED" ? "default" : "outline"
-                      }
-                      size="sm"
-                      onClick={() => {
-                        setTxStatusFilter("MATCHED");
-                        loadBankTransactions("MATCHED");
-                      }}
-                    >
-                      매칭완료
-                    </Button>
-                  </div>
-
-                  {loadingTransactions ? (
+            <TabsContent value="organizations" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>조직별 크레딧 현황</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingOrgs ? (
                     <div className="text-center py-8 text-muted-foreground">
                       불러오는 중...
                     </div>
-                  ) : bankTransactions.length === 0 ? (
+                  ) : organizations.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
-                      입금 내역이 없습니다.
+                      조직이 없습니다.
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {organizations.map((org) => {
+                        const spent = Number(org.spentAmount || 0);
+                        return (
+                          <Card key={org._id} className="border-muted">
+                            <CardHeader className="pb-3">
+                              <CardTitle className="text-base">
+                                {org.name}
+                              </CardTitle>
+                              <CardDescription className="space-y-1">
+                                <div>{org.companyName || "-"}</div>
+                                <div className="font-mono">
+                                  {org.businessNumber || "-"}
+                                </div>
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <div className="text-muted-foreground">
+                                  총잔액
+                                </div>
+                                <div className="font-semibold">
+                                  {org.balance.toLocaleString()}원
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">
+                                  사용액
+                                </div>
+                                <div className="font-semibold">
+                                  {spent.toLocaleString()}원
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">
+                                  구매 크레딧
+                                </div>
+                                <div className="font-medium">
+                                  {org.paidBalance.toLocaleString()}원
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">
+                                  무료 크레딧
+                                </div>
+                                <div className="font-medium">
+                                  {org.bonusBalance.toLocaleString()}원
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="verification" className="space-y-4">
+              <AutoMatchVerificationTab />
+            </TabsContent>
+
+            <TabsContent value="orders" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      승인 상태: 대기(PENDING), 승인(APPROVED), 거절(REJECTED)
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant={
+                          orderStatusFilter === "" ? "default" : "outline"
+                        }
+                        size="sm"
+                        onClick={() => {
+                          setOrderStatusFilter("");
+                          loadChargeOrders();
+                        }}
+                      >
+                        전체
+                      </Button>
+                      <Button
+                        variant={
+                          orderStatusFilter === "PENDING"
+                            ? "default"
+                            : "outline"
+                        }
+                        size="sm"
+                        onClick={() => {
+                          setOrderStatusFilter("PENDING");
+                          loadChargeOrders("PENDING");
+                        }}
+                      >
+                        대기중
+                      </Button>
+                      <Button
+                        variant={
+                          orderStatusFilter === "MATCHED"
+                            ? "default"
+                            : "outline"
+                        }
+                        size="sm"
+                        onClick={() => {
+                          setOrderStatusFilter("MATCHED");
+                          loadChargeOrders("MATCHED");
+                        }}
+                      >
+                        매칭완료
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {loadingOrders ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      불러오는 중...
+                    </div>
+                  ) : chargeOrders.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      충전 주문이 없습니다.
                     </div>
                   ) : (
                     <Table>
@@ -638,224 +552,512 @@ export default function AdminCreditPage() {
                         <TableRow>
                           <TableHead>상태</TableHead>
                           <TableHead>입금코드</TableHead>
-                          <TableHead className="text-right">금액</TableHead>
-                          <TableHead>입금자</TableHead>
-                          <TableHead>발생일</TableHead>
+                          <TableHead className="text-right">공급가</TableHead>
+                          <TableHead className="text-right">총액</TableHead>
+                          <TableHead>승인 상태</TableHead>
+                          <TableHead>승인자/시각</TableHead>
+                          <TableHead>생성일</TableHead>
+                          <TableHead>만료일</TableHead>
                           <TableHead>매칭일</TableHead>
+                          <TableHead className="text-right">액션</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {bankTransactions.map((tx) => (
-                          <TableRow key={tx._id}>
-                            <TableCell>{getStatusBadge(tx.status)}</TableCell>
+                        {chargeOrders.map((order) => (
+                          <TableRow key={order._id}>
+                            <TableCell>
+                              {getStatusBadge(order.status)}
+                            </TableCell>
                             <TableCell className="font-mono">
-                              {tx.depositCode || "-"}
+                              {order.depositCode}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {order.supplyAmount.toLocaleString()}원
                             </TableCell>
                             <TableCell className="text-right font-semibold">
-                              {tx.tranAmt.toLocaleString()}원
+                              {order.amountTotal.toLocaleString()}원
                             </TableCell>
-                            <TableCell>{tx.printedContent}</TableCell>
-                            <TableCell>{formatDate(tx.occurredAt)}</TableCell>
-                            <TableCell>{formatDate(tx.matchedAt)}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  order.adminApprovalStatus === "APPROVED"
+                                    ? "default"
+                                    : order.adminApprovalStatus === "REJECTED"
+                                      ? "destructive"
+                                      : "outline"
+                                }
+                              >
+                                {order.adminApprovalStatus || "PENDING"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {order.adminApprovalBy?.name
+                                ? `${order.adminApprovalBy.name} (${
+                                    order.adminApprovalBy.email || "-"
+                                  })`
+                                : "-"}
+                              <div className="text-xs text-muted-foreground">
+                                {formatDate(order.adminApprovalAt)}
+                              </div>
+                            </TableCell>
+                            <TableCell>{formatDate(order.createdAt)}</TableCell>
+                            <TableCell>{formatDate(order.expiresAt)}</TableCell>
+                            <TableCell>{formatDate(order.matchedAt)}</TableCell>
+                            <TableCell className="text-right space-x-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={
+                                  order.adminApprovalStatus !== "PENDING" ||
+                                  order.status === "CANCELED"
+                                }
+                                onClick={() => {
+                                  setSelectedOrder(order);
+                                  setApproveModalOpen(true);
+                                }}
+                              >
+                                승인
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={
+                                  order.adminApprovalStatus !== "PENDING" ||
+                                  order.status === "CANCELED"
+                                }
+                                onClick={() => {
+                                  setSelectedOrder(order);
+                                  setRejectNote("");
+                                  setRejectModalOpen(true);
+                                }}
+                              >
+                                거절
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   )}
-                </TabsContent>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-                <TabsContent value="manual" className="pt-4 space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>미매칭 입금 내역</CardTitle>
-                        <CardDescription>
-                          기본은 자동 매칭입니다. 자동 매칭이 실패한 케이스만
-                          예외적으로 수동 연결하세요.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        {loadingTransactions ? (
-                          <div className="text-center py-8 text-muted-foreground">
-                            불러오는 중...
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {bankTransactions
-                              .filter((tx) => tx.status === "NEW")
-                              .map((tx) => (
-                                <div
-                                  key={tx._id}
-                                  className={`rounded-lg border p-3 cursor-pointer transition-colors ${
-                                    selectedTx?._id === tx._id
-                                      ? "border-primary bg-primary/5"
-                                      : "hover:bg-gray-50"
-                                  }`}
-                                  onClick={() => setSelectedTx(tx)}
-                                >
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <div className="font-medium">
-                                        {tx.printedContent}
-                                      </div>
-                                      <div className="text-sm text-muted-foreground">
-                                        코드: {tx.depositCode || "없음"}
-                                      </div>
-                                    </div>
-                                    <div className="text-right">
-                                      <div className="font-semibold">
-                                        {tx.tranAmt.toLocaleString()}원
-                                      </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {formatDate(tx.occurredAt)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>대기중인 충전 주문</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {loadingOrders ? (
-                          <div className="text-center py-8 text-muted-foreground">
-                            불러오는 중...
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {chargeOrders
-                              .filter((order) => order.status === "PENDING")
-                              .map((order) => (
-                                <div
-                                  key={order._id}
-                                  className={`rounded-lg border p-3 cursor-pointer transition-colors ${
-                                    selectedOrder?._id === order._id
-                                      ? "border-primary bg-primary/5"
-                                      : "hover:bg-gray-50"
-                                  }`}
-                                  onClick={() => setSelectedOrder(order)}
-                                >
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <div className="font-medium font-mono">
-                                        {order.depositCode}
-                                      </div>
-                                      <div className="text-sm text-muted-foreground">
-                                        공급가:{" "}
-                                        {order.supplyAmount.toLocaleString()}원
-                                      </div>
-                                    </div>
-                                    <div className="text-right">
-                                      <div className="font-semibold">
-                                        {order.amountTotal.toLocaleString()}원
-                                      </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {formatDate(order.createdAt)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>수동 연결 실행</CardTitle>
+            <TabsContent value="transactions" className="space-y-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                      <CardTitle>입금 내역</CardTitle>
                       <CardDescription>
-                        입금 내역과 충전 주문을 직접 연결합니다. 금액/코드가
-                        불일치하면 기본적으로 막히며, 예외 허용을 켜면 강제
-                        연결할 수 있습니다.
+                        팝빌 웹훅으로 수신된 입금 내역을 기반으로 자동 매칭을
+                        처리합니다.
                       </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {selectedTx && selectedOrder ? (
-                        <>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <Label>선택된 입금 내역</Label>
-                              <div className="rounded-lg border p-3 bg-gray-50">
-                                <div className="font-medium">
-                                  {selectedTx.printedContent}
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                  금액: {selectedTx.tranAmt.toLocaleString()}원
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                  코드: {selectedTx.depositCode || "없음"}
-                                </div>
-                              </div>
-                            </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Tabs value={txTab} onValueChange={(v) => setTxTab(v as any)}>
+                    <TabsList>
+                      <TabsTrigger value="auto">자동 매칭</TabsTrigger>
+                      <TabsTrigger value="manual">수동 연결(예외)</TabsTrigger>
+                    </TabsList>
 
-                            <div className="space-y-2">
-                              <Label>선택된 충전 주문</Label>
-                              <div className="rounded-lg border p-3 bg-gray-50">
-                                <div className="font-medium font-mono">
-                                  {selectedOrder.depositCode}
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                  금액:{" "}
-                                  {selectedOrder.amountTotal.toLocaleString()}원
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                  생성: {formatDate(selectedOrder.createdAt)}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
+                    <TabsContent value="auto" className="pt-4">
+                      <div className="flex gap-2 flex-wrap justify-end pb-3">
+                        <Button
+                          variant={
+                            txStatusFilter === "" ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => {
+                            setTxStatusFilter("");
+                            loadBankTransactions();
+                          }}
+                        >
+                          전체
+                        </Button>
+                        <Button
+                          variant={
+                            txStatusFilter === "NEW" ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => {
+                            setTxStatusFilter("NEW");
+                            loadBankTransactions("NEW");
+                          }}
+                        >
+                          미매칭
+                        </Button>
+                        <Button
+                          variant={
+                            txStatusFilter === "MATCHED" ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() => {
+                            setTxStatusFilter("MATCHED");
+                            loadBankTransactions("MATCHED");
+                          }}
+                        >
+                          매칭완료
+                        </Button>
+                      </div>
 
-                          <div className="space-y-2">
-                            <Label htmlFor="match-note">메모</Label>
-                            <Input
-                              id="match-note"
-                              value={matchNote}
-                              onChange={(e) => setMatchNote(e.target.value)}
-                              placeholder="(선택) 메모"
-                            />
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id="match-force"
-                              checked={matchForce}
-                              onChange={(e) => setMatchForce(e.target.checked)}
-                              className="rounded"
-                            />
-                            <Label
-                              htmlFor="match-force"
-                              className="cursor-pointer"
-                            >
-                              예외 허용 (금액/코드 불일치 허용)
-                            </Label>
-                          </div>
-
-                          <Button
-                            onClick={handleManualMatch}
-                            disabled={matching}
-                            className="w-full"
-                          >
-                            {matching ? "연결 중..." : "연결 실행"}
-                          </Button>
-                        </>
-                      ) : (
+                      {loadingTransactions ? (
                         <div className="text-center py-8 text-muted-foreground">
-                          입금 내역과 충전 주문을 각각 선택하세요.
+                          불러오는 중...
                         </div>
+                      ) : bankTransactions.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          입금 내역이 없습니다.
+                        </div>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>상태</TableHead>
+                              <TableHead>입금코드</TableHead>
+                              <TableHead className="text-right">금액</TableHead>
+                              <TableHead>입금자</TableHead>
+                              <TableHead>발생일</TableHead>
+                              <TableHead>매칭일</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {bankTransactions.map((tx) => (
+                              <TableRow key={tx._id}>
+                                <TableCell>
+                                  {getStatusBadge(tx.status)}
+                                </TableCell>
+                                <TableCell className="font-mono">
+                                  {tx.depositCode || "-"}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold">
+                                  {tx.tranAmt.toLocaleString()}원
+                                </TableCell>
+                                <TableCell>{tx.printedContent}</TableCell>
+                                <TableCell>
+                                  {formatDate(tx.occurredAt)}
+                                </TableCell>
+                                <TableCell>
+                                  {formatDate(tx.matchedAt)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
                       )}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
+                    </TabsContent>
+
+                    <TabsContent value="manual" className="pt-4 space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>미매칭 입금 내역</CardTitle>
+                            <CardDescription>
+                              기본은 자동 매칭입니다. 자동 매칭이 실패한
+                              케이스만 예외적으로 수동 연결하세요.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            {loadingTransactions ? (
+                              <div className="text-center py-8 text-muted-foreground">
+                                불러오는 중...
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {bankTransactions
+                                  .filter((tx) => tx.status === "NEW")
+                                  .map((tx) => (
+                                    <div
+                                      key={tx._id}
+                                      className={`rounded-lg border p-3 cursor-pointer transition-colors ${
+                                        selectedTx?._id === tx._id
+                                          ? "border-primary bg-primary/5"
+                                          : "hover:bg-gray-50"
+                                      }`}
+                                      onClick={() => setSelectedTx(tx)}
+                                    >
+                                      <div className="flex justify-between items-start">
+                                        <div>
+                                          <div className="font-medium">
+                                            {tx.printedContent}
+                                          </div>
+                                          <div className="text-sm text-muted-foreground">
+                                            코드: {tx.depositCode || "없음"}
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <div className="font-semibold">
+                                            {tx.tranAmt.toLocaleString()}원
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {formatDate(tx.occurredAt)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>대기중인 충전 주문</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            {loadingOrders ? (
+                              <div className="text-center py-8 text-muted-foreground">
+                                불러오는 중...
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {chargeOrders
+                                  .filter((order) => order.status === "PENDING")
+                                  .map((order) => (
+                                    <div
+                                      key={order._id}
+                                      className={`rounded-lg border p-3 cursor-pointer transition-colors ${
+                                        selectedOrder?._id === order._id
+                                          ? "border-primary bg-primary/5"
+                                          : "hover:bg-gray-50"
+                                      }`}
+                                      onClick={() => setSelectedOrder(order)}
+                                    >
+                                      <div className="flex justify-between items-start">
+                                        <div>
+                                          <div className="font-medium font-mono">
+                                            {order.depositCode}
+                                          </div>
+                                          <div className="text-sm text-muted-foreground">
+                                            공급가:{" "}
+                                            {order.supplyAmount.toLocaleString()}
+                                            원
+                                          </div>
+                                        </div>
+                                        <div className="text-right">
+                                          <div className="font-semibold">
+                                            {order.amountTotal.toLocaleString()}
+                                            원
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {formatDate(order.createdAt)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>수동 연결 실행</CardTitle>
+                          <CardDescription>
+                            입금 내역과 충전 주문을 직접 연결합니다. 금액/코드가
+                            불일치하면 기본적으로 막히며, 예외 허용을 켜면 강제
+                            연결할 수 있습니다.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {selectedTx && selectedOrder ? (
+                            <>
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <div className="space-y-2">
+                                  <Label>선택된 입금 내역</Label>
+                                  <div className="rounded-lg border p-3 bg-gray-50">
+                                    <div className="font-medium">
+                                      {selectedTx.printedContent}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      금액:{" "}
+                                      {selectedTx.tranAmt.toLocaleString()}원
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      코드: {selectedTx.depositCode || "없음"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label>선택된 충전 주문</Label>
+                                  <div className="rounded-lg border p-3 bg-gray-50">
+                                    <div className="font-medium font-mono">
+                                      {selectedOrder.depositCode}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      금액:{" "}
+                                      {selectedOrder.amountTotal.toLocaleString()}
+                                      원
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      생성:{" "}
+                                      {formatDate(selectedOrder.createdAt)}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="match-note">메모</Label>
+                                <Input
+                                  id="match-note"
+                                  value={matchNote}
+                                  onChange={(e) => setMatchNote(e.target.value)}
+                                  placeholder="(선택) 메모"
+                                />
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  id="match-force"
+                                  checked={matchForce}
+                                  onChange={(e) =>
+                                    setMatchForce(e.target.checked)
+                                  }
+                                  className="rounded"
+                                />
+                                <Label
+                                  htmlFor="match-force"
+                                  className="cursor-pointer"
+                                >
+                                  예외 허용 (금액/코드 불일치 허용)
+                                </Label>
+                              </div>
+
+                              <Button
+                                onClick={handleManualMatch}
+                                disabled={matching}
+                                className="w-full"
+                              >
+                                {matching ? "연결 중..." : "연결 실행"}
+                              </Button>
+                            </>
+                          ) : (
+                            <div className="text-center py-8 text-muted-foreground">
+                              입금 내역과 충전 주문을 각각 선택하세요.
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </TabsContent>
+
+        <TabsContent value="salesman" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>영업자 크레딧(성과/정산 전 잔액)</CardTitle>
+              <CardDescription>
+                최근 30일 직접 소개 조직 기준 매출/수수료 + 영업자 지갑 잔액
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingSalesmen ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  불러오는 중...
+                </div>
+              ) : salesmen.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  영업자 데이터가 없습니다.
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {salesmen.map((s) => (
+                    <Card key={s.salesmanId} className="border-muted">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <CardTitle className="text-base">
+                              {s.name}
+                            </CardTitle>
+                            <CardDescription className="space-y-1">
+                              <div>{s.email}</div>
+                              <div className="font-mono">
+                                code: {s.referralCode || "-"}
+                              </div>
+                            </CardDescription>
+                          </div>
+                          <Badge variant={s.active ? "default" : "secondary"}>
+                            {s.active ? "활성" : "비활성"}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <div className="text-muted-foreground">잔액</div>
+                          <div className="font-semibold">
+                            {Number(
+                              s.wallet?.balanceAmount || 0,
+                            ).toLocaleString()}
+                            원
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">누적 적립</div>
+                          <div className="font-medium">
+                            {Number(
+                              s.wallet?.earnedAmount || 0,
+                            ).toLocaleString()}
+                            원
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">누적 정산</div>
+                          <div className="font-medium">
+                            {Number(
+                              s.wallet?.paidOutAmount || 0,
+                            ).toLocaleString()}
+                            원
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">
+                            소개 조직수(30일)
+                          </div>
+                          <div className="font-medium">
+                            {Number(
+                              s.performance30d?.referredOrgCount || 0,
+                            ).toLocaleString()}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">
+                            매출(30일)
+                          </div>
+                          <div className="font-medium">
+                            {Number(
+                              s.performance30d?.revenueAmount || 0,
+                            ).toLocaleString()}
+                            원
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">
+                            수수료(30일)
+                          </div>
+                          <div className="font-medium">
+                            {Number(
+                              s.performance30d?.commissionAmount || 0,
+                            ).toLocaleString()}
+                            원
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

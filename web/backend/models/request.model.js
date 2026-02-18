@@ -293,7 +293,16 @@ const requestSchema = new mongoose.Schema(
     status: {
       // [레거시] 의뢰인용 상태 — SSOT는 caseInfos.reviewByStage. 추후 제거 예정.
       type: String,
-      enum: ["의뢰", "CAM", "가공", "세척.포장", "발송", "추적관리", "취소"],
+      enum: [
+        "의뢰",
+        "CAM",
+        "가공",
+        "세척.포장",
+        "발송",
+        "추적관리",
+        "취소",
+        "완료",
+      ],
       default: "의뢰",
     },
     // [레거시] 공정 내 세부 단계 — SSOT는 caseInfos.reviewByStage. 추후 제거 예정.
