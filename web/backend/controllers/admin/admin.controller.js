@@ -1069,6 +1069,20 @@ async function getReferralGroupTree(req, res) {
       n.commissionAmount = Math.round(
         directRevenue * commissionRate + level1Revenue * level1CommissionRate,
       );
+
+      // 영업자 노드의 last30DaysOrders = 직계 의뢰자들의 주문 합계
+      n.last30DaysOrders = directRequestors.reduce(
+        (acc, r) => acc + Number(r.last30DaysOrders || 0),
+        0,
+      );
+      n.last30DaysPaidOrders = directRequestors.reduce(
+        (acc, r) => acc + Number(r.last30DaysPaidOrders || 0),
+        0,
+      );
+      n.last30DaysBonusOrders = directRequestors.reduce(
+        (acc, r) => acc + Number(r.last30DaysBonusOrders || 0),
+        0,
+      );
     }
 
     const nodeById = new Map(nodes.map((n) => [String(n._id), n]));

@@ -308,7 +308,12 @@ async function seedBulkUsersAndData() {
       active: true,
     });
     const leaderId = referralGroupLeaderId || salesman._id;
-    salesmen.push({ id: salesman._id, email, leaderId });
+    salesmen.push({
+      id: salesman._id,
+      email,
+      leaderId,
+      parentId: referredByUserId,
+    });
     if (isRoot) salesmanRoots.push({ id: salesman._id, email });
   }
 
@@ -487,7 +492,7 @@ async function seedBulkUsersAndData() {
         completedRequestIds.push(reqDoc._id);
       }
 
-      if (isCompleted && parentId) {
+      if (isCompleted && parentId && paidAmount > 0) {
         const parentUser = salesmen.find(
           (s) => String(s.id) === String(parentId),
         );
@@ -500,8 +505,26 @@ async function seedBulkUsersAndData() {
               amount: earnAmount,
               refType: "SEED_REQUEST",
               refId: reqDoc._id,
-              uniqueKey: `seed:salesman:earn:${String(parentId)}:${String(reqDoc._id)}`,
+              uniqueKey: `seed:salesman:earn:direct:${String(parentId)}:${String(reqDoc._id)}`,
             });
+          }
+
+          // level1: 직계 영업자의 부모 영업자에게 2.5% 적립
+          const grandparentUser = parentUser.parentId
+            ? salesmen.find((s) => String(s.id) === String(parentUser.parentId))
+            : null;
+          if (grandparentUser) {
+            const level1EarnAmount = Math.round(paidAmount * 0.025);
+            if (level1EarnAmount > 0) {
+              await SalesmanLedger.create({
+                salesmanId: grandparentUser.id,
+                type: "EARN",
+                amount: level1EarnAmount,
+                refType: "SEED_REQUEST_LEVEL1",
+                refId: reqDoc._id,
+                uniqueKey: `seed:salesman:earn:level1:${String(grandparentUser.id)}:${String(reqDoc._id)}`,
+              });
+            }
           }
         }
       }
