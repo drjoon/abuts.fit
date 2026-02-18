@@ -44,25 +44,27 @@ type ApiGroupRow = {
 type ApiGroupListResponse = {
   success: boolean;
   data?: {
-    overview?: {
+    overview: {
       ymd?: string;
-      totalGroups?: number;
-      totalAccounts?: number;
+      totalGroups: number;
+      totalAccounts: number;
       totalGroupOrders?: number;
       avgEffectiveUnitPrice?: number;
-      requestor?: {
-        groupCount?: number;
-        avgAccountsPerGroup?: number;
-        netNewGroups?: number;
-        avgRevenuePerGroup?: number;
-        totalRevenueAmount?: number;
+      requestor: {
+        groupCount: number;
+        avgAccountsPerGroup: number;
+        netNewGroups: number;
+        avgRevenuePerGroup: number;
+        totalRevenueAmount: number;
+        totalOrders?: number;
       };
-      salesman?: {
-        groupCount?: number;
-        avgAccountsPerGroup?: number;
-        netNewGroups?: number;
-        avgCommissionPerGroup?: number;
-        totalCommissionAmount?: number;
+      salesman: {
+        groupCount: number;
+        avgAccountsPerGroup: number;
+        netNewGroups: number;
+        avgCommissionPerGroup: number;
+        totalCommissionAmount: number;
+        totalReferralOrders?: number;
       };
     };
     groups?: ApiGroupRow[];
@@ -393,7 +395,7 @@ export default function AdminReferralGroupsPage() {
               {roleBadge("requestor")}
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4 text-right">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">그룹수</div>
               <div className="text-2xl font-semibold tracking-tight">
@@ -430,6 +432,12 @@ export default function AdminReferralGroupsPage() {
                 원
               </div>
             </div>
+            <div className="rounded-xl border p-3">
+              <div className="text-xs text-muted-foreground">의뢰건수</div>
+              <div className="text-2xl font-semibold tracking-tight">
+                {Number(overview?.requestor?.totalOrders || 0).toLocaleString()}
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -440,7 +448,7 @@ export default function AdminReferralGroupsPage() {
               {roleBadge("salesman")}
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4 text-right">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">그룹수</div>
               <div className="text-2xl font-semibold tracking-tight">
@@ -473,6 +481,16 @@ export default function AdminReferralGroupsPage() {
                   Number(overview?.salesman?.totalCommissionAmount || 0),
                 )}
                 원
+              </div>
+            </div>
+            <div className="rounded-xl border p-3">
+              <div className="text-xs text-muted-foreground">
+                의뢰건수(소개)
+              </div>
+              <div className="text-2xl font-semibold tracking-tight">
+                {Number(
+                  overview?.salesman?.totalReferralOrders || 0,
+                ).toLocaleString()}
               </div>
             </div>
           </CardContent>

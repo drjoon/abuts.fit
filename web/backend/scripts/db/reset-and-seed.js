@@ -311,7 +311,8 @@ async function seedBulkUsersAndData() {
   }
 
   // 의뢰자 100명 r001~r100, 조직 100개(owner만)
-  const depositOptions = [500_000, 1_000_000, 2_000_000, 3_000_000];
+  // 크레딧 사용(의뢰 완료 + SPEND)이 충분히 발생하도록 충전액 상향
+  const depositOptions = [1_000_000, 2_000_000, 3_000_000, 5_000_000];
   for (let i = 1; i <= 100; i += 1) {
     const email = `r${String(i).padStart(3, "0")}@gmail.com`;
     const orgName = `org-${String(i).padStart(3, "0")}`;
@@ -361,27 +362,32 @@ async function seedBulkUsersAndData() {
     requestors.push({ id: owner._id, email, orgId: org._id });
 
     // 입금: 무작위 금액
-    const amount = pick(depositOptions);
+    const depositAmount = pick(depositOptions);
     await CreditLedger.create({
       organizationId: org._id,
       userId: owner._id,
       type: "CHARGE",
-      amount,
+      amount: depositAmount,
       refType: "SEED_DEPOSIT",
       refId: null,
-      uniqueKey: `seed:deposit:${email}:${amount}`,
+      uniqueKey: `seed:charge:${email}`,
     });
 
-    let remainingCredit = amount;
+    // 의뢰자 1명당 주문 3~10건, 그 중 80% 완료
+    let remainingCredit = depositAmount;
 
-    // 지난 6개월 의뢰: 랜덤 건수/금액
-    const requestCount = randInt(1, 8);
+    const requestCount = randInt(3, 10);
     for (let k = 0; k < requestCount; k += 1) {
-      const monthsAgo = randInt(0, 5);
-      const createdAt = new Date();
-      createdAt.setMonth(createdAt.getMonth() - monthsAgo);
-      const price = pick([120000, 150000, 180000, 200000, 250000]);
+      const daysAgo = randInt(0, 180);
+      const createdAt = new Date(NOW);
+      createdAt.setDate(createdAt.getDate() - daysAgo);
 
+      // 한 건당 1만원 전후로 수렴(대시보드 평균 정합)
+      const price = randInt(9500, 10500);
+      const isCompleted = Math.random() < 0.8;
+      const status = isCompleted
+        ? "완료"
+        : pick(["의뢰", "CAM", "가공", "세척.포장", "발송", "추적관리"]);
       const reqDoc = await Request.create({
         requestorOrganizationId: org._id,
         requestor: owner._id,
@@ -394,19 +400,23 @@ async function seedBulkUsersAndData() {
           implantSystem: "Regular",
           implantType: "Hex",
         },
-        status: "완료",
-        price: {
-          amount: price,
-          baseAmount: price,
-          discountAmount: 0,
-          currency: "KRW",
-          rule: "seed",
-        },
+        status,
+        ...(isCompleted
+          ? {
+              price: {
+                amount: price,
+                baseAmount: price,
+                discountAmount: 0,
+                currency: "KRW",
+                rule: "seed",
+              },
+            }
+          : {}),
         createdAt,
         updatedAt: createdAt,
       });
 
-      if (remainingCredit >= price) {
+      if (isCompleted && remainingCredit >= price) {
         remainingCredit -= price;
         await CreditLedger.create({
           organizationId: org._id,
@@ -419,7 +429,7 @@ async function seedBulkUsersAndData() {
         });
       }
 
-      if (parentId) {
+      if (isCompleted && parentId) {
         const parentUser = salesmen.find(
           (s) => String(s.id) === String(parentId),
         );

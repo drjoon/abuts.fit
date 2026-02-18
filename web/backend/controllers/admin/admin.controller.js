@@ -98,7 +98,7 @@ function setAdminReferralCache(key, value) {
   adminReferralCache.set(key, { ts: Date.now(), value });
 }
 
-async function getReferralGroups(req, res) {
+export async function getReferralGroups(req, res) {
   try {
     const refresh = String(req.query.refresh || "") === "1";
     if (!refresh) {
@@ -154,7 +154,7 @@ async function getReferralGroups(req, res) {
         },
         { $group: { _id: "$referredByUserId", count: { $sum: 1 } } },
       ]),
-      PricingReferralStatsSnapshot.find({
+      ReferralGroupSnapshot.find({
         ownerUserId: { $in: leaderIds },
         ymd,
       })
@@ -166,6 +166,64 @@ async function getReferralGroups(req, res) {
         })
         .lean(),
     ]);
+
+    // 스냅샷이 비어있어도 overview 정합성을 위해 최근 30일 완료 의뢰 기준으로 fallback 집계
+    const now = new Date();
+    const last30Cutoff = new Date(now);
+    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+
+    const directChildren = leaderIds.length
+      ? await User.find({
+          referredByUserId: { $in: leaderIds },
+          role: { $in: ["requestor", "salesman"] },
+          active: true,
+        })
+          .select({ _id: 1, referredByUserId: 1 })
+          .lean()
+      : [];
+
+    const childIds = (directChildren || []).map((u) => u._id).filter(Boolean);
+    const relevantUserIds = [...leaderIds, ...childIds];
+    const requestRows = relevantUserIds.length
+      ? await Request.aggregate([
+          {
+            $match: {
+              requestor: { $in: relevantUserIds },
+              status: "완료",
+              createdAt: { $gte: last30Cutoff },
+            },
+          },
+          {
+            $group: {
+              _id: "$requestor",
+              orderCount: { $sum: 1 },
+              revenueAmount: { $sum: { $ifNull: ["$price.amount", 0] } },
+            },
+          },
+        ])
+      : [];
+
+    const ordersByUserId = new Map(
+      (requestRows || []).map((r) => [
+        String(r._id),
+        Number(r.orderCount || 0),
+      ]),
+    );
+    const revenueByUserId = new Map(
+      (requestRows || []).map((r) => [
+        String(r._id),
+        Number(r.revenueAmount || 0),
+      ]),
+    );
+
+    const childIdsByLeaderId = new Map();
+    for (const u of directChildren || []) {
+      const lid = String(u?.referredByUserId || "");
+      if (!lid) continue;
+      const arr = childIdsByLeaderId.get(lid) || [];
+      arr.push(String(u._id));
+      childIdsByLeaderId.set(lid, arr);
+    }
 
     const directCountByLeaderId = new Map();
     for (const r of directCounts || []) {
@@ -179,9 +237,30 @@ async function getReferralGroups(req, res) {
       const snapshot = (snapshots || []).find(
         (s) => String(s.ownerUserId) === String(leader._id),
       );
-      const groupTotalOrders = Number(snapshot?.groupTotalOrders || 0);
-      const groupMemberCount = Number(snapshot?.groupMemberCount || 0);
-      const now = new Date();
+      const snapshotTotalOrders = Number(snapshot?.groupTotalOrders || 0);
+      const snapshotGroupMemberCount = Number(snapshot?.groupMemberCount || 0);
+
+      const fallbackChildIds = childIdsByLeaderId.get(String(leader._id)) || [];
+      const fallbackOrders = fallbackChildIds.reduce((acc, cid) => {
+        return acc + Number(ordersByUserId.get(String(cid)) || 0);
+      }, 0);
+      const fallbackLeaderOrders = Number(
+        ordersByUserId.get(String(leader._id)) || 0,
+      );
+      const groupTotalOrders = snapshot
+        ? snapshotTotalOrders
+        : fallbackLeaderOrders + fallbackOrders;
+
+      const fallbackRevenue = fallbackChildIds.reduce((acc, cid) => {
+        return acc + Number(revenueByUserId.get(String(cid)) || 0);
+      }, 0);
+      const fallbackLeaderRevenue = Number(
+        revenueByUserId.get(String(leader._id)) || 0,
+      );
+      const groupRevenueAmount = snapshot
+        ? null
+        : fallbackLeaderRevenue + fallbackRevenue;
+
       const baseUnitPrice = 15000;
       const discountPerOrder = 10;
       const maxDiscountPerUnit = 5000;
@@ -219,9 +298,10 @@ async function getReferralGroups(req, res) {
       return {
         leader,
         memberCount: directCount + 1,
-        groupMemberCount: groupMemberCount || directCount + 1,
+        groupMemberCount: snapshotGroupMemberCount || directCount + 1,
         groupTotalOrders,
         effectiveUnitPrice,
+        ...(groupRevenueAmount !== null ? { groupRevenueAmount } : {}),
         snapshotComputedAt: snapshot?.computedAt || null,
         ...(isDev ? { unitPriceDebug } : {}),
       };
@@ -253,7 +333,15 @@ async function getReferralGroups(req, res) {
       ? Math.round(salesmanTotalAccounts / salesmanGroupCount)
       : 0;
 
+    const requestorTotalOrders = requestorGroups.reduce(
+      (acc, g) => acc + Number(g.groupTotalOrders || 0),
+      0,
+    );
+
+    // 매출은 가능한 실제 Request 합계(fallback) 사용. 스냅샷 기반 그룹은 추정치로 계산.
     const requestorTotalRevenueAmount = requestorGroups.reduce((acc, g) => {
+      const revenue = Number(g.groupRevenueAmount || 0);
+      if (Number.isFinite(revenue) && revenue > 0) return acc + revenue;
       const orders = Number(g.groupTotalOrders || 0);
       const unit = Number(g.effectiveUnitPrice || 0);
       return acc + orders * unit;
@@ -262,7 +350,6 @@ async function getReferralGroups(req, res) {
       ? Math.round(requestorTotalRevenueAmount / requestorGroupCount)
       : 0;
 
-    const now = new Date();
     const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const kstStartOfDayUtc = new Date(
       Date.UTC(
@@ -292,8 +379,6 @@ async function getReferralGroups(req, res) {
 
     const commissionRate = 0.05;
     const level1CommissionRate = commissionRate * 0.5;
-    const last30Cutoff = new Date(now);
-    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
 
     const salesmanLeaderIds = salesmanGroups
       .map((g) => g.leader?._id)
@@ -305,7 +390,7 @@ async function getReferralGroups(req, res) {
           role: "requestor",
           active: true,
         })
-          .select({ _id: 1, organizationId: 1, referredByUserId: 1 })
+          .select({ _id: 1, referredByUserId: 1 })
           .lean()
       : [];
 
@@ -333,21 +418,9 @@ async function getReferralGroups(req, res) {
           role: "requestor",
           active: true,
         })
-          .select({ _id: 1, organizationId: 1, referredByUserId: 1 })
+          .select({ _id: 1, referredByUserId: 1 })
           .lean()
       : [];
-
-    const orgIdByRequestorId = new Map(
-      (directRequestors || [])
-        .filter((u) => u?.organizationId)
-        .map((u) => [String(u._id), String(u.organizationId)]),
-    );
-
-    const level1OrgIdByRequestorId = new Map(
-      (level1Requestors || [])
-        .filter((u) => u?.organizationId)
-        .map((u) => [String(u._id), String(u.organizationId)]),
-    );
 
     const requestorIdsBySalesmanLeaderId = new Map();
     for (const u of directRequestors || []) {
@@ -378,43 +451,9 @@ async function getReferralGroups(req, res) {
       level1RequestorIdsBySalesmanLeaderId.set(leaderId, arr);
     }
 
-    const orgIds = Array.from(
-      new Set([
-        ...Array.from(orgIdByRequestorId.values()),
-        ...Array.from(level1OrgIdByRequestorId.values()),
-      ]),
-    );
-    const orgObjectIds = orgIds
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-
-    const revenueRows = orgObjectIds.length
-      ? await Request.aggregate([
-          {
-            $match: {
-              requestorOrganizationId: { $in: orgObjectIds },
-              status: "완료",
-              createdAt: { $gte: last30Cutoff },
-            },
-          },
-          {
-            $group: {
-              _id: "$requestorOrganizationId",
-              revenueAmount: { $sum: "$price.amount" },
-            },
-          },
-        ])
-      : [];
-
-    const revenueByOrgId = new Map(
-      (revenueRows || []).map((r) => [
-        String(r._id),
-        Number(r.revenueAmount || 0),
-      ]),
-    );
-
     const commissionBySalesmanLeaderId = new Map();
     let salesmanTotalCommissionAmount = 0;
+    let salesmanTotalReferralOrders = 0;
     for (const g of salesmanGroups) {
       const leaderId = String(g?.leader?._id || "");
       if (!leaderId) continue;
@@ -424,14 +463,16 @@ async function getReferralGroups(req, res) {
       let directRevenue = 0;
       let level1Revenue = 0;
       for (const rid of requestorIds) {
-        const orgId = orgIdByRequestorId.get(String(rid));
-        if (!orgId) continue;
-        directRevenue += Number(revenueByOrgId.get(String(orgId)) || 0);
+        directRevenue += Number(revenueByUserId.get(String(rid)) || 0);
+        salesmanTotalReferralOrders += Number(
+          ordersByUserId.get(String(rid)) || 0,
+        );
       }
       for (const rid of level1RequestorIds) {
-        const orgId = level1OrgIdByRequestorId.get(String(rid));
-        if (!orgId) continue;
-        level1Revenue += Number(revenueByOrgId.get(String(orgId)) || 0);
+        level1Revenue += Number(revenueByUserId.get(String(rid)) || 0);
+        salesmanTotalReferralOrders += Number(
+          ordersByUserId.get(String(rid)) || 0,
+        );
       }
       const directCommission = directRevenue * commissionRate;
       const level1Commission = level1Revenue * level1CommissionRate;
@@ -490,6 +531,7 @@ async function getReferralGroups(req, res) {
             netNewGroups: requestorNetNewGroups,
             avgRevenuePerGroup: requestorAvgRevenuePerGroup,
             totalRevenueAmount: Math.round(requestorTotalRevenueAmount),
+            totalOrders: Math.round(requestorTotalOrders),
           },
           salesman: {
             groupCount: salesmanGroupCount,
@@ -497,6 +539,7 @@ async function getReferralGroups(req, res) {
             netNewGroups: salesmanNetNewGroups,
             avgCommissionPerGroup: salesmanAvgCommissionPerGroup,
             totalCommissionAmount: Math.round(salesmanTotalCommissionAmount),
+            totalReferralOrders: Math.round(salesmanTotalReferralOrders),
           },
         },
         groups: groupsWithCommission,
@@ -1044,7 +1087,7 @@ async function getPricingStats(req, res) {
     const { start, end } = getDateRangeFromQuery(req);
     const match = {
       createdAt: { $gte: start, $lte: end },
-      status: { $ne: "취소" },
+      status: "완료",
     };
 
     const rows = await Request.aggregate([
