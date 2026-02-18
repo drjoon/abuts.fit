@@ -203,7 +203,7 @@ export const AdminUserManagement = () => {
     setLoadingUsers(true);
     try {
       const res = await request<any>({
-        path: "/api/admin/users?page=1&limit=200",
+        path: "/api/admin/users?page=1&limit=500",
         method: "GET",
         token,
       });

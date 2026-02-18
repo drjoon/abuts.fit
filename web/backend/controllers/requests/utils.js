@@ -423,14 +423,28 @@ export async function computePriceForRequest({
     };
   }
 
-  // 2) 신규 90일 고정가: 가입일(createdAt) 기준 90일 내 -> 10,000원 고정
-  const user = await User.findById(requestorId)
-    .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
-    .lean();
-  const baseDate =
-    user?.approvedAt ||
-    (user?.active ? user?.updatedAt : null) ||
-    user?.createdAt;
+  // 2) 신규 90일 고정가: 가입일 기준 90일 내 -> 10,000원 고정
+  // 조직 단위 정책이므로, 조직이 있으면 조직 owner의 가입일을 기준으로 한다.
+  // updatedAt은 운영 중 자주 갱신될 수 있어 기준일로 사용하지 않는다.
+  const baseDate = await (async () => {
+    if (requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))) {
+      const org = await RequestorOrganization.findById(String(requestorOrgId))
+        .select({ owner: 1 })
+        .lean();
+      const ownerId = org?.owner ? String(org.owner) : "";
+      if (ownerId && Types.ObjectId.isValid(ownerId)) {
+        const owner = await User.findById(ownerId)
+          .select({ createdAt: 1, approvedAt: 1 })
+          .lean();
+        return owner?.approvedAt || owner?.createdAt || null;
+      }
+    }
+
+    const user = await User.findById(requestorId)
+      .select({ createdAt: 1, approvedAt: 1 })
+      .lean();
+    return user?.approvedAt || user?.createdAt || null;
+  })();
   if (baseDate) {
     const newUserCutoff = new Date(baseDate);
     newUserCutoff.setDate(newUserCutoff.getDate() + 90);

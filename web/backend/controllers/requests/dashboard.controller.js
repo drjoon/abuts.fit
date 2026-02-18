@@ -358,8 +358,8 @@ export async function getMyDashboardSummary(req, res) {
           {
             $match: {
               ...requestFilter,
+              ...dateFilter,
               "caseInfos.implantSystem": { $exists: true, $ne: "" },
-              $or: [{ status: { $nin: ["완료", "취소"] } }, dateFilter],
             },
           },
           {
@@ -370,6 +370,9 @@ export async function getMyDashboardSummary(req, res) {
                     status: { $ifNull: ["$status", ""] },
                     stage: { $ifNull: ["$manufacturerStage", ""] },
                     status2: { $ifNull: ["$status2", ""] },
+                    shippingReviewStatus: {
+                      $ifNull: ["$caseInfos.reviewByStage.shipping.status", ""],
+                    },
                   },
                   in: {
                     $switch: {
@@ -380,7 +383,11 @@ export async function getMyDashboardSummary(req, res) {
                         },
                         {
                           case: {
-                            $or: [{ $eq: ["$$status2", "완료"] }],
+                            $or: [
+                              { $eq: ["$$shippingReviewStatus", "APPROVED"] },
+                              { $eq: ["$$status", "완료"] },
+                              { $eq: ["$$status2", "완료"] },
+                            ],
                           },
                           then: "completed",
                         },
@@ -545,12 +552,15 @@ export async function getMyDashboardSummary(req, res) {
       shippingCount: 0,
     };
 
+    // '발송(완료)' 카드는 발송/추적 + 배송 승인 완료 건을 함께 보여준다.
+    const shippingPlusCompleted = stats.shippingCount + stats.completed;
+
     const totalActive =
       stats.designCount +
         stats.camCount +
         stats.machiningCount +
         stats.packagingCount +
-        stats.shippingCount || 1;
+        shippingPlusCompleted || 1;
 
     const manufacturingSummary = {
       totalActive,
@@ -559,7 +569,7 @@ export async function getMyDashboardSummary(req, res) {
         { key: "cam", label: "CAM", count: stats.camCount },
         { key: "machining", label: "가공", count: stats.machiningCount },
         { key: "packaging", label: "세척.포장", count: stats.packagingCount },
-        { key: "shipping", label: "발송", count: stats.shippingCount },
+        { key: "shipping", label: "발송", count: shippingPlusCompleted },
       ].map((s) => ({
         ...s,
         percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
@@ -761,7 +771,7 @@ export async function getMyDashboardSummary(req, res) {
         inProductionChange: "+0%",
         inPackaging: stats.packagingCount,
         inPackagingChange: "+0%",
-        inShipping: stats.shippingCount,
+        inShipping: shippingPlusCompleted,
         inShippingChange: "+0%",
         canceled: stats.canceledCount,
         canceledChange: "+0%",
@@ -792,6 +802,9 @@ export async function getMyDashboardSummary(req, res) {
                   status: { $ifNull: ["$status", ""] },
                   stage: { $ifNull: ["$manufacturerStage", ""] },
                   status2: { $ifNull: ["$status2", ""] },
+                  shippingReviewStatus: {
+                    $ifNull: ["$caseInfos.reviewByStage.shipping.status", ""],
+                  },
                 },
                 in: {
                   $switch: {
@@ -799,7 +812,11 @@ export async function getMyDashboardSummary(req, res) {
                       { case: { $eq: ["$$status", "취소"] }, then: "cancel" },
                       {
                         case: {
-                          $or: [{ $eq: ["$$status2", "완료"] }],
+                          $or: [
+                            { $eq: ["$$shippingReviewStatus", "APPROVED"] },
+                            { $eq: ["$$status", "완료"] },
+                            { $eq: ["$$status2", "완료"] },
+                          ],
                         },
                         then: "completed",
                       },

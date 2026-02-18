@@ -34,6 +34,75 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AutoMatchVerificationTab } from "./components/AutoMatchVerificationTab";
 
+type AdminCreditLedgerType = "CHARGE" | "BONUS" | "SPEND" | "REFUND" | "ADJUST";
+type AdminSalesmanLedgerType = "EARN" | "PAYOUT" | "ADJUST";
+
+type AdminLedgerItem = {
+  _id: string;
+  type: AdminCreditLedgerType;
+  amount: number;
+  spentPaidAmount?: number | null;
+  spentBonusAmount?: number | null;
+  refType?: string;
+  refId?: string | null;
+  refRequestId?: string;
+  uniqueKey: string;
+  createdAt: string;
+};
+
+type AdminLedgerResponse = {
+  success: boolean;
+  data: {
+    items: AdminLedgerItem[];
+    total: number;
+    page: number;
+    pageSize: number;
+  };
+  message?: string;
+};
+
+const formatLedgerDate = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const formatShortCode = (value: string) => {
+  const raw = String(value || "");
+  if (!raw) return "-";
+  const tail = raw.replace(/[^a-zA-Z0-9]/g, "");
+  const s = tail.slice(-4).toUpperCase();
+  return s || "-";
+};
+
+const creditTypeLabel = (t: AdminCreditLedgerType) => {
+  if (t === "CHARGE") return "충전";
+  if (t === "BONUS") return "보너스";
+  if (t === "SPEND") return "사용";
+  if (t === "REFUND") return "환불";
+  return "조정";
+};
+
+const salesmanTypeLabel = (t: AdminSalesmanLedgerType) => {
+  if (t === "EARN") return "적립";
+  if (t === "PAYOUT") return "정산";
+  return "조정";
+};
+
+const refTypeLabel = (refType?: string) => {
+  const t = String(refType || "").trim();
+  if (!t) return "-";
+  if (t === "SHIPPING_FEE") return "배송비 (발송 1회)";
+  if (t === "REQUEST") return "의뢰";
+  return t;
+};
+
 type CreditStats = {
   totalOrgs: number;
   totalChargeOrders: number;
@@ -45,6 +114,10 @@ type CreditStats = {
   totalCharged: number;
   totalSpent: number;
   totalBonus: number;
+  totalSpentPaidAmount?: number;
+  totalSpentBonusAmount?: number;
+  totalPaidBalance?: number;
+  totalBonusBalance?: number;
 };
 
 type SalesmanCreditRow = {
@@ -62,6 +135,7 @@ type SalesmanCreditRow = {
   performance30d: {
     referredOrgCount: number;
     revenueAmount: number;
+    bonusAmount?: number;
     orderCount: number;
     commissionAmount: number;
   };
@@ -126,11 +200,14 @@ export default function AdminCreditPage() {
   const [orgSkip, setOrgSkip] = useState(0);
   const [orgHasMore, setOrgHasMore] = useState(true);
 
-  const [selectedOrg, setSelectedOrg] = useState<OrganizationCredit | null>(
+  const [orgLedgerOpen, setOrgLedgerOpen] = useState(false);
+  const [orgLedgerOrg, setOrgLedgerOrg] = useState<OrganizationCredit | null>(
     null,
   );
 
-  const closeOrgModal = () => setSelectedOrg(null);
+  const [salesmanLedgerOpen, setSalesmanLedgerOpen] = useState(false);
+  const [salesmanLedgerRow, setSalesmanLedgerRow] =
+    useState<SalesmanCreditRow | null>(null);
 
   const [salesmen, setSalesmen] = useState<SalesmanCreditRow[]>([]);
   const [loadingSalesmen, setLoadingSalesmen] = useState(false);
@@ -564,14 +641,198 @@ export default function AdminCreditPage() {
       (acc, s) => acc + Number(s?.performance30d?.commissionAmount || 0),
       0,
     );
+    const totalReferredRevenue30d = (salesmen || []).reduce(
+      (acc, s) => acc + Number(s?.performance30d?.revenueAmount || 0),
+      0,
+    );
+    const totalReferredBonus30d = (salesmen || []).reduce(
+      (acc, s) => acc + Number(s?.performance30d?.bonusAmount || 0),
+      0,
+    );
     return {
       totalSalesmen,
       totalBalance,
       totalEarned,
       totalPaidOut,
       totalCommission30d,
+      totalReferredRevenue30d,
+      totalReferredBonus30d,
     };
   }, [salesmen]);
+
+  const [orgLedgerPeriod, setOrgLedgerPeriod] = useState<
+    "7d" | "30d" | "90d" | "all"
+  >("30d");
+  const [orgLedgerType, setOrgLedgerType] = useState<
+    "all" | AdminCreditLedgerType
+  >("all");
+  const [orgLedgerQ, setOrgLedgerQ] = useState("");
+  const [orgLedgerFrom, setOrgLedgerFrom] = useState("");
+  const [orgLedgerTo, setOrgLedgerTo] = useState("");
+  const [orgLedgerPage, setOrgLedgerPage] = useState(1);
+  const [orgLedgerLoading, setOrgLedgerLoading] = useState(false);
+  const [orgLedgerItems, setOrgLedgerItems] = useState<AdminLedgerItem[]>([]);
+  const [orgLedgerTotal, setOrgLedgerTotal] = useState(0);
+
+  const [salesLedgerPeriod, setSalesLedgerPeriod] = useState<
+    "7d" | "30d" | "90d" | "all"
+  >("30d");
+  const [salesLedgerType, setSalesLedgerType] = useState<
+    "all" | AdminSalesmanLedgerType
+  >("all");
+  const [salesLedgerQ, setSalesLedgerQ] = useState("");
+  const [salesLedgerFrom, setSalesLedgerFrom] = useState("");
+  const [salesLedgerTo, setSalesLedgerTo] = useState("");
+  const [salesLedgerPage, setSalesLedgerPage] = useState(1);
+  const [salesLedgerLoading, setSalesLedgerLoading] = useState(false);
+  const [salesLedgerItems, setSalesLedgerItems] = useState<AdminLedgerItem[]>(
+    [],
+  );
+  const [salesLedgerTotal, setSalesLedgerTotal] = useState(0);
+
+  const LEDGER_PAGE_SIZE = 50;
+
+  const resetOrgLedgerFilters = () => {
+    setOrgLedgerPeriod("30d");
+    setOrgLedgerType("all");
+    setOrgLedgerQ("");
+    setOrgLedgerFrom("");
+    setOrgLedgerTo("");
+    setOrgLedgerPage(1);
+  };
+
+  const resetSalesLedgerFilters = () => {
+    setSalesLedgerPeriod("30d");
+    setSalesLedgerType("all");
+    setSalesLedgerQ("");
+    setSalesLedgerFrom("");
+    setSalesLedgerTo("");
+    setSalesLedgerPage(1);
+  };
+
+  const loadOrgLedger = async () => {
+    if (!token || !orgLedgerOrg?._id) return;
+    setOrgLedgerLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (orgLedgerPeriod) params.set("period", orgLedgerPeriod);
+      if (orgLedgerType && orgLedgerType !== "all")
+        params.set("type", orgLedgerType);
+      if (orgLedgerQ.trim()) params.set("q", orgLedgerQ.trim());
+      if (orgLedgerFrom) params.set("from", orgLedgerFrom);
+      if (orgLedgerTo) params.set("to", orgLedgerTo);
+      params.set("page", String(orgLedgerPage));
+      params.set("pageSize", String(LEDGER_PAGE_SIZE));
+
+      const res = await request<AdminLedgerResponse>({
+        path: `/api/admin/credits/organizations/${orgLedgerOrg._id}/ledger?${params.toString()}`,
+        method: "GET",
+        token,
+      });
+
+      if (!res.ok || !res.data?.success) {
+        const msg = (res.data as any)?.message;
+        throw new Error(msg || "크레딧 내역 조회에 실패했습니다.");
+      }
+
+      const data = res.data.data;
+      setOrgLedgerItems(Array.isArray(data?.items) ? data.items : []);
+      setOrgLedgerTotal(Number(data?.total || 0));
+    } catch (e: any) {
+      setOrgLedgerItems([]);
+      setOrgLedgerTotal(0);
+      toast({
+        title: "크레딧 내역 조회 실패",
+        description: e?.message || "다시 시도해주세요.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    } finally {
+      setOrgLedgerLoading(false);
+    }
+  };
+
+  const loadSalesmanLedger = async () => {
+    if (!token || !salesmanLedgerRow?.salesmanId) return;
+    setSalesLedgerLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (salesLedgerPeriod) params.set("period", salesLedgerPeriod);
+      if (salesLedgerType && salesLedgerType !== "all")
+        params.set("type", salesLedgerType);
+      if (salesLedgerQ.trim()) params.set("q", salesLedgerQ.trim());
+      if (salesLedgerFrom) params.set("from", salesLedgerFrom);
+      if (salesLedgerTo) params.set("to", salesLedgerTo);
+      params.set("page", String(salesLedgerPage));
+      params.set("pageSize", String(LEDGER_PAGE_SIZE));
+
+      const res = await request<AdminLedgerResponse>({
+        path: `/api/admin/credits/salesmen/${salesmanLedgerRow.salesmanId}/ledger?${params.toString()}`,
+        method: "GET",
+        token,
+      });
+
+      if (!res.ok || !res.data?.success) {
+        const msg = (res.data as any)?.message;
+        throw new Error(msg || "정산 내역 조회에 실패했습니다.");
+      }
+
+      const data = res.data.data;
+      setSalesLedgerItems(Array.isArray(data?.items) ? data.items : []);
+      setSalesLedgerTotal(Number(data?.total || 0));
+    } catch (e: any) {
+      setSalesLedgerItems([]);
+      setSalesLedgerTotal(0);
+      toast({
+        title: "정산 내역 조회 실패",
+        description: e?.message || "다시 시도해주세요.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    } finally {
+      setSalesLedgerLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!orgLedgerOpen) return;
+    if (orgLedgerPage !== 1) return;
+    loadOrgLedger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgLedgerOpen]);
+
+  useEffect(() => {
+    if (!salesmanLedgerOpen) return;
+    if (salesLedgerPage !== 1) return;
+    loadSalesmanLedger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [salesmanLedgerOpen]);
+
+  useEffect(() => {
+    if (!orgLedgerOpen) return;
+    loadOrgLedger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    orgLedgerPeriod,
+    orgLedgerType,
+    orgLedgerQ,
+    orgLedgerFrom,
+    orgLedgerTo,
+    orgLedgerPage,
+  ]);
+
+  useEffect(() => {
+    if (!salesmanLedgerOpen) return;
+    loadSalesmanLedger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    salesLedgerPeriod,
+    salesLedgerType,
+    salesLedgerQ,
+    salesLedgerFrom,
+    salesLedgerTo,
+    salesLedgerPage,
+  ]);
 
   return (
     <div className="space-y-6 p-6">
@@ -606,20 +867,33 @@ export default function AdminCreditPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">총 충전액</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  크레딧 충전액
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
                   {loadingStats
                     ? "..."
-                    : `${(stats?.totalCharged || 0).toLocaleString()}원`}
+                    : `${(
+                        Number(stats?.totalCharged || 0) +
+                        Number(stats?.totalBonus || 0)
+                      ).toLocaleString()}원`}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  유료 {(stats?.totalCharged || 0).toLocaleString()}원
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  무료 {(stats?.totalBonus || 0).toLocaleString()}원
                 </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">총 잔액</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  크레딧 잔여액
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -627,18 +901,32 @@ export default function AdminCreditPage() {
                     ? "..."
                     : `${requestorTotalBalance.toLocaleString()}원`}
                 </div>
+                <div className="text-xs text-muted-foreground">
+                  유료 {(stats?.totalPaidBalance || 0).toLocaleString()}원
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  무료 {(stats?.totalBonusBalance || 0).toLocaleString()}원
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">총 사용액</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  크레딧 사용액
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
                   {loadingStats
                     ? "..."
                     : `${(stats?.totalSpent || 0).toLocaleString()}원`}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  유료 {(stats?.totalSpentPaidAmount || 0).toLocaleString()}원
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  무료 {(stats?.totalSpentBonusAmount || 0).toLocaleString()}원
                 </div>
               </CardContent>
             </Card>
@@ -703,7 +991,10 @@ export default function AdminCreditPage() {
                               <Card
                                 key={org._id}
                                 className="border-muted cursor-pointer"
-                                onClick={() => setSelectedOrg(org)}
+                                onClick={() => {
+                                  setOrgLedgerOrg(org);
+                                  setOrgLedgerOpen(true);
+                                }}
                               >
                                 <CardHeader className="pb-3">
                                   <CardTitle className="text-base">
@@ -1308,21 +1599,36 @@ export default function AdminCreditPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">총 적립</CardTitle>
+                <CardTitle className="text-sm font-medium">소개 매출</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
                   {loadingSalesmen
                     ? "..."
-                    : `${salesmanSummary.totalEarned.toLocaleString()}원`}
+                    : `${(
+                        Number(salesmanSummary.totalReferredRevenue30d || 0) +
+                        Number(salesmanSummary.totalReferredBonus30d || 0)
+                      ).toLocaleString()}원`}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  유료{" "}
+                  {Number(
+                    salesmanSummary.totalReferredRevenue30d || 0,
+                  ).toLocaleString()}
+                  원
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  무료{" "}
+                  {Number(
+                    salesmanSummary.totalReferredBonus30d || 0,
+                  ).toLocaleString()}
+                  원
                 </div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  수수료(기간)
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">수수료</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -1330,11 +1636,26 @@ export default function AdminCreditPage() {
                     ? "..."
                     : `${salesmanSummary.totalCommission30d.toLocaleString()}원`}
                 </div>
+                <div className="text-xs text-muted-foreground">
+                  수수료율{" "}
+                  {(() => {
+                    const base = Number(
+                      salesmanSummary.totalReferredRevenue30d || 0,
+                    );
+                    const comm = Number(
+                      salesmanSummary.totalCommission30d || 0,
+                    );
+                    if (base <= 0) return "-";
+                    return `${((comm / base) * 100).toFixed(1)}%`;
+                  })()}
+                </div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">총 잔액</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  정산 전 잔액
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -1382,7 +1703,14 @@ export default function AdminCreditPage() {
                 >
                   <div className="grid gap-4 md:grid-cols-2">
                     {salesmen.map((s) => (
-                      <Card key={s.salesmanId} className="border-muted">
+                      <Card
+                        key={s.salesmanId}
+                        className="border-muted cursor-pointer"
+                        onClick={() => {
+                          setSalesmanLedgerRow(s);
+                          setSalesmanLedgerOpen(true);
+                        }}
+                      >
                         <CardHeader className="pb-3">
                           <div className="flex items-start justify-between gap-2">
                             <div>
@@ -1448,8 +1776,23 @@ export default function AdminCreditPage() {
                               매출(30일)
                             </div>
                             <div className="font-medium">
+                              {(
+                                Number(s.performance30d?.revenueAmount || 0) +
+                                Number(s.performance30d?.bonusAmount || 0)
+                              ).toLocaleString()}
+                              원
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              유료{" "}
                               {Number(
                                 s.performance30d?.revenueAmount || 0,
+                              ).toLocaleString()}
+                              원
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              무료{" "}
+                              {Number(
+                                s.performance30d?.bonusAmount || 0,
                               ).toLocaleString()}
                               원
                             </div>
@@ -1463,6 +1806,19 @@ export default function AdminCreditPage() {
                                 s.performance30d?.commissionAmount || 0,
                               ).toLocaleString()}
                               원
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              수수료율{" "}
+                              {(() => {
+                                const base = Number(
+                                  s.performance30d?.revenueAmount || 0,
+                                );
+                                const comm = Number(
+                                  s.performance30d?.commissionAmount || 0,
+                                );
+                                if (base <= 0) return "-";
+                                return `${((comm / base) * 100).toFixed(1)}%`;
+                              })()}
                             </div>
                           </div>
                         </CardContent>
@@ -1537,6 +1893,391 @@ export default function AdminCreditPage() {
               {processingApproval ? "처리 중..." : "승인"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={orgLedgerOpen}
+        onOpenChange={(open) => {
+          setOrgLedgerOpen(open);
+          if (!open) {
+            setOrgLedgerOrg(null);
+            resetOrgLedgerFilters();
+            setOrgLedgerItems([]);
+            setOrgLedgerTotal(0);
+          }
+        }}
+      >
+        <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-lg">
+              크레딧 내역 · {orgLedgerOrg?.name || "-"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3 min-h-0 flex-1">
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 py-0.5">
+                  <PeriodFilter
+                    value={orgLedgerPeriod as any}
+                    onChange={(v) => setOrgLedgerPeriod(v as any)}
+                  />
+
+                  <div className="w-[140px]">
+                    <select
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={orgLedgerType}
+                      onChange={(e) => setOrgLedgerType(e.target.value as any)}
+                      disabled={orgLedgerLoading}
+                    >
+                      <option value="all">전체</option>
+                      <option value="SPEND">사용</option>
+                      <option value="CHARGE">충전</option>
+                      <option value="REFUND">환불</option>
+                      <option value="BONUS">보너스</option>
+                      <option value="ADJUST">조정</option>
+                    </select>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9"
+                    onClick={resetOrgLedgerFilters}
+                    disabled={orgLedgerLoading}
+                  >
+                    초기화
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 py-0.5">
+                <Input
+                  type="date"
+                  value={orgLedgerFrom}
+                  onChange={(e) => setOrgLedgerFrom(e.target.value)}
+                  className="h-9 w-[150px]"
+                />
+                <span className="text-xs text-muted-foreground">~</span>
+                <Input
+                  type="date"
+                  value={orgLedgerTo}
+                  onChange={(e) => setOrgLedgerTo(e.target.value)}
+                  className="h-9 w-[150px]"
+                />
+
+                <Input
+                  value={orgLedgerQ}
+                  onChange={(e) => setOrgLedgerQ(e.target.value)}
+                  placeholder="검색 (참조/코드/refId)"
+                  className="h-9 w-full sm:w-[320px]"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-scroll overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[170px]">일시</TableHead>
+                    <TableHead className="w-[90px]">유형</TableHead>
+                    <TableHead className="w-[110px] text-right">금액</TableHead>
+                    <TableHead className="w-[160px]">참조</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(orgLedgerItems || []).map((r) => {
+                    const amount = Number(r.amount || 0);
+                    const isMinus = amount < 0;
+                    const spentPaid = Number(r.spentPaidAmount || 0);
+                    const spentBonus = Number(r.spentBonusAmount || 0);
+                    const showSplit =
+                      String(r.type) === "SPEND" &&
+                      (spentPaid > 0 || spentBonus > 0);
+                    const safeRef = r.refRequestId
+                      ? String(r.refRequestId)
+                      : "";
+                    return (
+                      <TableRow key={r._id}>
+                        <TableCell className="text-xs">
+                          {formatLedgerDate(String(r.createdAt || ""))}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium">
+                          {creditTypeLabel(r.type as any)}
+                        </TableCell>
+                        <TableCell
+                          className={`font-medium tabular-nums ${
+                            isMinus ? "text-rose-600" : "text-blue-700"
+                          }`}
+                        >
+                          {showSplit ? (
+                            <div className="flex flex-col leading-4">
+                              {spentPaid > 0 && (
+                                <div className="tabular-nums">
+                                  유료 -{spentPaid.toLocaleString()}원
+                                </div>
+                              )}
+                              {spentBonus > 0 && (
+                                <div className="tabular-nums">
+                                  무료 -{spentBonus.toLocaleString()}원
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            `${amount.toLocaleString()}원`
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-col leading-4">
+                            <span className="font-mono text-xs font-semibold">
+                              {safeRef ||
+                                formatShortCode(String(r.uniqueKey || ""))}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {refTypeLabel(r.refType)}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+
+                  {!orgLedgerLoading && (orgLedgerItems || []).length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={4}
+                        className="text-center text-sm text-muted-foreground py-8"
+                      >
+                        조회 결과가 없습니다.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <div className="text-xs text-muted-foreground">
+                {(() => {
+                  const totalPages = Math.max(
+                    1,
+                    Math.ceil(Number(orgLedgerTotal || 0) / LEDGER_PAGE_SIZE),
+                  );
+                  return `${orgLedgerPage} / ${totalPages}`;
+                })()}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-3"
+                  onClick={() => setOrgLedgerPage((p) => Math.max(1, p - 1))}
+                  disabled={orgLedgerLoading || orgLedgerPage <= 1}
+                >
+                  이전
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-3"
+                  onClick={() => {
+                    const totalPages = Math.max(
+                      1,
+                      Math.ceil(Number(orgLedgerTotal || 0) / LEDGER_PAGE_SIZE),
+                    );
+                    setOrgLedgerPage((p) => Math.min(totalPages, p + 1));
+                  }}
+                  disabled={orgLedgerLoading}
+                >
+                  다음
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={salesmanLedgerOpen}
+        onOpenChange={(open) => {
+          setSalesmanLedgerOpen(open);
+          if (!open) {
+            setSalesmanLedgerRow(null);
+            resetSalesLedgerFilters();
+            setSalesLedgerItems([]);
+            setSalesLedgerTotal(0);
+          }
+        }}
+      >
+        <DialogContent className="w-[92vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-lg">
+              정산 내역 · {salesmanLedgerRow?.name || "-"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3 min-h-0 flex-1">
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 py-0.5">
+                  <PeriodFilter
+                    value={salesLedgerPeriod as any}
+                    onChange={(v) => setSalesLedgerPeriod(v as any)}
+                  />
+
+                  <div className="w-[140px]">
+                    <select
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={salesLedgerType}
+                      onChange={(e) =>
+                        setSalesLedgerType(e.target.value as any)
+                      }
+                      disabled={salesLedgerLoading}
+                    >
+                      <option value="all">전체</option>
+                      <option value="EARN">적립</option>
+                      <option value="PAYOUT">정산</option>
+                      <option value="ADJUST">조정</option>
+                    </select>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9"
+                    onClick={resetSalesLedgerFilters}
+                    disabled={salesLedgerLoading}
+                  >
+                    초기화
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 py-0.5">
+                <Input
+                  type="date"
+                  value={salesLedgerFrom}
+                  onChange={(e) => setSalesLedgerFrom(e.target.value)}
+                  className="h-9 w-[150px]"
+                />
+                <span className="text-xs text-muted-foreground">~</span>
+                <Input
+                  type="date"
+                  value={salesLedgerTo}
+                  onChange={(e) => setSalesLedgerTo(e.target.value)}
+                  className="h-9 w-[150px]"
+                />
+
+                <Input
+                  value={salesLedgerQ}
+                  onChange={(e) => setSalesLedgerQ(e.target.value)}
+                  placeholder="검색 (참조/코드/refId)"
+                  className="h-9 w-full sm:w-[320px]"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-scroll overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[170px]">일시</TableHead>
+                    <TableHead className="w-[90px]">유형</TableHead>
+                    <TableHead className="w-[110px] text-right">금액</TableHead>
+                    <TableHead className="w-[160px]">참조</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(salesLedgerItems || []).map((r) => {
+                    const amount = Number(r.amount || 0);
+                    const isMinus = amount < 0;
+                    return (
+                      <TableRow key={r._id}>
+                        <TableCell className="text-xs">
+                          {formatLedgerDate(String(r.createdAt || ""))}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium">
+                          {salesmanTypeLabel(r.type as any)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right text-xs font-semibold ${
+                            isMinus ? "text-rose-600" : "text-blue-700"
+                          }`}
+                        >
+                          {amount.toLocaleString()}원
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="flex flex-col leading-4">
+                            <span className="font-mono text-xs font-semibold">
+                              {formatShortCode(String(r.uniqueKey || ""))}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {refTypeLabel(r.refType)}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+
+                  {!salesLedgerLoading &&
+                    (salesLedgerItems || []).length === 0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="text-center text-sm text-muted-foreground py-8"
+                        >
+                          조회 결과가 없습니다.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <div className="text-xs text-muted-foreground">
+                {(() => {
+                  const totalPages = Math.max(
+                    1,
+                    Math.ceil(Number(salesLedgerTotal || 0) / LEDGER_PAGE_SIZE),
+                  );
+                  return `${salesLedgerPage} / ${totalPages}`;
+                })()}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-3"
+                  onClick={() => setSalesLedgerPage((p) => Math.max(1, p - 1))}
+                  disabled={salesLedgerLoading || salesLedgerPage <= 1}
+                >
+                  이전
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 px-3"
+                  onClick={() => {
+                    const totalPages = Math.max(
+                      1,
+                      Math.ceil(
+                        Number(salesLedgerTotal || 0) / LEDGER_PAGE_SIZE,
+                      ),
+                    );
+                    setSalesLedgerPage((p) => Math.min(totalPages, p + 1));
+                  }}
+                  disabled={salesLedgerLoading}
+                >
+                  다음
+                </Button>
+              </div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1616,61 +2357,6 @@ export default function AdminCreditPage() {
               disabled={!selectedOrder || processingApproval}
             >
               {processingApproval ? "처리 중..." : "거절"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(selectedOrg)} onOpenChange={closeOrgModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{selectedOrg?.name || "조직 상세"}</DialogTitle>
-            <DialogDescription>
-              {selectedOrg?.ownerName || "-"} · {selectedOrg?.ownerEmail || "-"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 text-sm">
-            <div>
-              <span className="text-muted-foreground">사업자명</span> ·{" "}
-              {selectedOrg?.companyName || "-"}
-            </div>
-            <div>
-              <span className="text-muted-foreground">사업자번호</span> ·{" "}
-              <span className="font-mono">
-                {selectedOrg?.businessNumber || "-"}
-              </span>
-            </div>
-            <div className="pt-2 grid grid-cols-2 gap-2">
-              <div>
-                <div className="text-muted-foreground">잔여(구매)</div>
-                <div className="font-semibold">
-                  {Number(selectedOrg?.paidBalance || 0).toLocaleString()}원
-                </div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">잔여(무료)</div>
-                <div className="font-semibold">
-                  {Number(selectedOrg?.bonusBalance || 0).toLocaleString()}원
-                </div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">사용(구매)</div>
-                <div className="font-medium">
-                  {Number(selectedOrg?.spentPaidAmount || 0).toLocaleString()}원
-                </div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">사용(무료)</div>
-                <div className="font-medium">
-                  {Number(selectedOrg?.spentBonusAmount || 0).toLocaleString()}
-                  원
-                </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={closeOrgModal}>
-              닫기
             </Button>
           </DialogFooter>
         </DialogContent>

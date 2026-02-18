@@ -11,6 +11,239 @@ function getLast30Cutoff() {
   return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 }
 
+export async function adminGetOrganizationLedger(req, res) {
+  try {
+    const orgIdRaw = String(req.params.id || "");
+    if (!Types.ObjectId.isValid(orgIdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "조직 ID가 올바르지 않습니다.",
+      });
+    }
+    const organizationId = new Types.ObjectId(orgIdRaw);
+
+    const typeRaw = String(req.query.type || "")
+      .trim()
+      .toUpperCase();
+    const periodRaw = String(req.query.period || "").trim();
+    const qRaw = String(req.query.q || "").trim();
+
+    const page = Math.max(1, Number(req.query.page || 1) || 1);
+    const pageSize = Math.min(
+      200,
+      Math.max(1, Number(req.query.pageSize || 50) || 50),
+    );
+
+    const match = { organizationId };
+
+    if (
+      typeRaw &&
+      typeRaw !== "ALL" &&
+      ["CHARGE", "BONUS", "SPEND", "REFUND", "ADJUST"].includes(typeRaw)
+    ) {
+      match.type = typeRaw;
+    }
+
+    const createdAt = {};
+    const sinceFromPeriod = parsePeriod(periodRaw);
+    if (sinceFromPeriod) {
+      createdAt.$gte = sinceFromPeriod;
+    }
+
+    const fromRaw = String(req.query.from || "").trim();
+    const toRaw = String(req.query.to || "").trim();
+
+    if (fromRaw) {
+      const from = new Date(fromRaw);
+      if (!Number.isNaN(from.getTime())) {
+        createdAt.$gte = from;
+      }
+    }
+
+    if (toRaw) {
+      const to = new Date(toRaw);
+      if (!Number.isNaN(to.getTime())) {
+        createdAt.$lte = to;
+      }
+    }
+
+    if (Object.keys(createdAt).length) {
+      match.createdAt = createdAt;
+    }
+
+    if (qRaw) {
+      const rx = safeRegex(qRaw);
+      const ors = [];
+      if (rx) {
+        ors.push({ uniqueKey: rx });
+        ors.push({ refType: rx });
+      }
+      if (Types.ObjectId.isValid(qRaw)) {
+        ors.push({ refId: new Types.ObjectId(qRaw) });
+      }
+      if (ors.length) {
+        match.$or = ors;
+      }
+    }
+
+    const [total, items] = await Promise.all([
+      CreditLedger.countDocuments(match),
+      CreditLedger.find(match)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .select({
+          type: 1,
+          amount: 1,
+          spentPaidAmount: 1,
+          spentBonusAmount: 1,
+          refType: 1,
+          refId: 1,
+          uniqueKey: 1,
+          userId: 1,
+          createdAt: 1,
+        })
+        .lean(),
+    ]);
+
+    const requestRefIds = Array.from(
+      new Set(
+        (items || [])
+          .filter(
+            (it) =>
+              String(it?.refType || "") === "REQUEST" &&
+              it?.refId &&
+              Types.ObjectId.isValid(String(it.refId)),
+          )
+          .map((it) => String(it.refId)),
+      ),
+    );
+
+    const refRequestIdById = new Map();
+    if (requestRefIds.length > 0) {
+      const requestDocs = await Request.find({
+        _id: { $in: requestRefIds.map((id) => new Types.ObjectId(id)) },
+      })
+        .select({ _id: 1, requestId: 1 })
+        .lean();
+
+      for (const doc of requestDocs || []) {
+        if (doc?._id) {
+          refRequestIdById.set(String(doc._id), String(doc.requestId || ""));
+        }
+      }
+    }
+
+    const enrichedItems = (items || []).map((it) => {
+      if (String(it?.refType || "") !== "REQUEST") return it;
+      const refRequestId = it?.refId
+        ? refRequestIdById.get(String(it.refId)) || ""
+        : "";
+      return { ...it, refRequestId };
+    });
+
+    return res.json({
+      success: true,
+      data: { items: enrichedItems, total, page, pageSize },
+    });
+  } catch (error) {
+    console.error("adminGetOrganizationLedger error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "조직 크레딧 원장 조회에 실패했습니다.",
+    });
+  }
+}
+
+export async function adminCreateSalesmanPayout(req, res) {
+  try {
+    const salesmanIdRaw = String(req.params.id || "");
+    if (!Types.ObjectId.isValid(salesmanIdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "영업자 ID가 올바르지 않습니다.",
+      });
+    }
+    const salesmanId = new Types.ObjectId(salesmanIdRaw);
+
+    const amountRaw = Number(req.body?.amount || 0);
+    const amount = Number.isFinite(amountRaw) ? Math.round(amountRaw) : 0;
+    if (amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "정산 금액이 올바르지 않습니다.",
+      });
+    }
+    if (amount % 10000 !== 0) {
+      return res.status(400).json({
+        success: false,
+        message: "정산 금액은 10,000원 단위로만 가능합니다.",
+      });
+    }
+
+    const salesman = await User.findById(salesmanId)
+      .select({ _id: 1, role: 1, active: 1 })
+      .lean();
+    if (!salesman || String(salesman.role || "") !== "salesman") {
+      return res.status(404).json({
+        success: false,
+        message: "영업자를 찾을 수 없습니다.",
+      });
+    }
+
+    const ledgerRows = await SalesmanLedger.aggregate([
+      { $match: { salesmanId } },
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]);
+
+    let earn = 0;
+    let payout = 0;
+    let adjust = 0;
+    for (const r of ledgerRows || []) {
+      const type = String(r?._id || "");
+      const total = Number(r?.total || 0);
+      if (type === "EARN") earn += total;
+      else if (type === "PAYOUT") payout += total;
+      else if (type === "ADJUST") adjust += total;
+    }
+    const balance = Math.round(earn - payout + adjust);
+    if (balance < amount) {
+      return res.status(400).json({
+        success: false,
+        message: "정산 전 잔액이 부족합니다.",
+      });
+    }
+
+    const now = new Date();
+    const uniqueKey = `admin:salesman:payout:${String(salesmanId)}:${now.getTime()}`;
+    const created = await SalesmanLedger.create({
+      salesmanId,
+      type: "PAYOUT",
+      amount,
+      refType: "ADMIN_PAYOUT",
+      refId: null,
+      uniqueKey,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        _id: created?._id,
+        salesmanId: String(salesmanId),
+        amount,
+        type: "PAYOUT",
+        createdAt: created?.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("adminCreateSalesmanPayout error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "정산 처리에 실패했습니다.",
+    });
+  }
+}
+
 export async function adminGetCreditStats(req, res) {
   try {
     const [
@@ -53,6 +286,73 @@ export async function adminGetCreditStats(req, res) {
     const totalSpent = Math.abs(ledgerByType.SPEND?.totalAmount || 0);
     const totalBonus = Math.abs(ledgerByType.BONUS?.totalAmount || 0);
 
+    // 구매/무료 차감 분해(무료 우선 차감) - 조직 단위로 시뮬레이션
+    const orgRows = await CreditLedger.aggregate([
+      {
+        $group: {
+          _id: "$organizationId",
+          entries: {
+            $push: {
+              type: "$type",
+              amount: "$amount",
+              createdAt: "$createdAt",
+              _id: "$_id",
+            },
+          },
+        },
+      },
+    ]);
+
+    let totalSpentPaidAmount = 0;
+    let totalSpentBonusAmount = 0;
+    let totalPaidBalance = 0;
+    let totalBonusBalance = 0;
+
+    for (const org of orgRows || []) {
+      const entries = (org?.entries || []).slice().sort((a, b) => {
+        const at = new Date(a?.createdAt || 0).getTime();
+        const bt = new Date(b?.createdAt || 0).getTime();
+        if (at !== bt) return at - bt;
+        return String(a?._id || "").localeCompare(String(b?._id || ""));
+      });
+
+      let paid = 0;
+      let bonus = 0;
+
+      for (const e of entries) {
+        const type = String(e?.type || "");
+        const amount = Number(e?.amount || 0);
+        if (!Number.isFinite(amount)) continue;
+
+        if (type === "CHARGE" || type === "REFUND") {
+          paid += Math.abs(amount);
+          continue;
+        }
+        if (type === "BONUS") {
+          bonus += Math.abs(amount);
+          continue;
+        }
+        if (type === "ADJUST") {
+          paid += amount;
+          continue;
+        }
+        if (type === "SPEND") {
+          let spend = Math.abs(amount);
+          const fromBonus = Math.min(Math.max(0, bonus), spend);
+          bonus -= fromBonus;
+          totalSpentBonusAmount += fromBonus;
+          spend -= fromBonus;
+
+          const fromPaid = spend;
+          paid -= fromPaid;
+          totalSpentPaidAmount += fromPaid;
+        }
+      }
+
+      totalPaidBalance += Math.max(0, paid);
+      totalBonusBalance += Math.max(0, bonus);
+    }
+
     return res.json({
       success: true,
       data: {
@@ -66,6 +366,10 @@ export async function adminGetCreditStats(req, res) {
         totalCharged,
         totalSpent,
         totalBonus,
+        totalSpentPaidAmount: Math.max(0, Math.round(totalSpentPaidAmount)),
+        totalSpentBonusAmount: Math.max(0, Math.round(totalSpentBonusAmount)),
+        totalPaidBalance: Math.max(0, Math.round(totalPaidBalance)),
+        totalBonusBalance: Math.max(0, Math.round(totalBonusBalance)),
         ledgerByType,
       },
     });
@@ -131,6 +435,37 @@ export async function adminGetSalesmanCredits(req, res) {
       ledgerBySalesmanId.set(sid, prev);
     }
 
+    const ledgerRows30d = await SalesmanLedger.aggregate([
+      {
+        $match: {
+          salesmanId: { $in: salesmanIds },
+          createdAt: { $gte: last30Cutoff },
+        },
+      },
+      {
+        $group: {
+          _id: { salesmanId: "$salesmanId", type: "$type" },
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+    const ledger30dBySalesmanId = new Map();
+    for (const r of ledgerRows30d) {
+      const sid = String(r?._id?.salesmanId || "");
+      const type = String(r?._id?.type || "");
+      const total = Number(r?.total || 0);
+      if (!sid) continue;
+      const prev = ledger30dBySalesmanId.get(sid) || {
+        earn: 0,
+        payout: 0,
+        adjust: 0,
+      };
+      if (type === "EARN") prev.earn += total;
+      else if (type === "PAYOUT") prev.payout += total;
+      else if (type === "ADJUST") prev.adjust += total;
+      ledger30dBySalesmanId.set(sid, prev);
+    }
+
     const referred = await User.find({
       role: "requestor",
       referredByUserId: { $in: salesmanIds },
@@ -172,7 +507,15 @@ export async function adminGetSalesmanCredits(req, res) {
             {
               $group: {
                 _id: "$requestorOrganizationId",
-                revenueAmount: { $sum: "$price.amount" },
+                revenueAmount: {
+                  $sum: {
+                    $ifNull: [
+                      "$price.paidAmount",
+                      { $ifNull: ["$price.amount", 0] },
+                    ],
+                  },
+                },
+                bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
                 orderCount: { $sum: 1 },
               },
             },
@@ -183,6 +526,7 @@ export async function adminGetSalesmanCredits(req, res) {
         String(r._id),
         {
           revenueAmount: Number(r.revenueAmount || 0),
+          bonusAmount: Number(r.bonusAmount || 0),
           orderCount: Number(r.orderCount || 0),
         },
       ]),
@@ -195,22 +539,36 @@ export async function adminGetSalesmanCredits(req, res) {
         payout: 0,
         adjust: 0,
       };
+
+      const ledger30d = ledger30dBySalesmanId.get(sid) || {
+        earn: 0,
+        payout: 0,
+        adjust: 0,
+      };
       const balance = Math.round(
         Number(ledger.earn || 0) -
           Number(ledger.payout || 0) +
           Number(ledger.adjust || 0),
       );
 
+      const balance30d = Math.round(
+        Number(ledger30d.earn || 0) -
+          Number(ledger30d.payout || 0) +
+          Number(ledger30d.adjust || 0),
+      );
+
       const orgSet = orgIdsBySalesmanId.get(sid) || new Set();
       let revenue30d = 0;
+      let bonus30d = 0;
       let orders30d = 0;
       for (const orgId of orgSet) {
         const row = revenueByOrgId.get(String(orgId));
         if (!row) continue;
         revenue30d += Number(row.revenueAmount || 0);
+        bonus30d += Number(row.bonusAmount || 0);
         orders30d += Number(row.orderCount || 0);
       }
-      const commission30d = Math.round(revenue30d * commissionRate);
+      const commission30d = Math.round(Number(ledger30d.earn || 0));
 
       return {
         salesmanId: sid,
@@ -223,10 +581,15 @@ export async function adminGetSalesmanCredits(req, res) {
           paidOutAmount: Math.round(Number(ledger.payout || 0)),
           adjustedAmount: Math.round(Number(ledger.adjust || 0)),
           balanceAmount: balance,
+          earnedAmount30d: Math.round(Number(ledger30d.earn || 0)),
+          paidOutAmount30d: Math.round(Number(ledger30d.payout || 0)),
+          adjustedAmount30d: Math.round(Number(ledger30d.adjust || 0)),
+          balanceAmount30d: balance30d,
         },
         performance30d: {
           referredOrgCount: orgSet.size,
           revenueAmount: Math.round(revenue30d),
+          bonusAmount: Math.round(bonus30d),
           orderCount: Math.round(orders30d),
           commissionAmount: Math.round(commission30d),
         },
@@ -240,6 +603,129 @@ export async function adminGetSalesmanCredits(req, res) {
     return res.status(500).json({
       success: false,
       message: "영업자 크레딧 조회에 실패했습니다.",
+    });
+  }
+}
+
+function parsePeriod(period) {
+  const p = String(period || "").trim();
+  if (!p || p === "all") return null;
+  const now = Date.now();
+  if (p === "7d") return new Date(now - 7 * 24 * 60 * 60 * 1000);
+  if (p === "30d") return new Date(now - 30 * 24 * 60 * 60 * 1000);
+  if (p === "90d") return new Date(now - 90 * 24 * 60 * 60 * 1000);
+  return null;
+}
+
+function safeRegex(query) {
+  const q = String(query || "").trim();
+  if (!q) return null;
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(escaped, "i");
+}
+
+export async function adminGetSalesmanLedger(req, res) {
+  try {
+    const salesmanIdRaw = String(req.params.id || "");
+    if (!Types.ObjectId.isValid(salesmanIdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "영업자 ID가 올바르지 않습니다.",
+      });
+    }
+    const salesmanId = new Types.ObjectId(salesmanIdRaw);
+
+    const typeRaw = String(req.query.type || "")
+      .trim()
+      .toUpperCase();
+    const periodRaw = String(req.query.period || "").trim();
+    const qRaw = String(req.query.q || "").trim();
+
+    const page = Math.max(1, Number(req.query.page || 1) || 1);
+    const pageSize = Math.min(
+      200,
+      Math.max(1, Number(req.query.pageSize || 50) || 50),
+    );
+
+    const match = { salesmanId };
+
+    if (
+      typeRaw &&
+      typeRaw !== "ALL" &&
+      ["EARN", "PAYOUT", "ADJUST"].includes(typeRaw)
+    ) {
+      match.type = typeRaw;
+    }
+
+    const createdAt = {};
+
+    const sinceFromPeriod = parsePeriod(periodRaw);
+    if (sinceFromPeriod) {
+      createdAt.$gte = sinceFromPeriod;
+    }
+
+    const fromRaw = String(req.query.from || "").trim();
+    const toRaw = String(req.query.to || "").trim();
+
+    if (fromRaw) {
+      const from = new Date(fromRaw);
+      if (!Number.isNaN(from.getTime())) {
+        createdAt.$gte = from;
+      }
+    }
+
+    if (toRaw) {
+      const to = new Date(toRaw);
+      if (!Number.isNaN(to.getTime())) {
+        createdAt.$lte = to;
+      }
+    }
+
+    if (Object.keys(createdAt).length) {
+      match.createdAt = createdAt;
+    }
+
+    if (qRaw) {
+      const rx = safeRegex(qRaw);
+      const ors = [];
+      if (rx) {
+        ors.push({ uniqueKey: rx });
+        ors.push({ refType: rx });
+      }
+      if (Types.ObjectId.isValid(qRaw)) {
+        ors.push({ refId: new Types.ObjectId(qRaw) });
+      }
+      if (ors.length) {
+        match.$or = ors;
+      }
+    }
+
+    const [total, items] = await Promise.all([
+      SalesmanLedger.countDocuments(match),
+      SalesmanLedger.find(match)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .select({
+          type: 1,
+          amount: 1,
+          refType: 1,
+          refId: 1,
+          uniqueKey: 1,
+          createdAt: 1,
+        })
+        .lean(),
+    ]);
+
+    return res.json({
+      success: true,
+      data: { items: Array.isArray(items) ? items : [], total, page, pageSize },
+    });
+  } catch (error) {
+    console.error("adminGetSalesmanLedger error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "영업자 원장 조회에 실패했습니다.",
     });
   }
 }

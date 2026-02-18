@@ -17,6 +17,7 @@ import {
   ensureLotNumberForMachining,
   ensureFinishedLotNumberForPackaging,
   buildRequestorOrgScopeFilter,
+  computePriceForRequest,
   normalizeCaseInfosImplantFields,
   getTodayYmdInKst,
 } from "./utils.js";
@@ -766,6 +767,25 @@ async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
 
   const fee = Number(pkg?.shippingFeeSupply || 0);
   if (fee > 0) {
+    const { balance, bonusBalance } =
+      await getOrganizationCreditBalanceBreakdown({
+        organizationId,
+        session,
+      });
+
+    const feeRaw = Number(fee || 0);
+    const feeToDeduct = Number.isFinite(feeRaw) ? Math.round(feeRaw) : 0;
+    if (feeToDeduct <= 0) return;
+
+    if (balance < feeToDeduct) {
+      const err = new Error("크레딧이 부족하여 배송비를 청구할 수 없습니다.");
+      err.statusCode = 402;
+      throw err;
+    }
+
+    const fromBonus = Math.min(Math.max(0, bonusBalance), feeToDeduct);
+    const fromPaid = feeToDeduct - fromBonus;
+
     const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
     await CreditLedger.updateOne(
       { uniqueKey },
@@ -774,7 +794,9 @@ async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
           organizationId,
           userId: userId || null,
           type: "SPEND",
-          amount: -fee,
+          amount: -feeToDeduct,
+          spentPaidAmount: fromPaid,
+          spentBonusAmount: fromBonus,
           refType: "SHIPPING_PACKAGE",
           refId: pkg._id,
           uniqueKey,
@@ -1143,11 +1165,34 @@ const advanceManufacturerStageByReviewStage = async ({
     const organizationId =
       request.requestorOrganizationId || request.requestor?.organizationId;
     if (organizationId) {
-      const { balance } = await getOrganizationCreditBalanceBreakdown({
-        organizationId,
-        session,
+      const { balance, paidBalance, bonusBalance } =
+        await getOrganizationCreditBalanceBreakdown({
+          organizationId,
+          session,
+        });
+
+      const ci = request.caseInfos || {};
+      const computedPrice = await computePriceForRequest({
+        requestorId: request.requestor,
+        requestorOrgId: organizationId,
+        clinicName: String(ci.clinicName || ""),
+        patientName: String(ci.patientName || ""),
+        tooth: String(ci.tooth || ""),
       });
-      const amountToDeduct = Number(request.price?.amount || 0);
+
+      const amountToDeductRaw = Number(computedPrice?.amount || 0);
+      const amountToDeduct = Number.isFinite(amountToDeductRaw)
+        ? Math.round(amountToDeductRaw)
+        : 0;
+
+      const fromBonus = Math.min(Math.max(0, bonusBalance), amountToDeduct);
+      const fromPaid = amountToDeduct - fromBonus;
+
+      request.price = {
+        ...computedPrice,
+        paidAmount: fromPaid,
+        bonusAmount: fromBonus,
+      };
 
       if (balance < amountToDeduct) {
         const err = new Error("크레딧이 부족하여 가공을 시작할 수 없습니다.");
@@ -1164,6 +1209,8 @@ const advanceManufacturerStageByReviewStage = async ({
             userId: userId || null,
             type: "SPEND",
             amount: -amountToDeduct,
+            spentPaidAmount: fromPaid,
+            spentBonusAmount: fromBonus,
             refType: "REQUEST",
             refId: request._id,
             uniqueKey,

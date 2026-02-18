@@ -165,11 +165,6 @@ export const RequestorDashboardPage = () => {
         path: `/api/requests/my?page=${pageParam}&limit=20&sortBy=createdAt&sortOrder=desc`,
         method: "GET",
         token,
-        headers: token
-          ? {
-              "x-mock-role": "requestor",
-            }
-          : undefined,
       });
       if (!res.ok) throw new Error("의뢰 목록 조회에 실패했습니다.");
       const body = res.data;
@@ -224,11 +219,6 @@ export const RequestorDashboardPage = () => {
         path: `/api/requests/my/dashboard-summary?${params.toString()}`,
         method: "GET",
         token,
-        headers: token
-          ? {
-              "x-mock-role": "requestor",
-            }
-          : undefined,
       });
       if (!res.ok) {
         throw new Error("대시보드 요약 조회에 실패했습니다.");

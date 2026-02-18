@@ -37,7 +37,7 @@ export async function listMyCreditLedger(req, res) {
   const page = Math.max(1, Number(req.query.page || 1) || 1);
   const pageSize = Math.min(
     200,
-    Math.max(1, Number(req.query.pageSize || 50) || 50)
+    Math.max(1, Number(req.query.pageSize || 50) || 50),
   );
 
   const match = {
@@ -118,6 +118,8 @@ export async function listMyCreditLedger(req, res) {
       .select({
         type: 1,
         amount: 1,
+        spentPaidAmount: 1,
+        spentBonusAmount: 1,
         refType: 1,
         refId: 1,
         uniqueKey: 1,
@@ -134,10 +136,10 @@ export async function listMyCreditLedger(req, res) {
           (it) =>
             String(it?.refType || "") === "REQUEST" &&
             it?.refId &&
-            mongoose.Types.ObjectId.isValid(String(it.refId))
+            mongoose.Types.ObjectId.isValid(String(it.refId)),
         )
-        .map((it) => String(it.refId))
-    )
+        .map((it) => String(it.refId)),
+    ),
   );
 
   const refRequestIdById = new Map();

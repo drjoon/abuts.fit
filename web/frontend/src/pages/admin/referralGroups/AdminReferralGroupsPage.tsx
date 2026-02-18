@@ -58,6 +58,7 @@ type ApiGroupListResponse = {
         netNewGroups: number;
         avgRevenuePerGroup: number;
         totalRevenueAmount: number;
+        totalBonusAmount?: number;
         totalOrders?: number;
       };
       salesman: {
@@ -67,6 +68,7 @@ type ApiGroupListResponse = {
         avgCommissionPerGroup: number;
         totalCommissionAmount: number;
         totalReferredRevenueAmount?: number;
+        totalReferredBonusAmount?: number;
         totalReferralOrders?: number;
       };
     };
@@ -104,12 +106,14 @@ type ApiTreeNode = {
   name?: string;
   email?: string;
   organization?: string;
+  organizationId?: string;
   active?: boolean;
   createdAt?: string;
   approvedAt?: string;
   updatedAt?: string;
   referredByUserId?: string | null;
   last30DaysOrders?: number;
+  commissionAmount?: number;
   children?: ApiTreeNode[];
 };
 
@@ -145,6 +149,8 @@ const TreeNode = ({
 }) => {
   const indent = depth * 16;
   const last30DaysOrders = Number(node.last30DaysOrders || 0);
+  const commissionAmount = Number(node.commissionAmount || 0);
+  const isSalesman = String(node.role || "") === "salesman";
 
   return (
     <div style={{ paddingLeft: indent }} className="relative">
@@ -169,6 +175,9 @@ const TreeNode = ({
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
               최근30일 {last30DaysOrders.toLocaleString()}건
+              {isSalesman ? (
+                <> · 수수료 {formatMoney(commissionAmount)}원</>
+              ) : null}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -318,6 +327,13 @@ export default function AdminReferralGroupsPage() {
   const effectiveLeaderId =
     selectedLeaderId || (visibleGroups[0]?.leader?._id ?? null);
 
+  const selectedGroupRow = useMemo(() => {
+    if (!effectiveLeaderId) return null;
+    const id = String(effectiveLeaderId);
+    const all = groups || [];
+    return all.find((g) => String(g?.leader?._id || "") === id) || null;
+  }, [effectiveLeaderId, groups]);
+
   const { data: treeData, isLoading: isTreeLoading } = useQuery({
     queryKey: ["admin-referral-group-tree", effectiveLeaderId],
     enabled: Boolean(token && effectiveLeaderId),
@@ -409,11 +425,17 @@ export default function AdminReferralGroupsPage() {
               {roleBadge("requestor")}
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4 text-right">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
             <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">그룹수</div>
+              <div className="text-xs text-muted-foreground">
+                그룹수 / 의뢰건수
+              </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {Number(overview?.requestor?.groupCount || 0).toLocaleString()}
+                <span className="text-base font-normal text-muted-foreground mx-1">
+                  /
+                </span>
+                {Number(overview?.requestor?.totalOrders || 0).toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">
                 평균 계정수{" "}
@@ -428,7 +450,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹당 평균 매출액(추정)
+                그룹당 평균 유료 매출액
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
@@ -436,20 +458,37 @@ export default function AdminReferralGroupsPage() {
                 )}
                 원
               </div>
+              <div className="text-xs text-muted-foreground">
+                (무료 매출액{" "}
+                {formatMoney(
+                  Number(
+                    overview?.requestor?.groupCount
+                      ? Math.round(
+                          (overview?.requestor?.totalBonusAmount || 0) /
+                            overview?.requestor?.groupCount,
+                        )
+                      : 0,
+                  ),
+                )}
+                원)
+              </div>
             </div>
             <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">매출 총액</div>
+              <div className="text-xs text-muted-foreground">
+                유료 매출 총액
+              </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.requestor?.totalRevenueAmount || 0),
                 )}
                 원
               </div>
-            </div>
-            <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">의뢰건수</div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {Number(overview?.requestor?.totalOrders || 0).toLocaleString()}
+              <div className="text-xs text-muted-foreground">
+                (무료{" "}
+                {formatMoney(
+                  Number(overview?.requestor?.totalBonusAmount || 0),
+                )}
+                원)
               </div>
             </div>
           </CardContent>
@@ -462,11 +501,19 @@ export default function AdminReferralGroupsPage() {
               {roleBadge("salesman")}
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-4 text-right">
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
             <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">그룹수</div>
+              <div className="text-xs text-muted-foreground">
+                그룹수 / 의뢰건수(소개)
+              </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {Number(overview?.salesman?.groupCount || 0).toLocaleString()}
+                <span className="text-base font-normal text-muted-foreground mx-1">
+                  /
+                </span>
+                {Number(
+                  overview?.salesman?.totalReferralOrders || 0,
+                ).toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">
                 평균 계정수{" "}
@@ -481,17 +528,18 @@ export default function AdminReferralGroupsPage() {
               <div className="text-xs text-muted-foreground">
                 그룹당 평균 수수료(30일)
               </div>
-              <div className="text-2xl font-semibold tracking-tight text-center">
+              <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.salesman?.avgCommissionPerGroup || 0),
                 )}
                 원
               </div>
+              <div className="text-xs text-muted-foreground">
+                유료 소개 매출 기준
+              </div>
             </div>
             <div className="rounded-xl border p-3 text-right">
-              <div className="text-xs text-muted-foreground">
-                수수료 총액 / 소개 매출 총액
-              </div>
+              <div className="text-xs text-muted-foreground">수수료 총액</div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.salesman?.totalCommissionAmount || 0),
@@ -499,30 +547,30 @@ export default function AdminReferralGroupsPage() {
                 원
               </div>
               <div className="text-xs text-muted-foreground">
-                매출{" "}
+                유료 매출{" "}
                 {formatMoney(
                   Number(overview?.salesman?.totalReferredRevenueAmount || 0),
                 )}
-                원 · 비율 {salesmanCommissionRatio.toFixed(1)}%
+                원
               </div>
-            </div>
-            <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                의뢰건수(소개)
+                비율 {salesmanCommissionRatio.toFixed(1)}%
               </div>
-              <div className="text-2xl font-semibold tracking-tight">
-                {Number(
-                  overview?.salesman?.totalReferralOrders || 0,
-                ).toLocaleString()}
+              <div className="text-xs text-muted-foreground">
+                (무료 매출{" "}
+                {formatMoney(
+                  Number(overview?.salesman?.totalReferredBonusAmount || 0),
+                )}
+                원)
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 flex-1 min-h-0">
-        <Card className="lg:col-span-1 h-full flex flex-col min-h-0">
-          <CardHeader>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 flex-1 min-h-0">
+        <Card className="h-full flex flex-col min-h-0">
+          <CardHeader className="py-3">
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-base">그룹 목록</CardTitle>
               <div className="flex items-center gap-1">
@@ -558,7 +606,7 @@ export default function AdminReferralGroupsPage() {
               </CardDescription>
             ) : null}
           </CardHeader>
-          <CardContent className="space-y-3 flex flex-col min-h-0 flex-1">
+          <CardContent className="space-y-2 flex flex-col min-h-0 flex-1">
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -585,6 +633,52 @@ export default function AdminReferralGroupsPage() {
                 영업자
               </Button>
             </div>
+
+            {selectedGroupRow ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-medium text-emerald-900">
+                    멤버{" "}
+                    {Number(selectedGroupRow.memberCount || 0).toLocaleString()}
+                    명
+                  </div>
+                  <div className="text-emerald-900">
+                    주문{" "}
+                    {Number(
+                      selectedGroupRow.groupTotalOrders || 0,
+                    ).toLocaleString()}
+                    건
+                  </div>
+                  <div className="text-emerald-900">
+                    매출{" "}
+                    {(
+                      Number((overview as any)?.avgEffectiveUnitPrice || 0) *
+                      Number(selectedGroupRow.groupTotalOrders || 0)
+                    ).toLocaleString()}
+                    원
+                  </div>
+                  {String(selectedGroupRow?.leader?.role || "") ===
+                  "salesman" ? (
+                    <div className="font-semibold text-emerald-900">
+                      수수료{" "}
+                      {formatMoney(
+                        Number(selectedGroupRow.commissionAmount || 0),
+                      )}
+                      원
+                    </div>
+                  ) : (
+                    <div className="font-semibold text-emerald-900">
+                      단가{" "}
+                      {Number(
+                        selectedGroupRow.effectiveUnitPrice || 0,
+                      ).toLocaleString()}
+                      원
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -616,7 +710,7 @@ export default function AdminReferralGroupsPage() {
                     <button
                       key={String(leader._id)}
                       type="button"
-                      className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                      className={`w-full rounded-xl border p-2 text-left transition-colors ${
                         isSelected ? "border-primary" : "border-border"
                       }`}
                       onClick={() => {
@@ -682,19 +776,20 @@ export default function AdminReferralGroupsPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2 h-full flex flex-col min-h-0">
-          <CardHeader>
+        <Card className="h-full flex flex-col min-h-0">
+          <CardHeader className="py-3">
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-base">계층도</CardTitle>
-              {isDev ? (
-                <div className="text-[11px] text-muted-foreground">
-                  debug: applied=
-                  {String(Boolean((treeData as any)?.unitPriceDebug?.applied))}
-                </div>
-              ) : null}
             </div>
           </CardHeader>
           <CardContent className="flex flex-col min-h-0 flex-1">
+            {isDev && treeData?.tree ? (
+              <div className="mb-2 text-[11px] text-muted-foreground">
+                debug: applied=
+                {String(Boolean((treeData as any)?.unitPriceDebug?.applied))}
+              </div>
+            ) : null}
+
             {isTreeLoading ? (
               <div className="text-sm text-muted-foreground">로딩중...</div>
             ) : !treeData?.tree ? (
@@ -706,30 +801,6 @@ export default function AdminReferralGroupsPage() {
                 ref={treeScrollRef}
                 className="space-y-3 flex-1 min-h-0 overflow-y-auto pr-1"
               >
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium">
-                    멤버 수(리더+직계):{" "}
-                    {Number(treeData.memberCount || 0).toLocaleString()}
-                  </div>
-                  <div className="text-sm font-medium">
-                    주문(최근30일, 리더+직계):{" "}
-                    {Number(treeData.groupTotalOrders || 0).toLocaleString()}건
-                  </div>
-                  {String(treeData?.leader?.role || "") === "salesman" ? (
-                    <div className="text-sm font-semibold">
-                      수수료(최근30일 추정):{" "}
-                      {formatMoney(Number(treeData.commissionAmount || 0))}원
-                    </div>
-                  ) : (
-                    <div className="text-sm font-semibold">
-                      당일 단가:{" "}
-                      {Number(
-                        treeData.effectiveUnitPrice || 0,
-                      ).toLocaleString()}
-                      원
-                    </div>
-                  )}
-                </div>
                 <div className="space-y-2">
                   {visibleTreeRows.map(({ node, depth }) => (
                     <TreeNode

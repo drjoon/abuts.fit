@@ -21,11 +21,13 @@ const creditLedgerSchema = new mongoose.Schema(
       index: true,
     },
     amount: { type: Number, required: true },
+    spentPaidAmount: { type: Number, default: null },
+    spentBonusAmount: { type: Number, default: null },
     refType: { type: String, default: "" },
     refId: { type: mongoose.Schema.Types.ObjectId, default: null },
     uniqueKey: { type: String, required: true, unique: true, index: true },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export default mongoose.model("CreditLedger", creditLedgerSchema);

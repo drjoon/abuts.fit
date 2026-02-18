@@ -35,6 +35,8 @@ type CreditLedgerItem = {
   _id: string;
   type: CreditLedgerType;
   amount: number;
+  spentPaidAmount?: number | null;
+  spentBonusAmount?: number | null;
   refType?: string;
   refId?: string | null;
   refRequestId?: string;
@@ -311,10 +313,15 @@ export const CreditLedgerModal = ({
                   {rows.map((r) => {
                     const amount = Number(r.amount || 0);
                     const isMinus = amount < 0;
+                    const spentPaid = Number(r.spentPaidAmount || 0);
+                    const spentBonus = Number(r.spentBonusAmount || 0);
+                    const showSplit =
+                      String(r.type) === "SPEND" &&
+                      (spentPaid > 0 || spentBonus > 0);
                     const safeRef = r.refRequestId
                       ? formatRequestIdSafe(
                           r.refRequestId,
-                          r.refId || r.uniqueKey
+                          `${String(r.refId || "")}::${String(r.uniqueKey || "")}`,
                         )
                       : "";
                     return (
@@ -327,11 +334,26 @@ export const CreditLedgerModal = ({
                         </TableCell>
                         <TableCell
                           className={cn(
-                            "text-right text-xs font-semibold",
-                            isMinus ? "text-rose-600" : "text-blue-700"
+                            "font-medium tabular-nums",
+                            isMinus ? "text-rose-600" : "text-blue-700",
                           )}
                         >
-                          {amount.toLocaleString()}원
+                          {showSplit ? (
+                            <div className="flex flex-col leading-4">
+                              {spentPaid > 0 && (
+                                <div className="tabular-nums">
+                                  -{spentPaid.toLocaleString()}원
+                                </div>
+                              )}
+                              {spentBonus > 0 && (
+                                <div className="tabular-nums">
+                                  -{spentBonus.toLocaleString()}원
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            `${amount.toLocaleString()}원`
+                          )}
                         </TableCell>
                         <TableCell className="text-xs">
                           <div className="flex flex-col leading-4">

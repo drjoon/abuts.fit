@@ -242,7 +242,11 @@ export async function getSalesmanDashboard(req, res) {
       {
         $group: {
           _id: "$requestorOrganizationId",
-          revenueAmount: { $sum: "$price.amount" },
+          revenueAmount: {
+            $sum: {
+              $ifNull: ["$price.paidAmount", { $ifNull: ["$price.amount", 0] }],
+            },
+          },
           orderCount: { $sum: 1 },
         },
       },

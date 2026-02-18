@@ -25,12 +25,16 @@ import {
 
 type PricingSummary = {
   totalOrders?: number;
+  paidOrders?: number;
+  bonusOrders?: number;
   totalRevenue?: number;
+  totalBonusRevenue?: number;
   totalBaseAmount?: number;
   totalDiscountAmount?: number;
   totalShippingFeeSupply?: number;
   avgShippingFeeSupply?: number;
   avgUnitPrice?: number;
+  avgBonusUnitPrice?: number;
   avgDiscountPerOrder?: number;
 };
 
@@ -188,7 +192,7 @@ export const AdminDashboardPage = () => {
 
   const baseData: DashboardData = {
     stats: [
-      { label: "전체 사용자", value: "0", change: "+0%", icon: Users },
+      { label: "전체 의뢰자", value: "0", change: "+0%", icon: Users },
       { label: "진행", value: "0", change: "+0%", icon: FileText },
       { label: "완료", value: "0", change: "+0%", icon: CheckCircle },
       { label: "취소", value: "0", change: "+0%", icon: AlertCircle },
@@ -265,7 +269,7 @@ export const AdminDashboardPage = () => {
     data = {
       stats: [
         {
-          label: "전체 사용자",
+          label: "전체 의뢰자",
           value: String(totalUsers),
           change: "+0%",
           icon: Users,
@@ -313,23 +317,26 @@ export const AdminDashboardPage = () => {
       }
       stats={
         <>
+          {/* 카드1: 전체 사용자 / 전체 완료 주문 */}
           <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                전체 사용자 / 전체 주문(취소 제외)
+                사용자 / 주문
               </CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent className="space-y-1">
               <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">전체 사용자</div>
+                <div className="text-xs text-muted-foreground">전체 의뢰자</div>
                 <div className="text-2xl font-bold">
                   {(Number(data.stats?.[0]?.value || 0) || 0).toLocaleString()}
                   명
                 </div>
               </div>
               <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">전체 주문</div>
+                <div className="text-xs text-muted-foreground">
+                  전체 완료 주문
+                </div>
                 <div className="text-lg font-semibold">
                   {(pricingSummary?.totalOrders ?? 0).toLocaleString()}건
                 </div>
@@ -337,72 +344,113 @@ export const AdminDashboardPage = () => {
             </CardContent>
           </Card>
 
+          {/* 카드2: 진행/완료/취소 - 유료/무료 분리 */}
           <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                진행/완료/취소
+                진행 / 완료 / 취소
               </CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">진행</div>
-                <div className="text-2xl font-bold">
-                  {Number(data.stats?.[1]?.value || 0).toLocaleString()}
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-end justify-between gap-2 mr-6">
+                  <div className="text-xs text-muted-foreground">진행</div>
+                  <div className="text-2xl font-bold">
+                    {Number(data.stats?.[1]?.value || 0).toLocaleString()}
+                  </div>
+                </div>
+                <div className="flex items-end justify-between gap-2 ml-6">
+                  <div className="text-xs text-muted-foreground">취소</div>
+                  <div className="text-2xl font-bold text-muted-foreground">
+                    {Number(data.stats?.[3]?.value || 0).toLocaleString()}
+                  </div>
                 </div>
               </div>
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">완료 / 취소</div>
-                <div className="text-lg font-semibold">
-                  {Number(data.stats?.[2]?.value || 0).toLocaleString()} /{" "}
-                  {Number(data.stats?.[3]?.value || 0).toLocaleString()}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-end justify-between gap-2 mr-6">
+                  <div className="text-xs text-muted-foreground">
+                    완료(유료)
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {(pricingSummary?.paidOrders ?? 0).toLocaleString()}건
+                  </div>
+                </div>
+                <div className="flex items-end justify-between gap-2 ml-6">
+                  <div className="text-xs text-muted-foreground">
+                    완료(무료)
+                  </div>
+                  <div className="text-lg font-semibold text-muted-foreground">
+                    {(pricingSummary?.bonusOrders ?? 0).toLocaleString()}건
+                  </div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
+          {/* 카드3: 거래금액 */}
           <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                전체 거래금액 / 전체 배송비
-              </CardTitle>
+              <CardTitle className="text-sm font-medium">거래금액</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent className="space-y-1">
               <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">
-                  전체 거래금액
-                </div>
+                <div className="text-xs text-muted-foreground">유료 주문액</div>
                 <div className="text-2xl font-bold">
                   ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
                 </div>
               </div>
               <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">전체 배송비</div>
-                <div className="text-lg font-semibold">
-                  ₩
-                  {(
-                    pricingSummary?.totalShippingFeeSupply ?? 0
-                  ).toLocaleString()}
+                <div className="text-xs text-muted-foreground">무료 주문액</div>
+                <div className="text-lg font-semibold text-muted-foreground">
+                  ₩{(pricingSummary?.totalBonusRevenue ?? 0).toLocaleString()}
                 </div>
               </div>
             </CardContent>
           </Card>
 
+          {/* 카드4: 평균 단가 */}
           <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                평균 거래금액 / 평균 배송비
-              </CardTitle>
+              <CardTitle className="text-sm font-medium">평균 단가</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent className="space-y-1">
               <div className="flex items-end justify-between gap-2">
                 <div className="text-xs text-muted-foreground">
-                  평균 거래금액
+                  평균 유료 단가
                 </div>
                 <div className="text-2xl font-bold">
                   ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
+                </div>
+              </div>
+              <div className="flex items-end justify-between gap-2">
+                <div className="text-xs text-muted-foreground">
+                  평균 무료 단가
+                </div>
+                <div className="text-lg font-semibold text-muted-foreground">
+                  ₩{(pricingSummary?.avgBonusUnitPrice ?? 0).toLocaleString()}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 카드5: 배송비 */}
+          <Card className="app-glass-card app-glass-card--lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">배송비</CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className="flex items-end justify-between gap-2">
+                <div className="text-xs text-muted-foreground">전체 배송비</div>
+                <div className="text-2xl font-bold">
+                  ₩
+                  {(
+                    pricingSummary?.totalShippingFeeSupply ?? 0
+                  ).toLocaleString()}
                 </div>
               </div>
               <div className="flex items-end justify-between gap-2">
@@ -411,23 +459,6 @@ export const AdminDashboardPage = () => {
                   ₩
                   {(pricingSummary?.avgShippingFeeSupply ?? 0).toLocaleString()}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">시스템상태</CardTitle>
-              <CheckCircle className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">상태</div>
-                <div className="text-2xl font-bold">정상</div>
-              </div>
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">가동률</div>
-                <div className="text-lg font-semibold">99.9%</div>
               </div>
             </CardContent>
           </Card>

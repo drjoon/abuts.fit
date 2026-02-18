@@ -269,26 +269,21 @@ function toKstYmd(d) {
 }
 
 async function seedBulkUsersAndData() {
-  const NOW = new Date();
+  const BULK_NOW = new Date();
   const REQUESTOR_PW = "Abc!1234";
   const SALESMAN_PW = "Abc!1234";
 
-  const requestors = [];
+  const requestors = []; // owner만 (추천인 후보)
   const salesmen = [];
-
   const salesmanRoots = [];
+  const ROOT_COUNT = 3;
 
-  // 영업자 20명 s001~s020 (리퍼럴 코드 4자리)
-  // - 루트(미소개) 여러 명 생성해서 영업자 그룹이 여러 개 나오도록 구성
-  // - 일부는 다른 영업자가 소개
-  const ROOT_COUNT = 5;
-  for (let i = 1; i <= 20; i += 1) {
+  // 영업자 4명 s001~s004 (리퍼럴 코드 4자리, 의뢰자보다 먼저 생성해 추천 관계 성립)
+  for (let i = 1; i <= 4; i += 1) {
     const email = `s${String(i).padStart(3, "0")}@gmail.com`;
     const referralCode = randomReferralCode(4);
-
     let referredByUserId = null;
     let referralGroupLeaderId = null;
-
     const isRoot = i <= ROOT_COUNT;
     const isUnreferred = !isRoot && Math.random() < 0.1;
     if (!isRoot && !isUnreferred) {
@@ -301,7 +296,6 @@ async function seedBulkUsersAndData() {
       referralGroupLeaderId =
         root?.id || parent?.leaderId || parent?.id || null;
     }
-
     const salesman = await User.create({
       name: `데모 영업자${i}`,
       email,
@@ -310,39 +304,33 @@ async function seedBulkUsersAndData() {
       referralCode,
       referredByUserId,
       referralGroupLeaderId,
-      approvedAt: NOW,
+      approvedAt: BULK_NOW,
       active: true,
     });
-
     const leaderId = referralGroupLeaderId || salesman._id;
-    const row = { id: salesman._id, email, leaderId };
-    salesmen.push(row);
+    salesmen.push({ id: salesman._id, email, leaderId });
     if (isRoot) salesmanRoots.push({ id: salesman._id, email });
   }
 
-  // 의뢰자 100명 r001~r100, 조직 100개(owner만)
-  // 크레딧 사용(의뢰 완료 + SPEND)이 충분히 발생하도록 충전액 상향
-  for (let i = 1; i <= 100; i += 1) {
+  // 의뢰자 20계정 r001~r020, 계정당 1조직(staff 없음), 의뢰 50~100건
+  for (let i = 1; i <= 20; i += 1) {
     const email = `r${String(i).padStart(3, "0")}@gmail.com`;
     const orgName = `org-${String(i).padStart(3, "0")}`;
     const referralCode = randomReferralCode();
 
-    // 소개 관계 다양화
-    // - 20%: 미소개
-    // - 50%: 영업자 소개
-    // - 30%: 의뢰자 소개
+    // 소개 관계: 60% 영업자 소개 / 30% 의뢰자 소개 / 10% 미소개
     let parentId = null;
     const roll = Math.random();
     if (roll < 0.1) {
-      parentId = null;
-    } else if (roll < 0.6) {
-      parentId = salesmen.length ? pick(salesmen).id : null;
+      parentId = null; // 10% 미소개
+    } else if (roll < 0.7) {
+      parentId = salesmen.length ? pick(salesmen).id : null; // 60% 영업자 소개
     } else {
-      parentId = requestors.length ? pick(requestors).id : null;
+      parentId = requestors.length ? pick(requestors).id : null; // 30% 의뢰자 소개
     }
 
-    const approvedDaysAgo = randInt(0, 365);
-    const approvedAt = new Date(NOW);
+    const approvedDaysAgo = randInt(0, 60);
+    const approvedAt = new Date(BULK_NOW);
     approvedAt.setDate(approvedAt.getDate() - approvedDaysAgo);
 
     const owner = await User.create({
@@ -372,15 +360,17 @@ async function seedBulkUsersAndData() {
       { $set: { organizationId: org._id, organization: org.name } },
     );
 
-    requestors.push({ id: owner._id, email, orgId: org._id });
+    requestors.push({ id: owner._id, email, orgId: org._id }); // owner만 추천인 후보
 
-    // 입금: 무작위 금액
-    const depositAmount = randInt(1, 10) * 500_000;
+    // 입금: 50만/100만/200만/300만원 4종 중 랜덤
+    let remainingPaid = pick([500000, 1000000, 2000000, 3000000]);
+    let remainingBonus = 30000;
+
     await CreditLedger.create({
       organizationId: org._id,
       userId: owner._id,
       type: "CHARGE",
-      amount: depositAmount,
+      amount: remainingPaid,
       refType: "SEED_DEPOSIT",
       refId: null,
       uniqueKey: `seed:charge:${email}`,
@@ -390,38 +380,53 @@ async function seedBulkUsersAndData() {
       organizationId: org._id,
       userId: owner._id,
       type: "BONUS",
-      amount: 50_000,
+      amount: 30000,
       refType: "SEED_BONUS",
       refId: null,
       uniqueKey: `seed:bonus:${email}`,
     });
 
-    // 의뢰자 1명당 주문 5~20건, 그 중 80% 발송 완료
-    let remainingCredit = depositAmount;
-
-    const requestCount = randInt(5, 20);
+    // 의뢰자 1명당 주문 50~100건, 그 중 80% 완료(APPROVED)
+    const requestCount = randInt(50, 100);
     const completedRequestIds = [];
     for (let k = 0; k < requestCount; k += 1) {
-      const daysAgo = randInt(0, 365);
-      const createdAt = new Date(NOW);
+      const daysAgo = randInt(0, 30);
+      const createdAt = new Date(BULK_NOW);
       createdAt.setDate(createdAt.getDate() - daysAgo);
 
-      // 12~25만원 구간 랜덤(현실적인 사용 내역)
-      const price = randInt(120_000, 250_000);
+      // 조직 당일 단가 적용: 신규 90일 = 10,000원, 이후 = 15,000원
+      const isNewUser =
+        approvedAt &&
+        createdAt < new Date(approvedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+      const price = isNewUser ? 10_000 : 15_000;
+      const computedPrice = {
+        amount: price,
+        baseAmount: isNewUser ? 10_000 : 15_000,
+        discountAmount: 0,
+        rule: isNewUser ? "new_user_90days_fixed_10000" : "base_price",
+      };
       const isCompleted = Math.random() < 0.8;
 
       const status = isCompleted
-        ? "발송"
+        ? "완료"
         : pick(["의뢰", "CAM", "가공", "세척.포장", "발송"]);
 
       const manufacturerStage = (() => {
-        if (isCompleted) return "tracking";
-        if (status === "의뢰") return "request";
-        if (status === "CAM") return "cam";
-        if (status === "가공") return "machining";
-        if (status === "세척.포장") return "packaging";
-        if (status === "발송") return "shipping";
-        return "request";
+        if (isCompleted) return "추적관리";
+        if (status === "의뢰") return "의뢰";
+        if (status === "CAM") return "CAM";
+        if (status === "가공") return "가공";
+        if (status === "세척.포장") return "세척.포장";
+        if (status === "발송") return "발송";
+        return "의뢰";
+      })();
+
+      const paidAmount = (() => {
+        const fromBonus = Math.min(Math.max(0, remainingBonus), price);
+        return price - fromBonus;
+      })();
+      const bonusAmount = (() => {
+        return Math.min(Math.max(0, remainingBonus), price);
       })();
 
       const reqDoc = await Request.create({
@@ -435,18 +440,27 @@ async function seedBulkUsersAndData() {
           implantManufacturer: "OSSTEM",
           implantSystem: "Regular",
           implantType: "Hex",
+          reviewByStage: {
+            shipping: {
+              status: isCompleted ? "APPROVED" : "PENDING",
+              updatedAt: createdAt,
+              updatedBy: owner._id,
+              reason: "",
+            },
+          },
         },
         status,
         manufacturerStage,
-        ...(isCompleted ? { status2: "완료" } : {}),
         ...(isCompleted
           ? {
               price: {
-                amount: price,
-                baseAmount: price,
-                discountAmount: 0,
+                amount: computedPrice.amount,
+                baseAmount: computedPrice.baseAmount,
+                discountAmount: computedPrice.discountAmount,
                 currency: "KRW",
-                rule: "seed",
+                rule: computedPrice.rule,
+                paidAmount,
+                bonusAmount,
               },
             }
           : {}),
@@ -454,13 +468,18 @@ async function seedBulkUsersAndData() {
         updatedAt: createdAt,
       });
 
-      if (isCompleted && remainingCredit >= price) {
-        remainingCredit -= price;
+      if (isCompleted && remainingBonus + remainingPaid >= price) {
+        const fromBonus = Math.min(Math.max(0, remainingBonus), price);
+        const fromPaid = price - fromBonus;
+        remainingBonus -= fromBonus;
+        remainingPaid -= fromPaid;
         await CreditLedger.create({
           organizationId: org._id,
           userId: owner._id,
           type: "SPEND",
           amount: -price,
+          spentPaidAmount: fromPaid,
+          spentBonusAmount: fromBonus,
           refType: "SEED_REQUEST",
           refId: reqDoc._id,
           uniqueKey: `seed:spend:${email}:${String(reqDoc._id)}`,
@@ -473,7 +492,7 @@ async function seedBulkUsersAndData() {
           (s) => String(s.id) === String(parentId),
         );
         if (parentUser) {
-          const earnAmount = Math.round(price * 0.05);
+          const earnAmount = Math.round(paidAmount * 0.05);
           if (earnAmount > 0) {
             await SalesmanLedger.create({
               salesmanId: parentId,
@@ -502,7 +521,7 @@ async function seedBulkUsersAndData() {
         cursor += chunkSize;
         pkgIdx += 1;
 
-        const shipDate = new Date(NOW);
+        const shipDate = new Date(BULK_NOW);
         // 패키지마다 다른 날짜 보장: pkgIdx 기반 offset + 랜덤
         shipDate.setDate(shipDate.getDate() - pkgIdx - randInt(0, 5));
         // unique key: YMD + 패키지 인덱스 (index 충돌 방지)
@@ -520,13 +539,18 @@ async function seedBulkUsersAndData() {
         });
 
         // 배송비도 크레딧 사용으로 기록 (발송 1회당 3,500원)
-        if (remainingCredit >= 3500) {
-          remainingCredit -= 3500;
+        if (remainingBonus + remainingPaid >= 3500) {
+          const fromBonus = Math.min(remainingBonus, 3500);
+          const fromPaid = 3500 - fromBonus;
+          remainingBonus -= fromBonus;
+          remainingPaid -= fromPaid;
           await CreditLedger.create({
             organizationId: org._id,
             userId: owner._id,
             type: "SPEND",
             amount: -3500,
+            spentPaidAmount: fromPaid,
+            spentBonusAmount: fromBonus,
             refType: "SHIPPING_FEE",
             refId: pkg._id,
             uniqueKey: `seed:shipping-fee:${email}:${String(pkg._id)}`,
@@ -550,7 +574,8 @@ async function seedBulkUsersAndData() {
       ]);
       const totalEarned = Number(earned?.[0]?.total || 0);
       if (totalEarned > 0) {
-        const payout = Math.round(totalEarned * (0.3 + Math.random() * 0.4));
+        const payoutRaw = Math.round(totalEarned * (0.3 + Math.random() * 0.4));
+        const payout = Math.floor(Math.max(0, payoutRaw) / 10000) * 10000;
         if (payout > 0) {
           await SalesmanLedger.create({
             salesmanId: s.id,

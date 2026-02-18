@@ -55,6 +55,20 @@
 
 ## 5. 크레딧 및 의뢰 관리 정책
 
+### 5.1 무료 크레딧(보너스) 차감 정책
+
+- 가입 시 보너스 크레딧을 30,000원 지급한다.
+- 무료 크레딧(보너스)은 잔액에서 가능한 만큼 우선 차감하고, 부족분은 구매 크레딧에서 차감한다.
+- `price.bonusAmount`: bonus에서 차감된 금액 (0~amount)
+- `price.paidAmount`: 구매 크레딧에서 차감된 금액 (`amount - bonusAmount`)
+- `CreditLedger`의 `SPEND` 항목은 `spentPaidAmount`, `spentBonusAmount`로 유료/무료 사용분을 분리 기록한다.
+- 모든 매출/수수료/단가 계산은 `price.paidAmount` 기준으로 집계한다.
+
+### 5.2 크레딧 차감 시점
+
+- CAM 승인(가공 시작) 시점에 `CreditLedger` SPEND 생성 (idempotent, uniqueKey 보장)
+- 배송비: 발송 패키지 생성 시 패키지당 3,500원 SPEND 생성
+
 ## 6. CNC 예약목록(브리지 큐) DB 스냅샷
 
 - **목적**: 브리지 서버 장애/네트워크 오류 시에도 제조사 UI에서 예약목록을 조회할 수 있도록, 마지막으로 확인된 브리지 큐를 DB에 스냅샷으로 저장한다.

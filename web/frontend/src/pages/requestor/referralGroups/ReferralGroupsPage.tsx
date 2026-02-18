@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RequestorPricingReferralPolicyGuidance } from "@/components/requestor/RequestorPricingReferralPolicyGuidance";
 import {
   Dialog,
   DialogContent,
@@ -329,7 +328,55 @@ export default function ReferralGroupsPage() {
           <DialogHeader>
             <DialogTitle>가격 & 리퍼럴 정책 안내</DialogTitle>
             <DialogDescription asChild>
-              <RequestorPricingReferralPolicyGuidance />
+              <div className="space-y-4 pt-2 text-sm text-muted-foreground">
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    1. 기본 가격
+                  </h3>
+                  <p>커스텀 어벗 1개 주문 건당 기본 가격은 15,000원입니다.</p>
+                  <b>
+                    부가가치세(VAT)는 별도이며, 배송비는 1회 발송당
+                    3,500원(공급가)으로 청구됩니다.
+                  </b>
+                </section>
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    2. 무료 크레딧(보너스)
+                  </h3>
+                  <p>
+                    무료 크레딧은 <b>1건당 15,000원 고정</b>으로 차감됩니다.
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>무료 크레딧 잔액이 15,000원 이상일 때만 사용됩니다.</li>
+                    <li>
+                      무료 크레딧이 부족하면 구매 크레딧에서 전액 차감됩니다.
+                    </li>
+                  </ul>
+                </section>
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    3. 주문량 할인
+                  </h3>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li>최근 30일 주문 건당 10원 할인, 최대 5,000원.</li>
+                    <li>본인+직계 1단계 주문량 합산 기준.</li>
+                  </ul>
+                </section>
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    4. 런칭 이벤트 (신규 기공소)
+                  </h3>
+                  <p>신규 가입 승인일로부터 90일 동안 개당 10,000원 고정.</p>
+                </section>
+                <section className="space-y-1">
+                  <h3 className="font-semibold text-foreground text-md">
+                    5. 의뢰 취소
+                  </h3>
+                  <p>
+                    의뢰 취소는 <b>의뢰, CAM</b> 단계에서만 가능합니다.
+                  </p>
+                </section>
+              </div>
             </DialogDescription>
           </DialogHeader>
         </DialogContent>

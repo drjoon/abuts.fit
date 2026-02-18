@@ -442,6 +442,14 @@ const requestSchema = new mongoose.Schema(
         maxDiscount: Number,
       },
       quotedAt: Date,
+      paidAmount: {
+        type: Number,
+        default: null,
+      },
+      bonusAmount: {
+        type: Number,
+        default: null,
+      },
     },
 
     timeline: {
