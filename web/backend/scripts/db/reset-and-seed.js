@@ -341,7 +341,7 @@ async function seedBulkUsersAndData() {
       parentId = requestors.length ? pick(requestors).id : null;
     }
 
-    const approvedDaysAgo = randInt(0, 180);
+    const approvedDaysAgo = randInt(0, 365);
     const approvedAt = new Date(NOW);
     approvedAt.setDate(approvedAt.getDate() - approvedDaysAgo);
 
@@ -396,25 +396,34 @@ async function seedBulkUsersAndData() {
       uniqueKey: `seed:bonus:${email}`,
     });
 
-    // 의뢰자 1명당 주문 5~20건, 그 중 80% 완료
+    // 의뢰자 1명당 주문 5~20건, 그 중 80% 발송 완료
     let remainingCredit = depositAmount;
 
     const requestCount = randInt(5, 20);
     const completedRequestIds = [];
     for (let k = 0; k < requestCount; k += 1) {
-      const daysAgo = randInt(0, 180);
+      const daysAgo = randInt(0, 365);
       const createdAt = new Date(NOW);
       createdAt.setDate(createdAt.getDate() - daysAgo);
 
-      const fixedUntil = new Date(approvedAt);
-      fixedUntil.setDate(fixedUntil.getDate() + 90);
-
-      // 가입 이벤트(90일) 구간은 10,000원 고정
-      const price = createdAt < fixedUntil ? 10000 : randInt(10000, 11000);
+      // 12~25만원 구간 랜덤(현실적인 사용 내역)
+      const price = randInt(120_000, 250_000);
       const isCompleted = Math.random() < 0.8;
+
       const status = isCompleted
-        ? "완료"
-        : pick(["의뢰", "CAM", "가공", "세척.포장", "발송", "추적관리"]);
+        ? "발송"
+        : pick(["의뢰", "CAM", "가공", "세척.포장", "발송"]);
+
+      const manufacturerStage = (() => {
+        if (isCompleted) return "tracking";
+        if (status === "의뢰") return "request";
+        if (status === "CAM") return "cam";
+        if (status === "가공") return "machining";
+        if (status === "세척.포장") return "packaging";
+        if (status === "발송") return "shipping";
+        return "request";
+      })();
+
       const reqDoc = await Request.create({
         requestorOrganizationId: org._id,
         requestor: owner._id,
@@ -428,6 +437,8 @@ async function seedBulkUsersAndData() {
           implantType: "Hex",
         },
         status,
+        manufacturerStage,
+        ...(isCompleted ? { status2: "완료" } : {}),
         ...(isCompleted
           ? {
               price: {
@@ -507,6 +518,20 @@ async function seedBulkUsersAndData() {
           createdAt: shipDate,
           updatedAt: shipDate,
         });
+
+        // 배송비도 크레딧 사용으로 기록 (발송 1회당 3,500원)
+        if (remainingCredit >= 3500) {
+          remainingCredit -= 3500;
+          await CreditLedger.create({
+            organizationId: org._id,
+            userId: owner._id,
+            type: "SPEND",
+            amount: -3500,
+            refType: "SHIPPING_FEE",
+            refId: pkg._id,
+            uniqueKey: `seed:shipping-fee:${email}:${String(pkg._id)}`,
+          });
+        }
 
         await Request.updateMany(
           { _id: { $in: chunk } },

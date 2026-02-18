@@ -122,8 +122,8 @@ export const RequestorDashboardPage = () => {
     CAM: ["cam"],
     가공: ["machining"],
     "세척.포장": ["packaging"],
-    발송: ["shipping"],
-    "완료/취소": ["completed", "cancel"],
+    "발송(완료)": ["shipping"],
+    취소: ["cancel"],
   };
 
   const filterAbutmentRequest = (r: any) => {
@@ -209,7 +209,12 @@ export const RequestorDashboardPage = () => {
     isFetching,
     isLoading,
   } = useQuery({
-    queryKey: ["requestor-dashboard-summary-page", period],
+    queryKey: [
+      "requestor-dashboard-summary-page",
+      period,
+      String(user?.id || ""),
+      String((user as any)?.organizationId || ""),
+    ],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (period) {
@@ -425,8 +430,8 @@ export const RequestorDashboardPage = () => {
         { label: "CAM", value: "0", icon: Clock },
         { label: "가공", value: "0", icon: Clock },
         { label: "세척.포장", value: "0", icon: Clock },
-        { label: "발송", value: "0", icon: TrendingUp },
-        { label: "완료/취소", value: "0", icon: CheckCircle },
+        { label: "발송(완료)", value: "0", icon: TrendingUp },
+        { label: "취소", value: "0", icon: CheckCircle },
       ];
     }
 
@@ -457,15 +462,15 @@ export const RequestorDashboardPage = () => {
         icon: Clock,
       },
       {
-        label: "발송",
+        label: "발송(완료)",
         value: String(s.inShipping ?? 0),
         change: s.inShippingChange ?? "+0%",
         icon: TrendingUp,
       },
       {
-        label: "완료/취소",
-        value: String(s.doneOrCanceled ?? 0),
-        change: s.doneOrCanceledChange ?? "+0%",
+        label: "취소",
+        value: String((s.canceled ?? s.canceledCount ?? 0) as any),
+        change: s.canceledChange ?? "+0%",
         icon: CheckCircle,
       },
     ];

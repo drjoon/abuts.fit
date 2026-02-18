@@ -281,7 +281,7 @@ export default function ReferralGroupsPage() {
               의뢰자 계정에서 확인할 수 있습니다.
             </div>
           ) : loadingDirectMembers ? (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <Skeleton className="h-20" />
               <Skeleton className="h-20" />
               <Skeleton className="h-20" />
@@ -292,7 +292,7 @@ export default function ReferralGroupsPage() {
               아직 직계 멤버가 없습니다.
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               {directMembers.map((m) => {
                 const label = String(
                   m.organization || m.name || m.email || "-",

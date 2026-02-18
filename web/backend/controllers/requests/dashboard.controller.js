@@ -763,6 +763,8 @@ export async function getMyDashboardSummary(req, res) {
         inPackagingChange: "+0%",
         inShipping: stats.shippingCount,
         inShippingChange: "+0%",
+        canceled: stats.canceledCount,
+        canceledChange: "+0%",
         completed: stats.completed,
         doneOrCanceled: stats.completed + stats.canceledCount,
         doneOrCanceledChange: "+0%",

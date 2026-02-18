@@ -32,7 +32,7 @@ export interface ApiResponse<T = any> {
 }
 
 export async function apiFetch<T = any>(
-  options: ApiRequestOptions
+  options: ApiRequestOptions,
 ): Promise<ApiResponse<T>> {
   const { path, method = "GET", token, jsonBody, headers, ...rest } = options;
 
@@ -121,10 +121,21 @@ export async function apiFetch<T = any>(
     body = JSON.stringify(jsonBody);
   }
 
+  const mockHeadersKey = (() => {
+    const entries = Object.entries(finalHeaders as any)
+      .filter(
+        ([k, v]) =>
+          k.toLowerCase().startsWith("x-mock-") && typeof v === "string",
+      )
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`);
+    return entries.join("&");
+  })();
+
   const bodyKey =
     typeof body === "string" ? body : body ? "__non_string_body__" : "";
   const requestKey = `${method}:${url}:${String(effectiveToken || "")}:
-${bodyKey}`;
+${mockHeadersKey}:${bodyKey}`;
 
   const isDedupeEligible =
     method === "GET" || bodyKey !== "__non_string_body__";
