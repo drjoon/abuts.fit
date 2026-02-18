@@ -10,6 +10,7 @@ import CreditLedger from "../../models/creditLedger.model.js";
 import ImplantPreset from "../../models/implantPreset.model.js";
 import ClinicImplantPreset from "../../models/clinicImplantPreset.model.js";
 import Request from "../../models/request.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import crypto from "crypto";
 
@@ -258,6 +259,15 @@ function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function toKstYmd(d) {
+  const dt = d instanceof Date ? d : new Date(d);
+  const kst = new Date(dt.getTime() + 9 * 60 * 60 * 1000);
+  const yyyy = kst.getUTCFullYear();
+  const mm = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(kst.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 async function seedBulkUsersAndData() {
   const NOW = new Date();
   const REQUESTOR_PW = "Abc!1234";
@@ -312,7 +322,6 @@ async function seedBulkUsersAndData() {
 
   // 의뢰자 100명 r001~r100, 조직 100개(owner만)
   // 크레딧 사용(의뢰 완료 + SPEND)이 충분히 발생하도록 충전액 상향
-  const depositOptions = [1_000_000, 2_000_000, 3_000_000, 5_000_000];
   for (let i = 1; i <= 100; i += 1) {
     const email = `r${String(i).padStart(3, "0")}@gmail.com`;
     const orgName = `org-${String(i).padStart(3, "0")}`;
@@ -366,7 +375,7 @@ async function seedBulkUsersAndData() {
     requestors.push({ id: owner._id, email, orgId: org._id });
 
     // 입금: 무작위 금액
-    const depositAmount = pick(depositOptions);
+    const depositAmount = randInt(1, 10) * 500_000;
     await CreditLedger.create({
       organizationId: org._id,
       userId: owner._id,
@@ -377,10 +386,21 @@ async function seedBulkUsersAndData() {
       uniqueKey: `seed:charge:${email}`,
     });
 
-    // 의뢰자 1명당 주문 3~10건, 그 중 80% 완료
+    await CreditLedger.create({
+      organizationId: org._id,
+      userId: owner._id,
+      type: "BONUS",
+      amount: 50_000,
+      refType: "SEED_BONUS",
+      refId: null,
+      uniqueKey: `seed:bonus:${email}`,
+    });
+
+    // 의뢰자 1명당 주문 5~20건, 그 중 80% 완료
     let remainingCredit = depositAmount;
 
-    const requestCount = randInt(3, 10);
+    const requestCount = randInt(5, 20);
+    const completedRequestIds = [];
     for (let k = 0; k < requestCount; k += 1) {
       const daysAgo = randInt(0, 180);
       const createdAt = new Date(NOW);
@@ -429,11 +449,12 @@ async function seedBulkUsersAndData() {
           organizationId: org._id,
           userId: owner._id,
           type: "SPEND",
-          amount: price,
+          amount: -price,
           refType: "SEED_REQUEST",
           refId: reqDoc._id,
           uniqueKey: `seed:spend:${email}:${String(reqDoc._id)}`,
         });
+        completedRequestIds.push(reqDoc._id);
       }
 
       if (isCompleted && parentId) {
@@ -453,6 +474,42 @@ async function seedBulkUsersAndData() {
             });
           }
         }
+      }
+    }
+
+    // 배송 패키지: 완료 주문들을 3~20개씩 묶어서 생성(패키지 1개당 배송비 3500)
+    if (completedRequestIds.length > 0) {
+      const sortedIds = [...completedRequestIds];
+      let cursor = 0;
+      let dayOffset = 0;
+      while (cursor < sortedIds.length) {
+        const chunkSize = Math.min(
+          randInt(3, 20),
+          Math.max(1, sortedIds.length - cursor),
+        );
+        const chunk = sortedIds.slice(cursor, cursor + chunkSize);
+        cursor += chunkSize;
+
+        const shipDate = new Date(NOW);
+        shipDate.setDate(shipDate.getDate() - randInt(0, 30) - dayOffset);
+        dayOffset += 1;
+        const shipDateYmd = toKstYmd(shipDate);
+
+        const pkg = await ShippingPackage.create({
+          organizationId: org._id,
+          shipDateYmd,
+          requestIds: chunk,
+          shippingFeeSupply: 3500,
+          shippingFeeVat: 0,
+          createdBy: owner._id,
+          createdAt: shipDate,
+          updatedAt: shipDate,
+        });
+
+        await Request.updateMany(
+          { _id: { $in: chunk } },
+          { $set: { shippingPackageId: pkg._id } },
+        );
       }
     }
   }

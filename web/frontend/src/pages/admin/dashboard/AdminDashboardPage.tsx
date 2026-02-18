@@ -144,7 +144,7 @@ export const AdminDashboardPage = () => {
   });
 
   const { data: adminDashboardResponse } = useQuery({
-    queryKey: ["admin-dashboard-page"],
+    queryKey: ["admin-dashboard-page", period],
     enabled: Boolean(token),
     queryFn: async () => {
       const controller = new AbortController();
@@ -152,7 +152,7 @@ export const AdminDashboardPage = () => {
 
       try {
         const res = await apiFetch<any>({
-          path: "/api/admin/dashboard",
+          path: `/api/admin/dashboard${rangeQuery}`,
           method: "GET",
           token,
           signal: controller.signal,

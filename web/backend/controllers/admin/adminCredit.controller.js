@@ -250,11 +250,35 @@ export async function adminGetOrganizationCredits(req, res) {
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
     const orgs = await RequestorOrganization.find()
-      .select({ name: 1, extracted: 1 })
+      .select({ name: 1, owner: 1, extracted: 1 })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
+
+    const ownerIds = Array.from(
+      new Set(
+        (orgs || [])
+          .map((o) => o?.owner)
+          .filter(Boolean)
+          .map((id) => String(id)),
+      ),
+    )
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const owners = ownerIds.length
+      ? await User.find({ _id: { $in: ownerIds } })
+          .select({ _id: 1, name: 1, email: 1 })
+          .lean()
+      : [];
+
+    const ownerById = new Map(
+      (owners || []).map((u) => [
+        String(u._id),
+        { name: u.name, email: u.email },
+      ]),
+    );
 
     const orgIds = orgs.map((o) => o._id);
 
@@ -273,6 +297,10 @@ export async function adminGetOrganizationCredits(req, res) {
       let paid = 0;
       let bonus = 0;
       let spent = 0;
+      let chargedPaid = 0;
+      let chargedBonus = 0;
+      let spentPaid = 0;
+      let spentBonus = 0;
 
       item.entries.forEach((entry) => {
         const type = entry.type;
@@ -283,17 +311,22 @@ export async function adminGetOrganizationCredits(req, res) {
 
         if (type === "CHARGE" || type === "REFUND") {
           paid += absAmount;
+          chargedPaid += absAmount;
         } else if (type === "BONUS") {
           bonus += absAmount;
+          chargedBonus += absAmount;
         } else if (type === "ADJUST") {
           paid += amount;
+          if (amount > 0) chargedPaid += amount;
         } else if (type === "SPEND") {
           let spend = absAmount;
           spent += spend;
           const fromBonus = Math.min(bonus, spend);
           bonus -= fromBonus;
+          spentBonus += fromBonus;
           spend -= fromBonus;
           paid -= spend;
+          spentPaid += spend;
         }
       });
 
@@ -302,6 +335,10 @@ export async function adminGetOrganizationCredits(req, res) {
         paidBalance: Math.max(0, paid),
         bonusBalance: Math.max(0, bonus),
         spentAmount: Math.max(0, spent),
+        chargedPaidAmount: Math.max(0, chargedPaid),
+        chargedBonusAmount: Math.max(0, chargedBonus),
+        spentPaidAmount: Math.max(0, spentPaid),
+        spentBonusAmount: Math.max(0, spentBonus),
       };
     });
 
@@ -312,11 +349,19 @@ export async function adminGetOrganizationCredits(req, res) {
         paidBalance: 0,
         bonusBalance: 0,
         spentAmount: 0,
+        chargedPaidAmount: 0,
+        chargedBonusAmount: 0,
+        spentPaidAmount: 0,
+        spentBonusAmount: 0,
       };
+
+      const ownerInfo = ownerById.get(String(org?.owner || "")) || null;
 
       return {
         _id: org._id,
         name: org.name,
+        ownerName: ownerInfo?.name || "",
+        ownerEmail: ownerInfo?.email || "",
         companyName: org.extracted?.companyName || "",
         businessNumber: org.extracted?.businessNumber || "",
         ...balanceInfo,

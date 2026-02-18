@@ -64,6 +64,7 @@ type ApiGroupListResponse = {
         netNewGroups: number;
         avgCommissionPerGroup: number;
         totalCommissionAmount: number;
+        totalReferredRevenueAmount?: number;
         totalReferralOrders?: number;
       };
     };
@@ -230,6 +231,16 @@ export default function AdminReferralGroupsPage() {
 
   const groups = groupList?.groups || [];
   const overview = groupList?.overview || null;
+
+  const salesmanCommissionRatio = useMemo(() => {
+    const revenue = Number(overview?.salesman?.totalReferredRevenueAmount || 0);
+    const commission = Number(overview?.salesman?.totalCommissionAmount || 0);
+    if (!revenue || revenue <= 0) return 0;
+    return (commission / revenue) * 100;
+  }, [
+    overview?.salesman?.totalReferredRevenueAmount,
+    overview?.salesman?.totalCommissionAmount,
+  ]);
 
   // 데이터가 새로 바뀌면 기본 노출 개수 리셋
   useEffect(() => {
@@ -465,7 +476,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹당 평균 수수료(추정)
+                그룹당 평균 수수료(30일)
               </div>
               <div className="text-2xl font-semibold tracking-tight text-center">
                 {formatMoney(
@@ -475,12 +486,21 @@ export default function AdminReferralGroupsPage() {
               </div>
             </div>
             <div className="rounded-xl border p-3 text-right">
-              <div className="text-xs text-muted-foreground">수수료 총액</div>
+              <div className="text-xs text-muted-foreground">
+                수수료 총액 / 소개 매출 총액
+              </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.salesman?.totalCommissionAmount || 0),
                 )}
                 원
+              </div>
+              <div className="text-xs text-muted-foreground">
+                매출{" "}
+                {formatMoney(
+                  Number(overview?.salesman?.totalReferredRevenueAmount || 0),
+                )}
+                원 · 비율 {salesmanCommissionRatio.toFixed(1)}%
               </div>
             </div>
             <div className="rounded-xl border p-3">

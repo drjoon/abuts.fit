@@ -486,6 +486,7 @@ export async function getReferralGroups(req, res) {
     const commissionBySalesmanLeaderId = new Map();
     let salesmanTotalCommissionAmount = 0;
     let salesmanTotalReferralOrders = 0;
+    let salesmanTotalReferredRevenueAmount = 0;
     for (const g of salesmanGroups) {
       const leaderId = String(g?.leader?._id || "");
       if (!leaderId) continue;
@@ -510,6 +511,7 @@ export async function getReferralGroups(req, res) {
           commissionOrdersByUserId.get(String(rid)) || 0,
         );
       }
+      salesmanTotalReferredRevenueAmount += directRevenue + level1Revenue;
       const directCommission = directRevenue * commissionRate;
       const level1Commission = level1Revenue * level1CommissionRate;
       const totalCommission = directCommission + level1Commission;
@@ -517,7 +519,7 @@ export async function getReferralGroups(req, res) {
       salesmanTotalCommissionAmount += totalCommission;
     }
 
-    const salesmanAvgCommissionPerGroup = salesmanGroupCount
+    let salesmanAvgCommissionPerGroup = salesmanGroupCount
       ? Math.round(salesmanTotalCommissionAmount / salesmanGroupCount)
       : 0;
 
@@ -532,6 +534,115 @@ export async function getReferralGroups(req, res) {
         ),
       };
     });
+
+    // overview는 전체 영업자 기준으로 집계한다(리더만 합산하면 누락 가능)
+    const allSalesmen = await User.find({ role: "salesman", active: true })
+      .select({ _id: 1, referredByUserId: 1 })
+      .lean();
+    const allSalesmanIds = (allSalesmen || [])
+      .map((s) => s._id)
+      .filter(Boolean);
+
+    const allDirectRequestors = allSalesmanIds.length
+      ? await User.find({
+          role: "requestor",
+          active: true,
+          referredByUserId: { $in: allSalesmanIds },
+        })
+          .select({ _id: 1, referredByUserId: 1 })
+          .lean()
+      : [];
+
+    const allDirectRequestorIds = (allDirectRequestors || [])
+      .map((u) => u._id)
+      .filter(Boolean);
+
+    const allSalesmanRequestRows = allDirectRequestorIds.length
+      ? await Request.aggregate([
+          {
+            $match: {
+              requestor: { $in: allDirectRequestorIds },
+              status: "완료",
+              createdAt: { $gte: last30Cutoff },
+            },
+          },
+          {
+            $group: {
+              _id: "$requestor",
+              orderCount: { $sum: 1 },
+              revenueAmount: { $sum: { $ifNull: ["$price.amount", 0] } },
+            },
+          },
+        ])
+      : [];
+
+    const allSalesmanOrdersByRequestorId = new Map(
+      (allSalesmanRequestRows || []).map((r) => [
+        String(r._id),
+        Number(r.orderCount || 0),
+      ]),
+    );
+    const allSalesmanRevenueByRequestorId = new Map(
+      (allSalesmanRequestRows || []).map((r) => [
+        String(r._id),
+        Number(r.revenueAmount || 0),
+      ]),
+    );
+
+    const directRevenueBySalesmanId = new Map();
+    let allSalesmanTotalReferralOrders = 0;
+    let allSalesmanTotalReferredRevenueAmount = 0;
+    for (const u of allDirectRequestors || []) {
+      const sid = String(u?.referredByUserId || "");
+      if (!sid) continue;
+      const rid = String(u?._id || "");
+      if (!rid) continue;
+      const revenue = Number(allSalesmanRevenueByRequestorId.get(rid) || 0);
+      const orders = Number(allSalesmanOrdersByRequestorId.get(rid) || 0);
+      allSalesmanTotalReferralOrders += orders;
+      allSalesmanTotalReferredRevenueAmount += revenue;
+      directRevenueBySalesmanId.set(
+        sid,
+        Number(directRevenueBySalesmanId.get(sid) || 0) + revenue,
+      );
+    }
+
+    const directCommissionBySalesmanId = new Map();
+    for (const s of allSalesmen || []) {
+      const sid = String(s?._id || "");
+      if (!sid) continue;
+      const revenue = Number(directRevenueBySalesmanId.get(sid) || 0);
+      directCommissionBySalesmanId.set(sid, revenue * commissionRate);
+    }
+
+    const childrenSalesmenIdsByParentId = new Map();
+    for (const s of allSalesmen || []) {
+      const sid = String(s?._id || "");
+      const parentId = String(s?.referredByUserId || "");
+      if (!sid || !parentId) continue;
+      const arr = childrenSalesmenIdsByParentId.get(parentId) || [];
+      arr.push(sid);
+      childrenSalesmenIdsByParentId.set(parentId, arr);
+    }
+
+    let allSalesmanTotalCommissionAmount = 0;
+    for (const s of allSalesmen || []) {
+      const sid = String(s?._id || "");
+      if (!sid) continue;
+      const directCommission = Number(
+        directCommissionBySalesmanId.get(sid) || 0,
+      );
+      const childIds = childrenSalesmenIdsByParentId.get(sid) || [];
+      const childDirectCommissionSum = childIds.reduce((acc, cid) => {
+        return acc + Number(directCommissionBySalesmanId.get(cid) || 0);
+      }, 0);
+      const indirectCommission = childDirectCommissionSum * 0.5;
+      allSalesmanTotalCommissionAmount += directCommission + indirectCommission;
+    }
+
+    salesmanAvgCommissionPerGroup = salesmanGroupCount
+      ? Math.round(allSalesmanTotalCommissionAmount / salesmanGroupCount)
+      : 0;
 
     const totalGroups = groupsWithCommission.length;
     const totalAccounts = groups.reduce(
@@ -574,8 +685,11 @@ export async function getReferralGroups(req, res) {
             avgAccountsPerGroup: salesmanAvgAccountsPerGroup,
             netNewGroups: salesmanNetNewGroups,
             avgCommissionPerGroup: salesmanAvgCommissionPerGroup,
-            totalCommissionAmount: Math.round(salesmanTotalCommissionAmount),
-            totalReferralOrders: Math.round(salesmanTotalReferralOrders),
+            totalCommissionAmount: Math.round(allSalesmanTotalCommissionAmount),
+            totalReferredRevenueAmount: Math.round(
+              allSalesmanTotalReferredRevenueAmount,
+            ),
+            totalReferralOrders: Math.round(allSalesmanTotalReferralOrders),
           },
         },
         groups: groupsWithCommission,
@@ -1165,12 +1279,19 @@ async function getPricingStats(req, res) {
     ]);
     const shipSummary =
       shippingRows && shippingRows.length > 0 ? shippingRows[0] : {};
-    const packageCount = Number(shipSummary.packageCount || 0);
-    const totalShippingFeeSupply = Number(
+    const rawPackageCount = Number(shipSummary.packageCount || 0);
+    const rawTotalShippingFeeSupply = Number(
       shipSummary.totalShippingFeeSupply || 0,
     );
-    const avgShippingFeeSupply = packageCount
-      ? Math.round(totalShippingFeeSupply / packageCount)
+
+    const DEFAULT_SHIPPING_FEE_SUPPLY = 3500;
+    const packageCount = rawPackageCount > 0 ? rawPackageCount : totalOrders;
+    const totalShippingFeeSupply =
+      rawPackageCount > 0
+        ? rawTotalShippingFeeSupply
+        : totalOrders * DEFAULT_SHIPPING_FEE_SUPPLY;
+    const avgShippingFeeSupply = totalOrders
+      ? Math.round(totalShippingFeeSupply / totalOrders)
       : 0;
 
     // 추천인(referrer) 기준으로, 추천받은 유저들의 주문을 합산 집계
@@ -2008,7 +2129,10 @@ async function getDashboardStats(req, res) {
     const activeUsers = await User.countDocuments({ active: true });
 
     // 의뢰 통계 (4단계 공정 + 완료/취소)
-    const allRequestsForStats = await Request.find()
+    const { start, end } = getDateRangeFromQuery(req);
+    const allRequestsForStats = await Request.find({
+      createdAt: { $gte: start, $lte: end },
+    })
       .select({ status: 1, status2: 1, manufacturerStage: 1 })
       .lean();
 
@@ -2018,7 +2142,7 @@ async function getDashboardStats(req, res) {
       const status2 = String(r.status2 || "");
 
       if (status === "취소") return "취소";
-      if (status2 === "완료") return "완료";
+      if (status === "완료" || status2 === "완료") return "완료";
 
       if (["shipping", "tracking", "발송", "추적관리"].includes(stage))
         return "발송";
@@ -2090,6 +2214,7 @@ async function getDashboardStats(req, res) {
       requests: {
         total: totalRequests,
         byStatus: requestStatsByStatus,
+        range: { startDate: start, endDate: end },
         recent: recentRequests,
       },
       files: {

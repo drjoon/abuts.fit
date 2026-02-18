@@ -70,10 +70,16 @@ type OrganizationCredit = {
   name: string;
   companyName: string;
   businessNumber: string;
+  ownerName?: string;
+  ownerEmail?: string;
   balance: number;
   paidBalance: number;
   bonusBalance: number;
   spentAmount?: number;
+  chargedPaidAmount?: number;
+  chargedBonusAmount?: number;
+  spentPaidAmount?: number;
+  spentBonusAmount?: number;
 };
 
 type ChargeOrder = {
@@ -117,6 +123,12 @@ export default function AdminCreditPage() {
   const [orgSkip, setOrgSkip] = useState(0);
   const [orgHasMore, setOrgHasMore] = useState(true);
 
+  const [selectedOrg, setSelectedOrg] = useState<OrganizationCredit | null>(
+    null,
+  );
+
+  const closeOrgModal = () => setSelectedOrg(null);
+
   const [salesmen, setSalesmen] = useState<SalesmanCreditRow[]>([]);
   const [loadingSalesmen, setLoadingSalesmen] = useState(false);
   const [salesmanSkip, setSalesmanSkip] = useState(0);
@@ -140,7 +152,7 @@ export default function AdminCreditPage() {
   const [txSkip, setTxSkip] = useState(0);
   const [txHasMore, setTxHasMore] = useState(true);
 
-  const ORG_PAGE_SIZE = 40;
+  const ORG_PAGE_SIZE = 10;
   const SALESMAN_PAGE_SIZE = 40;
   const ORDER_PAGE_SIZE = 50;
   const TX_PAGE_SIZE = 50;
@@ -548,149 +560,88 @@ export default function AdminCreditPage() {
 
   return (
     <div className="space-y-6 p-6">
-      {creditTab === "salesman" ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">
-                총 영업자 수
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingSalesmen
-                  ? "..."
-                  : salesmanSummary.totalSalesmen.toLocaleString()}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">총 적립</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingSalesmen
-                  ? "..."
-                  : `${salesmanSummary.totalEarned.toLocaleString()}원`}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">총 잔액</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingSalesmen
-                  ? "..."
-                  : `${salesmanSummary.totalBalance.toLocaleString()}원`}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">총 정산</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingSalesmen
-                  ? "..."
-                  : `${salesmanSummary.totalPaidOut.toLocaleString()}원`}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">
-                수수료(30일)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingSalesmen
-                  ? "..."
-                  : `${salesmanSummary.totalCommission30d.toLocaleString()}원`}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">총 조직 수</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingStats ? "..." : stats?.totalOrgs.toLocaleString() || 0}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">총 충전액</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingStats
-                  ? "..."
-                  : `${(stats?.totalCharged || 0).toLocaleString()}원`}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">총 잔액</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingOrgs
-                  ? "..."
-                  : `${requestorTotalBalance.toLocaleString()}원`}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">총 사용액</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {loadingStats
-                  ? "..."
-                  : `${(stats?.totalSpent || 0).toLocaleString()}원`}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">미매칭 입금</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-amber-600">
-                {loadingStats ? "..." : stats?.newBankTransactions || 0}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       <Tabs value={creditTab} onValueChange={(v) => setCreditTab(v as any)}>
-        <TabsList>
-          <TabsTrigger value="requestor">의뢰자</TabsTrigger>
-          <TabsTrigger value="salesman">영업자</TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between">
+          <TabsList className="h-12">
+            <TabsTrigger value="requestor" className="px-6 text-base">
+              의뢰자
+            </TabsTrigger>
+            <TabsTrigger value="salesman" className="px-6 text-base">
+              영업자
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="requestor" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  총 조직 수
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingStats
+                    ? "..."
+                    : stats?.totalOrgs.toLocaleString() || 0}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">총 충전액</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingStats
+                    ? "..."
+                    : `${(stats?.totalCharged || 0).toLocaleString()}원`}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">총 잔액</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingOrgs
+                    ? "..."
+                    : `${requestorTotalBalance.toLocaleString()}원`}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">총 사용액</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingStats
+                    ? "..."
+                    : `${(stats?.totalSpent || 0).toLocaleString()}원`}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  미매칭 입금
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-amber-600">
+                  {loadingStats ? "..." : stats?.newBankTransactions || 0}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Tabs defaultValue="organizations" className="space-y-4">
             <TabsList>
               <TabsTrigger value="organizations">조직별 크레딧</TabsTrigger>
@@ -716,13 +667,26 @@ export default function AdminCreditPage() {
                   ) : (
                     <div
                       ref={orgScrollRef}
-                      className="h-[70vh] overflow-y-auto pr-1"
+                      className="h-[60vh] overflow-y-auto pr-1"
                     >
-                      <div className="grid gap-4 md:grid-cols-2">
+                      <div className="grid gap-4 md:grid-cols-3">
                         {organizations.map((org) => {
-                          const spent = Number(org.spentAmount || 0);
+                          const chargedPaid = Number(
+                            org.chargedPaidAmount || 0,
+                          );
+                          const chargedBonus = Number(
+                            org.chargedBonusAmount || 0,
+                          );
+                          const spentPaid = Number(org.spentPaidAmount || 0);
+                          const spentBonus = Number(org.spentBonusAmount || 0);
+                          const paidRemain = Number(org.paidBalance || 0);
+                          const bonusRemain = Number(org.bonusBalance || 0);
                           return (
-                            <Card key={org._id} className="border-muted">
+                            <Card
+                              key={org._id}
+                              className="border-muted cursor-pointer"
+                              onClick={() => setSelectedOrg(org)}
+                            >
                               <CardHeader className="pb-3">
                                 <CardTitle className="text-base">
                                   {org.name}
@@ -732,39 +696,59 @@ export default function AdminCreditPage() {
                                   <div className="font-mono">
                                     {org.businessNumber || "-"}
                                   </div>
+                                  <div>
+                                    {org.ownerName || "-"} ·{" "}
+                                    {org.ownerEmail || "-"}
+                                  </div>
                                 </CardDescription>
                               </CardHeader>
                               <CardContent className="grid grid-cols-2 gap-3 text-sm">
                                 <div>
                                   <div className="text-muted-foreground">
-                                    총잔액
+                                    잔여크레딧(구매)
                                   </div>
                                   <div className="font-semibold">
-                                    {org.balance.toLocaleString()}원
+                                    {paidRemain.toLocaleString()}원
                                   </div>
                                 </div>
                                 <div>
                                   <div className="text-muted-foreground">
-                                    사용액
+                                    잔여크레딧(무료)
                                   </div>
                                   <div className="font-semibold">
-                                    {spent.toLocaleString()}원
+                                    {bonusRemain.toLocaleString()}원
                                   </div>
                                 </div>
                                 <div>
                                   <div className="text-muted-foreground">
-                                    구매 크레딧
+                                    충전크레딧(구매)
                                   </div>
                                   <div className="font-medium">
-                                    {org.paidBalance.toLocaleString()}원
+                                    {chargedPaid.toLocaleString()}원
                                   </div>
                                 </div>
                                 <div>
                                   <div className="text-muted-foreground">
-                                    무료 크레딧
+                                    충전크레딧(무료)
                                   </div>
                                   <div className="font-medium">
-                                    {org.bonusBalance.toLocaleString()}원
+                                    {chargedBonus.toLocaleString()}원
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    사용크레딧(구매)
+                                  </div>
+                                  <div className="font-medium">
+                                    {spentPaid.toLocaleString()}원
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    사용크레딧(무료)
+                                  </div>
+                                  <div className="font-medium">
+                                    {spentBonus.toLocaleString()}원
                                   </div>
                                 </div>
                               </CardContent>
@@ -772,7 +756,7 @@ export default function AdminCreditPage() {
                           );
                         })}
                       </div>
-                      <div ref={orgSentinelRef} className="h-10" />
+                      <div ref={orgSentinelRef} className="h-6" />
                     </div>
                   )}
                 </CardContent>
@@ -852,7 +836,7 @@ export default function AdminCreditPage() {
                   ) : (
                     <div
                       ref={orderScrollRef}
-                      className="h-[70vh] overflow-y-auto pr-1"
+                      className="h-[60vh] overflow-y-auto pr-1"
                     >
                       <Table>
                         <TableHeader>
@@ -1033,7 +1017,7 @@ export default function AdminCreditPage() {
                       ) : (
                         <div
                           ref={txScrollRef}
-                          className="h-[70vh] overflow-y-auto pr-1"
+                          className="h-[60vh] overflow-y-auto pr-1"
                         >
                           <Table>
                             <TableHeader>
@@ -1282,6 +1266,77 @@ export default function AdminCreditPage() {
         </TabsContent>
 
         <TabsContent value="salesman" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  총 영업자 수
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingSalesmen
+                    ? "..."
+                    : salesmanSummary.totalSalesmen.toLocaleString()}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">총 적립</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingSalesmen
+                    ? "..."
+                    : `${salesmanSummary.totalEarned.toLocaleString()}원`}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">총 잔액</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingSalesmen
+                    ? "..."
+                    : `${salesmanSummary.totalBalance.toLocaleString()}원`}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">총 정산</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingSalesmen
+                    ? "..."
+                    : `${salesmanSummary.totalPaidOut.toLocaleString()}원`}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  수수료(30일)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {loadingSalesmen
+                    ? "..."
+                    : `${salesmanSummary.totalCommission30d.toLocaleString()}원`}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle>영업자 크레딧(성과/정산 전 잔액)</CardTitle>
@@ -1301,7 +1356,7 @@ export default function AdminCreditPage() {
               ) : (
                 <div
                   ref={salesmanScrollRef}
-                  className="h-[70vh] overflow-y-auto pr-1"
+                  className="h-[60vh] overflow-y-auto pr-1"
                 >
                   <div className="grid gap-4 md:grid-cols-2">
                     {salesmen.map((s) => (
@@ -1539,6 +1594,61 @@ export default function AdminCreditPage() {
               disabled={!selectedOrder || processingApproval}
             >
               {processingApproval ? "처리 중..." : "거절"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(selectedOrg)} onOpenChange={closeOrgModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedOrg?.name || "조직 상세"}</DialogTitle>
+            <DialogDescription>
+              {selectedOrg?.ownerName || "-"} · {selectedOrg?.ownerEmail || "-"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">사업자명</span> ·{" "}
+              {selectedOrg?.companyName || "-"}
+            </div>
+            <div>
+              <span className="text-muted-foreground">사업자번호</span> ·{" "}
+              <span className="font-mono">
+                {selectedOrg?.businessNumber || "-"}
+              </span>
+            </div>
+            <div className="pt-2 grid grid-cols-2 gap-2">
+              <div>
+                <div className="text-muted-foreground">잔여(구매)</div>
+                <div className="font-semibold">
+                  {Number(selectedOrg?.paidBalance || 0).toLocaleString()}원
+                </div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">잔여(무료)</div>
+                <div className="font-semibold">
+                  {Number(selectedOrg?.bonusBalance || 0).toLocaleString()}원
+                </div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">사용(구매)</div>
+                <div className="font-medium">
+                  {Number(selectedOrg?.spentPaidAmount || 0).toLocaleString()}원
+                </div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">사용(무료)</div>
+                <div className="font-medium">
+                  {Number(selectedOrg?.spentBonusAmount || 0).toLocaleString()}
+                  원
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeOrgModal}>
+              닫기
             </Button>
           </DialogFooter>
         </DialogContent>
