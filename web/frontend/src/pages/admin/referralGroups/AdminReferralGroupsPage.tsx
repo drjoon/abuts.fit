@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -21,7 +21,6 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
-import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 
 const PERIOD_LABEL: Record<string, string> = {
   "7d": "최근 7일",
@@ -153,7 +152,7 @@ type ApiGroupTreeResponse = {
   error?: string;
 };
 
-const SalesmanTreeNode = ({
+const TreeNode = ({
   node,
   depth,
   onSelect,
@@ -164,6 +163,12 @@ const SalesmanTreeNode = ({
 }) => {
   const indent = depth * 16;
   const lastMonthOrders = Number(node.lastMonthOrders || 0);
+  const commissionAmount = Number(node.commissionAmount || 0);
+  const directCommissionAmount = Number(node.directCommissionAmount ?? -1);
+  const level1CommissionAmount = Number(node.level1CommissionAmount ?? -1);
+  const hasCommissionBreakdown =
+    directCommissionAmount >= 0 && level1CommissionAmount >= 0;
+  const isSalesman = String(node.role || "") === "salesman";
 
   return (
     <div style={{ paddingLeft: indent }} className="relative">
@@ -188,7 +193,16 @@ const SalesmanTreeNode = ({
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
               {lastMonthOrders.toLocaleString()}건
+              {isSalesman && commissionAmount > 0 ? (
+                <> · 수수료 {formatMoney(commissionAmount)}원</>
+              ) : null}
             </div>
+            {isSalesman && hasCommissionBreakdown && commissionAmount > 0 ? (
+              <div className="text-[10px] text-muted-foreground/70">
+                직접 {formatMoney(directCommissionAmount)}원 + 간접{" "}
+                {formatMoney(level1CommissionAmount)}원
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {roleBadge(node.role)}
@@ -207,7 +221,6 @@ export default function AdminReferralGroupsPage() {
   const { period, setPeriod } = usePeriodStore();
   const isDev = import.meta.env.DEV;
   const refreshSuffix = isDev ? "?refresh=1" : "";
-  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<
     "all" | "requestor" | "salesman"
@@ -218,59 +231,12 @@ export default function AdminReferralGroupsPage() {
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const listSentinelRef = useRef<HTMLDivElement | null>(null);
   const treeScrollRef = useRef<HTMLDivElement | null>(null);
+  const treeSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [treeVisibleCount, setTreeVisibleCount] = useState(10);
   const [sortKey, setSortKey] = useState<"members" | "orders" | "created">(
     "members",
   );
   const periodLabel = PERIOD_LABEL[period] || period;
-  const [recalcConfirmOpen, setRecalcConfirmOpen] = useState(false);
-
-  const { data: snapshotStatus, refetch: refetchSnapshotStatus } = useQuery({
-    queryKey: ["admin-referral-snapshot-status"],
-    enabled: Boolean(token),
-    queryFn: async () => {
-      const res = await apiFetch<{
-        success: boolean;
-        data?: {
-          lastComputedAt: string | null;
-          lastYmd: string | null;
-          todayYmd: string;
-        };
-      }>({
-        path: `/api/admin/referral-snapshot/status`,
-        method: "GET",
-        token,
-        headers:
-          token === "MOCK_DEV_TOKEN" ? { "x-mock-role": "admin" } : undefined,
-      });
-      return res.data?.data || null;
-    },
-    refetchInterval: 60000,
-  });
-
-  const recalcMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiFetch<{
-        success: boolean;
-        upsertCount?: number;
-        computedAt?: string;
-      }>({
-        path: `/api/admin/referral-snapshot/recalc`,
-        method: "POST",
-        token,
-        headers:
-          token === "MOCK_DEV_TOKEN" ? { "x-mock-role": "admin" } : undefined,
-      });
-      if (!res.ok || !res.data?.success) throw new Error("재계산 실패");
-      return res.data;
-    },
-    onSuccess: () => {
-      refetchSnapshotStatus();
-      queryClient.invalidateQueries({ queryKey: ["admin-referral-groups"] });
-      queryClient.invalidateQueries({
-        queryKey: ["admin-referral-group-tree"],
-      });
-    },
-  });
 
   const { data: groupList, isLoading: isGroupListLoading } = useQuery({
     queryKey: ["admin-referral-groups", period],
@@ -418,11 +384,9 @@ export default function AdminReferralGroupsPage() {
     retry: false,
   });
 
-  // 영업자만 필터링한 트리 (영업자 계층도 열)
-  const salesmanFlattenedTree = useMemo(() => {
+  const flattenedTree = useMemo(() => {
     const root = treeData?.tree;
-    if (!root || String(root.role || "") !== "salesman")
-      return [] as Array<{ node: ApiTreeNode; depth: number }>;
+    if (!root) return [] as Array<{ node: ApiTreeNode; depth: number }>;
     const out: Array<{ node: ApiTreeNode; depth: number }> = [];
     const stack: Array<{ node: ApiTreeNode; depth: number }> = [
       { node: root, depth: 0 },
@@ -430,20 +394,16 @@ export default function AdminReferralGroupsPage() {
     while (stack.length) {
       const cur = stack.shift();
       if (!cur) break;
-      if (String(cur.node.role || "") === "salesman") {
-        out.push(cur);
-      }
+      out.push(cur);
       const children = Array.isArray(cur.node.children)
         ? cur.node.children
         : [];
-      const salesmanChildren = children
-        .filter((c) => String(c?.role || "") === "salesman")
-        .sort(
-          (a, b) =>
-            Number(b?.lastMonthOrders || 0) - Number(a?.lastMonthOrders || 0),
-        );
-      for (const child of salesmanChildren) {
-        stack.push({ node: child, depth: cur.depth + 1 });
+      const sortedChildren = [...children].sort(
+        (a, b) =>
+          Number(b?.lastMonthOrders || 0) - Number(a?.lastMonthOrders || 0),
+      );
+      for (let i = 0; i < sortedChildren.length; i += 1) {
+        stack.push({ node: sortedChildren[i], depth: cur.depth + 1 });
       }
     }
     return out;
@@ -481,6 +441,55 @@ export default function AdminReferralGroupsPage() {
     return result;
   }, [treeData?.tree]);
 
+  const visibleTreeRows = useMemo(() => {
+    return flattenedTree.slice(0, Math.max(0, treeVisibleCount));
+  }, [flattenedTree, treeVisibleCount]);
+
+  useEffect(() => {
+    setTreeVisibleCount(10);
+  }, [effectiveLeaderId, treeData]);
+
+  useEffect(() => {
+    const sentinel = treeSentinelRef.current;
+    if (!sentinel) return;
+    if (visibleTreeRows.length >= flattenedTree.length) return;
+
+    const root = treeScrollRef.current;
+    if (!root) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        const hit = entries.some((e) => e.isIntersecting);
+        if (!hit) return;
+        setTreeVisibleCount((prev) =>
+          Math.min(prev + 10, flattenedTree.length),
+        );
+      },
+      { root, rootMargin: "200px", threshold: 0 },
+    );
+
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [flattenedTree.length, visibleTreeRows.length]);
+
+  const directCommissionSum = useMemo(() => {
+    const sumPaidRevenue = (directReferralRequestors || []).reduce(
+      (acc, r) => acc + Number(r.lastMonthPaidRevenue || 0),
+      0,
+    );
+    return Math.round(sumPaidRevenue * 0.05);
+  }, [directReferralRequestors]);
+
+  const indirectCommissionSum = useMemo(() => {
+    const sumPaidRevenue = (indirectReferralRequestors || []).reduce(
+      (acc, row) => acc + Number(row.requestor?.lastMonthPaidRevenue || 0),
+      0,
+    );
+    return Math.round(sumPaidRevenue * 0.025);
+  }, [indirectReferralRequestors]);
+
+  const totalCommissionSum = directCommissionSum + indirectCommissionSum;
+
   return (
     <div className="h-screen max-h-screen overflow-hidden p-4 flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -494,7 +503,7 @@ export default function AdminReferralGroupsPage() {
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹수 / 의뢰건수
+                그룹수 / 의뢰건수 (전체)
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {Number(overview?.requestor?.groupCount || 0).toLocaleString()}
@@ -516,7 +525,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹당 평균 유료 매출액
+                그룹당 평균 매출 (유료/무료)
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
@@ -541,7 +550,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                유료 매출 총액
+                매출 총액 (유료/무료)
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
@@ -572,7 +581,7 @@ export default function AdminReferralGroupsPage() {
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹수 / 의뢰건수(소개)
+                그룹수 / 의뢰건수 (직접+간접 소개)
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {Number(overview?.salesman?.groupCount || 0).toLocaleString()}
@@ -594,7 +603,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹당 평균 수수료
+                그룹당 평균 수수료 (직접+간접)
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
@@ -607,7 +616,9 @@ export default function AdminReferralGroupsPage() {
               </div>
             </div>
             <div className="rounded-xl border p-3 text-right">
-              <div className="text-xs text-muted-foreground">수수료 총액</div>
+              <div className="text-xs text-muted-foreground">
+                수수료/매출 요약 (유료/무료)
+              </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.salesman?.totalCommissionAmount || 0),
@@ -643,34 +654,6 @@ export default function AdminReferralGroupsPage() {
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <CardTitle className="text-base">그룹 목록</CardTitle>
-                {snapshotStatus?.lastComputedAt ? (
-                  <span className="text-[11px] text-muted-foreground">
-                    스냅샷:{" "}
-                    {new Date(snapshotStatus.lastComputedAt).toLocaleString(
-                      "ko-KR",
-                      {
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      },
-                    )}
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-destructive">
-                    스냅샷 없음
-                  </span>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-6 text-[11px] px-2"
-                  disabled={recalcMutation.isPending}
-                  onClick={() => setRecalcConfirmOpen(true)}
-                >
-                  {recalcMutation.isPending ? "재계산 중..." : "스냅샷 재계산"}
-                </Button>
               </div>
               <div className="flex items-center gap-1">
                 <Button
@@ -699,11 +682,6 @@ export default function AdminReferralGroupsPage() {
                 </Button>
               </div>
             </div>
-            {isDev ? (
-              <CardDescription className="text-[11px]">
-                dev: refresh=1 · unitPriceDebug.applied 확인 가능
-              </CardDescription>
-            ) : null}
           </CardHeader>
           <CardContent className="space-y-2 flex flex-col min-h-0 flex-1">
             <div className="flex flex-wrap gap-2">
@@ -732,43 +710,6 @@ export default function AdminReferralGroupsPage() {
                 영업자
               </Button>
             </div>
-
-            {selectedGroupRow ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2 text-xs">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-medium text-emerald-900">
-                    멤버{" "}
-                    {Number(selectedGroupRow.memberCount || 0).toLocaleString()}
-                    명
-                  </div>
-                  <div className="text-emerald-900">
-                    주문{" "}
-                    {Number(
-                      selectedGroupRow.groupTotalOrders || 0,
-                    ).toLocaleString()}
-                    건
-                  </div>
-                  {String(selectedGroupRow?.leader?.role || "") ===
-                  "salesman" ? (
-                    <div className="font-semibold text-emerald-900">
-                      수수료{" "}
-                      {formatMoney(
-                        Number(selectedGroupRow.commissionAmount || 0),
-                      )}
-                      원
-                    </div>
-                  ) : (
-                    <div className="font-semibold text-emerald-900">
-                      단가{" "}
-                      {Number(
-                        selectedGroupRow.effectiveUnitPrice || 0,
-                      ).toLocaleString()}
-                      원
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
 
             <Input
               value={search}
@@ -867,33 +808,58 @@ export default function AdminReferralGroupsPage() {
           </CardContent>
         </Card>
 
-        {/* 열 2: 영업자 계층도 */}
+        {/* 열 2: 계층도 */}
         <Card className="h-full flex flex-col min-h-0">
           <CardHeader className="py-3">
-            <CardTitle className="text-base">영업자 계층도</CardTitle>
+            <CardTitle className="text-base">계층도</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col min-h-0 flex-1">
             {isTreeLoading ? (
               <div className="text-sm text-muted-foreground">로딩중...</div>
-            ) : salesmanFlattenedTree.length === 0 ? (
+            ) : !treeData?.tree ? (
               <div className="text-sm text-muted-foreground">
-                {!effectiveLeaderId
-                  ? "그룹을 선택해주세요."
-                  : "영업자 계층 정보가 없습니다."}
+                그룹을 선택해주세요.
               </div>
             ) : (
               <div
                 ref={treeScrollRef}
                 className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1"
               >
-                {salesmanFlattenedTree.map(({ node, depth }) => (
-                  <SalesmanTreeNode
-                    key={String(node._id)}
-                    node={node}
-                    depth={depth}
-                    onSelect={(n) => setSelectedNode(n)}
-                  />
-                ))}
+                <div className="space-y-2">
+                  {visibleTreeRows.map(({ node, depth }) => (
+                    <TreeNode
+                      key={String(node._id)}
+                      node={node}
+                      depth={depth}
+                      onSelect={(n) => setSelectedNode(n)}
+                    />
+                  ))}
+
+                  {visibleTreeRows.length < flattenedTree.length ? (
+                    <div
+                      ref={treeSentinelRef}
+                      className="h-8"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  {visibleTreeRows.length < flattenedTree.length ? (
+                    <div className="pb-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() =>
+                          setTreeVisibleCount((prev) =>
+                            Math.min(prev + 10, flattenedTree.length),
+                          )
+                        }
+                      >
+                        더 보기
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             )}
           </CardContent>
@@ -907,7 +873,9 @@ export default function AdminReferralGroupsPage() {
             treeData?.tree &&
             String(treeData.tree.role || "") === "salesman" ? (
               <CardDescription className="text-[11px]">
-                직접 5% · 간접 2.5%
+                직접 5%: {formatMoney(directCommissionSum)}원 · 간접 2.5%:{" "}
+                {formatMoney(indirectCommissionSum)}원 · 합계:{" "}
+                {formatMoney(totalCommissionSum)}원
               </CardDescription>
             ) : null}
           </CardHeader>
