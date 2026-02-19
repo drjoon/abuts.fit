@@ -3,7 +3,8 @@ export type QueueItem = {
   status?: string;
   queuePosition?: number;
   machiningQty?: number;
-  estimatedDelivery?: string | Date;
+  estimatedShipYmd?: string | null;
+  scheduledShipPickup?: string | Date;
   diameter?: number;
   diameterGroup?: string;
   paused?: boolean;

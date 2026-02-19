@@ -22,6 +22,7 @@ import {
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
 import { useToast } from "@/shared/hooks/use-toast";
+import { toKstYmd } from "@/shared/date/kst";
 import { Badge } from "@/components/ui/badge";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Dialog } from "@/components/ui/dialog";
@@ -868,7 +869,7 @@ export const RequestPage = ({
 
         // 2. 엑셀 다운로드
         const { utils, writeFileXLSX } = await import("xlsx");
-        const today = new Date().toISOString().slice(0, 10);
+        const today = toKstYmd(new Date()) || "";
 
         const header = [
           "기공소명",
@@ -1131,7 +1132,7 @@ export const RequestPage = ({
                   const pickup =
                     sample?.productionSchedule?.scheduledShipPickup;
                   const shipYmd = pickup
-                    ? new Date(pickup).toISOString().slice(0, 10)
+                    ? toKstYmd(new Date(pickup)) || "-"
                     : "-";
                   const title =
                     key === "unassigned"

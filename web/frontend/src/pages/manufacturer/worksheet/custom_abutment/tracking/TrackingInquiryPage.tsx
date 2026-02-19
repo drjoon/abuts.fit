@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import type { DeliveryInfoSummary, RequestBase } from "@/types/request";
+import { toKstYmd } from "@/shared/date/kst";
 
 type InquiryTab = "process" | "shipping" | "udi";
 type DateRange =
@@ -58,7 +59,7 @@ const formatYmd = (d?: string) => {
   if (s.length >= 10) return s.slice(0, 10);
   const dt = new Date(s);
   if (Number.isNaN(dt.getTime())) return "-";
-  return dt.toISOString().slice(0, 10);
+  return toKstYmd(dt) || "-";
 };
 
 const normalizeLotNumberLabel = (req: ManufacturerRequest) => {
@@ -428,14 +429,11 @@ export const TrackingInquiryPage = () => {
 
   const handleDownloadTodayShipping = () => {
     const today = new Date();
-    const ymd = today.toISOString().slice(0, 10);
+    const ymd = toKstYmd(today) || "";
     const rows = shippingRows.filter((r) => {
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
       const base =
-        di.shippedAt ||
-        di.deliveredAt ||
-        r.createdAt ||
-        new Date().toISOString();
+        formatYmd((di as any)?.shippedAt) || formatYmd((di as any)?.createdAt);
       return String(base).slice(0, 10) === ymd;
     });
 
@@ -551,7 +549,7 @@ export const TrackingInquiryPage = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const todayStr = (toKstYmd(new Date()) || "").replace(/-/g, "");
     a.download = `애크로덴트-UDI-${todayStr}.xlsx`;
     document.body.appendChild(a);
     a.click();

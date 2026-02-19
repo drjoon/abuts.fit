@@ -27,9 +27,9 @@ export type RequestDetailDialogRequest = {
   requestId?: string;
   createdAt?: string;
   timeline?: {
-    estimatedCompletion?: string;
+    estimatedShipYmd?: string;
   };
-  estimatedCompletion?: string;
+  estimatedShipYmd?: string;
   deliveryInfoRef?: {
     deliveredAt?: string;
   };
@@ -55,7 +55,7 @@ const formatTimestamp = (value?: string) => {
   if (!value) return "-";
   try {
     const date = new Date(value);
-    return date.toLocaleString("ko-KR");
+    return date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
   } catch {
     return value;
   }
@@ -64,8 +64,9 @@ const formatTimestamp = (value?: string) => {
 const formatDate = (value?: string) => {
   if (!value) return "-";
   try {
-    const date = new Date(value);
-    return date.toLocaleDateString("ko-KR");
+    const d = new Date(`${String(value).slice(0, 10)}T00:00:00+09:00`);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
   } catch {
     return value;
   }
@@ -135,9 +136,9 @@ export const RequestDetailDialog = ({
   const maxDiameter = caseInfos.maxDiameter;
   const connectionDiameter = caseInfos.connectionDiameter;
 
-  const estimatedCompletion =
-    request?.timeline?.estimatedCompletion ||
-    request?.estimatedCompletion ||
+  const estimatedShipYmd =
+    request?.timeline?.estimatedShipYmd ||
+    request?.estimatedShipYmd ||
     request?.dueDate;
 
   return (
@@ -182,10 +183,10 @@ export const RequestDetailDialog = ({
                 {formatTimestamp(request?.createdAt)}
               </span>
             </div>
-            {estimatedCompletion && (
+            {estimatedShipYmd && (
               <div className="grid grid-cols-[90px_1fr] gap-3 items-center text-blue-700 font-medium">
-                <span>도착 예정일</span>
-                <span>{formatTimestamp(estimatedCompletion)}</span>
+                <span>발송 예정일</span>
+                <span>{formatDate(estimatedShipYmd)}</span>
               </div>
             )}
             {typeof request?.daysOverdue === "number" && (

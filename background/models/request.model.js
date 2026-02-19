@@ -318,7 +318,6 @@ const requestSchema = new mongoose.Schema(
       scheduledMachiningComplete: Date, // 가공 완료 예정 시각 (가공 시작 + 15분)
       scheduledBatchProcessing: Date, // 세척/검사/포장 예정 시각 (50~100개 모아서 처리)
       scheduledShipPickup: Date, // 택배 수거 시각 (매일 14:00)
-      estimatedDelivery: Date, // 도착 예정 시각 (택배 수거일 + 1영업일)
 
       // 실제 시각
       actualCamStart: Date,
@@ -384,7 +383,7 @@ const requestSchema = new mongoose.Schema(
     },
 
     timeline: {
-      estimatedCompletion: String, // YYYY-MM-DD 형식 (deprecated - productionSchedule.estimatedDelivery 사용)
+      estimatedShipYmd: String, // YYYY-MM-DD 형식 (KST 기준, 발송 예정일)
       actualCompletion: Date,
     },
 

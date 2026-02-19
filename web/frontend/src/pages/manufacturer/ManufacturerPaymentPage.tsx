@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
+import { toKstYmd } from "@/shared/date/kst";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -179,7 +180,7 @@ export const ManufacturerPaymentPage = () => {
     const days = periodToDays(period);
     if (days && !from && !to) {
       const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      params.set("from", cutoff.toISOString().slice(0, 10));
+      params.set("from", toKstYmd(cutoff) || "");
     }
     if (q.trim()) params.set("q", q.trim());
     return params.toString();
@@ -281,7 +282,7 @@ export const ManufacturerPaymentPage = () => {
     const days = periodToDays(period);
     if (days && !from && !to) {
       const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      params.set("from", cutoff.toISOString().slice(0, 10));
+      params.set("from", toKstYmd(cutoff) || "");
     }
     if (q.trim()) params.set("q", q.trim());
     return params.toString();
@@ -321,7 +322,7 @@ export const ManufacturerPaymentPage = () => {
     const days = periodToDays(period);
     if (days && !from && !to) {
       const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      params.set("fromYmd", cutoff.toISOString().slice(0, 10));
+      params.set("fromYmd", toKstYmd(cutoff) || "");
     }
     if (from) params.set("fromYmd", from);
     if (to) params.set("toYmd", to);

@@ -10,8 +10,8 @@ type Props = {
   highlight: boolean;
   sectionHighlightClass: string;
   bulkShippingSummary: string;
-  normalArrivalDate?: string;
-  expressArrivalDate?: string;
+  normalEstimatedShipYmd?: string;
+  expressEstimatedShipYmd?: string;
   onOpenShippingSettings: () => void;
   onSelectExpress: () => void;
   onSubmit: () => void;
@@ -25,8 +25,8 @@ export function NewRequestShippingSection({
   highlight,
   sectionHighlightClass,
   bulkShippingSummary,
-  normalArrivalDate,
-  expressArrivalDate,
+  normalEstimatedShipYmd,
+  expressEstimatedShipYmd,
   onOpenShippingSettings,
   onSelectExpress,
   onSubmit,
@@ -71,7 +71,7 @@ export function NewRequestShippingSection({
                 <span className="text-[11px] md:text-xs opacity-80 font-normal">
                   {bulkShippingSummary}
                 </span>
-                {normalArrivalDate && (
+                {normalEstimatedShipYmd && (
                   <span
                     className={`text-[11px] md:text-xs ${
                       (caseInfos?.shippingMode || "normal") === "normal"
@@ -79,7 +79,7 @@ export function NewRequestShippingSection({
                         : "text-gray-500"
                     }`}
                   >
-                    도착 예정: {normalArrivalDate}
+                    발송 예정: {normalEstimatedShipYmd}
                   </span>
                 )}
               </span>
@@ -106,7 +106,7 @@ export function NewRequestShippingSection({
             <Zap className="w-4 h-4" />
             <span className="flex flex-col items-start leading-tight">
               <span>신속 배송</span>
-              {expressArrivalDate && (
+              {expressEstimatedShipYmd && (
                 <span
                   className={`text-[11px] md:text-xs ${
                     caseInfos?.shippingMode === "express"
@@ -114,7 +114,7 @@ export function NewRequestShippingSection({
                       : "text-gray-500"
                   }`}
                 >
-                  도착 예정: {expressArrivalDate}
+                  발송 예정: {expressEstimatedShipYmd}
                 </span>
               )}
             </span>

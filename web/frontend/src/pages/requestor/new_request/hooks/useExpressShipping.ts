@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CaseInfos } from "./newRequestTypes";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import { toKstYmd } from "@/shared/date/kst";
 
 const addWeekdays = (startDate: Date, days: number) => {
   let count = 0;
@@ -17,56 +18,31 @@ const addWeekdays = (startDate: Date, days: number) => {
 };
 
 const calculateExpressDate = (maxDiameter?: number) => {
-  const today = new Date();
+  const base = new Date();
+  const d =
+    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
+      ? maxDiameter
+      : null;
 
-  if (maxDiameter === undefined || maxDiameter <= 8) {
-    const shipDate = addWeekdays(today, 1);
-    return shipDate.toISOString().split("T")[0];
-  }
-
-  const currentDay = today.getDay();
-  const targetDow = 3;
-
-  let daysToAdd = targetDow - currentDay;
-  if (currentDay > 1) {
-    daysToAdd += 7;
-  }
-  if (daysToAdd <= 0) {
-    daysToAdd += 7;
-  }
-
-  const shipDate = new Date(today);
-  shipDate.setDate(today.getDate() + daysToAdd);
-  return shipDate.toISOString().split("T")[0];
+  const days = d != null && d >= 10 ? 4 : 1;
+  const shipDate = addWeekdays(base, days);
+  return toKstYmd(shipDate) || "";
 };
 
 export function useExpressShipping(caseInfos?: CaseInfos) {
   const { token, user } = useAuthStore();
-  const [expressArrivalDate, setExpressArrivalDate] = useState<
-    string | undefined
-  >(undefined);
-  const [resolvedExpressShipDate, setResolvedExpressShipDate] = useState<
+  const [expressEstimatedShipYmd, setExpressEstimatedShipYmd] = useState<
     string | undefined
   >(undefined);
 
-  const expressShipDate = useMemo(() => {
-    // UI용 기본값(백엔드 응답이 오면 resolvedExpressShipDate로 대체)
-    if (caseInfos?.shippingMode === "express" && caseInfos?.requestedShipDate) {
-      return caseInfos.requestedShipDate;
-    }
-    return calculateExpressDate(caseInfos?.maxDiameter);
-  }, [
-    caseInfos?.maxDiameter,
-    caseInfos?.requestedShipDate,
-    caseInfos?.shippingMode,
-  ]);
+  const maxDiameter = caseInfos?.maxDiameter;
 
   useEffect(() => {
     let cancelled = false;
 
     const run = async () => {
-      if (!expressShipDate) {
-        if (!cancelled) setExpressArrivalDate(undefined);
+      if (maxDiameter == null) {
+        if (!cancelled) setExpressEstimatedShipYmd(undefined);
         return;
       }
 
@@ -76,8 +52,8 @@ export function useExpressShipping(caseInfos?: CaseInfos) {
           data?: any;
           message?: string;
         }>({
-          path: `/api/requests/shipping-estimate?mode=express&shipYmd=${encodeURIComponent(
-            expressShipDate
+          path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(
+            String(maxDiameter),
           )}`,
           method: "GET",
           token,
@@ -88,24 +64,14 @@ export function useExpressShipping(caseInfos?: CaseInfos) {
             : undefined,
         });
 
-        const nextArrival =
-          res.ok && (res.data as any)?.success
-            ? (res.data as any)?.data?.arrivalDateYmd
-            : undefined;
         const nextShip =
           res.ok && (res.data as any)?.success
-            ? (res.data as any)?.data?.shipDateYmd
+            ? (res.data as any)?.data?.estimatedShipYmd
             : undefined;
 
-        if (!cancelled) {
-          setExpressArrivalDate(nextArrival);
-          setResolvedExpressShipDate(nextShip);
-        }
+        if (!cancelled) setExpressEstimatedShipYmd(nextShip);
       } catch {
-        if (!cancelled) {
-          setExpressArrivalDate(undefined);
-          setResolvedExpressShipDate(undefined);
-        }
+        if (!cancelled) setExpressEstimatedShipYmd(undefined);
       }
     };
 
@@ -113,14 +79,13 @@ export function useExpressShipping(caseInfos?: CaseInfos) {
     return () => {
       cancelled = true;
     };
-  }, [expressShipDate]);
+  }, [maxDiameter, token, user?.role]);
 
   return useMemo(
     () => ({
       calculateExpressDate,
-      expressShipDate: resolvedExpressShipDate || expressShipDate,
-      expressArrivalDate,
+      expressEstimatedShipYmd,
     }),
-    [expressArrivalDate, expressShipDate, resolvedExpressShipDate]
+    [expressEstimatedShipYmd],
   );
 }

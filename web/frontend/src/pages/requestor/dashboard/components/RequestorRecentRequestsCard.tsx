@@ -511,16 +511,13 @@ export const RequestorRecentRequestsCard = ({
                     </span>
                     {(() => {
                       const eta =
-                        item.timeline?.estimatedCompletion ||
-                        item.estimatedCompletion;
+                        item.timeline?.estimatedShipYmd ||
+                        item.estimatedShipYmd;
                       if (!eta) return null;
-                      const etaDate =
-                        typeof eta === "string"
-                          ? eta
-                          : new Date(eta).toLocaleDateString();
+                      const etaDate = String(eta);
                       return (
                         <span className="text-blue-600 font-medium">
-                          도착 예정: {etaDate}
+                          발송 예정: {etaDate}
                         </span>
                       );
                     })()}

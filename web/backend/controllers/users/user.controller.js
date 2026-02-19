@@ -4,6 +4,7 @@ import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import crypto from "crypto";
 import { SolapiMessageService } from "solapi";
 import { Types } from "mongoose";
+import { toKstYmd } from "../../utils/krBusinessDays.js";
 
 /**
  * 사용자 프로필 조회
@@ -70,7 +71,7 @@ async function sendPhoneVerification(req, res) {
     }
 
     const now = Date.now();
-    const todayKey = new Date(now).toISOString().slice(0, 10);
+    const todayKey = toKstYmd(new Date(now));
     const prevDailyKey = String(user?.phoneVerification?.dailySendDate || "");
     const prevDailyCountRaw = user?.phoneVerification?.dailySendCount;
     const prevDailyCount =

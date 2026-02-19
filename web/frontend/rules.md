@@ -211,7 +211,7 @@
 
 - 공정 단계: `stageKey` 또는 `stageLabel` 사용
 - 레거시 필드: `status1`, `status2` 사용 금지
-- 도착예정일: `productionSchedule.estimatedDelivery` (Date) 또는 `timeline.estimatedCompletion` (YYYY-MM-DD)
+- 발송예정일(SSOT): `timeline.estimatedShipYmd` (YYYY-MM-DD, KST)
 - 배송 모드: `finalShipping.mode` (없으면 `originalShipping.mode`)
 - **지연 위험**: `riskSummary`의 `delayedCount`, `warningCount` 표시
   - 지연/경고 건수를 눈에 띄게 표시 (빨간색 배지 등)

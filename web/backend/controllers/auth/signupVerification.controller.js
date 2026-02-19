@@ -2,6 +2,7 @@ import crypto from "crypto";
 import SignupVerification from "../../models/signupVerification.model.js";
 import User from "../../models/user.model.js";
 import { sendEmail } from "../../utils/email.util.js";
+import { toKstYmd } from "../../utils/krBusinessDays.js";
 
 const normalizeEmail = (email) =>
   String(email || "")
@@ -57,7 +58,7 @@ const ensureVerificationDoc = async ({ channel, target }) => {
 
 const MAX_DAILY_VERIFICATION_EMAILS = 3;
 const canSend = ({ existing, now, channel }) => {
-  const todayKey = new Date(now).toISOString().slice(0, 10);
+  const todayKey = toKstYmd(new Date(now));
   const prevDailyKey = String(existing?.dailySendDate || "");
   const prevDailyCountRaw = existing?.dailySendCount;
   const prevDailyCount =

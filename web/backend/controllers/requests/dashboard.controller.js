@@ -12,6 +12,7 @@ import {
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
   getTodayYmdInKst,
+  toKstYmd,
   getThisMonthStartYmdInKst,
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
@@ -28,18 +29,6 @@ function getLastMonthRangeUtc() {
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   return { start, end };
 }
-
-const toKstYmd = (d) => {
-  if (!d) return null;
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
-};
 
 const ymdToKstMidnight = (ymd) => {
   if (!ymd) return null;
@@ -544,7 +533,10 @@ export async function getMyDashboardSummary(req, res) {
             createdAt: 1,
             caseInfos: 1,
             timeline: 1,
-            estimatedCompletion: 1,
+            productionSchedule: 1,
+            shippingMode: 1,
+            finalShipping: 1,
+            originalShipping: 1,
             deliveryInfoRef: 1,
           })
           .sort({ createdAt: -1 })
@@ -595,7 +587,7 @@ export async function getMyDashboardSummary(req, res) {
       status: { $in: ["의뢰", "CAM", "가공", "세척.포장"] },
     })
       .select(
-        "requestId title status status2 manufacturerStage productionSchedule caseInfos createdAt timeline estimatedCompletion",
+        "requestId title status status2 manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
       )
       .lean();
 
@@ -718,32 +710,53 @@ export async function getMyDashboardSummary(req, res) {
     const recentRequests = await Promise.all(
       (recentRequestsResult || []).map(async (r) => {
         const ci = r.caseInfos || {};
-        const timelineEta = r.timeline?.estimatedCompletion
-          ? new Date(r.timeline.estimatedCompletion).toISOString().slice(0, 10)
-          : null;
+        const existingShipYmd =
+          typeof r.timeline?.estimatedShipYmd === "string" &&
+          r.timeline.estimatedShipYmd.trim()
+            ? r.timeline.estimatedShipYmd.trim()
+            : null;
 
-        if (timelineEta) {
+        if (existingShipYmd) {
           return {
             ...r,
             caseInfos: ci,
-            estimatedCompletion: timelineEta,
+            estimatedShipYmd: existingShipYmd,
+          };
+        }
+
+        const pickup = r.productionSchedule?.scheduledShipPickup;
+        const pickupYmd = pickup ? toKstYmd(pickup) : null;
+        if (pickupYmd) {
+          return {
+            ...r,
+            caseInfos: ci,
+            estimatedShipYmd: pickupYmd,
           };
         }
 
         const createdYmd = toKstYmd(r.createdAt) || getTodayYmdInKst();
         const baseYmd = await normalizeKoreanBusinessDay({ ymd: createdYmd });
-        // 생성일 다음 영업일부터 카운트 시작 (신규 의뢰와 동일하게 +2영업일 적용)
-        const startYmd = await addKoreanBusinessDays({
-          startYmd: baseYmd,
-          days: 1,
-        });
-        const days = resolveNormalLeadDays(ci?.maxDiameter);
-        const etaYmd = await addKoreanBusinessDays({ startYmd, days });
+        const d =
+          typeof ci?.maxDiameter === "number" && !Number.isNaN(ci.maxDiameter)
+            ? ci.maxDiameter
+            : null;
+
+        const mode = String(
+          r.finalShipping?.mode ||
+            r.originalShipping?.mode ||
+            r.shippingMode ||
+            "normal",
+        ).trim();
+        const isExpress = mode === "express";
+        const days = isExpress ? (d != null && d <= 8 ? 1 : 4) : 0;
+        const estimatedShipYmd = isExpress
+          ? await addKoreanBusinessDays({ startYmd: baseYmd, days })
+          : baseYmd;
 
         return {
           ...r,
           caseInfos: ci,
-          estimatedCompletion: etaYmd,
+          estimatedShipYmd,
         };
       }),
     );
@@ -757,8 +770,8 @@ export async function getMyDashboardSummary(req, res) {
         title: r.title,
         status: r.status,
         manufacturerStage: r.manufacturerStage,
-        date: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : "",
-        estimatedCompletion: r.estimatedCompletion || null,
+        date: r.createdAt ? toKstYmd(r.createdAt) || "" : "",
+        estimatedShipYmd: r.estimatedShipYmd || null,
         patientName: ci.patientName || "",
         tooth: ci.tooth || "",
         caseInfos: ci,

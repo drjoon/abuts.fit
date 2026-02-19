@@ -2,6 +2,7 @@ import {
   getTodayYmdInKst,
   addKoreanBusinessDays,
   getDeliveryEtaLeadDays,
+  toKstYmd,
 } from "./utils.js";
 
 /**
@@ -36,7 +37,7 @@ const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
 function createKstDateTime(ymd, hour = 0, minute = 0) {
   let ymdString = ymd;
   if (ymd instanceof Date) {
-    ymdString = ymd.toISOString().slice(0, 10);
+    ymdString = toKstYmd(ymd);
   }
   ymdString =
     typeof ymdString === "string" ? ymdString : String(ymdString || "");
@@ -50,7 +51,10 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
   // fallback: Date 파싱 후 KST 기준으로 재생성
   const parsed = new Date(ymdString);
   if (!Number.isNaN(parsed.getTime())) {
-    const iso = parsed.toISOString().slice(0, 10).split("-").map(Number);
+    const iso = String(toKstYmd(parsed) || "")
+      .slice(0, 10)
+      .split("-")
+      .map(Number);
     const [year, month, day] = iso;
     return new Date(year, month - 1, day, hour, minute, 0);
   }
@@ -151,9 +155,7 @@ export async function calculateInitialProductionSchedule({
   );
 
   // 가공 완료 → 배치 처리 (세척/검사/포장, 1일 소요)
-  const machiningCompleteYmd = scheduledMachiningComplete
-    .toISOString()
-    .slice(0, 10);
+  const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
   const batchProcessingYmd = await addKoreanBusinessDays({
     startYmd: machiningCompleteYmd,
     days: BATCH_PROCESSING_DAYS,
@@ -163,14 +165,6 @@ export async function calculateInitialProductionSchedule({
   // 배치 처리 완료 → 택배 수거 (다음날 16:00)
   const scheduledShipPickup = getNextPickupTime(scheduledBatchProcessing);
 
-  // 택배 수거 → 도착 (1영업일)
-  const pickupYmd = scheduledShipPickup.toISOString().slice(0, 10);
-  const deliveryYmd = await addKoreanBusinessDays({
-    startYmd: pickupYmd,
-    days: 1,
-  });
-  const estimatedDelivery = createKstDateTime(deliveryYmd, 12, 0);
-
   return {
     scheduledCamStart,
     scheduledCamComplete,
@@ -178,7 +172,6 @@ export async function calculateInitialProductionSchedule({
     scheduledMachiningComplete,
     scheduledBatchProcessing,
     scheduledShipPickup,
-    estimatedDelivery,
     assignedMachine: preferredMachine, // M3, M4, 또는 null
     diameter,
     diameterGroup,
@@ -212,8 +205,8 @@ export function getProductionQueueForMachine(machineId, requests) {
       const bpOk = Number.isFinite(bp) && bp > 0;
       if (apOk && bpOk && ap !== bp) return ap - bp;
       if (apOk !== bpOk) return apOk ? -1 : 1;
-      const aTime = a.productionSchedule?.estimatedDelivery || new Date(0);
-      const bTime = b.productionSchedule?.estimatedDelivery || new Date(0);
+      const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
+      const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
       return aTime - bTime;
     });
 }
@@ -251,8 +244,8 @@ export function getAllProductionQueues(requests) {
       const bpOk = Number.isFinite(bp) && bp > 0;
       if (apOk && bpOk && ap !== bp) return ap - bp;
       if (apOk !== bpOk) return apOk ? -1 : 1;
-      const aTime = a.productionSchedule?.estimatedDelivery || new Date(0);
-      const bTime = b.productionSchedule?.estimatedDelivery || new Date(0);
+      const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
+      const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
       return aTime - bTime;
     });
   }
@@ -301,10 +294,10 @@ export async function recalculateQueueOnMaterialChange(
     "productionSchedule.diameterGroup": newDiameterGroup,
   });
 
-  // 도착 예정시각 순으로 정렬하여 장비에 할당
+  // 발송(픽업) 예정시각 순으로 정렬하여 장비에 할당
   const sortedRequests = unassignedRequests.sort((a, b) => {
-    const aTime = a.productionSchedule?.estimatedDelivery || new Date(0);
-    const bTime = b.productionSchedule?.estimatedDelivery || new Date(0);
+    const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
+    const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
     return aTime - bTime;
   });
 
@@ -356,8 +349,8 @@ export function sortByProductionPriority(requests) {
  */
 export function calculateRiskSummary(requests) {
   const now = new Date();
-  const warningThresholdDays = 1; // 도착예정일 -1일부터 경고 (기존 2일에서 단축)
-  const delayGraceDays = 0; // 도착예정일 당일 미발송이면 지연
+  const warningThresholdDays = 1; // 발송예정일 -1일부터 경고
+  const delayGraceDays = 0; // 발송예정일 당일 미발송이면 지연
 
   let delayedCount = 0;
   let warningCount = 0;
@@ -365,14 +358,15 @@ export function calculateRiskSummary(requests) {
 
   for (const req of requests) {
     const schedule = req.productionSchedule;
-    if (!schedule || !schedule.estimatedDelivery) continue;
+    const ymd = req?.timeline?.estimatedShipYmd;
+    if (!schedule || typeof ymd !== "string" || !ymd.trim()) continue;
 
     const status = String(req.status || "");
-    const estimatedDelivery = new Date(schedule.estimatedDelivery);
-    const startOfDayDelivery = new Date(estimatedDelivery);
-    startOfDayDelivery.setHours(0, 0, 0, 0);
+    const baseYmd = ymd.trim();
+    const startOfDayShip = new Date(`${baseYmd}T00:00:00+09:00`);
+    if (Number.isNaN(startOfDayShip.getTime())) continue;
 
-    const warningStart = new Date(startOfDayDelivery);
+    const warningStart = new Date(startOfDayShip);
     warningStart.setDate(warningStart.getDate() - warningThresholdDays);
 
     const isShippedOrLater = [
@@ -383,8 +377,8 @@ export function calculateRiskSummary(requests) {
       "취소",
     ].includes(status);
 
-    // 지연 확정: 도착예정일 당일까지 발송되지 않음
-    if (!isShippedOrLater && now >= startOfDayDelivery) {
+    // 지연 확정: 발송예정일 당일까지 발송되지 않음
+    if (!isShippedOrLater && now >= startOfDayShip) {
       delayedCount++;
       riskItems.push({
         id: req._id,
@@ -394,20 +388,18 @@ export function calculateRiskSummary(requests) {
         riskLevel: "danger",
         status: status,
         manufacturerStage: req.manufacturerStage,
-        dueDate: schedule.estimatedDelivery
-          ? new Date(schedule.estimatedDelivery).toLocaleDateString()
-          : null,
+        dueDate: baseYmd,
         caseInfos: req.caseInfos || null,
         scheduledCamStart: schedule.scheduledCamStart,
-        estimatedDelivery: schedule.estimatedDelivery,
+        estimatedShipYmd: baseYmd,
       });
       continue;
     }
 
-    // 지연 위험: 도착예정일 - 1일까지 CAM 완료가 안 된 경우 (status가 의뢰/CAM)
+    // 지연 위험: 발송예정일 - 1일까지 CAM 완료가 안 된 경우 (status가 의뢰/CAM)
     // 생산(Machining) 단계로 들어갔다면 지연 가능 목록에서 제외
     const isPreProduction = ["의뢰", "CAM"].includes(status);
-    if (isPreProduction && now >= warningStart && now < startOfDayDelivery) {
+    if (isPreProduction && now >= warningStart && now < startOfDayShip) {
       warningCount++;
       riskItems.push({
         id: req._id,
@@ -417,12 +409,10 @@ export function calculateRiskSummary(requests) {
         riskLevel: "warning",
         status: status,
         manufacturerStage: req.manufacturerStage,
-        dueDate: schedule.estimatedDelivery
-          ? new Date(schedule.estimatedDelivery).toLocaleDateString()
-          : null,
+        dueDate: baseYmd,
         caseInfos: req.caseInfos || null,
         scheduledCamStart: schedule.scheduledCamStart,
-        estimatedDelivery: schedule.estimatedDelivery,
+        estimatedShipYmd: baseYmd,
       });
     }
   }

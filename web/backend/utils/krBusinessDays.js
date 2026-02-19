@@ -14,6 +14,13 @@ function formatYmdInTimeZone(date, timeZone) {
   return fmt.format(date);
 }
 
+export function toKstYmd(d) {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return null;
+  return formatYmdInTimeZone(date, KST_TZ);
+}
+
 export function getThisMonthStartYmdInKst(date = new Date()) {
   const ymd = formatYmdInTimeZone(date, KST_TZ);
   const [y, m] = String(ymd).split("-");
@@ -208,6 +215,24 @@ export async function addKoreanBusinessDays({ startYmd, days }) {
   }
 
   return utcDateToYmd(current);
+}
+
+export async function prevKoreanBusinessDayYmd({ fromYmd }) {
+  const base = new Date(`${fromYmd}T00:00:00+09:00`);
+  if (Number.isNaN(base.getTime())) return fromYmd;
+
+  let cur = new Date(base);
+  for (let i = 0; i < 10; i += 1) {
+    cur = new Date(cur.getTime() - 24 * 60 * 60 * 1000);
+    const ymd = toKstYmd(cur);
+    if (!ymd) continue;
+    // @ts-ignore (js)
+    if (await isKoreanBusinessDay(ymd)) {
+      return ymd;
+    }
+  }
+
+  return fromYmd;
 }
 
 export async function nextKoreanBusinessDay({ fromYmd }) {

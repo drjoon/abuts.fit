@@ -21,6 +21,7 @@ import {
   calculateExpressShipYmd,
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   ensureLotNumberForMachining,
+  toKstYmd,
 } from "./utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 
@@ -190,10 +191,10 @@ export function buildStandardStlFileName({
 /**
  * S3에서 파일을 다운로드하여 Rhino 서버의 1-stl 에 직접 업로드하는 헬퍼
  */
-async function uploadS3ToRhinoServer(s3Key, fileName) {
+export async function uploadS3ToRhinoServer(s3Url, fileName) {
   try {
     const s3Utils = (await import("../../utils/s3.utils.js")).default;
-    const buffer = await s3Utils.getObjectBufferFromS3(s3Key);
+    const buffer = await s3Utils.getObjectBufferFromS3(s3Url);
     if (buffer) {
       await uploadToRhinoServer(buffer, fileName);
     }
@@ -201,72 +202,6 @@ async function uploadS3ToRhinoServer(s3Key, fileName) {
     console.error(`[Rhino-Server] Failed to upload S3 file: ${err.message}`);
   }
 }
-
-const toKstYmd = (d) => {
-  if (!d) return null;
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
-};
-
-const ymdToKstDate = (ymd) => {
-  if (!ymd) return null;
-  const d = new Date(`${ymd}T00:00:00+09:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
-};
-
-const resolveNormalLeadDays = ({ leadDays, maxDiameter }) => {
-  const effective = {
-    ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
-    ...(leadDays || {}),
-  };
-  const d =
-    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
-      ? maxDiameter
-      : maxDiameter != null && String(maxDiameter).trim()
-        ? Number(maxDiameter)
-        : null;
-  if (d == null || Number.isNaN(d)) return effective.d10;
-  if (d <= 6) return effective.d6;
-  if (d <= 8) return effective.d8;
-  if (d <= 10) return effective.d10;
-  return effective.d10plus;
-};
-
-const resolveEstimatedCompletionDate = async ({
-  baseYmd,
-  shippingMode,
-  requestedShipDate,
-  maxDiameter,
-}) => {
-  const leadDays = await getDeliveryEtaLeadDays();
-  const requestedShipYmd = toKstYmd(requestedShipDate);
-  const todayYmd = getTodayYmdInKst();
-  const seedYmd = baseYmd || todayYmd;
-
-  const rawShipDateYmd =
-    shippingMode === "express"
-      ? requestedShipYmd ||
-        (await calculateExpressShipYmd({ maxDiameter, baseYmd: todayYmd }))
-      : requestedShipYmd || seedYmd;
-
-  const shipDateYmd = await normalizeKoreanBusinessDay({ ymd: rawShipDateYmd });
-
-  const arrivalYmd =
-    shippingMode === "express"
-      ? await addKoreanBusinessDays({ startYmd: shipDateYmd, days: 1 })
-      : await addKoreanBusinessDays({
-          startYmd: shipDateYmd,
-          days: resolveNormalLeadDays({ leadDays, maxDiameter }),
-        });
-
-  return ymdToKstDate(arrivalYmd);
-};
 
 export async function getOrganizationCreditBalanceBreakdown({
   organizationId,
@@ -447,10 +382,18 @@ export async function createRequest(req, res) {
     });
     newRequest.productionSchedule = productionSchedule;
 
-    // 하위 호환성을 위해 timeline.estimatedCompletion도 설정 (YYYY-MM-DD)
+    // 발송 예정일 (YYYY-MM-DD, KST)
+    const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
+    const maxD = normalizedCaseInfos?.maxDiameter;
+    const isSmall =
+      typeof maxD === "number" && !Number.isNaN(maxD) ? maxD <= 8 : true;
+    const days = shippingMode === "express" ? (isSmall ? 1 : 4) : 0;
+    const estimatedShipYmd =
+      shippingMode === "express"
+        ? await addKoreanBusinessDays({ startYmd: createdYmd, days })
+        : await normalizeKoreanBusinessDay({ ymd: createdYmd });
     newRequest.timeline = newRequest.timeline || {};
-    newRequest.timeline.estimatedCompletion =
-      productionSchedule.estimatedDelivery.toISOString().slice(0, 10);
+    newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
 
     newRequest.caseInfos = newRequest.caseInfos || {};
     if (newRequest.caseInfos?.file?.s3Key) {
@@ -1216,10 +1159,18 @@ export async function createRequestsFromDraft(req, res) {
           });
           newRequest.productionSchedule = productionSchedule;
 
-          // 하위 호환성을 위해 timeline.estimatedCompletion도 설정 (YYYY-MM-DD)
+          // 발송 예정일 (YYYY-MM-DD, KST)
+          const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
+          const maxD = item.caseInfosWithFile?.maxDiameter;
+          const isSmall =
+            typeof maxD === "number" && !Number.isNaN(maxD) ? maxD <= 8 : true;
+          const days = shippingMode === "express" ? (isSmall ? 1 : 4) : 0;
+          const estimatedShipYmd =
+            shippingMode === "express"
+              ? await addKoreanBusinessDays({ startYmd: createdYmd, days })
+              : await normalizeKoreanBusinessDay({ ymd: createdYmd });
           newRequest.timeline = newRequest.timeline || {};
-          newRequest.timeline.estimatedCompletion =
-            productionSchedule.estimatedDelivery.toISOString().slice(0, 10);
+          newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
 
           // 완료된 기존 의뢰에 대한 재의뢰(리메이크): referenceIds에 기존 requestId를 남긴다.
           if (duplicateResolutions) {

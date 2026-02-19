@@ -59,7 +59,7 @@ export function resolveEffectiveShippingMode(requestLike) {
 
 export async function computeShippingPriority({ request, now }) {
   const stage = String(
-    request?.manufacturerStage || request?.status || ""
+    request?.manufacturerStage || request?.status || "",
   ).trim();
   const isPreShip = ["의뢰", "CAM", "생산"].includes(stage);
 
@@ -110,16 +110,11 @@ export async function computeShippingPriority({ request, now }) {
     if (pickupYmd) {
       shipYmd = pickupYmd;
     } else {
-      const est =
-        request?.productionSchedule?.estimatedDelivery ||
-        request?.timeline?.estimatedCompletion ||
-        null;
-      const arrivalYmd = est ? toKstYmd(est) : null;
-      if (arrivalYmd) {
-        shipYmd = await prevKoreanBusinessDayYmd({ fromYmd: arrivalYmd });
-      } else {
-        shipYmd = await normalizeKoreanBusinessDay({ ymd: todayYmd });
-      }
+      const ymd = request?.timeline?.estimatedShipYmd;
+      shipYmd =
+        typeof ymd === "string" && ymd.trim()
+          ? ymd.trim()
+          : await normalizeKoreanBusinessDay({ ymd: todayYmd });
     }
   }
 

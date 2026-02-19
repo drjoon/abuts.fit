@@ -9,7 +9,9 @@ export async function getProductionQueues(req, res) {
     const requests = await Request.find({
       status: { $in: ["의뢰", "CAM", "생산", "가공"] },
     })
-      .select("requestId status productionSchedule caseInfos lotNumber")
+      .select(
+        "requestId status productionSchedule caseInfos lotNumber timeline",
+      )
       .populate({
         path: "productionSchedule.machiningRecord",
         select:
@@ -31,7 +33,8 @@ export async function getProductionQueues(req, res) {
           reqItem.productionSchedule?.machiningQty != null
             ? reqItem.productionSchedule.machiningQty
             : 1,
-        estimatedDelivery: reqItem.productionSchedule?.estimatedDelivery,
+        estimatedShipYmd: reqItem.timeline?.estimatedShipYmd || null,
+        scheduledShipPickup: reqItem.productionSchedule?.scheduledShipPickup,
         diameter: reqItem.productionSchedule?.diameter,
         diameterGroup: reqItem.productionSchedule?.diameterGroup,
         ncFile: reqItem.caseInfos?.ncFile

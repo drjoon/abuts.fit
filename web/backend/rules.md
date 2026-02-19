@@ -228,7 +228,9 @@
 - **가공 단계**: CNC 가공 시작 → 가공 완료까지 15분 소요
 - **배치 처리**: 가공 완료된 반제품 50~100개를 모아서 세척/검사/포장 (1일 소요)
 - **운송장 입력 마감**: 매일 15:00(KST)까지 택배사 시스템에 당일 출고 내역(운송장)을 입력
-- **택배 수거**: 매일 16:00(KST) 택배 차량이 방문하여 준비된 박스를 수거
+- **생산 완료 → 택배 수거**: 매일 16:00(KST) 수거
+- **택배 수거 → 배송**: +1영업일
+  준비된 박스를 수거
 - **배송**: 택배 수거일 다음 영업일 도착
 - **시각 단위 관리**: 모든 스케줄을 시각(DateTime) 단위로 관리
 
@@ -238,18 +240,19 @@
    - 대기 없이 즉시 CAM 시작
    - `scheduledCamStart` = 의뢰 시각
    - `scheduledCamComplete` = CAM 시작 + 5분
-   - `scheduledMachiningStart` = CAM 완료 (즉시)
-   - `scheduledMachiningComplete` = 가공 시작 + 15분
-   - `scheduledBatchProcessing` = 가공 완료 + 1영업일 (세척/검사/포장)
-   - `scheduledShipPickup` = 배치 처리 완료 후 다음날 16:00
-   - `estimatedDelivery` = 택배 수거일 + 1영업일
+   - `scheduledMachiningStart` = CAM 완료 직후
+
+- `scheduledMachiningComplete` = 가공 시작 + 15분
+- `scheduledBatchProcessing` = 가공 완료 + 1영업일 (세척/검사/포장)
+- `scheduledShipPickup` = 배치 처리 완료 후 다음날 16:00
+- `timeline.estimatedShipYmd` = 발송 예정일(YYYY-MM-DD, KST)
 
 2. **묶음배송** (`originalShipping.mode: "normal"`):
    - 직경별 대기 시간 적용 (CNC 장비별 소재 세팅 고려)
    - **6mm**: M3 전용 장비, 대기 0시간
    - **8mm**: M4 전용 장비, 대기 0시간
    - **10mm, 12mm**: 일주일에 1~2회 소재 교체하여 생산, 평균 대기 72시간
-   - 대기 후 CAM 시작 → +5분 CAM 완료 → +15분 가공 완료 → +1일 배치 처리 → 다음날 16:00 택배 수거 → +1영업일 도착
+   - 대기 후 CAM 시작 → +5분 CAM 완료 → +15분 가공 완료 → +1일 배치 처리 → 다음날 16:00 택배 수거 → +1영업일 배송
 
 **배송 옵션 데이터 구조**:
 
@@ -266,7 +269,7 @@
   - `scheduledMachiningComplete`: 가공 완료 예정 시각 (Date, 가공 시작 + 15분)
   - `scheduledBatchProcessing`: 배치 처리 예정 시각 (Date, 가공 완료 + 1영업일)
   - `scheduledShipPickup`: 택배 수거 시각 (Date, 배치 처리 완료 후 다음날 16:00)
-  - `estimatedDelivery`: 도착 예정 시각 (Date, 택배 수거일 + 1영업일)
+  - `timeline.estimatedShipYmd`: 발송 예정일(YYYY-MM-DD, KST)
   - `actualCamStart`, `actualCamComplete`, `actualMachiningStart`, `actualMachiningComplete`, `actualBatchProcessing`, `actualShipPickup`: 실제 시각 (Date)
   - `assignedMachine`: 할당된 CNC 장비 (String, "M3" | "M4" | null)
   - `queuePosition`: 해당 장비 큐에서의 위치 (Number)
@@ -297,14 +300,14 @@
 **장비별 큐 우선순위**:
 
 - 각 장비마다 독립적인 큐 관리
-- **우선순위**: 도착 예정시각(`estimatedDelivery`) 순서만 고려 (FIFO)
+- **우선순위**: 택배 수거 시각(`scheduledShipPickup`) 순서만 고려 (FIFO)
 - 점수 계산 없음, 단순 시각 순서
 
 **소재 세팅 변경**:
 
 - 제조사가 M3 또는 M4의 소재를 12mm로 변경 시
 - 해당 직경 그룹의 unassigned 의뢰를 자동으로 장비에 할당
-- 도착 예정시각 순으로 큐에 추가
+- 택배 수거 시각 순으로 큐에 추가
 
 **소재 교체 예약 기능**:
 
@@ -336,8 +339,18 @@
   - KST 기준 **당일 00:00까지 주문된 신속배송**은 당일 15:00 출고 내역에 포함되어 익일 도착하도록 처리한다.
   - 따라서 신속배송 의뢰가 발송 이전 단계에 있다면 다른 건보다 우선순위를 높게 잡아 신속히 발송 단계까지 진행한다.
 - **묶음배송(Bulk/Normal)**:
-  - 도착예정일을 맞추기 위해, **도착 예정일 전(직전 영업일) 15:00**까지 운송장 입력이 가능해야 한다.
-  - 이를 위해 해당 시각 이전에 생산 단계까지 완료되어 발송 대기 상태가 되도록 스케줄/우선순위를 관리한다.
+
+- 발송 운영 마감(15:00 KST)에 맞추기 위해, **발송 예정일 전(직전 영업일) 15:00**까지 운송장 입력이 가능해야 한다.
+- 이를 위해 해당 시각 이전에 생산 단계까지 완료되어 발송 대기 상태가 되도록 스케줄/우선순위를 관리한다.
+
+**발송예정일(의뢰자 화면 고지용) 정책**:
+
+- **표시 용어**: 앱 내 모든 영역에서 `도착예정일`이라는 용어를 사용하지 않는다.
+- **발송예정일 필드(SSOT)**: `timeline.estimatedShipYmd` (YYYY-MM-DD, KST)
+- **신속배송(Express)**:
+  - 직경 **8mm 이하**: `의뢰일 + 1영업일`
+  - 직경 **10mm 이상**: `의뢰일 + 4영업일`
+  - 공정 상황(대기/검수/택배 수거 등)에 따라 변동될 수 있음을 UI/정책에서 고지한다.
 
 **자동화 구현**:
 
@@ -346,10 +359,10 @@
 - 생산 스케줄 기준으로 공정 단계 자동 진행
 - 상태 조회: `GET /status` (background worker)
 
-**하위 호환성**:
+**시간대(KST) 정책**:
 
-- `timeline.estimatedCompletion`: `productionSchedule.estimatedDelivery.toISOString().slice(0, 10)` (String, YYYY-MM-DD)
-- 기존 날짜 기반 로직과의 호환성 유지
+- 앱 내 모든 날짜/시간 계산 및 표시는 UTC가 아니라 항상 KST(Asia/Seoul)를 기준으로 한다.
+- `toISOString()`/UTC slice 기반으로 YYYY-MM-DD를 생성하는 로직은 금지한다.
 
 ### 5.3 의뢰 취소 및 정보 변경 정책
 

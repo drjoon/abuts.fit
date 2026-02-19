@@ -12,6 +12,8 @@ import {
   getTodayMidnightUtcInKst,
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
+  prevKoreanBusinessDayYmd,
+  toKstYmd,
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
 
@@ -22,6 +24,8 @@ export {
   getTodayMidnightUtcInKst,
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
+  prevKoreanBusinessDayYmd,
+  toKstYmd,
   ymdToMmDd,
 };
 

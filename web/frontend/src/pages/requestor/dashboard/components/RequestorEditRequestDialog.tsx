@@ -11,7 +11,7 @@ export type EditingRequestState = {
   id: string;
   requestId?: string;
   createdAt?: string;
-  estimatedCompletion?: string;
+  estimatedShipYmd?: string;
   title?: string;
   description?: string;
   clinicName?: string;
@@ -152,8 +152,8 @@ export const RequestorEditRequestDialog = ({
               <span>{formatDate(editingRequest?.createdAt)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="font-medium">도착 예정일:</span>
-              <span>{formatDate(editingRequest?.estimatedCompletion)}</span>
+              <span className="font-medium">발송 예정일:</span>
+              <span>{formatDate(editingRequest?.estimatedShipYmd)}</span>
             </div>
           </div>
           <div className="space-y-6">

@@ -6,6 +6,7 @@ import {
   normalizeKoreanBusinessDay,
   addKoreanBusinessDays,
   getTodayYmdInKst,
+  toKstYmd,
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
   getDeliveryEtaLeadDays,
   applyStatusMapping,
@@ -26,7 +27,7 @@ const memo = async ({ key, ttlMs, fn }) => {
   return value;
 };
 
-const resolveExpressLeadDays = (maxDiameter) => {
+const resolveExpressShipLeadDays = (maxDiameter) => {
   const d =
     typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
       ? maxDiameter
@@ -34,8 +35,10 @@ const resolveExpressLeadDays = (maxDiameter) => {
         ? Number(maxDiameter)
         : null;
 
-  if (d == null || Number.isNaN(d)) return 5;
-  return d <= 8 ? 2 : 5;
+  if (d == null || Number.isNaN(d)) return 4;
+  if (d <= 8) return 1;
+  if (d >= 10) return 4;
+  return 1;
 };
 
 /**
@@ -99,11 +102,23 @@ export async function updateMyShippingMode(req, res) {
           // 생산 스케줄 업데이트
           req.productionSchedule = newSchedule;
 
-          // 하위 호환성을 위해 timeline.estimatedCompletion도 업데이트
+          // 발송 예정일(YYYY-MM-DD, KST)
           req.timeline = req.timeline || {};
-          req.timeline.estimatedCompletion = newSchedule.estimatedDelivery
-            .toISOString()
-            .slice(0, 10);
+          if (shippingMode === "express") {
+            const createdYmd = toKstYmd(req.createdAt) || getTodayYmdInKst();
+            req.timeline.estimatedShipYmd = await addKoreanBusinessDays({
+              startYmd: createdYmd,
+              days: resolveExpressShipLeadDays(maxDiameter),
+            });
+          } else {
+            const pickup = newSchedule?.scheduledShipPickup;
+            const pickupYmd = pickup ? toKstYmd(pickup) : null;
+            req.timeline.estimatedShipYmd = pickupYmd
+              ? pickupYmd
+              : await normalizeKoreanBusinessDay({
+                  ymd: toKstYmd(req.createdAt) || getTodayYmdInKst(),
+                });
+          }
 
           await req.save();
         }
@@ -243,16 +258,12 @@ export async function getMyShippingPackagesSummary(req, res) {
 }
 
 /**
- * 배송 도착일/출고일 계산 (공용)
+ * 발송 예정일 계산 (공용)
  * @route GET /api/requests/shipping-estimate
  */
 export async function getShippingEstimate(req, res) {
   try {
     const mode = req.query.mode;
-    const shipYmd =
-      typeof req.query.shipYmd === "string" && req.query.shipYmd.trim()
-        ? req.query.shipYmd.trim()
-        : null;
     const maxDiameterRaw = req.query.maxDiameter;
     const maxDiameter =
       typeof maxDiameterRaw === "string" && maxDiameterRaw.trim()
@@ -268,53 +279,26 @@ export async function getShippingEstimate(req, res) {
       });
     }
 
-    // 출고일: express는 정책 기반, normal은 기본값(today)
     const todayYmd = getTodayYmdInKst();
-    const rawShipDateYmd = shipYmd
-      ? shipYmd
-      : mode === "express"
-        ? await calculateExpressShipYmd({ maxDiameter })
-        : todayYmd;
-
-    const shipDateYmd = await normalizeKoreanBusinessDay({
-      ymd: rawShipDateYmd,
-    });
-
-    // 도착일: express는 직경별(<=8mm:+2, >=10mm:+5) 영업일, normal은 직경별 리드타임(영업일) 적용
-    const resolveNormalLeadDays = () => {
-      const d =
-        typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
-          ? maxDiameter
-          : null;
-      if (d == null) return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d10;
-      if (d <= 6) return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d6;
-      if (d <= 8) return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d8;
-      if (d <= 10) return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d10;
-      return DEFAULT_DELIVERY_ETA_LEAD_DAYS.d10plus;
-    };
-
-    const arrivalDateYmd =
+    const baseYmd = todayYmd;
+    const estimatedShipYmd =
       mode === "express"
         ? await addKoreanBusinessDays({
-            startYmd: todayYmd,
-            days: resolveExpressLeadDays(maxDiameter),
+            startYmd: baseYmd,
+            days: resolveExpressShipLeadDays(maxDiameter),
           })
-        : await addKoreanBusinessDays({
-            startYmd: shipDateYmd,
-            days: resolveNormalLeadDays(),
-          });
+        : await normalizeKoreanBusinessDay({ ymd: baseYmd });
 
     return res.status(200).json({
       success: true,
       data: {
-        shipDateYmd,
-        arrivalDateYmd,
+        estimatedShipYmd,
       },
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "배송 도착일 계산 중 오류가 발생했습니다.",
+      message: "발송 예정일 계산 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -350,18 +334,6 @@ export async function getMyBulkShipping(req, res) {
       return effectiveLeadDays.d10plus;
     };
 
-    const toYmd = (d) => {
-      if (!d) return null;
-      const date = d instanceof Date ? d : new Date(d);
-      if (Number.isNaN(date.getTime())) return null;
-      return new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Seoul",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(date);
-    };
-
     // 배치 최적화: 같은 diameter는 1회만 계산
     const todayYmd = getTodayYmdInKst();
     const diameterCache = new Map();
@@ -384,57 +356,29 @@ export async function getMyBulkShipping(req, res) {
       return diameterCache.get(key);
     };
 
-    const resolveShippingYmds = async (r) => {
+    const resolveEstimatedShipYmd = async (r) => {
       const ci = r.caseInfos || {};
       const maxDiameter = ci.maxDiameter;
       const mode = r.shippingMode || "normal";
 
-      const createdYmd = toYmd(r.createdAt);
-      const baseYmd = createdYmd || todayYmd;
-      const requestedShipYmd = toYmd(r.requestedShipDate);
-
-      // timeline ETA가 이미 있어도 과거 날짜면 재계산
-      const existing = r.timeline?.estimatedCompletion;
-      const existingEtaYmd =
-        existing instanceof Date
-          ? existing.toISOString().slice(0, 10)
-          : typeof existing === "string" && existing.trim()
-            ? existing.trim()
-            : null;
-
-      let shipDateYmd;
       if (mode === "express") {
-        shipDateYmd =
-          requestedShipYmd || (await getExpressShipYmd(maxDiameter));
-      } else {
-        const raw = requestedShipYmd || baseYmd;
-        shipDateYmd = await memo({
-          key: `krbiz:normalize:${raw}`,
+        const createdYmd = toKstYmd(r.createdAt) || todayYmd;
+        const days = resolveExpressShipLeadDays(maxDiameter);
+        return memo({
+          key: `krbiz:add:${createdYmd}:${days}`,
           ttlMs: 6 * 60 * 60 * 1000,
-          fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
+          fn: () => addKoreanBusinessDays({ startYmd: createdYmd, days }),
         });
       }
 
-      if (existingEtaYmd && existingEtaYmd >= todayYmd) {
-        return { shipDateYmd, arrivalDateYmd: existingEtaYmd };
-      }
-
-      // ETA 없는 경우만 계산
-      const days =
-        mode === "express"
-          ? resolveExpressLeadDays(maxDiameter)
-          : resolveNormalLeadDays(maxDiameter);
-      const arrivalDateYmd = await memo({
-        key: `krbiz:add:${mode === "express" ? todayYmd : shipDateYmd}:${days}`,
+      const requestedShipYmd = toKstYmd(r.requestedShipDate);
+      const createdYmd = toKstYmd(r.createdAt) || todayYmd;
+      const raw = requestedShipYmd || createdYmd;
+      return memo({
+        key: `krbiz:normalize:${raw}`,
         ttlMs: 6 * 60 * 60 * 1000,
-        fn: () =>
-          addKoreanBusinessDays({
-            startYmd: mode === "express" ? todayYmd : shipDateYmd,
-            days,
-          }),
+        fn: () => normalizeKoreanBusinessDay({ ymd: raw }),
       });
-
-      return { shipDateYmd, arrivalDateYmd };
     };
 
     const requests = await Request.find({
@@ -454,7 +398,7 @@ export async function getMyBulkShipping(req, res) {
       },
     })
       .select(
-        "requestId title status manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedCompletion requestor",
+        "requestId title status manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedShipYmd requestor",
       )
       .populate("requestor", "name organization")
       .lean();
@@ -470,9 +414,7 @@ export async function getMyBulkShipping(req, res) {
             ? `${Number(ci.maxDiameter)}mm`
             : "";
 
-      const ymds = await resolveShippingYmds(r);
-      const eta = ymds?.arrivalDateYmd;
-      const shipDateYmd = ymds?.shipDateYmd;
+      const estimatedShipYmd = await resolveEstimatedShipYmd(r);
 
       const stageKey = normalizeRequestStage(r);
       const stageLabel = normalizeRequestStageLabel(r);
@@ -490,8 +432,7 @@ export async function getMyBulkShipping(req, res) {
         stageLabel,
         shippingMode: r.shippingMode || "normal",
         requestedShipDate: r.requestedShipDate,
-        shipDateYmd,
-        estimatedArrivalDate: eta,
+        estimatedShipYmd,
       };
     };
 

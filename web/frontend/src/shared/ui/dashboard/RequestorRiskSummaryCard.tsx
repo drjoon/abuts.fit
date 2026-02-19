@@ -273,7 +273,7 @@ export const RequestorRiskSummaryCard = ({
                   <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
                     {item.dueDate && (
                       <span className="text-blue-600 font-medium">
-                        도착 예정: {item.dueDate}
+                        발송 예정: {item.dueDate}
                       </span>
                     )}
                     <span className="truncate">{item.manufacturer || "-"}</span>

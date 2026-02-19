@@ -316,9 +316,9 @@ export const RequestorDashboardPage = () => {
       id: mongoId,
       requestId: request.requestId || displayId,
       createdAt: request.createdAt || request.date || "",
-      estimatedCompletion:
-        request.timeline?.estimatedCompletion ||
-        request.estimatedCompletion ||
+      estimatedShipYmd:
+        request.timeline?.estimatedShipYmd ||
+        request.estimatedShipYmd ||
         request.dueDate ||
         "",
       title: request.title || displayId,

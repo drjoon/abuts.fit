@@ -37,7 +37,7 @@ export const NewRequestPage = () => {
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
-    {}
+    {},
   );
 
   const normalizeKeyPart = (s: string) => {
@@ -143,8 +143,8 @@ export const NewRequestPage = () => {
           ? "requestor.new_request.details"
           : "requestor.new_request.upload"
         : highlightStep === "details"
-        ? "requestor.new_request.details"
-        : "requestor.new_request.shipping";
+          ? "requestor.new_request.details"
+          : "requestor.new_request.shipping";
 
     if (isStepActive(desiredStepId)) return;
 
@@ -173,7 +173,7 @@ export const NewRequestPage = () => {
   const hasVerifiedFile = useMemo(() => {
     if (!files.length) return false;
     return files.some(
-      (file) => fileVerificationStatus[`${file.name}:${file.size}`]
+      (file) => fileVerificationStatus[`${file.name}:${file.size}`],
     );
   }, [fileVerificationStatus, files]);
 
@@ -219,7 +219,7 @@ export const NewRequestPage = () => {
     setImplantType("");
 
     const fileInput = document.getElementById(
-      "file-input"
+      "file-input",
     ) as HTMLInputElement | null;
     if (fileInput) {
       fileInput.value = "";
@@ -248,12 +248,12 @@ export const NewRequestPage = () => {
       duplicatePrompt.duplicates.length > 0
         ? duplicatePrompt.duplicates
         : [],
-    [duplicatePrompt]
+    [duplicatePrompt],
   );
 
   const getFileKeyByDraftCaseId = (draftCaseId: string) => {
     const found = (files || []).find(
-      (f) => String((f as any)?._draftCaseInfoId || "") === String(draftCaseId)
+      (f) => String((f as any)?._draftCaseInfoId || "") === String(draftCaseId),
     );
     if (!found) return null;
     return `${found.name}:${found.size}`;
@@ -273,7 +273,7 @@ export const NewRequestPage = () => {
         clinicName: String(info?.clinicName || ""),
       };
     },
-    [caseInfosMap, files]
+    [caseInfosMap, files],
   );
 
   const applyDuplicateChoice = async (choice: {
@@ -322,7 +322,7 @@ export const NewRequestPage = () => {
 
       const remaining =
         (duplicatePrompt?.duplicates || []).filter(
-          (d) => d.caseId !== choice.caseId
+          (d) => d.caseId !== choice.caseId,
         ) || [];
 
       if (remaining.length > 0) {
@@ -363,7 +363,7 @@ export const NewRequestPage = () => {
     // --- 의뢰 제출 시 감지된 중복 케이스 처리 ---
     const nextResolutions = (() => {
       const next = (duplicateResolutions || []).filter(
-        (r) => r.caseId !== choice.caseId
+        (r) => r.caseId !== choice.caseId,
       );
       next.push(choice);
       return next;
@@ -373,7 +373,7 @@ export const NewRequestPage = () => {
 
     const remaining =
       (duplicatePrompt?.duplicates || []).filter(
-        (d) => d.caseId !== choice.caseId
+        (d) => d.caseId !== choice.caseId,
       ) || [];
 
     if (remaining.length > 0) {
@@ -438,10 +438,10 @@ export const NewRequestPage = () => {
   };
 
   const { summary: bulkShippingSummary } = useBulkShippingPolicy(user?.email);
-  const { calculateExpressDate, expressArrivalDate } =
+  const { calculateExpressDate, expressEstimatedShipYmd } =
     useExpressShipping(caseInfos);
 
-  const [normalArrivalDate, setNormalArrivalDate] = useState<
+  const [normalEstimatedShipYmd, setNormalEstimatedShipYmd] = useState<
     string | undefined
   >(undefined);
 
@@ -450,25 +450,25 @@ export const NewRequestPage = () => {
     const run = async () => {
       const maxDiameter = caseInfos?.maxDiameter;
       if (maxDiameter == null) {
-        if (!cancelled) setNormalArrivalDate(undefined);
+        if (!cancelled) setNormalEstimatedShipYmd(undefined);
         return;
       }
 
       try {
         const res = await apiFetch<any>({
           path: `/api/requests/shipping-estimate?mode=normal&maxDiameter=${encodeURIComponent(
-            String(maxDiameter)
+            String(maxDiameter),
           )}`,
           method: "GET",
         });
 
         const next =
           res.ok && res.data?.success
-            ? res.data?.data?.arrivalDateYmd
+            ? res.data?.data?.estimatedShipYmd
             : undefined;
-        if (!cancelled) setNormalArrivalDate(next);
+        if (!cancelled) setNormalEstimatedShipYmd(next);
       } catch {
-        if (!cancelled) setNormalArrivalDate(undefined);
+        if (!cancelled) setNormalEstimatedShipYmd(undefined);
       }
     };
 
@@ -479,7 +479,7 @@ export const NewRequestPage = () => {
   }, [caseInfos?.maxDiameter]);
 
   const validateFileForUpload = (
-    file: File
+    file: File,
   ): { valid: boolean; message?: string } => {
     if (file.size >= FILE_SIZE_THRESHOLD_BYTES) {
       return {
@@ -584,7 +584,7 @@ export const NewRequestPage = () => {
                               ? "완료"
                               : existing?.manufacturerStage ||
                                   existing?.status ||
-                                  ""
+                                  "",
                           )}
                           {isLocked && (
                             <span className="text-red-500 ml-1">
@@ -596,7 +596,7 @@ export const NewRequestPage = () => {
                           <span className="truncate">
                             금액(공급가):{" "}
                             {Number(
-                              existing?.price?.amount || 0
+                              existing?.price?.amount || 0,
                             ).toLocaleString()}
                             원
                           </span>
@@ -680,26 +680,26 @@ export const NewRequestPage = () => {
               highlight={highlightStep === "shipping"}
               sectionHighlightClass={sectionHighlightClass}
               bulkShippingSummary={bulkShippingSummary}
-              normalArrivalDate={normalArrivalDate}
-              expressArrivalDate={expressArrivalDate}
+              normalEstimatedShipYmd={normalEstimatedShipYmd}
+              expressEstimatedShipYmd={expressEstimatedShipYmd}
               onOpenShippingSettings={() =>
                 navigate("/dashboard/settings?tab=shipping")
               }
               onSelectExpress={async () => {
                 const guessShipDate = calculateExpressDate(
-                  caseInfos?.maxDiameter
+                  caseInfos?.maxDiameter,
                 );
                 try {
                   const res = await apiFetch<any>({
-                    path: `/api/requests/shipping-estimate?mode=express&shipYmd=${encodeURIComponent(
-                      guessShipDate
+                    path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(
+                      String(caseInfos?.maxDiameter ?? ""),
                     )}`,
                     method: "GET",
                   });
 
                   const shipDateYmd =
                     res.ok && res.data?.success
-                      ? res.data?.data?.shipDateYmd
+                      ? res.data?.data?.estimatedShipYmd
                       : guessShipDate;
 
                   setCaseInfos({

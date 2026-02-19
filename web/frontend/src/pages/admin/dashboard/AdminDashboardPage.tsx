@@ -578,7 +578,7 @@ export const AdminDashboardPage = () => {
                   onClick={() => setRecalcConfirmOpen(true)}
                 >
                   {snapshotRecalcDisabled
-                    ? "오늘 자정에 이미 재계산됨"
+                    ? "이미 재계산됨"
                     : recalcMutation.isPending
                       ? "재계산 중..."
                       : "수동 재계산"}

@@ -3,7 +3,8 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
-import { request } from "@/shared/api/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
+import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -237,7 +238,7 @@ export const DashboardLayout = () => {
     void (async () => {
       try {
         const steps = getRequestorOnboardingSteps();
-        const res = await request<any>({
+        const res = await apiFetch<any>({
           path: "/api/guide-progress/requestor-onboarding",
           method: "GET",
           token,
@@ -301,7 +302,7 @@ export const DashboardLayout = () => {
     void (async () => {
       try {
         const steps = getRequestorNewRequestSteps();
-        const res = await request<any>({
+        const res = await apiFetch<any>({
           path: "/api/guide-progress/requestor-new-request",
           method: "GET",
           token,
@@ -407,7 +408,7 @@ export const DashboardLayout = () => {
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await request<any>({
+      const res = await apiFetch<any>({
         path: "/api/users/profile",
         method: "GET",
         token,
@@ -450,7 +451,7 @@ export const DashboardLayout = () => {
 
     setLoadingCreditBalance(true);
     try {
-      const res = await request<any>({
+      const res = await apiFetch<any>({
         path: "/api/credits/balance",
         method: "GET",
         token,
@@ -507,7 +508,7 @@ export const DashboardLayout = () => {
     if (!location.pathname.startsWith("/dashboard/new-request")) return;
 
     const today = new Date();
-    const yyyyMmDd = today.toISOString().slice(0, 10);
+    const yyyyMmDd = toKstYmd(today) || "";
     const storageKey = `abuts_credit_nudge:${String(user.id)}:${yyyyMmDd}`;
 
     try {
@@ -534,8 +535,8 @@ export const DashboardLayout = () => {
     const run = async () => {
       try {
         const [balanceRes, insightsRes] = await Promise.all([
-          request<any>({ path: "/api/credits/balance", method: "GET", token }),
-          request<any>({
+          apiFetch<any>({ path: "/api/credits/balance", method: "GET", token }),
+          apiFetch<any>({
             path: "/api/credits/insights/spend",
             method: "GET",
             token,

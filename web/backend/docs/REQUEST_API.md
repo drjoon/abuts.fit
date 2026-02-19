@@ -296,7 +296,7 @@
       "quotedAt": "2023-08-05T12:00:00.000Z"
     },
     "timeline": {
-      "estimatedCompletion": "2023-08-15T00:00:00.000Z"
+      "estimatedShipYmd": "2023-08-15"
     },
     "createdAt": "2023-08-05T11:30:00.000Z",
     "updatedAt": "2023-08-05T12:00:00.000Z"

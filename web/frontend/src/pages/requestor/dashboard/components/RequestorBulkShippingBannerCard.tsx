@@ -57,7 +57,7 @@ type ShippingItemApi = {
   shippingMode?: "normal" | "express";
   requestedShipDate?: string;
   shipDateYmd?: string | null;
-  estimatedArrivalDate?: string | null;
+  estimatedShipYmd?: string | null;
 };
 
 export const RequestorBulkShippingBannerCard = ({
@@ -103,7 +103,7 @@ export const RequestorBulkShippingBannerCard = ({
   }, [bulkData]);
 
   const hasAnyEta = useMemo(() => {
-    return items.some((it) => Boolean(it.estimatedArrivalDate));
+    return items.some((it) => Boolean(it.estimatedShipYmd));
   }, [items]);
 
   useEffect(() => {
@@ -141,7 +141,7 @@ export const RequestorBulkShippingBannerCard = ({
   }, [isModalOpen, items.length, hasAnyEta]);
 
   useEffect(() => {
-    // 묶음 배송(normal)인 아이템의 "원래 ETA"를 1회 저장 (신속→묶음 복귀 시 사용)
+    // 묶음 배송(normal)인 아이템의 "원래 발송예정일"을 1회 저장 (신속→묶음 복귀 시 사용)
     setOriginalBulkEtaById((prev) => {
       const next = { ...prev };
       for (const it of items) {
@@ -149,7 +149,7 @@ export const RequestorBulkShippingBannerCard = ({
         if (mode !== "normal") continue;
         if (!it.id) continue;
         if (next[it.id] !== undefined) continue;
-        next[it.id] = it.estimatedArrivalDate ?? null;
+        next[it.id] = it.estimatedShipYmd ?? null;
       }
       return next;
     });
@@ -164,14 +164,16 @@ export const RequestorBulkShippingBannerCard = ({
 
   const earliestEta = (list: ShippingItemApi[]) => {
     const dates = list
-      .map((i) => i.estimatedArrivalDate)
+      .map((i) => i.estimatedShipYmd)
       .filter(Boolean)
-      .map((d) => new Date(d as string).getTime())
-      .filter((t) => !Number.isNaN(t));
+      .map((d) => String(d))
+      .filter((v) => v.length >= 10);
     if (!dates.length) return "-";
-    const ts = Math.min(...dates);
-    const d = new Date(ts);
-    return `${d.getMonth() + 1}/${d.getDate()}`;
+    const ts = dates.sort()[0];
+    const mm = Number(ts.slice(5, 7));
+    const dd = Number(ts.slice(8, 10));
+    if (!Number.isFinite(mm) || !Number.isFinite(dd)) return "-";
+    return `${mm}/${dd}`;
   };
 
   const getNextSummary = () => {
@@ -306,28 +308,9 @@ export const RequestorBulkShippingBannerCard = ({
     onOpenBulkModal();
   };
 
-  const isExpressEligible = (it: ShippingItemApi) => {
-    const raw = it.diameter;
-    if (!raw) return true;
-    const n = Number(String(raw).replace(/[^0-9.]/g, ""));
-    if (Number.isNaN(n) || n < 10) return true;
-
-    // 10mm 이상: 공정 단계가 CAM 이상(의뢰 단계 아님)이면 허용
-    if (it.stageKey) {
-      return it.stageKey !== "request" && it.stageKey !== "cancel";
-    }
-
-    const status = it.status || "";
-    return [
-      "CAM",
-      "가공전",
-      "생산",
-      "가공후",
-      "발송",
-      "배송대기",
-      "배송중",
-      "완료",
-    ].includes(status);
+  const canToggleMode = (status?: string) => {
+    if (!status) return false;
+    return ["의뢰", "의뢰접수"].includes(status);
   };
 
   const patchShippingMode = async (
@@ -396,30 +379,32 @@ export const RequestorBulkShippingBannerCard = ({
         ? (res.data.data.shipDateYmd as string)
         : null;
 
-    if (shippingMode === "express" && rejectedIds.length) {
-      toast({
-        title: "일부 제품은 신속배송 제외",
-        description: `10mm 이상(10mm, 12mm) ${rejectedIds.length}건은 묶음 배송으로 유지됩니다.`,
-        duration: 3500,
-      });
-    }
+    // 레거시 하위호환: 서버가 rejectedIds/updatedIds를 주지 않는 경우 프론트에서 전체 성공으로 처리
+    const safeRejectedIds = Array.isArray(rejectedIds) ? rejectedIds : [];
+    const safeUpdatedIds = Array.isArray(updatedIds) ? updatedIds : requestIds;
 
-    return { ok: true as const, updatedIds, rejectedIds, shipDateYmd };
+    return {
+      ok: true as const,
+      updatedIds: safeUpdatedIds,
+      rejectedIds: safeRejectedIds,
+      shipDateYmd,
+    };
   };
 
   const getEtaKey = (it: ShippingItemApi) => {
-    const raw = it.estimatedArrivalDate;
+    const raw = it.estimatedShipYmd;
     if (!raw) return "-";
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) return "-";
-    return d.toISOString().slice(0, 10);
+    const s = String(raw);
+    return s.length >= 10 ? s.slice(0, 10) : "-";
   };
 
   const formatEta = (raw?: string | null) => {
     if (!raw) return "-";
-    const d = new Date(raw);
+    const s = String(raw);
+    if (s.length < 10) return "-";
+    const d = new Date(`${s.slice(0, 10)}T00:00:00+09:00`);
     if (Number.isNaN(d.getTime())) return "-";
-    return d.toLocaleDateString("ko-KR");
+    return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
   };
 
   const formatShipDate = (raw?: string | null) => {
@@ -432,7 +417,7 @@ export const RequestorBulkShippingBannerCard = ({
   const getExpressEtaText = () => {
     if (!expressItems.length) return "-";
 
-    // '도착 예정일' 표시는 반드시 ETA(estimatedArrivalDate)를 사용해야 한다.
+    // '발송 예정일' 표시는 반드시 estimatedShipYmd를 사용해야 한다.
     return earliestEta(expressItems);
   };
 
@@ -453,20 +438,22 @@ export const RequestorBulkShippingBannerCard = ({
   })();
 
   const toggleAllShippingMode = async () => {
+    const hasNonEligible = items.some((it) => !canToggleMode(it.status));
+    if (hasNonEligible) {
+      toast({
+        title: "변경 불가",
+        description: "의뢰 단계에서만 배송 방식을 변경할 수 있습니다.",
+        duration: 3000,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const requestIds = items.map((i) => i.id).filter(Boolean);
     if (!requestIds.length) return;
 
     const hasExpress = expressItems.length > 0;
     const nextMode: "normal" | "express" = hasExpress ? "normal" : "express";
-
-    // 신속배송 전환 시 프론트에서 선제 필터링
-    const eligibleIds =
-      nextMode === "express"
-        ? items.filter((it) => isExpressEligible(it)).map((it) => it.id)
-        : requestIds;
-
-    const rejectedCount =
-      nextMode === "express" ? requestIds.length - eligibleIds.length : 0;
 
     if (nextMode === "express") {
       setOriginalBulkEtaById((prev) => {
@@ -474,21 +461,13 @@ export const RequestorBulkShippingBannerCard = ({
         for (const it of bulkItems) {
           if (!it.id) continue;
           if (next[it.id] !== undefined) continue;
-          next[it.id] = it.estimatedArrivalDate ?? null;
+          next[it.id] = it.estimatedShipYmd ?? null;
         }
         return next;
       });
-
-      if (rejectedCount > 0) {
-        toast({
-          title: "일부 제품은 신속배송 제외",
-          description: `의뢰 단계의 10mm 이상 ${rejectedCount}건은 묶음 배송으로 유지됩니다.`,
-          duration: 3500,
-        });
-      }
     }
 
-    const result = await patchShippingMode(eligibleIds, nextMode);
+    const result = await patchShippingMode(requestIds, nextMode);
     if (!result.ok) return;
 
     const updatedSet = new Set(result.updatedIds);
@@ -502,8 +481,8 @@ export const RequestorBulkShippingBannerCard = ({
             ...it,
             shippingMode: "normal",
             shipDateYmd: null,
-            estimatedArrivalDate:
-              originalEta !== undefined ? originalEta : it.estimatedArrivalDate,
+            estimatedShipYmd:
+              originalEta !== undefined ? originalEta : it.estimatedShipYmd,
           };
         }
         return {
@@ -614,7 +593,7 @@ export const RequestorBulkShippingBannerCard = ({
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="text-xs text-slate-700">
-                            <span className="font-medium">도착 예정일:</span>{" "}
+                            <span className="font-medium">발송 예정일:</span>{" "}
                             <span className="text-foreground font-medium">
                               {group.etaKey === "-"
                                 ? "-"
@@ -678,7 +657,7 @@ export const RequestorBulkShippingBannerCard = ({
                   </div>
                   {expressItems.length > 0 && (
                     <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
-                      <span className="font-medium">도착 예정일:</span>{" "}
+                      <span className="font-medium">발송 예정일:</span>{" "}
                       <span className="text-red-900">
                         {getExpressEtaText()}
                       </span>

@@ -11,9 +11,9 @@ import {
  * 공정 단계 자동 진행 워커
  *
  * 규칙:
- * 1. 의뢰 → CAM: 도착예정일 - 2영업일 도달 시
+ * 1. 의뢰 → CAM: 발송예정일 2영업일 이내 도달 시
  * 2. CAM → 생산: CAM 단계이고 caseInfos.reviewByStage.cam.status === 'APPROVED' 시
- * 3. 생산 → 발송: 도착예정일 - 1영업일 도달 시
+ * 3. 생산 → 발송: 발송예정일 1영업일 이내 도달 시
  * 4. 발송 → 완료: deliveryInfoRef.deliveredAt이 설정되면 (배송 완료 시)
  *
  * 신속배송: shippingMode === 'express'인 경우 우선순위 상승
@@ -44,10 +44,10 @@ async function progressStages() {
 
     let updatedCount = 0;
 
-    // 1. 의뢰 → CAM: 도착예정일 - 2영업일 도달
+    // 1. 의뢰 → CAM: 발송예정일 2영업일 이내 도달
     const requestsToCam = await Request.find({
       status: "의뢰",
-      "timeline.estimatedCompletion": { $exists: true, $lte: twoDaysFromNow },
+      "timeline.estimatedShipYmd": { $exists: true, $lte: twoDaysFromNow },
     });
 
     for (const req of requestsToCam) {
@@ -55,7 +55,7 @@ async function progressStages() {
       await req.save();
       updatedCount++;
       console.log(
-        `  [의뢰→CAM] ${req.requestId} (ETA: ${req.timeline.estimatedCompletion})`,
+        `  [의뢰→CAM] ${req.requestId} (SHIP: ${req.timeline.estimatedShipYmd})`,
       );
     }
 
@@ -74,7 +74,7 @@ async function progressStages() {
 
     const productionToShipping = await Request.find({
       status: { $in: ["가공", "세척.포장"] },
-      "timeline.estimatedCompletion": { $exists: true, $lte: oneDayFromNow },
+      "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
     });
 
     for (const req of productionToShipping) {
@@ -82,7 +82,7 @@ async function progressStages() {
       await req.save();
       updatedCount++;
       console.log(
-        `  [가공→발송] ${req.requestId} (ETA: ${req.timeline.estimatedCompletion})`,
+        `  [가공→발송] ${req.requestId} (SHIP: ${req.timeline.estimatedShipYmd})`,
       );
     }
 

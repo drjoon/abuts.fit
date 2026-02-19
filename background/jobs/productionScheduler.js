@@ -11,6 +11,18 @@ const CNC_PRELOAD_BACKOFF_MS = Number(
   process.env.CNC_PRELOAD_BACKOFF_MS || 2 * 60 * 1000,
 );
 
+function toKstYmd(d) {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
@@ -459,7 +471,7 @@ async function processCncAutoStart(now) {
         { "caseInfos.ncFile.s3Key": { $exists: true, $ne: "" } },
         { "caseInfos.ncFile.filePath": { $exists: true, $ne: "" } },
       ],
-    }).sort({ "productionSchedule.estimatedDelivery": 1 });
+    }).sort({ "productionSchedule.scheduledShipPickup": 1 });
 
     if (!candidate) continue;
 
@@ -547,14 +559,14 @@ async function processScheduledMaterialChanges(now) {
       const assignedRequests = await Request.find({
         status: { $in: ["CAM", "생산"] },
         "productionSchedule.assignedMachine": machine.machineId,
-      }).sort({ "productionSchedule.estimatedDelivery": 1 });
+      }).sort({ "productionSchedule.scheduledShipPickup": 1 });
 
       // 교체 시각 이전에 완료 불가능한 의뢰는 unassigned로 변경
       let unassignedCount = 0;
       for (const req of assignedRequests) {
-        const estimatedCompletion =
+        const scheduledCompleteAt =
           req.productionSchedule.scheduledMachiningComplete;
-        if (estimatedCompletion && estimatedCompletion > targetTime) {
+        if (scheduledCompleteAt && scheduledCompleteAt > targetTime) {
           req.productionSchedule.assignedMachine = null;
           req.productionSchedule.queuePosition = null;
           await req.save();
@@ -562,7 +574,7 @@ async function processScheduledMaterialChanges(now) {
           console.log(
             `    [unassign] ${
               req.requestId
-            } (완료예정: ${estimatedCompletion.toISOString()} > 교체시각)`,
+            } (완료예정: ${scheduledCompleteAt.toISOString()} > 교체시각)`,
           );
         }
       }
@@ -582,7 +594,7 @@ async function processScheduledMaterialChanges(now) {
         status: { $in: ["CAM", "생산"] },
         "productionSchedule.assignedMachine": null,
         "productionSchedule.diameterGroup": newDiameterGroup,
-      }).sort({ "productionSchedule.estimatedDelivery": 1 });
+      }).sort({ "productionSchedule.scheduledShipPickup": 1 });
 
       let assignedCount = 0;
       for (const req of newRequests) {
@@ -625,10 +637,7 @@ function updateStage(request, newStage) {
  * 오늘 날짜 (KST 기준 YYYY-MM-DD)
  */
 function getTodayYmdInKst() {
-  const now = new Date();
-  const kstOffset = 9 * 60;
-  const kstTime = new Date(now.getTime() + kstOffset * 60 * 1000);
-  return kstTime.toISOString().slice(0, 10);
+  return toKstYmd(new Date());
 }
 
 /**
