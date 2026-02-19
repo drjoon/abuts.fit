@@ -429,18 +429,11 @@ export const RequestorBulkShippingBannerCard = ({
     return d.toLocaleDateString("ko-KR");
   };
 
-  const getExpressShipDateText = () => {
+  const getExpressEtaText = () => {
     if (!expressItems.length) return "-";
 
-    const times = expressItems
-      .map((it) => it.shipDateYmd || it.requestedShipDate)
-      .filter(Boolean)
-      .map((d) => new Date(d as string).getTime())
-      .filter((t) => !Number.isNaN(t));
-
-    if (!times.length) return "-";
-    const ts = Math.min(...times);
-    return formatShipDate(new Date(ts).toISOString());
+    // '도착 예정일' 표시는 반드시 ETA(estimatedArrivalDate)를 사용해야 한다.
+    return earliestEta(expressItems);
   };
 
   const bulkGroups = (() => {
@@ -687,7 +680,7 @@ export const RequestorBulkShippingBannerCard = ({
                     <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
                       <span className="font-medium">도착 예정일:</span>{" "}
                       <span className="text-red-900">
-                        {getExpressShipDateText()}
+                        {getExpressEtaText()}
                       </span>
                     </div>
                   )}

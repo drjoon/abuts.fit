@@ -26,6 +26,18 @@ const memo = async ({ key, ttlMs, fn }) => {
   return value;
 };
 
+const resolveExpressLeadDays = (maxDiameter) => {
+  const d =
+    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
+      ? maxDiameter
+      : maxDiameter != null && String(maxDiameter).trim()
+        ? Number(maxDiameter)
+        : null;
+
+  if (d == null || Number.isNaN(d)) return 5;
+  return d <= 8 ? 2 : 5;
+};
+
 /**
  * 배송 방식 변경 (의뢰자용)
  * @route PATCH /api/requests/my/shipping-mode
@@ -132,8 +144,8 @@ export async function getMyShippingPackagesSummary(req, res) {
       typeof daysRaw === "string" && daysRaw.trim()
         ? Number(daysRaw)
         : typeof daysRaw === "number"
-        ? daysRaw
-        : 30;
+          ? daysRaw
+          : 30;
 
     if (!Number.isFinite(days) || days <= 0) {
       return res.status(400).json({
@@ -179,7 +191,7 @@ export async function getMyShippingPackagesSummary(req, res) {
       packageCount: todayPackages.length,
       shippingFeeSupplyTotal: todayPackages.reduce(
         (acc, cur) => acc + Number(cur.shippingFeeSupply || 0),
-        0
+        0,
       ),
     };
 
@@ -188,7 +200,7 @@ export async function getMyShippingPackagesSummary(req, res) {
       packageCount: packages.length,
       shippingFeeSupplyTotal: packages.reduce(
         (acc, cur) => acc + Number(cur.shippingFeeSupply || 0),
-        0
+        0,
       ),
     };
 
@@ -246,8 +258,8 @@ export async function getShippingEstimate(req, res) {
       typeof maxDiameterRaw === "string" && maxDiameterRaw.trim()
         ? Number(maxDiameterRaw)
         : typeof maxDiameterRaw === "number"
-        ? maxDiameterRaw
-        : null;
+          ? maxDiameterRaw
+          : null;
 
     if (!mode || !["express", "normal"].includes(mode)) {
       return res.status(400).json({
@@ -261,14 +273,14 @@ export async function getShippingEstimate(req, res) {
     const rawShipDateYmd = shipYmd
       ? shipYmd
       : mode === "express"
-      ? await calculateExpressShipYmd({ maxDiameter })
-      : todayYmd;
+        ? await calculateExpressShipYmd({ maxDiameter })
+        : todayYmd;
 
     const shipDateYmd = await normalizeKoreanBusinessDay({
       ymd: rawShipDateYmd,
     });
 
-    // 도착일: express는 ship+1 영업일, normal은 직경별 리드타임(영업일) 적용
+    // 도착일: express는 직경별(<=8mm:+2, >=10mm:+5) 영업일, normal은 직경별 리드타임(영업일) 적용
     const resolveNormalLeadDays = () => {
       const d =
         typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
@@ -283,7 +295,10 @@ export async function getShippingEstimate(req, res) {
 
     const arrivalDateYmd =
       mode === "express"
-        ? await addKoreanBusinessDays({ startYmd: shipDateYmd, days: 1 })
+        ? await addKoreanBusinessDays({
+            startYmd: todayYmd,
+            days: resolveExpressLeadDays(maxDiameter),
+          })
         : await addKoreanBusinessDays({
             startYmd: shipDateYmd,
             days: resolveNormalLeadDays(),
@@ -326,8 +341,8 @@ export async function getMyBulkShipping(req, res) {
         typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
           ? maxDiameter
           : maxDiameter != null && String(maxDiameter).trim()
-          ? Number(maxDiameter)
-          : null;
+            ? Number(maxDiameter)
+            : null;
       if (d == null || Number.isNaN(d)) return effectiveLeadDays.d10;
       if (d <= 6) return effectiveLeadDays.d6;
       if (d <= 8) return effectiveLeadDays.d8;
@@ -378,14 +393,14 @@ export async function getMyBulkShipping(req, res) {
       const baseYmd = createdYmd || todayYmd;
       const requestedShipYmd = toYmd(r.requestedShipDate);
 
-      // ETA가 이미 있으면 계산 생략
+      // timeline ETA가 이미 있어도 과거 날짜면 재계산
       const existing = r.timeline?.estimatedCompletion;
       const existingEtaYmd =
         existing instanceof Date
           ? existing.toISOString().slice(0, 10)
           : typeof existing === "string" && existing.trim()
-          ? existing.trim()
-          : null;
+            ? existing.trim()
+            : null;
 
       let shipDateYmd;
       if (mode === "express") {
@@ -400,16 +415,23 @@ export async function getMyBulkShipping(req, res) {
         });
       }
 
-      if (existingEtaYmd) {
+      if (existingEtaYmd && existingEtaYmd >= todayYmd) {
         return { shipDateYmd, arrivalDateYmd: existingEtaYmd };
       }
 
       // ETA 없는 경우만 계산
-      const days = mode === "express" ? 1 : resolveNormalLeadDays(maxDiameter);
+      const days =
+        mode === "express"
+          ? resolveExpressLeadDays(maxDiameter)
+          : resolveNormalLeadDays(maxDiameter);
       const arrivalDateYmd = await memo({
-        key: `krbiz:add:${shipDateYmd}:${days}`,
+        key: `krbiz:add:${mode === "express" ? todayYmd : shipDateYmd}:${days}`,
         ttlMs: 6 * 60 * 60 * 1000,
-        fn: () => addKoreanBusinessDays({ startYmd: shipDateYmd, days }),
+        fn: () =>
+          addKoreanBusinessDays({
+            startYmd: mode === "express" ? todayYmd : shipDateYmd,
+            days,
+          }),
       });
 
       return { shipDateYmd, arrivalDateYmd };
@@ -432,7 +454,7 @@ export async function getMyBulkShipping(req, res) {
       },
     })
       .select(
-        "requestId title status manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedCompletion requestor"
+        "requestId title status manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedCompletion requestor",
       )
       .populate("requestor", "name organization")
       .lean();
@@ -445,8 +467,8 @@ export async function getMyBulkShipping(req, res) {
         typeof ci.maxDiameter === "number"
           ? `${ci.maxDiameter}mm`
           : ci.maxDiameter != null
-          ? `${Number(ci.maxDiameter)}mm`
-          : "";
+            ? `${Number(ci.maxDiameter)}mm`
+            : "";
 
       const ymds = await resolveShippingYmds(r);
       const eta = ymds?.arrivalDateYmd;
@@ -477,19 +499,19 @@ export async function getMyBulkShipping(req, res) {
       Promise.all(
         requests
           .filter((r) =>
-            ["의뢰", "의뢰접수", "CAM", "가공전"].includes(r.status)
+            ["의뢰", "의뢰접수", "CAM", "가공전"].includes(r.status),
           )
-          .map(mapItem)
+          .map(mapItem),
       ),
       Promise.all(
         requests
           .filter((r) => ["생산", "가공후"].includes(r.status))
-          .map(mapItem)
+          .map(mapItem),
       ),
       Promise.all(
         requests
           .filter((r) => ["발송", "배송대기", "배송중"].includes(r.status))
-          .map(mapItem)
+          .map(mapItem),
       ),
     ]);
 
