@@ -479,7 +479,6 @@ export async function getReferralGroups(req, res) {
     ).length;
 
     const commissionRate = 0.05;
-    const level1CommissionRate = commissionRate * 0.5;
 
     const salesmanLeaderIds = salesmanGroups
       .map((g) => g.leader?._id)
@@ -606,8 +605,8 @@ export async function getReferralGroups(req, res) {
       level1RequestorOrgIdsBySalesmanLeaderId.set(leaderId, arr);
     }
 
-    const commissionBySalesmanLeaderId = new Map();
-    let salesmanTotalCommissionAmount = 0;
+    // 1단계: 각 영업자 리더의 직접 수수료 계산
+    const directCommissionByLeaderId = new Map();
     let salesmanTotalReferralOrders = 0;
     let salesmanTotalReferredRevenueAmount = 0;
     for (const g of salesmanGroups) {
@@ -615,26 +614,53 @@ export async function getReferralGroups(req, res) {
       if (!leaderId) continue;
       const requestorOrgIds =
         requestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
-      const level1RequestorOrgIds =
-        level1RequestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
       let directRevenue = 0;
-      let level1Revenue = 0;
       for (const oid of requestorOrgIds) {
         directRevenue += Number(commissionRevenueByOrgId.get(String(oid)) || 0);
         salesmanTotalReferralOrders += Number(
           commissionOrdersByOrgId.get(String(oid)) || 0,
         );
       }
+      const level1RequestorOrgIds =
+        level1RequestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
       for (const oid of level1RequestorOrgIds) {
-        level1Revenue += Number(commissionRevenueByOrgId.get(String(oid)) || 0);
         salesmanTotalReferralOrders += Number(
           commissionOrdersByOrgId.get(String(oid)) || 0,
         );
+        salesmanTotalReferredRevenueAmount += Number(
+          commissionRevenueByOrgId.get(String(oid)) || 0,
+        );
       }
-      salesmanTotalReferredRevenueAmount += directRevenue + level1Revenue;
-      const directCommission = directRevenue * commissionRate;
-      const level1Commission = level1Revenue * level1CommissionRate;
-      const totalCommission = directCommission + level1Commission;
+      salesmanTotalReferredRevenueAmount += directRevenue;
+      directCommissionByLeaderId.set(leaderId, directRevenue * commissionRate);
+    }
+
+    // referredSalesmen을 리더별로 그룹화 (직계1 영업자 목록)
+    const childSalesmanIdsByLeaderId = new Map();
+    for (const s of referredSalesmen || []) {
+      const sid = String(s?._id || "");
+      const leaderId = String(s?.referredByUserId || "");
+      if (!sid || !leaderId) continue;
+      const arr = childSalesmanIdsByLeaderId.get(leaderId) || [];
+      arr.push(sid);
+      childSalesmanIdsByLeaderId.set(leaderId, arr);
+    }
+
+    // 2단계: 직계1 영업자의 직접 수수료 * 50%를 간접 수수료로 합산
+    const commissionBySalesmanLeaderId = new Map();
+    let salesmanTotalCommissionAmount = 0;
+    for (const g of salesmanGroups) {
+      const leaderId = String(g?.leader?._id || "");
+      if (!leaderId) continue;
+      const directCommission = Number(
+        directCommissionByLeaderId.get(leaderId) || 0,
+      );
+      const childSalesmanIds = childSalesmanIdsByLeaderId.get(leaderId) || [];
+      const indirectCommission =
+        childSalesmanIds.reduce((acc, sid) => {
+          return acc + Number(directCommissionByLeaderId.get(sid) || 0);
+        }, 0) * 0.5;
+      const totalCommission = directCommission + indirectCommission;
       commissionBySalesmanLeaderId.set(leaderId, totalCommission);
       salesmanTotalCommissionAmount += totalCommission;
     }
@@ -898,13 +924,7 @@ async function getReferralGroupTree(req, res) {
       $or: [
         { _id: leader._id },
         { referralGroupLeaderId: leader._id },
-        {
-          referredByUserId: leader._id,
-          $or: [
-            { referralGroupLeaderId: { $exists: false } },
-            { referralGroupLeaderId: null },
-          ],
-        },
+        { referredByUserId: leader._id },
       ],
       role: { $in: ["requestor", "salesman"] },
     })
@@ -1065,7 +1085,6 @@ async function getReferralGroupTree(req, res) {
     }
 
     const commissionRate = 0.05;
-    const level1CommissionRate = commissionRate * 0.5;
 
     // 의뢰자 노드: commissionAmount = 해당 조직의 지난달 유료 매출 * 5%
     for (const n of nodes) {
@@ -1077,23 +1096,12 @@ async function getReferralGroupTree(req, res) {
       n.commissionAmount = Math.round(Number(rev.paid || 0) * commissionRate);
     }
 
+    // 1단계: 모든 영업자의 직접 수수료(directCommissionAmount) 먼저 계산
     for (const n of nodes) {
       if (String(n?.role || "") !== "salesman") continue;
       const directChildren = nodesByReferredBy.get(String(n._id)) || [];
       const directRequestors = directChildren.filter(
         (c) => String(c?.role || "") === "requestor",
-      );
-      const directSalesmen = directChildren.filter(
-        (c) => String(c?.role || "") === "salesman",
-      );
-      const directSalesmanIdSet = new Set(
-        directSalesmen.map((c) => String(c._id)),
-      );
-
-      const level1Requestors = nodes.filter(
-        (c) =>
-          String(c?.role || "") === "requestor" &&
-          directSalesmanIdSet.has(String(c?.referredByUserId || "")),
       );
 
       const directRevenue = directRequestors.reduce((acc, r) => {
@@ -1101,15 +1109,8 @@ async function getReferralGroupTree(req, res) {
         if (!oid) return acc;
         return acc + Number(revenueByOrgIdInGroup.get(oid)?.paid || 0);
       }, 0);
-      const level1Revenue = level1Requestors.reduce((acc, r) => {
-        const oid = String(r.organizationId || "");
-        if (!oid) return acc;
-        return acc + Number(revenueByOrgIdInGroup.get(oid)?.paid || 0);
-      }, 0);
 
-      n.commissionAmount = Math.round(
-        directRevenue * commissionRate + level1Revenue * level1CommissionRate,
-      );
+      n.directCommissionAmount = Math.round(directRevenue * commissionRate);
 
       // 영업자 노드의 lastMonthOrders = 직계 의뢰자들의 주문 합계
       n.lastMonthOrders = directRequestors.reduce(
@@ -1124,6 +1125,25 @@ async function getReferralGroupTree(req, res) {
         (acc, r) => acc + Number(r.lastMonthBonusOrders || 0),
         0,
       );
+    }
+
+    // 2단계: 직계1 영업자의 directCommissionAmount * 50%를 간접 수수료로 계산
+    const indirectCommissionShareRate = 0.5;
+    for (const n of nodes) {
+      if (String(n?.role || "") !== "salesman") continue;
+      const directChildren = nodesByReferredBy.get(String(n._id)) || [];
+      const directSalesmen = directChildren.filter(
+        (c) => String(c?.role || "") === "salesman",
+      );
+
+      n.level1CommissionAmount = Math.round(
+        directSalesmen.reduce(
+          (acc, s) => acc + Number(s.directCommissionAmount || 0),
+          0,
+        ) * indirectCommissionShareRate,
+      );
+      n.commissionAmount =
+        (n.directCommissionAmount || 0) + n.level1CommissionAmount;
     }
 
     const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
@@ -1325,6 +1345,172 @@ async function getReferralGroupTree(req, res) {
     return res.status(500).json({
       success: false,
       message: "리퍼럴 그룹 계층도 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function triggerReferralSnapshotRecalc(req, res) {
+  try {
+    const ymd = getTodayYmdInKst();
+    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
+
+    const leaders = await User.find({
+      $or: [
+        { role: "salesman" },
+        { role: "requestor", requestorRole: "owner" },
+      ],
+      active: true,
+    })
+      .select({ _id: 1, role: 1, organizationId: 1 })
+      .lean();
+
+    if (!leaders.length) {
+      return res.status(200).json({ success: true, upsertCount: 0, ymd });
+    }
+
+    const leaderIds = leaders.map((l) => l._id).filter(Boolean);
+
+    const directChildren = await User.find({
+      referredByUserId: { $in: leaderIds },
+      role: { $in: ["requestor", "salesman"] },
+      active: true,
+    })
+      .select({ _id: 1, referredByUserId: 1, organizationId: 1, role: 1 })
+      .lean();
+
+    const childIdsByLeaderId = new Map();
+    for (const u of directChildren) {
+      const lid = String(u.referredByUserId || "");
+      if (!lid) continue;
+      const arr = childIdsByLeaderId.get(lid) || [];
+      arr.push(u);
+      childIdsByLeaderId.set(lid, arr);
+    }
+
+    const relevantUserIds = [
+      ...leaderIds,
+      ...directChildren.map((u) => u._id),
+    ].filter(Boolean);
+
+    const requestRows = relevantUserIds.length
+      ? await Request.aggregate([
+          {
+            $match: {
+              requestor: { $in: relevantUserIds },
+              status: "완료",
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+            },
+          },
+          { $group: { _id: "$requestor", orderCount: { $sum: 1 } } },
+        ])
+      : [];
+
+    const ordersByUserId = new Map(
+      requestRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
+    );
+
+    const requestorLeaderOrgIds = leaders
+      .filter((l) => String(l.role) === "requestor" && l.organizationId)
+      .map((l) => String(l.organizationId));
+    const requestorLeaderOrgObjectIds = requestorLeaderOrgIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const orgOrderRows = requestorLeaderOrgObjectIds.length
+      ? await Request.aggregate([
+          {
+            $match: {
+              requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
+              status: "완료",
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+            },
+          },
+          {
+            $group: {
+              _id: "$requestorOrganizationId",
+              orderCount: { $sum: 1 },
+            },
+          },
+        ])
+      : [];
+
+    const ordersByOrgId = new Map(
+      orgOrderRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
+    );
+
+    let upsertCount = 0;
+    for (const leader of leaders) {
+      const lid = String(leader._id);
+      const children = childIdsByLeaderId.get(lid) || [];
+      const memberCount = 1 + children.length;
+
+      let groupTotalOrders = 0;
+      if (String(leader.role) === "requestor") {
+        const orgId = String(leader.organizationId || "");
+        groupTotalOrders = orgId ? ordersByOrgId.get(orgId) || 0 : 0;
+      } else {
+        const leaderOrders = ordersByUserId.get(lid) || 0;
+        const childOrders = children.reduce(
+          (acc, c) => acc + (ordersByUserId.get(String(c._id)) || 0),
+          0,
+        );
+        groupTotalOrders = leaderOrders + childOrders;
+      }
+
+      await PricingReferralStatsSnapshot.findOneAndUpdate(
+        { groupLeaderId: leader._id, ymd },
+        {
+          $set: {
+            ownerUserId: leader._id,
+            groupLeaderId: leader._id,
+            groupMemberCount: memberCount,
+            groupTotalOrders,
+            computedAt: new Date(),
+          },
+        },
+        { upsert: true, new: false },
+      );
+      upsertCount++;
+    }
+
+    adminReferralCache.clear();
+
+    return res.status(200).json({
+      success: true,
+      upsertCount,
+      ymd,
+      computedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "스냅샷 재계산 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getReferralSnapshotStatus(req, res) {
+  try {
+    const ymd = getTodayYmdInKst();
+    const latest = await PricingReferralStatsSnapshot.findOne()
+      .sort({ computedAt: -1 })
+      .select({ computedAt: 1, ymd: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        lastComputedAt: latest?.computedAt || null,
+        lastYmd: latest?.ymd || null,
+        todayYmd: ymd,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "스냅샷 상태 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

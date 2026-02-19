@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
@@ -21,6 +16,7 @@ import {
   CheckCircle,
   AlertCircle,
   DollarSign,
+  RefreshCw,
 } from "lucide-react";
 
 type PricingSummary = {
@@ -70,12 +66,53 @@ const getAlertIcon = (type: string) => {
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
+  const queryClient = useQueryClient();
   const [pricingSummary, setPricingSummary] = useState<PricingSummary | null>(
     null,
   );
   const [pricingLoading, setPricingLoading] = useState(false);
 
   if (!user || user.role !== "admin") return null;
+
+  const { data: snapshotStatus, refetch: refetchSnapshotStatus } = useQuery({
+    queryKey: ["admin-referral-snapshot-status"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const res = await apiFetch<{
+        success: boolean;
+        data?: {
+          lastComputedAt: string | null;
+          lastYmd: string | null;
+          todayYmd: string;
+        };
+      }>({
+        path: `/api/admin/referral-snapshot/status`,
+        method: "GET",
+        token,
+      });
+      return res.data?.data || null;
+    },
+    refetchInterval: 60000,
+  });
+
+  const recalcMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch<{ success: boolean; upsertCount?: number }>({
+        path: `/api/admin/referral-snapshot/recalc`,
+        method: "POST",
+        token,
+      });
+      if (!res.ok || !res.data?.success) throw new Error("재계산 실패");
+      return res.data;
+    },
+    onSuccess: () => {
+      refetchSnapshotStatus();
+      queryClient.invalidateQueries({ queryKey: ["admin-referral-groups"] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-referral-group-tree"],
+      });
+    },
+  });
 
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
@@ -460,6 +497,62 @@ export const AdminDashboardPage = () => {
                   {(pricingSummary?.avgShippingFeeSupply ?? 0).toLocaleString()}
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 카드6: 리퍼럴 단가 스냅샷 */}
+          <Card className="app-glass-card app-glass-card--lg">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                리퍼럴 단가 스냅샷
+              </CardTitle>
+              <RefreshCw className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-end justify-between gap-2">
+                <div className="text-xs text-muted-foreground">
+                  마지막 재계산
+                </div>
+                <div className="text-sm font-semibold">
+                  {snapshotStatus?.lastComputedAt ? (
+                    new Date(snapshotStatus.lastComputedAt).toLocaleString(
+                      "ko-KR",
+                      {
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      },
+                    )
+                  ) : (
+                    <span className="text-destructive">없음</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-end justify-between gap-2">
+                <div className="text-xs text-muted-foreground">기준일(ymd)</div>
+                <div className="text-xs text-muted-foreground">
+                  {snapshotStatus?.lastYmd || "-"}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full h-7 text-xs mt-1"
+                disabled={recalcMutation.isPending}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "지난달 기준으로 전체 리퍼럴 스냅샷을 재계산합니다. 계속하시겠습니까?",
+                    )
+                  ) {
+                    recalcMutation.mutate();
+                  }
+                }}
+              >
+                {recalcMutation.isPending ? "재계산 중..." : "수동 재계산"}
+              </Button>
             </CardContent>
           </Card>
         </>

@@ -18,6 +18,15 @@ import {
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 
+function getLastMonthRangeUtc() {
+  const now = new Date();
+  const start = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+  );
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  return { start, end };
+}
+
 const toKstYmd = (d) => {
   if (!d) return null;
   const date = d instanceof Date ? d : new Date(d);
@@ -250,9 +259,7 @@ export async function getMyReferralDirectMembers(req, res) {
       });
     }
 
-    const now = new Date();
-    const last30Cutoff = new Date(now);
-    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
 
     const groupLeaderId = await getReferralGroupLeaderId(requestorId);
 
@@ -305,7 +312,7 @@ export async function getMyReferralDirectMembers(req, res) {
             $match: {
               requestor: { $in: memberIds },
               status: "완료",
-              createdAt: { $gte: last30Cutoff },
+              createdAt: { $gte: lastMonthStart, $lt: lastMonthEnd },
             },
           },
           { $group: { _id: "$requestor", count: { $sum: 1 } } },
@@ -320,7 +327,7 @@ export async function getMyReferralDirectMembers(req, res) {
       data: {
         members: (members || []).map((m) => ({
           ...m,
-          last30DaysOrders: ordersByUserId.get(String(m._id)) || 0,
+          lastMonthOrders: ordersByUserId.get(String(m._id)) || 0,
         })),
       },
     });
@@ -1094,8 +1101,7 @@ export async function getMyPricingReferralStats(req, res) {
     }
 
     const now = new Date();
-    const last30Cutoff = new Date(now);
-    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
 
     const ymd = toKstYmd(now);
     if (!ymd) {
@@ -1165,28 +1171,26 @@ export async function getMyPricingReferralStats(req, res) {
 
     const groupMemberCount = groupMemberIds.length;
 
-    // 그룹 내 모든 멤버의 지난 30일 주문량 합산 (항상 실시간 계산)
-    const [freshGroupTotalOrders, myLast30DaysOrders, user] = await Promise.all(
-      [
-        groupMemberIds.length
-          ? Request.countDocuments({
-              requestor: { $in: groupMemberIds },
-              status: "완료",
-              createdAt: { $gte: last30Cutoff },
-            })
-          : Promise.resolve(0),
-        Request.countDocuments({
-          requestor: requestorId,
-          status: "완료",
-          createdAt: { $gte: last30Cutoff },
-        }),
-        User.findById(requestorId)
-          .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
-          .lean(),
-      ],
-    );
+    // 그룹 내 모든 멤버의 지난달 주문량 합산 (항상 실시간 계산)
+    const [freshGroupTotalOrders, myLastMonthOrders, user] = await Promise.all([
+      groupMemberIds.length
+        ? Request.countDocuments({
+            requestor: { $in: groupMemberIds },
+            status: "완료",
+            createdAt: { $gte: lastMonthStart, $lt: lastMonthEnd },
+          })
+        : Promise.resolve(0),
+      Request.countDocuments({
+        requestor: requestorId,
+        status: "완료",
+        createdAt: { $gte: lastMonthStart, $lt: lastMonthEnd },
+      }),
+      User.findById(requestorId)
+        .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
+        .lean(),
+    ]);
 
-    const totalLast30DaysOrders = freshGroupTotalOrders;
+    const totalLastMonthOrders = freshGroupTotalOrders;
 
     await PricingReferralStatsSnapshot.findOneAndUpdate(
       { ownerUserId: requestorId, ymd },
@@ -1195,14 +1199,14 @@ export async function getMyPricingReferralStats(req, res) {
           ownerUserId: requestorId,
           groupLeaderId,
           groupMemberCount,
-          groupTotalOrders: totalLast30DaysOrders,
+          groupTotalOrders: totalLastMonthOrders,
           computedAt: now,
         },
       },
       { upsert: true, new: true },
     );
 
-    const totalOrders = totalLast30DaysOrders;
+    const totalOrders = totalLastMonthOrders;
 
     const baseUnitPrice = 15000;
     const discountPerOrder = 20;
@@ -1212,7 +1216,7 @@ export async function getMyPricingReferralStats(req, res) {
       maxDiscountPerUnit,
     );
 
-    let rule = "volume_discount_last30days";
+    let rule = "volume_discount_last_month";
     let effectiveUnitPrice = Math.max(0, baseUnitPrice - discountAmount);
 
     const dateSource = user || req.user;
@@ -1253,7 +1257,7 @@ export async function getMyPricingReferralStats(req, res) {
               active: user.active,
             }
           : null,
-        myLast30DaysOrders,
+        myLastMonthOrders,
         totalOrders,
         discountAmount,
         effectiveUnitPrice,
@@ -1262,9 +1266,10 @@ export async function getMyPricingReferralStats(req, res) {
     }
 
     const responseData = {
-      last30Cutoff,
-      myLast30DaysOrders,
-      groupTotalOrders: totalLast30DaysOrders,
+      lastMonthStart,
+      lastMonthEnd,
+      myLastMonthOrders,
+      groupTotalOrders: totalLastMonthOrders,
       totalOrders,
       baseUnitPrice,
       discountPerOrder,
@@ -1276,6 +1281,8 @@ export async function getMyPricingReferralStats(req, res) {
       ...(process.env.NODE_ENV !== "production"
         ? {
             debug: {
+              lastMonthStart,
+              lastMonthEnd,
               requestorId,
               isMockDevToken,
               now,

@@ -11,8 +11,10 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 
 type RequestorReferralStats = {
+  myLastMonthOrders?: number;
   myLast30DaysOrders?: number;
   groupTotalOrders?: number;
   groupMemberCount?: number;
@@ -32,6 +34,7 @@ type DirectMemberRow = {
   active?: boolean;
   createdAt?: string;
   approvedAt?: string | null;
+  lastMonthOrders?: number;
   last30DaysOrders?: number;
 };
 
@@ -68,6 +71,7 @@ function MetricCard({
 export default function ReferralGroupsPage() {
   const { user, token } = useAuthStore();
   const { toast } = useToast();
+  const [policyOpen, setPolicyOpen] = useState(false);
 
   const [requestorStats, setRequestorStats] =
     useState<RequestorReferralStats | null>(null);
@@ -140,7 +144,11 @@ export default function ReferralGroupsPage() {
       .finally(() => setLoadingDirectMembers(false));
   }, [isRequestor, toast, token]);
 
-  const requestorOrders = Number(requestorStats?.myLast30DaysOrders || 0);
+  const requestorOrders = Number(
+    requestorStats?.myLastMonthOrders ??
+      requestorStats?.myLast30DaysOrders ??
+      0,
+  );
   const requestorGroupOrders = Number(requestorStats?.groupTotalOrders || 0);
   const requestorMembers = Number(requestorStats?.groupMemberCount || 0);
   const requestorUnitPrice = Number(
@@ -153,9 +161,20 @@ export default function ReferralGroupsPage() {
     <div className="p-4 space-y-4">
       <Card className="border-gray-200">
         <CardHeader>
-          <CardTitle className="text-base">의뢰자</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">의뢰자</CardTitle>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs h-7 px-2"
+              onClick={() => setPolicyOpen(true)}
+            >
+              정책 보기
+            </Button>
+          </div>
           <CardDescription>
-            최근 30일 완료 주문량(본인+직계 1단계) 기준으로 단가가 적용됩니다.
+            지난달 완료 주문량(본인+직계 1단계) 기준으로 단가가 적용됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -206,7 +225,7 @@ export default function ReferralGroupsPage() {
 
               <div className="grid gap-3 md:grid-cols-4">
                 <MetricCard
-                  title="내 주문(지난 30일)"
+                  title="내 주문(지난달)"
                   value={`${requestorOrders.toLocaleString()}건`}
                 />
                 <MetricCard
@@ -270,7 +289,11 @@ export default function ReferralGroupsPage() {
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        최근30일 {last30.toLocaleString()}건
+                        지난달{" "}
+                        {Number(
+                          m.lastMonthOrders ?? m.last30DaysOrders ?? 0,
+                        ).toLocaleString()}
+                        건
                       </div>
                     </div>
                   </div>
@@ -280,6 +303,8 @@ export default function ReferralGroupsPage() {
           )}
         </CardContent>
       </Card>
+
+      <PricingPolicyDialog open={policyOpen} onOpenChange={setPolicyOpen} />
     </div>
   );
 }

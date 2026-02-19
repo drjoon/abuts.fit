@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -21,6 +21,14 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+
+const PERIOD_LABEL: Record<string, string> = {
+  "7d": "최근 7일",
+  "30d": "최근 30일",
+  lastMonth: "지난달",
+  thisMonth: "이번달",
+  "90d": "최근 90일",
+};
 
 type ApiGroupLeader = {
   _id: string;
@@ -114,6 +122,8 @@ type ApiTreeNode = {
   referredByUserId?: string | null;
   lastMonthOrders?: number;
   commissionAmount?: number;
+  directCommissionAmount?: number;
+  level1CommissionAmount?: number;
   children?: ApiTreeNode[];
 };
 
@@ -150,6 +160,10 @@ const TreeNode = ({
   const indent = depth * 16;
   const lastMonthOrders = Number(node.lastMonthOrders || 0);
   const commissionAmount = Number(node.commissionAmount || 0);
+  const directCommissionAmount = Number(node.directCommissionAmount ?? -1);
+  const level1CommissionAmount = Number(node.level1CommissionAmount ?? -1);
+  const hasCommissionBreakdown =
+    directCommissionAmount >= 0 && level1CommissionAmount >= 0;
   const isSalesman = String(node.role || "") === "salesman";
   const isRequestor = String(node.role || "") === "requestor";
 
@@ -175,11 +189,17 @@ const TreeNode = ({
               {node.email || ""}
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
-              기간 {lastMonthOrders.toLocaleString()}건
+              {lastMonthOrders.toLocaleString()}건
               {(isSalesman || isRequestor) && commissionAmount > 0 ? (
                 <> · 수수료 {formatMoney(commissionAmount)}원</>
               ) : null}
             </div>
+            {isSalesman && hasCommissionBreakdown && commissionAmount > 0 ? (
+              <div className="text-[10px] text-muted-foreground/70">
+                직접 {formatMoney(directCommissionAmount)}원 + 간접{" "}
+                {formatMoney(level1CommissionAmount)}원
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {roleBadge(node.role)}
@@ -198,6 +218,7 @@ export default function AdminReferralGroupsPage() {
   const { period, setPeriod } = usePeriodStore();
   const isDev = import.meta.env.DEV;
   const refreshSuffix = isDev ? "?refresh=1" : "";
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<
     "all" | "requestor" | "salesman"
@@ -213,6 +234,55 @@ export default function AdminReferralGroupsPage() {
   const [sortKey, setSortKey] = useState<"members" | "orders" | "created">(
     "members",
   );
+  const periodLabel = PERIOD_LABEL[period] || period;
+
+  const { data: snapshotStatus, refetch: refetchSnapshotStatus } = useQuery({
+    queryKey: ["admin-referral-snapshot-status"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const res = await apiFetch<{
+        success: boolean;
+        data?: {
+          lastComputedAt: string | null;
+          lastYmd: string | null;
+          todayYmd: string;
+        };
+      }>({
+        path: `/api/admin/referral-snapshot/status`,
+        method: "GET",
+        token,
+        headers:
+          token === "MOCK_DEV_TOKEN" ? { "x-mock-role": "admin" } : undefined,
+      });
+      return res.data?.data || null;
+    },
+    refetchInterval: 60000,
+  });
+
+  const recalcMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiFetch<{
+        success: boolean;
+        upsertCount?: number;
+        computedAt?: string;
+      }>({
+        path: `/api/admin/referral-snapshot/recalc`,
+        method: "POST",
+        token,
+        headers:
+          token === "MOCK_DEV_TOKEN" ? { "x-mock-role": "admin" } : undefined,
+      });
+      if (!res.ok || !res.data?.success) throw new Error("재계산 실패");
+      return res.data;
+    },
+    onSuccess: () => {
+      refetchSnapshotStatus();
+      queryClient.invalidateQueries({ queryKey: ["admin-referral-groups"] });
+      queryClient.invalidateQueries({
+        queryKey: ["admin-referral-group-tree"],
+      });
+    },
+  });
 
   const { data: groupList, isLoading: isGroupListLoading } = useQuery({
     queryKey: ["admin-referral-groups", period],
@@ -421,7 +491,7 @@ export default function AdminReferralGroupsPage() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <CardTitle className="text-base">의뢰자 그룹</CardTitle>
               {roleBadge("requestor")}
             </div>
@@ -498,8 +568,10 @@ export default function AdminReferralGroupsPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-base">영업자 그룹</CardTitle>
-              {roleBadge("salesman")}
+              <div className="flex items-center gap-2 flex-wrap">
+                <CardTitle className="text-base">영업자 그룹</CardTitle>
+                {roleBadge("salesman")}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
@@ -527,7 +599,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹당 평균 수수료(30일)
+                그룹당 평균 수수료
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
@@ -573,7 +645,45 @@ export default function AdminReferralGroupsPage() {
         <Card className="h-full flex flex-col min-h-0">
           <CardHeader className="py-3">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-base">그룹 목록</CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <CardTitle className="text-base">그룹 목록</CardTitle>
+                {snapshotStatus?.lastComputedAt ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    스냅샷:{" "}
+                    {new Date(snapshotStatus.lastComputedAt).toLocaleString(
+                      "ko-KR",
+                      {
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      },
+                    )}
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-destructive">
+                    스냅샷 없음
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[11px] px-2"
+                  disabled={recalcMutation.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "지난달 기준으로 전체 리퍼럴 스냅샷을 재계산합니다. 계속하시겠습니까?",
+                      )
+                    ) {
+                      recalcMutation.mutate();
+                    }
+                  }}
+                >
+                  {recalcMutation.isPending ? "재계산 중..." : "스냅샷 재계산"}
+                </Button>
+              </div>
               <div className="flex items-center gap-1">
                 <Button
                   type="button"
@@ -731,7 +841,7 @@ export default function AdminReferralGroupsPage() {
                             {leader.email || ""}
                           </div>
                           <div className="mt-1 text-[11px] text-muted-foreground">
-                            최근30일 {orders.toLocaleString()}건 ·{" "}
+                            {orders.toLocaleString()}건 ·{" "}
                             {isSalesman ? "수수료" : "단가"}{" "}
                             {formatMoney(isSalesman ? commission : unit)}원
                           </div>
@@ -866,7 +976,7 @@ export default function AdminReferralGroupsPage() {
                 </Badge>
               </div>
               <div className="flex items-center justify-between">
-                <div className="text-muted-foreground">기간 주문</div>
+                <div className="text-muted-foreground">{periodLabel} 주문</div>
                 <div className="font-medium">
                   {Number(selectedNode.lastMonthOrders || 0).toLocaleString()}건
                 </div>

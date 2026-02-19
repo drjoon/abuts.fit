@@ -1,1 +1,2 @@
 web: bash -lc 'cd backend && exec node server.js'
+worker: bash -lc 'cd backend && exec node jobs/monthlyReferralSnapshotWorker.js'

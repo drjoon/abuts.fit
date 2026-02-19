@@ -1,6 +1,9 @@
 import { Router } from "express";
 const router = Router();
-import adminController from "../../controllers/admin/admin.controller.js";
+import adminController, {
+  triggerReferralSnapshotRecalc,
+  getReferralSnapshotStatus,
+} from "../../controllers/admin/admin.controller.js";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   adminListBankTransactions,
@@ -141,6 +144,14 @@ router.get("/pricing-stats/users", adminController.getPricingStatsByUser);
 // 리퍼럴 그룹
 router.get("/referral-groups", adminController.getReferralGroups);
 router.get("/referral-groups/:leaderId", adminController.getReferralGroupTree);
+
+// 리퍼럴 스냅샷
+router.get("/referral-snapshot/status", getReferralSnapshotStatus);
+router.post(
+  "/referral-snapshot/recalc",
+  authorize(["admin"], { adminRoles: ["owner"] }),
+  triggerReferralSnapshotRecalc,
+);
 
 // 시스템 로그
 router.get("/logs", adminController.getSystemLogs);

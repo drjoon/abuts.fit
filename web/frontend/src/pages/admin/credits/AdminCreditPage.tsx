@@ -1764,10 +1764,7 @@ export default function AdminCreditPage() {
                                 </div>
                                 <div className="font-medium">
                                   {Number(
-                                    (s.performance30d?.myCommissionAmount ??
-                                      0) +
-                                      (s.performance30d
-                                        ?.level1CommissionAmount ?? 0),
+                                    s.wallet?.earnedAmountPeriod || 0,
                                   ).toLocaleString()}
                                   원
                                 </div>
