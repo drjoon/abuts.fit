@@ -767,24 +767,23 @@ async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
 
   const fee = Number(pkg?.shippingFeeSupply || 0);
   if (fee > 0) {
-    const { balance, bonusBalance } =
-      await getOrganizationCreditBalanceBreakdown({
-        organizationId,
-        session,
-      });
+    const { paidBalance } = await getOrganizationCreditBalanceBreakdown({
+      organizationId,
+      session,
+    });
 
     const feeRaw = Number(fee || 0);
     const feeToDeduct = Number.isFinite(feeRaw) ? Math.round(feeRaw) : 0;
     if (feeToDeduct <= 0) return;
 
-    if (balance < feeToDeduct) {
+    if (paidBalance < feeToDeduct) {
       const err = new Error("크레딧이 부족하여 배송비를 청구할 수 없습니다.");
       err.statusCode = 402;
       throw err;
     }
 
-    const fromBonus = Math.min(Math.max(0, bonusBalance), feeToDeduct);
-    const fromPaid = feeToDeduct - fromBonus;
+    const fromBonus = 0;
+    const fromPaid = feeToDeduct;
 
     const uniqueKey = `shippingPackage:${String(pkg._id)}:shipping_fee`;
     await CreditLedger.updateOne(

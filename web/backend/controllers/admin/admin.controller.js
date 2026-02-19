@@ -98,6 +98,28 @@ function setAdminReferralCache(key, value) {
   adminReferralCache.set(key, { ts: Date.now(), value });
 }
 
+/**
+ * KST 기준 지난달(전월) 1일 00:00:00 ~ 말일 23:59:59 UTC 범위를 반환한다.
+ */
+function getLastMonthRangeUtc() {
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const kstYear = kstNow.getUTCFullYear();
+  const kstMonth = kstNow.getUTCMonth(); // 0-indexed, 현재 월
+  // 전월: kstMonth === 0이면 전년 12월
+  const lastMonthYear = kstMonth === 0 ? kstYear - 1 : kstYear;
+  const lastMonth = kstMonth === 0 ? 12 : kstMonth; // 1-indexed
+  // KST 전월 1일 00:00:00 → UTC
+  const startKst = new Date(
+    Date.UTC(lastMonthYear, lastMonth - 1, 1, -9, 0, 0, 0),
+  );
+  // KST 전월 말일 23:59:59.999 → UTC
+  const endKst = new Date(
+    Date.UTC(lastMonthYear, lastMonth, 0, 14, 59, 59, 999),
+  );
+  return { start: startKst, end: endKst };
+}
+
 export async function getReferralGroups(req, res) {
   try {
     const refresh = String(req.query.refresh || "") === "1";
@@ -161,10 +183,9 @@ export async function getReferralGroups(req, res) {
         .lean(),
     ]);
 
-    // 스냅샷이 비어있어도 overview 정합성을 위해 최근 30일 완료 의뢰 기준으로 fallback 집계
+    // 스냅샷이 비어있어도 overview 정합성을 위해 지난달 완료 의뢰 기준으로 fallback 집계
     const now = new Date();
-    const last30Cutoff = new Date(now);
-    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
 
     const directChildren = leaderIds.length
       ? await User.find({
@@ -184,7 +205,7 @@ export async function getReferralGroups(req, res) {
             $match: {
               requestor: { $in: relevantUserIds },
               status: "완료",
-              createdAt: { $gte: last30Cutoff },
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           {
@@ -220,7 +241,7 @@ export async function getReferralGroups(req, res) {
             $match: {
               requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
               status: "완료",
-              createdAt: { $gte: last30Cutoff },
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           {
@@ -521,7 +542,7 @@ export async function getReferralGroups(req, res) {
             $match: {
               requestorOrganizationId: { $in: commissionOrgObjectIds },
               status: "완료",
-              createdAt: { $gte: last30Cutoff },
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           {
@@ -662,7 +683,7 @@ export async function getReferralGroups(req, res) {
             $match: {
               requestor: { $in: allDirectRequestorIds },
               status: "완료",
-              createdAt: { $gte: last30Cutoff },
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           {
@@ -904,8 +925,7 @@ async function getReferralGroupTree(req, res) {
       .lean();
 
     const now = new Date();
-    const last30Cutoff = new Date(now);
-    last30Cutoff.setDate(last30Cutoff.getDate() - 30);
+    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
 
     const memberIds = (members || []).map((m) => m._id).filter(Boolean);
     const orderRows = memberIds.length
@@ -914,7 +934,7 @@ async function getReferralGroupTree(req, res) {
             $match: {
               requestor: { $in: memberIds },
               status: "완료",
-              createdAt: { $gte: last30Cutoff },
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           {
@@ -981,13 +1001,13 @@ async function getReferralGroupTree(req, res) {
       approvedAt: u.approvedAt,
       updatedAt: u.updatedAt,
       referredByUserId: u.referredByUserId || null,
-      last30DaysOrders: ordersByUserId.get(String(u._id))?.total || 0,
-      last30DaysPaidOrders: ordersByUserId.get(String(u._id))?.paid || 0,
-      last30DaysBonusOrders: ordersByUserId.get(String(u._id))?.bonus || 0,
+      lastMonthOrders: ordersByUserId.get(String(u._id))?.total || 0,
+      lastMonthPaidOrders: ordersByUserId.get(String(u._id))?.paid || 0,
+      lastMonthBonusOrders: ordersByUserId.get(String(u._id))?.bonus || 0,
       commissionAmount: 0, // 이후 루프에서 채워짐
     }));
 
-    // 영업자 노드용 수수료 계산(최근 30일, 유료 매출 기준)
+    // 영업자 노드용 수수료 계산(지난달, 유료 매출 기준)
     const requestorNodes = nodes.filter(
       (n) => String(n?.role || "") === "requestor" && n.organizationId,
     );
@@ -1008,7 +1028,7 @@ async function getReferralGroupTree(req, res) {
             $match: {
               requestorOrganizationId: { $in: orgObjectIdsInGroup },
               status: "완료",
-              createdAt: { $gte: last30Cutoff },
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           {
@@ -1047,7 +1067,7 @@ async function getReferralGroupTree(req, res) {
     const commissionRate = 0.05;
     const level1CommissionRate = commissionRate * 0.5;
 
-    // 의뢰자 노드: commissionAmount = 해당 조직의 30일 유료 매출 * 5%
+    // 의뢰자 노드: commissionAmount = 해당 조직의 지난달 유료 매출 * 5%
     for (const n of nodes) {
       if (String(n?.role || "") !== "requestor") continue;
       const oid = String(n.organizationId || "");
@@ -1091,17 +1111,17 @@ async function getReferralGroupTree(req, res) {
         directRevenue * commissionRate + level1Revenue * level1CommissionRate,
       );
 
-      // 영업자 노드의 last30DaysOrders = 직계 의뢰자들의 주문 합계
-      n.last30DaysOrders = directRequestors.reduce(
-        (acc, r) => acc + Number(r.last30DaysOrders || 0),
+      // 영업자 노드의 lastMonthOrders = 직계 의뢰자들의 주문 합계
+      n.lastMonthOrders = directRequestors.reduce(
+        (acc, r) => acc + Number(r.lastMonthOrders || 0),
         0,
       );
-      n.last30DaysPaidOrders = directRequestors.reduce(
-        (acc, r) => acc + Number(r.last30DaysPaidOrders || 0),
+      n.lastMonthPaidOrders = directRequestors.reduce(
+        (acc, r) => acc + Number(r.lastMonthPaidOrders || 0),
         0,
       );
-      n.last30DaysBonusOrders = directRequestors.reduce(
-        (acc, r) => acc + Number(r.last30DaysBonusOrders || 0),
+      n.lastMonthBonusOrders = directRequestors.reduce(
+        (acc, r) => acc + Number(r.lastMonthBonusOrders || 0),
         0,
       );
     }
@@ -1168,21 +1188,21 @@ async function getReferralGroupTree(req, res) {
       const isOwner = idStr === String(leader._id);
       const isDirectChild = directChildIdSet.has(idStr);
       if (!isOwner && !isDirectChild) return acc;
-      return acc + Number(n.last30DaysOrders || 0);
+      return acc + Number(n.lastMonthOrders || 0);
     }, 0);
     const computedTierPaidOrders = nodes.reduce((acc, n) => {
       const idStr = String(n._id);
       const isOwner = idStr === String(leader._id);
       const isDirectChild = directChildIdSet.has(idStr);
       if (!isOwner && !isDirectChild) return acc;
-      return acc + Number(n.last30DaysPaidOrders || 0);
+      return acc + Number(n.lastMonthPaidOrders || 0);
     }, 0);
     const computedTierBonusOrders = nodes.reduce((acc, n) => {
       const idStr = String(n._id);
       const isOwner = idStr === String(leader._id);
       const isDirectChild = directChildIdSet.has(idStr);
       if (!isOwner && !isDirectChild) return acc;
-      return acc + Number(n.last30DaysBonusOrders || 0);
+      return acc + Number(n.lastMonthBonusOrders || 0);
     }, 0);
     const computedTierMemberCount = 1 + directChildIdSet.size;
 

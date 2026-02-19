@@ -127,10 +127,10 @@ type SalesmanCreditRow = {
     paidOutAmount: number;
     adjustedAmount: number;
     balanceAmount: number;
-    earnedAmount30d: number;
-    paidOutAmount30d: number;
-    adjustedAmount30d: number;
-    balanceAmount30d: number;
+    earnedAmountPeriod: number;
+    paidOutAmountPeriod: number;
+    adjustedAmountPeriod: number;
+    balanceAmountPeriod: number;
   };
   performance30d: {
     referredOrgCount: number;
@@ -651,7 +651,7 @@ export default function AdminCreditPage() {
   const salesmanSummary = useMemo(() => {
     const totalSalesmen = (salesmen || []).length;
     const totalBalance = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.wallet?.balanceAmount || 0),
+      (acc, s) => acc + Number(s?.wallet?.balanceAmountPeriod || 0),
       0,
     );
     const totalEarned = (salesmen || []).reduce(
@@ -664,7 +664,7 @@ export default function AdminCreditPage() {
       0,
     );
     const totalPaidOut = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.wallet?.paidOutAmount30d || 0),
+      (acc, s) => acc + Number(s?.wallet?.paidOutAmountPeriod || 0),
       0,
     );
     const totalReferredRevenue30d = (salesmen || []).reduce(
@@ -1629,9 +1629,7 @@ export default function AdminCreditPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  정산 전 잔액
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">기간 잔액</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -1660,10 +1658,10 @@ export default function AdminCreditPage() {
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <CardTitle>영업자 크레딧(성과/정산 전 잔액)</CardTitle>
+                  <CardTitle>영업자 크레딧(성과/기간 잔액)</CardTitle>
                   <CardDescription>
                     선택 기간 직접/간접 소개 조직 기준 매출/수수료 + 영업자 지갑
-                    잔액
+                    기간 잔액
                   </CardDescription>
                 </div>
                 <div className="w-[170px]">
@@ -1699,8 +1697,8 @@ export default function AdminCreditPage() {
                       .sort((a, b) => {
                         if (salesmanSortKey === "balance")
                           return (
-                            Number(b.wallet?.balanceAmount || 0) -
-                            Number(a.wallet?.balanceAmount || 0)
+                            Number(b.wallet?.balanceAmountPeriod || 0) -
+                            Number(a.wallet?.balanceAmountPeriod || 0)
                           );
                         if (salesmanSortKey === "commission")
                           return (
@@ -1751,11 +1749,11 @@ export default function AdminCreditPage() {
                             <div className="grid grid-cols-3 gap-2">
                               <div>
                                 <div className="text-muted-foreground text-xs">
-                                  잔액
+                                  기간 잔액
                                 </div>
                                 <div className="font-semibold">
                                   {Number(
-                                    s.wallet?.balanceAmount || 0,
+                                    s.wallet?.balanceAmountPeriod || 0,
                                   ).toLocaleString()}
                                   원
                                 </div>
@@ -1780,7 +1778,7 @@ export default function AdminCreditPage() {
                                 </div>
                                 <div className="font-medium">
                                   {Number(
-                                    s.wallet?.paidOutAmount30d || 0,
+                                    s.wallet?.paidOutAmountPeriod || 0,
                                   ).toLocaleString()}
                                   원
                                 </div>

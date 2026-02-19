@@ -272,9 +272,8 @@ async function seedBulkUsersAndData() {
   const BULK_NOW = new Date();
   const REQUESTOR_PW = "Abc!1234";
   const SALESMAN_PW = "Abc!1234";
-  const TWO_MONTHS_AGO = new Date(
-    BULK_NOW.getTime() - 60 * 24 * 60 * 60 * 1000,
-  );
+  const LAST_N_DAYS = 20;
+  const REQUEST_COUNT_RANGE = { min: 20, max: 100 };
 
   const requestors = []; // owner만 (추천인 후보)
   const salesmen = [];
@@ -322,24 +321,48 @@ async function seedBulkUsersAndData() {
     if (isRoot) salesmanRoots.push({ id: salesman._id, email });
   }
 
-  // 의뢰자 5계정 r001~r005, 계정당 1조직(staff 없음), 의뢰 100~500건, 2개월 전부터
-  for (let i = 1; i <= 5; i += 1) {
+  // 의뢰자 10계정 r001~r010, 계정당 1조직(staff 없음), 의뢰 20~100건, 최근 20일 내 생성
+  for (let i = 1; i <= 10; i += 1) {
     const email = `r${String(i).padStart(3, "0")}@gmail.com`;
     const orgName = `org-${String(i).padStart(3, "0")}`;
     const referralCode = randomReferralCode();
 
-    // 소개 관계: 60% 영업자 소개 / 30% 의뢰자 소개 / 10% 미소개
+    // 소개 관계: 고정 배정 (간접 수수료 검증 가능하도록)
+    // r001~r003: s001 직접 소개 (s001 직접 수수료)
+    // r004~r005: s004 직접 소개 (s004 직접 수수료 + s001 간접 수수료)
+    // r006~r007: s006 직접 소개 (s006 직접 수수료)
+    // r008~r010: s009 직접 소개 (s009 직접 수수료)
     let parentId = null;
-    const roll = Math.random();
-    if (roll < 0.1) {
-      parentId = null; // 10% 미소개
-    } else if (roll < 0.7) {
-      parentId = salesmen.length ? pick(salesmen).id : null; // 60% 영업자 소개
+    const s001 = salesmen.find((s) => s.email === "s001@gmail.com");
+    const s004 = salesmen.find((s) => s.email === "s004@gmail.com");
+    const s006 = salesmen.find((s) => s.email === "s006@gmail.com");
+    const s009 = salesmen.find((s) => s.email === "s009@gmail.com");
+    if (i <= 3) {
+      parentId = s001?.id || null;
+    } else if (i <= 5) {
+      parentId = s004?.id || null;
+    } else if (i <= 7) {
+      parentId = s006?.id || null;
     } else {
-      parentId = requestors.length ? pick(requestors).id : null; // 30% 의뢰자 소개
+      parentId = s009?.id || null;
     }
 
-    const approvedDaysAgo = randInt(0, 60);
+    let referralGroupLeaderId = null;
+    if (parentId) {
+      const parentSalesman = salesmen.find(
+        (s) => String(s.id) === String(parentId),
+      );
+      if (parentSalesman) {
+        referralGroupLeaderId = parentSalesman.leaderId || parentSalesman.id;
+      } else {
+        const parentRequestor = requestors.find(
+          (r) => String(r.id) === String(parentId),
+        );
+        referralGroupLeaderId = parentRequestor?.leaderId || parentId;
+      }
+    }
+
+    const approvedDaysAgo = randInt(0, LAST_N_DAYS);
     const approvedAt = new Date(BULK_NOW);
     approvedAt.setDate(approvedAt.getDate() - approvedDaysAgo);
 
@@ -352,7 +375,7 @@ async function seedBulkUsersAndData() {
       organization: orgName,
       referralCode,
       referredByUserId: parentId,
-      referralGroupLeaderId: parentId,
+      referralGroupLeaderId,
       approvedAt,
       active: true,
     });
@@ -370,11 +393,16 @@ async function seedBulkUsersAndData() {
       { $set: { organizationId: org._id, organization: org.name } },
     );
 
-    requestors.push({ id: owner._id, email, orgId: org._id }); // owner만 추천인 후보
+    requestors.push({
+      id: owner._id,
+      email,
+      orgId: org._id,
+      leaderId: referralGroupLeaderId || owner._id,
+    }); // owner만 추천인 후보
 
     // 입금: 50만/100만/200만/300만원 4종 중 랜덤
     let remainingPaid = pick([500000, 1000000, 2000000, 3000000]);
-    let remainingBonus = 25000;
+    let remainingBonus = 30000;
 
     await CreditLedger.create({
       organizationId: org._id,
@@ -396,13 +424,16 @@ async function seedBulkUsersAndData() {
       uniqueKey: `seed:bonus:${email}`,
     });
 
-    // 의뢰자 1명당 주문 100~500건, 그 중 80% 완료(APPROVED), 2개월 전부터
-    const requestCount = randInt(100, 500);
+    // 의뢰자 1명당 주문 20~100건, 그 중 80% 완료(APPROVED), 최근 20일 내 생성
+    const requestCount = randInt(
+      REQUEST_COUNT_RANGE.min,
+      REQUEST_COUNT_RANGE.max,
+    );
     const completedRequestIds = [];
     // 첫 의뢰자(i===1)에서 무료 1건 신속배송 처리
     let freeExpressAdded = false;
     for (let k = 0; k < requestCount; k += 1) {
-      const daysAgo = randInt(0, 60);
+      const daysAgo = randInt(0, LAST_N_DAYS);
       const createdAt = new Date(BULK_NOW);
       createdAt.setDate(createdAt.getDate() - daysAgo);
 
@@ -575,8 +606,9 @@ async function seedBulkUsersAndData() {
         pkgIdx += 1;
 
         const shipDate = new Date(BULK_NOW);
-        // 패키지마다 다른 날짜 보장: pkgIdx 기반 offset + 랜덤
-        shipDate.setDate(shipDate.getDate() - pkgIdx - randInt(0, 5));
+        // 패키지마다 다른 날짜 보장: pkgIdx 기반 offset + 랜덤, 단 최근 30일 내 유지
+        const shipOffset = Math.min(LAST_N_DAYS, pkgIdx + randInt(0, 3));
+        shipDate.setDate(shipDate.getDate() - shipOffset);
         // unique key: YMD + 패키지 인덱스 (index 충돌 방지)
         const shipDateYmd = `${toKstYmd(shipDate)}-p${pkgIdx}`;
 
@@ -591,11 +623,10 @@ async function seedBulkUsersAndData() {
           updatedAt: shipDate,
         });
 
-        // 배송비도 크레딧 사용으로 기록 (발송 1회당 3,500원)
-        if (remainingBonus + remainingPaid >= 3500) {
-          const fromBonus = Math.min(remainingBonus, 3500);
-          const fromPaid = 3500 - fromBonus;
-          remainingBonus -= fromBonus;
+        // 배송비는 유료 크레딧에서만 차감 (발송 1회당 3,500원)
+        if (remainingPaid >= 3500) {
+          const fromBonus = 0;
+          const fromPaid = 3500;
           remainingPaid -= fromPaid;
           await CreditLedger.create({
             organizationId: org._id,

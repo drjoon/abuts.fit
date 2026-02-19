@@ -112,7 +112,7 @@ type ApiTreeNode = {
   approvedAt?: string;
   updatedAt?: string;
   referredByUserId?: string | null;
-  last30DaysOrders?: number;
+  lastMonthOrders?: number;
   commissionAmount?: number;
   children?: ApiTreeNode[];
 };
@@ -148,7 +148,7 @@ const TreeNode = ({
   onSelect: (node: ApiTreeNode) => void;
 }) => {
   const indent = depth * 16;
-  const last30DaysOrders = Number(node.last30DaysOrders || 0);
+  const lastMonthOrders = Number(node.lastMonthOrders || 0);
   const commissionAmount = Number(node.commissionAmount || 0);
   const isSalesman = String(node.role || "") === "salesman";
   const isRequestor = String(node.role || "") === "requestor";
@@ -175,7 +175,7 @@ const TreeNode = ({
               {node.email || ""}
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
-              최근30일 {last30DaysOrders.toLocaleString()}건
+              기간 {lastMonthOrders.toLocaleString()}건
               {(isSalesman || isRequestor) && commissionAmount > 0 ? (
                 <> · 수수료 {formatMoney(commissionAmount)}원</>
               ) : null}
@@ -376,7 +376,7 @@ export default function AdminReferralGroupsPage() {
         : [];
       const sortedChildren = [...children].sort(
         (a, b) =>
-          Number(b?.last30DaysOrders || 0) - Number(a?.last30DaysOrders || 0),
+          Number(b?.lastMonthOrders || 0) - Number(a?.lastMonthOrders || 0),
       );
       for (let i = 0; i < sortedChildren.length; i += 1) {
         stack.push({ node: sortedChildren[i], depth: cur.depth + 1 });
@@ -866,10 +866,9 @@ export default function AdminReferralGroupsPage() {
                 </Badge>
               </div>
               <div className="flex items-center justify-between">
-                <div className="text-muted-foreground">최근 30일 주문</div>
+                <div className="text-muted-foreground">기간 주문</div>
                 <div className="font-medium">
-                  {Number(selectedNode.last30DaysOrders || 0).toLocaleString()}
-                  건
+                  {Number(selectedNode.lastMonthOrders || 0).toLocaleString()}건
                 </div>
               </div>
               <div className="flex items-center justify-between">

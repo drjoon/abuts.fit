@@ -18,7 +18,8 @@
     "db:seed:e2e-user": "cross-env ENV_FILE=local.env node scripts/db/seed.e2e-user.js",
     "db:cleanup:e2e-user": "cross-env ENV_FILE=local.env node scripts/db/cleanup.e2e-user.js",
     "db:seed:e2e-referral-pricing": "cross-env ENV_FILE=local.env node scripts/db/seed.e2e-referral-pricing.js",
-    "db:cleanup:e2e-referral-pricing": "cross-env ENV_FILE=local.env node scripts/db/cleanup.e2e-referral-pricing.js"
+    "db:cleanup:e2e-referral-pricing": "cross-env ENV_FILE=local.env node scripts/db/cleanup.e2e-referral-pricing.js",
+    "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/monthlyReferralSnapshotWorker.js"
   },
   "keywords": [
     "dental",

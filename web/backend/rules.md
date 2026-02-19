@@ -66,6 +66,7 @@
 
 - 가입 시 보너스 크레딧을 30,000원 지급한다.
 - 무료 크레딧(보너스)은 잔액에서 가능한 만큼 우선 차감하고, 부족분은 구매 크레딧에서 차감한다.
+- 단, **배송비(발송 패키지 비용)는 무료 크레딧(보너스)을 사용할 수 없고 유료 크레딧에서만 차감한다.**
 - `price.bonusAmount`: bonus에서 차감된 금액 (0~amount)
 - `price.paidAmount`: 구매 크레딧에서 차감된 금액 (`amount - bonusAmount`)
 - `CreditLedger`의 `SPEND` 항목은 `spentPaidAmount`, `spentBonusAmount`로 유료/무료 사용분을 분리 기록한다.
@@ -166,18 +167,21 @@
 ### 5.1.2 관리자용 리퍼럴 그룹 계층도 및 스냅샷
 
 - **목표**: 리더 기준 계층도를 확인하되, 단가/주문 합산은 "리더 본인+직계 1단계" 기준으로 계산하고 당일 첫 조회 시 스냅샷을 생성함.
+- **단가 계산 기준**: **지난달(전월 1일~말일) 완료 의뢰 주문량** 기준으로 당월 단가를 결정한다. (최근 30일 기준 아님)
 - **스냅샷 키**: `(ownerUserId, yyyy-MM-dd)`
 - **스냅샷 생성 시점**
+  - **매달 1일 KST 00:00**: `jobs/monthlyReferralSnapshotWorker.js` 워커가 전체 그룹 리더의 스냅샷을 일괄 재계산·upsert.
   - 요청자 API(`GET /api/requests/my/pricing-referral-stats`)는 본인+직계 기준 스냅샷을 조회/생성.
   - 관리자 API(`GET /api/admin/referral-groups/:leaderId`)에서 **스냅샷이 없으면** 리더 본인+직계 기준 주문량으로 `PricingReferralStatsSnapshot`을 upsert.
   - 목록 API(`/api/admin/referral-groups`)은 snapshot이 없으면 `groupTotalOrders=0`으로 둔 채 `미생성` 배지를 보여줌.
 - **관리자 대시보드 설명**
   - `/dashboard/referral-groups` 페이지
-    - 상단 overview 카드: 전체 그룹 수/계정 수/최근30일 주문 합산(리더+직계)/평균 단가
-    - 그룹 리스트: 각 그룹 recent30일 주문(리더+직계), 단가, snapshot 생성 여부(“미생성” 배지)
-    - 계층도 트리: 멤버별 최근30일 주문, 클릭 시 기본 정보 다이얼로그, 트리 상단에 그룹 주문·단가
+    - 상단 overview 카드: 전체 그룹 수/계정 수/지난달 주문 합산(리더+직계)/평균 단가
+    - 그룹 리스트: 각 그룹 지난달 주문(리더+직계), 단가, snapshot 생성 여부("미생성" 배지)
+    - 계층도 트리: 멤버별 지난달 주문(`lastMonthOrders`), 클릭 시 기본 정보 다이얼로그, 트리 상단에 그룹 주문·단가
   - 트리 조회 시 snapshot이 없는 그룹이면 처음 조회에서 snapshot 생성 → 다음 목록 새로고침부터 값 반영
-  - Dialog shows account status, recent 30-day orders, email, ID, parent referral ID, creation date
+  - Dialog shows account status, last month orders, email, ID, parent referral ID, creation date
+- **영업자 수수료 지갑 기간 필터**: `wallet.balanceAmountPeriod`, `earnedAmountPeriod`, `paidOutAmountPeriod`, `adjustedAmountPeriod` (기간 필터 연동, 30d 하드코딩 제거)
 
 문서화한 정책과 실제 UI/모델이 일치하는지 확인 후 배포 바랍니다.
 

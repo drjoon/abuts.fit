@@ -485,7 +485,7 @@ export async function adminGetSalesmanCredits(req, res) {
       ledgerPeriodMatch.createdAt.$lte = periodEnd;
     }
 
-    const ledgerRows30d = await SalesmanLedger.aggregate([
+    const ledgerRowsPeriod = await SalesmanLedger.aggregate([
       { $match: ledgerPeriodMatch },
       {
         $group: {
@@ -494,13 +494,13 @@ export async function adminGetSalesmanCredits(req, res) {
         },
       },
     ]);
-    const ledger30dBySalesmanId = new Map();
-    for (const r of ledgerRows30d) {
+    const ledgerPeriodBySalesmanId = new Map();
+    for (const r of ledgerRowsPeriod) {
       const sid = String(r?._id?.salesmanId || "");
       const type = String(r?._id?.type || "");
       const total = Number(r?.total || 0);
       if (!sid) continue;
-      const prev = ledger30dBySalesmanId.get(sid) || {
+      const prev = ledgerPeriodBySalesmanId.get(sid) || {
         earn: 0,
         payout: 0,
         adjust: 0,
@@ -508,7 +508,7 @@ export async function adminGetSalesmanCredits(req, res) {
       if (type === "EARN") prev.earn += total;
       else if (type === "PAYOUT") prev.payout += total;
       else if (type === "ADJUST") prev.adjust += total;
-      ledger30dBySalesmanId.set(sid, prev);
+      ledgerPeriodBySalesmanId.set(sid, prev);
     }
 
     const directRequestors = await User.find({
@@ -677,7 +677,7 @@ export async function adminGetSalesmanCredits(req, res) {
         adjust: 0,
       };
 
-      const ledger30d = ledger30dBySalesmanId.get(sid) || {
+      const ledgerPeriod = ledgerPeriodBySalesmanId.get(sid) || {
         earn: 0,
         payout: 0,
         adjust: 0,
@@ -688,10 +688,10 @@ export async function adminGetSalesmanCredits(req, res) {
           Number(ledger.adjust || 0),
       );
 
-      const balance30d = Math.round(
-        Number(ledger30d.earn || 0) -
-          Number(ledger30d.payout || 0) +
-          Number(ledger30d.adjust || 0),
+      const balancePeriod = Math.round(
+        Number(ledgerPeriod.earn || 0) -
+          Number(ledgerPeriod.payout || 0) +
+          Number(ledgerPeriod.adjust || 0),
       );
 
       const directOrgSet = directOrgIdsBySalesmanId.get(sid) || new Set();
@@ -740,10 +740,10 @@ export async function adminGetSalesmanCredits(req, res) {
           paidOutAmount: Math.round(Number(ledger.payout || 0)),
           adjustedAmount: Math.round(Number(ledger.adjust || 0)),
           balanceAmount: balance,
-          earnedAmount30d: Math.round(Number(ledger30d.earn || 0)),
-          paidOutAmount30d: Math.round(Number(ledger30d.payout || 0)),
-          adjustedAmount30d: Math.round(Number(ledger30d.adjust || 0)),
-          balanceAmount30d: balance30d,
+          earnedAmountPeriod: Math.round(Number(ledgerPeriod.earn || 0)),
+          paidOutAmountPeriod: Math.round(Number(ledgerPeriod.payout || 0)),
+          adjustedAmountPeriod: Math.round(Number(ledgerPeriod.adjust || 0)),
+          balanceAmountPeriod: balancePeriod,
         },
         performance30d: {
           referredOrgCount: directOrgSet.size,
