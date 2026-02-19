@@ -2,6 +2,7 @@ import {
   useMemo,
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useRef,
   type DragEvent,
@@ -115,7 +116,9 @@ export const RequestPage = ({
     {},
   );
   const [visibleCount, setVisibleCount] = useState(9);
-  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const visibleCountRef = useRef(9);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const totalCountRef = useRef(0);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -714,45 +717,67 @@ export const RequestPage = ({
     [filteredAndSorted, handleOpenPreview, setPreviewOpen],
   );
 
+  totalCountRef.current = filteredAndSorted.length;
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
   useEffect(() => {
+    visibleCountRef.current = 9;
     setVisibleCount(9);
   }, [worksheetSearch, showCompleted, tabStage]);
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (
-          entries[0]?.isIntersecting &&
-          visibleCount < filteredAndSorted.length
-        ) {
-          setVisibleCount((prev) => prev + 9);
-        }
-      },
-      { threshold: 0, rootMargin: "200px" },
-    );
+  const onScrollRef = useRef<(() => void) | null>(null);
 
-    const el = sentinelRef.current;
-    if (el) observer.observe(el);
+  const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
+    scrollContainerRef.current = node;
+    if (!node) return;
+    const maybeLoadMore = () => {
+      if (visibleCountRef.current >= totalCountRef.current) return;
 
-    if (el && visibleCount < filteredAndSorted.length) {
-      const t = setTimeout(() => {
-        const rect = el.getBoundingClientRect();
-        if (rect.top <= window.innerHeight + 200) {
-          setVisibleCount((prev) => prev + 9);
-        }
-      }, 0);
-      return () => {
-        clearTimeout(t);
-        observer.disconnect();
-      };
-    }
+      const nearBottom =
+        node.scrollTop + node.clientHeight >= node.scrollHeight - 300;
+      const notScrollable = node.scrollHeight <= node.clientHeight + 20;
 
-    return () => {
-      if (el) observer.unobserve(el);
+      if (!nearBottom && !notScrollable) return;
+
+      visibleCountRef.current = Math.min(
+        visibleCountRef.current + 9,
+        totalCountRef.current,
+      );
+      setVisibleCount(visibleCountRef.current);
+      requestAnimationFrame(maybeLoadMore);
     };
+
+    onScrollRef.current = maybeLoadMore;
+    requestAnimationFrame(maybeLoadMore);
+  }, []);
+
+  useEffect(() => {
+    const fn = onScrollRef.current;
+    if (!fn) return;
+    requestAnimationFrame(fn);
+  }, [filteredAndSorted.length]);
+
+  useLayoutEffect(() => {
+    const node = scrollContainerRef.current;
+    if (!node) return;
+    if (visibleCountRef.current >= totalCountRef.current) return;
+
+    const maybeFill = () => {
+      if (visibleCountRef.current >= totalCountRef.current) return;
+      const notScrollable = node.scrollHeight <= node.clientHeight + 20;
+      if (!notScrollable) return;
+
+      visibleCountRef.current = Math.min(
+        visibleCountRef.current + 9,
+        totalCountRef.current,
+      );
+      setVisibleCount(visibleCountRef.current);
+      requestAnimationFrame(maybeFill);
+    };
+
+    requestAnimationFrame(maybeFill);
   }, [visibleCount, filteredAndSorted.length]);
+
   const groupedByShippingPackage = useMemo(() => {
     if (tabStage !== "shipping") return null;
     const map = new Map<string, ManufacturerRequest[]>();
@@ -1080,143 +1105,172 @@ export const RequestPage = ({
             </Button>
           </div>
         )}
-        {tabStage === "machining" ? (
-          <MachiningQueueBoard searchQuery={worksheetSearch} />
-        ) : isEmpty ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
-            표시할 의뢰가 없습니다.
-          </div>
-        ) : tabStage === "shipping" && groupedByShippingPackage ? (
-          <div className="space-y-4">
-            {Array.from(groupedByShippingPackage.entries()).map(
-              ([key, reqs]) => {
-                const sample = reqs[0];
-                const org =
-                  sample?.requestor?.organization ||
-                  sample?.requestor?.name ||
-                  sample?.requestor?._id ||
-                  "기공소 미지정";
-                const pickup = sample?.productionSchedule?.scheduledShipPickup;
-                const shipYmd = pickup
-                  ? new Date(pickup).toISOString().slice(0, 10)
-                  : "-";
-                const title =
-                  key === "unassigned"
-                    ? "발송 박스 미배정"
-                    : `발송 박스 ${String(key).slice(-6)}`;
-                return (
-                  <div
-                    key={key}
-                    className="app-glass-card app-glass-card--xl flex flex-col space-y-3"
-                  >
-                    <div className="flex items-center justify-between gap-2 px-4 pt-4">
-                      <div className="flex items-center gap-2">
-                        <div className="text-sm font-semibold text-slate-800">
-                          {title}
+        <div
+          ref={setScrollContainer}
+          className="overflow-auto"
+          data-worksheet-scroll="1"
+          style={{ maxHeight: "calc(100vh - 260px)" }}
+          onScroll={() => onScrollRef.current?.()}
+        >
+          {tabStage === "machining" ? (
+            <MachiningQueueBoard searchQuery={worksheetSearch} />
+          ) : isEmpty ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
+              표시할 의뢰가 없습니다.
+            </div>
+          ) : tabStage === "shipping" && groupedByShippingPackage ? (
+            <div className="space-y-4">
+              {Array.from(groupedByShippingPackage.entries()).map(
+                ([key, reqs]) => {
+                  const sample = reqs[0];
+                  const org =
+                    sample?.requestor?.organization ||
+                    sample?.requestor?.name ||
+                    sample?.requestor?._id ||
+                    "기공소 미지정";
+                  const pickup =
+                    sample?.productionSchedule?.scheduledShipPickup;
+                  const shipYmd = pickup
+                    ? new Date(pickup).toISOString().slice(0, 10)
+                    : "-";
+                  const title =
+                    key === "unassigned"
+                      ? "발송 박스 미배정"
+                      : `발송 박스 ${String(key).slice(-6)}`;
+                  return (
+                    <div
+                      key={key}
+                      className="app-glass-card app-glass-card--xl flex flex-col space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2 px-4 pt-4">
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm font-semibold text-slate-800">
+                            {title}
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
+                          >
+                            {org}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
+                          >
+                            출고 {shipYmd}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className="text-[11px] bg-blue-50 text-blue-700 border-blue-200 font-semibold"
+                          >
+                            {reqs.length}건
+                          </Badge>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
-                        >
-                          {org}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
-                        >
-                          출고 {shipYmd}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className="text-[11px] bg-blue-50 text-blue-700 border-blue-200 font-semibold"
-                        >
-                          {reqs.length}건
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              reqs.forEach((req) => handleCardRollback(req));
+                            }}
+                            aria-label="롤백"
+                            title="모든 의뢰 롤백"
+                          >
+                            ←
+                          </button>
+                          <button
+                            type="button"
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              reqs.forEach((req) => handleCardApprove(req));
+                            }}
+                            aria-label="승인"
+                            title="모든 의뢰 승인"
+                          >
+                            →
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            reqs.forEach((req) => handleCardRollback(req));
-                          }}
-                          aria-label="롤백"
-                          title="모든 의뢰 롤백"
-                        >
-                          ←
-                        </button>
-                        <button
-                          type="button"
-                          className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            reqs.forEach((req) => handleCardApprove(req));
-                          }}
-                          aria-label="승인"
-                          title="모든 의뢰 승인"
-                        >
-                          →
-                        </button>
+                      <div className="px-4 pb-4">
+                        <WorksheetCardGrid
+                          requests={reqs}
+                          onDownload={handleDownloadOriginal}
+                          onOpenPreview={handleOpenPreview}
+                          onDeleteCam={handleDeleteCam}
+                          onDeleteNc={handleDeleteNc}
+                          onRollback={
+                            enableCardRollback ? handleCardRollback : undefined
+                          }
+                          onApprove={
+                            tabStage === "shipping"
+                              ? handleCardApprove
+                              : undefined
+                          }
+                          onUploadNc={handleUploadNc}
+                          uploadProgress={uploadProgress}
+                          uploading={uploading}
+                          deletingCam={deletingCam}
+                          deletingNc={deletingNc}
+                          isCamStage={isCamStage}
+                          isMachiningStage={isMachiningStage}
+                          downloading={downloading}
+                          currentStageOrder={currentStageOrder}
+                        />
                       </div>
                     </div>
-                    <div className="px-4 pb-4">
-                      <WorksheetCardGrid
-                        requests={reqs}
-                        onDownload={handleDownloadOriginal}
-                        onOpenPreview={handleOpenPreview}
-                        onDeleteCam={handleDeleteCam}
-                        onDeleteNc={handleDeleteNc}
-                        onRollback={
-                          enableCardRollback ? handleCardRollback : undefined
-                        }
-                        onApprove={
-                          tabStage === "shipping"
-                            ? handleCardApprove
-                            : undefined
-                        }
-                        onUploadNc={handleUploadNc}
-                        uploadProgress={uploadProgress}
-                        uploading={uploading}
-                        deletingCam={deletingCam}
-                        deletingNc={deletingNc}
-                        isCamStage={isCamStage}
-                        isMachiningStage={isMachiningStage}
-                        downloading={downloading}
-                        currentStageOrder={currentStageOrder}
-                      />
-                    </div>
-                  </div>
-                );
-              },
+                  );
+                },
+              )}
+            </div>
+          ) : (
+            <WorksheetCardGrid
+              requests={paginatedRequests}
+              onDownload={handleDownloadOriginal}
+              onOpenPreview={handleOpenPreview}
+              onDeleteCam={handleDeleteCam}
+              onDeleteNc={handleDeleteNc}
+              onRollback={enableCardRollback ? handleCardRollback : undefined}
+              onApprove={
+                tabStage === "shipping" ? handleCardApprove : undefined
+              }
+              onUploadNc={handleUploadNc}
+              uploadProgress={uploadProgress}
+              uploading={uploading}
+              deletingCam={deletingCam}
+              deletingNc={deletingNc}
+              isCamStage={isCamStage}
+              isMachiningStage={isMachiningStage}
+              downloading={downloading}
+              currentStageOrder={currentStageOrder}
+              tabStage={tabStage}
+            />
+          )}
+
+          {!isEmpty &&
+            tabStage !== "machining" &&
+            visibleCount < filteredAndSorted.length && (
+              <div className="flex justify-center py-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    visibleCountRef.current = Math.min(
+                      visibleCountRef.current + 9,
+                      totalCountRef.current,
+                    );
+                    setVisibleCount(visibleCountRef.current);
+                  }}
+                >
+                  더 보기
+                </Button>
+              </div>
             )}
-          </div>
-        ) : (
-          <WorksheetCardGrid
-            requests={paginatedRequests}
-            onDownload={handleDownloadOriginal}
-            onOpenPreview={handleOpenPreview}
-            onDeleteCam={handleDeleteCam}
-            onDeleteNc={handleDeleteNc}
-            onRollback={enableCardRollback ? handleCardRollback : undefined}
-            onApprove={tabStage === "shipping" ? handleCardApprove : undefined}
-            onUploadNc={handleUploadNc}
-            uploadProgress={uploadProgress}
-            uploading={uploading}
-            deletingCam={deletingCam}
-            deletingNc={deletingNc}
-            isCamStage={isCamStage}
-            isMachiningStage={isMachiningStage}
-            downloading={downloading}
-            currentStageOrder={currentStageOrder}
-            tabStage={tabStage}
-          />
-        )}
-        {!isEmpty && paginatedRequests.length < filteredAndSorted.length && (
-          <div ref={sentinelRef} className="h-6 w-full" />
-        )}
+        </div>
       </div>
 
       <WorksheetDiameterQueueModal

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -89,6 +89,11 @@ export const TrackingInquiryPage = () => {
   }>();
 
   const [tab, setTab] = useState<InquiryTab>("process");
+  const [visibleCount, setVisibleCount] = useState(50);
+  const visibleCountRef = useRef(50);
+  const totalCountRef = useRef(0);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const onScrollRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const defaultDateRangeByTab: Record<InquiryTab, DateRange> = {
@@ -618,6 +623,56 @@ export const TrackingInquiryPage = () => {
     });
   }, [baseFiltered]);
 
+  const currentRows =
+    tab === "process"
+      ? processRows
+      : tab === "shipping"
+        ? shippingRows
+        : udiRows;
+  totalCountRef.current = currentRows.length;
+
+  useEffect(() => {
+    visibleCountRef.current = 50;
+    setVisibleCount(50);
+  }, [tab, dateRange, worksheetSearch, showCompleted]);
+
+  const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
+    if (scrollRef.current && onScrollRef.current) {
+      scrollRef.current.removeEventListener("scroll", onScrollRef.current);
+      onScrollRef.current = null;
+    }
+    scrollRef.current = node;
+    if (!node) return;
+
+    const maybeLoadMore = () => {
+      if (visibleCountRef.current >= totalCountRef.current) return;
+
+      const nearBottom =
+        node.scrollTop + node.clientHeight >= node.scrollHeight - 200;
+      const notScrollable = node.scrollHeight <= node.clientHeight + 20;
+
+      if (!nearBottom && !notScrollable) return;
+
+      visibleCountRef.current = Math.min(
+        visibleCountRef.current + 50,
+        totalCountRef.current,
+      );
+      setVisibleCount(visibleCountRef.current);
+      requestAnimationFrame(maybeLoadMore);
+    };
+
+    const onScroll = () => {
+      maybeLoadMore();
+    };
+    onScrollRef.current = onScroll;
+    node.addEventListener("scroll", onScroll, { passive: true });
+    requestAnimationFrame(maybeLoadMore);
+  }, []);
+
+  useEffect(() => {
+    requestAnimationFrame(() => onScrollRef.current?.());
+  }, [currentRows.length]);
+
   return (
     <div className="space-y-4">
       <Tabs value={tab} onValueChange={(v) => setTab(v as InquiryTab)}>
@@ -680,7 +735,11 @@ export const TrackingInquiryPage = () => {
         </div>
 
         <TabsContent value="process" className="space-y-3 mt-4">
-          <div className="rounded-md border bg-background">
+          <div
+            ref={setScrollContainer}
+            className="rounded-md border bg-background overflow-auto"
+            style={{ maxHeight: "calc(100vh - 320px)" }}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -695,7 +754,7 @@ export const TrackingInquiryPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {processRows.map((r) => {
+                {processRows.slice(0, visibleCount).map((r) => {
                   const ci: any = r.caseInfos || {};
                   const di = normalizeDeliveryInfo(r.deliveryInfoRef);
                   const shippedDate = formatYmd(di.shippedAt || di.deliveredAt);
@@ -768,7 +827,11 @@ export const TrackingInquiryPage = () => {
         </TabsContent>
 
         <TabsContent value="udi" className="space-y-3 mt-4">
-          <div className="rounded-md border bg-background">
+          <div
+            ref={setScrollContainer}
+            className="rounded-md border bg-background overflow-auto"
+            style={{ maxHeight: "calc(100vh - 320px)" }}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -782,7 +845,7 @@ export const TrackingInquiryPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {udiRows.map((r) => {
+                {udiRows.slice(0, visibleCount).map((r) => {
                   const ci: any = r.caseInfos || {};
                   const di = normalizeDeliveryInfo(r.deliveryInfoRef);
                   const shippedAt = di.shippedAt || di.deliveredAt || "";
@@ -821,7 +884,11 @@ export const TrackingInquiryPage = () => {
         </TabsContent>
 
         <TabsContent value="shipping" className="space-y-3 mt-4">
-          <div className="rounded-md border bg-background">
+          <div
+            ref={setScrollContainer}
+            className="rounded-md border bg-background overflow-auto"
+            style={{ maxHeight: "calc(100vh - 320px)" }}
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -834,7 +901,7 @@ export const TrackingInquiryPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {shippingRows.map((r) => {
+                {shippingRows.slice(0, visibleCount).map((r) => {
                   const di = normalizeDeliveryInfo(r.deliveryInfoRef);
                   const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
                   const deliveredAt = di.deliveredAt

@@ -832,7 +832,7 @@ export const DashboardLayout = () => {
                 <PeriodFilter value={period} onChange={setPeriod} />
               </div>
             )}
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto" data-dashboard-scroll="1">
             {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
               <div className="border-b border-border bg-background/80 sticky top-0 z-10">
                 <div className="px-4 py-2 flex flex-col gap-2">

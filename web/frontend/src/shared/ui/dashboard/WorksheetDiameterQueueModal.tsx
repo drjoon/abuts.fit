@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
@@ -47,6 +54,12 @@ export const WorksheetDiameterQueueModal = ({
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
+  const [visibleCount, setVisibleCount] = useState(18);
+  const visibleCountRef = useRef(18);
+  const totalCountRef = useRef(0);
+  const listRootRef = useRef<HTMLDivElement | null>(null);
+  const listOnScrollRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     if (!open) {
       setSelectedItemId(null);
@@ -57,6 +70,8 @@ export const WorksheetDiameterQueueModal = ({
   }, [open, effectiveBucket, queues]);
 
   const items = queues[effectiveBucket] ?? [];
+  totalCountRef.current = items.length;
+  const paginatedItems = items.slice(0, visibleCount);
   const activeItem = items.find((it) => it.id === selectedItemId) ?? null;
 
   const bucketCount = (queues[effectiveBucket] ?? []).length;
@@ -64,6 +79,57 @@ export const WorksheetDiameterQueueModal = ({
   const [stlFile, setStlFile] = useState<File | null>(null);
   const [stlLoading, setStlLoading] = useState(false);
   const [stlError, setStlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    visibleCountRef.current = 18;
+    setVisibleCount(18);
+  }, [open, effectiveBucket]);
+
+  const setListContainer = useCallback((node: HTMLDivElement | null) => {
+    listRootRef.current = node;
+    if (!node) return;
+    const maybeLoadMore = () => {
+      if (visibleCountRef.current >= totalCountRef.current) return;
+
+      const nearBottom =
+        node.scrollTop + node.clientHeight >= node.scrollHeight - 200;
+      const notScrollable = node.scrollHeight <= node.clientHeight + 20;
+
+      if (!nearBottom && !notScrollable) return;
+
+      visibleCountRef.current = Math.min(
+        visibleCountRef.current + 18,
+        totalCountRef.current,
+      );
+      setVisibleCount(visibleCountRef.current);
+      requestAnimationFrame(maybeLoadMore);
+    };
+
+    listOnScrollRef.current = maybeLoadMore;
+    requestAnimationFrame(maybeLoadMore);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const node = listRootRef.current;
+    if (!node) return;
+    if (visibleCountRef.current >= totalCountRef.current) return;
+
+    const maybeFill = () => {
+      if (visibleCountRef.current >= totalCountRef.current) return;
+      const notScrollable = node.scrollHeight <= node.clientHeight + 20;
+      if (!notScrollable) return;
+
+      visibleCountRef.current = Math.min(
+        visibleCountRef.current + 18,
+        totalCountRef.current,
+      );
+      setVisibleCount(visibleCountRef.current);
+      requestAnimationFrame(maybeFill);
+    };
+
+    requestAnimationFrame(maybeFill);
+  }, [open, visibleCount, items.length, effectiveBucket]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,8 +275,12 @@ export const WorksheetDiameterQueueModal = ({
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 text-base text-slate-700 h-full">
           <div className="flex flex-col min-h-0">
-            <div className="flex-1 min-h-0 space-y-3 overflow-auto pr-1">
-              {items.map((item) => {
+            <div
+              ref={setListContainer}
+              className="flex-1 min-h-0 space-y-3 overflow-auto pr-1"
+              onScroll={() => listOnScrollRef.current?.()}
+            >
+              {paginatedItems.map((item) => {
                 const active = item.id === selectedItemId;
 
                 const line1 = (() => {
@@ -266,9 +336,22 @@ export const WorksheetDiameterQueueModal = ({
                   </button>
                 );
               })}
-              {items.length === 0 && (
-                <div className="app-surface app-surface--panel h-full min-h-[180px] flex items-center justify-center text-base text-slate-500">
-                  해당 직경의 대기 의뢰가 없습니다.
+
+              {paginatedItems.length < items.length && (
+                <div className="flex justify-center py-3">
+                  <button
+                    type="button"
+                    className="rounded-md border bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                    onClick={() => {
+                      visibleCountRef.current = Math.min(
+                        visibleCountRef.current + 18,
+                        totalCountRef.current,
+                      );
+                      setVisibleCount(visibleCountRef.current);
+                    }}
+                  >
+                    더 보기
+                  </button>
                 </div>
               )}
             </div>
