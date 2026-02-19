@@ -3,6 +3,19 @@ import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.mode
 import ManufacturerDailySettlementSnapshot from "../../models/manufacturerDailySettlementSnapshot.model.js";
 import { sendNotificationViaQueue } from "../../utils/notificationQueue.js";
 import User from "../../models/user.model.js";
+import {
+  getTodayMidnightUtcInKst,
+  getTodayYmdInKst,
+  getYesterdayYmdInKst,
+} from "../../utils/krBusinessDays.js";
+
+function kstYmdToUtcRange(ymd) {
+  const dt = new Date(`${ymd}T00:00:00.000+09:00`);
+  if (Number.isNaN(dt.getTime())) return null;
+  const start = new Date(dt.getTime() - 9 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { start, end };
+}
 
 export async function getManufacturerCreditLedger(req, res) {
   try {
@@ -75,6 +88,187 @@ export async function getManufacturerCreditLedger(req, res) {
     return res.status(500).json({
       success: false,
       message: "제조사 크레딧 조회에 실패했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getManufacturerDailySettlementSnapshotStatus(req, res) {
+  try {
+    const user = req.user;
+    if (!user?._id || user?.role !== "manufacturer") {
+      return res.status(403).json({
+        success: false,
+        message: "제조사 권한이 필요합니다.",
+      });
+    }
+
+    const manufacturerOrganization = String(user.organization || "").trim();
+    if (!manufacturerOrganization) {
+      return res.status(400).json({
+        success: false,
+        message: "조직 정보가 필요합니다.",
+      });
+    }
+
+    const baseYmd = getTodayYmdInKst();
+    const snapshotYmd = getYesterdayYmdInKst();
+    const baseMidnightUtc = getTodayMidnightUtcInKst();
+
+    if (!baseYmd || !snapshotYmd || !baseMidnightUtc) {
+      return res
+        .status(500)
+        .json({ success: false, message: "날짜 계산 실패" });
+    }
+
+    const latest = await ManufacturerDailySettlementSnapshot.findOne({
+      manufacturerOrganization,
+      ymd: snapshotYmd,
+    })
+      .select({ computedAt: 1, ymd: 1 })
+      .lean();
+
+    const snapshotMissing = !latest;
+    return res.status(200).json({
+      success: true,
+      data: {
+        lastComputedAt: latest?.computedAt || null,
+        baseYmd,
+        baseMidnightUtc: baseMidnightUtc.toISOString(),
+        snapshotYmd,
+        snapshotMissing,
+      },
+    });
+  } catch (error) {
+    console.error("제조사 정산 스냅샷 상태 조회 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "정산 스냅샷 상태 조회에 실패했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function triggerManufacturerDailySettlementSnapshotRecalc(
+  req,
+  res,
+) {
+  try {
+    const user = req.user;
+    if (!user?._id || user?.role !== "manufacturer") {
+      return res.status(403).json({
+        success: false,
+        message: "제조사 권한이 필요합니다.",
+      });
+    }
+
+    const manufacturerOrganization = String(user.organization || "").trim();
+    if (!manufacturerOrganization) {
+      return res.status(400).json({
+        success: false,
+        message: "조직 정보가 필요합니다.",
+      });
+    }
+
+    const baseYmd = getTodayYmdInKst();
+    const snapshotYmd = getYesterdayYmdInKst();
+    const baseMidnightUtc = getTodayMidnightUtcInKst();
+
+    if (!baseYmd || !snapshotYmd || !baseMidnightUtc) {
+      return res
+        .status(500)
+        .json({ success: false, message: "날짜 계산 실패" });
+    }
+
+    const utcRange = kstYmdToUtcRange(snapshotYmd);
+    if (!utcRange) {
+      return res
+        .status(500)
+        .json({ success: false, message: "날짜 범위 계산 실패" });
+    }
+
+    const { start, end } = utcRange;
+    const agg = await ManufacturerCreditLedger.aggregate([
+      {
+        $match: {
+          manufacturerOrganization,
+          occurredAt: { $gte: start, $lte: end },
+        },
+      },
+      {
+        $group: {
+          _id: { type: "$type", refType: "$refType" },
+          amount: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const sums = {
+      earnRequestAmount: 0,
+      earnRequestCount: 0,
+      earnShippingAmount: 0,
+      earnShippingCount: 0,
+      refundAmount: 0,
+      payoutAmount: 0,
+      adjustAmount: 0,
+    };
+
+    for (const row of agg) {
+      const type = String(row?._id?.type || "");
+      const refType = String(row?._id?.refType || "");
+      const amount = Math.round(Number(row?.amount || 0));
+      const count = Math.round(Number(row?.count || 0));
+
+      if (type === "EARN" && refType === "REQUEST") {
+        sums.earnRequestAmount += amount;
+        sums.earnRequestCount += count;
+      } else if (type === "EARN" && refType === "SHIPPING_PACKAGE") {
+        sums.earnShippingAmount += amount;
+        sums.earnShippingCount += count;
+      } else if (type === "REFUND") {
+        sums.refundAmount += amount;
+      } else if (type === "PAYOUT") {
+        sums.payoutAmount += amount;
+      } else if (type === "ADJUST") {
+        sums.adjustAmount += amount;
+      }
+    }
+
+    const netAmount =
+      Math.round(Number(sums.earnRequestAmount || 0)) +
+      Math.round(Number(sums.earnShippingAmount || 0)) +
+      Math.round(Number(sums.refundAmount || 0)) +
+      Math.round(Number(sums.payoutAmount || 0)) +
+      Math.round(Number(sums.adjustAmount || 0));
+
+    const computedAt = new Date();
+    await ManufacturerDailySettlementSnapshot.updateOne(
+      { manufacturerOrganization, ymd: snapshotYmd },
+      {
+        $set: {
+          ...sums,
+          netAmount,
+          computedAt,
+        },
+      },
+      { upsert: true },
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        baseYmd,
+        baseMidnightUtc: baseMidnightUtc.toISOString(),
+        snapshotYmd,
+        computedAt: computedAt.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("제조사 정산 스냅샷 재계산 실패:", error);
+    return res.status(500).json({
+      success: false,
+      message: "정산 스냅샷 재계산에 실패했습니다.",
       error: error.message,
     });
   }

@@ -21,6 +21,11 @@ export function getThisMonthStartYmdInKst(date = new Date()) {
   return `${y}-${m}-01`;
 }
 
+export function getYesterdayYmdInKst(date = new Date()) {
+  const yesterday = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+  return formatYmdInTimeZone(yesterday, KST_TZ);
+}
+
 /**
  * KST 기준 오늘 자정(00:00:00) UTC Date를 반환한다.
  * 예: KST 2026-02-19 00:00:00 → UTC 2026-02-18 15:00:00

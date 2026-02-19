@@ -19,24 +19,10 @@ import ManufacturerCreditLedger from "../models/manufacturerCreditLedger.model.j
 import ManufacturerDailySettlementSnapshot from "../models/manufacturerDailySettlementSnapshot.model.js";
 import {
   getTodayYmdInKst,
+  getYesterdayYmdInKst,
   getTodayMidnightUtcInKst,
   getLast30DaysRangeUtc,
 } from "../utils/krBusinessDays.js";
-
-function getYesterdayYmdInKst() {
-  const now = new Date();
-  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const y = kstNow.getUTCFullYear();
-  const m = kstNow.getUTCMonth();
-  const d = kstNow.getUTCDate();
-  const ymdToday = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  const dt = new Date(`${ymdToday}T00:00:00.000+09:00`);
-  const yest = new Date(dt.getTime() - 24 * 60 * 60 * 1000);
-  const yy = yest.getUTCFullYear();
-  const mm = String(yest.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(yest.getUTCDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
 
 function kstYmdToUtcRange(ymd) {
   const dt = new Date(`${ymd}T00:00:00.000+09:00`);

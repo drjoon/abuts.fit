@@ -97,6 +97,18 @@ export const AdminDashboardPage = () => {
     refetchInterval: 60000,
   });
 
+  const snapshotRecalcDisabled = (() => {
+    const baseYmd = snapshotStatus?.baseYmd;
+    const last = snapshotStatus?.lastComputedAt;
+    if (!baseYmd || !last) return false;
+    const base = new Date(`${baseYmd}T00:00:00.000+09:00`);
+    const computed = new Date(last);
+    if (Number.isNaN(base.getTime()) || Number.isNaN(computed.getTime())) {
+      return false;
+    }
+    return computed.getTime() >= base.getTime();
+  })();
+
   const recalcMutation = useMutation({
     mutationFn: async () => {
       const res = await apiFetch<{ success: boolean; upsertCount?: number }>({
@@ -562,10 +574,14 @@ export const AdminDashboardPage = () => {
                   variant="outline"
                   size="sm"
                   className="w-full h-7 text-xs mt-1"
-                  disabled={recalcMutation.isPending}
+                  disabled={recalcMutation.isPending || snapshotRecalcDisabled}
                   onClick={() => setRecalcConfirmOpen(true)}
                 >
-                  {recalcMutation.isPending ? "재계산 중..." : "수동 재계산"}
+                  {snapshotRecalcDisabled
+                    ? "오늘 자정에 이미 재계산됨"
+                    : recalcMutation.isPending
+                      ? "재계산 중..."
+                      : "수동 재계산"}
                 </Button>
               </CardContent>
             </Card>

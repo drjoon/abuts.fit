@@ -67,6 +67,14 @@ type ManufacturerDailySnapshotRow = {
   computedAt?: string;
 };
 
+type ManufacturerDailySnapshotStatus = {
+  lastComputedAt: string | null;
+  baseYmd: string;
+  baseMidnightUtc: string;
+  snapshotYmd: string;
+  snapshotMissing?: boolean;
+};
+
 const PAGE_SIZE = 50;
 
 const formatDate = (iso: string) => {
@@ -130,8 +138,22 @@ export const ManufacturerPaymentPage = () => {
   const [snapItems, setSnapItems] = useState<ManufacturerDailySnapshotRow[]>(
     [],
   );
+  const [snapshotStatus, setSnapshotStatus] =
+    useState<ManufacturerDailySnapshotStatus | null>(null);
+  const [snapshotRecalcLoading, setSnapshotRecalcLoading] = useState(false);
 
   const anyLoading = loading || ledgerLoading || snapLoading;
+
+  const snapshotRecalcDisabled = (() => {
+    const baseMidnightUtc = snapshotStatus?.baseMidnightUtc;
+    const last = snapshotStatus?.lastComputedAt;
+    if (!baseMidnightUtc || !last) return false;
+    const base = new Date(baseMidnightUtc);
+    const computed = new Date(last);
+    if (Number.isNaN(base.getTime()) || Number.isNaN(computed.getTime()))
+      return false;
+    return computed.getTime() >= base.getTime();
+  })();
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -197,6 +219,57 @@ export const ManufacturerPaymentPage = () => {
       setLoading(false);
     }
   };
+
+  const loadSnapshotStatus = async () => {
+    if (!token) return;
+    try {
+      const res = await apiFetch<any>({
+        path: `/api/manufacturer/credits/daily-snapshots/status`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.data?.message || "조회 실패");
+      }
+      setSnapshotStatus(res.data.data || null);
+    } catch (err: any) {
+      toast({
+        title: "조회 실패",
+        description: err?.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const recalcSnapshots = async () => {
+    if (!token) return;
+    setSnapshotRecalcLoading(true);
+    try {
+      const res = await apiFetch<any>({
+        path: `/api/manufacturer/credits/daily-snapshots/recalc`,
+        method: "POST",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.data?.message || "재계산 실패");
+      }
+      await loadSnapshotStatus();
+      await loadSnapshots();
+    } catch (err: any) {
+      toast({
+        title: "재계산 실패",
+        description: err?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSnapshotRecalcLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return;
+    loadSnapshotStatus();
+  }, [token]);
 
   const buildLedgerParams = (p: number) => {
     const params = new URLSearchParams({
@@ -346,7 +419,7 @@ export const ManufacturerPaymentPage = () => {
       mainLeft={
         <div className="space-y-4">
           <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 mb-2">
               <div className="flex flex-wrap items-center gap-2">
                 <PeriodFilter value={period} onChange={setPeriod} />
                 <TabsList className="h-9">
@@ -419,6 +492,20 @@ export const ManufacturerPaymentPage = () => {
                   </DialogContent>
                 </Dialog>
 
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9"
+                  disabled={
+                    snapshotRecalcLoading ||
+                    !snapshotStatus ||
+                    snapshotRecalcDisabled
+                  }
+                  onClick={() => void recalcSnapshots()}
+                >
+                  스냅샷
+                </Button>
+
                 <div className="grow" />
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -453,7 +540,7 @@ export const ManufacturerPaymentPage = () => {
               </div>
             </div>
 
-            <TabsContent value="snapshot" className="mt-2">
+            <TabsContent value="snapshot" className="mt-0">
               <div className="overflow-x-auto rounded-md border">
                 <Table>
                   <TableHeader>

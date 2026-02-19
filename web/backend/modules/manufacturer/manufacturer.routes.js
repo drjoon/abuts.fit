@@ -6,6 +6,8 @@ import {
   sendUrgentMessage,
   getManufacturerCreditLedger,
   getManufacturerDailySettlementSnapshots,
+  getManufacturerDailySettlementSnapshotStatus,
+  triggerManufacturerDailySettlementSnapshotRecalc,
 } from "../../controllers/manufacturers/manufacturer.controller.js";
 import {
   sendVerificationCode,
@@ -48,6 +50,22 @@ router.get(
     manufacturerRoles: ["owner", "staff"],
   }),
   getManufacturerDailySettlementSnapshots,
+);
+
+// 제조사 일별 정산 스냅샷 status/recalc
+router.get(
+  "/credits/daily-snapshots/status",
+  authorize(["manufacturer", "admin"], {
+    manufacturerRoles: ["owner", "staff"],
+  }),
+  getManufacturerDailySettlementSnapshotStatus,
+);
+router.post(
+  "/credits/daily-snapshots/recalc",
+  authorize(["manufacturer", "admin"], {
+    manufacturerRoles: ["owner", "staff"],
+  }),
+  triggerManufacturerDailySettlementSnapshotRecalc,
 );
 
 // 긴급 메시지 발송
