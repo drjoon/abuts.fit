@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/store/useAuthStore";
-import { usePeriodStore } from "@/store/usePeriodStore";
+import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { DollarSign, FileText, Users } from "lucide-react";
 
@@ -64,9 +64,10 @@ export const AdminAnalytics = () => {
       if (!token || !user || user.role !== "admin") return;
       setLoading(true);
       try {
+        const rangeQ = periodToRangeQuery(period);
         const [sRes, uRes] = await Promise.all([
-          fetch("/api/admin/pricing-stats", { headers }),
-          fetch("/api/admin/pricing-stats/users", { headers }),
+          fetch(`/api/admin/pricing-stats${rangeQ}`, { headers }),
+          fetch(`/api/admin/pricing-stats/users${rangeQ}`, { headers }),
         ]);
 
         const sJson = await sRes.json().catch(() => null);

@@ -86,7 +86,25 @@ export async function adminGetOrganizationLedger(req, res) {
       }
     }
 
-    const [total, items] = await Promise.all([
+    // running balance: 전체 잔액 계산 (필터 무관)
+    const allLedgerRows = await CreditLedger.aggregate([
+      { $match: { organizationId } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+    let totalBalance = Number(allLedgerRows[0]?.total || 0);
+
+    const skippedRows =
+      (page - 1) * pageSize > 0
+        ? await CreditLedger.find(match)
+            .sort({ createdAt: -1, _id: -1 })
+            .limit((page - 1) * pageSize)
+            .select({ amount: 1 })
+            .lean()
+        : [];
+    let skippedSum = 0;
+    for (const r of skippedRows) skippedSum += Number(r.amount || 0);
+
+    const [total, rawItems] = await Promise.all([
       CreditLedger.countDocuments(match),
       CreditLedger.find(match)
         .sort({ createdAt: -1, _id: -1 })
@@ -105,6 +123,13 @@ export async function adminGetOrganizationLedger(req, res) {
         })
         .lean(),
     ]);
+
+    let runningBalance = totalBalance - skippedSum;
+    const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
+      const balanceAfter = runningBalance;
+      runningBalance -= Number(r.amount || 0);
+      return { ...r, balanceAfter };
+    });
 
     const requestRefIds = Array.from(
       new Set(
@@ -397,8 +422,13 @@ export async function adminGetSalesmanCredits(req, res) {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
-    const last30Cutoff = getLast30Cutoff();
     const commissionRate = 0.05;
+
+    // 기간 필터: startDate/endDate 파라미터 우선, 없으면 전체 기간
+    const startDateRaw = String(req.query.startDate || "").trim();
+    const endDateRaw = String(req.query.endDate || "").trim();
+    const periodCutoff = startDateRaw ? new Date(startDateRaw) : null;
+    const periodEnd = endDateRaw ? new Date(endDateRaw) : null;
 
     const salesmen = await User.find({ role: "salesman" })
       .select({ _id: 1, name: 1, email: 1, referralCode: 1, active: 1 })
@@ -420,6 +450,7 @@ export async function adminGetSalesmanCredits(req, res) {
       });
     }
 
+    // 잔액(balance)은 항상 전체 기간 기준 (정산 전 잔액)
     const ledgerRows = await SalesmanLedger.aggregate([
       { $match: { salesmanId: { $in: salesmanIds } } },
       {
@@ -446,13 +477,16 @@ export async function adminGetSalesmanCredits(req, res) {
       ledgerBySalesmanId.set(sid, prev);
     }
 
+    // 기간 필터 적용된 ledger 집계
+    const ledgerPeriodMatch = { salesmanId: { $in: salesmanIds } };
+    if (periodCutoff) ledgerPeriodMatch.createdAt = { $gte: periodCutoff };
+    if (periodEnd) {
+      ledgerPeriodMatch.createdAt = ledgerPeriodMatch.createdAt || {};
+      ledgerPeriodMatch.createdAt.$lte = periodEnd;
+    }
+
     const ledgerRows30d = await SalesmanLedger.aggregate([
-      {
-        $match: {
-          salesmanId: { $in: salesmanIds },
-          createdAt: { $gte: last30Cutoff },
-        },
-      },
+      { $match: ledgerPeriodMatch },
       {
         $group: {
           _id: { salesmanId: "$salesmanId", type: "$type" },
@@ -518,23 +552,38 @@ export async function adminGetSalesmanCredits(req, res) {
         .filter(([cid, pid]) => cid && pid),
     );
 
-    const orgIdsBySalesmanId = new Map();
+    // 직접 소개 조직 (나의 수수료 5%)
+    const directOrgIdsBySalesmanId = new Map();
     for (const u of directRequestors || []) {
       const sid = String(u?.referredByUserId || "");
       const orgId = u?.organizationId ? String(u.organizationId) : "";
       if (!sid || !orgId) continue;
-      const set = orgIdsBySalesmanId.get(sid) || new Set();
+      const set = directOrgIdsBySalesmanId.get(sid) || new Set();
       set.add(orgId);
-      orgIdsBySalesmanId.set(sid, set);
+      directOrgIdsBySalesmanId.set(sid, set);
     }
+    // 직계1 소개 조직 (직계1 수수료 2.5%)
+    const level1OrgIdsBySalesmanId = new Map();
     for (const u of level1Requestors || []) {
       const childSid = String(u?.referredByUserId || "");
       const leaderSid = String(leaderIdByChildSalesmanId.get(childSid) || "");
       const orgId = u?.organizationId ? String(u.organizationId) : "";
       if (!leaderSid || !orgId) continue;
-      const set = orgIdsBySalesmanId.get(leaderSid) || new Set();
+      const set = level1OrgIdsBySalesmanId.get(leaderSid) || new Set();
       set.add(orgId);
-      orgIdsBySalesmanId.set(leaderSid, set);
+      level1OrgIdsBySalesmanId.set(leaderSid, set);
+    }
+    // 전체 조직 (revenue 집계용)
+    const orgIdsBySalesmanId = new Map();
+    for (const [sid, set] of directOrgIdsBySalesmanId) {
+      const merged = orgIdsBySalesmanId.get(sid) || new Set();
+      for (const id of set) merged.add(id);
+      orgIdsBySalesmanId.set(sid, merged);
+    }
+    for (const [sid, set] of level1OrgIdsBySalesmanId) {
+      const merged = orgIdsBySalesmanId.get(sid) || new Set();
+      for (const id of set) merged.add(id);
+      orgIdsBySalesmanId.set(sid, merged);
     }
 
     const allOrgIds = Array.from(
@@ -545,6 +594,10 @@ export async function adminGetSalesmanCredits(req, res) {
       .filter((id) => Types.ObjectId.isValid(id))
       .map((id) => new Types.ObjectId(id));
 
+    const revenueCreatedAtMatch = {};
+    if (periodCutoff) revenueCreatedAtMatch.$gte = periodCutoff;
+    if (periodEnd) revenueCreatedAtMatch.$lte = periodEnd;
+
     const revenueRows =
       allOrgIds.length === 0
         ? []
@@ -553,7 +606,9 @@ export async function adminGetSalesmanCredits(req, res) {
               $match: {
                 requestorOrganizationId: { $in: allOrgIds },
                 status: "완료",
-                createdAt: { $gte: last30Cutoff },
+                ...(Object.keys(revenueCreatedAtMatch).length
+                  ? { createdAt: revenueCreatedAtMatch }
+                  : {}),
               },
             },
             {
@@ -639,18 +694,39 @@ export async function adminGetSalesmanCredits(req, res) {
           Number(ledger30d.adjust || 0),
       );
 
-      const orgSet = orgIdsBySalesmanId.get(sid) || new Set();
-      let revenue30d = 0;
-      let bonus30d = 0;
-      let orders30d = 0;
-      for (const orgId of orgSet) {
+      const directOrgSet = directOrgIdsBySalesmanId.get(sid) || new Set();
+      const level1OrgSet = level1OrgIdsBySalesmanId.get(sid) || new Set();
+
+      let directRevenue30d = 0;
+      let directBonus30d = 0;
+      let directOrders30d = 0;
+      for (const orgId of directOrgSet) {
         const row = revenueByOrgId.get(String(orgId));
         if (!row) continue;
-        revenue30d += Number(row.revenueAmount || 0);
-        bonus30d += Number(row.bonusAmount || 0);
-        orders30d += Number(row.orderCount || 0);
+        directRevenue30d += Number(row.revenueAmount || 0);
+        directBonus30d += Number(row.bonusAmount || 0);
+        directOrders30d += Number(row.orderCount || 0);
       }
-      const commission30d = Math.round(revenue30d * commissionRate);
+
+      let level1Revenue30d = 0;
+      let level1Bonus30d = 0;
+      let level1Orders30d = 0;
+      for (const orgId of level1OrgSet) {
+        const row = revenueByOrgId.get(String(orgId));
+        if (!row) continue;
+        level1Revenue30d += Number(row.revenueAmount || 0);
+        level1Bonus30d += Number(row.bonusAmount || 0);
+        level1Orders30d += Number(row.orderCount || 0);
+      }
+
+      const revenue30d = directRevenue30d + level1Revenue30d;
+      const bonus30d = directBonus30d + level1Bonus30d;
+      const orders30d = directOrders30d + level1Orders30d;
+      const myCommission30d = Math.round(directRevenue30d * commissionRate);
+      const level1Commission30d = Math.round(
+        level1Revenue30d * commissionRate * 0.5,
+      ); // 2.5%
+      const commission30d = myCommission30d + level1Commission30d;
 
       return {
         salesmanId: sid,
@@ -670,11 +746,18 @@ export async function adminGetSalesmanCredits(req, res) {
           balanceAmount30d: balance30d,
         },
         performance30d: {
-          referredOrgCount: orgSet.size,
+          referredOrgCount: directOrgSet.size,
+          level1OrgCount: level1OrgSet.size,
           revenueAmount: Math.round(revenue30d),
+          directRevenueAmount: Math.round(directRevenue30d),
+          level1RevenueAmount: Math.round(level1Revenue30d),
           bonusAmount: Math.round(bonus30d),
+          directBonusAmount: Math.round(directBonus30d),
+          level1BonusAmount: Math.round(level1Bonus30d),
           orderCount: Math.round(orders30d),
           commissionAmount: Math.round(commission30d),
+          myCommissionAmount: Math.round(myCommission30d),
+          level1CommissionAmount: Math.round(level1Commission30d),
         },
       };
     });
@@ -783,7 +866,39 @@ export async function adminGetSalesmanLedger(req, res) {
       }
     }
 
-    const [total, items] = await Promise.all([
+    // running balance를 위해 전체 누적 잔액 계산 (필터 무관)
+    const allLedgerRows = await SalesmanLedger.aggregate([
+      { $match: { salesmanId } },
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]);
+    let totalBalance = 0;
+    for (const r of allLedgerRows) {
+      const t = String(r._id || "");
+      const v = Number(r.total || 0);
+      if (t === "EARN" || t === "ADJUST") totalBalance += v;
+      else if (t === "PAYOUT") totalBalance -= v;
+    }
+
+    // 현재 페이지 이후(더 오래된) 항목들의 합산 잔액 계산
+    // sort: createdAt desc → 페이지1이 가장 최신
+    // skip된 항목들(더 최신)의 합을 전체잔액에서 빼면 현재 페이지 첫 항목 직후 잔액
+    const skippedRows =
+      (page - 1) * pageSize > 0
+        ? await SalesmanLedger.find(match)
+            .sort({ createdAt: -1, _id: -1 })
+            .limit((page - 1) * pageSize)
+            .select({ type: 1, amount: 1 })
+            .lean()
+        : [];
+    let skippedSum = 0;
+    for (const r of skippedRows) {
+      const t = String(r.type || "");
+      const v = Number(r.amount || 0);
+      if (t === "EARN" || t === "ADJUST") skippedSum += v;
+      else if (t === "PAYOUT") skippedSum -= v;
+    }
+
+    const [total, rawItems] = await Promise.all([
       SalesmanLedger.countDocuments(match),
       SalesmanLedger.find(match)
         .sort({ createdAt: -1, _id: -1 })
@@ -800,9 +915,20 @@ export async function adminGetSalesmanLedger(req, res) {
         .lean(),
     ]);
 
+    // running balance: 각 행 이후의 잔액 (최신→과거 순)
+    let runningBalance = totalBalance - skippedSum;
+    const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
+      const v = Number(r.amount || 0);
+      const t = String(r.type || "");
+      const balanceAfter = runningBalance;
+      if (t === "EARN" || t === "ADJUST") runningBalance -= v;
+      else if (t === "PAYOUT") runningBalance += v;
+      return { ...r, balanceAfter };
+    });
+
     return res.json({
       success: true,
-      data: { items: Array.isArray(items) ? items : [], total, page, pageSize },
+      data: { items, total, page, pageSize },
     });
   } catch (error) {
     console.error("adminGetSalesmanLedger error:", error);

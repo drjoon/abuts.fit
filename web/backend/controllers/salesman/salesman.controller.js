@@ -158,7 +158,36 @@ export async function getSalesmanLedger(req, res) {
       if (ors.length) match.$or = ors;
     }
 
-    const [total, items] = await Promise.all([
+    // running balance를 위해 전체 누적 잔액 계산 (필터 무관)
+    const allLedgerRows = await SalesmanLedger.aggregate([
+      { $match: { salesmanId } },
+      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    ]);
+    let totalBalance = 0;
+    for (const r of allLedgerRows) {
+      const t = String(r._id || "");
+      const v = Number(r.total || 0);
+      if (t === "EARN" || t === "ADJUST") totalBalance += v;
+      else if (t === "PAYOUT") totalBalance -= v;
+    }
+
+    const skippedRows =
+      (page - 1) * pageSize > 0
+        ? await SalesmanLedger.find(match)
+            .sort({ createdAt: -1, _id: -1 })
+            .limit((page - 1) * pageSize)
+            .select({ type: 1, amount: 1 })
+            .lean()
+        : [];
+    let skippedSum = 0;
+    for (const r of skippedRows) {
+      const t = String(r.type || "");
+      const v = Number(r.amount || 0);
+      if (t === "EARN" || t === "ADJUST") skippedSum += v;
+      else if (t === "PAYOUT") skippedSum -= v;
+    }
+
+    const [total, rawItems] = await Promise.all([
       SalesmanLedger.countDocuments(match),
       SalesmanLedger.find(match)
         .sort({ createdAt: -1, _id: -1 })
@@ -175,9 +204,19 @@ export async function getSalesmanLedger(req, res) {
         .lean(),
     ]);
 
+    let runningBalance = totalBalance - skippedSum;
+    const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
+      const v = Number(r.amount || 0);
+      const t = String(r.type || "");
+      const balanceAfter = runningBalance;
+      if (t === "EARN" || t === "ADJUST") runningBalance -= v;
+      else if (t === "PAYOUT") runningBalance += v;
+      return { ...r, balanceAfter };
+    });
+
     return res.json({
       success: true,
-      data: { items: Array.isArray(items) ? items : [], total, page, pageSize },
+      data: { items, total, page, pageSize },
     });
   } catch (error) {
     console.error("[salesman.getSalesmanLedger] error", error);

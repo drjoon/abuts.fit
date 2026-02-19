@@ -16,6 +16,15 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
 
+const DEV_ACCOUNTS = [
+  { label: "r001", email: "r001@gmail.com" },
+  { label: "r002", email: "r002@gmail.com" },
+  { label: "r003", email: "r003@gmail.com" },
+  { label: "r004", email: "r004@gmail.com" },
+  { label: "r005", email: "r005@gmail.com" },
+];
+const isDev = import.meta.env.DEV;
+
 export const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -182,6 +191,48 @@ export const LoginPage = () => {
                     {isLoading ? "로그인 중..." : "로그인"}
                   </Button>
                 </form>
+
+                {isDev && (
+                  <div className="mt-4 pt-4 border-t border-dashed border-border/60">
+                    <p className="text-xs text-muted-foreground mb-2 text-center">
+                      개발용 간편 로그인
+                    </p>
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {DEV_ACCOUNTS.map((acc) => (
+                        <Button
+                          key={acc.email}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7 px-3"
+                          disabled={isLoading}
+                          onClick={async () => {
+                            setIsLoading(true);
+                            try {
+                              const success = await login(
+                                acc.email,
+                                "Abc!1234",
+                              );
+                              if (success) {
+                                navigate("/dashboard", { replace: true });
+                              } else {
+                                toast({
+                                  title: "로그인 실패",
+                                  description: `${acc.email} 계정 로그인에 실패했습니다.`,
+                                  variant: "destructive",
+                                });
+                              }
+                            } finally {
+                              setIsLoading(false);
+                            }
+                          }}
+                        >
+                          {acc.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

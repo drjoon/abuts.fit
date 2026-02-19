@@ -358,7 +358,10 @@ export default function ReferralGroupsPage() {
                     3. 주문량 할인
                   </h3>
                   <ul className="list-disc pl-4 space-y-0.5">
-                    <li>최근 30일 주문 건당 10원 할인, 최대 5,000원.</li>
+                    <li>
+                      최근 30일 주문 건당 20원 할인, 최대 5,000원 (250건 이상 시
+                      최저가).
+                    </li>
                     <li>본인+직계 1단계 주문량 합산 기준.</li>
                   </ul>
                 </section>

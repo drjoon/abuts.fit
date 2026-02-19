@@ -1205,7 +1205,7 @@ export async function getMyPricingReferralStats(req, res) {
     const totalOrders = totalLast30DaysOrders;
 
     const baseUnitPrice = 15000;
-    const discountPerOrder = 10;
+    const discountPerOrder = 20;
     const maxDiscountPerUnit = 5000;
     const discountAmount = Math.min(
       totalOrders * discountPerOrder,

@@ -388,7 +388,7 @@ export async function computePriceForRequest({
   const BASE_UNIT_PRICE = 15000;
   const REMAKE_FIXED_PRICE = 10000;
   const NEW_USER_FIXED_PRICE = 10000;
-  const DISCOUNT_PER_ORDER = 10;
+  const DISCOUNT_PER_ORDER = 20;
   const MAX_DISCOUNT = 5000;
 
   // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 고정가

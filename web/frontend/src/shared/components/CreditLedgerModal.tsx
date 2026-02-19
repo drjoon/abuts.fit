@@ -42,6 +42,7 @@ type CreditLedgerItem = {
   refRequestId?: string;
   uniqueKey: string;
   createdAt: string;
+  balanceAfter?: number;
 };
 
 export type CreditLedgerModalProps = {
@@ -169,7 +170,12 @@ export const CreditLedgerModal = ({
     try {
       const res = await apiFetch<{
         success: boolean;
-        data: { items: CreditLedgerItem[]; total: number; page: number; pageSize: number };
+        data: {
+          items: CreditLedgerItem[];
+          total: number;
+          page: number;
+          pageSize: number;
+        };
         message?: string;
       }>({
         path: buildPath(pageNum),
@@ -178,7 +184,9 @@ export const CreditLedgerModal = ({
       });
 
       if (!res.ok || !res.data?.success) {
-        throw new Error((res.data as any)?.message || "크레딧 내역 조회에 실패했습니다.");
+        throw new Error(
+          (res.data as any)?.message || "크레딧 내역 조회에 실패했습니다.",
+        );
       }
 
       const data = res.data.data;
@@ -230,8 +238,7 @@ export const CreditLedgerModal = ({
   const rows = Array.isArray(items) ? items : [];
 
   const canCharge =
-    chargeNavPath &&
-    (user?.role === "requestor" || user?.role === "admin");
+    chargeNavPath && (user?.role === "requestor" || user?.role === "admin");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -322,10 +329,11 @@ export const CreditLedgerModal = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[170px]">일시</TableHead>
-                  <TableHead className="w-[90px]">유형</TableHead>
+                  <TableHead className="w-[150px]">일시</TableHead>
+                  <TableHead className="w-[80px]">유형</TableHead>
                   <TableHead className="w-[110px] text-right">금액</TableHead>
-                  <TableHead className="w-[160px]">참조</TableHead>
+                  <TableHead className="w-[110px] text-right">잔액</TableHead>
+                  <TableHead>참조</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -374,6 +382,11 @@ export const CreditLedgerModal = ({
                           `${amount.toLocaleString()}원`
                         )}
                       </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                        {r.balanceAfter !== undefined
+                          ? `${Number(r.balanceAfter).toLocaleString()}원`
+                          : "-"}
+                      </TableCell>
                       <TableCell className="text-xs">
                         <div className="flex flex-col leading-4">
                           <span className="font-mono text-xs font-semibold">
@@ -392,7 +405,7 @@ export const CreditLedgerModal = ({
                 {loading && (
                   <TableRow>
                     <TableCell
-                      colSpan={4}
+                      colSpan={5}
                       className="text-center text-sm text-muted-foreground py-4"
                     >
                       불러오는 중...
@@ -403,7 +416,7 @@ export const CreditLedgerModal = ({
                 {!loading && rows.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={4}
+                      colSpan={5}
                       className="text-center text-sm text-muted-foreground py-8"
                     >
                       조회 결과가 없습니다.

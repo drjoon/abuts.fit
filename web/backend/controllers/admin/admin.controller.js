@@ -337,7 +337,7 @@ export async function getReferralGroups(req, res) {
       }
 
       const baseUnitPrice = 15000;
-      const discountPerOrder = 10;
+      const discountPerOrder = 20;
       const maxDiscountPerUnit = 5000;
       const discountAmount = Math.min(
         groupTotalOrders * discountPerOrder,
@@ -879,7 +879,10 @@ async function getReferralGroupTree(req, res) {
         { referralGroupLeaderId: leader._id },
         {
           referredByUserId: leader._id,
-          referralGroupLeaderId: { $exists: false },
+          $or: [
+            { referralGroupLeaderId: { $exists: false } },
+            { referralGroupLeaderId: null },
+          ],
         },
       ],
       role: { $in: ["requestor", "salesman"] },
@@ -1229,7 +1232,7 @@ async function getReferralGroupTree(req, res) {
       ? snapshotGroupTotalOrders
       : computedTierTotalOrders;
     const baseUnitPrice = 15000;
-    const discountPerOrder = 10;
+    const discountPerOrder = 20;
     const maxDiscountPerUnit = 5000;
     const discountAmount = Math.min(
       groupTotalOrders * discountPerOrder,

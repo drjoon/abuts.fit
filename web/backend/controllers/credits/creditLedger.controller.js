@@ -109,7 +109,31 @@ export async function listMyCreditLedger(req, res) {
     }
   }
 
-  const [total, items] = await Promise.all([
+  // running balance: 전체 잔액 계산 (필터 무관)
+  const orgId = new mongoose.Types.ObjectId(String(organizationId));
+  const allLedgerRows = await CreditLedger.aggregate([
+    { $match: { organizationId: orgId } },
+    { $group: { _id: "$type", total: { $sum: "$amount" } } },
+  ]);
+  let totalBalance = 0;
+  for (const r of allLedgerRows) {
+    totalBalance += Number(r.total || 0);
+  }
+
+  const skippedRows =
+    (page - 1) * pageSize > 0
+      ? await CreditLedger.find(match)
+          .sort({ createdAt: -1, _id: -1 })
+          .limit((page - 1) * pageSize)
+          .select({ type: 1, amount: 1 })
+          .lean()
+      : [];
+  let skippedSum = 0;
+  for (const r of skippedRows) {
+    skippedSum += Number(r.amount || 0);
+  }
+
+  const [total, rawItems] = await Promise.all([
     CreditLedger.countDocuments(match),
     CreditLedger.find(match)
       .sort({ createdAt: -1, _id: -1 })
@@ -128,6 +152,13 @@ export async function listMyCreditLedger(req, res) {
       })
       .lean(),
   ]);
+
+  let runningBalance = totalBalance - skippedSum;
+  const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
+    const balanceAfter = runningBalance;
+    runningBalance -= Number(r.amount || 0);
+    return { ...r, balanceAfter };
+  });
 
   const requestRefIds = Array.from(
     new Set(

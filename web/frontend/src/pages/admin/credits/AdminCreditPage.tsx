@@ -127,13 +127,24 @@ type SalesmanCreditRow = {
     paidOutAmount: number;
     adjustedAmount: number;
     balanceAmount: number;
+    earnedAmount30d: number;
+    paidOutAmount30d: number;
+    adjustedAmount30d: number;
+    balanceAmount30d: number;
   };
   performance30d: {
     referredOrgCount: number;
+    level1OrgCount?: number;
     revenueAmount: number;
+    directRevenueAmount?: number;
+    level1RevenueAmount?: number;
     bonusAmount?: number;
+    directBonusAmount?: number;
+    level1BonusAmount?: number;
     orderCount: number;
     commissionAmount: number;
+    myCommissionAmount?: number;
+    level1CommissionAmount?: number;
   };
 };
 
@@ -333,6 +344,15 @@ export default function AdminCreditPage() {
     if (!token) return;
     setLoadingOrgs(true);
     try {
+      const qs = new URLSearchParams({
+        limit: String(ORG_PAGE_SIZE),
+        skip: String(reset ? 0 : orgSkip),
+      });
+      const rangeQ = periodToRangeQuery(period);
+      if (rangeQ) {
+        const rp = new URLSearchParams(rangeQ.replace(/^\?/, ""));
+        rp.forEach((v, k) => qs.set(k, v));
+      }
       const res = await request<{
         success: boolean;
         data: {
@@ -342,7 +362,7 @@ export default function AdminCreditPage() {
           limit?: number;
         };
       }>({
-        path: `/api/admin/credits/organizations?limit=${ORG_PAGE_SIZE}&skip=${reset ? 0 : orgSkip}`,
+        path: `/api/admin/credits/organizations?${qs.toString()}`,
         method: "GET",
         token,
       });
@@ -523,6 +543,9 @@ export default function AdminCreditPage() {
     setSalesmanSkip(0);
     setSalesmanHasMore(true);
     loadSalesmen({ reset: true });
+    setOrgSkip(0);
+    setOrgHasMore(true);
+    loadOrganizations({ reset: true });
   }, [period, token]);
 
   useEffect(() => {
@@ -632,15 +655,16 @@ export default function AdminCreditPage() {
       0,
     );
     const totalEarned = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.wallet?.earnedAmount || 0),
+      (acc, s) =>
+        acc +
+        Number(
+          (s?.performance30d?.myCommissionAmount ?? 0) +
+            (s?.performance30d?.level1CommissionAmount ?? 0),
+        ),
       0,
     );
     const totalPaidOut = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.wallet?.paidOutAmount || 0),
-      0,
-    );
-    const totalCommission30d = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.performance30d?.commissionAmount || 0),
+      (acc, s) => acc + Number(s?.wallet?.paidOutAmount30d || 0),
       0,
     );
     const totalReferredRevenue30d = (salesmen || []).reduce(
@@ -656,14 +680,13 @@ export default function AdminCreditPage() {
       totalBalance,
       totalEarned,
       totalPaidOut,
-      totalCommission30d,
       totalReferredRevenue30d,
       totalReferredBonus30d,
     };
   }, [salesmen]);
 
   const [orgLedgerPeriod, setOrgLedgerPeriod] = useState<
-    "7d" | "30d" | "90d" | "all"
+    "7d" | "30d" | "90d" | "thisMonth" | "lastMonth"
   >("30d");
   const [orgLedgerType, setOrgLedgerType] = useState<
     "all" | AdminCreditLedgerType
@@ -1552,7 +1575,9 @@ export default function AdminCreditPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">소개 매출</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  소개 매출 (기간)
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -1587,7 +1612,7 @@ export default function AdminCreditPage() {
                 <div className="text-2xl font-bold">
                   {loadingSalesmen
                     ? "..."
-                    : `${salesmanSummary.totalCommission30d.toLocaleString()}원`}
+                    : `${salesmanSummary.totalEarned.toLocaleString()}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   수수료율{" "}
@@ -1595,9 +1620,7 @@ export default function AdminCreditPage() {
                     const base = Number(
                       salesmanSummary.totalReferredRevenue30d || 0,
                     );
-                    const comm = Number(
-                      salesmanSummary.totalCommission30d || 0,
-                    );
+                    const comm = Number(salesmanSummary.totalEarned || 0);
                     if (base <= 0) return "-";
                     return `${((comm / base) * 100).toFixed(1)}%`;
                   })()}
@@ -1639,7 +1662,8 @@ export default function AdminCreditPage() {
                 <div>
                   <CardTitle>영업자 크레딧(성과/정산 전 잔액)</CardTitle>
                   <CardDescription>
-                    최근 30일 직접 소개 조직 기준 매출/수수료 + 영업자 지갑 잔액
+                    선택 기간 직접/간접 소개 조직 기준 매출/수수료 + 영업자 지갑
+                    잔액
                   </CardDescription>
                 </div>
                 <div className="w-[170px]">
@@ -1722,106 +1746,156 @@ export default function AdminCreditPage() {
                               </Badge>
                             </div>
                           </CardHeader>
-                          <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                            <div>
-                              <div className="text-muted-foreground">잔액</div>
-                              <div className="font-semibold">
-                                {Number(
-                                  s.wallet?.balanceAmount || 0,
-                                ).toLocaleString()}
-                                원
+                          <CardContent className="space-y-3 text-sm">
+                            {/* 잔액/정산 행 */}
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <div className="text-muted-foreground text-xs">
+                                  잔액
+                                </div>
+                                <div className="font-semibold">
+                                  {Number(
+                                    s.wallet?.balanceAmount || 0,
+                                  ).toLocaleString()}
+                                  원
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground text-xs">
+                                  기간 적립
+                                </div>
+                                <div className="font-medium">
+                                  {Number(
+                                    (s.performance30d?.myCommissionAmount ??
+                                      0) +
+                                      (s.performance30d
+                                        ?.level1CommissionAmount ?? 0),
+                                  ).toLocaleString()}
+                                  원
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground text-xs">
+                                  기간 정산
+                                </div>
+                                <div className="font-medium">
+                                  {Number(
+                                    s.wallet?.paidOutAmount30d || 0,
+                                  ).toLocaleString()}
+                                  원
+                                </div>
                               </div>
                             </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                누적 적립
+                            {/* 소개 조직/영업자 수 */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <div className="text-muted-foreground text-xs">
+                                  소개 조직수
+                                </div>
+                                <div className="font-medium">
+                                  {Number(
+                                    s.performance30d?.referredOrgCount || 0,
+                                  )}
+                                  직접
+                                  {" / "}
+                                  {Number(
+                                    s.performance30d?.level1OrgCount || 0,
+                                  )}
+                                  간접
+                                </div>
                               </div>
-                              <div className="font-medium">
-                                {Number(
-                                  s.wallet?.earnedAmount || 0,
-                                ).toLocaleString()}
-                                원
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                누적 정산
-                              </div>
-                              <div className="font-medium">
-                                {Number(
-                                  s.wallet?.paidOutAmount || 0,
-                                ).toLocaleString()}
-                                원
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                소개 조직수(30일)
-                              </div>
-                              <div className="font-medium">
-                                {Number(
-                                  s.performance30d?.referredOrgCount || 0,
-                                ).toLocaleString()}
+                              <div>
+                                <div className="text-muted-foreground text-xs">
+                                  소개 영업자수
+                                </div>
+                                <div className="font-medium">
+                                  {Number(s.referredSalesmanCount || 0)}
+                                </div>
                               </div>
                             </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                소개 영업자수
+                            {/* 직접 수수료 블록 */}
+                            <div className="rounded-md bg-muted/40 px-3 py-2 space-y-0.5">
+                              <div className="text-xs font-semibold text-muted-foreground mb-1">
+                                직접 수수료
                               </div>
-                              <div className="font-medium">
-                                {Number(
-                                  s.referredSalesmanCount || 0,
-                                ).toLocaleString()}
+                              <div className="flex justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  직접 유료 매출{" "}
+                                  {Number(
+                                    s.performance30d?.directRevenueAmount || 0,
+                                  ).toLocaleString()}
+                                  원
+                                  {Number(
+                                    s.performance30d?.directBonusAmount || 0,
+                                  ) > 0 && (
+                                    <span className="text-muted-foreground/70">
+                                      {" "}
+                                      (무료{" "}
+                                      {Number(
+                                        s.performance30d?.directBonusAmount ||
+                                          0,
+                                      ).toLocaleString()}
+                                      원)
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                              <div className="flex justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  직접 소개 수수료
+                                </span>
+                                <span className="font-semibold text-blue-700">
+                                  {Number(
+                                    s.performance30d?.myCommissionAmount ?? 0,
+                                  ).toLocaleString()}
+                                  원
+                                  <span className="text-muted-foreground font-normal ml-1">
+                                    (매출 × 5%)
+                                  </span>
+                                </span>
                               </div>
                             </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                매출(30일)
+                            {/* 간접 수수료 블록 */}
+                            <div className="rounded-md bg-muted/40 px-3 py-2 space-y-0.5">
+                              <div className="text-xs font-semibold text-muted-foreground mb-1">
+                                간접 수수료
                               </div>
-                              <div className="font-medium">
-                                {(
-                                  Number(s.performance30d?.revenueAmount || 0) +
-                                  Number(s.performance30d?.bonusAmount || 0)
-                                ).toLocaleString()}
-                                원
+                              <div className="flex justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  간접 유료 매출{" "}
+                                  {Number(
+                                    s.performance30d?.level1RevenueAmount || 0,
+                                  ).toLocaleString()}
+                                  원
+                                  {Number(
+                                    s.performance30d?.level1BonusAmount || 0,
+                                  ) > 0 && (
+                                    <span className="text-muted-foreground/70">
+                                      {" "}
+                                      (무료{" "}
+                                      {Number(
+                                        s.performance30d?.level1BonusAmount ||
+                                          0,
+                                      ).toLocaleString()}
+                                      원)
+                                    </span>
+                                  )}
+                                </span>
                               </div>
-                              <div className="text-xs text-muted-foreground">
-                                유료{" "}
-                                {Number(
-                                  s.performance30d?.revenueAmount || 0,
-                                ).toLocaleString()}
-                                원
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                무료{" "}
-                                {Number(
-                                  s.performance30d?.bonusAmount || 0,
-                                ).toLocaleString()}
-                                원
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-muted-foreground">
-                                수수료(30일)
-                              </div>
-                              <div className="font-medium">
-                                {Number(
-                                  s.performance30d?.commissionAmount || 0,
-                                ).toLocaleString()}
-                                원
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                수수료율{" "}
-                                {(() => {
-                                  const base = Number(
-                                    s.performance30d?.revenueAmount || 0,
-                                  );
-                                  const comm = Number(
-                                    s.performance30d?.commissionAmount || 0,
-                                  );
-                                  if (base <= 0) return "-";
-                                  return `${((comm / base) * 100).toFixed(1)}%`;
-                                })()}
+                              <div className="flex justify-between text-xs">
+                                <span className="text-muted-foreground">
+                                  간접 소개 수수료
+                                </span>
+                                <span className="font-semibold text-blue-700">
+                                  {Number(
+                                    s.performance30d?.level1CommissionAmount ??
+                                      0,
+                                  ).toLocaleString()}
+                                  원
+                                  <span className="text-muted-foreground font-normal ml-1">
+                                    (매출 × 2.5%)
+                                  </span>
+                                </span>
                               </div>
                             </div>
                           </CardContent>

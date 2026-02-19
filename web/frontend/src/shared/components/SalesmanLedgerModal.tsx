@@ -30,6 +30,7 @@ type LedgerItem = {
   refId?: string | null;
   uniqueKey: string;
   createdAt: string;
+  balanceAfter?: number;
 };
 
 export type SalesmanLedgerModalProps = {
@@ -113,7 +114,7 @@ export const SalesmanLedgerModal = ({
       page: String(p),
       pageSize: String(PAGE_SIZE),
     });
-    if (period && period !== "all") qs.set("period", period);
+    if (period) qs.set("period", period);
     if (type !== "all") qs.set("type", type);
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
@@ -259,15 +260,20 @@ export const SalesmanLedgerModal = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[170px]">일시</TableHead>
-                  <TableHead className="w-[80px]">유형</TableHead>
-                  <TableHead className="w-[120px] text-right">금액</TableHead>
+                  <TableHead className="w-[150px]">일시</TableHead>
+                  <TableHead className="w-[70px]">유형</TableHead>
+                  <TableHead className="w-[110px] text-right">금액</TableHead>
+                  <TableHead className="w-[110px] text-right">잔액</TableHead>
                   <TableHead>참조</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((r) => {
                   const amount = Number(r.amount || 0);
+                  const balanceAfter =
+                    r.balanceAfter !== undefined
+                      ? Number(r.balanceAfter)
+                      : null;
                   return (
                     <TableRow key={r._id}>
                       <TableCell className="text-xs">
@@ -280,6 +286,11 @@ export const SalesmanLedgerModal = ({
                         className={`text-right text-xs font-semibold ${amount < 0 ? "text-rose-600" : "text-blue-700"}`}
                       >
                         {amount.toLocaleString()}원
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                        {balanceAfter !== null
+                          ? `${balanceAfter.toLocaleString()}원`
+                          : "-"}
                       </TableCell>
                       <TableCell className="text-xs">
                         <div className="flex flex-col leading-4">
@@ -297,7 +308,7 @@ export const SalesmanLedgerModal = ({
                 {!loading && items.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={4}
+                      colSpan={5}
                       className="text-center text-sm text-muted-foreground py-8"
                     >
                       조회 결과가 없습니다.

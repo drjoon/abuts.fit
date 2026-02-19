@@ -15,8 +15,6 @@ export const periodToRange = (period: PeriodFilterValue) => {
   const end = new Date();
   const start = new Date(end);
 
-  if (period === "all") return null;
-
   if (period === "7d") {
     start.setDate(start.getDate() - 7);
     return { startDate: start.toISOString(), endDate: end.toISOString() };

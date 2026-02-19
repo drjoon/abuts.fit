@@ -5,8 +5,7 @@ export type PeriodFilterValue =
   | "30d"
   | "lastMonth"
   | "thisMonth"
-  | "90d"
-  | "all";
+  | "90d";
 
 type Props = {
   value: PeriodFilterValue;
@@ -27,14 +26,13 @@ export const PeriodFilter = ({
     lastMonth: "지난달",
     thisMonth: "이번달",
     "90d": "최근 90일",
-    all: "전체",
   };
 
   return (
     <div
       className={cn(
         "inline-flex items-center gap-1 rounded-lg border bg-muted p-1 text-xs",
-        className
+        className,
       )}
     >
       <span className="px-2 text-muted-foreground">{label}</span>
@@ -47,7 +45,7 @@ export const PeriodFilter = ({
             "rounded-md px-2.5 py-1 text-[11px] transition-colors",
             value === k
               ? "bg-primary text-primary-foreground"
-              : "bg-background text-muted-foreground hover:bg-muted"
+              : "bg-background text-muted-foreground hover:bg-muted",
           )}
         >
           {labelMap[k]}

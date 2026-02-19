@@ -69,6 +69,7 @@ import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
+import { ManufacturerPaymentPage } from "@/pages/manufacturer/ManufacturerPaymentPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
 const CncDashboardPage = lazy(() =>
@@ -299,6 +300,14 @@ const App = () => {
                       element={
                         <RoleProtectedRoute roles={["admin"]}>
                           <AdminCreditPage />
+                        </RoleProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="payments"
+                      element={
+                        <RoleProtectedRoute roles={["manufacturer"]}>
+                          <ManufacturerPaymentPage />
                         </RoleProtectedRoute>
                       }
                     />

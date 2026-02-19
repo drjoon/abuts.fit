@@ -29,14 +29,14 @@
 - s004~s010 중 일부는 소개 관계 포함(`referredByUserId`가 null이 아닌 영업자 존재)
 - referralGroupLeaderId = 루트 또는 상위 영업자에 의해 결정 (계층 소속)
 
-### 의뢰자 5계정 (r001~r005, 계정당 1조직)
+### 의뢰자 10계정 (r001~r010, 계정당 1조직)
 
-- owner 이메일: `r001@gmail.com` ~ `r005@gmail.com`
-- 조직: `org-001` ~ `org-005`, 각 계정의 `organizationId` 세팅
+- owner 이메일: `r001@gmail.com` ~ `r010@gmail.com`
+- 조직: `org-001` ~ `org-010`, 각 계정의 `organizationId` 세팅
 - 리퍼럴 코드 랜덤, 추천인: **60% 영업자 소개 / 30% 의뢰자 소개 / 10% 미소개**
 - 입금: 50만/100만/200만/300만원 4종 중 랜덤으로 `CreditLedger` CHARGE 생성
 - 보너스: 조직당 25,000원 `CreditLedger` BONUS 생성 (무료 크레딧, 먼저 소비)
-- 의뢰 기록: **최근 2개월(60일) 내 100~500건 랜덤 생성**, 금액 정책:
+- 의뢰 기록: **최근 1개월(30일) 내 20~100건 랜덤 생성**, 금액 정책:
   - 가입 후 90일: 고정 10,000원 (`new_user_90days_fixed_10000`)
   - 이후: 15,000원 (`base_price`)
   - **r001 첫 번째 완료 의뢰**: 무료 신속배송 1건 (`rule=free_express`, paidAmount=0, bonusAmount=price)
