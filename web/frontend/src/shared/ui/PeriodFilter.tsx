@@ -5,7 +5,8 @@ export type PeriodFilterValue =
   | "30d"
   | "lastMonth"
   | "thisMonth"
-  | "90d";
+  | "90d"
+  | "all";
 
 type Props = {
   value: PeriodFilterValue;
@@ -26,6 +27,7 @@ export const PeriodFilter = ({
     lastMonth: "지난달",
     thisMonth: "이번달",
     "90d": "최근 90일",
+    all: "전체",
   };
 
   return (

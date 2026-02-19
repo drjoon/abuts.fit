@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 
 type RequestorReferralStats = {
+  myLastMonthOrders?: number;
   myLast30DaysOrders?: number;
   groupTotalOrders?: number;
   groupMemberCount?: number;
@@ -33,6 +34,7 @@ type DirectMemberRow = {
   active?: boolean;
   createdAt?: string;
   approvedAt?: string | null;
+  lastMonthOrders?: number;
   last30DaysOrders?: number;
 };
 
@@ -56,11 +58,11 @@ function MetricCard({
   subtitle?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-5 flex flex-col gap-3">
+    <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4">
       <div className="text-xs text-muted-foreground">{title}</div>
-      <div className="text-xl font-semibold">{value}</div>
+      <div className="mt-1 text-xl font-semibold">{value}</div>
       {subtitle ? (
-        <div className="text-xs text-muted-foreground">{subtitle}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
       ) : null}
     </div>
   );
@@ -69,14 +71,6 @@ function MetricCard({
 export default function ReferralGroupsPage() {
   const { user, token } = useAuthStore();
   const { toast } = useToast();
-
-  const organizationName = useMemo(() => {
-    return (
-      String((user as any)?.organization || user?.companyName || "").trim() ||
-      "조직명(기공소명)"
-    );
-  }, [user?.companyName, user]);
-
   const [policyOpen, setPolicyOpen] = useState(false);
 
   const [requestorStats, setRequestorStats] =
@@ -150,7 +144,11 @@ export default function ReferralGroupsPage() {
       .finally(() => setLoadingDirectMembers(false));
   }, [isRequestor, toast, token]);
 
-  const requestorOrders = Number(requestorStats?.myLast30DaysOrders || 0);
+  const requestorOrders = Number(
+    requestorStats?.myLast30DaysOrders ??
+      requestorStats?.myLastMonthOrders ??
+      0,
+  );
   const requestorGroupOrders = Number(requestorStats?.groupTotalOrders || 0);
   const requestorMembers = Number(requestorStats?.groupMemberCount || 0);
   const requestorUnitPrice = Number(
@@ -159,13 +157,13 @@ export default function ReferralGroupsPage() {
       15000,
   );
 
-  const policyRule = String(requestorStats?.rule || "");
-
   return (
     <div className="p-4 space-y-4">
       <Card className="border-gray-200">
         <CardHeader>
-          <CardTitle className="text-base">{organizationName}</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">의뢰자</CardTitle>
+          </div>
         </CardHeader>
         <CardContent>
           {!isRequestor ? (
@@ -180,17 +178,18 @@ export default function ReferralGroupsPage() {
               <Skeleton className="h-24" />
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4 text-right">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-sm justify-between">
+                <div className="text-sm">
                   <div className="text-muted-foreground">내 추천 링크</div>
                   <div className="font-mono text-sm break-all">
                     {referralLink || "-"}
+
                     <Button
                       type="button"
                       variant="default"
                       size="sm"
-                      className="h-9 ml-4"
+                      className="h-9 ml-6"
                       disabled={!referralLink}
                       onClick={async () => {
                         try {
@@ -212,43 +211,42 @@ export default function ReferralGroupsPage() {
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-6">
-                <MetricCard
-                  title="내 주문(지난 30일)"
-                  value={`${requestorOrders.toLocaleString()}건`}
-                />
+              <div className="grid gap-3 md:grid-cols-5">
                 <MetricCard
                   title="직계 멤버 수(나 포함)"
                   value={`${requestorMembers.toLocaleString()}명`}
                 />
                 <MetricCard
-                  title="주문 합계(나+직계)"
+                  title="그룹 합산 (최근 30일)"
                   value={`${requestorGroupOrders.toLocaleString()}건`}
+                  subtitle={
+                    requestorGroupOrders > 0
+                      ? `내 주문: ${requestorOrders.toLocaleString()}건`
+                      : undefined
+                  }
                 />
                 <MetricCard
                   title="적용 단가"
                   value={`${fmtMoney(requestorUnitPrice)}원`}
                   subtitle="부가세·배송비 별도"
                 />
-                <div className="rounded-xl border bg-muted/30 p-4 text-xs text-muted-foreground space-y-3 md:col-span-2">
-                  <div>- 최근 30일 완료 주문량 기준으로 단가가 적용됩니다.</div>
-                  <div>- 주문량 집계는 매일 자정(00:00) 업데이트됩니다.</div>
+
+                <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 md:col-span-2 flex flex-col justify-between gap-2">
                   <div>
-                    - 리퍼럴 그룹은 <b>본인 + 직계 1단계</b> 주문량을
-                    합산합니다.
-                  </div>
-                  {policyRule === "new_user_90days_fixed_10000" ? (
-                    <div>
-                      - 신규 가입 이벤트 기간에는 90일간 단가가 10,000원으로
+                    <div className="text-xs text-muted-foreground">
+                      - 최근 30일 완료 주문량 기준으로 단가가 적용됩니다.
+                      <br />
+                      - 주문량 집계는 매일 자정(00:00) 업데이트됩니다.
+                      <br />- 신규 가입 이벤트 기간 중에는 90일간 10,000원으로
                       고정됩니다.
                     </div>
-                  ) : null}
+                  </div>
                   <div className="flex justify-end">
                     <Button
                       type="button"
                       variant="default"
                       size="sm"
-                      className="h-9 "
+                      className="text-xs h-8"
                       onClick={() => setPolicyOpen(true)}
                     >
                       정책 보기
@@ -263,10 +261,8 @@ export default function ReferralGroupsPage() {
 
       <Card className="border-gray-200">
         <CardHeader>
-          <CardTitle className="text-base">내가 추천한 의뢰자들</CardTitle>
-          <CardDescription>
-            가장 최근 30일 완료/직계 기준 단가와 실적을 보여줍니다.
-          </CardDescription>
+          <CardTitle className="text-base">직계 멤버</CardTitle>
+          <CardDescription>내 추천으로 가입한 계정입니다.</CardDescription>
         </CardHeader>
         <CardContent>
           {!isRequestor ? (
@@ -274,7 +270,7 @@ export default function ReferralGroupsPage() {
               의뢰자 계정에서 확인할 수 있습니다.
             </div>
           ) : loadingDirectMembers ? (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-4">
               <Skeleton className="h-20" />
               <Skeleton className="h-20" />
               <Skeleton className="h-20" />
@@ -285,7 +281,7 @@ export default function ReferralGroupsPage() {
               아직 직계 멤버가 없습니다.
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-4">
               {directMembers.map((m) => {
                 const label = String(
                   m.organization || m.name || m.email || "-",
@@ -306,7 +302,11 @@ export default function ReferralGroupsPage() {
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        최근30일 {last30.toLocaleString()}건
+                        최근 30일{" "}
+                        {Number(
+                          m.last30DaysOrders ?? m.lastMonthOrders ?? 0,
+                        ).toLocaleString()}
+                        건
                       </div>
                     </div>
                   </div>

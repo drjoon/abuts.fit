@@ -14,6 +14,7 @@ import { DashboardShellSkeleton } from "@/shared/ui/dashboard/DashboardShellSkel
 import { Clock, CheckCircle, TrendingUp, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
   RequestorEditRequestDialog,
   type EditingRequestState,
@@ -65,9 +66,7 @@ export const RequestorDashboardPage = () => {
   const { creditBalance, loadingCreditBalance } =
     useOutletContext<DashboardOutletContext>();
 
-  const [period, setPeriod] = useState<
-    "7d" | "30d" | "lastMonth" | "thisMonth" | "90d" | "all"
-  >("30d");
+  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [creditLedgerOpen, setCreditLedgerOpen] = useState(false);
   const [pastRequestsOpen, setPastRequestsOpen] = useState(false);
   const [editingRequest, setEditingRequest] =
