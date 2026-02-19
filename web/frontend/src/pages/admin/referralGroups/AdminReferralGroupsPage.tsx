@@ -503,7 +503,7 @@ export default function AdminReferralGroupsPage() {
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹수 / 의뢰건수 (전체)
+                그룹수 / 의뢰건수
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {Number(overview?.requestor?.groupCount || 0).toLocaleString()}
@@ -525,7 +525,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹당 평균 매출 (유료/무료)
+                그룹당 평균 매출
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
@@ -549,9 +549,7 @@ export default function AdminReferralGroupsPage() {
               </div>
             </div>
             <div className="rounded-xl border p-3">
-              <div className="text-xs text-muted-foreground">
-                매출 총액 (유료/무료)
-              </div>
+              <div className="text-xs text-muted-foreground">매출 총액</div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
                   Number(overview?.requestor?.totalRevenueAmount || 0),
@@ -581,7 +579,7 @@ export default function AdminReferralGroupsPage() {
           <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3 text-right">
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹수 / 의뢰건수 (직접+간접 소개)
+                그룹수 / 의뢰건수
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {Number(overview?.salesman?.groupCount || 0).toLocaleString()}
@@ -603,7 +601,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3">
               <div className="text-xs text-muted-foreground">
-                그룹당 평균 수수료 (직접+간접)
+                그룹당 평균 수수료
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
@@ -617,7 +615,7 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3 text-right">
               <div className="text-xs text-muted-foreground">
-                수수료/매출 요약 (유료/무료)
+                수수료/매출 요약
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
@@ -626,15 +624,16 @@ export default function AdminReferralGroupsPage() {
                 원
               </div>
               <div className="text-xs text-muted-foreground">
+                비율 {salesmanCommissionRatio.toFixed(1)}%
+              </div>
+              <div className="text-xs text-muted-foreground">
                 유료 매출{" "}
                 {formatMoney(
                   Number(overview?.salesman?.totalReferredRevenueAmount || 0),
                 )}
                 원
               </div>
-              <div className="text-xs text-muted-foreground">
-                비율 {salesmanCommissionRatio.toFixed(1)}%
-              </div>
+
               <div className="text-xs text-muted-foreground">
                 (무료 매출{" "}
                 {formatMoney(
