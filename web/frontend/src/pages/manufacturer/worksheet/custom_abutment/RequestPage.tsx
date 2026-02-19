@@ -715,6 +715,44 @@ export const RequestPage = ({
   );
 
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
+
+  useEffect(() => {
+    setVisibleCount(9);
+  }, [worksheetSearch, showCompleted, tabStage]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0]?.isIntersecting &&
+          visibleCount < filteredAndSorted.length
+        ) {
+          setVisibleCount((prev) => prev + 9);
+        }
+      },
+      { threshold: 0, rootMargin: "200px" },
+    );
+
+    const el = sentinelRef.current;
+    if (el) observer.observe(el);
+
+    if (el && visibleCount < filteredAndSorted.length) {
+      const t = setTimeout(() => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= window.innerHeight + 200) {
+          setVisibleCount((prev) => prev + 9);
+        }
+      }, 0);
+      return () => {
+        clearTimeout(t);
+        observer.disconnect();
+      };
+    }
+
+    return () => {
+      if (el) observer.unobserve(el);
+    };
+  }, [visibleCount, filteredAndSorted.length]);
   const groupedByShippingPackage = useMemo(() => {
     if (tabStage !== "shipping") return null;
     const map = new Map<string, ManufacturerRequest[]>();
