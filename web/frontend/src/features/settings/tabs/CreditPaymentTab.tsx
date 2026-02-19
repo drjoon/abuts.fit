@@ -279,17 +279,6 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     };
 
     const items = Array.isArray(orders) ? orders : [];
-    if (ordersPeriod === "all") {
-      return [...items].sort((a, b) => {
-        const ta = new Date(
-          String(a.createdAt || a.matchedAt || a.expiresAt || 0),
-        ).getTime();
-        const tb = new Date(
-          String(b.createdAt || b.matchedAt || b.expiresAt || 0),
-        ).getTime();
-        return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
-      });
-    }
 
     if (ordersPeriod === "lastMonth" || ordersPeriod === "thisMonth") {
       const today = new Date();

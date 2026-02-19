@@ -20,8 +20,7 @@ type DateRange =
   | "recent30"
   | "lastMonth"
   | "thisMonth"
-  | "recent90"
-  | "all";
+  | "recent90";
 
 type ManufacturerRequest = RequestBase;
 
@@ -238,9 +237,6 @@ export const TrackingInquiryPage = () => {
         const to = new Date(year, month + 1, 0); // last day of this month
         return { fromDate: startOfDay(from), toDate: endOfDay(to) };
       }
-      case "all":
-      default:
-        return { fromDate: null, toDate: null };
     }
   }, [dateRange]);
 
@@ -643,7 +639,6 @@ export const TrackingInquiryPage = () => {
                 ["recent90", "최근 90일"],
                 ["lastMonth", "지난달"],
                 ["thisMonth", "이번달"],
-                ["all", "전체"],
               ] as const
             ).map(([key, label]) => (
               <Button

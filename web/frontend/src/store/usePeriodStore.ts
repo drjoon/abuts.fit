@@ -12,8 +12,6 @@ export const usePeriodStore = create<PeriodState>((set) => ({
 }));
 
 export const periodToRange = (period: PeriodFilterValue) => {
-  if (period === "all") return null;
-
   const end = new Date();
   const start = new Date(end);
 
