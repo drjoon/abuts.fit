@@ -205,6 +205,8 @@ export const CncDashboardPage = () => {
   const [machineManagerOpen, setMachineManagerOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<Machine | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [stopTargetUid, setStopTargetUid] = useState<string | null>(null);
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
 
   const {
     machineInfoOpen,
@@ -638,6 +640,10 @@ export const CncDashboardPage = () => {
       isReadOnly={isReadOnly}
       resetConfirmOpen={resetConfirmOpen}
       resetTarget={resetTarget}
+      stopConfirmOpen={stopConfirmOpen}
+      setStopConfirmOpen={setStopConfirmOpen}
+      stopTargetUid={stopTargetUid}
+      setStopTargetUid={setStopTargetUid}
       playlistOpen={queues.playlistOpen}
       playlistTarget={queues.playlistTarget}
       playlistJobs={queues.playlistJobs}

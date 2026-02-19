@@ -273,7 +273,28 @@ async function seedBulkUsersAndData() {
   const REQUESTOR_PW = "Abc!1234";
   const SALESMAN_PW = "Abc!1234";
   const LAST_N_DAYS = 20;
-  const REQUEST_COUNT_RANGE = { min: 20, max: 100 };
+  const REQUEST_COUNT_RANGE = { min: 20, max: 50 };
+  const REQUESTOR_COUNT = 20;
+  const SALES_INTRO_PARENTS = [
+    "s001@gmail.com",
+    "s001@gmail.com",
+    "s004@gmail.com",
+    "s004@gmail.com",
+    "s006@gmail.com",
+    "s006@gmail.com",
+    "s009@gmail.com",
+    "s009@gmail.com",
+  ];
+  const REQUESTOR_INTRO_PARENTS = [
+    "r001@gmail.com",
+    "r002@gmail.com",
+    "r003@gmail.com",
+    "r004@gmail.com",
+    "r001@gmail.com",
+    "r002@gmail.com",
+    "r003@gmail.com",
+    "r004@gmail.com",
+  ];
 
   const requestors = []; // owner만 (추천인 후보)
   const salesmen = [];
@@ -321,44 +342,32 @@ async function seedBulkUsersAndData() {
     if (isRoot) salesmanRoots.push({ id: salesman._id, email });
   }
 
-  // 의뢰자 10계정 r001~r010, 계정당 1조직(staff 없음), 의뢰 20~100건, 최근 20일 내 생성
-  for (let i = 1; i <= 10; i += 1) {
+  // 의뢰자 20계정 r001~r020, 계정당 1조직(staff 없음), 의뢰 20~50건, 최근 20일 내 생성
+  for (let i = 1; i <= REQUESTOR_COUNT; i += 1) {
     const email = `r${String(i).padStart(3, "0")}@gmail.com`;
     const orgName = `org-${String(i).padStart(3, "0")}`;
     const referralCode = randomReferralCode();
 
-    // 소개 관계: 고정 배정 (간접 수수료 검증 가능하도록)
-    // r001~r003: s001 직접 소개 (s001 직접 수수료)
-    // r004~r005: s004 직접 소개 (s004 직접 수수료 + s001 간접 수수료)
-    // r006~r007: s006 직접 소개 (s006 직접 수수료)
-    // r008~r010: s009 직접 소개 (s009 직접 수수료)
+    // 소개 관계: 고정 배정 (간접 수수료 / requestor-to-requestor 리퍼럴 검증)
     let parentId = null;
-    const s001 = salesmen.find((s) => s.email === "s001@gmail.com");
-    const s004 = salesmen.find((s) => s.email === "s004@gmail.com");
-    const s006 = salesmen.find((s) => s.email === "s006@gmail.com");
-    const s009 = salesmen.find((s) => s.email === "s009@gmail.com");
-    if (i <= 3) {
-      parentId = s001?.id || null;
-    } else if (i <= 5) {
-      parentId = s004?.id || null;
-    } else if (i <= 7) {
-      parentId = s006?.id || null;
-    } else {
-      parentId = s009?.id || null;
-    }
-
     let referralGroupLeaderId = null;
-    if (parentId) {
-      const parentSalesman = salesmen.find(
-        (s) => String(s.id) === String(parentId),
-      );
+    if (i <= SALES_INTRO_PARENTS.length) {
+      const parentEmail = SALES_INTRO_PARENTS[i - 1];
+      const parentSalesman = salesmen.find((s) => s.email === parentEmail);
       if (parentSalesman) {
+        parentId = parentSalesman.id;
         referralGroupLeaderId = parentSalesman.leaderId || parentSalesman.id;
-      } else {
-        const parentRequestor = requestors.find(
-          (r) => String(r.id) === String(parentId),
-        );
-        referralGroupLeaderId = parentRequestor?.leaderId || parentId;
+      }
+    } else if (
+      i <=
+      SALES_INTRO_PARENTS.length + REQUESTOR_INTRO_PARENTS.length
+    ) {
+      const parentEmail =
+        REQUESTOR_INTRO_PARENTS[i - SALES_INTRO_PARENTS.length - 1];
+      const parentRequestor = requestors.find((r) => r.email === parentEmail);
+      if (parentRequestor) {
+        parentId = parentRequestor.id;
+        referralGroupLeaderId = parentRequestor.leaderId || parentRequestor.id;
       }
     }
 
@@ -388,16 +397,23 @@ async function seedBulkUsersAndData() {
       joinRequests: [],
     });
 
+    const effectiveLeaderId = referralGroupLeaderId || parentId || owner._id;
     await User.updateOne(
       { _id: owner._id },
-      { $set: { organizationId: org._id, organization: org.name } },
+      {
+        $set: {
+          organizationId: org._id,
+          organization: org.name,
+          referralGroupLeaderId: effectiveLeaderId,
+        },
+      },
     );
 
     requestors.push({
       id: owner._id,
       email,
       orgId: org._id,
-      leaderId: referralGroupLeaderId || owner._id,
+      leaderId: effectiveLeaderId,
     }); // owner만 추천인 후보
 
     // 입금: 50만/100만/200만/300만원 4종 중 랜덤

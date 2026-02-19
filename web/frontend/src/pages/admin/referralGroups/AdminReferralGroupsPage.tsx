@@ -21,6 +21,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 
 const PERIOD_LABEL: Record<string, string> = {
   "7d": "최근 7일",
@@ -235,6 +236,7 @@ export default function AdminReferralGroupsPage() {
     "members",
   );
   const periodLabel = PERIOD_LABEL[period] || period;
+  const [recalcConfirmOpen, setRecalcConfirmOpen] = useState(false);
 
   const { data: snapshotStatus, refetch: refetchSnapshotStatus } = useQuery({
     queryKey: ["admin-referral-snapshot-status"],
@@ -671,15 +673,7 @@ export default function AdminReferralGroupsPage() {
                   size="sm"
                   className="h-6 text-[11px] px-2"
                   disabled={recalcMutation.isPending}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "지난달 기준으로 전체 리퍼럴 스냅샷을 재계산합니다. 계속하시겠습니까?",
-                      )
-                    ) {
-                      recalcMutation.mutate();
-                    }
-                  }}
+                  onClick={() => setRecalcConfirmOpen(true)}
                 >
                   {recalcMutation.isPending ? "재계산 중..." : "스냅샷 재계산"}
                 </Button>

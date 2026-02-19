@@ -18,10 +18,10 @@ import { Footer } from "@/features/landing/Footer";
 
 const DEV_ACCOUNTS = [
   { label: "r001", email: "r001@gmail.com" },
-  { label: "r002", email: "r002@gmail.com" },
-  { label: "r003", email: "r003@gmail.com" },
   { label: "r004", email: "r004@gmail.com" },
-  { label: "r005", email: "r005@gmail.com" },
+  { label: "r007", email: "r007@gmail.com" },
+  { label: "r010", email: "r010@gmail.com" },
+  { label: "r013", email: "r013@gmail.com" },
 ];
 const isDev = import.meta.env.DEV;
 

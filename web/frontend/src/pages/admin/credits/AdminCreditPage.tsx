@@ -835,9 +835,12 @@ export default function AdminCreditPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {loadingOrgs
+                  {loadingStats
                     ? "..."
-                    : `${requestorTotalBalance.toLocaleString()}원`}
+                    : `${(
+                        (stats?.totalPaidBalance || 0) +
+                        (stats?.totalBonusBalance || 0)
+                      ).toLocaleString()}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   유료 {(stats?.totalPaidBalance || 0).toLocaleString()}원

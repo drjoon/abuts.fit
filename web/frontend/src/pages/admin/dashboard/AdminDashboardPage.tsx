@@ -10,6 +10,7 @@ import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard"
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
   Users,
   FileText,
@@ -71,6 +72,7 @@ export const AdminDashboardPage = () => {
     null,
   );
   const [pricingLoading, setPricingLoading] = useState(false);
+  const [recalcConfirmOpen, setRecalcConfirmOpen] = useState(false);
 
   if (!user || user.role !== "admin") return null;
 
@@ -341,223 +343,245 @@ export const AdminDashboardPage = () => {
   }
 
   return (
-    <DashboardShell
-      title={`안녕하세요, ${user.name}님!`}
-      subtitle="시스템 관리 대시보드입니다."
-      headerRight={undefined}
-      statsGridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
-      topSection={
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
-          {diameterTopSection}
-          <RequestorRiskSummaryCard riskSummary={riskSummary} />
-        </div>
-      }
-      stats={
-        <>
-          {/* 카드1: 전체 사용자 / 전체 완료 주문 */}
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                사용자 / 주문
-              </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">전체 의뢰자</div>
-                <div className="text-2xl font-bold">
-                  {(Number(data.stats?.[0]?.value || 0) || 0).toLocaleString()}
-                  명
-                </div>
-              </div>
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">
-                  전체 완료 주문
-                </div>
-                <div className="text-lg font-semibold">
-                  {(pricingSummary?.totalOrders ?? 0).toLocaleString()}건
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 카드2: 진행/완료/취소 - 유료/무료 분리 */}
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                진행 / 완료 / 취소
-              </CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-end justify-between gap-2 mr-6">
-                  <div className="text-xs text-muted-foreground">진행</div>
-                  <div className="text-2xl font-bold">
-                    {Number(data.stats?.[1]?.value || 0).toLocaleString()}
-                  </div>
-                </div>
-                <div className="flex items-end justify-between gap-2 ml-6">
-                  <div className="text-xs text-muted-foreground">취소</div>
-                  <div className="text-2xl font-bold text-muted-foreground">
-                    {Number(data.stats?.[3]?.value || 0).toLocaleString()}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-end justify-between gap-2 mr-6">
+    <>
+      <DashboardShell
+        title={`안녕하세요, ${user.name}님!`}
+        subtitle="시스템 관리 대시보드입니다."
+        headerRight={undefined}
+        statsGridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+        topSection={
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
+            {diameterTopSection}
+            <RequestorRiskSummaryCard riskSummary={riskSummary} />
+          </div>
+        }
+        stats={
+          <>
+            {/* 카드1: 전체 사용자 / 전체 완료 주문 */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  사용자 / 주문
+                </CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="flex items-end justify-between gap-2">
                   <div className="text-xs text-muted-foreground">
-                    완료(유료)
+                    전체 의뢰자
+                  </div>
+                  <div className="text-2xl font-bold">
+                    {(
+                      Number(data.stats?.[0]?.value || 0) || 0
+                    ).toLocaleString()}
+                    명
+                  </div>
+                </div>
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    전체 완료 주문
                   </div>
                   <div className="text-lg font-semibold">
-                    {(pricingSummary?.paidOrders ?? 0).toLocaleString()}건
+                    {(pricingSummary?.totalOrders ?? 0).toLocaleString()}건
                   </div>
                 </div>
-                <div className="flex items-end justify-between gap-2 ml-6">
+              </CardContent>
+            </Card>
+
+            {/* 카드2: 진행/완료/취소 - 유료/무료 분리 */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  진행 / 완료 / 취소
+                </CardTitle>
+                <FileText className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-end justify-between gap-2 mr-6">
+                    <div className="text-xs text-muted-foreground">진행</div>
+                    <div className="text-2xl font-bold">
+                      {Number(data.stats?.[1]?.value || 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between gap-2 ml-6">
+                    <div className="text-xs text-muted-foreground">취소</div>
+                    <div className="text-2xl font-bold text-muted-foreground">
+                      {Number(data.stats?.[3]?.value || 0).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-end justify-between gap-2 mr-6">
+                    <div className="text-xs text-muted-foreground">
+                      완료(유료)
+                    </div>
+                    <div className="text-lg font-semibold">
+                      {(pricingSummary?.paidOrders ?? 0).toLocaleString()}건
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between gap-2 ml-6">
+                    <div className="text-xs text-muted-foreground">
+                      완료(무료)
+                    </div>
+                    <div className="text-lg font-semibold text-muted-foreground">
+                      {(pricingSummary?.bonusOrders ?? 0).toLocaleString()}건
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 카드3: 거래금액 */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">거래금액</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="flex items-end justify-between gap-2">
                   <div className="text-xs text-muted-foreground">
-                    완료(무료)
+                    유료 주문액
+                  </div>
+                  <div className="text-2xl font-bold">
+                    ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
+                  </div>
+                </div>
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    무료 주문액
                   </div>
                   <div className="text-lg font-semibold text-muted-foreground">
-                    {(pricingSummary?.bonusOrders ?? 0).toLocaleString()}건
+                    ₩{(pricingSummary?.totalBonusRevenue ?? 0).toLocaleString()}
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          {/* 카드3: 거래금액 */}
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">거래금액</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">유료 주문액</div>
-                <div className="text-2xl font-bold">
-                  ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
+            {/* 카드4: 평균 단가 */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">평균 단가</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    평균 유료 단가
+                  </div>
+                  <div className="text-2xl font-bold">
+                    ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">무료 주문액</div>
-                <div className="text-lg font-semibold text-muted-foreground">
-                  ₩{(pricingSummary?.totalBonusRevenue ?? 0).toLocaleString()}
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    평균 무료 단가
+                  </div>
+                  <div className="text-lg font-semibold text-muted-foreground">
+                    ₩{(pricingSummary?.avgBonusUnitPrice ?? 0).toLocaleString()}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          {/* 카드4: 평균 단가 */}
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">평균 단가</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">
-                  평균 유료 단가
+            {/* 카드5: 배송비 */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">배송비</CardTitle>
+                <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    전체 배송비
+                  </div>
+                  <div className="text-2xl font-bold">
+                    ₩
+                    {(
+                      pricingSummary?.totalShippingFeeSupply ?? 0
+                    ).toLocaleString()}
+                  </div>
                 </div>
-                <div className="text-2xl font-bold">
-                  ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    평균 배송비
+                  </div>
+                  <div className="text-lg font-semibold">
+                    ₩
+                    {(
+                      pricingSummary?.avgShippingFeeSupply ?? 0
+                    ).toLocaleString()}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">
-                  평균 무료 단가
-                </div>
-                <div className="text-lg font-semibold text-muted-foreground">
-                  ₩{(pricingSummary?.avgBonusUnitPrice ?? 0).toLocaleString()}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          {/* 카드5: 배송비 */}
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">배송비</CardTitle>
-              <CheckCircle className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="space-y-1">
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">전체 배송비</div>
-                <div className="text-2xl font-bold">
-                  ₩
-                  {(
-                    pricingSummary?.totalShippingFeeSupply ?? 0
-                  ).toLocaleString()}
+            {/* 카드6: 리퍼럴 단가 스냅샷 */}
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">
+                  리퍼럴 단가 스냅샷
+                </CardTitle>
+                <RefreshCw className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    마지막 재계산
+                  </div>
+                  <div className="text-sm font-semibold">
+                    {snapshotStatus?.lastComputedAt ? (
+                      new Date(snapshotStatus.lastComputedAt).toLocaleString(
+                        "ko-KR",
+                        {
+                          month: "2-digit",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        },
+                      )
+                    ) : (
+                      <span className="text-destructive">없음</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">평균 배송비</div>
-                <div className="text-lg font-semibold">
-                  ₩
-                  {(pricingSummary?.avgShippingFeeSupply ?? 0).toLocaleString()}
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">
+                    기준일(ymd)
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {snapshotStatus?.lastYmd || "-"}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 카드6: 리퍼럴 단가 스냅샷 */}
-          <Card className="app-glass-card app-glass-card--lg">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                리퍼럴 단가 스냅샷
-              </CardTitle>
-              <RefreshCw className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">
-                  마지막 재계산
-                </div>
-                <div className="text-sm font-semibold">
-                  {snapshotStatus?.lastComputedAt ? (
-                    new Date(snapshotStatus.lastComputedAt).toLocaleString(
-                      "ko-KR",
-                      {
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      },
-                    )
-                  ) : (
-                    <span className="text-destructive">없음</span>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-xs text-muted-foreground">기준일(ymd)</div>
-                <div className="text-xs text-muted-foreground">
-                  {snapshotStatus?.lastYmd || "-"}
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full h-7 text-xs mt-1"
-                disabled={recalcMutation.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "지난달 기준으로 전체 리퍼럴 스냅샷을 재계산합니다. 계속하시겠습니까?",
-                    )
-                  ) {
-                    recalcMutation.mutate();
-                  }
-                }}
-              >
-                {recalcMutation.isPending ? "재계산 중..." : "수동 재계산"}
-              </Button>
-            </CardContent>
-          </Card>
-        </>
-      }
-      mainLeft={undefined}
-    />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-7 text-xs mt-1"
+                  disabled={recalcMutation.isPending}
+                  onClick={() => setRecalcConfirmOpen(true)}
+                >
+                  {recalcMutation.isPending ? "재계산 중..." : "수동 재계산"}
+                </Button>
+              </CardContent>
+            </Card>
+          </>
+        }
+        mainLeft={undefined}
+      />
+      <ConfirmDialog
+        open={recalcConfirmOpen}
+        title="스냅샷 재계산"
+        description="지난달 기준으로 전체 리퍼럴 스냅샷을 재계산합니다. 계속하시겠습니까?"
+        confirmLabel="재계산"
+        cancelLabel="취소"
+        onConfirm={async () => {
+          await recalcMutation.mutateAsync();
+          setRecalcConfirmOpen(false);
+        }}
+        onCancel={() => setRecalcConfirmOpen(false)}
+      />
+    </>
   );
 };

@@ -1158,7 +1158,8 @@ async function getReferralGroupTree(req, res) {
       childrenByParentId.set(parentId, arr);
     }
 
-    const buildTree = (id, visited) => {
+    const visited = new Set();
+    const buildTree = (id) => {
       if (visited.has(id)) return null;
       visited.add(id);
 
@@ -1166,9 +1167,7 @@ async function getReferralGroupTree(req, res) {
       if (!base) return null;
 
       const childIds = childrenByParentId.get(id) || [];
-      const children = childIds
-        .map((cid) => buildTree(cid, visited))
-        .filter(Boolean);
+      const children = childIds.map((cid) => buildTree(cid)).filter(Boolean);
 
       return {
         ...base,
@@ -1177,25 +1176,31 @@ async function getReferralGroupTree(req, res) {
     };
 
     const rootId = String(leader._id);
-    const tree = buildTree(rootId, new Set()) || {
+    const tree = buildTree(rootId) || {
       ...nodeById.get(rootId),
       children: [],
     };
 
-    const attached = new Set();
-    const walk = (t) => {
-      if (!t) return;
-      attached.add(String(t._id));
-      for (const c of t.children || []) walk(c);
-    };
-    walk(tree);
+    // 메인 트리에 연결되지 않은 노드들(orphans) 처리
+    // visited에 없는 노드들 중, 부모가 아직 방문되지 않았거나 없는 노드를 루트로 서브트리 구성
+    const potentialOrphans = nodes.filter((n) => !visited.has(String(n._id)));
+    const orphanRoots = potentialOrphans.filter((n) => {
+      const pid = n.referredByUserId ? String(n.referredByUserId) : null;
+      // 부모가 없거나, 부모가 이미 방문되었거나(끊긴 고리), 부모가 potentialOrphans 목록에 없으면 로컬 루트
+      if (!pid) return true;
+      if (visited.has(pid)) return true;
+      const parentIsOrphan = potentialOrphans.some(
+        (on) => String(on._id) === pid,
+      );
+      return !parentIsOrphan;
+    });
 
-    const orphans = nodes
-      .filter((n) => !attached.has(String(n._id)))
-      .map((n) => ({ ...n, children: [] }));
+    const orphanSubtrees = orphanRoots
+      .map((n) => buildTree(String(n._id)))
+      .filter(Boolean);
 
-    if (orphans.length) {
-      tree.children = [...(tree.children || []), ...orphans];
+    if (orphanSubtrees.length) {
+      tree.children = [...(tree.children || []), ...orphanSubtrees];
     }
 
     const directChildIdSet = new Set(
