@@ -15,11 +15,36 @@ import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
 import Request from "../models/request.model.js";
 import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
+import ManufacturerCreditLedger from "../models/manufacturerCreditLedger.model.js";
+import ManufacturerDailySettlementSnapshot from "../models/manufacturerDailySettlementSnapshot.model.js";
 import {
   getTodayYmdInKst,
   getTodayMidnightUtcInKst,
   getLast30DaysRangeUtc,
 } from "../utils/krBusinessDays.js";
+
+function getYesterdayYmdInKst() {
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const y = kstNow.getUTCFullYear();
+  const m = kstNow.getUTCMonth();
+  const d = kstNow.getUTCDate();
+  const ymdToday = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const dt = new Date(`${ymdToday}T00:00:00.000+09:00`);
+  const yest = new Date(dt.getTime() - 24 * 60 * 60 * 1000);
+  const yy = yest.getUTCFullYear();
+  const mm = String(yest.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(yest.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function kstYmdToUtcRange(ymd) {
+  const dt = new Date(`${ymd}T00:00:00.000+09:00`);
+  if (Number.isNaN(dt.getTime())) return null;
+  const start = new Date(dt.getTime() - 9 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  return { start, end };
+}
 
 /**
  * 현재 KST 시각이 자정(00:00 ~ 00:01) 사이인지 확인한다.
@@ -178,6 +203,90 @@ async function runDailySnapshot(ymd, range) {
   console.log(
     `[${new Date().toISOString()}] Daily referral snapshot completed. Upserted ${upsertCount} snapshots for ymd=${ymd}.`,
   );
+
+  // 제조사 일별 정산 스냅샷 (전일분)
+  try {
+    const yesterdayYmd = getYesterdayYmdInKst();
+    const utcRange = kstYmdToUtcRange(yesterdayYmd);
+    if (utcRange) {
+      const { start, end } = utcRange;
+      const agg = await ManufacturerCreditLedger.aggregate([
+        {
+          $match: {
+            occurredAt: { $gte: start, $lte: end },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              manufacturerOrganization: "$manufacturerOrganization",
+              type: "$type",
+              refType: "$refType",
+            },
+            amount: { $sum: "$amount" },
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      const byOrg = new Map();
+      for (const row of agg) {
+        const org = String(row?._id?.manufacturerOrganization || "").trim();
+        if (!org) continue;
+        const type = String(row?._id?.type || "");
+        const refType = String(row?._id?.refType || "");
+        const amount = Math.round(Number(row?.amount || 0));
+        const count = Math.round(Number(row?.count || 0));
+        const cur = byOrg.get(org) || {
+          earnRequestAmount: 0,
+          earnRequestCount: 0,
+          earnShippingAmount: 0,
+          earnShippingCount: 0,
+          refundAmount: 0,
+          payoutAmount: 0,
+          adjustAmount: 0,
+        };
+
+        if (type === "EARN" && refType === "REQUEST") {
+          cur.earnRequestAmount += amount;
+          cur.earnRequestCount += count;
+        } else if (type === "EARN" && refType === "SHIPPING_PACKAGE") {
+          cur.earnShippingAmount += amount;
+          cur.earnShippingCount += count;
+        } else if (type === "REFUND") {
+          cur.refundAmount += amount;
+        } else if (type === "PAYOUT") {
+          cur.payoutAmount += amount;
+        } else if (type === "ADJUST") {
+          cur.adjustAmount += amount;
+        }
+        byOrg.set(org, cur);
+      }
+
+      for (const [manufacturerOrganization, sums] of byOrg.entries()) {
+        const netAmount =
+          Math.round(Number(sums.earnRequestAmount || 0)) +
+          Math.round(Number(sums.earnShippingAmount || 0)) +
+          Math.round(Number(sums.refundAmount || 0)) +
+          Math.round(Number(sums.payoutAmount || 0)) +
+          Math.round(Number(sums.adjustAmount || 0));
+
+        await ManufacturerDailySettlementSnapshot.updateOne(
+          { manufacturerOrganization, ymd: yesterdayYmd },
+          {
+            $set: {
+              ...sums,
+              netAmount,
+              computedAt: new Date(),
+            },
+          },
+          { upsert: true },
+        );
+      }
+    }
+  } catch (e) {
+    console.error("[manufacturerDailySnapshot] failed:", e);
+  }
 }
 
 // 1분마다 KST 자정 여부 확인 후 실행 (중복 실행 방지: ymd 기준)

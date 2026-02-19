@@ -2,6 +2,8 @@ import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import Request from "../../models/request.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
+import User from "../../models/user.model.js";
 import {
   getPresignedGetUrl,
   getPresignedPutUrl,
@@ -403,7 +405,7 @@ export async function rollbackRequestToCamByRequestId(requestId) {
             await CreditLedger.create({
               organizationId: orgId,
               userId: null,
-              type: "CHARGE",
+              type: "REFUND",
               amount,
               refType: "REQUEST",
               refId: request._id,
@@ -412,6 +414,41 @@ export async function rollbackRequestToCamByRequestId(requestId) {
           }
         }
       }
+    }
+
+    // 제조사 리펀드 (건당 6,500) - 조직 단위
+    try {
+      const manufacturerId = request?.manufacturer;
+      if (manufacturerId) {
+        const m = await User.findById(manufacturerId)
+          .select({ organization: 1 })
+          .lean();
+        const manufacturerOrganization = String(m?.organization || "").trim();
+        if (manufacturerOrganization) {
+          const refundKey = `request:${String(request._id)}:manufacturer_refund_request`;
+          await ManufacturerCreditLedger.updateOne(
+            { uniqueKey: refundKey },
+            {
+              $setOnInsert: {
+                manufacturerOrganization,
+                manufacturerId,
+                type: "REFUND",
+                amount: -6500,
+                refType: "REQUEST",
+                refId: request._id,
+                uniqueKey: refundKey,
+                occurredAt: new Date(),
+              },
+            },
+            { upsert: true },
+          );
+        }
+      }
+    } catch (e) {
+      console.error(
+        "rollbackRequestToCamByRequestId manufacturer refund error:",
+        e,
+      );
     }
   } catch (e) {
     console.error("rollbackRequestToCamByRequestId credit refund error:", e);

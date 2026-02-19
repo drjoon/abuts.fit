@@ -77,6 +77,33 @@
 - CAM 승인(가공 시작) 시점에 `CreditLedger` SPEND 생성 (idempotent, uniqueKey 보장)
 - 배송비: 발송 패키지 생성 시 패키지당 3,500원 SPEND 생성
 
+### 5.3 제조사 정산(크레딧) 정책
+
+- **정산 단위**: 제조사 조직 단위 (`User.organization` 문자열 기준)
+- **원장(ledger)**: `ManufacturerCreditLedger`
+  - `type`: `EARN | REFUND | PAYOUT | ADJUST`
+  - `refType`: `REQUEST | SHIPPING_PACKAGE` 등
+  - `uniqueKey`로 idempotency 보장
+- **적립 규칙**
+  - CAM 승인(가공 시작) 시점: 제조사 적립 `+6,500` (`refType=REQUEST`)
+  - 발송 패키지 생성 시점: 제조사 배송비 적립 `+3,500` (`refType=SHIPPING_PACKAGE`)
+- **환불(롤백) 규칙**
+  - CAM 단계 이후 취소/롤백 시:
+    - 의뢰자: `CreditLedger`에 `REFUND` 생성
+    - 제조사: `ManufacturerCreditLedger`에 `REFUND` 생성(예: `-6,500`)
+- **일별 정산 스냅샷**: `ManufacturerDailySettlementSnapshot`
+  - 매일 KST 자정에 전일(어제) 원장을 집계하여 조직별로 upsert
+  - 워커: `jobs/dailyReferralSnapshotWorker.js` 내에서 함께 수행
+
+#### 5.3.1 제조사 정산 관련 API
+
+- `GET /api/manufacturer/credits/ledger`
+  - Query: `page`, `limit`, `from`, `to`, `q`, `type`
+  - 제조사 조직 기준으로 원장 조회
+- `GET /api/manufacturer/credits/daily-snapshots`
+  - Query: `fromYmd`, `toYmd`, `limit`
+  - 제조사 조직 기준으로 일별 스냅샷 조회
+
 ## 6. CNC 예약목록(브리지 큐) DB 스냅샷
 
 - **목적**: 브리지 서버 장애/네트워크 오류 시에도 제조사 UI에서 예약목록을 조회할 수 있도록, 마지막으로 확인된 브리지 큐를 DB에 스냅샷으로 저장한다.

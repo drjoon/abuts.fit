@@ -137,6 +137,17 @@
   - `price.paidAmount`: 구매 크레딧에서 차감된 금액 (`amount - bonusAmount`)
   - UI 원장 모달에서 SPEND 금액은 **유료/무료를 2줄로 분리 표시**
 
+### 7.2 제조사 정산 페이지 정책
+
+- 페이지: `src/pages/manufacturer/ManufacturerPaymentPage.tsx`
+- 탭 구성
+  - `월 정산`: `GET /api/manufacturer/credits/daily-snapshots`
+  - `원장`: `GET /api/manufacturer/credits/ledger`
+  - `입금`: `GET /api/manufacturer/payments`
+- 기간/검색 필터
+  - `PeriodFilter` + `from/to` date input + `q` 검색 입력을 공통으로 사용
+  - 탭별로 동일한 필터 UI를 공유하되, API query는 탭에 맞춰 매핑한다.
+
 #### 7.1.1 CreditLedgerModal 전역 컴포넌트
 
 - **위치**: `src/shared/components/CreditLedgerModal.tsx`

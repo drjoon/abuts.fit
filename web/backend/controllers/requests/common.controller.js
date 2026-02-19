@@ -4,9 +4,11 @@ import Request from "../../models/request.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import User from "../../models/user.model.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -708,6 +710,14 @@ function toKstYmd(d) {
 async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
   if (!request) return;
 
+  const manufacturerId = request?.manufacturer;
+  const manufacturerOrg = manufacturerId
+    ? await User.findById(manufacturerId).select({ organization: 1 }).lean()
+    : null;
+  const manufacturerOrganization = String(
+    manufacturerOrg?.organization || "",
+  ).trim();
+
   const organizationIdRaw =
     request.requestorOrganizationId || request.requestor?.organizationId;
   const organizationId =
@@ -767,6 +777,26 @@ async function ensureShippingPackageAndChargeFee({ request, userId, session }) {
 
   const fee = Number(pkg?.shippingFeeSupply || 0);
   if (fee > 0) {
+    if (pkg?._id && manufacturerOrganization) {
+      const earnKey = `shippingPackage:${String(pkg._id)}:manufacturer_earn_shipping`;
+      await ManufacturerCreditLedger.updateOne(
+        { uniqueKey: earnKey },
+        {
+          $setOnInsert: {
+            manufacturerOrganization,
+            manufacturerId: manufacturerId || null,
+            type: "EARN",
+            amount: Math.round(fee),
+            refType: "SHIPPING_PACKAGE",
+            refId: pkg._id,
+            uniqueKey: earnKey,
+            occurredAt: new Date(),
+          },
+        },
+        { upsert: true, session: session || null },
+      );
+    }
+
     const { paidBalance } = await getOrganizationCreditBalanceBreakdown({
       organizationId,
       session,
@@ -1163,6 +1193,39 @@ const advanceManufacturerStageByReviewStage = async ({
     // [변경] CAM 승인(가공 시작) 시점에 크레딧 차감
     const organizationId =
       request.requestorOrganizationId || request.requestor?.organizationId;
+
+    // 제조사 적립 (건당 6,500)
+    try {
+      const manufacturerId = request?.manufacturer;
+      if (manufacturerId) {
+        const m = await User.findById(manufacturerId)
+          .select({ organization: 1 })
+          .lean();
+        const manufacturerOrganization = String(m?.organization || "").trim();
+        if (manufacturerOrganization) {
+          const earnKey = `request:${String(request._id)}:manufacturer_earn_request`;
+          await ManufacturerCreditLedger.updateOne(
+            { uniqueKey: earnKey },
+            {
+              $setOnInsert: {
+                manufacturerOrganization,
+                manufacturerId,
+                type: "EARN",
+                amount: 6500,
+                refType: "REQUEST",
+                refId: request._id,
+                uniqueKey: earnKey,
+                occurredAt: new Date(),
+              },
+            },
+            { upsert: true, session },
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[manufacturerCredit] earn on cam approve failed:", e);
+    }
+
     if (organizationId) {
       const { balance, paidBalance, bonusBalance } =
         await getOrganizationCreditBalanceBreakdown({

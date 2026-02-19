@@ -4,6 +4,8 @@ import {
   recordManufacturerPayment,
   listManufacturerPayments,
   sendUrgentMessage,
+  getManufacturerCreditLedger,
+  getManufacturerDailySettlementSnapshots,
 } from "../../controllers/manufacturers/manufacturer.controller.js";
 import {
   sendVerificationCode,
@@ -28,6 +30,24 @@ router.get(
     manufacturerRoles: ["owner", "staff"],
   }),
   listManufacturerPayments,
+);
+
+// 제조사 크레딧(정산) 원장
+router.get(
+  "/credits/ledger",
+  authorize(["manufacturer", "admin"], {
+    manufacturerRoles: ["owner", "staff"],
+  }),
+  getManufacturerCreditLedger,
+);
+
+// 제조사 일별 정산 스냅샷
+router.get(
+  "/credits/daily-snapshots",
+  authorize(["manufacturer", "admin"], {
+    manufacturerRoles: ["owner", "staff"],
+  }),
+  getManufacturerDailySettlementSnapshots,
 );
 
 // 긴급 메시지 발송
