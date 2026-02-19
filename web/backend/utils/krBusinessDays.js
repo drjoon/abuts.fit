@@ -14,6 +14,13 @@ function formatYmdInTimeZone(date, timeZone) {
   return fmt.format(date);
 }
 
+export function getThisMonthStartYmdInKst(date = new Date()) {
+  const ymd = formatYmdInTimeZone(date, KST_TZ);
+  const [y, m] = String(ymd).split("-");
+  if (!y || !m) return null;
+  return `${y}-${m}-01`;
+}
+
 export async function normalizeKoreanBusinessDay({ ymd }) {
   const start = ymdToUtcDate(ymd);
   if (!start) {
@@ -107,7 +114,7 @@ async function fetchKrHolidaySet(year) {
       ? data
           .map((row) => (typeof row?.date === "string" ? row.date : null))
           .filter(Boolean)
-      : []
+      : [],
   );
 
   holidaysCache.set(year, { set, fetchedAt: now });
@@ -124,7 +131,7 @@ async function fetchKrHolidaySet(year) {
             expiresAt,
           },
         },
-        { upsert: true, new: true }
+        { upsert: true, new: true },
       ).lean();
     } catch {
       // ignore

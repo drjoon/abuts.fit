@@ -1,7 +1,7 @@
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
 import User from "../../models/user.model.js";
-import Request from "../../models/request.model.js";
+import { getThisMonthStartYmdInKst } from "../requests/utils.js";
 import File from "../../models/file.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
@@ -157,7 +157,7 @@ export async function getReferralGroups(req, res) {
       return res.status(200).json({ success: true, data: { groups: [] } });
     }
 
-    const ymd = getTodayYmdInKst();
+    const ymd = getThisMonthStartYmdInKst();
 
     const [directCounts, snapshots] = await Promise.all([
       User.aggregate([
@@ -992,7 +992,7 @@ async function getReferralGroupTree(req, res) {
       });
     }
 
-    const ymd = getTodayYmdInKst();
+    const ymd = getThisMonthStartYmdInKst();
     const snapshot = await PricingReferralStatsSnapshot.findOne({
       $or: [
         { ownerUserId: leader._id, ymd },
@@ -1361,7 +1361,7 @@ async function getReferralGroupTree(req, res) {
 
 export async function triggerReferralSnapshotRecalc(req, res) {
   try {
-    const ymd = getTodayYmdInKst();
+    const ymd = getThisMonthStartYmdInKst();
     const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
 
     const leaders = await User.find({
@@ -1502,8 +1502,8 @@ export async function triggerReferralSnapshotRecalc(req, res) {
 
 export async function getReferralSnapshotStatus(req, res) {
   try {
-    const ymd = getTodayYmdInKst();
-    const latest = await PricingReferralStatsSnapshot.findOne()
+    const ymd = getThisMonthStartYmdInKst();
+    const latest = await PricingReferralStatsSnapshot.findOne({ ymd })
       .sort({ computedAt: -1 })
       .select({ computedAt: 1, ymd: 1 })
       .lean();
@@ -1512,8 +1512,7 @@ export async function getReferralSnapshotStatus(req, res) {
       success: true,
       data: {
         lastComputedAt: latest?.computedAt || null,
-        lastYmd: latest?.ymd || null,
-        todayYmd: ymd,
+        baseYmd: ymd,
       },
     });
   } catch (error) {

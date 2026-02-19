@@ -191,18 +191,6 @@ const TreeNode = ({
             <div className="truncate text-xs text-muted-foreground">
               {node.email || ""}
             </div>
-            <div className="truncate text-[11px] text-muted-foreground">
-              {lastMonthOrders.toLocaleString()}건
-              {isSalesman && commissionAmount > 0 ? (
-                <> · 수수료 {formatMoney(commissionAmount)}원</>
-              ) : null}
-            </div>
-            {isSalesman && hasCommissionBreakdown && commissionAmount > 0 ? (
-              <div className="text-[10px] text-muted-foreground/70">
-                직접 {formatMoney(directCommissionAmount)}원 + 간접{" "}
-                {formatMoney(level1CommissionAmount)}원
-              </div>
-            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {roleBadge(node.role)}

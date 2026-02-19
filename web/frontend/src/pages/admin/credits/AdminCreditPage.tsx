@@ -1661,11 +1661,7 @@ export default function AdminCreditPage() {
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <CardTitle>영업자 크레딧(성과/기간 잔액)</CardTitle>
-                  <CardDescription>
-                    선택 기간 직접/간접 소개 조직 기준 매출/수수료 + 영업자 지갑
-                    기간 잔액
-                  </CardDescription>
+                  <CardTitle>영업자 크레딧</CardTitle>
                 </div>
                 <div className="w-[170px]">
                   <select

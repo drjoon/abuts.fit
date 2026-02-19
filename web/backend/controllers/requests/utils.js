@@ -8,6 +8,7 @@ import LotCounter from "../../models/lotCounter.model.js";
 import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
+  getThisMonthStartYmdInKst,
   normalizeKoreanBusinessDay,
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
@@ -15,6 +16,7 @@ import {
 export {
   addKoreanBusinessDays,
   getTodayYmdInKst,
+  getThisMonthStartYmdInKst,
   normalizeKoreanBusinessDay,
   ymdToMmDd,
 };

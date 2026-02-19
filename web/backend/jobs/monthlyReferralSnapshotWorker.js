@@ -14,7 +14,7 @@ import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
 import Request from "../models/request.model.js";
 import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
-import { getTodayYmdInKst } from "../controllers/requests/utils.js";
+import { getThisMonthStartYmdInKst } from "../controllers/requests/utils.js";
 
 /**
  * KST 기준 지난달(전월) 1일 00:00:00 ~ 말일 23:59:59 UTC 범위를 반환한다.
@@ -41,7 +41,11 @@ function getLastMonthRangeUtc() {
 function isFirstDayOfMonthKst() {
   const now = new Date();
   const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return kstNow.getUTCDate() === 1 && kstNow.getUTCHours() === 0 && kstNow.getUTCMinutes() === 0;
+  return (
+    kstNow.getUTCDate() === 1 &&
+    kstNow.getUTCHours() === 0 &&
+    kstNow.getUTCMinutes() === 0
+  );
 }
 
 async function runMonthlySnapshot() {
@@ -56,17 +60,16 @@ async function runMonthlySnapshot() {
     await mongoose.connect(mongoUri);
   }
 
-  console.log(`[${new Date().toISOString()}] Monthly referral snapshot started`);
+  console.log(
+    `[${new Date().toISOString()}] Monthly referral snapshot started`,
+  );
 
   const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
-  const ymd = getTodayYmdInKst();
+  const ymd = getThisMonthStartYmdInKst();
 
   // 모든 그룹 리더(영업자 + 의뢰자 owner) 조회
   const leaders = await User.find({
-    $or: [
-      { role: "salesman" },
-      { role: "requestor", requestorRole: "owner" },
-    ],
+    $or: [{ role: "salesman" }, { role: "requestor", requestorRole: "owner" }],
     active: true,
   })
     .select({ _id: 1, role: 1, organizationId: 1 })
@@ -137,7 +140,9 @@ async function runMonthlySnapshot() {
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },
-        { $group: { _id: "$requestorOrganizationId", orderCount: { $sum: 1 } } },
+        {
+          $group: { _id: "$requestorOrganizationId", orderCount: { $sum: 1 } },
+        },
       ])
     : [];
 
@@ -154,7 +159,7 @@ async function runMonthlySnapshot() {
     let groupTotalOrders = 0;
     if (String(leader.role) === "requestor") {
       const orgId = String(leader.organizationId || "");
-      groupTotalOrders = orgId ? (ordersByOrgId.get(orgId) || 0) : 0;
+      groupTotalOrders = orgId ? ordersByOrgId.get(orgId) || 0 : 0;
     } else {
       const leaderOrders = ordersByUserId.get(lid) || 0;
       const childOrders = children.reduce(
@@ -192,7 +197,7 @@ let lastRunYmd = null;
 async function loop() {
   try {
     if (isFirstDayOfMonthKst()) {
-      const ymd = getTodayYmdInKst();
+      const ymd = getThisMonthStartYmdInKst();
       if (lastRunYmd !== ymd) {
         lastRunYmd = ymd;
         await runMonthlySnapshot();

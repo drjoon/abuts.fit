@@ -84,8 +84,7 @@ export const AdminDashboardPage = () => {
         success: boolean;
         data?: {
           lastComputedAt: string | null;
-          lastYmd: string | null;
-          todayYmd: string;
+          baseYmd: string | null;
         };
       }>({
         path: `/api/admin/referral-snapshot/status`,
@@ -547,11 +546,11 @@ export const AdminDashboardPage = () => {
                   </div>
                 </div>
                 <div className="flex items-end justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">기준일</div>
                   <div className="text-xs text-muted-foreground">
-                    기준일(ymd)
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {snapshotStatus?.lastYmd || "-"}
+                    {snapshotStatus?.baseYmd
+                      ? `${snapshotStatus.baseYmd} 00:00`
+                      : "-"}
                   </div>
                 </div>
                 <Button
@@ -573,7 +572,7 @@ export const AdminDashboardPage = () => {
       <ConfirmDialog
         open={recalcConfirmOpen}
         title="스냅샷 재계산"
-        description="지난달 기준으로 전체 리퍼럴 스냅샷을 재계산합니다. 계속하시겠습니까?"
+        description="전체 리퍼럴 스냅샷을 재계산합니다. 계속하시겠습니까?"
         confirmLabel="재계산"
         cancelLabel="취소"
         onConfirm={async () => {

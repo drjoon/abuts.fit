@@ -12,6 +12,7 @@ import {
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
   getTodayYmdInKst,
+  getThisMonthStartYmdInKst,
   normalizeKoreanBusinessDay,
   ymdToMmDd,
   getReferralGroupLeaderId,
@@ -1103,7 +1104,7 @@ export async function getMyPricingReferralStats(req, res) {
     const now = new Date();
     const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
 
-    const ymd = toKstYmd(now);
+    const ymd = getThisMonthStartYmdInKst(now);
     if (!ymd) {
       return res.status(500).json({
         success: false,
