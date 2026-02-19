@@ -73,7 +73,7 @@ export const SalesmanDashboardPage = () => {
 
   const [creditModalOpen, setCreditModalOpen] = useState(false);
 
-  const [period, setPeriod] = useState<PeriodFilterValue>("thisMonth");
+  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
 
   useEffect(() => {
     if (!token) return;

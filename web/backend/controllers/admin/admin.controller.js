@@ -1,7 +1,11 @@
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
 import User from "../../models/user.model.js";
-import { getThisMonthStartYmdInKst } from "../requests/utils.js";
+import Request from "../../models/request.model.js";
+import {
+  getThisMonthStartYmdInKst,
+  getLast30DaysRangeUtc,
+} from "../requests/utils.js";
 import File from "../../models/file.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
@@ -123,8 +127,16 @@ function getLastMonthRangeUtc() {
 export async function getReferralGroups(req, res) {
   try {
     const refresh = String(req.query.refresh || "") === "1";
+    const startDateRaw = String(req.query.startDate || "").trim();
+    const endDateRaw = String(req.query.endDate || "").trim();
+    const hasPeriodFilter = Boolean(startDateRaw || endDateRaw);
+    const cacheKeySuffix = hasPeriodFilter
+      ? `:${startDateRaw}:${endDateRaw}`
+      : "";
     if (!refresh) {
-      const cached = getAdminReferralCache("referral-groups:v3");
+      const cached = getAdminReferralCache(
+        `referral-groups:v3${cacheKeySuffix}`,
+      );
       if (cached) {
         return res.status(200).json(cached);
       }
@@ -183,9 +195,18 @@ export async function getReferralGroups(req, res) {
         .lean(),
     ]);
 
-    // 스냅샷이 비어있어도 overview 정합성을 위해 지난달 완료 의뢰 기준으로 fallback 집계
+    // 기본 기간: 오늘 자정 기준 최근 30일 (기간 파라미터 없을 때)
     const now = new Date();
-    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
+    const defaultRange = getLast30DaysRangeUtc(now);
+    const periodStart = startDateRaw
+      ? new Date(startDateRaw)
+      : (defaultRange?.start ??
+        new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
+    const periodEnd = endDateRaw
+      ? new Date(endDateRaw)
+      : (defaultRange?.end ?? now);
+    const lastMonthStart = periodStart;
+    const lastMonthEnd = periodEnd;
 
     const directChildren = leaderIds.length
       ? await User.find({
@@ -593,16 +614,25 @@ export async function getReferralGroups(req, res) {
     }
 
     const level1RequestorOrgIdsBySalesmanLeaderId = new Map();
+    // 자식 영업자 ID 기준 직접 소개 의뢰자 조직 맵 (간접 수수료 계산용)
+    const requestorOrgIdsByChildSalesmanId = new Map();
     for (const u of level1Requestors || []) {
       const refSalesmanId = String(u?.referredByUserId || "");
       const leaderId = String(
         leaderIdByReferredSalesmanId.get(refSalesmanId) || "",
       );
       const orgId = String(u?.organizationId || "");
-      if (!leaderId || !orgId) continue;
-      const arr = level1RequestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
-      arr.push(orgId);
-      level1RequestorOrgIdsBySalesmanLeaderId.set(leaderId, arr);
+      if (!orgId) continue;
+      if (leaderId) {
+        const arr = level1RequestorOrgIdsBySalesmanLeaderId.get(leaderId) || [];
+        arr.push(orgId);
+        level1RequestorOrgIdsBySalesmanLeaderId.set(leaderId, arr);
+      }
+      if (refSalesmanId) {
+        const arr2 = requestorOrgIdsByChildSalesmanId.get(refSalesmanId) || [];
+        arr2.push(orgId);
+        requestorOrgIdsByChildSalesmanId.set(refSalesmanId, arr2);
+      }
     }
 
     // 1단계: 각 영업자 리더의 직접 수수료 계산
@@ -647,6 +677,7 @@ export async function getReferralGroups(req, res) {
     }
 
     // 2단계: 직계1 영업자의 직접 수수료 * 50%를 간접 수수료로 합산
+    // directCommissionBySalesmanId(전체 영업자 기준)를 사용해야 자식 영업자 수수료가 정확히 계산됨
     const commissionBySalesmanLeaderId = new Map();
     let salesmanTotalCommissionAmount = 0;
     for (const g of salesmanGroups) {
@@ -658,7 +689,13 @@ export async function getReferralGroups(req, res) {
       const childSalesmanIds = childSalesmanIdsByLeaderId.get(leaderId) || [];
       const indirectCommission =
         childSalesmanIds.reduce((acc, sid) => {
-          return acc + Number(directCommissionByLeaderId.get(sid) || 0);
+          // 자식 영업자가 직접 소개한 의뢰자 조직의 매출 기준으로 간접 수수료 계산
+          const childDirectOrgIds =
+            requestorOrgIdsByChildSalesmanId.get(sid) || [];
+          const childDirectRevenue = childDirectOrgIds.reduce((s, oid) => {
+            return s + Number(commissionRevenueByOrgId.get(String(oid)) || 0);
+          }, 0);
+          return acc + childDirectRevenue * commissionRate;
         }, 0) * 0.5;
       const totalCommission = directCommission + indirectCommission;
       commissionBySalesmanLeaderId.set(leaderId, totalCommission);
@@ -857,7 +894,7 @@ export async function getReferralGroups(req, res) {
     };
 
     if (!refresh) {
-      setAdminReferralCache("referral-groups:v3", payload);
+      setAdminReferralCache(`referral-groups:v3${cacheKeySuffix}`, payload);
     }
     return res.status(200).json(payload);
   } catch (error) {
@@ -945,7 +982,10 @@ async function getReferralGroupTree(req, res) {
       .lean();
 
     const now = new Date();
-    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
+    const range30 = getLast30DaysRangeUtc(now);
+    const lastMonthStart =
+      range30?.start ?? new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const lastMonthEnd = range30?.end ?? now;
 
     const memberIds = (members || []).map((m) => m._id).filter(Boolean);
     const orderRows = memberIds.length
@@ -992,7 +1032,7 @@ async function getReferralGroupTree(req, res) {
       });
     }
 
-    const ymd = getThisMonthStartYmdInKst();
+    const ymd = getTodayYmdInKst();
     const snapshot = await PricingReferralStatsSnapshot.findOne({
       $or: [
         { ownerUserId: leader._id, ymd },
@@ -1361,8 +1401,14 @@ async function getReferralGroupTree(req, res) {
 
 export async function triggerReferralSnapshotRecalc(req, res) {
   try {
-    const ymd = getThisMonthStartYmdInKst();
-    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
+    const ymd = getTodayYmdInKst();
+    const range30 = getLast30DaysRangeUtc();
+    if (!ymd || !range30) {
+      return res
+        .status(500)
+        .json({ success: false, message: "날짜 계산 실패" });
+    }
+    const { start: lastMonthStart, end: lastMonthEnd } = range30;
 
     const leaders = await User.find({
       $or: [
@@ -1502,17 +1548,19 @@ export async function triggerReferralSnapshotRecalc(req, res) {
 
 export async function getReferralSnapshotStatus(req, res) {
   try {
-    const ymd = getThisMonthStartYmdInKst();
+    const ymd = getTodayYmdInKst();
     const latest = await PricingReferralStatsSnapshot.findOne({ ymd })
       .sort({ computedAt: -1 })
       .select({ computedAt: 1, ymd: 1 })
       .lean();
 
+    const snapshotMissing = !latest;
     return res.status(200).json({
       success: true,
       data: {
         lastComputedAt: latest?.computedAt || null,
         baseYmd: ymd,
+        snapshotMissing,
       },
     });
   } catch (error) {

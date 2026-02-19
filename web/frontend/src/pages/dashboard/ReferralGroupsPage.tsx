@@ -174,7 +174,7 @@ export default function ReferralGroupsPage() {
             </Button>
           </div>
           <CardDescription>
-            지난달 완료 주문량(본인+직계 1단계) 기준으로 단가가 적용됩니다.
+            최근 30일 완료 주문량(본인+직계 1단계) 기준으로 단가가 적용됩니다.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -225,7 +225,7 @@ export default function ReferralGroupsPage() {
 
               <div className="grid gap-3 md:grid-cols-4">
                 <MetricCard
-                  title="내 주문(지난달)"
+                  title="내 주문(최근 30일)"
                   value={`${requestorOrders.toLocaleString()}건`}
                 />
                 <MetricCard
@@ -289,9 +289,9 @@ export default function ReferralGroupsPage() {
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        지난달{" "}
+                        최근 30일{" "}
                         {Number(
-                          m.lastMonthOrders ?? m.last30DaysOrders ?? 0,
+                          m.last30DaysOrders ?? m.lastMonthOrders ?? 0,
                         ).toLocaleString()}
                         건
                       </div>

@@ -61,7 +61,7 @@ const SettingsPage = lazy(() =>
   })),
 );
 import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
-import { AdminRequestMonitoring } from "@/pages/admin/monitoring/AdminRequestMonitoring";
+import { AdminRequestMonitoring } from "@/pages/admin/requests/AdminRequestMonitoring";
 import AdminMailPage from "@/pages/admin/support/AdminMailPage";
 import AdminSmsPage from "@/pages/admin/support/AdminSmsPage";
 import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";

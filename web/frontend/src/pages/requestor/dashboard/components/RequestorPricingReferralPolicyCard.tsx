@@ -202,7 +202,7 @@ export const RequestorPricingReferralPolicyCard = () => {
             </div>
           </div>
           <CardDescription className="space-y-1 text-xs text-slate-600">
-            지난달 집계는 <b>완료</b> 주문 기준입니다.
+            최근 30일 집계는 <b>완료</b> 주문 기준입니다.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-2 pb-4 gap-3 text-xs text-foreground">
@@ -211,7 +211,7 @@ export const RequestorPricingReferralPolicyCard = () => {
               <div className="flex-1 space-y-1">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-md text-slate-600">
-                    내 주문 (지난달)
+                    내 주문 (최근 30일)
                   </span>
                   <span className="text-lg font-semibold text-foreground">
                     {myLast30DaysOrders.toLocaleString()}건

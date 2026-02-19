@@ -13,6 +13,7 @@ import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
   getThisMonthStartYmdInKst,
+  getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
   ymdToMmDd,
   getReferralGroupLeaderId,
@@ -260,7 +261,10 @@ export async function getMyReferralDirectMembers(req, res) {
       });
     }
 
-    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
+    const range30 = getLast30DaysRangeUtc();
+    const lastMonthStart =
+      range30?.start ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const lastMonthEnd = range30?.end ?? new Date();
 
     const groupLeaderId = await getReferralGroupLeaderId(requestorId);
 
@@ -313,7 +317,7 @@ export async function getMyReferralDirectMembers(req, res) {
             $match: {
               requestor: { $in: memberIds },
               status: "완료",
-              createdAt: { $gte: lastMonthStart, $lt: lastMonthEnd },
+              createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
           { $group: { _id: "$requestor", count: { $sum: 1 } } },
@@ -328,6 +332,7 @@ export async function getMyReferralDirectMembers(req, res) {
       data: {
         members: (members || []).map((m) => ({
           ...m,
+          last30DaysOrders: ordersByUserId.get(String(m._id)) || 0,
           lastMonthOrders: ordersByUserId.get(String(m._id)) || 0,
         })),
       },
@@ -1102,9 +1107,16 @@ export async function getMyPricingReferralStats(req, res) {
     }
 
     const now = new Date();
-    const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
+    const range30 = getLast30DaysRangeUtc(now);
+    if (!range30) {
+      return res.status(500).json({
+        success: false,
+        message: "날짜 계산에 실패했습니다.",
+      });
+    }
+    const { start: lastMonthStart, end: lastMonthEnd } = range30;
 
-    const ymd = getThisMonthStartYmdInKst(now);
+    const ymd = getTodayYmdInKst();
     if (!ymd) {
       return res.status(500).json({
         success: false,
@@ -1127,6 +1139,9 @@ export async function getMyPricingReferralStats(req, res) {
         computedAt: 1,
       })
       .lean();
+
+    // 누락 감지: 오늘 스냅샷이 없으면 당일 자정 기준 30일로 즉시 계산 (워커 장애 복구)
+    const snapshotMissing = !cachedSnapshot;
 
     const cachedGroupMemberCount = cachedSnapshot?.groupMemberCount;
     const cachedGroupTotalOrders = cachedSnapshot?.groupTotalOrders;
@@ -1172,19 +1187,19 @@ export async function getMyPricingReferralStats(req, res) {
 
     const groupMemberCount = groupMemberIds.length;
 
-    // 그룹 내 모든 멤버의 지난달 주문량 합산 (항상 실시간 계산)
+    // 그룹 내 모든 멤버의 최근 30일 주문량 합산 (항상 실시간 계산)
     const [freshGroupTotalOrders, myLastMonthOrders, user] = await Promise.all([
       groupMemberIds.length
         ? Request.countDocuments({
             requestor: { $in: groupMemberIds },
             status: "완료",
-            createdAt: { $gte: lastMonthStart, $lt: lastMonthEnd },
+            createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           })
         : Promise.resolve(0),
       Request.countDocuments({
         requestor: requestorId,
         status: "완료",
-        createdAt: { $gte: lastMonthStart, $lt: lastMonthEnd },
+        createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
       }),
       User.findById(requestorId)
         .select({ createdAt: 1, updatedAt: 1, active: 1, approvedAt: 1 })
@@ -1279,6 +1294,7 @@ export async function getMyPricingReferralStats(req, res) {
       effectiveUnitPrice,
       rule,
       groupMemberCount,
+      snapshotMissing,
       ...(process.env.NODE_ENV !== "production"
         ? {
             debug: {

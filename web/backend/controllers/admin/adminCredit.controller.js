@@ -6,10 +6,7 @@ import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import Request from "../../models/request.model.js";
 import { Types } from "mongoose";
-
-function getLast30Cutoff() {
-  return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-}
+import { getLast30DaysRangeUtc } from "../../utils/krBusinessDays.js";
 
 export async function adminGetOrganizationLedger(req, res) {
   try {
@@ -424,11 +421,16 @@ export async function adminGetSalesmanCredits(req, res) {
     const skip = Math.max(Number(req.query.skip) || 0, 0);
     const commissionRate = 0.05;
 
-    // 기간 필터: startDate/endDate 파라미터 우선, 없으면 전체 기간
+    // 기간 필터: startDate/endDate 파라미터 우선, 없으면 KST 자정 기준 최근 30일
     const startDateRaw = String(req.query.startDate || "").trim();
     const endDateRaw = String(req.query.endDate || "").trim();
-    const periodCutoff = startDateRaw ? new Date(startDateRaw) : null;
-    const periodEnd = endDateRaw ? new Date(endDateRaw) : null;
+    const defaultRange = getLast30DaysRangeUtc();
+    const periodCutoff = startDateRaw
+      ? new Date(startDateRaw)
+      : (defaultRange?.start ?? null);
+    const periodEnd = endDateRaw
+      ? new Date(endDateRaw)
+      : (defaultRange?.end ?? null);
 
     const salesmen = await User.find({ role: "salesman" })
       .select({ _id: 1, name: 1, email: 1, referralCode: 1, active: 1 })

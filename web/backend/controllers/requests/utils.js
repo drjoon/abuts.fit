@@ -9,6 +9,8 @@ import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
   getThisMonthStartYmdInKst,
+  getTodayMidnightUtcInKst,
+  getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
@@ -17,6 +19,8 @@ export {
   addKoreanBusinessDays,
   getTodayYmdInKst,
   getThisMonthStartYmdInKst,
+  getTodayMidnightUtcInKst,
+  getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
   ymdToMmDd,
 };

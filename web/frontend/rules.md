@@ -291,3 +291,31 @@ await searchUsers("검색어", "admin"); // 역할 필터링 선택사항
 - **AdminChatManagement** (`pages/admin/support/AdminChatManagement.tsx`): Admin 채팅 관리
 
 새로운 채팅 UI를 추가할 때는 위 훅들을 활용하여 구현하고, 일관된 디자인을 유지합니다.
+
+## 9. 리퍼럴 및 단가 정책
+
+### 9.1 스냅샷 기준
+
+- **단가 계산 기준**: 오늘 KST 자정 기준 직전 30일 완료 의뢰 주문량
+- **스냅샷 ymd**: 오늘 KST 날짜 (`getTodayYmdInKst()`)
+- **워커**: `dailyReferralSnapshotWorker.js` — 매일 KST 00:00 실행
+- **누락 감지**: 워커 장애 시 1분 루프에서 오늘 스냅샷 없으면 자동 재계산
+
+### 9.2 수수료 구조
+
+- **직접리퍼럴** (영업자 → 의뢰자 직접 소개): 의뢰자 최근 30일 유료 매출의 **5%**
+- **간접리퍼럴** (영업자 A → 영업자 B → 의뢰자): 의뢰자 최근 30일 유료 매출의 **2.5%** → A에게
+- 의뢰자→의뢰자 소개: 수수료 없음 (할인 가격 결정에만 사용)
+
+### 9.3 관리자 대시보드 표시
+
+- 기준 표시: `{baseYmd} 자정 기준 30일`
+- 스냅샷 누락 시 ⚠️ 누락 표시 (`snapshotMissing: true`)
+- 수동 재계산 버튼으로 즉시 재계산 가능
+
+### 9.4 API
+
+- `GET /api/requests/my/pricing-referral-stats` — 의뢰자 단가/주문량 조회
+- `GET /api/admin/referral-groups` — 그룹 목록 (startDate/endDate 파라미터 지원)
+- `GET /api/admin/referral-snapshot/status` — 스냅샷 상태 (`baseYmd`, `lastComputedAt`, `snapshotMissing`)
+- `POST /api/admin/referral-snapshot/recalc` — 수동 재계산

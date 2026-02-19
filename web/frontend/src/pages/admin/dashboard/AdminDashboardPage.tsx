@@ -85,6 +85,7 @@ export const AdminDashboardPage = () => {
         data?: {
           lastComputedAt: string | null;
           baseYmd: string | null;
+          snapshotMissing?: boolean;
         };
       }>({
         path: `/api/admin/referral-snapshot/status`,
@@ -546,11 +547,14 @@ export const AdminDashboardPage = () => {
                   </div>
                 </div>
                 <div className="flex items-end justify-between gap-2">
-                  <div className="text-xs text-muted-foreground">기준일</div>
+                  <div className="text-xs text-muted-foreground">기준</div>
                   <div className="text-xs text-muted-foreground">
                     {snapshotStatus?.baseYmd
-                      ? `${snapshotStatus.baseYmd} 00:00`
+                      ? `${snapshotStatus.baseYmd} 자정 기준 30일`
                       : "-"}
+                    {snapshotStatus?.snapshotMissing && (
+                      <span className="ml-1 text-amber-500">⚠️ 누락</span>
+                    )}
                   </div>
                 </div>
                 <Button

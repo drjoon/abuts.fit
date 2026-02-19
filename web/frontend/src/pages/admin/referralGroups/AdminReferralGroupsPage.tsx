@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { usePeriodStore } from "@/store/usePeriodStore";
+import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 
 const PERIOD_LABEL: Record<string, string> = {
@@ -208,7 +208,6 @@ export default function AdminReferralGroupsPage() {
   const { token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const isDev = import.meta.env.DEV;
-  const refreshSuffix = isDev ? "?refresh=1" : "";
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<
     "all" | "requestor" | "salesman"
@@ -230,8 +229,15 @@ export default function AdminReferralGroupsPage() {
     queryKey: ["admin-referral-groups", period],
     enabled: Boolean(token),
     queryFn: async () => {
+      const qs = new URLSearchParams();
+      if (isDev) qs.set("refresh", "1");
+      const rangeQ = periodToRangeQuery(period);
+      if (rangeQ) {
+        const rp = new URLSearchParams(rangeQ.replace(/^\?/, ""));
+        rp.forEach((v, k) => qs.set(k, v));
+      }
       const res = await apiFetch<ApiGroupListResponse>({
-        path: `/api/admin/referral-groups${refreshSuffix}`,
+        path: `/api/admin/referral-groups?${qs.toString()}`,
         method: "GET",
         token,
         headers:
@@ -352,7 +358,7 @@ export default function AdminReferralGroupsPage() {
     enabled: Boolean(token && effectiveLeaderId),
     queryFn: async () => {
       const res = await apiFetch<ApiGroupTreeResponse>({
-        path: `/api/admin/referral-groups/${effectiveLeaderId}${refreshSuffix}`,
+        path: `/api/admin/referral-groups/${effectiveLeaderId}${isDev ? "?refresh=1" : ""}`,
         method: "GET",
         token,
         headers:

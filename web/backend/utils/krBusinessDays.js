@@ -21,6 +21,30 @@ export function getThisMonthStartYmdInKst(date = new Date()) {
   return `${y}-${m}-01`;
 }
 
+/**
+ * KST 기준 오늘 자정(00:00:00) UTC Date를 반환한다.
+ * 예: KST 2026-02-19 00:00:00 → UTC 2026-02-18 15:00:00
+ */
+export function getTodayMidnightUtcInKst(date = new Date()) {
+  const ymd = formatYmdInTimeZone(date, KST_TZ);
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  // KST 00:00:00 = UTC -9h
+  return new Date(Date.UTC(y, m - 1, d, -9, 0, 0, 0));
+}
+
+/**
+ * KST 기준 오늘 자정 전 30일 범위(UTC)를 반환한다.
+ * start: 오늘 자정 - 30일, end: 오늘 자정 - 1ms
+ */
+export function getLast30DaysRangeUtc(date = new Date()) {
+  const todayMidnight = getTodayMidnightUtcInKst(date);
+  if (!todayMidnight) return null;
+  const end = new Date(todayMidnight.getTime() - 1);
+  const start = new Date(todayMidnight.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
 export async function normalizeKoreanBusinessDay({ ymd }) {
   const start = ymdToUtcDate(ymd);
   if (!start) {

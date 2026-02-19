@@ -1,12 +1,13 @@
-// @ts-nocheck
 /**
- * @deprecated dailyReferralSnapshotWorker.js로 대체됨 (2026-02).
- * 이 파일은 더 이상 사용하지 않습니다.
- * 새 워커: jobs/dailyReferralSnapshotWorker.js
- * - 매일 KST 00:00 실행
- * - 오늘 자정 기준 직전 30일 완료 의뢰 집계
- * - 누락 감지: 오늘 스냅샷 없으면 자동 재계산
- * 환경변수: DAILY_REFERRAL_SNAPSHOT_WORKER_ENABLED (기존: MONTHLY_REFERRAL_SNAPSHOT_WORKER_ENABLED)
+ * 매일 KST 00:00에 실행되는 리퍼럴 그룹 스냅샷 재계산 워커.
+ *
+ * 오늘 자정(KST 00:00) 기준 직전 30일 완료 의뢰를 집계하여
+ * 각 그룹 리더의 groupTotalOrders / groupMemberCount 를
+ * PricingReferralStatsSnapshot에 upsert한다.
+ * 이 스냅샷이 당일 의뢰 단가 계산의 기준이 된다.
+ *
+ * 누락 방지: 매 1분마다 KST 자정 여부를 확인하고,
+ * 오늘 ymd로 스냅샷이 없으면(누락) 즉시 재계산한다.
  */
 
 import "../bootstrap/env.js";
@@ -14,44 +15,34 @@ import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
 import Request from "../models/request.model.js";
 import PricingReferralStatsSnapshot from "../models/pricingReferralStatsSnapshot.model.js";
-import { getThisMonthStartYmdInKst } from "../controllers/requests/utils.js";
+import {
+  getTodayYmdInKst,
+  getTodayMidnightUtcInKst,
+  getLast30DaysRangeUtc,
+} from "../utils/krBusinessDays.js";
 
 /**
- * KST 기준 지난달(전월) 1일 00:00:00 ~ 말일 23:59:59 UTC 범위를 반환한다.
+ * 현재 KST 시각이 자정(00:00 ~ 00:01) 사이인지 확인한다.
  */
-function getLastMonthRangeUtc() {
+function isMidnightKst() {
   const now = new Date();
   const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const kstYear = kstNow.getUTCFullYear();
-  const kstMonth = kstNow.getUTCMonth(); // 0-indexed
-  const lastMonthYear = kstMonth === 0 ? kstYear - 1 : kstYear;
-  const lastMonth = kstMonth === 0 ? 12 : kstMonth; // 1-indexed
-  const startKst = new Date(
-    Date.UTC(lastMonthYear, lastMonth - 1, 1, -9, 0, 0, 0),
-  );
-  const endKst = new Date(
-    Date.UTC(lastMonthYear, lastMonth, 0, 14, 59, 59, 999),
-  );
-  return { start: startKst, end: endKst };
+  return kstNow.getUTCHours() === 0 && kstNow.getUTCMinutes() === 0;
 }
 
 /**
- * 현재 KST 시각이 매달 1일 00:00 ~ 00:01 사이인지 확인한다.
+ * 오늘 ymd 기준 스냅샷이 이미 존재하는지 확인한다.
+ * 리더가 1명 이상 있고 스냅샷이 하나도 없으면 누락으로 판단.
  */
-function isFirstDayOfMonthKst() {
-  const now = new Date();
-  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return (
-    kstNow.getUTCDate() === 1 &&
-    kstNow.getUTCHours() === 0 &&
-    kstNow.getUTCMinutes() === 0
-  );
+async function isTodaySnapshotMissing(ymd) {
+  const count = await PricingReferralStatsSnapshot.countDocuments({ ymd });
+  return count === 0;
 }
 
-async function runMonthlySnapshot() {
+async function runDailySnapshot(ymd, range) {
   const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
-    console.error("[monthlyReferralSnapshot] MONGODB_URI is not set");
+    console.error("[dailyReferralSnapshot] MONGODB_URI is not set");
     return;
   }
 
@@ -61,11 +52,10 @@ async function runMonthlySnapshot() {
   }
 
   console.log(
-    `[${new Date().toISOString()}] Monthly referral snapshot started`,
+    `[${new Date().toISOString()}] Daily referral snapshot started for ymd=${ymd}`,
   );
 
-  const { start: lastMonthStart, end: lastMonthEnd } = getLastMonthRangeUtc();
-  const ymd = getThisMonthStartYmdInKst();
+  const { start: rangeStart, end: rangeEnd } = range;
 
   // 모든 그룹 리더(영업자 + 의뢰자 owner) 조회
   const leaders = await User.find({
@@ -76,7 +66,7 @@ async function runMonthlySnapshot() {
     .lean();
 
   if (!leaders.length) {
-    console.log("[monthlyReferralSnapshot] No leaders found, skipping.");
+    console.log("[dailyReferralSnapshot] No leaders found, skipping.");
     return;
   }
 
@@ -100,7 +90,7 @@ async function runMonthlySnapshot() {
     childIdsByLeaderId.set(lid, arr);
   }
 
-  // 지난달 완료 의뢰 집계 (requestor 기준)
+  // 최근 30일 완료 의뢰 집계 (requestor 기준)
   const relevantUserIds = [
     ...leaderIds,
     ...directChildren.map((u) => u._id),
@@ -112,7 +102,7 @@ async function runMonthlySnapshot() {
           $match: {
             requestor: { $in: relevantUserIds },
             status: "완료",
-            createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+            createdAt: { $gte: rangeStart, $lte: rangeEnd },
           },
         },
         { $group: { _id: "$requestor", orderCount: { $sum: 1 } } },
@@ -137,7 +127,7 @@ async function runMonthlySnapshot() {
           $match: {
             requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
             status: "완료",
-            createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
+            createdAt: { $gte: rangeStart, $lte: rangeEnd },
           },
         },
         {
@@ -186,34 +176,50 @@ async function runMonthlySnapshot() {
   }
 
   console.log(
-    `[${new Date().toISOString()}] Monthly referral snapshot completed. Upserted ${upsertCount} snapshots for ymd=${ymd}.`,
+    `[${new Date().toISOString()}] Daily referral snapshot completed. Upserted ${upsertCount} snapshots for ymd=${ymd}.`,
   );
 }
 
-// 1분마다 KST 1일 00:00 여부 확인 후 실행 (중복 실행 방지: 분당 1회)
+// 1분마다 KST 자정 여부 확인 후 실행 (중복 실행 방지: ymd 기준)
 const INTERVAL_MS = 60 * 1000;
 let lastRunYmd = null;
 
 async function loop() {
   try {
-    if (isFirstDayOfMonthKst()) {
-      const ymd = getThisMonthStartYmdInKst();
-      if (lastRunYmd !== ymd) {
+    const ymd = getTodayYmdInKst();
+    const range = getLast30DaysRangeUtc();
+
+    if (!ymd || !range) {
+      setTimeout(loop, INTERVAL_MS);
+      return;
+    }
+
+    // 자정 타이밍에 실행 (중복 방지)
+    if (isMidnightKst() && lastRunYmd !== ymd) {
+      lastRunYmd = ymd;
+      await runDailySnapshot(ymd, range);
+    } else if (lastRunYmd !== ymd) {
+      // 자정이 아니더라도 오늘 스냅샷이 누락된 경우 재계산 (워커 장애 복구)
+      const missing = await isTodaySnapshotMissing(ymd);
+      if (missing) {
+        console.log(
+          `[dailyReferralSnapshot] Snapshot missing for ymd=${ymd}, running fallback.`,
+        );
         lastRunYmd = ymd;
-        await runMonthlySnapshot();
+        await runDailySnapshot(ymd, range);
       }
     }
   } catch (err) {
-    console.error("[monthlyReferralSnapshot] Error:", err);
+    console.error("[dailyReferralSnapshot] Error:", err);
   }
   setTimeout(loop, INTERVAL_MS);
 }
 
-if (process.env.MONTHLY_REFERRAL_SNAPSHOT_WORKER_ENABLED !== "false") {
+if (process.env.DAILY_REFERRAL_SNAPSHOT_WORKER_ENABLED !== "false") {
   loop().catch((err) => {
-    console.error("[monthlyReferralSnapshot] Init failed:", err);
+    console.error("[dailyReferralSnapshot] Init failed:", err);
     process.exit(1);
   });
 } else {
-  console.log("[monthlyReferralSnapshot] Worker is disabled");
+  console.log("[dailyReferralSnapshot] Worker is disabled");
 }

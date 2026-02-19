@@ -167,11 +167,12 @@
 ### 5.1.2 관리자용 리퍼럴 그룹 계층도 및 스냅샷
 
 - **목표**: 리더 기준 계층도를 확인하되, 단가/주문 합산은 "리더 본인+직계 1단계" 기준으로 계산하고 당일 첫 조회 시 스냅샷을 생성함.
-- **단가 계산 기준**: **지난달(전월 1일~말일) 완료 의뢰 주문량** 기준으로 당월 단가를 결정한다. (최근 30일 기준 아님)
-- **스냅샷 키**: `(ownerUserId, yyyy-MM-dd)`
+- **단가 계산 기준**: **오늘 KST 자정 기준 직전 30일 완료 의뢰 주문량** 기준으로 당일 단가를 결정한다.
+- **스냅샷 키**: `(ownerUserId, yyyy-MM-dd)` — `ymd`는 오늘 KST 날짜
 - **스냅샷 생성 시점**
-  - **매달 1일 KST 00:00**: `jobs/monthlyReferralSnapshotWorker.js` 워커가 전체 그룹 리더의 스냅샷을 일괄 재계산·upsert.
-  - 요청자 API(`GET /api/requests/my/pricing-referral-stats`)는 본인+직계 기준 스냅샷을 조회/생성.
+  - **매일 KST 00:00**: `jobs/dailyReferralSnapshotWorker.js` 워커가 전체 그룹 리더의 스냅샷을 일괄 재계산·upsert.
+  - **누락 감지**: 워커가 자정에 실행되지 못한 경우, 1분 루프에서 오늘 ymd 스냅샷이 없으면 즉시 재계산(fallback).
+  - 요청자 API(`GET /api/requests/my/pricing-referral-stats`)는 본인+직계 기준 스냅샷을 조회/생성. 스냅샷 누락 시 즉시 재계산.
   - 관리자 API(`GET /api/admin/referral-groups/:leaderId`)에서 **스냅샷이 없으면** 리더 본인+직계 기준 주문량으로 `PricingReferralStatsSnapshot`을 upsert.
   - 목록 API(`/api/admin/referral-groups`)은 snapshot이 없으면 `groupTotalOrders=0`으로 둔 채 `미생성` 배지를 보여줌.
 - **관리자 대시보드 설명**

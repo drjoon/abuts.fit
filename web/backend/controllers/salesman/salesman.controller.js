@@ -4,6 +4,7 @@ import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
+import { getLast30DaysRangeUtc } from "../../utils/krBusinessDays.js";
 
 function parsePeriod(input) {
   const raw = String(input || "").trim();
@@ -53,8 +54,15 @@ function getPeriodRangeUtc(period) {
     return getMonthRangeUtc({ year: y - 1, month: 12 });
   }
 
-  if (period === "7d" || period === "30d" || period === "90d") {
-    const days = period === "7d" ? 7 : period === "30d" ? 30 : 90;
+  if (period === "30d") {
+    const range = getLast30DaysRangeUtc(now);
+    return (
+      range ?? { start: new Date(nowMs - 30 * 24 * 60 * 60 * 1000), end: now }
+    );
+  }
+
+  if (period === "7d" || period === "90d") {
+    const days = period === "7d" ? 7 : 90;
     const start = new Date(nowMs - days * 24 * 60 * 60 * 1000);
     return { start, end: now };
   }
@@ -273,22 +281,13 @@ export async function getSalesmanDashboard(req, res) {
       }
     }
 
-    const period = parsePeriod(req.query?.period);
-
-    const ym = period ? null : parseYearMonth(req.query?.ym);
-    const now = new Date();
-    const effectiveYm = ym || {
-      year: now.getUTCFullYear(),
-      month: now.getUTCMonth() + 1,
-    };
+    const period = parsePeriod(req.query?.period) || "30d";
 
     const commissionRate = 0.05;
     const indirectCommissionRate = commissionRate * 0.5;
     const payoutDayOfMonth = 1;
 
-    const { start, end } = period
-      ? getPeriodRangeUtc(period)
-      : getMonthRangeUtc(effectiveYm);
+    const { start, end } = getPeriodRangeUtc(period);
 
     const referredRequestors = await User.find({
       referredByUserId: me._id,
@@ -476,8 +475,8 @@ export async function getSalesmanDashboard(req, res) {
     return res.status(200).json({
       success: true,
       data: {
-        ym: `${effectiveYm.year}-${String(effectiveYm.month).padStart(2, "0")}`,
-        period: period || null,
+        ym: null,
+        period,
         commissionRate,
         indirectCommissionRate,
         payoutDayOfMonth,

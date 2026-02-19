@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
@@ -15,15 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Search,
-  Filter,
   FileText,
   Clock,
   CheckCircle,
-  AlertTriangle,
   Building2,
   User,
-  Eye,
-  MessageSquare,
   Truck,
   XCircle,
 } from "lucide-react";
@@ -135,6 +131,8 @@ const getStatusIcon = (
   }
 };
 
+const PAGE_SIZE = 9;
+
 export const AdminRequestMonitoring = () => {
   const { token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
@@ -145,6 +143,9 @@ export const AdminRequestMonitoring = () => {
     total?: number;
     byStatus?: Record<string, number>;
   }>({});
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const fetchRequests = async () => {
@@ -157,6 +158,7 @@ export const AdminRequestMonitoring = () => {
         });
         if (res.ok && res.data?.data?.requests) {
           setRequests(res.data.data.requests);
+          setVisibleCount(PAGE_SIZE);
         }
       } catch (error) {
         console.error("Failed to fetch requests:", error);
@@ -217,6 +219,26 @@ export const AdminRequestMonitoring = () => {
 
     return matchesSearch && matchesStatus;
   });
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchQuery, selectedStatus]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const root = listScrollRef.current;
+    if (!sentinel || !root) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisibleCount((prev) => prev + PAGE_SIZE);
+        }
+      },
+      { root, rootMargin: "200px", threshold: 0 },
+    );
+    io.observe(sentinel);
+    return () => io.disconnect();
+  }, [filteredRequests.length, visibleCount]);
 
   const totalCount = requestStats.total ?? 0;
   const byStatus = requestStats.byStatus || {};
@@ -390,21 +412,6 @@ export const AdminRequestMonitoring = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-dashed">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-slate-100 rounded-lg">
-                  <FileText className="h-4 w-4 text-slate-700" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">총 의뢰</p>
-                  <p className="text-2xl font-bold">
-                    {totalCount.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         {/* Requests List */}
@@ -416,85 +423,80 @@ export const AdminRequestMonitoring = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {filteredRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        {getStatusIcon(
+            <div
+              ref={listScrollRef}
+              className="max-h-[70vh] overflow-y-auto pr-1"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredRequests.slice(0, visibleCount).map((request) => (
+                  <div
+                    key={request._id || request.id}
+                    className="p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {getStatusIcon(
+                            request.status,
+                            request.manufacturerStage,
+                            request.status2,
+                          )}
+                          <h3 className="font-medium truncate">
+                            {request.caseInfos?.patientName} (
+                            {request.caseInfos?.tooth})
+                          </h3>
+                          {getPriorityBadge(request.priority)}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <User className="h-3 w-3" />
+                            {request.requestor?.name} (
+                            {request.requestor?.organization})
+                          </span>
+                          {request.manufacturer &&
+                            request.manufacturer !== "-" && (
+                              <span className="flex items-center gap-1">
+                                <Building2 className="h-3 w-3" />
+                                {request.manufacturer}
+                              </span>
+                            )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
+                        {getStatusBadge(
                           request.status,
                           request.manufacturerStage,
                           request.status2,
                         )}
-                        <h3 className="font-medium">
-                          {request.caseInfos?.patientName} (
-                          {request.caseInfos?.tooth})
-                        </h3>
-                        {getPriorityBadge(request.priority)}
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          {request.requestor?.name} (
-                          {request.requestor?.organization})
-                        </span>
-                        {request.manufacturer !== "-" && (
-                          <span className="flex items-center gap-1">
-                            <Building2 className="h-3 w-3" />
-                            {request.manufacturer}
-                          </span>
-                        )}
+                        <div className="text-right text-xs">
+                          <p className="font-medium text-primary">
+                            {(
+                              request.price?.paidAmount ??
+                              request.price?.amount ??
+                              0
+                            ).toLocaleString()}
+                            원
+                          </p>
+                          <p className="text-muted-foreground">
+                            {new Date(request.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                      {getStatusBadge(
-                        request.status,
-                        request.manufacturerStage,
-                        request.status2,
-                      )}
-                      <div className="text-right text-sm">
-                        <p className="font-medium text-primary">
-                          {request.price?.amount?.toLocaleString()}원
-                        </p>
-                        <p className="text-muted-foreground">
-                          의뢰일:{" "}
-                          {new Date(request.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Progress Bar */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">진행률</span>
-                      <span className="font-medium">{request.progress}%</span>
-                    </div>
-                    <div className="w-full bg-muted rounded-full h-2">
-                      <div
-                        className="bg-primary h-2 rounded-full transition-all"
-                        style={{ width: `${request.progress}%` }}
-                      />
+                    {/* Progress Bar */}
+                    <div className="space-y-1">
+                      <div className="w-full bg-muted rounded-full h-1.5">
+                        <div
+                          className="bg-primary h-1.5 rounded-full transition-all"
+                          style={{ width: `${request.progress ?? 0}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-2 justify-end mt-4">
-                    <Button variant="outline" size="sm">
-                      <Eye className="mr-2 h-4 w-4" />
-                      상세보기
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      채팅 참여
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div ref={sentinelRef} className="h-4" />
             </div>
           </CardContent>
         </Card>
