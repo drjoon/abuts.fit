@@ -122,6 +122,10 @@ type ApiTreeNode = {
   updatedAt?: string;
   referredByUserId?: string | null;
   lastMonthOrders?: number;
+  lastMonthPaidOrders?: number;
+  lastMonthBonusOrders?: number;
+  lastMonthPaidRevenue?: number;
+  lastMonthBonusRevenue?: number;
   commissionAmount?: number;
   directCommissionAmount?: number;
   level1CommissionAmount?: number;
@@ -149,7 +153,7 @@ type ApiGroupTreeResponse = {
   error?: string;
 };
 
-const TreeNode = ({
+const SalesmanTreeNode = ({
   node,
   depth,
   onSelect,
@@ -160,13 +164,6 @@ const TreeNode = ({
 }) => {
   const indent = depth * 16;
   const lastMonthOrders = Number(node.lastMonthOrders || 0);
-  const commissionAmount = Number(node.commissionAmount || 0);
-  const directCommissionAmount = Number(node.directCommissionAmount ?? -1);
-  const level1CommissionAmount = Number(node.level1CommissionAmount ?? -1);
-  const hasCommissionBreakdown =
-    directCommissionAmount >= 0 && level1CommissionAmount >= 0;
-  const isSalesman = String(node.role || "") === "salesman";
-  const isRequestor = String(node.role || "") === "requestor";
 
   return (
     <div style={{ paddingLeft: indent }} className="relative">
@@ -191,16 +188,7 @@ const TreeNode = ({
             </div>
             <div className="truncate text-[11px] text-muted-foreground">
               {lastMonthOrders.toLocaleString()}건
-              {(isSalesman || isRequestor) && commissionAmount > 0 ? (
-                <> · 수수료 {formatMoney(commissionAmount)}원</>
-              ) : null}
             </div>
-            {isSalesman && hasCommissionBreakdown && commissionAmount > 0 ? (
-              <div className="text-[10px] text-muted-foreground/70">
-                직접 {formatMoney(directCommissionAmount)}원 + 간접{" "}
-                {formatMoney(level1CommissionAmount)}원
-              </div>
-            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {roleBadge(node.role)}
@@ -230,8 +218,6 @@ export default function AdminReferralGroupsPage() {
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const listSentinelRef = useRef<HTMLDivElement | null>(null);
   const treeScrollRef = useRef<HTMLDivElement | null>(null);
-  const treeSentinelRef = useRef<HTMLDivElement | null>(null);
-  const [treeVisibleCount, setTreeVisibleCount] = useState(10);
   const [sortKey, setSortKey] = useState<"members" | "orders" | "created">(
     "members",
   );
@@ -432,9 +418,11 @@ export default function AdminReferralGroupsPage() {
     retry: false,
   });
 
-  const flattenedTree = useMemo(() => {
+  // 영업자만 필터링한 트리 (영업자 계층도 열)
+  const salesmanFlattenedTree = useMemo(() => {
     const root = treeData?.tree;
-    if (!root) return [] as Array<{ node: ApiTreeNode; depth: number }>;
+    if (!root || String(root.role || "") !== "salesman")
+      return [] as Array<{ node: ApiTreeNode; depth: number }>;
     const out: Array<{ node: ApiTreeNode; depth: number }> = [];
     const stack: Array<{ node: ApiTreeNode; depth: number }> = [
       { node: root, depth: 0 },
@@ -442,51 +430,56 @@ export default function AdminReferralGroupsPage() {
     while (stack.length) {
       const cur = stack.shift();
       if (!cur) break;
-      out.push(cur);
+      if (String(cur.node.role || "") === "salesman") {
+        out.push(cur);
+      }
       const children = Array.isArray(cur.node.children)
         ? cur.node.children
         : [];
-      const sortedChildren = [...children].sort(
-        (a, b) =>
-          Number(b?.lastMonthOrders || 0) - Number(a?.lastMonthOrders || 0),
-      );
-      for (let i = 0; i < sortedChildren.length; i += 1) {
-        stack.push({ node: sortedChildren[i], depth: cur.depth + 1 });
+      const salesmanChildren = children
+        .filter((c) => String(c?.role || "") === "salesman")
+        .sort(
+          (a, b) =>
+            Number(b?.lastMonthOrders || 0) - Number(a?.lastMonthOrders || 0),
+        );
+      for (const child of salesmanChildren) {
+        stack.push({ node: child, depth: cur.depth + 1 });
       }
     }
     return out;
   }, [treeData?.tree]);
 
-  const visibleTreeRows = useMemo(() => {
-    return flattenedTree.slice(0, Math.max(0, treeVisibleCount));
-  }, [flattenedTree, treeVisibleCount]);
-
-  useEffect(() => {
-    setTreeVisibleCount(10);
-  }, [effectiveLeaderId, treeData]);
-
-  useEffect(() => {
-    const sentinel = treeSentinelRef.current;
-    if (!sentinel) return;
-    if (visibleTreeRows.length >= flattenedTree.length) return;
-
-    const root = treeScrollRef.current;
-    if (!root) return;
-
-    const io = new IntersectionObserver(
-      (entries) => {
-        const hit = entries.some((e) => e.isIntersecting);
-        if (!hit) return;
-        setTreeVisibleCount((prev) =>
-          Math.min(prev + 10, flattenedTree.length),
-        );
-      },
-      { root, rootMargin: "200px", threshold: 0 },
+  // 수수료 패널: 직접리퍼럴(영업자가 직접 소개한 의뢰자) 목록
+  // 트리 루트가 영업자인 경우, 루트의 직계 자식 중 의뢰자
+  const directReferralRequestors = useMemo(() => {
+    const root = treeData?.tree;
+    if (!root || String(root.role || "") !== "salesman")
+      return [] as ApiTreeNode[];
+    return (root.children || []).filter(
+      (c) => String(c?.role || "") === "requestor",
     );
+  }, [treeData?.tree]);
 
-    io.observe(sentinel);
-    return () => io.disconnect();
-  }, [flattenedTree.length, visibleTreeRows.length]);
+  // 수수료 패널: 간접리퍼럴(영업자가 소개한 하위 영업자들의 의뢰자) 목록
+  // 루트의 직계 자식 중 영업자들의 직계 자식 중 의뢰자
+  const indirectReferralRequestors = useMemo(() => {
+    const root = treeData?.tree;
+    if (!root || String(root.role || "") !== "salesman")
+      return [] as Array<{ requestor: ApiTreeNode; via: ApiTreeNode }>;
+    const result: Array<{ requestor: ApiTreeNode; via: ApiTreeNode }> = [];
+    const childSalesmen = (root.children || []).filter(
+      (c) => String(c?.role || "") === "salesman",
+    );
+    for (const salesman of childSalesmen) {
+      const requestors = (salesman.children || []).filter(
+        (c) => String(c?.role || "") === "requestor",
+      );
+      for (const r of requestors) {
+        result.push({ requestor: r, via: salesman });
+      }
+    }
+    return result;
+  }, [treeData?.tree]);
 
   return (
     <div className="h-screen max-h-screen overflow-hidden p-4 flex flex-col gap-4">
@@ -643,7 +636,8 @@ export default function AdminReferralGroupsPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 flex-1 min-h-0">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3 flex-1 min-h-0">
+        {/* 열 1: 그룹 목록 */}
         <Card className="h-full flex flex-col min-h-0">
           <CardHeader className="py-3">
             <div className="flex items-center justify-between gap-2">
@@ -753,14 +747,6 @@ export default function AdminReferralGroupsPage() {
                       selectedGroupRow.groupTotalOrders || 0,
                     ).toLocaleString()}
                     건
-                  </div>
-                  <div className="text-emerald-900">
-                    매출{" "}
-                    {(
-                      Number((overview as any)?.avgEffectiveUnitPrice || 0) *
-                      Number(selectedGroupRow.groupTotalOrders || 0)
-                    ).toLocaleString()}
-                    원
                   </div>
                   {String(selectedGroupRow?.leader?.role || "") ===
                   "salesman" ? (
@@ -881,67 +867,206 @@ export default function AdminReferralGroupsPage() {
           </CardContent>
         </Card>
 
+        {/* 열 2: 영업자 계층도 */}
         <Card className="h-full flex flex-col min-h-0">
           <CardHeader className="py-3">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-base">계층도</CardTitle>
-            </div>
+            <CardTitle className="text-base">영업자 계층도</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col min-h-0 flex-1">
-            {isDev && treeData?.tree ? (
-              <div className="mb-2 text-[11px] text-muted-foreground">
-                debug: applied=
-                {String(Boolean((treeData as any)?.unitPriceDebug?.applied))}
-              </div>
-            ) : null}
-
             {isTreeLoading ? (
               <div className="text-sm text-muted-foreground">로딩중...</div>
-            ) : !treeData?.tree ? (
+            ) : salesmanFlattenedTree.length === 0 ? (
               <div className="text-sm text-muted-foreground">
-                그룹을 선택해주세요.
+                {!effectiveLeaderId
+                  ? "그룹을 선택해주세요."
+                  : "영업자 계층 정보가 없습니다."}
               </div>
             ) : (
               <div
                 ref={treeScrollRef}
-                className="space-y-3 flex-1 min-h-0 overflow-y-auto pr-1"
+                className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1"
               >
-                <div className="space-y-2">
-                  {visibleTreeRows.map(({ node, depth }) => (
-                    <TreeNode
-                      key={String(node._id)}
-                      node={node}
-                      depth={depth}
-                      onSelect={(n) => setSelectedNode(n)}
-                    />
-                  ))}
-
-                  {visibleTreeRows.length < flattenedTree.length ? (
-                    <div
-                      ref={treeSentinelRef}
-                      className="h-8"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                  {visibleTreeRows.length < flattenedTree.length ? (
-                    <div className="pb-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() =>
-                          setTreeVisibleCount((prev) =>
-                            Math.min(prev + 10, flattenedTree.length),
-                          )
-                        }
-                      >
-                        더 보기
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
+                {salesmanFlattenedTree.map(({ node, depth }) => (
+                  <SalesmanTreeNode
+                    key={String(node._id)}
+                    node={node}
+                    depth={depth}
+                    onSelect={(n) => setSelectedNode(n)}
+                  />
+                ))}
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 열 3: 수수료 */}
+        <Card className="h-full flex flex-col min-h-0">
+          <CardHeader className="py-3">
+            <CardTitle className="text-base">수수료</CardTitle>
+            {effectiveLeaderId &&
+            treeData?.tree &&
+            String(treeData.tree.role || "") === "salesman" ? (
+              <CardDescription className="text-[11px]">
+                직접 5% · 간접 2.5%
+              </CardDescription>
+            ) : null}
+          </CardHeader>
+          <CardContent className="flex flex-col min-h-0 flex-1 overflow-y-auto pr-1 space-y-4">
+            {isTreeLoading ? (
+              <div className="text-sm text-muted-foreground">로딩중...</div>
+            ) : !effectiveLeaderId || !treeData?.tree ? (
+              <div className="text-sm text-muted-foreground">
+                그룹을 선택해주세요.
+              </div>
+            ) : String(treeData.tree.role || "") !== "salesman" ? (
+              <div className="text-sm text-muted-foreground">
+                영업자 그룹만 수수료가 표시됩니다.
+              </div>
+            ) : (
+              <>
+                {/* 직접리퍼럴 */}
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-sm font-semibold">직접리퍼럴</span>
+                    <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[10px] px-1.5 py-0">
+                      5%
+                    </Badge>
+                    <span className="text-[11px] text-muted-foreground">
+                      {directReferralRequestors.length}개 조직
+                    </span>
+                  </div>
+                  {directReferralRequestors.length === 0 ? (
+                    <div className="text-xs text-muted-foreground pl-2">
+                      직접 소개한 의뢰자 없음
+                    </div>
+                  ) : (
+                    <div className="space-y-1 pl-2 border-l-2 border-emerald-200">
+                      {directReferralRequestors.map((r) => {
+                        const paidOrders = Number(r.lastMonthPaidOrders || 0);
+                        const bonusOrders = Number(r.lastMonthBonusOrders || 0);
+                        const paidRevenue = Number(r.lastMonthPaidRevenue || 0);
+                        const bonusRevenue = Number(
+                          r.lastMonthBonusRevenue || 0,
+                        );
+                        const commission = Math.round(paidRevenue * 0.05);
+                        return (
+                          <button
+                            key={String(r._id)}
+                            type="button"
+                            className="w-full text-left rounded-md hover:bg-muted/40 px-2 py-1"
+                            onClick={() => setSelectedNode(r)}
+                          >
+                            <div className="truncate text-sm font-medium">
+                              {r.organization || r.name || r.email || r._id}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              유료 {paidOrders.toLocaleString()}건
+                              {bonusOrders > 0 ? (
+                                <span className="text-muted-foreground/60">
+                                  {" "}
+                                  ({bonusOrders.toLocaleString()}건 무료)
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">
+                              유료 {formatMoney(paidRevenue)}원
+                              {bonusRevenue > 0 ? (
+                                <span className="text-muted-foreground/60">
+                                  {" "}
+                                  ({formatMoney(bonusRevenue)}원 무료)
+                                </span>
+                              ) : null}
+                            </div>
+                            {commission > 0 ? (
+                              <div className="text-[11px] font-semibold text-emerald-700">
+                                수수료 {formatMoney(commission)}원
+                              </div>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 간접리퍼럴 */}
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-sm font-semibold">간접리퍼럴</span>
+                    <Badge className="bg-blue-600 text-white hover:bg-blue-600 text-[10px] px-1.5 py-0">
+                      2.5%
+                    </Badge>
+                    <span className="text-[11px] text-muted-foreground">
+                      {indirectReferralRequestors.length}개 조직
+                    </span>
+                  </div>
+                  {indirectReferralRequestors.length === 0 ? (
+                    <div className="text-xs text-muted-foreground pl-2">
+                      간접 소개한 의뢰자 없음
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pl-2 border-l-2 border-blue-200">
+                      {indirectReferralRequestors.map(
+                        ({ requestor: r, via }) => {
+                          const paidOrders = Number(r.lastMonthPaidOrders || 0);
+                          const bonusOrders = Number(
+                            r.lastMonthBonusOrders || 0,
+                          );
+                          const paidRevenue = Number(
+                            r.lastMonthPaidRevenue || 0,
+                          );
+                          const bonusRevenue = Number(
+                            r.lastMonthBonusRevenue || 0,
+                          );
+                          const commission = Math.round(paidRevenue * 0.025);
+                          return (
+                            <button
+                              key={String(r._id)}
+                              type="button"
+                              className="w-full text-left rounded-md hover:bg-muted/40 px-2 py-1"
+                              onClick={() => setSelectedNode(r)}
+                            >
+                              <div className="text-[10px] text-muted-foreground/70 mb-0.5">
+                                경유:{" "}
+                                {via.organization ||
+                                  via.name ||
+                                  via.email ||
+                                  via._id}
+                              </div>
+                              <div className="truncate text-sm font-medium">
+                                {r.organization || r.name || r.email || r._id}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                유료 {paidOrders.toLocaleString()}건
+                                {bonusOrders > 0 ? (
+                                  <span className="text-muted-foreground/60">
+                                    {" "}
+                                    ({bonusOrders.toLocaleString()}건 무료)
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground">
+                                유료 {formatMoney(paidRevenue)}원
+                                {bonusRevenue > 0 ? (
+                                  <span className="text-muted-foreground/60">
+                                    {" "}
+                                    ({formatMoney(bonusRevenue)}원 무료)
+                                  </span>
+                                ) : null}
+                              </div>
+                              {commission > 0 ? (
+                                <div className="text-[11px] font-semibold text-blue-700">
+                                  수수료 {formatMoney(commission)}원
+                                </div>
+                              ) : null}
+                            </button>
+                          );
+                        },
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

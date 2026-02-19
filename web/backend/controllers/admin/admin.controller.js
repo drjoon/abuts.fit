@@ -1024,6 +1024,8 @@ async function getReferralGroupTree(req, res) {
       lastMonthOrders: ordersByUserId.get(String(u._id))?.total || 0,
       lastMonthPaidOrders: ordersByUserId.get(String(u._id))?.paid || 0,
       lastMonthBonusOrders: ordersByUserId.get(String(u._id))?.bonus || 0,
+      lastMonthPaidRevenue: 0, // 이후 루프에서 채워짐 (의뢰자만)
+      lastMonthBonusRevenue: 0, // 이후 루프에서 채워짐 (의뢰자만)
       commissionAmount: 0, // 이후 루프에서 채워짐
     }));
 
@@ -1086,13 +1088,15 @@ async function getReferralGroupTree(req, res) {
 
     const commissionRate = 0.05;
 
-    // 의뢰자 노드: commissionAmount = 해당 조직의 지난달 유료 매출 * 5%
+    // 의뢰자 노드: revenue 및 commissionAmount 설정
     for (const n of nodes) {
       if (String(n?.role || "") !== "requestor") continue;
       const oid = String(n.organizationId || "");
       if (!oid) continue;
       const rev = revenueByOrgIdInGroup.get(oid);
       if (!rev) continue;
+      n.lastMonthPaidRevenue = Number(rev.paid || 0);
+      n.lastMonthBonusRevenue = Number(rev.bonus || 0);
       n.commissionAmount = Math.round(Number(rev.paid || 0) * commissionRate);
     }
 
