@@ -99,66 +99,6 @@ const formatMachineDiameterLabel = (machine: Machine): string => {
   return "-";
 };
 
-type MockQueueItem = {
-  id: string;
-  client: string;
-  patient: string;
-  tooth: string;
-  programName: string;
-  qty: number;
-};
-
-const mockDiameterQueues: Record<UiDiameterBucketKey, MockQueueItem[]> = {
-  "6": [
-    {
-      id: "Q-601",
-      client: "서울치과기공소",
-      patient: "홍길동",
-      tooth: "16",
-      programName: "상악 대구치 커스텀 어벗",
-      qty: 2,
-    },
-  ],
-  "8": [
-    {
-      id: "Q-801",
-      client: "부산치과기공소",
-      patient: "김민수",
-      tooth: "35",
-      programName: "하악 소구치 어벗",
-      qty: 1,
-    },
-    {
-      id: "Q-802",
-      client: "대구치과기공소",
-      patient: "이수현",
-      tooth: "21",
-      programName: "전치부 지르코니아",
-      qty: 1,
-    },
-  ],
-  "10": [
-    {
-      id: "Q-1001",
-      client: "수원치과기공소",
-      patient: "정민호",
-      tooth: "11",
-      programName: "전치부 브릿지",
-      qty: 3,
-    },
-  ],
-  "12": [
-    {
-      id: "Q-10P1",
-      client: "서울프리미엄기공소",
-      patient: "박서연",
-      tooth: "16/14/11/21/24/26",
-      programName: "풀마우스 와이드",
-      qty: 6,
-    },
-  ],
-};
-
 interface WorksheetMachineCardProps {
   machine: Machine;
   loading: boolean;
@@ -548,46 +488,18 @@ export const WorksheetCncMachineSection = ({
 
   const diameterQueueSummary = useMemo(() => {
     const labels: UiDiameterBucketKey[] = ["6", "8", "10", "12"];
-    const counts = labels.map((label) => mockDiameterQueues[label].length);
-    const total = counts.reduce((sum, c) => sum + c, 0);
+    const counts = labels.map(() => 0);
+    const total = 0;
     return { labels, counts, total };
   }, []);
 
   const machiningQueues: Record<UiDiameterBucketKey, WorksheetQueueItem[]> =
     useMemo(
       () => ({
-        "6": mockDiameterQueues["6"].map((q) => ({
-          id: q.id,
-          client: q.client,
-          patient: q.patient,
-          tooth: q.tooth,
-          programText: q.programName,
-          qty: q.qty,
-        })),
-        "8": mockDiameterQueues["8"].map((q) => ({
-          id: q.id,
-          client: q.client,
-          patient: q.patient,
-          tooth: q.tooth,
-          programText: q.programName,
-          qty: q.qty,
-        })),
-        "10": mockDiameterQueues["10"].map((q) => ({
-          id: q.id,
-          client: q.client,
-          patient: q.patient,
-          tooth: q.tooth,
-          programText: q.programName,
-          qty: q.qty,
-        })),
-        "12": mockDiameterQueues["12"].map((q) => ({
-          id: q.id,
-          client: q.client,
-          patient: q.patient,
-          tooth: q.tooth,
-          programText: q.programName,
-          qty: q.qty,
-        })),
+        "6": [],
+        "8": [],
+        "10": [],
+        "12": [],
       }),
       [],
     );
