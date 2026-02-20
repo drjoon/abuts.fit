@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 
-import type { Machine } from "@/pages/manufacturer/cnc/types";
+import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { getFileBlob, setFileBlob } from "@/shared/files/fileBlobCache";

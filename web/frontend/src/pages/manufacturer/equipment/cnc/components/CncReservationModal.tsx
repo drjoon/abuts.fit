@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Machine } from "@/pages/manufacturer/cnc/types";
+import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useManUpload } from "../hooks/useManUpload";
 

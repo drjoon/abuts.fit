@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
+import type { HealthLevel } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";
 
 interface UseCncTempPanelParams {
   callRaw: (uid: string, dataType: string, payload?: any) => Promise<any>;

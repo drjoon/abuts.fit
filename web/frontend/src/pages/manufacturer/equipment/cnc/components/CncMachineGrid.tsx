@@ -1,7 +1,7 @@
 import React from "react";
-import { Machine } from "@/pages/manufacturer/cnc/types";
-import { MachineCard } from "@/pages/manufacturer/cnc/components/MachineCard";
-import type { CncJobItem } from "@/pages/manufacturer/cnc/components/CncReservationModal";
+import { Machine } from "@/pages/manufacturer/equipment/cnc/types";
+import { MachineCard } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";
+import type { CncJobItem } from "@/pages/manufacturer/equipment/cnc/components/CncReservationModal";
 import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 
 interface CncMachineGridProps {

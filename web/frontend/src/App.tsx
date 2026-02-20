@@ -69,12 +69,12 @@ import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
-import { ManufacturerPaymentPage } from "@/pages/manufacturer/ManufacturerPaymentPage";
+import { ManufacturerPaymentPage } from "@/pages/manufacturer/payments/PaymentsPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
 const CncDashboardPage = lazy(() =>
-  import("./pages/manufacturer/CncDashboardPage").then((m) => ({
-    default: m.CncDashboardPage,
+  import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
+    default: m.CncDashboardPage || m.EquipmentPage,
   })),
 );
 const HelpPage = lazy(() =>

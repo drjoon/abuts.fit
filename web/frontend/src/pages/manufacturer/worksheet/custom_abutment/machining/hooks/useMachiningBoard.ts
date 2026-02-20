@@ -13,7 +13,7 @@ import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines
 import { useCncProgramEditor } from "@/features/manufacturer/cnc/hooks/useCncProgramEditor";
 import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
-import type { PlaylistJobItem } from "@/pages/manufacturer/cnc/components/CncPlaylistDrawer";
+import type { PlaylistJobItem } from "@/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer";
 import type {
   QueueItem,
   QueueMap,

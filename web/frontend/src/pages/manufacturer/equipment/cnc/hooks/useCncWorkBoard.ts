@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { Machine } from "@/pages/manufacturer/cnc/types";
+import { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import { useToast } from "@/shared/hooks/use-toast";
 
 export const useCncWorkBoard = (

@@ -1,4 +1,4 @@
-import type { MachineForm } from "@/pages/manufacturer/cnc/types";
+import type { MachineForm } from "@/pages/manufacturer/equipment/cnc/types";
 import { useRef } from "react";
 
 interface CncMachineManagerModalProps {

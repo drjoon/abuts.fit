@@ -7,13 +7,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
-import type { Machine } from "@/pages/manufacturer/cnc/types";
+import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
 import { useCncTempPanel } from "@/features/manufacturer/cnc/hooks/useCncTempPanel";
 import { useCncToolPanels } from "@/features/manufacturer/cnc/hooks/useCncToolPanels";
 import { useCncContinuous } from "@/features/manufacturer/cnc/hooks/useCncContinuous";
-import { CncTempDetailModal } from "@/pages/manufacturer/cnc/components/CncTempDetailModal";
-import { CncToolStatusModal } from "@/pages/manufacturer/cnc/components/CncToolStatusModal";
+import { CncTempDetailModal } from "@/pages/manufacturer/equipment/cnc/components/CncTempDetailModal";
+import { CncToolStatusModal } from "@/pages/manufacturer/equipment/cnc/components/CncToolStatusModal";
 import { useCncWriteGuard } from "@/features/manufacturer/cnc/hooks/useCncWriteGuard";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -22,7 +22,7 @@ import {
   WorksheetDiameterQueueModal,
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
-import type { HealthLevel } from "@/pages/manufacturer/cnc/components/MachineCard";
+import type { HealthLevel } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { DiameterBucketKey as UiDiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 

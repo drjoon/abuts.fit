@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
-import { Machine, MachineForm } from "@/pages/manufacturer/cnc/types";
+import { Machine, MachineForm } from "@/pages/manufacturer/equipment/cnc/types";
 
 export const useCncMachines = () => {
   const { token } = useAuthStore();

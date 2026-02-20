@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 
-import type { Machine } from "@/pages/manufacturer/cnc/types";
+import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 
 interface UseCncDashboardCoreParams {
   machines: Machine[];

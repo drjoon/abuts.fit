@@ -22,17 +22,17 @@ import {
 import { useAuthStore } from "@/store/useAuthStore";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { Machine } from "@/pages/manufacturer/cnc/types";
+import { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import {
   getMachineStatusDotClass,
   getMachineStatusLabel,
-} from "@/pages/manufacturer/cnc/lib/machineStatus";
+} from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 import type { ContinuousMachiningState } from "../hooks/useCncContinuous";
 import { useQueueSlots } from "../hooks/useQueueSlots";
 import { CncCirclePlayPauseButton } from "./CncCirclePlayPauseButton";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getMockCncMachiningEnabled } from "@/shared/bridge/bridgeSettings";
-import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/cnc/components/CompletedMachiningRecordsModal";
+import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal";
 import {
   MACHINING_SECTION_LABELS,
   buildLastCompletedSummary,

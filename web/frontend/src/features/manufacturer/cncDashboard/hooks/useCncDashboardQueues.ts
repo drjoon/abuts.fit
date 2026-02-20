@@ -5,4 +5,4 @@
 // simply re-exports it so that domain hooks live under `features/` while we
 // keep a single source of truth.
 
-export { useCncDashboardQueues } from "@/pages/manufacturer/cncDashboard/hooks/useCncDashboardQueues";
+export { useCncDashboardQueues } from "@/pages/manufacturer/equipment/cncDashboard/hooks/useCncDashboardQueues";

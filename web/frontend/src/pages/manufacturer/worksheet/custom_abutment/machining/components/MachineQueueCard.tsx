@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { getMachineStatusDotClass } from "@/pages/manufacturer/cnc/lib/machineStatus";
+import { getMachineStatusDotClass } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 import {
   MACHINING_SECTION_LABELS,
   buildLastCompletedSummary,
