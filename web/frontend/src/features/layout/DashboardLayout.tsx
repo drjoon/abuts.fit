@@ -643,7 +643,7 @@ export const DashboardLayout = () => {
 
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
-  const worksheetStage = worksheetParams.get("stage") || "receive";
+  const worksheetStage = worksheetParams.get("stage") || "request";
 
   const handleLogout = () => {
     logout();
@@ -874,7 +874,7 @@ export const DashboardLayout = () => {
                           size="sm"
                           onClick={() =>
                             navigate(
-                              "/dashboard/worksheet?type=cnc&stage=receive",
+                              "/dashboard/worksheet?type=cnc&stage=request",
                             )
                           }
                         >
@@ -899,8 +899,7 @@ export const DashboardLayout = () => {
                           <div className="flex flex-wrap gap-1 text-xs flex-shrink-0">
                             <Button
                               variant={
-                                worksheetStage === "request" ||
-                                worksheetStage === "receive"
+                                worksheetStage === "request"
                                   ? "default"
                                   : "ghost"
                               }
@@ -946,7 +945,7 @@ export const DashboardLayout = () => {
                             </Button>
                             <Button
                               variant={
-                                worksheetStage === "packaging"
+                                worksheetStage === "packing"
                                   ? "default"
                                   : "ghost"
                               }
@@ -954,11 +953,11 @@ export const DashboardLayout = () => {
                               className="h-7 px-2 text-xs"
                               onClick={() =>
                                 navigate(
-                                  "/dashboard/worksheet?type=cnc&stage=packaging",
+                                  "/dashboard/worksheet?type=cnc&stage=packing",
                                 )
                               }
                             >
-                              세척.포장
+                              세척.패킹
                             </Button>
                             <Button
                               variant={
@@ -974,7 +973,7 @@ export const DashboardLayout = () => {
                                 )
                               }
                             >
-                              발송
+                              포장.발송
                             </Button>
                             <Button
                               variant={

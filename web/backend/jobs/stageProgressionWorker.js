@@ -72,17 +72,33 @@ async function progressStages() {
       console.log(`  [CAM→가공] ${req.requestId} (CAM 승인 완료)`);
     }
 
-    const productionToShipping = await Request.find({
-      status: { $in: ["가공", "세척.포장"] },
+    // 3. 가공 → 세척.패킹: 출고 예정일 1영업일 이내 도달한 가공 완료 건
+    const productionToPackaging = await Request.find({
+      status: "가공",
       "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
     });
 
-    for (const req of productionToShipping) {
-      applyStatusMapping(req, "발송");
+    for (const req of productionToPackaging) {
+      applyStatusMapping(req, "세척.패킹");
       await req.save();
       updatedCount++;
       console.log(
-        `  [가공→발송] ${req.requestId} (SHIP: ${req.timeline.estimatedShipYmd})`,
+        `  [가공→세척.패킹] ${req.requestId} (SHIP: ${req.timeline.estimatedShipYmd})`,
+      );
+    }
+
+    // 4. 세척.패킹 → 포장.발송: 출고 예정일이 도래한 세척·패킹 완료 건
+    const packagingToShipping = await Request.find({
+      status: "세척.패킹",
+      "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
+    });
+
+    for (const req of packagingToShipping) {
+      applyStatusMapping(req, "포장.발송");
+      await req.save();
+      updatedCount++;
+      console.log(
+        `  [세척.패킹→포장.발송] ${req.requestId} (SHIP: ${req.timeline.estimatedShipYmd})`,
       );
     }
 

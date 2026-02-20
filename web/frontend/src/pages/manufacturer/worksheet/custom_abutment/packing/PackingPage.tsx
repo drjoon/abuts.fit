@@ -44,7 +44,7 @@ type PreviewFiles = {
   request?: ManufacturerRequest | null;
 };
 
-export const PackagingPage = ({
+export const PackingPage = ({
   showQueueBar = true,
 }: {
   showQueueBar?: boolean;
@@ -55,7 +55,7 @@ export const PackagingPage = ({
     showCompleted: boolean;
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabStage = "packaging";
+  const tabStage = "packing";
 
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -256,7 +256,7 @@ export const PackagingPage = ({
     });
   }, []);
 
-  const handlePackagingImageDrop = useCallback(
+  const handlePackingImageDrop = useCallback(
     async (imageFiles: File[]) => {
       if (!token || imageFiles.length === 0) return;
 
@@ -335,7 +335,7 @@ export const PackagingPage = ({
 
               await handleUploadStageFile({
                 req: matchingRequest,
-                stage: "packaging",
+                stage: "packing",
                 file: resizedFile || imageFiles[index] || imageFiles[0],
                 source: "manual",
               });
@@ -343,7 +343,7 @@ export const PackagingPage = ({
               await handleUpdateReviewStatus({
                 req: matchingRequest,
                 status: "APPROVED",
-                stageOverride: "packaging",
+                stageOverride: "packing",
               });
 
               toast({
@@ -362,7 +362,7 @@ export const PackagingPage = ({
           }),
         );
       } catch (error: any) {
-        console.error("Packaging LOT 인식 처리 오류:", error);
+        console.error("Packing LOT 인식 처리 오류:", error);
         toast({
           title: "이미지 처리 실패",
           description:
@@ -390,7 +390,7 @@ export const PackagingPage = ({
     (req: ManufacturerRequest, files: File[]) => {
       return handleUploadStageFile({
         req,
-        stage: "packaging",
+        stage: "packing",
         file: files[0],
         source: "manual",
       });
@@ -413,10 +413,10 @@ export const PackagingPage = ({
         return;
       }
 
-      if (stage === "세척.포장") {
+      if (stage === "세척.포장" || stage === "세척.패킹") {
         void handleDeleteStageFile({
           req,
-          stage: "packaging",
+          stage: "packing",
           rollbackOnly: true,
         });
         return;
@@ -463,9 +463,9 @@ export const PackagingPage = ({
 
       if (imageFiles.length === 0) return;
 
-      void handlePackagingImageDrop(imageFiles);
+      void handlePackingImageDrop(imageFiles);
     },
-    [handlePackagingImageDrop],
+    [handlePackingImageDrop],
   );
 
   const handlePageDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -485,7 +485,7 @@ export const PackagingPage = ({
   }, [fetchRequests]);
 
   const searchLower = worksheetSearch.toLowerCase();
-  const currentStageForTab = "세척.포장";
+  const currentStageForTab = "세척.패킹";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const filteredBase = (() => {
@@ -499,7 +499,7 @@ export const PackagingPage = ({
 
     return requests.filter((req) => {
       const stage = deriveStageForFilter(req);
-      return stage === "세척.포장";
+      return stage === "세척.패킹";
     });
   })();
 
@@ -549,7 +549,7 @@ export const PackagingPage = ({
 
   const paginatedRequests = filteredAndSorted.slice(0, visibleCount);
 
-  const diameterQueueForPackaging = useMemo(() => {
+  const diameterQueueForPacking = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];
     const counts = labels.map(() => 0);
     const buckets: Record<DiameterBucketKey, WorksheetQueueItem[]> = {
@@ -639,14 +639,14 @@ export const PackagingPage = ({
       {showQueueBar && (
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
           <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
-            진행중인 의뢰 총 {diameterQueueForPackaging.total}건
+            진행중인 의뢰 총 {diameterQueueForPacking.total}건
           </div>
           <div className="flex-1">
             <WorksheetDiameterQueueBar
               title=""
-              labels={diameterQueueForPackaging.labels}
-              counts={diameterQueueForPackaging.counts}
-              total={diameterQueueForPackaging.total}
+              labels={diameterQueueForPacking.labels}
+              counts={diameterQueueForPacking.counts}
+              total={diameterQueueForPacking.total}
               onBucketClick={(label) => {
                 setSelectedBucket(label);
                 setQueueModalOpen(true);
@@ -751,8 +751,8 @@ export const PackagingPage = ({
       <WorksheetDiameterQueueModal
         open={queueModalOpen}
         onOpenChange={setQueueModalOpen}
-        processLabel="커스텀어벗 > 세척.포장"
-        queues={diameterQueueForPackaging.buckets}
+        processLabel="커스텀어벗 > 세척.패킹"
+        queues={diameterQueueForPacking.buckets}
         selectedBucket={selectedBucket}
         onSelectBucket={(bucket) => setSelectedBucket(bucket)}
       />

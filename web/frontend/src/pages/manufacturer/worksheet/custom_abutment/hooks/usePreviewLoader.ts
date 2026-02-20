@@ -227,13 +227,13 @@ export function usePreviewLoader({
         // 생산/발송/추적관리 탭: stageFiles 이미지 URL도 불러온다.
         if (
           previewStageKey === "machining" ||
-          previewStageKey === "packaging" ||
+          previewStageKey === "packing" ||
           previewStageKey === "shipping" ||
           previewStageKey === "tracking"
         ) {
-          // 발송 탭에서는 포장 단계(stage="packaging")의 이미지를 재사용한다.
+          // 발송 탭에서는 포장 단계(stage="packing")의 이미지를 재사용한다.
           const effectiveStageKey =
-            previewStageKey === "shipping" ? "packaging" : previewStageKey;
+            previewStageKey === "shipping" ? "packing" : previewStageKey;
 
           const stageMeta = req.caseInfos?.stageFiles?.[effectiveStageKey];
           if (stageMeta?.s3Key) {

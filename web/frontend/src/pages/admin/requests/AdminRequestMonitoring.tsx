@@ -36,9 +36,10 @@ const normalizeStage = (
   if (s === "취소") return "취소";
   if (s2 === "완료") return "완료";
 
-  if (["shipping", "tracking", "발송", "추적관리"].includes(stage))
-    return "발송";
-  if (["packaging", "세척.포장"].includes(stage)) return "세척.포장";
+  if (["shipping", "tracking", "발송", "포장.발송", "추적관리"].includes(stage))
+    return "포장.발송";
+  if (["packaging", "세척.포장", "세척.패킹"].includes(stage))
+    return "세척.패킹";
   if (["machining", "production", "가공"].includes(stage)) return "가공";
   if (["cam", "CAM", "가공전"].includes(stage)) return "CAM";
   return "의뢰";
@@ -61,16 +62,16 @@ const getStatusBadge = (
           가공
         </Badge>
       );
-    case "세척.포장":
+    case "세척.패킹":
       return (
         <Badge className="bg-purple-50 text-purple-700 border-purple-200 text-xs">
-          세척.포장
+          세척.패킹
         </Badge>
       );
-    case "발송":
+    case "포장.발송":
       return (
         <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
-          발송
+          포장.발송
         </Badge>
       );
     case "완료":
@@ -118,9 +119,9 @@ const getStatusIcon = (
       return <FileText className="h-4 w-4 text-blue-500" />;
     case "CAM":
     case "가공":
-    case "세척.포장":
+    case "세척.패킹":
       return <Clock className="h-4 w-4 text-green-500" />;
-    case "발송":
+    case "포장.발송":
       return <Truck className="h-4 w-4 text-orange-500" />;
     case "완료":
       return <CheckCircle className="h-4 w-4 text-green-500" />;
@@ -245,8 +246,8 @@ export const AdminRequestMonitoring = () => {
   const receiveCount = byStatus["의뢰"] || 0;
   const camCount = byStatus["CAM"] || 0;
   const machiningCount = byStatus["가공"] || 0;
-  const packagingCount = byStatus["세척.포장"] || 0;
-  const shippingCount = byStatus["발송"] || 0;
+  const packagingCount = byStatus["세척.패킹"] || byStatus["세척.포장"] || 0;
+  const shippingCount = byStatus["포장.발송"] || byStatus["발송"] || 0;
   const doneCount = byStatus["완료"] || 0;
   const canceledCount = byStatus["취소"] || 0;
 
@@ -296,18 +297,18 @@ export const AdminRequestMonitoring = () => {
                 가공
               </Button>
               <Button
-                variant={selectedStatus === "세척.포장" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("세척.포장")}
+                variant={selectedStatus === "세척.패킹" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("세척.패킹")}
                 size="sm"
               >
-                세척.포장
+                세척.패킹
               </Button>
               <Button
-                variant={selectedStatus === "발송" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("발송")}
+                variant={selectedStatus === "포장.발송" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("포장.발송")}
                 size="sm"
               >
-                발송
+                포장.발송
               </Button>
               <Button
                 variant={selectedStatus === "취소" ? "default" : "outline"}
@@ -374,7 +375,7 @@ export const AdminRequestMonitoring = () => {
                   <Clock className="h-4 w-4 text-purple-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">세척.포장</p>
+                  <p className="text-sm text-muted-foreground">세척.패킹</p>
                   <p className="text-2xl font-bold">
                     {packagingCount.toLocaleString()}
                   </p>
@@ -389,7 +390,7 @@ export const AdminRequestMonitoring = () => {
                   <Truck className="h-4 w-4 text-orange-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">발송</p>
+                  <p className="text-sm text-muted-foreground">포장.발송</p>
                   <p className="text-2xl font-bold">
                     {shippingCount.toLocaleString()}
                   </p>

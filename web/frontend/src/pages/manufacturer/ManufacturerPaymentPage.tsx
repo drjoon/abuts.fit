@@ -4,6 +4,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
@@ -141,20 +142,8 @@ export const ManufacturerPaymentPage = () => {
   );
   const [snapshotStatus, setSnapshotStatus] =
     useState<ManufacturerDailySnapshotStatus | null>(null);
-  const [snapshotRecalcLoading, setSnapshotRecalcLoading] = useState(false);
 
   const anyLoading = loading || ledgerLoading || snapLoading;
-
-  const snapshotRecalcDisabled = (() => {
-    const baseMidnightUtc = snapshotStatus?.baseMidnightUtc;
-    const last = snapshotStatus?.lastComputedAt;
-    if (!baseMidnightUtc || !last) return false;
-    const base = new Date(baseMidnightUtc);
-    const computed = new Date(last);
-    if (Number.isNaN(base.getTime()) || Number.isNaN(computed.getTime()))
-      return false;
-    return computed.getTime() >= base.getTime();
-  })();
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -242,29 +231,9 @@ export const ManufacturerPaymentPage = () => {
     }
   };
 
-  const recalcSnapshots = async () => {
-    if (!token) return;
-    setSnapshotRecalcLoading(true);
-    try {
-      const res = await apiFetch<any>({
-        path: `/api/manufacturer/credits/daily-snapshots/recalc`,
-        method: "POST",
-        token,
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(res.data?.message || "재계산 실패");
-      }
-      await loadSnapshotStatus();
-      await loadSnapshots();
-    } catch (err: any) {
-      toast({
-        title: "재계산 실패",
-        description: err?.message,
-        variant: "destructive",
-      });
-    } finally {
-      setSnapshotRecalcLoading(false);
-    }
+  const handleSnapshotSuccess = async () => {
+    await loadSnapshotStatus();
+    await loadSnapshots();
   };
 
   useEffect(() => {
@@ -493,19 +462,12 @@ export const ManufacturerPaymentPage = () => {
                   </DialogContent>
                 </Dialog>
 
-                <Button
-                  type="button"
-                  variant="outline"
+                <SnapshotRecalcAllButton
+                  token={token}
                   className="h-9"
-                  disabled={
-                    snapshotRecalcLoading ||
-                    !snapshotStatus ||
-                    snapshotRecalcDisabled
-                  }
-                  onClick={() => void recalcSnapshots()}
-                >
-                  스냅샷
-                </Button>
+                  disabled={anyLoading}
+                  onSuccess={handleSnapshotSuccess}
+                />
 
                 <div className="grow" />
               </div>

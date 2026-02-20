@@ -1,16 +1,12 @@
-import { Types } from "mongoose";
-import User from "../../models/user.model.js";
-import Request from "../../models/request.model.js";
-import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../../models/manufacturerDailySettlementSnapshot.model.js";
 import {
-  getLast30DaysRangeUtc,
   getTodayYmdInKst,
   getYesterdayYmdInKst,
   getTodayMidnightUtcInKst,
 } from "../../utils/krBusinessDays.js";
 import { recalcAdminSalesmanCreditsOverviewSnapshot } from "../admin/adminCredit.controller.js";
+import { recalcReferralSnapshot } from "../admin/admin.controller.js";
 
 function kstYmdToUtcRange(ymd) {
   const dt = new Date(`${ymd}T00:00:00.000+09:00`);
@@ -20,134 +16,9 @@ function kstYmdToUtcRange(ymd) {
   return { start, end };
 }
 
-async function runReferralSnapshotRecalc() {
-  const ymd = getTodayYmdInKst();
-  const range30 = getLast30DaysRangeUtc();
-  if (!ymd || !range30) {
-    return {
-      success: false,
-      message: "날짜 계산 실패",
-    };
-  }
-  const { start: lastMonthStart, end: lastMonthEnd } = range30;
-
-  const leaders = await User.find({
-    $or: [{ role: "salesman" }, { role: "requestor", requestorRole: "owner" }],
-    active: true,
-  })
-    .select({ _id: 1, role: 1, organizationId: 1 })
-    .lean();
-
-  if (!leaders.length) {
-    return { success: true, upsertCount: 0, ymd, computedAt: new Date() };
-  }
-
-  const leaderIds = leaders.map((l) => l._id).filter(Boolean);
-
-  const directChildren = await User.find({
-    referredByUserId: { $in: leaderIds },
-    role: { $in: ["requestor", "salesman"] },
-    active: true,
-  })
-    .select({ _id: 1, referredByUserId: 1, organizationId: 1, role: 1 })
-    .lean();
-
-  const childIdsByLeaderId = new Map();
-  for (const u of directChildren) {
-    const lid = String(u.referredByUserId || "");
-    if (!lid) continue;
-    const arr = childIdsByLeaderId.get(lid) || [];
-    arr.push(u);
-    childIdsByLeaderId.set(lid, arr);
-  }
-
-  const relevantUserIds = [...leaderIds, ...directChildren.map((u) => u._id)].filter(
-    Boolean,
-  );
-
-  const requestRows = relevantUserIds.length
-    ? await Request.aggregate([
-        {
-          $match: {
-            requestor: { $in: relevantUserIds },
-            status: "완료",
-            createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-          },
-        },
-        { $group: { _id: "$requestor", orderCount: { $sum: 1 } } },
-      ])
-    : [];
-
-  const ordersByUserId = new Map(
-    requestRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
-  );
-
-  const requestorLeaderOrgIds = leaders
-    .filter((l) => String(l.role) === "requestor" && l.organizationId)
-    .map((l) => String(l.organizationId));
-  const requestorLeaderOrgObjectIds = requestorLeaderOrgIds
-    .filter((id) => Types.ObjectId.isValid(id))
-    .map((id) => new Types.ObjectId(id));
-
-  const orgOrderRows = requestorLeaderOrgObjectIds.length
-    ? await Request.aggregate([
-        {
-          $match: {
-            requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
-            status: "완료",
-            createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
-          },
-        },
-        {
-          $group: { _id: "$requestorOrganizationId", orderCount: { $sum: 1 } },
-        },
-      ])
-    : [];
-
-  const ordersByOrgId = new Map(
-    orgOrderRows.map((r) => [String(r._id), Number(r.orderCount || 0)]),
-  );
-
-  let upsertCount = 0;
-  const computedAt = new Date();
-  for (const leader of leaders) {
-    const lid = String(leader._id);
-    const children = childIdsByLeaderId.get(lid) || [];
-    const memberCount = 1 + children.length;
-
-    let groupTotalOrders = 0;
-    if (String(leader.role) === "requestor") {
-      const orgId = String(leader.organizationId || "");
-      groupTotalOrders = orgId ? ordersByOrgId.get(orgId) || 0 : 0;
-    } else {
-      const leaderOrders = ordersByUserId.get(lid) || 0;
-      const childOrders = children.reduce(
-        (acc, c) => acc + (ordersByUserId.get(String(c._id)) || 0),
-        0,
-      );
-      groupTotalOrders = leaderOrders + childOrders;
-    }
-
-    await PricingReferralStatsSnapshot.findOneAndUpdate(
-      { groupLeaderId: leader._id, ymd },
-      {
-        $set: {
-          ownerUserId: leader._id,
-          groupLeaderId: leader._id,
-          groupMemberCount: memberCount,
-          groupTotalOrders,
-          computedAt,
-        },
-      },
-      { upsert: true, new: false },
-    );
-    upsertCount++;
-  }
-
-  return { success: true, upsertCount, ymd, computedAt };
-}
-
-async function runManufacturerDailySettlementSnapshotRecalc({ manufacturerOrganization }) {
+async function runManufacturerDailySettlementSnapshotRecalc({
+  manufacturerOrganization,
+}) {
   const baseYmd = getTodayYmdInKst();
   const snapshotYmd = getYesterdayYmdInKst();
   const baseMidnightUtc = getTodayMidnightUtcInKst();
@@ -242,7 +113,7 @@ async function runManufacturerDailySettlementSnapshotRecalc({ manufacturerOrgani
 
 export async function recalcAllSnapshots(req, res) {
   try {
-    const referral = await runReferralSnapshotRecalc();
+    const referral = await recalcReferralSnapshot();
     if (!referral.success) {
       return res.status(500).json({
         success: false,
@@ -284,8 +155,9 @@ export async function recalcAllSnapshots(req, res) {
     }
 
     if (user?.role === "admin") {
+      const periodKey = String(req.query.periodKey || "30d").trim() || "30d";
       const credit = await recalcAdminSalesmanCreditsOverviewSnapshot({
-        periodKey: "30d",
+        periodKey,
       });
       if (!credit?.computedAt) {
         return res.status(500).json({

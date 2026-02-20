@@ -69,6 +69,10 @@
 - **페이지 전용 컴포넌트**: 해당 페이지 폴더 하위 `components/`에 위치
 - **Page Import 금지**: 다른 페이지 폴더를 import하지 않음
 - **Settings**: 역할별로 페이지 파일을 분리 (`pages/requestor/settings/SettingsPage.tsx` 등)
+- **공정 단위 서브 폴더 규칙** (Manufacturer Worksheet 등):
+  - 제품군별 루트(예: `pages/manufacturer/worksheet/custom_abutment`) 아래에 공정 단계별 폴더(`cam`, `machining`, `packaging`, `shipping`, `tracking` 등)를 둔다.
+  - 특정 공정에서만 사용하는 컴포넌트/훅은 해당 공정 폴더 하위의 `components/`, `hooks/`에 위치시킨다.
+  - 여러 공정에서 재사용되는 컴포넌트/훅은 제품군 루트(`custom_abutment/components`, `custom_abutment/hooks`) 또는 `shared/*`로 승격하여 사용한다.
 
 ## 5. API 호출 규칙
 

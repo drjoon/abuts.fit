@@ -53,7 +53,7 @@ type PreviewModalProps = {
   ) => Promise<void>;
   onDeleteStageFile: (params: {
     req: ManufacturerRequest;
-    stage: "machining" | "packaging" | "shipping" | "tracking";
+    stage: "machining" | "packing" | "shipping" | "tracking";
     rollbackOnly?: boolean;
     navigate?: boolean;
   }) => Promise<void>;
@@ -61,7 +61,7 @@ type PreviewModalProps = {
   onUploadNc: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   onUploadStageFile: (params: {
     req: ManufacturerRequest;
-    stage: "machining" | "packaging" | "shipping" | "tracking";
+    stage: "machining" | "packing" | "shipping" | "tracking";
     file: File;
     source: "manual" | "worker";
   }) => Promise<void>;
@@ -139,24 +139,24 @@ export const PreviewModal = ({
 
   const isStageFileStage =
     currentReviewStageKey === "machining" ||
-    currentReviewStageKey === "packaging" ||
+    currentReviewStageKey === "packing" ||
     currentReviewStageKey === "shipping" ||
     currentReviewStageKey === "tracking";
 
   const isRequestStage = currentReviewStageKey === "request";
   const isNcStage = currentReviewStageKey === "machining";
   const isImageStage =
-    currentReviewStageKey === "packaging" ||
+    currentReviewStageKey === "packing" ||
     currentReviewStageKey === "shipping" ||
     currentReviewStageKey === "tracking";
   const imageStageKey =
-    currentReviewStageKey === "shipping" ? "packaging" : currentReviewStageKey;
+    currentReviewStageKey === "shipping" ? "packing" : currentReviewStageKey;
 
   const canApprove = (() => {
     if (isStageFileStage) {
       const key = currentReviewStageKey as
         | "machining"
-        | "packaging"
+        | "packing"
         | "shipping"
         | "tracking";
       return !!req.caseInfos?.stageFiles?.[key]?.s3Key || !!previewStageUrl;
@@ -234,7 +234,7 @@ export const PreviewModal = ({
     if (isStageFileStage) {
       const key = currentReviewStageKey as
         | "machining"
-        | "packaging"
+        | "packing"
         | "shipping"
         | "tracking";
       void (async () => {
@@ -245,12 +245,12 @@ export const PreviewModal = ({
           source: "manual",
         });
 
-        if (key === "packaging") {
+        if (key === "packing") {
           try {
             await onUpdateReviewStatus({
               req,
               status: "APPROVED",
-              stageOverride: "packaging",
+              stageOverride: "packing",
             });
             setSearchParams((prev) => {
               const next = new URLSearchParams(prev);
@@ -274,7 +274,7 @@ export const PreviewModal = ({
 
   const rightMeta = isStageFileStage
     ? req.caseInfos?.stageFiles?.[
-        imageStageKey as "machining" | "packaging" | "shipping" | "tracking"
+        imageStageKey as "machining" | "packing" | "shipping" | "tracking"
       ]
     : isCamStage
       ? req.caseInfos?.ncFile
@@ -441,7 +441,7 @@ export const PreviewModal = ({
         req,
         stage: imageStageKey as
           | "machining"
-          | "packaging"
+          | "packing"
           | "shipping"
           | "tracking",
       });
@@ -486,7 +486,7 @@ export const PreviewModal = ({
                   const stageKey = currentReviewStageKey;
                   if (
                     stageKey === "machining" ||
-                    stageKey === "packaging" ||
+                    stageKey === "packing" ||
                     stageKey === "shipping" ||
                     stageKey === "tracking"
                   ) {
@@ -754,12 +754,12 @@ export const PreviewModal = ({
                     className="text-sm font-semibold text-blue-700 hover:underline text-left max-w-[320px] truncate"
                     onClick={onDownload}
                     title={
-                      stage === "packaging" || stage === "shipping"
+                      stage === "packing" || stage === "shipping"
                         ? "각인 이미지"
                         : fileLabel
                     }
                   >
-                    {stage === "packaging" || stage === "shipping"
+                    {stage === "packing" || stage === "shipping"
                       ? "각인 이미지"
                       : fileLabel}
                   </button>

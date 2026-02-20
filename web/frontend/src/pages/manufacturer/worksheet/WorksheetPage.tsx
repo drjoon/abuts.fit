@@ -1,7 +1,10 @@
 import { useLocation } from "react-router-dom";
-import { RequestPage } from "./custom_abutment/RequestPage";
-import { PackagingPage } from "./custom_abutment/packaging/PackagingPage";
-import { TrackingInquiryPage } from "./custom_abutment/tracking/TrackingInquiryPage";
+import { RequestPage } from "./custom_abutment/components/RequestPage";
+import { CamPage } from "./custom_abutment/cam/CamPage";
+import { MachiningPage } from "./custom_abutment/machining/MachiningPage";
+import { PackingPage } from "./custom_abutment/packing/PackingPage";
+import { ShippingPage } from "./custom_abutment/shipping/ShippingPage";
+import { TrackingInquiryPage } from "./custom_abutment/tracking/TrackingPage";
 import { deriveStageForFilter } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
 export const ManufacturerWorksheetPage = () => {
@@ -18,49 +21,29 @@ export const ManufacturerWorksheetPage = () => {
     if (worksheetType === "custom_abutment" || worksheetType === "cnc") {
       switch (worksheetStage) {
         case "request":
-        case "receive": // Legacy alias
           return (
             <RequestPage
               showQueueBar={true}
-              filterRequests={(req) => {
-                return deriveStageForFilter(req) === "의뢰";
-              }}
+              filterRequests={(req) => deriveStageForFilter(req) === "의뢰"}
             />
           );
         case "cam":
-          return (
-            <RequestPage
-              showQueueBar={true}
-              filterRequests={(req) => {
-                return deriveStageForFilter(req) === "CAM";
-              }}
-            />
-          );
+          return <CamPage />;
         case "machining":
-          return (
-            <RequestPage
-              showQueueBar={true}
-              filterRequests={(req) => {
-                return deriveStageForFilter(req) === "가공";
-              }}
-            />
-          );
-        case "packaging":
-          return <PackagingPage showQueueBar={true} />;
+          return <MachiningPage />;
+        case "packing":
+          return <PackingPage showQueueBar={true} />;
         case "shipping":
-          return (
-            <RequestPage
-              showQueueBar={false}
-              filterRequests={(req) => {
-                const stage = String(req.manufacturerStage || "").trim();
-                return stage === "발송";
-              }}
-            />
-          );
+          return <ShippingPage />;
         case "tracking":
           return <TrackingInquiryPage />;
         default:
-          return <RequestPage showQueueBar={true} />;
+          return (
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) => deriveStageForFilter(req) === "의뢰"}
+            />
+          );
       }
     }
 

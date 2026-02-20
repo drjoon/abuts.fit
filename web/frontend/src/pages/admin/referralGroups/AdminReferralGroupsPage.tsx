@@ -18,9 +18,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { apiFetch } from "@/shared/api/apiClient";
+import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
-import { useToast } from "@/shared/hooks/use-toast";
 
 const PERIOD_LABEL: Record<string, string> = {
   "7d": "최근 7일",
@@ -207,16 +207,8 @@ const TreeNode = ({
 export default function AdminReferralGroupsPage() {
   const { token } = useAuthStore();
   const { period } = usePeriodStore();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const isDev = import.meta.env.DEV;
-
-  const REFERRAL_SNAPSHOT_COOLDOWN_MS = 5 * 60 * 1000;
-  const REFERRAL_SNAPSHOT_LAST_RUN_AT_KEY =
-    "admin:snapshot:referral-groups:last-run-at";
-
-  const [refreshingReferralSnapshot, setRefreshingReferralSnapshot] =
-    useState(false);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<
     "all" | "requestor" | "salesman"
@@ -269,80 +261,15 @@ export default function AdminReferralGroupsPage() {
     retry: false,
   });
 
-  const getReferralSnapshotCooldownRemainingMs = () => {
-    try {
-      const raw = localStorage.getItem(REFERRAL_SNAPSHOT_LAST_RUN_AT_KEY);
-      const lastAt = Number(raw || 0);
-      if (!Number.isFinite(lastAt) || lastAt <= 0) return 0;
-      const until = lastAt + REFERRAL_SNAPSHOT_COOLDOWN_MS;
-      return Math.max(0, until - Date.now());
-    } catch {
-      return 0;
-    }
-  };
-
-  const refreshReferralSnapshot = async () => {
-    if (!token) return;
-    const remainingMs = getReferralSnapshotCooldownRemainingMs();
-    if (remainingMs > 0) {
-      const sec = Math.ceil(remainingMs / 1000);
-      toast({
-        title: "스냅샷 재계산 대기",
-        description: `한 번 실행한 뒤 5분 후 가능합니다. ${sec}초 후 다시 시도해주세요.`,
-        duration: 3000,
-      });
-      return;
-    }
-
-    setRefreshingReferralSnapshot(true);
-    try {
-      const res = await apiFetch<any>({
-        path: "/api/admin/referral-snapshot/recalc",
-        method: "POST",
-        token,
-        headers:
-          token === "MOCK_DEV_TOKEN"
-            ? {
-                "x-mock-role": "admin",
-              }
-            : undefined,
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(res.data?.message || "스냅샷 재계산에 실패했습니다.");
-      }
-      try {
-        localStorage.setItem(
-          REFERRAL_SNAPSHOT_LAST_RUN_AT_KEY,
-          String(Date.now()),
-        );
-      } catch {
-        // ignore
-      }
-
-      toast({
-        title: "스냅샷 재계산 완료",
-        description: "한 번 실행한 뒤 5분 후 다시 실행할 수 있습니다.",
-        duration: 3000,
-      });
-
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["admin-referral-groups", period],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["admin-referral-group-tree"],
-        }),
-      ]);
-    } catch (e: any) {
-      toast({
-        title: "스냅샷 재계산 실패",
-        description: e?.message || "다시 시도해주세요.",
-        variant: "destructive",
-        duration: 3000,
-      });
-    } finally {
-      setRefreshingReferralSnapshot(false);
-    }
+  const handleSnapshotSuccess = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["admin-referral-groups", period],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["admin-referral-group-tree"],
+      }),
+    ]);
   };
 
   const groups = groupList?.groups || [];
@@ -572,16 +499,12 @@ export default function AdminReferralGroupsPage() {
   return (
     <div className="h-screen max-h-screen overflow-hidden p-4 flex flex-col gap-4">
       <div className="flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
+        <SnapshotRecalcAllButton
+          token={token}
+          periodKey={period}
           className="h-9"
-          disabled={refreshingReferralSnapshot}
-          onClick={() => void refreshReferralSnapshot()}
-        >
-          {refreshingReferralSnapshot ? "스냅샷..." : "스냅샷"}
-        </Button>
+          onSuccess={handleSnapshotSuccess}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

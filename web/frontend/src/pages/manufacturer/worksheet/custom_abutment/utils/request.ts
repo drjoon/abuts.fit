@@ -9,7 +9,7 @@ export type ReviewStageKey =
   | "request"
   | "cam"
   | "machining"
-  | "packaging"
+  | "packing"
   | "shipping"
   | "tracking";
 
@@ -21,7 +21,7 @@ export const getReviewStageKeyByTab = (opts: {
   const stage = String(opts.stage || "").trim();
   if (stage === "tracking") return "tracking";
   if (stage === "shipping") return "shipping";
-  if (stage === "packaging") return "packaging";
+  if (stage === "packing") return "packing";
   if (opts.isMachiningStage) return "machining";
   if (opts.isCamStage) return "cam";
   return "request";
@@ -68,16 +68,13 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
   const saved = (req.manufacturerStage || "").trim();
   if (saved) {
     switch (saved) {
-      case "생산":
-        return "가공";
-      case "가공전":
-        return "가공";
-      case "가공후":
-      case "가공":
-        return "가공";
+      case "세척.패킹":
+        // 레거시/신 명칭 모두 필터용 라벨은 "세척.패킹"으로 통일
+        return "세척.패킹";
+      case "포장.발송":
       case "배송대기":
       case "배송중":
-        return "발송";
+        return "포장.발송";
       case "완료":
         return "추적관리";
       default:
@@ -85,38 +82,22 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
     }
   }
 
-  // Fallback for legacy data (should be rare after backend updates)
+  // Fallback: manufacturerStage가 비어 있고 status만 있는 경우, 새 표준 라벨만 처리
   const status = (req.status || "").trim();
-  switch (status) {
-    case "생산":
-    case "가공":
-      return "가공";
-    case "의뢰접수":
-      return "의뢰";
-    case "가공전":
-      return "CAM";
-    case "가공후":
-      return "가공";
-    case "세척.포장":
-      return "세척.포장";
-    case "배송대기":
-    case "배송중":
-      return "발송";
-    case "완료":
-      return "추적관리";
-    case "취소":
-      return "의뢰";
-    default:
-      return "의뢰";
-  }
+  if (status === "세척.패킹") return "세척.패킹";
+  if (status === "포장.발송") return "포장.발송";
+  if (status === "추적관리" || status === "완료") return "추적관리";
+  if (status === "가공") return "가공";
+  if (status === "CAM") return "CAM";
+  return "의뢰";
 };
 
 export const stageOrder: Record<string, number> = {
   의뢰: 0,
   CAM: 1,
   가공: 2,
-  "세척.포장": 3,
-  발송: 4,
+  "세척.패킹": 3,
+  "포장.발송": 4,
   추적관리: 5,
 };
 
@@ -128,9 +109,9 @@ export const getAcceptByStage = (stage: string) => {
       return ".nc";
     case "가공":
       return ".png,.jpg,.jpeg,.webp,.bmp";
-    case "세척.포장":
+    case "세척.패킹":
       return ".png,.jpg,.jpeg,.webp,.bmp";
-    case "발송":
+    case "포장.발송":
     case "추적관리":
       return ".png,.jpg,.jpeg,.webp,.bmp";
     default:

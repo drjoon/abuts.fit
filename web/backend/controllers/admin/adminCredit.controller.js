@@ -298,6 +298,65 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   };
 }
 
+export async function recalcAdminSalesmanCreditsOverviewSnapshot({
+  periodKey = "30d",
+} = {}) {
+  const range = getPeriodRangeUtcFromPeriodKey(periodKey);
+  if (!range) return null;
+
+  const ymd = getTodayYmdInKst();
+  if (!ymd) return null;
+
+  const salesmen = await User.find({ role: "salesman", active: true })
+    .select({ _id: 1 })
+    .lean();
+  const salesmanIds = (salesmen || [])
+    .map((s) => String(s?._id || ""))
+    .filter(Boolean)
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+
+  const overview = await computeSalesmanOverviewSnapshot({
+    range,
+    salesmanIds,
+  });
+
+  const payload = {
+    ymd,
+    periodKey,
+    rangeStartUtc: range.start,
+    rangeEndUtc: range.end,
+    salesmenCount: normalizeNumber(overview.salesmenCount || 0),
+    referral: {
+      paidRevenueAmount: normalizeNumber(overview?.referral?.paidRevenueAmount),
+      bonusRevenueAmount: normalizeNumber(
+        overview?.referral?.bonusRevenueAmount,
+      ),
+      orderCount: normalizeNumber(overview?.referral?.orderCount),
+    },
+    commission: {
+      totalAmount: normalizeNumber(overview?.commission?.totalAmount),
+      directAmount: normalizeNumber(overview?.commission?.directAmount),
+      indirectAmount: normalizeNumber(overview?.commission?.indirectAmount),
+    },
+    walletPeriod: {
+      earnedAmount: normalizeNumber(overview?.walletPeriod?.earnedAmount),
+      paidOutAmount: normalizeNumber(overview?.walletPeriod?.paidOutAmount),
+      adjustedAmount: normalizeNumber(overview?.walletPeriod?.adjustedAmount),
+      balanceAmount: normalizeNumber(overview?.walletPeriod?.balanceAmount),
+    },
+    computedAt: new Date(),
+  };
+
+  await AdminSalesmanCreditsOverviewSnapshot.updateOne(
+    { ymd, periodKey },
+    { $set: payload },
+    { upsert: true },
+  );
+
+  return payload;
+}
+
 export async function adminGetSalesmanCreditsOverview(req, res) {
   try {
     const periodKey = String(req.query.period || "30d").trim() || "30d";
@@ -345,60 +404,19 @@ export async function adminGetSalesmanCreditsOverview(req, res) {
       }
     }
 
-    const salesmen = await User.find({ role: "salesman", active: true })
-      .select({ _id: 1 })
-      .lean();
-    const salesmanIds = (salesmen || [])
-      .map((s) => String(s?._id || ""))
-      .filter(Boolean)
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-
-    const overview = await computeSalesmanOverviewSnapshot({
-      range,
-      salesmanIds,
-    });
-
-    const payload = {
-      ymd,
+    const payload = await recalcAdminSalesmanCreditsOverviewSnapshot({
       periodKey,
-      rangeStartUtc: range.start,
-      rangeEndUtc: range.end,
-      salesmenCount: normalizeNumber(overview.salesmenCount || 0),
-      referral: {
-        paidRevenueAmount: normalizeNumber(
-          overview?.referral?.paidRevenueAmount,
-        ),
-        bonusRevenueAmount: normalizeNumber(
-          overview?.referral?.bonusRevenueAmount,
-        ),
-        orderCount: normalizeNumber(overview?.referral?.orderCount),
-      },
-      commission: {
-        totalAmount: normalizeNumber(overview?.commission?.totalAmount),
-        directAmount: normalizeNumber(overview?.commission?.directAmount),
-        indirectAmount: normalizeNumber(overview?.commission?.indirectAmount),
-      },
-      walletPeriod: {
-        earnedAmount: normalizeNumber(overview?.walletPeriod?.earnedAmount),
-        paidOutAmount: normalizeNumber(overview?.walletPeriod?.paidOutAmount),
-        adjustedAmount: normalizeNumber(overview?.walletPeriod?.adjustedAmount),
-        balanceAmount: normalizeNumber(overview?.walletPeriod?.balanceAmount),
-      },
-      computedAt: new Date(),
-    };
-
-    await AdminSalesmanCreditsOverviewSnapshot.updateOne(
-      { ymd, periodKey },
-      { $set: payload },
-      { upsert: true },
-    );
-
-    return res.status(200).json({
-      success: true,
-      data: payload,
-      cached: false,
     });
+    if (!payload) {
+      return res.status(500).json({
+        success: false,
+        message: "영업자 크레딧 요약 스냅샷 재계산에 실패했습니다.",
+      });
+    }
+
+    return res
+      .status(200)
+      .json({ success: true, data: payload, cached: false });
   } catch (error) {
     console.error("adminGetSalesmanCreditsOverview error:", error);
     return res.status(500).json({

@@ -145,23 +145,23 @@ export const WorksheetCardGrid = ({
             </Badge>
           );
         }
-        if (s === "세척.포장") {
+        if (s === "세척.포장" || s === "세척.패킹") {
           return (
             <Badge
               variant="outline"
               className={`${base} bg-emerald-50 text-emerald-700 border-emerald-200`}
             >
-              세척·포장
+              세척·패킹
             </Badge>
           );
         }
-        if (s === "발송") {
+        if (s === "발송" || s === "포장.발송") {
           return (
             <Badge
               variant="outline"
               className={`${base} bg-amber-50 text-amber-700 border-amber-200`}
             >
-              발송
+              포장·발송
             </Badge>
           );
         }

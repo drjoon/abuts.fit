@@ -49,7 +49,7 @@ const NewRequestPage = lazy(() =>
   })),
 );
 const ManufacturerWorksheetPage = lazy(() =>
-  import("./pages/manufacturer/worksheet/ManufacturerWorksheetPage").then(
+  import("./pages/manufacturer/worksheet/WorksheetPage").then(
     (m) => ({
       default: m.ManufacturerWorksheetPage,
     }),

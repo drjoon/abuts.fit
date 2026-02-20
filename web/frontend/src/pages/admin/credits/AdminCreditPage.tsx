@@ -4,6 +4,7 @@ import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { SnapshotRecalcAllButton } from "@/shared/components/SnapshotRecalcAllButton";
 import {
   Card,
   CardContent,
@@ -224,10 +225,6 @@ export default function AdminCreditPage() {
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
 
-  const SALESMAN_OVERVIEW_SNAPSHOT_COOLDOWN_MS = 5 * 60 * 1000;
-  const SALESMAN_OVERVIEW_SNAPSHOT_LAST_RUN_AT_KEY =
-    "admin:snapshot:credits:salesmen-overview:last-run-at";
-
   const [stats, setStats] = useState<CreditStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
@@ -253,11 +250,6 @@ export default function AdminCreditPage() {
   const [salesmanOverview, setSalesmanOverview] =
     useState<SalesmanCreditsOverview | null>(null);
   const [loadingSalesmanOverview, setLoadingSalesmanOverview] = useState(false);
-
-  const [
-    refreshingSalesmanOverviewSnapshot,
-    setRefreshingSalesmanOverviewSnapshot,
-  ] = useState(false);
 
   const [creditTab, setCreditTab] = useState<"requestor" | "salesman">(
     "requestor",
@@ -329,74 +321,6 @@ export default function AdminCreditPage() {
       });
     } finally {
       setLoadingStats(false);
-    }
-  };
-
-  const getSalesmanOverviewSnapshotCooldownRemainingMs = () => {
-    try {
-      const raw = localStorage.getItem(
-        SALESMAN_OVERVIEW_SNAPSHOT_LAST_RUN_AT_KEY,
-      );
-      const lastAt = Number(raw || 0);
-      if (!Number.isFinite(lastAt) || lastAt <= 0) return 0;
-      const until = lastAt + SALESMAN_OVERVIEW_SNAPSHOT_COOLDOWN_MS;
-      return Math.max(0, until - Date.now());
-    } catch {
-      return 0;
-    }
-  };
-
-  const refreshSalesmanOverviewSnapshot = async () => {
-    if (!token) return;
-    const remainingMs = getSalesmanOverviewSnapshotCooldownRemainingMs();
-    if (remainingMs > 0) {
-      const sec = Math.ceil(remainingMs / 1000);
-      toast({
-        title: "스냅샷 재계산 대기",
-        description: `한 번 실행한 뒤 5분 후 가능합니다. ${sec}초 후 다시 시도해주세요.`,
-        duration: 3000,
-      });
-      return;
-    }
-
-    setRefreshingSalesmanOverviewSnapshot(true);
-    try {
-      const qs = new URLSearchParams({ period, refresh: "1" });
-      const res = await request<{
-        success: boolean;
-        data: SalesmanCreditsOverview;
-        message?: string;
-      }>({
-        path: `/api/admin/credits/salesmen/overview?${qs.toString()}`,
-        method: "GET",
-        token,
-      });
-      if (!res.ok || !res.data?.success || !res.data?.data) {
-        throw new Error(res.data?.message || "스냅샷 재계산에 실패했습니다.");
-      }
-      setSalesmanOverview(res.data.data);
-      try {
-        localStorage.setItem(
-          SALESMAN_OVERVIEW_SNAPSHOT_LAST_RUN_AT_KEY,
-          String(Date.now()),
-        );
-      } catch {
-        // ignore
-      }
-      toast({
-        title: "스냅샷 재계산 완료",
-        description: "한 번 실행한 뒤 5분 후 다시 실행할 수 있습니다.",
-        duration: 3000,
-      });
-    } catch (e: any) {
-      toast({
-        title: "스냅샷 재계산 실패",
-        description: e?.message || "다시 시도해주세요.",
-        variant: "destructive",
-        duration: 3000,
-      });
-    } finally {
-      setRefreshingSalesmanOverviewSnapshot(false);
     }
   };
 
@@ -922,16 +846,12 @@ export default function AdminCreditPage() {
           </TabsList>
 
           {creditTab === "salesman" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <SnapshotRecalcAllButton
+              token={token}
+              periodKey={period}
               className="h-9"
-              disabled={refreshingSalesmanOverviewSnapshot}
-              onClick={() => void refreshSalesmanOverviewSnapshot()}
-            >
-              {refreshingSalesmanOverviewSnapshot ? "스냅샷..." : "스냅샷"}
-            </Button>
+              onSuccess={loadSalesmanOverview}
+            />
           ) : null}
         </div>
 

@@ -10,7 +10,7 @@ type StageDropParams = {
   requests: ManufacturerRequest[];
   handleUploadStageFile: (params: {
     req: ManufacturerRequest;
-    stage: "machining" | "packaging" | "shipping" | "tracking";
+    stage: "machining" | "packing" | "shipping" | "tracking";
     file: File;
     source: "manual" | "worker";
   }) => Promise<void>;

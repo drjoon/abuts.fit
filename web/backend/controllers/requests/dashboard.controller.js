@@ -398,13 +398,23 @@ export async function getMyDashboardSummary(req, res) {
                               {
                                 $in: [
                                   "$$stage",
-                                  ["shipping", "tracking", "발송", "추적관리"],
+                                  [
+                                    "shipping",
+                                    "tracking",
+                                    "포장.발송",
+                                    "추적관리",
+                                  ],
                                 ],
                               },
                               {
                                 $in: [
                                   "$$status",
-                                  ["shipping", "tracking", "발송", "추적관리"],
+                                  [
+                                    "shipping",
+                                    "tracking",
+                                    "포장.발송",
+                                    "추적관리",
+                                  ],
                                 ],
                               },
                             ],
@@ -415,14 +425,14 @@ export async function getMyDashboardSummary(req, res) {
                           case: {
                             $or: [
                               {
-                                $in: ["$$stage", ["packaging", "세척.포장"]],
+                                $in: ["$$stage", ["packing", "세척.패킹"]],
                               },
                               {
-                                $in: ["$$status", ["packaging", "세척.포장"]],
+                                $in: ["$$status", ["packing", "세척.패킹"]],
                               },
                             ],
                           },
-                          then: "packaging",
+                          then: "packing",
                         },
                         {
                           case: {
@@ -506,9 +516,9 @@ export async function getMyDashboardSummary(req, res) {
                   $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
                 },
               },
-              packagingCount: {
+              packingCount: {
                 $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "packaging"] }, 1, 0],
+                  $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0],
                 },
               },
               shippingCount: {
@@ -552,7 +562,7 @@ export async function getMyDashboardSummary(req, res) {
       designCount: 0,
       camCount: 0,
       machiningCount: 0,
-      packagingCount: 0,
+      packingCount: 0,
       shippingCount: 0,
     };
 
@@ -563,17 +573,17 @@ export async function getMyDashboardSummary(req, res) {
       stats.designCount +
         stats.camCount +
         stats.machiningCount +
-        stats.packagingCount +
+        stats.packingCount +
         shippingPlusCompleted || 1;
 
     const manufacturingSummary = {
       totalActive,
       stages: [
-        { key: "design", label: "의뢰 접수", count: stats.designCount },
+        { key: "design", label: "의뢰", count: stats.designCount },
         { key: "cam", label: "CAM", count: stats.camCount },
         { key: "machining", label: "가공", count: stats.machiningCount },
-        { key: "packaging", label: "세척.포장", count: stats.packagingCount },
-        { key: "shipping", label: "발송", count: shippingPlusCompleted },
+        { key: "packing", label: "세척.패킹", count: stats.packingCount },
+        { key: "shipping", label: "포장.발송", count: shippingPlusCompleted },
       ].map((s) => ({
         ...s,
         percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
@@ -584,7 +594,7 @@ export async function getMyDashboardSummary(req, res) {
     const { calculateRiskSummary } = await import("./production.utils.js");
     const activeRequests = await Request.find({
       ...requestFilter,
-      status: { $in: ["의뢰", "CAM", "가공", "세척.포장"] },
+      status: { $in: ["의뢰", "CAM", "가공", "세척.패킹"] },
     })
       .select(
         "requestId title status status2 manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
@@ -782,7 +792,7 @@ export async function getMyDashboardSummary(req, res) {
     });
 
     const inProgress =
-      stats.camCount + stats.machiningCount + stats.packagingCount;
+      stats.camCount + stats.machiningCount + stats.packingCount;
 
     const responseData = {
       stats: {
@@ -794,8 +804,8 @@ export async function getMyDashboardSummary(req, res) {
         inCamChange: "+0%",
         inProduction: stats.machiningCount,
         inProductionChange: "+0%",
-        inPackaging: stats.packagingCount,
-        inPackagingChange: "+0%",
+        inpacking: stats.packingCount,
+        inpackingChange: "+0%",
         inShipping: shippingPlusCompleted,
         inShippingChange: "+0%",
         canceled: stats.canceledCount,
@@ -858,7 +868,7 @@ export async function getMyDashboardSummary(req, res) {
                         case: {
                           $in: [
                             "$$stage",
-                            ["machining", "packaging", "production", "생산"],
+                            ["machining", "packing", "production", "생산"],
                           ],
                         },
                         then: "production",

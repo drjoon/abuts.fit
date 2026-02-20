@@ -94,23 +94,33 @@ export function normalizeRequestStage(requestLike) {
   if (status === "취소") return "cancel";
   if (status2 === "완료") return "completed";
 
-  if (["shipping", "tracking", "발송", "추적관리"].includes(stage)) {
+  // 포장·발송 단계 (shipping)
+  if (["shipping", "포장.발송"].includes(stage)) {
     return "shipping";
   }
 
-  if (["machining", "가공", "production", "생산"].includes(stage)) {
+  // 추적관리 단계 (tracking)
+  if (["tracking", "추적관리"].includes(stage)) {
+    return "tracking";
+  }
+
+  // 가공 단계
+  if (["machining", "가공"].includes(stage)) {
     return "machining";
   }
 
-  if (["packaging", "세척.포장"].includes(stage)) {
+  // 세척/패킹 단계 (packaging)
+  if (["packaging", "세척.패킹"].includes(stage)) {
     return "packaging";
   }
 
-  if (["cam", "CAM", "가공전"].includes(stage)) {
+  // CAM 단계
+  if (["cam", "CAM"].includes(stage)) {
     return "cam";
   }
 
-  if (["request", "receive", "의뢰", "의뢰접수"].includes(stage)) {
+  // 의뢰 단계
+  if (["request","의뢰"].includes(stage)) {
     return "request";
   }
 
@@ -122,8 +132,8 @@ export function normalizeRequestStageLabel(requestLike) {
   if (s === "request") return "의뢰";
   if (s === "cam") return "CAM";
   if (s === "machining") return "가공";
-  if (s === "packaging") return "세척.포장";
-  if (s === "shipping") return "발송";
+  if (s === "packaging") return "세척.패킹";
+  if (s === "shipping") return "포장.발송";
   if (s === "completed") return "완료";
   if (s === "cancel") return "취소";
   return "의뢰";
@@ -527,49 +537,6 @@ export async function computePriceForRequest({
 
 export function applyStatusMapping(request, status) {
   request.status = status;
-
-  // 4단계 공통 공정: 의뢰 → CAM → 생산 → 발송
-  switch (status) {
-    case "의뢰":
-    case "의뢰접수":
-      request.status = "의뢰";
-      request.manufacturerStage = "의뢰";
-      break;
-    case "CAM":
-    case "가공전":
-      request.status = "CAM";
-      request.manufacturerStage = "CAM";
-      break;
-    case "가공":
-    case "가공후":
-      request.status = "가공";
-      request.manufacturerStage = "가공";
-      break;
-    case "세척.포장":
-      request.status = "세척.포장";
-      request.manufacturerStage = "세척.포장";
-      break;
-    case "발송":
-    case "배송대기":
-    case "배송중":
-    case "완료":
-      request.status = "발송";
-      request.manufacturerStage = "발송";
-      break;
-    case "추적관리":
-      request.status = "추적관리";
-      request.manufacturerStage = "추적관리";
-      break;
-    case "취소":
-      request.status = "취소";
-      request.manufacturerStage = "의뢰";
-      break;
-    default:
-      if (!request.manufacturerStage) {
-        request.manufacturerStage = "의뢰";
-      }
-      break;
-  }
 }
 
 export async function computeDiameterStats(requests, leadDays) {

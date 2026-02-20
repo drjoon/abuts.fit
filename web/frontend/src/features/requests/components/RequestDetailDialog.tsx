@@ -83,8 +83,12 @@ export const getStatusBadge = (status: string, manufacturerStage?: string) => {
         return <Badge variant="default">CAM</Badge>;
       case "생산":
         return <Badge variant="default">생산</Badge>;
+      case "세척.포장":
+      case "세척.패킹":
+        return <Badge variant="default">세척.패킹</Badge>;
       case "발송":
-        return <Badge variant="default">발송</Badge>;
+      case "포장.발송":
+        return <Badge variant="default">포장.발송</Badge>;
       case "추적관리":
         return <Badge variant="secondary">추적관리</Badge>;
       default:

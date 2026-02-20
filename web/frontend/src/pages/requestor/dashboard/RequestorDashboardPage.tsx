@@ -99,11 +99,13 @@ export const RequestorDashboardPage = () => {
     if (status === "취소") return "cancel";
     if (status2 === "완료") return "completed";
 
-    if (["shipping", "tracking", "발송", "추적관리"].includes(stage)) {
+    if (
+      ["shipping", "tracking", "발송", "포장.발송", "추적관리"].includes(stage)
+    ) {
       return "shipping";
     }
-    if (["packaging", "세척.포장"].includes(stage)) {
-      return "packaging";
+    if (["packing", "packaging", "세척.포장", "세척.패킹"].includes(stage)) {
+      return "packing";
     }
     if (["machining", "production", "가공"].includes(stage)) {
       return "machining";
@@ -118,12 +120,12 @@ export const RequestorDashboardPage = () => {
   };
 
   const stageGroupByLabel: Record<string, string[] | null> = {
-    // 6단계 공통 공정: 의뢰 → CAM → 가공 → 세척.포장 → 발송 → 추적관리
+    // 6단계 공통 공정: 의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
     의뢰: ["request"],
     CAM: ["cam"],
     가공: ["machining"],
-    "세척.포장": ["packaging"],
-    "발송(완료)": ["shipping"],
+    "세척.패킹": ["packing"],
+    "포장.발송(완료)": ["shipping"],
     취소: ["cancel"],
   };
 
@@ -146,8 +148,8 @@ export const RequestorDashboardPage = () => {
     if (s === "request") return "의뢰";
     if (s === "cam") return "CAM";
     if (s === "machining") return "가공";
-    if (s === "packaging") return "세척.포장";
-    if (s === "shipping") return "발송";
+    if (s === "packing") return "세척.패킹";
+    if (s === "shipping") return "포장.발송";
     if (s === "completed") return "완료";
     if (s === "cancel") return "취소";
     return "의뢰";

@@ -102,13 +102,24 @@ export const RequestorRiskSummaryCard = ({
               생산
             </Badge>
           );
-        case "발송":
+        case "세척.포장":
+        case "세척.패킹":
           return (
             <Badge
               variant="default"
-              className="text-[10px] h-4 px-1.5 whitespace-nowrap leading-none"
+              className="bg-purple-50 text-purple-700 border-purple-200 text-xs"
             >
-              발송
+              세척.패킹
+            </Badge>
+          );
+        case "발송":
+        case "포장.발송":
+          return (
+            <Badge
+              variant="default"
+              className="bg-blue-50 text-blue-700 border-blue-200 text-xs"
+            >
+              포장.발송
             </Badge>
           );
         case "추적관리":
