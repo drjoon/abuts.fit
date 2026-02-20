@@ -1,6 +1,6 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ToastAction } from "@/components/ui/toast";
 import { CncEventLogModal } from "@/features/cnc/components/CncEventLogModal";
@@ -10,6 +10,7 @@ import { CompletedMachiningRecordsModal } from "@/pages/manufacturer/equipment/c
 import { MachineQueueCard } from "./components/MachineQueueCard";
 import type { MachineStatus } from "./types";
 import { useMachiningBoard } from "./hooks/useMachiningBoard";
+import { CncMaterialModal } from "@/pages/manufacturer/equipment/cnc/components/CncMaterialModal";
 
 export const MachiningQueueBoard = ({
   searchQuery,
@@ -19,20 +20,46 @@ export const MachiningQueueBoard = ({
   const { token } = useAuthStore();
   const { toast } = useToast();
   const board = useMachiningBoard({ token });
+  const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
 
-  const filteredMachines = useMemo(() => {
-    const q = String(searchQuery || "")
-      .trim()
-      .toLowerCase();
-    const list = Array.isArray(board.mergedMachines)
-      ? board.mergedMachines
-      : [];
-    if (!q) return list;
-    return list.filter((m: any) => {
-      const fields = [m.name, m.uid, m.ip].filter(Boolean);
-      return fields.some((f) => String(f).toLowerCase().indexOf(q) >= 0);
-    });
-  }, [board.mergedMachines, searchQuery]);
+  const {
+    filteredMachines,
+    statusRefreshing,
+    statusRefreshError,
+    statusRefreshedAt,
+    statusRefreshErroredAt,
+    globalAutoEnabled,
+    loading,
+    isMockFromBackend,
+    isReadOnly,
+    workUid,
+    programEditorOpen,
+    programEditorTarget,
+    closeProgramEditor,
+    loadProgramCodeForMachining,
+    saveProgramCode,
+    eventLogRequestId,
+    setEventLogRequestId,
+    playlistOpen,
+    playlistTitle,
+    playlistJobs,
+    playlistMachineId,
+    setPlaylistOpen,
+    openReservationForMachine,
+    openProgramDetailForMachining,
+    completedModalOpen,
+    setCompletedModalOpen,
+    completedModalMachineId,
+    setCompletedModalMachineId,
+    completedModalTitle,
+    setCompletedModalTitle,
+    materialModalOpen,
+    setMaterialModalOpen,
+    materialModalTarget,
+    setMaterialModalTarget,
+    handleReplaceMaterial,
+    handleAddMaterial,
+  } = board;
 
   const requestToggleMachineAuto = useCallback(
     (uid: string, next: boolean) => {
@@ -75,35 +102,31 @@ export const MachiningQueueBoard = ({
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          {board.isMockFromBackend != null ? (
+          {isMockFromBackend != null ? (
             <Badge
               variant="outline"
               className={`shrink-0 text-[11px] font-extrabold px-2.5 py-1 border ${
-                board.isMockFromBackend === true
+                isMockFromBackend === true
                   ? "bg-violet-50 text-violet-700 border-violet-200"
                   : "bg-slate-50 text-slate-700 border-slate-200"
               }`}
               title={
-                board.isMockFromBackend === true
-                  ? "더미(모의) 가공"
-                  : "실제 가공"
+                isMockFromBackend === true ? "더미(모의) 가공" : "실제 가공"
               }
             >
-              {board.isMockFromBackend === true ? "MOCK" : "REAL"}
+              {isMockFromBackend === true ? "MOCK" : "REAL"}
             </Badge>
           ) : null}
 
           <div className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 border border-slate-200 truncate">
-            {board.statusRefreshing
+            {statusRefreshing
               ? "장비 상태 조회중…"
-              : board.statusRefreshError
+              : statusRefreshError
                 ? `장비 상태 조회 실패${
-                    board.statusRefreshErroredAt
-                      ? ` ${board.statusRefreshErroredAt}`
-                      : ""
-                  } (${board.statusRefreshError})`
-                : board.statusRefreshedAt
-                  ? `장비 상태 갱신 ${board.statusRefreshedAt}`
+                    statusRefreshErroredAt ? ` ${statusRefreshErroredAt}` : ""
+                  } (${statusRefreshError})`
+                : statusRefreshedAt
+                  ? `장비 상태 갱신 ${statusRefreshedAt}`
                   : ""}
           </div>
         </div>
@@ -117,23 +140,23 @@ export const MachiningQueueBoard = ({
           <button
             type="button"
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              board.globalAutoEnabled ? "bg-emerald-500" : "bg-gray-300"
+              globalAutoEnabled ? "bg-emerald-500" : "bg-gray-300"
             }`}
             onClick={() => {
-              void board.setGlobalAutoEnabled(!board.globalAutoEnabled);
+              void board.setGlobalAutoEnabled(!globalAutoEnabled);
             }}
-            disabled={board.loading}
+            disabled={loading}
           >
             <span
               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                board.globalAutoEnabled ? "translate-x-5" : "translate-x-1"
+                globalAutoEnabled ? "translate-x-5" : "translate-x-1"
               }`}
             />
           </button>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 p-4 pb-8 -mx-2">
         {filteredMachines.map((m) => {
           const statusFromStore = board.statusByUid?.[m.uid];
           const local = board.machineStatusMap?.[m.uid] ?? null;
@@ -150,6 +173,8 @@ export const MachiningQueueBoard = ({
                   status: String(statusFromStore).trim(),
                 }
               : null;
+
+          const isActive = activeMachineId === m.uid;
 
           return (
             <MachineQueueCard
@@ -180,7 +205,11 @@ export const MachiningQueueBoard = ({
                 void board.updateMachineRequestAssign(m.uid, next);
               }}
               machineStatus={mergedStatus}
-              statusRefreshing={board.statusRefreshing}
+              statusRefreshing={statusRefreshing}
+              isActive={isActive}
+              onSelect={() => {
+                setActiveMachineId(m.uid);
+              }}
               onOpenReservation={() => board.openReservationForMachine(m.uid)}
               onOpenProgramCode={(prog, machineId) => {
                 void board.openProgramDetailForMachining(prog, machineId);
@@ -192,23 +221,27 @@ export const MachiningQueueBoard = ({
                 );
                 board.setCompletedModalOpen(true);
               }}
+              onOpenMaterial={() => {
+                setMaterialModalTarget(m);
+                setMaterialModalOpen(true);
+              }}
             />
           );
         })}
       </div>
 
       <CompletedMachiningRecordsModal
-        open={board.completedModalOpen}
-        onOpenChange={board.setCompletedModalOpen}
-        machineId={board.completedModalMachineId}
-        title={board.completedModalTitle}
+        open={completedModalOpen}
+        onOpenChange={setCompletedModalOpen}
+        machineId={completedModalMachineId}
+        title={completedModalTitle}
         pageSize={5}
       />
 
-      {board.eventLogRequestId ? (
+      {eventLogRequestId ? (
         <CncEventLogModal
-          open={!!board.eventLogRequestId}
-          mode={{ kind: "request", requestId: board.eventLogRequestId }}
+          open={!!eventLogRequestId}
+          mode={{ kind: "request", requestId: eventLogRequestId }}
           onOpenChange={(next) => {
             if (!next) board.setEventLogRequestId(null);
           }}
@@ -216,20 +249,20 @@ export const MachiningQueueBoard = ({
       ) : null}
 
       <CncPlaylistDrawer
-        open={board.playlistOpen}
-        title={board.playlistTitle}
-        jobs={board.playlistJobs}
+        open={playlistOpen}
+        title={playlistTitle}
+        jobs={playlistJobs}
         readOnly={false}
         deleteVariant="worksheet"
         onClose={() => {
           board.setPlaylistOpen(false);
         }}
         onOpenCode={(jobId) => {
-          const mid = String(board.playlistMachineId || "").trim();
+          const mid = String(playlistMachineId || "").trim();
           if (!mid) return;
-          const job = (
-            Array.isArray(board.playlistJobs) ? board.playlistJobs : []
-          ).find((j) => j.id === jobId);
+          const job = (Array.isArray(playlistJobs) ? playlistJobs : []).find(
+            (j) => j.id === jobId,
+          );
           if (!job) return;
           // workUid는 openProgramDetailForMachining 내에서 설정됨
           const prog: any = {
@@ -248,8 +281,8 @@ export const MachiningQueueBoard = ({
         onDelete={(jobId) => {
           void (async () => {
             try {
-              if (!board.token) return;
-              const mid = String(board.playlistMachineId || "").trim();
+              if (!token) return;
+              const mid = String(playlistMachineId || "").trim();
               if (!mid) return;
               const res = await fetch(
                 `/api/cnc-machines/${encodeURIComponent(mid)}/production-queue/batch`,
@@ -257,7 +290,7 @@ export const MachiningQueueBoard = ({
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${board.token}`,
+                    Authorization: `Bearer ${token}`,
                   },
                   body: JSON.stringify({ deleteRequestIds: [jobId] }),
                 },
@@ -270,7 +303,7 @@ export const MachiningQueueBoard = ({
               }
 
               const qRes = await fetch("/api/cnc-machines/queues", {
-                headers: { Authorization: `Bearer ${board.token}` },
+                headers: { Authorization: `Bearer ${token}` },
               });
               const qBody: any = await qRes.json().catch(() => ({}));
               if (qRes.ok && qBody?.success !== false) {
@@ -299,8 +332,8 @@ export const MachiningQueueBoard = ({
         onReorder={(nextOrder) => {
           void (async () => {
             try {
-              if (!board.token) return;
-              const mid = String(board.playlistMachineId || "").trim();
+              if (!token) return;
+              const mid = String(playlistMachineId || "").trim();
               if (!mid) return;
               const res = await fetch(
                 `/api/cnc-machines/${encodeURIComponent(mid)}/production-queue/batch`,
@@ -308,7 +341,7 @@ export const MachiningQueueBoard = ({
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${board.token}`,
+                    Authorization: `Bearer ${token}`,
                   },
                   body: JSON.stringify({ order: nextOrder }),
                 },
@@ -321,7 +354,7 @@ export const MachiningQueueBoard = ({
               }
 
               const qRes = await fetch("/api/cnc-machines/queues", {
-                headers: { Authorization: `Bearer ${board.token}` },
+                headers: { Authorization: `Bearer ${token}` },
               });
               const qBody: any = await qRes.json().catch(() => ({}));
               if (qRes.ok && qBody?.success !== false) {
@@ -350,8 +383,8 @@ export const MachiningQueueBoard = ({
         onChangeQty={(jobId, qty) => {
           void (async () => {
             try {
-              if (!board.token) return;
-              const mid = String(board.playlistMachineId || "").trim();
+              if (!token) return;
+              const mid = String(playlistMachineId || "").trim();
               if (!mid) return;
               const res = await fetch(
                 `/api/cnc-machines/${encodeURIComponent(mid)}/production-queue/batch`,
@@ -359,7 +392,7 @@ export const MachiningQueueBoard = ({
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${board.token}`,
+                    Authorization: `Bearer ${token}`,
                   },
                   body: JSON.stringify({
                     qtyUpdates: [{ requestId: jobId, qty }],
@@ -374,7 +407,7 @@ export const MachiningQueueBoard = ({
               }
 
               const qRes = await fetch("/api/cnc-machines/queues", {
-                headers: { Authorization: `Bearer ${board.token}` },
+                headers: { Authorization: `Bearer ${token}` },
               });
               const qBody: any = await qRes.json().catch(() => ({}));
               if (qRes.ok && qBody?.success !== false) {
@@ -402,17 +435,35 @@ export const MachiningQueueBoard = ({
         }}
       />
 
-      {board.programEditorOpen && board.programEditorTarget ? (
+      {programEditorOpen && programEditorTarget ? (
         <CncProgramEditorPanel
-          open={board.programEditorOpen}
-          onClose={board.closeProgramEditor}
-          workUid={board.workUid}
-          selectedProgram={board.programEditorTarget}
-          onLoadProgram={board.loadProgramCodeForMachining}
-          onSaveProgram={board.saveProgramCode}
-          readOnly={board.isReadOnly}
+          open={programEditorOpen}
+          onClose={closeProgramEditor}
+          workUid={workUid}
+          selectedProgram={programEditorTarget}
+          onLoadProgram={loadProgramCodeForMachining}
+          onSaveProgram={saveProgramCode}
+          readOnly={isReadOnly}
         />
       ) : null}
+
+      {materialModalTarget && (
+        <CncMaterialModal
+          open={materialModalOpen}
+          onClose={() => {
+            setMaterialModalOpen(false);
+            setMaterialModalTarget(null);
+          }}
+          machineId={materialModalTarget.uid}
+          machineName={materialModalTarget.name}
+          currentMaterial={materialModalTarget.currentMaterial || null}
+          maxModelDiameterGroups={
+            materialModalTarget.maxModelDiameterGroups || ["12"]
+          }
+          onReplace={handleReplaceMaterial}
+          onAdd={handleAddMaterial}
+        />
+      )}
     </div>
   );
 };

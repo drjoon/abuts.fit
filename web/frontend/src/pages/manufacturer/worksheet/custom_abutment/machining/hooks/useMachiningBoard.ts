@@ -22,6 +22,7 @@ import type {
   MachineStatus,
 } from "../types";
 import { formatMachiningLabel } from "../utils/label";
+import { useCncDashboardMaterials } from "@/pages/manufacturer/equipment/cnc/hooks/useCncDashboardMaterials";
 
 const isMachiningStatus = (status?: string) => {
   const s = String(status || "").trim();
@@ -193,6 +194,16 @@ export const useMachiningBoard = ({
     };
   }, [token]);
 
+  const {
+    materialModalOpen,
+    setMaterialModalOpen,
+    materialModalTarget,
+    setMaterialModalTarget,
+    handleReplaceMaterial,
+    handleAddMaterial,
+    refreshCncMachineMeta,
+  } = useCncDashboardMaterials({ token, machines, setMachines, toast });
+
   const mergedMachines = useMemo(() => {
     return (machines || []).map((m: any) => {
       const meta = cncMachineMetaMap[m.uid];
@@ -208,6 +219,10 @@ export const useMachiningBoard = ({
       };
     });
   }, [cncMachineMetaMap, machines]);
+
+  const filteredMachines = useMemo(() => {
+    return machines.filter((m) => m.status !== "offline");
+  }, [machines]);
 
   const {
     programEditorOpen,
@@ -594,7 +609,9 @@ export const useMachiningBoard = ({
           name: target.name,
           ip: target.ip,
           port: target.port,
-          allowJobStart: next ? true : target.allowJobStart !== false,
+          // 자동가공 설정은 allowAutoMachining만 변경하고,
+          // 원격가공 허용(allowJobStart)은 현재 설정을 그대로 유지한다.
+          allowJobStart: target.allowJobStart !== false,
           allowProgramDelete: target.allowProgramDelete === true,
           allowRequestAssign: target.allowRequestAssign !== false,
           allowAutoMachining: next,
@@ -811,6 +828,7 @@ export const useMachiningBoard = ({
   return {
     machines,
     mergedMachines,
+    filteredMachines,
     statusByUid,
     machineStatusMap,
     queueMap,
@@ -856,6 +874,13 @@ export const useMachiningBoard = ({
     setCompletedModalMachineId,
     completedModalTitle,
     setCompletedModalTitle,
+    materialModalOpen,
+    setMaterialModalOpen,
+    materialModalTarget,
+    setMaterialModalTarget,
+    handleReplaceMaterial,
+    handleAddMaterial,
+    refreshCncMachineMeta,
     token,
   };
 };

@@ -78,6 +78,8 @@ export const MachineQueueCard = ({
   lastCompleted,
   nowPlayingHint,
   onOpenCompleted,
+  isActive,
+  onSelect,
 }: MachineQueueCardProps) => {
   useToast();
 
@@ -165,7 +167,14 @@ export const MachineQueueCard = ({
   ).trim();
 
   return (
-    <div className="app-glass-card app-glass-card--xl flex flex-col">
+    <div
+      className={`app-glass-card app-glass-card--xl flex flex-col cursor-pointer min-h-[240px] sm:min-h-[260px] ${
+        isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"
+      }`}
+      onClick={() => {
+        onSelect?.();
+      }}
+    >
       <div className="app-glass-card-content flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

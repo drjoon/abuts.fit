@@ -87,4 +87,7 @@ export type MachineQueueCardProps = {
   lastCompleted?: LastCompletedMachining | null;
   nowPlayingHint?: NowPlayingHint | null;
   onOpenCompleted?: (machineId: string, machineName?: string) => void;
+  onOpenMaterial?: () => void;
+  isActive?: boolean;
+  onSelect?: () => void;
 };

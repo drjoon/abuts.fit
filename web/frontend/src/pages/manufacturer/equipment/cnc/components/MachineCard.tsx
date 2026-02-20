@@ -570,7 +570,7 @@ export const MachineCard = (props: MachineCardProps) => {
         isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"
       }`}
     >
-      <div className="app-glass-card-content mb-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="app-glass-card-content flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1 min-w-0">
           <div className="flex items-center gap-2">
             <div className="text-[16px] font-extrabold text-slate-900 truncate max-w-[200px]">
