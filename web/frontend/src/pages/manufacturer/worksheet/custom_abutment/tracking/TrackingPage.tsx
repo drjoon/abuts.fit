@@ -672,102 +672,111 @@ export const TrackingInquiryPage = () => {
   }, [currentRows.length]);
 
   return (
-    <div className="space-y-4">
-      <Tabs value={tab} onValueChange={(v) => setTab(v as InquiryTab)}>
-        <div className="flex items-center gap-3">
-          <TabsList className="flex-1 justify-center">
-            <TabsTrigger value="process">생산공정일지</TabsTrigger>
-            <TabsTrigger value="shipping">택배/배송</TabsTrigger>
-            <TabsTrigger value="udi">UDI신고</TabsTrigger>
-          </TabsList>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">기간</span>
-            {(
-              [
-                ["recent7", "최근 7일"],
-                ["recent30", "최근 30일"],
-                ["recent90", "최근 90일"],
-                ["lastMonth", "지난달"],
-                ["thisMonth", "이번달"],
-              ] as const
-            ).map(([key, label]) => (
-              <Button
-                key={key}
-                variant={dateRange === key ? "default" : "outline"}
-                size="sm"
-                className="rounded-full px-3"
-                onClick={() =>
-                  setDateRangeByTab((prev) => ({
-                    ...prev,
-                    [tab]: key as DateRange,
-                  }))
-                }
-              >
-                {label}
-              </Button>
-            ))}
+    <div className="w-full text-gray-800 p-2 sm:p-4 lg:p-6 flex flex-col items-stretch">
+      <main className="flex-1 bg-white/80 backdrop-blur-xl p-4 sm:p-6 rounded-2xl shadow-lg min-h-[calc(100vh-140px)]">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as InquiryTab)}>
+          <div className="flex items-center gap-3">
+            <TabsList className="flex-1 justify-center">
+              <TabsTrigger value="process">생산공정일지</TabsTrigger>
+              <TabsTrigger value="shipping">택배/배송</TabsTrigger>
+              <TabsTrigger value="udi">UDI신고</TabsTrigger>
+            </TabsList>
           </div>
-          <div className="flex items-center gap-2">
-            {tab === "udi" && (
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">기간</span>
+              {(
+                [
+                  ["recent7", "최근 7일"],
+                  ["recent30", "최근 30일"],
+                  ["recent90", "최근 90일"],
+                  ["lastMonth", "지난달"],
+                  ["thisMonth", "이번달"],
+                ] as const
+              ).map(([key, label]) => (
+                <Button
+                  key={key}
+                  variant={dateRange === key ? "default" : "outline"}
+                  size="sm"
+                  className="rounded-full px-3"
+                  onClick={() =>
+                    setDateRangeByTab((prev) => ({
+                      ...prev,
+                      [tab]: key as DateRange,
+                    }))
+                  }
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              {tab === "udi" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-4"
+                  onClick={handleDownloadUdi}
+                >
+                  다운로드
+                </Button>
+              )}
               <Button
-                variant="outline"
+                variant="default"
                 size="sm"
                 className="px-4"
-                onClick={handleDownloadUdi}
+                onClick={() => handlePrint(tab)}
               >
-                다운로드
+                프린트
               </Button>
-            )}
-            <Button
-              variant="default"
-              size="sm"
-              className="px-4"
-              onClick={() => handlePrint(tab)}
-            >
-              프린트
-            </Button>
+            </div>
           </div>
-        </div>
 
-        <TabsContent value="process" className="space-y-3 mt-4">
-          <div
-            ref={setScrollContainer}
-            className="rounded-md border bg-background overflow-auto"
-            style={{ maxHeight: "calc(100vh - 320px)" }}
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-center">의뢰ID</TableHead>
-                  <TableHead className="text-center">환자/치아</TableHead>
-                  <TableHead className="text-center">생산</TableHead>
-                  <TableHead className="text-center">발송</TableHead>
-                  <TableHead className="text-center">발송날짜</TableHead>
-                  <TableHead className="text-center">장비</TableHead>
-                  <TableHead className="text-center">원재료</TableHead>
-                  <TableHead className="text-center">로트번호</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {processRows.slice(0, visibleCount).map((r) => {
-                  const ci: any = r.caseInfos || {};
-                  const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-                  const shippedDate = formatYmd(di.shippedAt || di.deliveredAt);
-                  return (
-                    <TableRow key={String(r._id || r.requestId)}>
-                      <TableCell className="font-medium">
-                        {r.requestId || "-"}
-                      </TableCell>
-                      <TableCell>
-                        {ci.patientName || "-"} / {ci.tooth || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="grid grid-cols-3 gap-x-3 gap-y-1">
-                          {["가공", "탈지", "연마", "검사", "세척", "포장"].map(
-                            (step) => (
+          <TabsContent value="process" className="space-y-3 mt-4">
+            <div
+              ref={setScrollContainer}
+              className="rounded-md border bg-background overflow-auto"
+              style={{ maxHeight: "calc(100vh - 320px)" }}
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-center">의뢰ID</TableHead>
+                    <TableHead className="text-center">환자/치아</TableHead>
+                    <TableHead className="text-center">생산</TableHead>
+                    <TableHead className="text-center">발송</TableHead>
+                    <TableHead className="text-center">발송날짜</TableHead>
+                    <TableHead className="text-center">장비</TableHead>
+                    <TableHead className="text-center">원재료</TableHead>
+                    <TableHead className="text-center">로트번호</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {processRows.slice(0, visibleCount).map((r) => {
+                    const ci: any = r.caseInfos || {};
+                    const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+                    const shippedDate = formatYmd(
+                      di.shippedAt || di.deliveredAt,
+                    );
+                    return (
+                      <TableRow key={String(r._id || r.requestId)}>
+                        <TableCell className="font-medium">
+                          {r.requestId || "-"}
+                        </TableCell>
+                        <TableCell>
+                          {ci.patientName || "-"} / {ci.tooth || "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="grid grid-cols-3 gap-x-3 gap-y-1">
+                            {[
+                              "가공",
+                              "탈지",
+                              "연마",
+                              "검사",
+                              "세척",
+                              "포장",
+                            ].map((step) => (
                               <label
                                 key={step}
                                 className="flex items-center gap-1 text-sm"
@@ -780,165 +789,165 @@ export const TrackingInquiryPage = () => {
                                 />
                                 <span>{step}</span>
                               </label>
-                            ),
-                          )}
-                        </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-3">
+                            {["출하승인", "출고"].map((step) => (
+                              <label
+                                key={step}
+                                className="flex items-center gap-1 text-sm"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked
+                                  readOnly
+                                  className="h-4 w-4 accent-primary"
+                                />
+                                <span>{step}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>{shippedDate}</TableCell>
+                        <TableCell>{r.assignedMachine || "-"}</TableCell>
+                        <TableCell>{r.lotNumber?.material || "-"}</TableCell>
+                        <TableCell>{normalizeLotNumberLabel(r)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {!loading && processRows.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={8}
+                        className="text-center text-muted-foreground"
+                      >
+                        조회 결과가 없습니다.
                       </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-3">
-                          {["출하승인", "출고"].map((step) => (
-                            <label
-                              key={step}
-                              className="flex items-center gap-1 text-sm"
-                            >
-                              <input
-                                type="checkbox"
-                                checked
-                                readOnly
-                                className="h-4 w-4 accent-primary"
-                              />
-                              <span>{step}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>{shippedDate}</TableCell>
-                      <TableCell>{r.assignedMachine || "-"}</TableCell>
-                      <TableCell>{r.lotNumber?.material || "-"}</TableCell>
-                      <TableCell>{normalizeLotNumberLabel(r)}</TableCell>
                     </TableRow>
-                  );
-                })}
-                {!loading && processRows.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-center text-muted-foreground"
-                    >
-                      조회 결과가 없습니다.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
 
-        <TabsContent value="udi" className="space-y-3 mt-4">
-          <div
-            ref={setScrollContainer}
-            className="rounded-md border bg-background overflow-auto"
-            style={{ maxHeight: "calc(100vh - 320px)" }}
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>의뢰ID</TableHead>
-                  <TableHead>환자/치아</TableHead>
-                  <TableHead>출고일</TableHead>
-                  <TableHead>택배사</TableHead>
-                  <TableHead>송장번호</TableHead>
-                  <TableHead>원재료</TableHead>
-                  <TableHead>로트번호</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {udiRows.slice(0, visibleCount).map((r) => {
-                  const ci: any = r.caseInfos || {};
-                  const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-                  const shippedAt = di.shippedAt || di.deliveredAt || "";
-                  const shippedDate = shippedAt
-                    ? String(shippedAt).slice(0, 10)
-                    : "-";
-                  return (
-                    <TableRow key={String(r._id || r.requestId)}>
-                      <TableCell className="font-medium">
-                        {r.requestId || "-"}
-                      </TableCell>
-                      <TableCell>
-                        {ci.patientName || "-"} / {ci.tooth || "-"}
-                      </TableCell>
-                      <TableCell>{shippedDate}</TableCell>
-                      <TableCell>{di.carrier || "-"}</TableCell>
-                      <TableCell>{di.trackingNumber || "-"}</TableCell>
-                      <TableCell>{r.lotNumber?.material || "-"}</TableCell>
-                      <TableCell>{normalizeLotNumberLabel(r)}</TableCell>
-                    </TableRow>
-                  );
-                })}
-                {!loading && udiRows.length === 0 && (
+          <TabsContent value="udi" className="space-y-3 mt-4">
+            <div
+              ref={setScrollContainer}
+              className="rounded-md border bg-background overflow-auto"
+              style={{ maxHeight: "calc(100vh - 320px)" }}
+            >
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center text-muted-foreground"
-                    >
-                      지난달 출고 내역이 없습니다.
-                    </TableCell>
+                    <TableHead>의뢰ID</TableHead>
+                    <TableHead>환자/치아</TableHead>
+                    <TableHead>출고일</TableHead>
+                    <TableHead>택배사</TableHead>
+                    <TableHead>송장번호</TableHead>
+                    <TableHead>원재료</TableHead>
+                    <TableHead>로트번호</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="shipping" className="space-y-3 mt-4">
-          <div
-            ref={setScrollContainer}
-            className="rounded-md border bg-background overflow-auto"
-            style={{ maxHeight: "calc(100vh - 320px)" }}
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>의뢰ID</TableHead>
-                  <TableHead>택배사</TableHead>
-                  <TableHead>송장번호</TableHead>
-                  <TableHead>접수(출고)</TableHead>
-                  <TableHead>배송완료</TableHead>
-                  <TableHead>상태</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {shippingRows.slice(0, visibleCount).map((r) => {
-                  const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-                  const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
-                  const deliveredAt = di.deliveredAt
-                    ? String(di.deliveredAt)
-                    : "";
-                  const status = deliveredAt
-                    ? "완료"
-                    : shippedAt || di.trackingNumber
-                      ? "배송중"
+                </TableHeader>
+                <TableBody>
+                  {udiRows.slice(0, visibleCount).map((r) => {
+                    const ci: any = r.caseInfos || {};
+                    const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+                    const shippedAt = di.shippedAt || di.deliveredAt || "";
+                    const shippedDate = shippedAt
+                      ? String(shippedAt).slice(0, 10)
                       : "-";
-
-                  return (
-                    <TableRow key={String(r._id || r.requestId)}>
-                      <TableCell className="font-medium">
-                        {r.requestId || "-"}
+                    return (
+                      <TableRow key={String(r._id || r.requestId)}>
+                        <TableCell className="font-medium">
+                          {r.requestId || "-"}
+                        </TableCell>
+                        <TableCell>
+                          {ci.patientName || "-"} / {ci.tooth || "-"}
+                        </TableCell>
+                        <TableCell>{shippedDate}</TableCell>
+                        <TableCell>{di.carrier || "-"}</TableCell>
+                        <TableCell>{di.trackingNumber || "-"}</TableCell>
+                        <TableCell>{r.lotNumber?.material || "-"}</TableCell>
+                        <TableCell>{normalizeLotNumberLabel(r)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {!loading && udiRows.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7}
+                        className="text-center text-muted-foreground"
+                      >
+                        지난달 출고 내역이 없습니다.
                       </TableCell>
-                      <TableCell>{di.carrier || "-"}</TableCell>
-                      <TableCell>{di.trackingNumber || "-"}</TableCell>
-                      <TableCell>{formatDateTime(shippedAt)}</TableCell>
-                      <TableCell>{formatDateTime(deliveredAt)}</TableCell>
-                      <TableCell>{status}</TableCell>
                     </TableRow>
-                  );
-                })}
-                {!loading && shippingRows.length === 0 && (
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="shipping" className="space-y-3 mt-4">
+            <div
+              ref={setScrollContainer}
+              className="rounded-md border bg-background overflow-auto"
+              style={{ maxHeight: "calc(100vh - 320px)" }}
+            >
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center text-muted-foreground"
-                    >
-                      조회 결과가 없습니다.
-                    </TableCell>
+                    <TableHead>의뢰ID</TableHead>
+                    <TableHead>택배사</TableHead>
+                    <TableHead>송장번호</TableHead>
+                    <TableHead>접수(출고)</TableHead>
+                    <TableHead>배송완료</TableHead>
+                    <TableHead>상태</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
-      </Tabs>
+                </TableHeader>
+                <TableBody>
+                  {shippingRows.slice(0, visibleCount).map((r) => {
+                    const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+                    const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
+                    const deliveredAt = di.deliveredAt
+                      ? String(di.deliveredAt)
+                      : "";
+                    const status = deliveredAt
+                      ? "완료"
+                      : shippedAt || di.trackingNumber
+                        ? "배송중"
+                        : "-";
+
+                    return (
+                      <TableRow key={String(r._id || r.requestId)}>
+                        <TableCell className="font-medium">
+                          {r.requestId || "-"}
+                        </TableCell>
+                        <TableCell>{di.carrier || "-"}</TableCell>
+                        <TableCell>{di.trackingNumber || "-"}</TableCell>
+                        <TableCell>{formatDateTime(shippedAt)}</TableCell>
+                        <TableCell>{formatDateTime(deliveredAt)}</TableCell>
+                        <TableCell>{status}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {!loading && shippingRows.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="text-center text-muted-foreground"
+                      >
+                        조회 결과가 없습니다.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </main>
     </div>
   );
 };

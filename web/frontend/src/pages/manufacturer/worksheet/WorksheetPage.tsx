@@ -64,8 +64,8 @@ export const ManufacturerWorksheetPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-subtle p-6">
-      <div className="max-w-6xl mx-auto space-y-6">{renderContent()}</div>
+    <div className="w-full min-h-full bg-gradient-to-br from-gray-50 to-blue-100 text-gray-800 flex flex-col items-stretch">
+      {renderContent()}
     </div>
   );
 };

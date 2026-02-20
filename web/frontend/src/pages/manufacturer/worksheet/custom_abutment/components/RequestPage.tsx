@@ -1046,74 +1046,74 @@ export const RequestPage = ({
       onDrop={handlePageDrop}
       onDragOver={handlePageDragOver}
       onDragLeave={handlePageDragLeave}
-      className="relative"
+      className="relative w-full text-gray-800 p-2 sm:p-4 lg:p-6 flex flex-col items-stretch"
     >
-      {(isMachiningStage || isCamStage) && isDraggingOver && (
-        <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-blue-500 text-center">
-            <div className="text-2xl font-bold text-blue-700 mb-2">
-              {isMachiningStage
-                ? "생산 이미지를 드롭하세요"
-                : "NC 파일을 드롭하세요"}
+      <main
+        className="flex-1 bg-white/80 backdrop-blur-xl p-4 sm:p-6 rounded-2xl shadow-lg min-h-[calc(100vh-140px)]"
+        ref={setScrollContainer}
+        data-worksheet-scroll="1"
+        onScroll={() => onScrollRef.current?.()}
+      >
+        {(isMachiningStage || isCamStage) && isDraggingOver && (
+          <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-blue-500 text-center">
+              <div className="text-2xl font-bold text-blue-700 mb-2">
+                {isMachiningStage
+                  ? "생산 이미지를 드롭하세요"
+                  : "NC 파일을 드롭하세요"}
+              </div>
+              <div className="text-sm text-slate-600">
+                {isMachiningStage
+                  ? "로트넘버를 자동으로 인식하여 해당 파일에 업로드합니다"
+                  : "파일명이 일치하는 의뢰건에 자동으로 업로드됩니다"}
+              </div>
             </div>
-            <div className="text-sm text-slate-600">
-              {isMachiningStage
-                ? "로트넘버를 자동으로 인식하여 해당 파일에 업로드합니다"
-                : "파일명이 일치하는 의뢰건에 자동으로 업로드됩니다"}
-            </div>
-          </div>
-        </div>
-      )}
-      {ocrProcessing && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-white rounded-2xl shadow-2xl p-8">
-            <div className="text-xl font-bold text-slate-800 mb-2">
-              로트넘버 인식 중...
-            </div>
-            <div className="text-sm text-slate-600">잠시만 기다려주세요</div>
-          </div>
-        </div>
-      )}
-      {showQueueBar && (
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
-          <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
-            진행중인 의뢰 총 {diameterQueueForReceive.total}건
-          </div>
-          <div className="flex-1">
-            <WorksheetDiameterQueueBar
-              title=""
-              labels={diameterQueueForReceive.labels}
-              counts={diameterQueueForReceive.counts}
-              total={diameterQueueForReceive.total}
-              onBucketClick={(label) => {
-                setReceiveSelectedBucket(label);
-                setReceiveQueueModalOpen(true);
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-4 mt-6">
-        {tabStage === "shipping" && (
-          <div className="flex justify-end">
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleDownloadShippingToday}
-            >
-              오늘 택배 접수
-            </Button>
           </div>
         )}
-        <div
-          ref={setScrollContainer}
-          className="overflow-y-auto"
-          data-worksheet-scroll="1"
-          style={{ maxHeight: "calc(100vh - 260px)" }}
-          onScroll={() => onScrollRef.current?.()}
-        >
-          <div className="pb-12 px-4 sm:px-6 pt-6">
+        {ocrProcessing && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+            <div className="bg-white rounded-2xl shadow-2xl p-8">
+              <div className="text-xl font-bold text-slate-800 mb-2">
+                로트넘버 인식 중...
+              </div>
+              <div className="text-sm text-slate-600">잠시만 기다려주세요</div>
+            </div>
+          </div>
+        )}
+        {showQueueBar && (
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+            <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
+              진행중인 의뢰 총 {diameterQueueForReceive.total}건
+            </div>
+            <div className="flex-1">
+              <WorksheetDiameterQueueBar
+                title=""
+                labels={diameterQueueForReceive.labels}
+                counts={diameterQueueForReceive.counts}
+                total={diameterQueueForReceive.total}
+                onBucketClick={(label) => {
+                  setReceiveSelectedBucket(label);
+                  setReceiveQueueModalOpen(true);
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4 mt-6">
+          {tabStage === "shipping" && (
+            <div className="flex justify-end">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleDownloadShippingToday}
+              >
+                오늘 택배 접수
+              </Button>
+            </div>
+          )}
+
+          <div className="pb-12 pt-2">
             {tabStage === "machining" ? (
               <MachiningQueueBoard searchQuery={worksheetSearch} />
             ) : isEmpty ? (
@@ -1276,7 +1276,7 @@ export const RequestPage = ({
               )}
           </div>
         </div>
-      </div>
+      </main>
 
       <WorksheetDiameterQueueModal
         open={receiveQueueModalOpen}

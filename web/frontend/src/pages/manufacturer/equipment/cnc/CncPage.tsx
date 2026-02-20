@@ -165,7 +165,7 @@ export const CncDashboardPageView = (props: any) => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-gray-50 to-blue-100 text-gray-800 p-4 sm:p-6 lg:p-8 flex items-stretch">
+    <div className="w-full bg-gradient-to-br from-gray-50 to-blue-100 text-gray-800 p-2 sm:p-4 lg:p-6 flex items-stretch">
       <main
         className="flex-1 min-h-full bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-2xl shadow-lg cursor-pointer transition-shadow hover:shadow-xl"
         onClick={(e) => {
