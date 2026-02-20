@@ -6,7 +6,407 @@ import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import Request from "../../models/request.model.js";
 import { Types } from "mongoose";
-import { getLast30DaysRangeUtc } from "../../utils/krBusinessDays.js";
+import {
+  getLast30DaysRangeUtc,
+  getTodayMidnightUtcInKst,
+  getTodayYmdInKst,
+  getThisMonthStartYmdInKst,
+} from "../../utils/krBusinessDays.js";
+import AdminSalesmanCreditsOverviewSnapshot from "../../models/adminSalesmanCreditsOverviewSnapshot.model.js";
+
+function normalizeNumber(n) {
+  const v = Number(n || 0);
+  if (!Number.isFinite(v)) return 0;
+  return Math.round(v);
+}
+
+function parseYmd(ymd) {
+  const parts = String(ymd || "")
+    .split("-")
+    .map((v) => Number(v));
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts;
+  if (!y || !m || !d) return null;
+  return { y, m, d };
+}
+
+function kstMonthRangeUtc({ y, m }) {
+  if (!y || !m) return null;
+  const startKst = new Date(
+    `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-01T00:00:00.000+09:00`,
+  );
+  if (Number.isNaN(startKst.getTime())) return null;
+  const nextMonth = m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
+  const nextStartKst = new Date(
+    `${String(nextMonth.y).padStart(4, "0")}-${String(nextMonth.m).padStart(2, "0")}-01T00:00:00.000+09:00`,
+  );
+  if (Number.isNaN(nextStartKst.getTime())) return null;
+  const start = startKst;
+  const end = new Date(nextStartKst.getTime() - 1);
+  return { start, end };
+}
+
+function getPeriodRangeUtcFromPeriodKey(periodKey) {
+  const period = String(periodKey || "").trim();
+  const now = new Date();
+  const todayMidnight = getTodayMidnightUtcInKst(now);
+
+  if (["7d", "30d", "90d"].includes(period)) {
+    if (!todayMidnight) return null;
+    if (period === "30d") {
+      return getLast30DaysRangeUtc(now);
+    }
+    const days = period === "7d" ? 7 : 90;
+    const end = new Date(todayMidnight.getTime() - 1);
+    const start = new Date(
+      todayMidnight.getTime() - days * 24 * 60 * 60 * 1000,
+    );
+    return { start, end };
+  }
+
+  if (period === "thisMonth") {
+    const ymd = getThisMonthStartYmdInKst(now);
+    const p = parseYmd(ymd);
+    if (!p) return null;
+    return kstMonthRangeUtc({ y: p.y, m: p.m });
+  }
+
+  if (period === "lastMonth") {
+    const ymd = getThisMonthStartYmdInKst(now);
+    const p = parseYmd(ymd);
+    if (!p) return null;
+    const prev = p.m === 1 ? { y: p.y - 1, m: 12 } : { y: p.y, m: p.m - 1 };
+    return kstMonthRangeUtc(prev);
+  }
+
+  // fallback
+  return getLast30DaysRangeUtc(now);
+}
+
+async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
+  const commissionRate = 0.05;
+
+  const ledgerPeriodRows = await SalesmanLedger.aggregate([
+    {
+      $match: {
+        salesmanId: { $in: salesmanIds },
+        createdAt: { $gte: range.start, $lte: range.end },
+      },
+    },
+    {
+      $group: {
+        _id: "$type",
+        total: { $sum: "$amount" },
+      },
+    },
+  ]);
+
+  let earnedAmount = 0;
+  let paidOutAmount = 0;
+  let adjustedAmount = 0;
+  for (const r of ledgerPeriodRows || []) {
+    const type = String(r?._id || "");
+    const total = normalizeNumber(r?.total || 0);
+    if (type === "EARN") earnedAmount += total;
+    else if (type === "PAYOUT") paidOutAmount += total;
+    else if (type === "ADJUST") adjustedAmount += total;
+  }
+  const balanceAmount = normalizeNumber(
+    earnedAmount - paidOutAmount + adjustedAmount,
+  );
+
+  const directRequestors = await User.find({
+    role: "requestor",
+    referredByUserId: { $in: salesmanIds },
+    active: true,
+    organizationId: { $ne: null },
+  })
+    .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+    .lean();
+
+  const childSalesmen = await User.find({
+    role: "salesman",
+    referredByUserId: { $in: salesmanIds },
+    active: true,
+  })
+    .select({ _id: 1, referredByUserId: 1 })
+    .lean();
+
+  const childSalesmanIds = (childSalesmen || [])
+    .map((s) => String(s?._id || ""))
+    .filter(Boolean)
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+
+  const level1Requestors =
+    childSalesmanIds.length === 0
+      ? []
+      : await User.find({
+          role: "requestor",
+          referredByUserId: { $in: childSalesmanIds },
+          active: true,
+          organizationId: { $ne: null },
+        })
+          .select({ _id: 1, referredByUserId: 1, organizationId: 1 })
+          .lean();
+
+  const leaderIdByChildSalesmanId = new Map(
+    (childSalesmen || [])
+      .map((s) => [String(s?._id || ""), String(s?.referredByUserId || "")])
+      .filter(([cid, pid]) => cid && pid),
+  );
+
+  const directOrgIdsBySalesmanId = new Map();
+  for (const u of directRequestors || []) {
+    const sid = String(u?.referredByUserId || "");
+    const orgId = u?.organizationId ? String(u.organizationId) : "";
+    if (!sid || !orgId) continue;
+    const set = directOrgIdsBySalesmanId.get(sid) || new Set();
+    set.add(orgId);
+    directOrgIdsBySalesmanId.set(sid, set);
+  }
+
+  const requestorOrgIdsByChildSalesmanId = new Map();
+  const level1OrgIdsBySalesmanId = new Map();
+  for (const u of level1Requestors || []) {
+    const childSid = String(u?.referredByUserId || "");
+    const leaderSid = String(leaderIdByChildSalesmanId.get(childSid) || "");
+    const orgId = u?.organizationId ? String(u.organizationId) : "";
+    if (!orgId) continue;
+
+    if (leaderSid) {
+      const set = level1OrgIdsBySalesmanId.get(leaderSid) || new Set();
+      set.add(orgId);
+      level1OrgIdsBySalesmanId.set(leaderSid, set);
+    }
+    if (childSid) {
+      const set2 = requestorOrgIdsByChildSalesmanId.get(childSid) || new Set();
+      set2.add(orgId);
+      requestorOrgIdsByChildSalesmanId.set(childSid, set2);
+    }
+  }
+
+  const orgIdsBySalesmanId = new Map();
+  for (const [sid, set] of directOrgIdsBySalesmanId) {
+    const merged = orgIdsBySalesmanId.get(sid) || new Set();
+    for (const id of set) merged.add(id);
+    orgIdsBySalesmanId.set(sid, merged);
+  }
+  for (const [sid, set] of level1OrgIdsBySalesmanId) {
+    const merged = orgIdsBySalesmanId.get(sid) || new Set();
+    for (const id of set) merged.add(id);
+    orgIdsBySalesmanId.set(sid, merged);
+  }
+
+  const allOrgIds = Array.from(
+    new Set(
+      Array.from(orgIdsBySalesmanId.values()).flatMap((s) => Array.from(s)),
+    ),
+  )
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+
+  const revenueRows =
+    allOrgIds.length === 0
+      ? []
+      : await Request.aggregate([
+          {
+            $match: {
+              requestorOrganizationId: { $in: allOrgIds },
+              status: "완료",
+              createdAt: { $gte: range.start, $lte: range.end },
+            },
+          },
+          {
+            $group: {
+              _id: "$requestorOrganizationId",
+              revenueAmount: {
+                $sum: {
+                  $ifNull: [
+                    "$price.paidAmount",
+                    { $ifNull: ["$price.amount", 0] },
+                  ],
+                },
+              },
+              bonusAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
+              orderCount: { $sum: 1 },
+            },
+          },
+        ]);
+
+  const revenueByOrgId = new Map(
+    (revenueRows || []).map((r) => [
+      String(r._id),
+      {
+        revenueAmount: normalizeNumber(r.revenueAmount || 0),
+        bonusAmount: normalizeNumber(r.bonusAmount || 0),
+        orderCount: normalizeNumber(r.orderCount || 0),
+      },
+    ]),
+  );
+
+  let paidRevenueAmount = 0;
+  let bonusRevenueAmount = 0;
+  let orderCount = 0;
+  for (const row of revenueByOrgId.values()) {
+    paidRevenueAmount += Number(row.revenueAmount || 0);
+    bonusRevenueAmount += Number(row.bonusAmount || 0);
+    orderCount += Number(row.orderCount || 0);
+  }
+
+  let directAmount = 0;
+  for (const orgSet of directOrgIdsBySalesmanId.values()) {
+    let rev = 0;
+    for (const oid of orgSet) {
+      rev += Number(revenueByOrgId.get(String(oid))?.revenueAmount || 0);
+    }
+    directAmount += rev * commissionRate;
+  }
+
+  let indirectAmount = 0;
+  for (const child of childSalesmen || []) {
+    const childSid = String(child?._id || "");
+    if (!childSid) continue;
+    const orgSet = requestorOrgIdsByChildSalesmanId.get(childSid) || new Set();
+    let rev = 0;
+    for (const oid of orgSet) {
+      rev += Number(revenueByOrgId.get(String(oid))?.revenueAmount || 0);
+    }
+    indirectAmount += rev * commissionRate * 0.5;
+  }
+
+  const totalAmount = normalizeNumber(directAmount + indirectAmount);
+
+  return {
+    salesmenCount: salesmanIds.length,
+    referral: {
+      paidRevenueAmount: normalizeNumber(paidRevenueAmount),
+      bonusRevenueAmount: normalizeNumber(bonusRevenueAmount),
+      orderCount: normalizeNumber(orderCount),
+    },
+    commission: {
+      totalAmount,
+      directAmount: normalizeNumber(directAmount),
+      indirectAmount: normalizeNumber(indirectAmount),
+    },
+    walletPeriod: {
+      earnedAmount: normalizeNumber(earnedAmount),
+      paidOutAmount: normalizeNumber(paidOutAmount),
+      adjustedAmount: normalizeNumber(adjustedAmount),
+      balanceAmount: normalizeNumber(balanceAmount),
+    },
+  };
+}
+
+export async function adminGetSalesmanCreditsOverview(req, res) {
+  try {
+    const periodKey = String(req.query.period || "30d").trim() || "30d";
+    const range = getPeriodRangeUtcFromPeriodKey(periodKey);
+    if (!range) {
+      return res.status(500).json({
+        success: false,
+        message: "기간 계산에 실패했습니다.",
+      });
+    }
+
+    const ymd = getTodayYmdInKst();
+    if (!ymd) {
+      return res.status(500).json({
+        success: false,
+        message: "날짜 계산에 실패했습니다.",
+      });
+    }
+
+    const refresh = String(req.query.refresh || "") === "1";
+    if (!refresh) {
+      const cached = await AdminSalesmanCreditsOverviewSnapshot.findOne({
+        ymd,
+        periodKey,
+      })
+        .select({
+          _id: 0,
+          ymd: 1,
+          periodKey: 1,
+          rangeStartUtc: 1,
+          rangeEndUtc: 1,
+          salesmenCount: 1,
+          referral: 1,
+          commission: 1,
+          walletPeriod: 1,
+          computedAt: 1,
+        })
+        .lean();
+      if (cached?.computedAt) {
+        return res.status(200).json({
+          success: true,
+          data: cached,
+          cached: true,
+        });
+      }
+    }
+
+    const salesmen = await User.find({ role: "salesman", active: true })
+      .select({ _id: 1 })
+      .lean();
+    const salesmanIds = (salesmen || [])
+      .map((s) => String(s?._id || ""))
+      .filter(Boolean)
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const overview = await computeSalesmanOverviewSnapshot({
+      range,
+      salesmanIds,
+    });
+
+    const payload = {
+      ymd,
+      periodKey,
+      rangeStartUtc: range.start,
+      rangeEndUtc: range.end,
+      salesmenCount: normalizeNumber(overview.salesmenCount || 0),
+      referral: {
+        paidRevenueAmount: normalizeNumber(
+          overview?.referral?.paidRevenueAmount,
+        ),
+        bonusRevenueAmount: normalizeNumber(
+          overview?.referral?.bonusRevenueAmount,
+        ),
+        orderCount: normalizeNumber(overview?.referral?.orderCount),
+      },
+      commission: {
+        totalAmount: normalizeNumber(overview?.commission?.totalAmount),
+        directAmount: normalizeNumber(overview?.commission?.directAmount),
+        indirectAmount: normalizeNumber(overview?.commission?.indirectAmount),
+      },
+      walletPeriod: {
+        earnedAmount: normalizeNumber(overview?.walletPeriod?.earnedAmount),
+        paidOutAmount: normalizeNumber(overview?.walletPeriod?.paidOutAmount),
+        adjustedAmount: normalizeNumber(overview?.walletPeriod?.adjustedAmount),
+        balanceAmount: normalizeNumber(overview?.walletPeriod?.balanceAmount),
+      },
+      computedAt: new Date(),
+    };
+
+    await AdminSalesmanCreditsOverviewSnapshot.updateOne(
+      { ymd, periodKey },
+      { $set: payload },
+      { upsert: true },
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: payload,
+      cached: false,
+    });
+  } catch (error) {
+    console.error("adminGetSalesmanCreditsOverview error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "영업자 크레딧 요약 조회에 실패했습니다.",
+    });
+  }
+}
 
 export async function adminGetOrganizationLedger(req, res) {
   try {

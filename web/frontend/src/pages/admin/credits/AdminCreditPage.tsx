@@ -148,6 +148,31 @@ type SalesmanCreditRow = {
   };
 };
 
+type SalesmanCreditsOverview = {
+  ymd: string;
+  periodKey: string;
+  rangeStartUtc: string;
+  rangeEndUtc: string;
+  salesmenCount: number;
+  referral: {
+    paidRevenueAmount: number;
+    bonusRevenueAmount: number;
+    orderCount: number;
+  };
+  commission: {
+    totalAmount: number;
+    directAmount: number;
+    indirectAmount: number;
+  };
+  walletPeriod: {
+    earnedAmount: number;
+    paidOutAmount: number;
+    adjustedAmount: number;
+    balanceAmount: number;
+  };
+  computedAt?: string | null;
+};
+
 type OrganizationCredit = {
   _id: string;
   name: string;
@@ -221,6 +246,10 @@ export default function AdminCreditPage() {
   const [salesmanSkip, setSalesmanSkip] = useState(0);
   const [salesmanHasMore, setSalesmanHasMore] = useState(true);
 
+  const [salesmanOverview, setSalesmanOverview] =
+    useState<SalesmanCreditsOverview | null>(null);
+  const [loadingSalesmanOverview, setLoadingSalesmanOverview] = useState(false);
+
   const [creditTab, setCreditTab] = useState<"requestor" | "salesman">(
     "requestor",
   );
@@ -291,6 +320,29 @@ export default function AdminCreditPage() {
       });
     } finally {
       setLoadingStats(false);
+    }
+  };
+
+  const loadSalesmanOverview = async () => {
+    if (!token) return;
+    setLoadingSalesmanOverview(true);
+    try {
+      const qs = new URLSearchParams({ period });
+      const res = await request<{
+        success: boolean;
+        data: SalesmanCreditsOverview;
+      }>({
+        path: `/api/admin/credits/salesmen/overview?${qs.toString()}`,
+        method: "GET",
+        token,
+      });
+      if (res.ok && res.data?.success && res.data?.data) {
+        setSalesmanOverview(res.data.data);
+      }
+    } catch {
+      setSalesmanOverview(null);
+    } finally {
+      setLoadingSalesmanOverview(false);
     }
   };
 
@@ -539,13 +591,12 @@ export default function AdminCreditPage() {
   }, [token]);
 
   useEffect(() => {
-    if (!token) return;
+    setSalesmen([]);
     setSalesmanSkip(0);
     setSalesmanHasMore(true);
     loadSalesmen({ reset: true });
-    setOrgSkip(0);
-    setOrgHasMore(true);
-    loadOrganizations({ reset: true });
+    loadSalesmanOverview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, token]);
 
   useEffect(() => {
@@ -649,41 +700,49 @@ export default function AdminCreditPage() {
   }, [organizations]);
 
   const salesmanSummary = useMemo(() => {
-    const totalSalesmen = (salesmen || []).length;
-    const totalBalance = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.wallet?.balanceAmountPeriod || 0),
-      0,
-    );
-    const totalEarned = (salesmen || []).reduce(
-      (acc, s) =>
-        acc +
-        Number(
-          (s?.performance30d?.myCommissionAmount ?? 0) +
-            (s?.performance30d?.level1CommissionAmount ?? 0),
-        ),
-      0,
-    );
-    const totalPaidOut = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.wallet?.paidOutAmountPeriod || 0),
-      0,
-    );
-    const totalReferredRevenue30d = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.performance30d?.revenueAmount || 0),
-      0,
-    );
-    const totalReferredBonus30d = (salesmen || []).reduce(
-      (acc, s) => acc + Number(s?.performance30d?.bonusAmount || 0),
-      0,
-    );
-    return {
-      totalSalesmen,
-      totalBalance,
-      totalEarned,
-      totalPaidOut,
-      totalReferredRevenue30d,
-      totalReferredBonus30d,
+    const fallback = {
+      totalSalesmen: (salesmen || []).length,
+      totalBalance: (salesmen || []).reduce(
+        (acc, s) => acc + Number(s?.wallet?.balanceAmountPeriod || 0),
+        0,
+      ),
+      totalEarned: (salesmen || []).reduce(
+        (acc, s) =>
+          acc +
+          Number(
+            (s?.performance30d?.myCommissionAmount ?? 0) +
+              (s?.performance30d?.level1CommissionAmount ?? 0),
+          ),
+        0,
+      ),
+      totalPaidOut: (salesmen || []).reduce(
+        (acc, s) => acc + Number(s?.wallet?.paidOutAmountPeriod || 0),
+        0,
+      ),
+      totalReferredRevenue30d: (salesmen || []).reduce(
+        (acc, s) => acc + Number(s?.performance30d?.revenueAmount || 0),
+        0,
+      ),
+      totalReferredBonus30d: (salesmen || []).reduce(
+        (acc, s) => acc + Number(s?.performance30d?.bonusAmount || 0),
+        0,
+      ),
     };
-  }, [salesmen]);
+
+    if (!salesmanOverview) return fallback;
+    return {
+      totalSalesmen: Number(salesmanOverview.salesmenCount || 0),
+      totalBalance: Number(salesmanOverview.walletPeriod?.balanceAmount || 0),
+      totalEarned: Number(salesmanOverview.commission?.totalAmount || 0),
+      totalPaidOut: Number(salesmanOverview.walletPeriod?.paidOutAmount || 0),
+      totalReferredRevenue30d: Number(
+        salesmanOverview.referral?.paidRevenueAmount || 0,
+      ),
+      totalReferredBonus30d: Number(
+        salesmanOverview.referral?.bonusRevenueAmount || 0,
+      ),
+    };
+  }, [salesmanOverview, salesmen]);
 
   const [orgLedgerPeriod, setOrgLedgerPeriod] = useState<
     "7d" | "30d" | "90d" | "thisMonth" | "lastMonth"
@@ -1569,7 +1628,7 @@ export default function AdminCreditPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {loadingSalesmen
+                  {loadingSalesmanOverview
                     ? "..."
                     : salesmanSummary.totalSalesmen.toLocaleString()}
                 </div>
@@ -1584,7 +1643,7 @@ export default function AdminCreditPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {loadingSalesmen
+                  {loadingSalesmanOverview
                     ? "..."
                     : `${(
                         Number(salesmanSummary.totalReferredRevenue30d || 0) +
@@ -1613,7 +1672,7 @@ export default function AdminCreditPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {loadingSalesmen
+                  {loadingSalesmanOverview
                     ? "..."
                     : `${salesmanSummary.totalEarned.toLocaleString()}원`}
                 </div>
@@ -1636,7 +1695,7 @@ export default function AdminCreditPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {loadingSalesmen
+                  {loadingSalesmanOverview
                     ? "..."
                     : `${salesmanSummary.totalBalance.toLocaleString()}원`}
                 </div>
@@ -1649,7 +1708,7 @@ export default function AdminCreditPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {loadingSalesmen
+                  {loadingSalesmanOverview
                     ? "..."
                     : `${salesmanSummary.totalPaidOut.toLocaleString()}원`}
                 </div>

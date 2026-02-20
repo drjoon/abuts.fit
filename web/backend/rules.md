@@ -72,6 +72,12 @@
 - `CreditLedger`의 `SPEND` 항목은 `spentPaidAmount`, `spentBonusAmount`로 유료/무료 사용분을 분리 기록한다.
 - 모든 매출/수수료/단가 계산은 `price.paidAmount` 기준으로 집계한다.
 
+### 5.1.1 관리자/대규모 집계(overview) SSOT 정책
+
+- 관리자 화면에서 **전체 합계(overview)** 가 필요한 경우(무한 스크롤/부분 로딩 등으로 프론트 집계가 불완전해질 수 있음), 백엔드는 주기적으로 **스냅샷 컬렉션에 집계값을 upsert** 하고 이를 **SSOT(single source of truth)** 로 제공한다.
+- 프론트는 overview를 클라이언트에서 재합산하지 않고, 스냅샷 기반 API를 사용한다.
+- 영업자 수수료/리퍼럴 커미션 집계는 **유료 매출(`price.paidAmount`)만** 기준으로 계산한다(무료/보너스 매출 제외).
+
 ### 5.2 크레딧 차감 시점
 
 - CAM 승인(가공 시작) 시점에 `CreditLedger` SPEND 생성 (idempotent, uniqueKey 보장)

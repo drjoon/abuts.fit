@@ -546,16 +546,24 @@ export default function AdminReferralGroupsPage() {
               <div className="text-xs text-muted-foreground">매출 총액</div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
+                  Number(overview?.requestor?.totalRevenueAmount || 0) +
+                    Number(overview?.requestor?.totalBonusAmount || 0),
+                )}
+                원
+              </div>
+              <div className="text-xs text-muted-foreground">
+                유료{" "}
+                {formatMoney(
                   Number(overview?.requestor?.totalRevenueAmount || 0),
                 )}
                 원
               </div>
               <div className="text-xs text-muted-foreground">
-                (무료{" "}
+                무료{" "}
                 {formatMoney(
                   Number(overview?.requestor?.totalBonusAmount || 0),
                 )}
-                원)
+                원
               </div>
             </div>
           </CardContent>
@@ -609,31 +617,35 @@ export default function AdminReferralGroupsPage() {
             </div>
             <div className="rounded-xl border p-3 text-right">
               <div className="text-xs text-muted-foreground">
-                수수료/매출 요약
+                소개 매출 총액
               </div>
               <div className="text-2xl font-semibold tracking-tight">
                 {formatMoney(
-                  Number(overview?.salesman?.totalCommissionAmount || 0),
+                  Number(overview?.salesman?.totalReferredRevenueAmount || 0) +
+                    Number(overview?.salesman?.totalReferredBonusAmount || 0),
                 )}
                 원
               </div>
               <div className="text-xs text-muted-foreground">
-                비율 {salesmanCommissionRatio.toFixed(1)}%
-              </div>
-              <div className="text-xs text-muted-foreground">
-                유료 매출{" "}
+                유료{" "}
                 {formatMoney(
                   Number(overview?.salesman?.totalReferredRevenueAmount || 0),
                 )}
                 원
               </div>
-
               <div className="text-xs text-muted-foreground">
-                (무료 매출{" "}
+                무료{" "}
                 {formatMoney(
                   Number(overview?.salesman?.totalReferredBonusAmount || 0),
                 )}
-                원)
+                원
+              </div>
+              <div className="text-xs text-muted-foreground">
+                수수료{" "}
+                {formatMoney(
+                  Number(overview?.salesman?.totalCommissionAmount || 0),
+                )}
+                원 · 비율 {salesmanCommissionRatio.toFixed(1)}%
               </div>
             </div>
           </CardContent>

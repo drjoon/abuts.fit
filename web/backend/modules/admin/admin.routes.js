@@ -59,6 +59,7 @@ import {
   adminGetOrganizationLedger,
   adminGetOrganizationCredits,
   adminGetOrganizationCreditDetail,
+  adminGetSalesmanCreditsOverview,
   adminGetSalesmanCredits,
   adminGetSalesmanLedger,
   adminCreateSalesmanPayout,
@@ -92,6 +93,7 @@ router.get("/credits/stats", adminGetCreditStats);
 router.get("/credits/organizations", adminGetOrganizationCredits);
 router.get("/credits/organizations/:id", adminGetOrganizationCreditDetail);
 router.get("/credits/organizations/:id/ledger", adminGetOrganizationLedger);
+router.get("/credits/salesmen/overview", adminGetSalesmanCreditsOverview);
 router.get("/credits/salesmen", adminGetSalesmanCredits);
 router.get("/credits/salesmen/:id/ledger", adminGetSalesmanLedger);
 router.post("/credits/salesmen/:id/payout", adminCreateSalesmanPayout);
