@@ -699,7 +699,6 @@ async function run() {
     await clearAllCollections();
     await seedCore();
     const seeded = await seedDev();
-    const bulk = await seedBulkUsersAndData();
 
     console.log("[db] reset + seed done", {
       requestorOwner: {
@@ -734,8 +733,6 @@ async function run() {
         password: seeded.passwords.adminStaff,
         userId: String(seeded.adminStaff._id),
       },
-      requestorExtras: bulk.requestors,
-      salesmanExtras: bulk.salesmen,
     });
   } finally {
     await disconnectDb();
