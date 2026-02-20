@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { Machine } from "../../cnc/types";
-import type { CncMaterialInfo } from "../../cnc/components/CncMaterialModal";
+import type { Machine } from "../types";
+import type { CncMaterialInfo } from "../components/CncMaterialModal";
 
 interface CncMachineMeta {
   currentMaterial?: CncMaterialInfo;

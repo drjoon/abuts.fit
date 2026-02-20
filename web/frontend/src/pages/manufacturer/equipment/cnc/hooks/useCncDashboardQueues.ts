@@ -10,9 +10,9 @@ import {
   initializeSocket,
 } from "@/shared/realtime/socket";
 
-import type { Machine } from "../../cnc/types";
-import type { CncJobItem } from "../../cnc/components/CncReservationModal";
-import type { PlaylistJobItem } from "../../cnc/components/CncPlaylistDrawer";
+import type { Machine } from "../types";
+import type { CncJobItem } from "../components/CncReservationModal";
+import type { PlaylistJobItem } from "../components/CncPlaylistDrawer";
 
 type LastCompletedMachining = {
   machineId: string;

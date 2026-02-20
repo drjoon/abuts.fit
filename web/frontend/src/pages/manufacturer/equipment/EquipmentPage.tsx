@@ -23,7 +23,7 @@ import type { CncJobItem } from "@/pages/manufacturer/equipment/cnc/components/C
 import type { PlaylistJobItem } from "@/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer";
 import { useCncProgramEditor } from "@/features/manufacturer/cnc/hooks/useCncProgramEditor";
 import { type CncMaterialInfo } from "@/pages/manufacturer/equipment/cnc/components/CncMaterialModal";
-import { CncDashboardPageView } from "./cncDashboard/CncDashboardPageView";
+import { CncDashboardPageView } from "./cnc/CncPage";
 import { useCncDashboardQueues } from "@/features/manufacturer/cncDashboard/hooks/useCncDashboardQueues";
 import { useCncDashboardMachineInfo } from "@/features/manufacturer/cncDashboard/hooks/useCncDashboardMachineInfo";
 import { useCncDashboardMaterials } from "@/features/manufacturer/cncDashboard/hooks/useCncDashboardMaterials";

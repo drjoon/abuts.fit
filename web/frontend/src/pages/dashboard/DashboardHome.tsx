@@ -1,6 +1,6 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { RequestorDashboardPage } from "../requestor/dashboard/RequestorDashboardPage";
-import { ManufacturerDashboardPage } from "../manufacturer/ManufacturerDashboardPage";
+import { ManufacturerDashboardPage } from "../manufacturer/dashboard/ManufacturerDashboardPage";
 import { AdminDashboardPage } from "../admin/dashboard/AdminDashboardPage";
 import { SalesmanDashboardPage } from "../salesman/SalesmanDashboardPage";
 

@@ -1,22 +1,22 @@
 import React from "react";
 import { Plus } from "lucide-react";
 
-import type { Machine } from "../cnc/types";
-import type { HealthLevel } from "../cnc/components/MachineCard";
-import type { CncJobItem } from "../cnc/components/CncReservationModal";
-import { useManUpload } from "../cnc/hooks/useManUpload";
+import type { Machine } from "./types";
+import type { HealthLevel } from "./components/MachineCard";
+import type { CncJobItem } from "./components/CncReservationModal";
+import { useManUpload } from "./hooks/useManUpload";
 import {
   CncPlaylistDrawer,
   type PlaylistJobItem,
-} from "../cnc/components/CncPlaylistDrawer";
-import { CncMachineGrid } from "../cnc/components/CncMachineGrid";
-import { CncMachineManagerModal } from "../cnc/components/CncMachineManagerModal";
-import { CncProgramEditorPanel } from "../cnc/components/CncProgramEditorPanel";
-import { CncToolStatusModal } from "../cnc/components/CncToolStatusModal";
-import { CncTempDetailModal } from "../cnc/components/CncTempDetailModal";
-import { CncMachineInfoModal } from "../cnc/components/CncMachineInfoModal";
-import { CncMaterialChangeModal } from "../cnc/components/CncMaterialChangeModal";
-import { CncMaterialModal } from "../cnc/components/CncMaterialModal";
+} from "./components/CncPlaylistDrawer";
+import { CncMachineGrid } from "./components/CncMachineGrid";
+import { CncMachineManagerModal } from "./components/CncMachineManagerModal";
+import { CncProgramEditorPanel } from "./components/CncProgramEditorPanel";
+import { CncToolStatusModal } from "./components/CncToolStatusModal";
+import { CncTempDetailModal } from "./components/CncTempDetailModal";
+import { CncMachineInfoModal } from "./components/CncMachineInfoModal";
+import { CncMaterialChangeModal } from "./components/CncMaterialChangeModal";
+import { CncMaterialModal } from "./components/CncMaterialModal";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { CncEventLogModal } from "@/features/cnc/components/CncEventLogModal";
 
