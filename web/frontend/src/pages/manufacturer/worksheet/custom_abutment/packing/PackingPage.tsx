@@ -17,14 +17,9 @@ import {
   deriveStageForFilter,
   getDiameterBucketIndex,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
-import {
-  WorksheetDiameterQueueBar,
-  type DiameterBucketKey,
-} from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
-import {
-  WorksheetDiameterQueueModal,
-  type WorksheetQueueItem,
-} from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
+import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
+import { type WorksheetQueueItem } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
+import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { WorksheetCardGrid } from "../components/WorksheetCardGrid";
 import { PreviewModal } from "../components/PreviewModal";
 import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
@@ -81,7 +76,6 @@ export const PackingPage = ({
   );
   const [visibleCount, setVisibleCount] = useState(9);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const [queueModalOpen, setQueueModalOpen] = useState(false);
   const [selectedBucket, setSelectedBucket] =
     useState<DiameterBucketKey | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -631,150 +625,131 @@ export const PackingPage = ({
 
   return (
     <div
-      className="flex flex-col gap-4 relative"
+      className="relative w-full text-gray-800 flex flex-col items-stretch"
       onDrop={handlePageDrop}
       onDragOver={handlePageDragOver}
       onDragLeave={handlePageDragLeave}
     >
-      {showQueueBar && (
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
-          <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
-            진행중인 의뢰 총 {diameterQueueForPacking.total}건
-          </div>
-          <div className="flex-1">
-            <WorksheetDiameterQueueBar
-              title=""
-              labels={diameterQueueForPacking.labels}
-              counts={diameterQueueForPacking.counts}
-              total={diameterQueueForPacking.total}
-              onBucketClick={(label) => {
-                setSelectedBucket(label);
-                setQueueModalOpen(true);
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {isLoading && <WorksheetLoading />}
-
-      {!isLoading && paginatedRequests.length === 0 && (
-        <div className="flex justify-center py-8">
-          <div className="text-gray-500">의뢰가 없습니다.</div>
-        </div>
-      )}
-
-      {!isLoading && paginatedRequests.length > 0 && (
-        <>
-          <WorksheetCardGrid
-            requests={paginatedRequests}
-            onDownload={handleDownloadOriginalStl}
-            onOpenPreview={handleOpenPreview}
-            onDeleteCam={() => {}}
-            onDeleteNc={handleDeleteNc}
-            onRollback={handleCardRollback}
-            uploadProgress={uploadProgress}
-            isCamStage={false}
-            isMachiningStage={false}
-            uploading={uploading}
-            downloading={downloading}
-            deletingCam={{}}
-            deletingNc={deletingNc}
-            currentStageOrder={currentStageOrder}
+      <div className="flex-1">
+        {showQueueBar && (
+          <WorksheetQueueSummary
+            total={diameterQueueForPacking.total}
+            labels={diameterQueueForPacking.labels}
+            counts={diameterQueueForPacking.counts}
           />
+        )}
 
-          <div ref={sentinelRef} className="py-4 text-center text-gray-500">
-            {visibleCount >= filteredAndSorted.length
-              ? "모든 의뢰를 표시했습니다."
-              : "스크롤하여 더보기"}
+        {isLoading && <WorksheetLoading />}
+
+        {!isLoading && paginatedRequests.length === 0 && (
+          <div className="flex justify-center py-8">
+            <div className="text-gray-500">의뢰가 없습니다.</div>
           </div>
-        </>
-      )}
+        )}
 
-      <PreviewModal
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        previewLoading={previewLoading}
-        previewFiles={previewFiles}
-        previewNcText={previewNcText}
-        previewNcName={previewNcName}
-        previewStageUrl={previewStageUrl}
-        previewStageName={previewStageName}
-        uploading={uploading}
-        reviewSaving={reviewSaving}
-        stage={tabStage}
-        isCamStage={false}
-        isMachiningStage={false}
-        onUpdateReviewStatus={handleUpdateReviewStatus}
-        onDeleteCam={() => Promise.resolve()}
-        onDeleteNc={handleDeleteNc}
-        onDeleteStageFile={handleDeleteStageFile}
-        onUploadCam={() => Promise.resolve()}
-        onUploadNc={() => Promise.resolve()}
-        onUploadStageFile={handleUploadStageFile}
-        onDownloadOriginalStl={handleDownloadOriginalStl}
-        onDownloadCamStl={handleDownloadCamStl}
-        onDownloadNcFile={handleDownloadNcFile}
-        onDownloadStageFile={handleDownloadStageFile}
-        setSearchParams={setSearchParams}
-        setConfirmTitle={setConfirmTitle}
-        setConfirmDescription={setConfirmDescription}
-        setConfirmAction={setConfirmAction}
-        setConfirmOpen={setConfirmOpen}
-        onOpenNextRequest={handleOpenNextRequest}
-      />
+        {!isLoading && paginatedRequests.length > 0 && (
+          <>
+            <WorksheetCardGrid
+              requests={paginatedRequests}
+              onDownload={handleDownloadOriginalStl}
+              onOpenPreview={handleOpenPreview}
+              onDeleteCam={() => {}}
+              onDeleteNc={handleDeleteNc}
+              onRollback={handleCardRollback}
+              uploadProgress={uploadProgress}
+              isCamStage={false}
+              isMachiningStage={false}
+              uploading={uploading}
+              downloading={downloading}
+              deletingCam={{}}
+              deletingNc={deletingNc}
+              currentStageOrder={currentStageOrder}
+            />
 
-      <ConfirmDialog
-        open={confirmOpen}
-        title={confirmTitle}
-        description={confirmDescription}
-        confirmLabel="확인"
-        cancelLabel="취소"
-        onConfirm={async () => {
-          if (!confirmAction) return;
-          const action = confirmAction;
-          setConfirmOpen(false);
-          setConfirmAction(null);
+            <div ref={sentinelRef} className="py-4 text-center text-gray-500">
+              {visibleCount >= filteredAndSorted.length
+                ? "모든 의뢰를 표시했습니다."
+                : "스크롤하여 더보기"}
+            </div>
+          </>
+        )}
 
-          try {
-            await action();
-          } catch (error) {
-            console.error("Confirm action failed:", error);
-          }
-        }}
-        onCancel={() => {
-          setConfirmOpen(false);
-          setConfirmAction(null);
-        }}
-      />
+        <PreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          previewLoading={previewLoading}
+          previewFiles={previewFiles}
+          previewNcText={previewNcText}
+          previewNcName={previewNcName}
+          previewStageUrl={previewStageUrl}
+          previewStageName={previewStageName}
+          uploading={uploading}
+          reviewSaving={reviewSaving}
+          stage={tabStage}
+          isCamStage={false}
+          isMachiningStage={false}
+          onUpdateReviewStatus={handleUpdateReviewStatus}
+          onDeleteCam={() => Promise.resolve()}
+          onDeleteNc={handleDeleteNc}
+          onDeleteStageFile={handleDeleteStageFile}
+          onUploadCam={() => Promise.resolve()}
+          onUploadNc={() => Promise.resolve()}
+          onUploadStageFile={handleUploadStageFile}
+          onDownloadOriginalStl={handleDownloadOriginalStl}
+          onDownloadCamStl={() => Promise.resolve()}
+          onDownloadNcFile={() => Promise.resolve()}
+          onDownloadStageFile={handleDownloadStageFile}
+          onOpenNextRequest={(id) => {}}
+          setSearchParams={setSearchParams}
+          setConfirmTitle={setConfirmTitle}
+          setConfirmDescription={setConfirmDescription}
+          setConfirmAction={setConfirmAction}
+          setConfirmOpen={setConfirmOpen}
+        />
 
-      <WorksheetDiameterQueueModal
-        open={queueModalOpen}
-        onOpenChange={setQueueModalOpen}
-        processLabel="커스텀어벗 > 세척.패킹"
-        queues={diameterQueueForPacking.buckets}
-        selectedBucket={selectedBucket}
-        onSelectBucket={(bucket) => setSelectedBucket(bucket)}
-      />
+        <ConfirmDialog
+          open={confirmOpen}
+          title={confirmTitle}
+          description={confirmDescription}
+          confirmLabel="확인"
+          cancelLabel="취소"
+          onConfirm={async () => {
+            if (!confirmAction) return;
+            const action = confirmAction;
+            setConfirmOpen(false);
+            setConfirmAction(null);
 
-      {(isDraggingOver || ocrProcessing) && (
-        <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-slate-900/20">
-          <div className="rounded-xl bg-white/90 px-4 py-3 text-sm font-semibold text-slate-800 shadow flex items-center gap-2">
-            {ocrProcessing && (
-              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
-            )}
-            <span>
-              {ocrProcessing
-                ? ocrStage === "upload"
-                  ? "이미지 업로드 중..."
-                  : ocrStage === "recognize"
-                    ? "LOT 인식 중..."
-                    : "처리 중..."
-                : "이미지 파일을 놓으면 세척·포장 완료 후 발송 단계로 이동합니다."}
-            </span>
+            try {
+              await action();
+            } catch (error) {
+              console.error("Confirm action failed:", error);
+            }
+          }}
+          onCancel={() => {
+            setConfirmOpen(false);
+            setConfirmAction(null);
+          }}
+        />
+
+        {(isDraggingOver || ocrProcessing) && (
+          <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-slate-900/20">
+            <div className="rounded-xl bg-white/90 px-4 py-3 text-sm font-semibold text-slate-800 shadow flex items-center gap-2">
+              {ocrProcessing && (
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+              )}
+              <span>
+                {ocrProcessing
+                  ? ocrStage === "upload"
+                    ? "이미지 업로드 중..."
+                    : ocrStage === "recognize"
+                      ? "LOT 인식 중..."
+                      : "처리 중..."
+                  : "이미지 파일을 놓으면 세척·포장 완료 후 발송 단계로 이동합니다."}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

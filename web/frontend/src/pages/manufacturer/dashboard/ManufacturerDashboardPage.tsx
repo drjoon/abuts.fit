@@ -332,3 +332,5 @@ const RiskDetailModal = ({
     </Dialog>
   );
 };
+
+export default ManufacturerDashboardPage;

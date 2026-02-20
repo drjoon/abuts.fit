@@ -833,7 +833,10 @@ export const DashboardLayout = () => {
                 <PeriodFilter value={period} onChange={setPeriod} />
               </div>
             )}
-          <div className="flex-1 overflow-auto" data-dashboard-scroll="1">
+          <div
+            className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-blue-100"
+            data-dashboard-scroll="1"
+          >
             {(isManufacturer && isEquipmentRoute) || isWorksheetRoute ? (
               <div className="border-b border-border bg-background/80 sticky top-0 z-10">
                 <div className="px-4 py-2 flex flex-col gap-2">
@@ -1020,16 +1023,20 @@ export const DashboardLayout = () => {
                 </div>
               </div>
             ) : null}
-            <Outlet
-              context={{
-                worksheetSearch,
-                setWorksheetSearch,
-                showCompleted,
-                setShowCompleted,
-                creditBalance,
-                loadingCreditBalance,
-              }}
-            />
+            <div className="p-2 sm:p-4 lg:p-6 flex flex-col items-stretch min-h-max">
+              <main className="flex-1 bg-white/80 backdrop-blur-xl p-4 sm:p-6 rounded-2xl shadow-lg min-h-[calc(100vh-140px)] overflow-x-hidden">
+                <Outlet
+                  context={{
+                    worksheetSearch,
+                    setWorksheetSearch,
+                    showCompleted,
+                    setShowCompleted,
+                    creditBalance,
+                    loadingCreditBalance,
+                  }}
+                />
+              </main>
+            </div>
           </div>
         </main>
       </div>

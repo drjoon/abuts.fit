@@ -13,14 +13,12 @@ import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  WorksheetDiameterQueueBar,
-  type DiameterBucketKey,
-} from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
+import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import {
   WorksheetDiameterQueueModal,
   type WorksheetQueueItem,
 } from "@/shared/ui/dashboard/WorksheetDiameterQueueModal";
+import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { useToast } from "@/shared/hooks/use-toast";
 import { toKstYmd } from "@/shared/date/kst";
 import { Badge } from "@/components/ui/badge";
@@ -1046,10 +1044,10 @@ export const RequestPage = ({
       onDrop={handlePageDrop}
       onDragOver={handlePageDragOver}
       onDragLeave={handlePageDragLeave}
-      className="relative w-full text-gray-800 p-2 sm:p-4 lg:p-6 flex flex-col items-stretch"
+      className="relative w-full text-gray-800 flex flex-col items-stretch"
     >
-      <main
-        className="flex-1 bg-white/80 backdrop-blur-xl p-4 sm:p-6 rounded-2xl shadow-lg min-h-[calc(100vh-140px)]"
+      <div
+        className="flex-1"
         ref={setScrollContainer}
         data-worksheet-scroll="1"
         onScroll={() => onScrollRef.current?.()}
@@ -1081,23 +1079,11 @@ export const RequestPage = ({
           </div>
         )}
         {showQueueBar && (
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
-            <div className="text-lg font-semibold text-slate-800 md:whitespace-nowrap">
-              진행중인 의뢰 총 {diameterQueueForReceive.total}건
-            </div>
-            <div className="flex-1">
-              <WorksheetDiameterQueueBar
-                title=""
-                labels={diameterQueueForReceive.labels}
-                counts={diameterQueueForReceive.counts}
-                total={diameterQueueForReceive.total}
-                onBucketClick={(label) => {
-                  setReceiveSelectedBucket(label);
-                  setReceiveQueueModalOpen(true);
-                }}
-              />
-            </div>
-          </div>
+          <WorksheetQueueSummary
+            total={diameterQueueForReceive.total}
+            labels={diameterQueueForReceive.labels}
+            counts={diameterQueueForReceive.counts}
+          />
         )}
 
         <div className="space-y-4 mt-6">
@@ -1276,7 +1262,7 @@ export const RequestPage = ({
               )}
           </div>
         </div>
-      </main>
+      </div>
 
       <WorksheetDiameterQueueModal
         open={receiveQueueModalOpen}

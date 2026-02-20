@@ -699,3 +699,5 @@ export const ManufacturerPaymentPage = () => {
     />
   );
 };
+
+export default ManufacturerPaymentPage;

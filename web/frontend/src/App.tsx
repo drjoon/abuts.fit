@@ -49,11 +49,9 @@ const NewRequestPage = lazy(() =>
   })),
 );
 const ManufacturerWorksheetPage = lazy(() =>
-  import("./pages/manufacturer/worksheet/WorksheetPage").then(
-    (m) => ({
-      default: m.ManufacturerWorksheetPage,
-    }),
-  ),
+  import("./pages/manufacturer/worksheet/WorksheetPage").then((m) => ({
+    default: m.ManufacturerWorksheetPage,
+  })),
 );
 const SettingsPage = lazy(() =>
   import("./pages/dashboard/SettingsPage").then((m) => ({
@@ -69,12 +67,21 @@ import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
 import AdminCreditPage from "@/pages/admin/credits/AdminCreditPage";
-import { ManufacturerPaymentPage } from "@/pages/manufacturer/payments/PaymentsPage";
 import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsPage";
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
+const ManufacturerDashboardPage = lazy(() =>
+  import("./pages/manufacturer/dashboard/ManufacturerDashboardPage").then(
+    (m) => ({ default: m.ManufacturerDashboardPage }),
+  ),
+);
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
-    default: m.CncDashboardPage || m.EquipmentPage,
+    default: m.EquipmentPage,
+  })),
+);
+const ManufacturerPaymentPage = lazy(() =>
+  import("./pages/manufacturer/payments/PaymentsPage").then((m) => ({
+    default: m.ManufacturerPaymentPage,
   })),
 );
 const HelpPage = lazy(() =>

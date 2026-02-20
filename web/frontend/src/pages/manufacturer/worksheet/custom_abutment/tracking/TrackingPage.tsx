@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import type { DeliveryInfoSummary, RequestBase } from "@/types/request";
 import { toKstYmd } from "@/shared/date/kst";
+import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 
 type InquiryTab = "process" | "shipping" | "udi";
 type DateRange =
@@ -297,6 +298,22 @@ export const TrackingInquiryPage = () => {
         return hay.includes(searchLower);
       });
   }, [requests, searchLower, showCompleted, fromDate, toDate]);
+
+  const dateRangeToPeriod = (dr: DateRange): PeriodFilterValue => {
+    if (dr === "recent7") return "7d";
+    if (dr === "recent30") return "30d";
+    if (dr === "recent90") return "90d";
+    if (dr === "lastMonth") return "lastMonth";
+    return "thisMonth";
+  };
+
+  const periodToDateRange = (p: PeriodFilterValue): DateRange => {
+    if (p === "7d") return "recent7";
+    if (p === "30d") return "recent30";
+    if (p === "90d") return "recent90";
+    if (p === "lastMonth") return "lastMonth";
+    return "thisMonth";
+  };
 
   const handlePrint = (type: InquiryTab) => {
     const win = window.open("", "_blank", "width=1024,height=768");
@@ -672,8 +689,8 @@ export const TrackingInquiryPage = () => {
   }, [currentRows.length]);
 
   return (
-    <div className="w-full text-gray-800 p-2 sm:p-4 lg:p-6 flex flex-col items-stretch">
-      <main className="flex-1 bg-white/80 backdrop-blur-xl p-4 sm:p-6 rounded-2xl shadow-lg min-h-[calc(100vh-140px)]">
+    <div className="relative w-full text-gray-800 flex flex-col items-stretch">
+      <div className="flex-1">
         <Tabs value={tab} onValueChange={(v) => setTab(v as InquiryTab)}>
           <div className="flex items-center gap-3">
             <TabsList className="flex-1 justify-center">
@@ -685,31 +702,16 @@ export const TrackingInquiryPage = () => {
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">기간</span>
-              {(
-                [
-                  ["recent7", "최근 7일"],
-                  ["recent30", "최근 30일"],
-                  ["recent90", "최근 90일"],
-                  ["lastMonth", "지난달"],
-                  ["thisMonth", "이번달"],
-                ] as const
-              ).map(([key, label]) => (
-                <Button
-                  key={key}
-                  variant={dateRange === key ? "default" : "outline"}
-                  size="sm"
-                  className="rounded-full px-3"
-                  onClick={() =>
-                    setDateRangeByTab((prev) => ({
-                      ...prev,
-                      [tab]: key as DateRange,
-                    }))
-                  }
-                >
-                  {label}
-                </Button>
-              ))}
+              <PeriodFilter
+                value={dateRangeToPeriod(dateRange)}
+                onChange={(next) => {
+                  const nextRange = periodToDateRange(next);
+                  setDateRangeByTab((prev) => ({
+                    ...prev,
+                    [tab]: nextRange,
+                  }));
+                }}
+              />
             </div>
             <div className="flex items-center gap-2">
               {tab === "udi" && (
@@ -947,7 +949,7 @@ export const TrackingInquiryPage = () => {
             </div>
           </TabsContent>
         </Tabs>
-      </main>
+      </div>
     </div>
   );
 };
