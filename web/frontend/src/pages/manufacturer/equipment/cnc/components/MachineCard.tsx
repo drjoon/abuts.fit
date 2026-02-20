@@ -577,16 +577,6 @@ export const MachineCard = (props: MachineCardProps) => {
               {machine.name}
             </div>
             {getMachineStatusChip(String(effectiveStatus || ""), isRunningUi)}
-            <div
-              className={`rounded-full px-2 py-0.5 text-[10px] font-black tracking-wide border ${
-                isMockUi
-                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                  : "bg-slate-50 text-slate-700 border-slate-200"
-              }`}
-              title={isMockUi ? "더미(모의) 가공" : "실제 가공"}
-            >
-              {isMockUi ? "MOCK" : "REAL"}
-            </div>
           </div>
 
           {requestId ? (
@@ -733,7 +723,7 @@ export const MachineCard = (props: MachineCardProps) => {
           </div>
         </div>
       )}
-      <div className="relative flex items-start justify-end gap-3 mb-4">
+      <div className="relative flex items-start justify-end gap-3 mb-4 mt-2">
         <div className="flex flex-nowrap items-center justify-end gap-1.5">
           {onUploadFiles && (
             <>

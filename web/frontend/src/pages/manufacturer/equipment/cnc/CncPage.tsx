@@ -168,6 +168,21 @@ export const CncDashboardPageView = (props: any) => {
     <div className="w-full flex flex-col min-h-0 items-stretch">
       {/* 장비 그리드 영역 */}
       <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+        <div className="mr-auto">
+          <div
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-black tracking-wide border ${
+              globalDummyEnabled
+                ? "bg-blue-50 text-blue-700 border-blue-200"
+                : "bg-slate-50 text-slate-700 border-slate-200"
+            }`}
+            title={
+              globalDummyEnabled ? "더미(모의) 가공 상태" : "실제 가공 상태"
+            }
+          >
+            {globalDummyEnabled ? "MOCK" : "REAL"}
+          </div>
+        </div>
+
         <div className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3">
           <div className="text-[12px] font-extrabold text-slate-700">
             전체 더미 가공 허용

@@ -528,184 +528,19 @@ export async function upsertMachine(req, res) {
       { new: true, upsert: true },
     );
 
-    // OFF -> ON 전환 시, 해당 장비에 할당된 대기(CAM 승인 이후) 의뢰를 브리지로 트리거한다.
-    // - 브리지는 매번 DB를 조회하지 않으므로, 백엔드에서 process-file 호출을 해줘야 자동 가공이 시작될 수 있다.
-    // - 실패하더라도 장비 설정 저장 자체는 성공으로 반환한다.
-    const nextAuto = machine?.allowAutoMachining === true;
-    let autoMachiningTrigger = null;
-    if (!prevAuto && nextAuto && BRIDGE_BASE) {
-      try {
-        const pending = await Request.find({
-          status: { $in: ["CAM", "가공", "생산"] },
-          "productionSchedule.assignedMachine": finalUid,
-        })
-          .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
-          .limit(1)
-          .lean();
+    // 브리지 서버 등록 및 동기화 과정을 제거하고 백엔드 DB 업데이트만 수행합니다.
+    // 브리지 서버가 재기동될 때 백엔드 스냅샷을 기준으로 초기화됩니다.
 
-        const req0 = Array.isArray(pending) ? pending[0] : null;
-        const requestId = String(req0?.requestId || "").trim();
-        const bridgePath = String(
-          req0?.caseInfos?.ncFile?.filePath || "",
-        ).trim();
-        const rawFileName = String(
-          req0?.caseInfos?.ncFile?.fileName || "",
-        ).trim();
-        const derivedFileName = bridgePath
-          ? String(bridgePath).split(/[/\\]/).pop()
-          : "";
-        const fileName = rawFileName || derivedFileName;
-
-        autoMachiningTrigger = {
-          attempted: false,
-          requestId: requestId || null,
-          machineId: finalUid,
-          fileName: fileName || null,
-          bridgePath: bridgePath || null,
-          error: null,
-        };
-
-        if (requestId && bridgePath) {
-          // DB에 선업로드 진행 상태 기록 (UI에서 표시 가능)
-          try {
-            await Request.updateOne(
-              { requestId },
-              {
-                $set: {
-                  "productionSchedule.ncPreload": {
-                    status: "UPLOADING",
-                    machineId: finalUid,
-                    bridgePath: bridgePath || null,
-                    updatedAt: new Date(),
-                    error: null,
-                  },
-                },
-              },
-            );
-          } catch (e) {
-            console.warn("autoMachining ncPreload UPLOADING update failed", e);
-          }
-
-          const base =
-            process.env.BRIDGE_NODE_URL ||
-            process.env.BRIDGE_PROCESS_BASE ||
-            process.env.CNC_BRIDGE_BASE ||
-            process.env.BRIDGE_BASE ||
-            "http://localhost:8002";
-          try {
-            const triggerResp = await fetch(
-              `${String(base).replace(/\/$/, "")}/api/bridge/process-file`,
-              {
-                method: "POST",
-                headers: withBridgeHeaders({
-                  "Content-Type": "application/json",
-                }),
-                body: JSON.stringify({
-                  fileName: fileName || null,
-                  requestId,
-                  machineId: finalUid,
-                  bridgePath: bridgePath || null,
-                }),
-              },
-            );
-
-            try {
-              const q = await fetchBridgeQueueFromBridge(finalUid);
-              if (q.ok) {
-                await saveBridgeQueueSnapshot(finalUid, q.jobs);
-              }
-            } catch (e) {
-              console.warn("autoMachining queue sync failed", e);
-            }
-
-            autoMachiningTrigger.attempted = true;
-          } catch (e) {
-            autoMachiningTrigger.error = String(e?.message || e);
-            console.warn("autoMachining trigger bridge call failed", e);
-            try {
-              await Request.updateOne(
-                { requestId },
-                {
-                  $set: {
-                    "productionSchedule.ncPreload": {
-                      status: "FAILED",
-                      machineId: finalUid,
-                      bridgePath: bridgePath || null,
-                      updatedAt: new Date(),
-                      error: autoMachiningTrigger.error,
-                    },
-                  },
-                },
-              );
-            } catch (e2) {
-              console.warn("autoMachining ncPreload FAILED update failed", e2);
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("autoMachining trigger on toggle failed", e);
-      }
-    }
-
-    // hi-link 브리지에도 장비 정보를 등록 시도 (실패하더라도 DB 저장 결과는 그대로 반환)
-    let hiLinkResult = null;
-    if (ip && port && BRIDGE_BASE) {
-      try {
-        // .env의 BRIDGE_BASE (http://1.217.31.227:8002)를 사용하여 직접 호출
-        const bridgeResponse = await fetch(`${BRIDGE_BASE}/api/cnc/machines`, {
-          method: "POST",
-          headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ uid: finalUid, ip, port }),
-        });
-        const bridgeData = await bridgeResponse.json().catch(() => null);
-        hiLinkResult = {
-          status: bridgeResponse.status,
-          ...(bridgeData || {}),
-        };
-        if (!bridgeResponse.ok || !bridgeData || bridgeData.success === false) {
-          console.warn("hi-link addMachine warning", hiLinkResult);
-        }
-      } catch (bridgeError) {
-        console.error("hi-link addMachine error", bridgeError);
-        hiLinkResult = {
-          success: false,
-          message: "Hi-Link AddMachine 호출 중 오류가 발생했습니다.",
-          error: String(bridgeError?.message || bridgeError),
-        };
-      }
-
-      // bridge-node 로컬 machines.json (MachinesConfigStore) 도 함께 업데이트
-      try {
-        await fetch(
-          `${BRIDGE_BASE}/api/machines-config/${encodeURIComponent(finalUid)}`,
-          {
-            method: "PUT",
-            headers: withBridgeHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ uid: finalUid, ip, port }),
-          },
-        );
-      } catch (cfgError) {
-        console.warn("bridge-node config upsert error", cfgError);
-      }
-    } else if (ip && port && !BRIDGE_BASE) {
-      hiLinkResult = {
-        success: false,
-        message: "BRIDGE_BASE is not configured",
-      };
-    }
-
-    res.status(201).json({
+    return res.json({
       success: true,
+      message: "장비 정보가 저장되었습니다.",
       data: machine,
-      hiLink: hiLinkResult,
-      autoMachiningTrigger,
     });
   } catch (error) {
     console.error("upsertMachine error", error);
     res.status(500).json({
       success: false,
-      message: "장비 저장 중 오류가 발생했습니다.",
-      error: error.message,
+      message: "장비 정보 저장 중 오류가 발생했습니다.",
     });
   }
 }

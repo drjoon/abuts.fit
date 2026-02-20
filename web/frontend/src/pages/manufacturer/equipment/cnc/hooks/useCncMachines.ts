@@ -219,31 +219,12 @@ export const useCncMachines = () => {
 
       // 백엔드 기준으로도 동기화 (신뢰원)
       await loadMachinesFromBackend();
-      const hiLink = body?.hiLink;
-      if (hiLink && hiLink.success === false) {
-        // Hi-Link result 88: 이미 등록된 UID - 에러가 아니라 등록 정보 갱신으로 간주
-        if (hiLink.result === 88) {
-          toast({
-            title: "Hi-Link",
-            description: "등록 정보를 갱신했습니다.",
-          });
-        } else {
-          toast({
-            title: "Hi-Link 등록 실패",
-            description:
-              hiLink.result === -16
-                ? "CNC 통신 에러입니다. 설비 전원, 통신 케이블, IP/포트 설정과 네트워크 상태를 확인해 주세요. (브리지 설정은 저장되었을 수 있습니다.)"
-                : hiLink.message ||
-                  `장비 ${form.name} (UID: ${form.uid})는 Hi-Link에 등록되지 않았습니다.`,
-            variant: "destructive",
-          });
-        }
-      } else {
-        toast({
-          title: "장비 저장",
-          description: `장비 ${submit.name} (UID: ${submit.uid}) 정보를 저장했습니다.`,
-        });
-      }
+
+      toast({
+        title: "장비 저장",
+        description: `장비 ${submit.name} (UID: ${submit.uid}) 정보를 저장했습니다.`,
+      });
+
       // 편집 모드(auto-save)에서는 닫지 않고, 생성 모드에서만 닫음
       if (addModalMode === "create") {
         setAddModalOpen(false);
