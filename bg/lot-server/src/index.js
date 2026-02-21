@@ -216,6 +216,20 @@ async function main() {
     6 * 60 * 60 * 1000,
   );
 
+  try {
+    const entries = await fs
+      .readdir(WATCH_DIR, { withFileTypes: true })
+      .catch(() => []);
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      const full = path.join(WATCH_DIR, ent.name);
+      if (!isImageFile(full)) continue;
+      try {
+        await handleNewImage(full);
+      } catch {}
+    }
+  } catch {}
+
   const watcher = chokidar.watch(WATCH_DIR, {
     ignored: (p) =>
       p.includes("_processed") ||
