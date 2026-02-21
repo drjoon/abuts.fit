@@ -332,7 +332,7 @@ async function triggerNextAutoMachiningAfterComplete({
   if (!mid) return;
 
   try {
-    const m = await Machine.findOne({ uid: mid })
+    const m = await Machine.findOne({ $or: [{ uid: mid }, { name: mid }] })
       .select({ allowAutoMachining: 1 })
       .lean()
       .catch(() => null);

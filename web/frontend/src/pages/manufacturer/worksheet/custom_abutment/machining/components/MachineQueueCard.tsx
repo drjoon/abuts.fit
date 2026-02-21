@@ -295,7 +295,7 @@ export const MachineQueueCard = ({
                   </span>
                   <span>소요 {lastCompletedSummary?.durationLabel || "-"}</span>
                 </div>
-                <div className="mt-0.5 text-[15px] font-extrabold text-slate-900 leading-tight max-h-[40px] overflow-hidden">
+                <div className="mt-0.5 text-[15px] font-extrabold text-slate-900 leading-tight">
                   {lastCompleted ? (
                     <MachiningRequestLabel
                       clinicName={(lastCompleted as any)?.clinicName}
