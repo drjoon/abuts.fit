@@ -132,6 +132,10 @@ def create_app():
             pass
 
         settings.ensure_dirs()
+        try:
+            settings.purge_old_storage(days=15)
+        except Exception:
+            pass
         start_recovery_thread()
 
     return app, socket_app

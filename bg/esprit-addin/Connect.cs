@@ -21,6 +21,12 @@ using System.Windows.Forms;
 using Esprit;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
 
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Properties;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
@@ -34,6 +40,233 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         ProgId("ESPRIT2025AddinProject.Connect")]
     public class Connect : DPTechnology.AnnexLibraries.EspritAddIn
     {
+
+        private static readonly HttpClient BackendHttp = new HttpClient(new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            UseProxy = false,
+        })
+        {
+            Timeout = TimeSpan.FromSeconds(20),
+        };
+
+        [DataContract]
+        private class ApiResponseEnvelope<T>
+        {
+            [DataMember] public bool success { get; set; }
+            [DataMember] public bool ok { get; set; }
+            [DataMember] public T data { get; set; }
+        }
+
+        [DataContract]
+        private class PendingItemsData
+        {
+            [DataMember] public PendingItem[] items { get; set; }
+        }
+
+        [DataContract]
+        private class PendingItem
+        {
+            [DataMember] public string requestId { get; set; }
+            [DataMember] public string filePath { get; set; }
+            [DataMember] public string s3Key { get; set; }
+            [DataMember] public string s3Url { get; set; }
+        }
+
+        private static void AddBridgeSecretHeader(HttpRequestMessage req)
+        {
+            var secret = (AppConfig.GetBridgeSecret() ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(secret))
+            {
+                try { req.Headers.Remove("X-Bridge-Secret"); } catch { }
+                req.Headers.Add("X-Bridge-Secret", secret);
+            }
+        }
+
+        private static string BackendApiBase()
+        {
+            return (AppConfig.GetBackendUrl() ?? string.Empty).Trim().TrimEnd('/');
+        }
+
+        private static string SafeFileName(string value)
+        {
+            try
+            {
+                return Path.GetFileName(value ?? string.Empty);
+            }
+            catch
+            {
+                return value ?? string.Empty;
+            }
+        }
+
+        private static void PurgeOldFiles(string dirPath, int days)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dirPath)) return;
+                if (!Directory.Exists(dirPath)) return;
+                var thresholdUtc = DateTime.UtcNow.AddDays(-Math.Abs(days));
+                foreach (var file in Directory.GetFiles(dirPath, "*", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        var utc = File.GetLastWriteTimeUtc(file);
+                        if (utc < thresholdUtc)
+                        {
+                            File.Delete(file);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private static PendingItem[] FetchPendingNcItems()
+        {
+            try
+            {
+                var baseUrl = BackendApiBase();
+                if (string.IsNullOrWhiteSpace(baseUrl)) return Array.Empty<PendingItem>();
+                var url = baseUrl + "/bg/pending-nc";
+                using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    AddBridgeSecretHeader(req);
+                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    var body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        AppLogger.Log($"Connect: pending-nc failed status={resp.StatusCode} body={body}");
+                        return Array.Empty<PendingItem>();
+                    }
+
+                    try
+                    {
+                        using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(body)))
+                        {
+                            var serializer = new DataContractJsonSerializer(typeof(ApiResponseEnvelope<PendingItemsData>));
+                            var root = serializer.ReadObject(ms) as ApiResponseEnvelope<PendingItemsData>;
+                            var items = root?.data?.items;
+                            return items ?? Array.Empty<PendingItem>();
+                        }
+                    }
+                    catch
+                    {
+                        return Array.Empty<PendingItem>();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"Connect: pending-nc error {ex.GetType().Name}:{ex.Message}");
+                return Array.Empty<PendingItem>();
+            }
+        }
+
+        private static bool DownloadSourceFileToFilledDir(string requestId, string filePath, string targetFullPath)
+        {
+            try
+            {
+                var baseUrl = BackendApiBase();
+                if (string.IsNullOrWhiteSpace(baseUrl)) return false;
+
+                var qs = new List<string>();
+                qs.Add("sourceStep=2-filled");
+                if (!string.IsNullOrWhiteSpace(requestId))
+                {
+                    qs.Add("requestId=" + Uri.EscapeDataString(requestId));
+                }
+                if (!string.IsNullOrWhiteSpace(filePath))
+                {
+                    qs.Add("filePath=" + Uri.EscapeDataString(filePath));
+                }
+                var url = baseUrl + "/bg/source-file?" + string.Join("&", qs);
+
+                using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    AddBridgeSecretHeader(req);
+                    var resp = BackendHttp.SendAsync(req).GetAwaiter().GetResult();
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        var body = string.Empty;
+                        try { body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult(); } catch { }
+                        AppLogger.Log($"Connect: source-file download failed status={resp.StatusCode} requestId={requestId} body={body}");
+                        return false;
+                    }
+                    var bytes = resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                    var dir = Path.GetDirectoryName(targetFullPath);
+                    if (!string.IsNullOrWhiteSpace(dir) && !Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
+                    File.WriteAllBytes(targetFullPath, bytes);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"Connect: source-file download error requestId={requestId} err={ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
+        private static void RecoverPendingNcToQueue(EspritHttpServer httpServer)
+        {
+            try
+            {
+                if (httpServer == null) return;
+                PurgeOldFiles(AppConfig.StorageFilledDirectory, 15);
+                PurgeOldFiles(AppConfig.StorageNcDirectory, 15);
+
+                var items = FetchPendingNcItems();
+                if (items == null || items.Length == 0) return;
+
+                foreach (var it in items)
+                {
+                    try
+                    {
+                        var rid = (it?.requestId ?? string.Empty).Trim();
+                        var fp = (it?.filePath ?? string.Empty).Trim();
+                        if (string.IsNullOrWhiteSpace(rid) || string.IsNullOrWhiteSpace(fp))
+                        {
+                            continue;
+                        }
+
+                        var safeName = SafeFileName(fp);
+                        if (string.IsNullOrWhiteSpace(safeName))
+                        {
+                            continue;
+                        }
+
+                        var filledDir = AppConfig.StorageFilledDirectory;
+                        if (!Directory.Exists(filledDir))
+                        {
+                            Directory.CreateDirectory(filledDir);
+                        }
+                        var localPath = Path.Combine(filledDir, safeName);
+                        if (!File.Exists(localPath))
+                        {
+                            var ok = DownloadSourceFileToFilledDir(rid, fp, localPath);
+                            if (!ok)
+                            {
+                                continue;
+                            }
+                        }
+
+                        httpServer.EnqueueNcRequest(new NcGenerationRequest
+                        {
+                            RequestId = rid,
+                            StlPath = localPath,
+                            NcOutputPath = AppConfig.StorageNcDirectory,
+                        });
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
 
         // Default Property Procedures should not need changes
         #region " Default Property Procedures "
@@ -195,6 +428,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _httpServer = new EspritHttpServer(espritApplication);
                 _httpServer.Start();
             }
+
+            try
+            {
+                var serverRef = _httpServer;
+                Task.Run(() => RecoverPendingNcToQueue(serverRef));
+            }
+            catch { }
 
             // -------------------------
             // 2. Apply commands

@@ -45,6 +45,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private Task _queueProcessorTask;
         private CancellationTokenSource _queueProcessorCts;
 
+        public void EnqueueNcRequest(NcGenerationRequest req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.RequestId))
+            {
+                return;
+            }
+            lock (_queueLock)
+            {
+                _ncQueue.Enqueue(req);
+            }
+        }
+
         public EspritHttpServer(Application app)
         {
             _espApp = app ?? throw new ArgumentNullException(nameof(app));

@@ -20,6 +20,8 @@ const BRIDGE_SECRET = String(process.env.BRIDGE_SHARED_SECRET || "").trim();
 
 const WAIT_STABLE_MS = Number(process.env.LOT_WAIT_STABLE_MS || 800);
 
+const TTL_DAYS = Number(process.env.LOT_LOCAL_TTL_DAYS || 15);
+
 async function ensureDir(p) {
   await fs.mkdir(p, { recursive: true });
 }
@@ -108,6 +110,27 @@ async function uploadToPresignedUrl({ uploadUrl, mimeType, buffer }) {
   }
 }
 
+async function purgeOldFilesInDir(dirPath, days) {
+  try {
+    const ttlMs = Math.abs(Number(days) || 0) * 24 * 60 * 60 * 1000;
+    if (!ttlMs) return;
+    const now = Date.now();
+    const entries = await fs
+      .readdir(dirPath, { withFileTypes: true })
+      .catch(() => []);
+    for (const ent of entries) {
+      try {
+        if (!ent.isFile()) continue;
+        const full = path.join(dirPath, ent.name);
+        const st = await fs.stat(full);
+        if (now - st.mtimeMs > ttlMs) {
+          await fs.unlink(full).catch(() => {});
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
 async function moveFileSafely(src, destDir) {
   await ensureDir(destDir);
   const base = path.basename(src);
@@ -182,6 +205,16 @@ async function handleNewImage(filePath) {
 async function main() {
   await ensureDir(PROCESSED_DIR);
   await ensureDir(FAILED_DIR);
+
+  await purgeOldFilesInDir(PROCESSED_DIR, TTL_DAYS);
+  await purgeOldFilesInDir(FAILED_DIR, TTL_DAYS);
+  setInterval(
+    () => {
+      purgeOldFilesInDir(PROCESSED_DIR, TTL_DAYS).catch(() => {});
+      purgeOldFilesInDir(FAILED_DIR, TTL_DAYS).catch(() => {});
+    },
+    6 * 60 * 60 * 1000,
+  );
 
   const watcher = chokidar.watch(WATCH_DIR, {
     ignored: (p) =>

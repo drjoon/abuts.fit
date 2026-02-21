@@ -52,10 +52,22 @@ router.get(
   bgController.listPendingStl,
 );
 router.get(
+  "/pending-nc",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.listPendingNc,
+);
+router.get(
   "/original-file",
   requireBridgeIpAllowlist,
   requireBridgeSecret,
   bgController.downloadOriginalFile,
+);
+router.get(
+  "/source-file",
+  requireBridgeIpAllowlist,
+  requireBridgeSecret,
+  bgController.downloadSourceFile,
 );
 router.get(
   "/request-meta",

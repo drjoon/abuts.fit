@@ -71,6 +71,40 @@ def prune_tmp(max_items: int = 100) -> None:
             pass
 
 
+def purge_old_storage(days: int = 15) -> None:
+    try:
+        import time
+
+        threshold = time.time() - (abs(int(days)) * 86400)
+    except Exception:
+        threshold = None
+
+    if threshold is None:
+        return
+
+    def _purge_dir(root: Path) -> None:
+        try:
+            if not root.exists():
+                return
+            for p in root.rglob("*"):
+                try:
+                    if not p.is_file():
+                        continue
+                    st = p.stat()
+                    if st.st_mtime < threshold:
+                        p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        except Exception:
+            return
+
+    try:
+        _purge_dir(STORE_IN_DIR)
+        _purge_dir(STORE_OUT_DIR)
+    except Exception:
+        pass
+
+
 def guess_content_type(path: Path) -> str:
     ct, _ = mimetypes.guess_type(str(path))
     return ct or "application/octet-stream"

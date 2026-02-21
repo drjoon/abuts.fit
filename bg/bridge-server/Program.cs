@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Net.Http;
 using System.Text;
+using System.Linq;
 using Microsoft.Owin.Hosting;
 using Newtonsoft.Json;
 namespace HiLinkBridgeWebApi48
@@ -16,6 +17,39 @@ namespace HiLinkBridgeWebApi48
         private const string BaseAddress = "http://+:8002";
         private static int _shutdownOnce = 0;
         private static readonly ManualResetEventSlim ExitEvent = new ManualResetEventSlim(false);
+
+        private static void PurgeOldFiles(string dirPath, int days)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dirPath)) return;
+                if (!Directory.Exists(dirPath)) return;
+                var thresholdUtc = DateTime.UtcNow.AddDays(-Math.Abs(days));
+                var files = Enumerable.Empty<string>();
+                try
+                {
+                    files = Directory.EnumerateFiles(dirPath, "*", SearchOption.AllDirectories);
+                }
+                catch
+                {
+                    files = Enumerable.Empty<string>();
+                }
+                foreach (var f in files)
+                {
+                    try
+                    {
+                        var utc = File.GetLastWriteTimeUtc(f);
+                        if (utc < thresholdUtc)
+                        {
+                            File.Delete(f);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
         private static async Task RegisterBridgeSettings()
         {
             try
@@ -160,6 +194,11 @@ namespace HiLinkBridgeWebApi48
             using (WebApp.Start<Startup>(BaseAddress))
             {
                 Console.WriteLine("Hi-Link Bridge WebAPI (net48) is running. Initializing machines from machines.json...");
+                try
+                {
+                    PurgeOldFiles(Config.BridgeStoreRoot, 15);
+                }
+                catch { }
                 MachinesInitializer.InitializeFromConfig();
                 DummyCncScheduler.Start();
                 CncMachining.Start();

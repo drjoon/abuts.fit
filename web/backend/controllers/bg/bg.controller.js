@@ -777,6 +777,128 @@ export const listPendingStl = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, { items }, "Pending STL list"));
 });
 
+export const listPendingNc = asyncHandler(async (_req, res) => {
+  const requests = await Request.find({
+    status: { $nin: ["취소", "완료", "cancelled", "completed"] },
+    "caseInfos.camFile.filePath": { $exists: true, $ne: null },
+    $or: [
+      { "caseInfos.ncFile": { $exists: false } },
+      { "caseInfos.ncFile.s3Key": { $exists: false } },
+    ],
+  })
+    .select({
+      requestId: 1,
+      caseInfos: 1,
+    })
+    .lean();
+
+  const items =
+    requests
+      ?.map((r) => {
+        const ci = r?.caseInfos || {};
+        const f = ci.camFile || {};
+        const preferredName = selectStoredCaseFileName(f);
+        return {
+          requestId: r.requestId,
+          filePath: preferredName,
+          s3Key: f.s3Key,
+          s3Url: f.s3Url,
+          metadata: {
+            clinicName: ci.clinicName,
+            patientName: ci.patientName,
+            tooth: ci.tooth,
+          },
+        };
+      })
+      ?.filter((x) => x?.filePath) || [];
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { items }, "Pending NC list"));
+});
+
+export const downloadSourceFile = asyncHandler(async (req, res) => {
+  const { sourceStep, requestId, filePath } = req.query;
+  const step = String(sourceStep || "").trim();
+  if (!step) {
+    throw new ApiError(400, "sourceStep is required");
+  }
+  if (!requestId && !filePath) {
+    throw new ApiError(400, "requestId or filePath is required");
+  }
+
+  if (step !== "2-filled") {
+    throw new ApiError(400, "unsupported sourceStep");
+  }
+
+  let requestDoc = null;
+  if (requestId) {
+    requestDoc = await Request.findOne({ requestId });
+  }
+  if (!requestDoc && filePath) {
+    const normalized = normalizeFilePath(filePath);
+    const all = await Request.find({}).select({ requestId: 1, caseInfos: 1 });
+    for (const r of all) {
+      const ci = r?.caseInfos || {};
+      const stored = [
+        ci?.camFile?.originalName,
+        ci?.camFile?.filePath,
+        ci?.file?.originalName,
+        ci?.file?.filePath,
+      ].filter(Boolean);
+      const hit = stored.some((n) => normalizeFilePath(n) === normalized);
+      if (hit) {
+        requestDoc = r;
+        break;
+      }
+    }
+  }
+
+  const f = requestDoc?.caseInfos?.camFile;
+  if (!f) {
+    throw new ApiError(404, "Source file not found");
+  }
+
+  const targetName = selectStoredCaseFileName(f) || "file.stl";
+
+  if (f.s3Key) {
+    try {
+      const buf = await s3Utils.getObjectBufferFromS3(f.s3Key);
+      res.setHeader("Content-Type", "application/octet-stream");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
+      );
+      return res.status(200).send(buf);
+    } catch (err) {
+      console.warn(
+        `[BG-Source] S3 download failed step=${step} key=${f.s3Key} err=${err?.message}`,
+      );
+    }
+  }
+
+  if (f.s3Url) {
+    try {
+      const resp = await fetch(f.s3Url);
+      if (resp.ok) {
+        const arrayBuffer = await resp.arrayBuffer();
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
+        );
+        return res.status(200).send(Buffer.from(arrayBuffer));
+      }
+    } catch (err) {
+      console.warn(
+        `[BG-Source] URL download failed step=${step} url=${f.s3Url} err=${err?.message}`,
+      );
+    }
+  }
+
+  throw new ApiError(404, "Source file not accessible");
+});
+
 // 원본 STL을 Rhino 서버가 다시 받아갈 수 있게 내려주는 엔드포인트
 // GET /api/bg/original-file?requestId=... or ?filePath=...
 export const downloadOriginalFile = asyncHandler(async (req, res) => {
