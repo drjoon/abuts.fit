@@ -221,8 +221,8 @@ export const useMachiningBoard = ({
   }, [cncMachineMetaMap, machines]);
 
   const filteredMachines = useMemo(() => {
-    return machines.filter((m) => m.status !== "offline");
-  }, [machines]);
+    return (mergedMachines || []).filter((m: any) => m.status !== "offline");
+  }, [mergedMachines]);
 
   const {
     programEditorOpen,
