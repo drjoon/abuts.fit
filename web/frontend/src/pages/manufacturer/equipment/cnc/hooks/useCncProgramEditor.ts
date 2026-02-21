@@ -5,17 +5,6 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { getFileBlob, setFileBlob } from "@/shared/files/fileBlobCache";
 
-const REQUEST_ID_REGEX = /(\d{8}-[A-Z0-9]{6,10})/i;
-
-const extractRequestIdFromPath = (raw: string | null | undefined): string => {
-  if (!raw) return "";
-  const str = String(raw).trim();
-  if (!str) return "";
-  const match = str.match(REQUEST_ID_REGEX);
-  if (match && match[1]) return match[1].toUpperCase();
-  return "";
-};
-
 interface UseCncProgramEditorParams {
   workUid: string;
   machines: Machine[];
@@ -149,83 +138,8 @@ export const useCncProgramEditor = ({
       return text;
     }
 
-    const bridgePath = String(
-      prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
-    ).trim();
-    const storeScope = String((prog as any)?.storeScope || "").trim();
-    const explicitRequestId = String(prog?.requestId || "").trim();
-    const derivedRequestId = !explicitRequestId
-      ? extractRequestIdFromPath(bridgePath)
-      : "";
-    const normalizedRequestId = (explicitRequestId || derivedRequestId).trim();
-    if (bridgePath) {
-      const loadBridgeOnce = async (
-        pathOverride?: string,
-      ): Promise<{
-        ok: boolean;
-        status: number;
-        body: any;
-      }> => {
-        const targetPath = String(pathOverride || bridgePath || "").trim();
-        const url = `/api/bridge-store/file?path=${encodeURIComponent(
-          targetPath,
-        )}&_ts=${Date.now()}`;
-        const res = await fetch(url, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
-          },
-        });
-        const body: any = await res.json().catch(() => ({}));
-        return { ok: res.ok, status: res.status, body };
-      };
-
-      const first = await loadBridgeOnce();
-      const firstText = first?.body?.content;
-      if (first.ok && typeof firstText === "string") return firstText;
-
-      const requestId = normalizedRequestId;
-      if (requestId && token) {
-        const ensured = await apiFetch({
-          path: `/api/requests/by-request/${encodeURIComponent(
-            requestId,
-          )}/nc-file/ensure-bridge`,
-          method: "POST",
-          token,
-          jsonBody: {
-            bridgePath,
-            ...(storeScope ? { storeScope } : {}),
-          },
-        });
-
-        const ensuredBody: any = ensured.data ?? {};
-        const nextPath = String(
-          ensuredBody?.data?.bridgePath || ensuredBody?.data?.filePath || "",
-        ).trim();
-
-        const second = await loadBridgeOnce(nextPath || bridgePath);
-        const secondText = second?.body?.content;
-        if (second.ok && typeof secondText === "string") return secondText;
-
-        throw new Error(
-          second?.body?.message ||
-            second?.body?.error ||
-            first?.body?.message ||
-            first?.body?.error ||
-            "브리지 파일 로드 실패",
-        );
-      }
-
-      throw new Error(
-        first?.body?.message || first?.body?.error || "브리지 파일 로드 실패",
-      );
-    }
-
-    // 브리지 서버에서 온 프로그램(source === "bridge")이고 programData가 이미 포함된 경우,
-    // Hi-Link를 호출하지 않고 해당 내용을 그대로 사용한다.
+    // SSOT 원칙상 브리지 파일시스템(bridge-store)을 직접 조회하지 않는다.
+    // 프로그램 코드는 S3(s3Key) 기반으로만 조회한다.
     if (prog.source === "bridge" && typeof prog.programData === "string") {
       return prog.programData;
     }
@@ -319,71 +233,18 @@ export const useCncProgramEditor = ({
 
     const s3Key = String(prog?.s3Key || "").trim();
     const explicitRequestId = String(prog?.requestId || "").trim();
-    const bridgePath = String(
-      prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
-    ).trim();
-    const storeScope = String((prog as any)?.storeScope || "").trim();
-    const derivedRequestId = !explicitRequestId
-      ? extractRequestIdFromPath(bridgePath)
-      : "";
-    const requestId = (explicitRequestId || derivedRequestId).trim();
+    const requestId = explicitRequestId.trim();
     const normalizedCode = String(code ?? "");
     const overrideKey = getProgramOverrideKey(prog);
 
-    const isJobProgram = !!(requestId || bridgePath || s3Key);
+    const isJobProgram = !!(requestId || s3Key);
 
-    // storage/3-nc (bridge-store) 를 SSOT으로 사용한다 (의뢰/작업 프로그램만).
-    // - bridgePath가 있으면: bridge-store에만 저장
-    // - bridgePath가 없으면: S3 → bridge-store 복구(ensure-bridge) 후 bridge-store에 저장
-    // NOTE: SSOT 모드에서는 UpdateProgram(Hi-Link)로 장비에 직접 쓰지 않는다.
+    // SSOT 원칙상 프론트에서 브리지 파일시스템(bridge-store)에 직접 저장하지 않는다.
+    // 의뢰/업로드 기반 프로그램(job program)은 코드 편집을 허용하지 않는다.
     if (isJobProgram) {
-      let resolvedBridgePath = bridgePath;
-      if (!resolvedBridgePath && requestId && s3Key && token) {
-        const ensureRes = await fetch(
-          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              bridgePath: "",
-              ...(storeScope ? { storeScope } : {}),
-            }),
-          },
-        );
-        const ensureBody: any = await ensureRes.json().catch(() => ({}));
-        if (!ensureRes.ok || ensureBody?.success === false) {
-          throw new Error(
-            ensureBody?.message || ensureBody?.error || "NC 파일 복구 실패",
-          );
-        }
-        resolvedBridgePath = String(
-          ensureBody?.data?.bridgePath || ensureBody?.data?.filePath || "",
-        ).trim();
-      }
-
-      if (!resolvedBridgePath) {
-        throw new Error(
-          "브리지 저장 경로를 찾을 수 없습니다. (storage/3-nc 복구 필요)",
-        );
-      }
-
-      const res = await fetch("/api/bridge-store/file", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          path: resolvedBridgePath,
-          content: normalizedCode,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error("브리지 서버 저장 실패");
-      }
+      throw new Error(
+        "SSOT 모드에서는 작업 프로그램 코드 편집을 지원하지 않습니다.",
+      );
     }
 
     if (!isJobProgram && programNo != null) {

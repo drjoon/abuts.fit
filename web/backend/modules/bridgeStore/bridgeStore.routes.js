@@ -15,8 +15,8 @@ const maybeAuth =
     });
   };
 
-// CNC와 동일하게 manufacturer만 사용
-const guard = maybeAuth(["manufacturer"]);
+// Bridge-store (브리지 파일시스템) 직접 조작은 SSOT 원칙상 관리자만 허용
+const guard = maybeAuth(["admin"]);
 
 router.get("/config", guard, proxyToBridge("/api/bridge-store/config"));
 router.get("/list", guard, proxyToBridge("/api/bridge-store/list"));

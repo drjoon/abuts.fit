@@ -212,31 +212,6 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     setError(null);
     setSaveStatus("idle");
 
-    // 브리지 서버에서 연 프로그램은 CNC 보호 PIN 없이 브리지에만 저장한다.
-    if (selectedProgram.source === "bridge") {
-      const path = selectedProgram.bridgePath || selectedProgram.name || "";
-      if (!path) return;
-      setLoading(true);
-      try {
-        const res = await fetch("/api/bridge-store/file", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path, content: code }),
-        });
-        if (!res.ok) {
-          throw new Error("브리지 서버 저장 실패");
-        }
-        setOriginalCode(code);
-        setSaveStatus("saved");
-      } catch (e: any) {
-        setError(e?.message ?? "브리지 서버 저장 중 오류");
-        setSaveStatus("error");
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
     const ok = await ensureCncWriteAllowed();
     if (!ok) return;
     setLoading(true);
@@ -336,11 +311,9 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     // Auto-save on blur removed - only save on explicit SAVE button click or Ctrl+S
   };
 
-  const isBridgeSource = selectedProgram?.source === "bridge";
-
   return (
     <>
-      {!isBridgeSource && PinModal}
+      {PinModal}
       <div
         className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 sm:p-8"
         role="dialog"

@@ -297,9 +297,18 @@ export const uploadFile = asyncHandler(async (req, res) => {
     tags,
     isPublic = false,
   } = req.body;
-  const localPath = req.file?.path;
 
-  if (!localPath) {
+  const uploaded = req.file
+    ? req.file
+    : Array.isArray(req.files?.file) && req.files.file.length
+      ? req.files.file[0]
+      : Array.isArray(req.files?.files) && req.files.files.length
+        ? req.files.files[0]
+        : null;
+
+  const localPath = uploaded?.path;
+
+  if (!uploaded || !localPath) {
     throw new ApiError(400, "File is required");
   }
 
@@ -316,24 +325,49 @@ export const uploadFile = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Related request not found");
   }
 
-  const uploadedFile = await s3Utils.uploadFileToS3(localPath);
+  const originalName = normalizeOriginalName(uploaded.originalname);
+  const ext = path.extname(originalName || "");
+  const key = `uploads/requests/${relatedRequest.toString()}/${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}${ext}`;
 
-  if (!uploadedFile || !uploadedFile.Location || !uploadedFile.Key) {
+  let fileBuffer;
+  try {
+    fileBuffer = await fs.readFile(localPath);
+  } catch {
+    throw new ApiError(500, "Failed to read uploaded file");
+  }
+
+  const uploadedFile = await s3Utils.uploadFileToS3(
+    fileBuffer,
+    key,
+    uploaded.mimetype,
+  );
+
+  if (!uploadedFile || !uploadedFile.location || !uploadedFile.key) {
     throw new ApiError(500, "File upload to S3 failed");
   }
 
   const newFile = await File.create({
-    originalName: req.file.originalname,
-    mimetype: req.file.mimetype,
-    size: req.file.size,
-    key: uploadedFile.Key,
-    location: uploadedFile.Location,
+    originalName,
+    mimetype: uploaded.mimetype,
+    size: uploaded.size,
+    bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+    key: uploadedFile.key,
+    location: uploadedFile.location,
+    contentType: uploaded.mimetype,
     fileType,
     relatedRequest,
     uploadedBy: req.user._id,
     tags: tags ? JSON.parse(tags) : [],
     isPublic: !!isPublic,
   });
+
+  try {
+    await fs.unlink(localPath);
+  } catch {
+    // ignore
+  }
 
   return res
     .status(201)

@@ -243,84 +243,9 @@ export const useMachiningBoard = ({
 
   const loadProgramCodeForMachining = useCallback(
     async (prog: any) => {
-      const bridgePath = String(
-        prog?.bridgePath || prog?.bridge_store_path || prog?.path || "",
-      ).trim();
-      const requestId = String(prog?.requestId || "").trim();
-      const s3Key = String(prog?.s3Key || "").trim();
-
-      if (bridgePath && token) {
-        const url = `/api/bridge-store/file?path=${encodeURIComponent(bridgePath)}&_ts=${Date.now()}`;
-        const res = await fetch(url, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
-          },
-        });
-        const body: any = await res.json().catch(() => ({}));
-        if (
-          res.ok &&
-          body?.success !== false &&
-          typeof body?.content === "string"
-        ) {
-          return body.content;
-        }
-
-        if (requestId && s3Key) {
-          const ensureRes = await fetch(
-            `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({ bridgePath }),
-            },
-          );
-          const ensureBody: any = await ensureRes.json().catch(() => ({}));
-          if (!ensureRes.ok || ensureBody?.success === false) {
-            throw new Error(
-              ensureBody?.message || ensureBody?.error || "NC 파일 동기화 실패",
-            );
-          }
-
-          const nextPath = String(
-            ensureBody?.data?.bridgePath ||
-              ensureBody?.data?.filePath ||
-              bridgePath,
-          ).trim();
-          if (nextPath) {
-            const retry = await fetch(
-              `/api/bridge-store/file?path=${encodeURIComponent(nextPath)}&_ts=${Date.now()}`,
-              {
-                method: "GET",
-                cache: "no-store",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Cache-Control": "no-cache",
-                  Pragma: "no-cache",
-                },
-              },
-            );
-            const retryBody: any = await retry.json().catch(() => ({}));
-            if (
-              retry.ok &&
-              retryBody?.success !== false &&
-              typeof retryBody?.content === "string"
-            ) {
-              return retryBody.content;
-            }
-          }
-        }
-      }
-
       return loadProgramCode(prog);
     },
-    [loadProgramCode, token],
+    [loadProgramCode],
   );
 
   const buildPlaylistJobsFromQueue = useCallback((raw: QueueItem[]) => {
