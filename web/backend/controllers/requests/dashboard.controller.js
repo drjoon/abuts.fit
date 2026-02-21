@@ -3,6 +3,7 @@ import User from "../../models/user.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import PricingReferralStatsSnapshot from "../../models/pricingReferralStatsSnapshot.model.js";
 import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Machine from "../../models/machine.model.js";
 import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
@@ -69,6 +70,232 @@ const buildDateFilter = (period) => {
   from.setDate(from.getDate() - days);
   return { createdAt: { $gte: from } };
 };
+
+/**
+ * 제조사 대시보드 요약 (할당된 의뢰 기준)
+ * @route GET /api/requests/assigned/dashboard-summary
+ */
+export async function getAssignedDashboardSummary(req, res) {
+  try {
+    const { period = "30d" } = req.query;
+    const role = String(req.user?.role || "").trim();
+    if (role !== "manufacturer" && role !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "권한이 없습니다.",
+      });
+    }
+
+    const dateFilter = buildDateFilter(period);
+
+    const machineIds = await (async () => {
+      if (role === "admin") {
+        const list = await Machine.find({})
+          .select({ uid: 1 })
+          .lean()
+          .catch(() => []);
+        return (Array.isArray(list) ? list : [])
+          .map((m) => String(m?.uid || "").trim())
+          .filter(Boolean);
+      }
+
+      const list = await Machine.find({ manufacturer: req.user._id })
+        .select({ uid: 1 })
+        .lean()
+        .catch(() => []);
+      return (Array.isArray(list) ? list : [])
+        .map((m) => String(m?.uid || "").trim())
+        .filter(Boolean);
+    })();
+
+    if (!machineIds.length) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          total: 0,
+          canceledCount: 0,
+          completed: 0,
+          designCount: 0,
+          camCount: 0,
+          machiningCount: 0,
+          packingCount: 0,
+          shippingCount: 0,
+        },
+      });
+    }
+
+    const baseFilter = {
+      status: { $ne: "취소" },
+      "caseInfos.implantSystem": { $exists: true, $ne: "" },
+      "productionSchedule.assignedMachine": { $in: machineIds },
+    };
+
+    const [statsResult] = await Request.aggregate([
+      {
+        $match: {
+          ...baseFilter,
+          ...dateFilter,
+        },
+      },
+      {
+        $addFields: {
+          normalizedStage: {
+            $let: {
+              vars: {
+                status: { $ifNull: ["$status", ""] },
+                stage: { $ifNull: ["$manufacturerStage", ""] },
+                status2: { $ifNull: ["$status2", ""] },
+                shippingReviewStatus: {
+                  $ifNull: ["$caseInfos.reviewByStage.shipping.status", ""],
+                },
+              },
+              in: {
+                $switch: {
+                  branches: [
+                    { case: { $eq: ["$$status", "취소"] }, then: "cancel" },
+                    {
+                      case: {
+                        $or: [
+                          { $eq: ["$$shippingReviewStatus", "APPROVED"] },
+                          { $eq: ["$$status", "완료"] },
+                          { $eq: ["$$status2", "완료"] },
+                        ],
+                      },
+                      then: "completed",
+                    },
+                    {
+                      case: {
+                        $or: [
+                          {
+                            $in: [
+                              "$$stage",
+                              ["shipping", "tracking", "포장.발송", "추적관리"],
+                            ],
+                          },
+                          {
+                            $in: [
+                              "$$status",
+                              ["shipping", "tracking", "포장.발송", "추적관리"],
+                            ],
+                          },
+                        ],
+                      },
+                      then: "shipping",
+                    },
+                    {
+                      case: {
+                        $or: [
+                          { $in: ["$$stage", ["packing", "세척.패킹"]] },
+                          { $in: ["$$status", ["packing", "세척.패킹"]] },
+                        ],
+                      },
+                      then: "packing",
+                    },
+                    {
+                      case: {
+                        $or: [
+                          {
+                            $in: [
+                              "$$stage",
+                              ["machining", "production", "가공", "생산"],
+                            ],
+                          },
+                          {
+                            $in: [
+                              "$$status",
+                              ["machining", "production", "가공", "생산"],
+                            ],
+                          },
+                        ],
+                      },
+                      then: "machining",
+                    },
+                    {
+                      case: {
+                        $or: [
+                          { $in: ["$$stage", ["cam", "CAM", "가공전"]] },
+                          { $in: ["$$status", ["cam", "CAM", "가공전"]] },
+                        ],
+                      },
+                      then: "cam",
+                    },
+                    {
+                      case: {
+                        $or: [
+                          {
+                            $in: [
+                              "$$stage",
+                              ["request", "receive", "의뢰", "의뢰접수"],
+                            ],
+                          },
+                          {
+                            $in: [
+                              "$$status",
+                              ["request", "receive", "의뢰", "의뢰접수"],
+                            ],
+                          },
+                        ],
+                      },
+                      then: "request",
+                    },
+                  ],
+                  default: "request",
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          canceledCount: {
+            $sum: { $cond: [{ $eq: ["$status", "취소"] }, 1, 0] },
+          },
+          completed: {
+            $sum: { $cond: [{ $eq: ["$normalizedStage", "completed"] }, 1, 0] },
+          },
+          designCount: {
+            $sum: { $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0] },
+          },
+          camCount: {
+            $sum: { $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0] },
+          },
+          machiningCount: {
+            $sum: { $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0] },
+          },
+          packingCount: {
+            $sum: { $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0] },
+          },
+          shippingCount: {
+            $sum: { $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0] },
+          },
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total: Number(statsResult?.total ?? 0) || 0,
+        canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
+        completed: Number(statsResult?.completed ?? 0) || 0,
+        designCount: Number(statsResult?.designCount ?? 0) || 0,
+        camCount: Number(statsResult?.camCount ?? 0) || 0,
+        machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
+        packingCount: Number(statsResult?.packingCount ?? 0) || 0,
+        shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
+      },
+    });
+  } catch (error) {
+    console.error("getAssignedDashboardSummary error", error);
+    return res.status(500).json({
+      success: false,
+      message: "제조사 대시보드 요약 조회 중 오류가 발생했습니다.",
+    });
+  }
+}
 
 /**
  * 최대 직경별 통계 (공용)

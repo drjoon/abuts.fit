@@ -35,6 +35,7 @@ export const {
 
 export const {
   getDiameterStats,
+  getAssignedDashboardSummary,
   getMyDashboardSummary,
   getDashboardRiskSummary,
   getMyPricingReferralStats,

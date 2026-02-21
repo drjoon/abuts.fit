@@ -53,6 +53,13 @@ router.get(
   requestController.getMyDashboardSummary,
 );
 
+// 제조사 대시보드 요약 (할당된 의뢰 기준)
+router.get(
+  "/assigned/dashboard-summary",
+  authorize(["manufacturer", "admin"]),
+  requestController.getAssignedDashboardSummary,
+);
+
 // 내 발송 패키지 요약 (의뢰자용)
 router.get(
   "/my/shipping-packages",
