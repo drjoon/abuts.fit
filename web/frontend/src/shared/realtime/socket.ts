@@ -87,6 +87,33 @@ export interface SocketNotification {
   createdAt?: string;
 }
 
+export interface AppEventMessage {
+  type: string;
+  data?: any;
+  timestamp?: string;
+}
+
+export function onAppEvent(callback: (evt: AppEventMessage) => void) {
+  const s = getSocket();
+  if (s) {
+    s.on("app-event", callback);
+    return () => s.off("app-event", callback);
+  }
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("app-event", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("app-event", callback);
+  };
+}
+
 export function initializeSocket(token: string): Socket {
   // 이미 소켓 인스턴스가 있으면(연결 중 포함) 재사용한다.
   // 연결 중에 initializeSocket이 반복 호출되면 기존 인스턴스를 덮어써서
@@ -109,7 +136,7 @@ export function initializeSocket(token: string): Socket {
   const serverUrl = envSocketUrl
     ? envSocketUrl
     : import.meta.env.DEV
-      ? envDevApiTarget || envApiUrl || origin || "http://localhost:8080"
+      ? envDevApiTarget || envApiUrl || origin || "http://localhost:5173"
       : origin || envApiUrl || "https://abuts.fit";
 
   console.log("[socket] connecting to", serverUrl);

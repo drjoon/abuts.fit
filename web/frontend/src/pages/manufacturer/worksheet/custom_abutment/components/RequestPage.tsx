@@ -50,7 +50,6 @@ import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_ab
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
 import { useStageDropHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useStageDropHandlers";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
-import { useSocket } from "@/shared/hooks/useSocket";
 import {
   onCncMachiningCompleted,
   onCncMachiningTick,
@@ -77,7 +76,6 @@ export const RequestPage = ({
   filterRequests?: (req: ManufacturerRequest) => boolean;
 }) => {
   const { user, token } = useAuthStore();
-  useSocket();
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
     showCompleted: boolean;

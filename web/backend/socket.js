@@ -132,12 +132,12 @@ export function initializeSocket(server) {
           .lean();
 
         // 채팅방의 모든 참여자에게 전송
-        io.to(`room:${roomId}`).emit("new-message", populatedMessage);
+        emitToRoom(`room:${roomId}`, "new-message", populatedMessage);
 
         // 참여자들에게 알림 전송 (본인 제외)
         room.participants.forEach((participantId) => {
           if (participantId.toString() !== socket.userId) {
-            io.to(`user:${participantId}`).emit("notification", {
+            emitToUser(participantId, "notification", {
               type: "new-message",
               roomId,
               message: populatedMessage,
@@ -183,7 +183,7 @@ export function initializeSocket(server) {
           },
         );
 
-        socket.to(`room:${roomId}`).emit("messages-read", {
+        emitToRoom(`room:${roomId}`, "messages-read", {
           userId: socket.userId,
           messageIds,
           readAt: new Date(),
@@ -261,10 +261,102 @@ export function sendNotificationToRoles(roles, notification) {
   }
 }
 
+export function emitToUser(userId, event, payload) {
+  if (!io) return;
+  const uid = String(userId || "").trim();
+  const evt = String(event || "").trim();
+  if (!uid || !evt) return;
+  io.to(`user:${uid}`).emit(evt, payload);
+}
+
+export function emitToRoles(roles, event, payload) {
+  if (!io) return;
+  const evt = String(event || "").trim();
+  if (!evt) return;
+  const roleSet = new Set(
+    (Array.isArray(roles) ? roles : [roles]).map((r) => String(r || "")),
+  );
+  if (roleSet.size === 0) return;
+
+  for (const socket of io.sockets.sockets.values()) {
+    try {
+      const role = String(socket.userRole || "");
+      if (roleSet.has(role)) {
+        socket.emit(evt, payload);
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function emitGlobal(event, payload) {
+  if (!io) return;
+  const evt = String(event || "").trim();
+  if (!evt) return;
+  io.emit(evt, payload);
+}
+
+export function emitToRoom(roomKey, event, payload) {
+  if (!io) return;
+  const room = String(roomKey || "").trim();
+  const evt = String(event || "").trim();
+  if (!room || !evt) return;
+  io.to(room).emit(evt, payload);
+}
+
+export function emitAppEventToUser(userId, type, data) {
+  const evtType = String(type || "").trim();
+  if (!evtType) return;
+  emitToUser(userId, "app-event", {
+    type: evtType,
+    data: data ?? null,
+    timestamp: new Date(),
+  });
+}
+
+export function emitAppEventToRoles(roles, type, data) {
+  const evtType = String(type || "").trim();
+  if (!evtType) return;
+  emitToRoles(roles, "app-event", {
+    type: evtType,
+    data: data ?? null,
+    timestamp: new Date(),
+  });
+}
+
+export function emitAppEventGlobal(type, data) {
+  const evtType = String(type || "").trim();
+  if (!evtType) return;
+  emitGlobal("app-event", {
+    type: evtType,
+    data: data ?? null,
+    timestamp: new Date(),
+  });
+}
+
+export function emitAppEventToRoom(roomKey, type, data) {
+  const evtType = String(type || "").trim();
+  if (!evtType) return;
+  emitToRoom(roomKey, "app-event", {
+    type: evtType,
+    data: data ?? null,
+    timestamp: new Date(),
+  });
+}
+
 export default {
   initializeSocket,
   getIO,
   sendNotificationToUser,
   sendNotificationToRoles,
   sendMessageToRoom,
+  emitToUser,
+  emitToRoles,
+  emitGlobal,
+  emitToRoom,
+  emitAppEventToUser,
+  emitAppEventToRoles,
+  emitAppEventGlobal,
+  emitAppEventToRoom,
 };

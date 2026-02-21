@@ -13,6 +13,11 @@ export default defineConfig(({ mode }) => {
       host: "::",
       port: 5173,
       proxy: {
+        "/socket.io": {
+          target: apiTarget,
+          changeOrigin: true,
+          ws: true,
+        },
         "/api/cnc-machines": {
           target: apiTarget,
           changeOrigin: true,

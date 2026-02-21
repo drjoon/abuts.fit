@@ -10,6 +10,7 @@ import { NewChatWidget } from "@/features/chat/components/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { GuideTourProvider } from "@/features/guidetour/GuideTourProvider";
+import { useSocket } from "@/shared/hooks/useSocket";
 
 const Index = lazy(() => import("./pages/public/Index"));
 const LoginPage = lazy(() =>
@@ -174,6 +175,8 @@ const ReferralGroupsRoute = () => {
 
 const App = () => {
   const { token, loginWithToken, logout } = useAuthStore();
+
+  useSocket();
 
   // 앱 시작 시 백엔드에서 파일명 파싱 룰 로드
   useEffect(() => {
