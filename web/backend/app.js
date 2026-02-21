@@ -38,10 +38,10 @@ const mongoUri =
       ? process.env.MONGODB_URI ||
         process.env.MONGO_URI ||
         "mongodb://localhost:27017/abutsFit"
-      : process.env.MONGODB_URI_TEST ||
-        process.env.MONGO_URI_TEST ||
-        process.env.MONGODB_URI ||
+      : process.env.MONGODB_URI ||
         process.env.MONGO_URI ||
+        process.env.MONGODB_URI_TEST ||
+        process.env.MONGO_URI_TEST ||
         "mongodb://localhost:27017/abutsFit";
 
 const mongoSource =
@@ -51,10 +51,10 @@ const mongoSource =
       ? process.env.MONGODB_URI || process.env.MONGO_URI
         ? "PROD DB"
         : "LOCAL DB"
-      : process.env.MONGODB_URI_TEST || process.env.MONGO_URI_TEST
-        ? "TEST DB"
-        : process.env.MONGODB_URI || process.env.MONGO_URI
-          ? "PROD DB"
+      : process.env.MONGODB_URI || process.env.MONGO_URI
+        ? "DEV DB"
+        : process.env.MONGODB_URI_TEST || process.env.MONGO_URI_TEST
+          ? "TEST DB"
           : "LOCAL DB";
 
 const dbReady = connect(mongoUri)
