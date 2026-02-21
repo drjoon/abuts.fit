@@ -239,7 +239,7 @@ async function handleNewImage(filePath) {
     const { buffer, mimeType } = await resizeToOneFifth(filePath);
 
     const presign = await apiPostJson(`${BACKEND_BASE}/api/bg/presign-upload`, {
-      sourceStep: "packaging-capture",
+      sourceStep: "packing-capture",
       fileName: originalName.replace(/\s+/g, "_"),
     });
 
@@ -262,7 +262,7 @@ async function handleNewImage(filePath) {
     await uploadToPresignedUrl({ uploadUrl, mimeType, buffer });
 
     const done = await apiPostJson(
-      `${BACKEND_BASE}/api/bg/lot-capture/packaging`,
+      `${BACKEND_BASE}/api/bg/lot-capture/packing`,
       {
         s3Key,
         s3Url,

@@ -10,7 +10,7 @@ import { ApiError } from "../../utils/ApiError.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   applyStatusMapping,
-  ensureFinishedLotNumberForPackaging,
+  ensureFinishedLotNumberForPacking,
   getTodayYmdInKst,
 } from "../../controllers/requests/utils.js";
 
@@ -236,7 +236,7 @@ async function recognizeLotNumberFromS3({ s3Key, originalName }) {
   };
 }
 
-export const handlePackagingCapture = asyncHandler(async (req, res) => {
+export const handlePackingCapture = asyncHandler(async (req, res) => {
   const { s3Key, s3Url, originalName, fileSize } = req.body || {};
 
   const key = String(s3Key || "").trim();
@@ -292,7 +292,7 @@ export const handlePackagingCapture = asyncHandler(async (req, res) => {
   request.caseInfos.stageFiles = request.caseInfos.stageFiles || {};
   request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
 
-  request.caseInfos.stageFiles.packaging = {
+  request.caseInfos.stageFiles.packing = {
     fileName: name,
     fileType:
       s3Utils.getFileType(name) === "image"
@@ -307,14 +307,14 @@ export const handlePackagingCapture = asyncHandler(async (req, res) => {
     uploadedAt: new Date(),
   };
 
-  request.caseInfos.reviewByStage.packaging = {
+  request.caseInfos.reviewByStage.packing = {
     status: "APPROVED",
     updatedAt: new Date(),
     updatedBy: null,
     reason: "",
   };
 
-  await ensureFinishedLotNumberForPackaging(request);
+  await ensureFinishedLotNumberForPacking(request);
   await ensureShippingPackageAndChargeFee({ request, session: null });
   applyStatusMapping(request, "발송");
 
@@ -335,4 +335,4 @@ export const handlePackagingCapture = asyncHandler(async (req, res) => {
   );
 });
 
-export default { handlePackagingCapture };
+export default { handlePackingCapture };

@@ -142,9 +142,7 @@ export async function getAssignedDashboardSummary(req, res) {
           normalizedStage: {
             $let: {
               vars: {
-                status: { $ifNull: ["$status", ""] },
                 stage: { $ifNull: ["$manufacturerStage", ""] },
-                status2: { $ifNull: ["$status2", ""] },
                 shippingReviewStatus: {
                   $ifNull: ["$caseInfos.reviewByStage.shipping.status", ""],
                 },
@@ -152,88 +150,51 @@ export async function getAssignedDashboardSummary(req, res) {
               in: {
                 $switch: {
                   branches: [
-                    { case: { $eq: ["$$status", "취소"] }, then: "cancel" },
+                    // NOTE: status/status2 are legacy. Stage is classified by manufacturerStage.
                     {
                       case: {
-                        $or: [
-                          { $eq: ["$$shippingReviewStatus", "APPROVED"] },
-                          { $eq: ["$$status", "완료"] },
-                          { $eq: ["$$status2", "완료"] },
-                        ],
+                        $or: [{ $eq: ["$$shippingReviewStatus", "APPROVED"] }],
                       },
                       then: "completed",
                     },
                     {
                       case: {
-                        $or: [
-                          {
-                            $in: [
-                              "$$stage",
-                              ["shipping", "tracking", "포장.발송", "추적관리"],
-                            ],
-                          },
-                          {
-                            $in: [
-                              "$$status",
-                              ["shipping", "tracking", "포장.발송", "추적관리"],
-                            ],
-                          },
-                        ],
+                        $in: ["$$stage", ["tracking", "추적관리"]],
+                      },
+                      then: "tracking",
+                    },
+                    {
+                      case: {
+                        $in: ["$$stage", ["shipping", "포장.발송"]],
                       },
                       then: "shipping",
                     },
                     {
                       case: {
-                        $or: [
-                          { $in: ["$$stage", ["packing", "세척.패킹"]] },
-                          { $in: ["$$status", ["packing", "세척.패킹"]] },
-                        ],
+                        $in: ["$$stage", ["packing", "세척.패킹"]],
                       },
                       then: "packing",
                     },
                     {
                       case: {
-                        $or: [
-                          {
-                            $in: [
-                              "$$stage",
-                              ["machining", "production", "가공", "생산"],
-                            ],
-                          },
-                          {
-                            $in: [
-                              "$$status",
-                              ["machining", "production", "가공", "생산"],
-                            ],
-                          },
+                        $in: [
+                          "$$stage",
+                          ["machining", "production", "가공", "생산"],
                         ],
                       },
                       then: "machining",
                     },
                     {
                       case: {
-                        $or: [
-                          { $in: ["$$stage", ["cam", "CAM", "가공전"]] },
-                          { $in: ["$$status", ["cam", "CAM", "가공전"]] },
-                        ],
+                        $in: ["$$stage", ["cam", "CAM", "가공전"]],
                       },
                       then: "cam",
                     },
                     {
                       case: {
-                        $or: [
-                          {
-                            $in: [
-                              "$$stage",
-                              ["request", "receive", "의뢰", "의뢰접수"],
-                            ],
-                          },
-                          {
-                            $in: [
-                              "$$status",
-                              ["request", "receive", "의뢰", "의뢰접수"],
-                            ],
-                          },
+                        $in: [
+                          "$$stage",
+                          ["request", "receive", "의뢰", "의뢰접수"],
                         ],
                       },
                       then: "request",
@@ -753,6 +714,11 @@ export async function getMyDashboardSummary(req, res) {
                   $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
                 },
               },
+              trackingCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
+                },
+              },
             },
           },
         ]),
@@ -791,17 +757,19 @@ export async function getMyDashboardSummary(req, res) {
       machiningCount: 0,
       packingCount: 0,
       shippingCount: 0,
+      trackingCount: 0,
     };
 
-    // '발송(완료)' 카드는 발송/추적 + 배송 승인 완료 건을 함께 보여준다.
-    const shippingPlusCompleted = stats.shippingCount + stats.completed;
+    // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
+    const shippingTotal = stats.shippingCount;
 
     const totalActive =
       stats.designCount +
         stats.camCount +
         stats.machiningCount +
         stats.packingCount +
-        shippingPlusCompleted || 1;
+        shippingTotal +
+        stats.trackingCount || 1;
 
     const manufacturingSummary = {
       totalActive,
@@ -810,7 +778,8 @@ export async function getMyDashboardSummary(req, res) {
         { key: "cam", label: "CAM", count: stats.camCount },
         { key: "machining", label: "가공", count: stats.machiningCount },
         { key: "packing", label: "세척.패킹", count: stats.packingCount },
-        { key: "shipping", label: "포장.발송", count: shippingPlusCompleted },
+        { key: "shipping", label: "포장.발송", count: shippingTotal },
+        { key: "tracking", label: "추적관리", count: stats.trackingCount },
       ].map((s) => ({
         ...s,
         percent: totalActive ? Math.round((s.count / totalActive) * 100) : 0,
@@ -821,7 +790,22 @@ export async function getMyDashboardSummary(req, res) {
     const { calculateRiskSummary } = await import("./production.utils.js");
     const activeRequests = await Request.find({
       ...requestFilter,
-      status: { $in: ["의뢰", "CAM", "가공", "세척.패킹"] },
+      manufacturerStage: {
+        $in: [
+          "request",
+          "cam",
+          "machining",
+          "packing",
+          "shipping",
+          "tracking",
+          "의뢰",
+          "CAM",
+          "가공",
+          "세척.패킹",
+          "포장.발송",
+          "추적관리",
+        ],
+      },
     })
       .select(
         "requestId title status status2 manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
@@ -1031,10 +1015,12 @@ export async function getMyDashboardSummary(req, res) {
         inCamChange: "+0%",
         inProduction: stats.machiningCount,
         inProductionChange: "+0%",
-        inpacking: stats.packingCount,
-        inpackingChange: "+0%",
-        inShipping: shippingPlusCompleted,
+        inPacking: stats.packingCount,
+        inPackingChange: "+0%",
+        inShipping: shippingTotal,
         inShippingChange: "+0%",
+        inTracking: stats.trackingCount,
+        inTrackingChange: "+0%",
         canceled: stats.canceledCount,
         canceledChange: "+0%",
         completed: stats.completed,

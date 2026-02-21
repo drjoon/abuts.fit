@@ -5,7 +5,7 @@ import MachiningRecord from "../../models/machiningRecord.model.js";
 import { getIO } from "../../socket.js";
 import {
   applyStatusMapping,
-  ensureFinishedLotNumberForPackaging,
+  ensureFinishedLotNumberForPacking,
   ensureLotNumberForMachining,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";

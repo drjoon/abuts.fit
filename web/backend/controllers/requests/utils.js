@@ -109,9 +109,9 @@ export function normalizeRequestStage(requestLike) {
     return "machining";
   }
 
-  // 세척/패킹 단계 (packaging)
-  if (["packaging", "세척.패킹"].includes(stage)) {
-    return "packaging";
+  // 세척/패킹 단계 (packing)
+  if (["packing", "세척.패킹"].includes(stage)) {
+    return "packing";
   }
 
   // CAM 단계
@@ -132,7 +132,7 @@ export function normalizeRequestStageLabel(requestLike) {
   if (s === "request") return "의뢰";
   if (s === "cam") return "CAM";
   if (s === "machining") return "가공";
-  if (s === "packaging") return "세척.패킹";
+  if (s === "packing") return "세척.패킹";
   if (s === "shipping") return "포장.발송";
   if (s === "completed") return "완료";
   if (s === "cancel") return "취소";
@@ -366,7 +366,7 @@ export async function ensureLotNumberForMachining(requestDoc) {
   requestDoc.lotNumber.part = `${prefix}${yyMMdd}-${letters}`;
 }
 
-export async function ensureFinishedLotNumberForPackaging(requestDoc) {
+export async function ensureFinishedLotNumberForPacking(requestDoc) {
   if (!requestDoc) return;
 
   requestDoc.lotNumber = requestDoc.lotNumber || {};

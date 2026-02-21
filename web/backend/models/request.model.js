@@ -109,7 +109,7 @@ const requestSchema = new mongoose.Schema(
           },
           reason: String,
         },
-        packaging: {
+        packing: {
           status: {
             type: String,
             enum: ["PENDING", "APPROVED", "REJECTED"],
@@ -171,7 +171,7 @@ const requestSchema = new mongoose.Schema(
             default: Date.now,
           },
         },
-        packaging: {
+        packing: {
           fileName: String,
           fileType: String,
           fileSize: Number,

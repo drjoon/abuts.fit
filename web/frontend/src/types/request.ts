@@ -80,7 +80,7 @@ export interface RequestCaseInfos {
       updatedBy?: string;
       reason?: string;
     };
-    packaging?: {
+    packing?: {
       status?: "PENDING" | "APPROVED" | "REJECTED";
       updatedAt?: string;
       updatedBy?: string;
@@ -111,7 +111,7 @@ export interface RequestCaseInfos {
       uploadedBy?: string;
       uploadedAt?: string;
     };
-    packaging?: {
+    packing?: {
       fileName?: string;
       fileType?: string;
       fileSize?: number;

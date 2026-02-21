@@ -36,13 +36,12 @@ const normalizeStage = (
   if (s === "취소") return "취소";
   if (s2 === "완료") return "완료";
 
-  if (["shipping", "tracking", "발송", "포장.발송", "추적관리"].includes(stage))
-    return "포장.발송";
-  if (["packaging", "세척.포장", "세척.패킹"].includes(stage))
-    return "세척.패킹";
-  if (["machining", "production", "가공"].includes(stage)) return "가공";
-  if (["cam", "CAM", "가공전"].includes(stage)) return "CAM";
-  return "의뢰";
+  if (["shipping", "포장.발송"].includes(stage)) return "포장.발송";
+  if (["packing", "세척.패킹"].includes(stage)) return "세척.패킹";
+  if (["machining", "가공"].includes(stage)) return "가공";
+  if (["cam", "CAM"].includes(stage)) return "CAM";
+  if (["request", "의뢰"].includes(stage)) return "의뢰";
+  return "";
 };
 
 const getStatusBadge = (

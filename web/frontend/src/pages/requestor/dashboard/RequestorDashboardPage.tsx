@@ -99,21 +99,22 @@ export const RequestorDashboardPage = () => {
     if (status === "취소") return "cancel";
     if (status2 === "완료") return "completed";
 
-    if (
-      ["shipping", "tracking", "발송", "포장.발송", "추적관리"].includes(stage)
-    ) {
+    if (["tracking", "추적관리"].includes(stage)) {
+      return "tracking";
+    }
+    if (["shipping", "포장.발송"].includes(stage)) {
       return "shipping";
     }
-    if (["packing", "packaging", "세척.포장", "세척.패킹"].includes(stage)) {
+    if (["packing", "세척.패킹"].includes(stage)) {
       return "packing";
     }
-    if (["machining", "production", "가공"].includes(stage)) {
+    if (["machining", "가공"].includes(stage)) {
       return "machining";
     }
-    if (["cam", "CAM", "가공전"].includes(stage)) {
+    if (["cam", "CAM"].includes(stage)) {
       return "cam";
     }
-    if (["request", "receive", "의뢰", "의뢰접수"].includes(stage)) {
+    if (["request", "의뢰"].includes(stage)) {
       return "request";
     }
     return "request";
@@ -125,7 +126,8 @@ export const RequestorDashboardPage = () => {
     CAM: ["cam"],
     가공: ["machining"],
     "세척.패킹": ["packing"],
-    "포장.발송(완료)": ["shipping"],
+    "포장.발송": ["shipping"],
+    추적관리: ["tracking"],
     취소: ["cancel"],
   };
 
@@ -150,7 +152,7 @@ export const RequestorDashboardPage = () => {
     if (s === "machining") return "가공";
     if (s === "packing") return "세척.패킹";
     if (s === "shipping") return "포장.발송";
-    if (s === "completed") return "완료";
+    if (s === "tracking") return "추적관리";
     if (s === "cancel") return "취소";
     return "의뢰";
   };
@@ -422,8 +424,8 @@ export const RequestorDashboardPage = () => {
         { label: "의뢰", value: "0", icon: FileText },
         { label: "CAM", value: "0", icon: Clock },
         { label: "가공", value: "0", icon: Clock },
-        { label: "세척.포장", value: "0", icon: Clock },
-        { label: "발송(완료)", value: "0", icon: TrendingUp },
+        { label: "세척.패킹", value: "0", icon: Clock },
+        { label: "포장.발송", value: "0", icon: TrendingUp },
         { label: "취소", value: "0", icon: CheckCircle },
       ];
     }
@@ -449,15 +451,21 @@ export const RequestorDashboardPage = () => {
         icon: Clock,
       },
       {
-        label: "세척.포장",
-        value: String(s.inPackaging ?? 0),
-        change: s.inPackagingChange ?? "+0%",
+        label: "세척.패킹",
+        value: String(s.inPacking ?? 0),
+        change: s.inPackingChange ?? "+0%",
         icon: Clock,
       },
       {
-        label: "발송(완료)",
+        label: "포장.발송",
         value: String(s.inShipping ?? 0),
         change: s.inShippingChange ?? "+0%",
+        icon: TrendingUp,
+      },
+      {
+        label: "추적관리",
+        value: String(s.inTracking ?? 0),
+        change: s.inTrackingChange ?? "+0%",
         icon: TrendingUp,
       },
       {

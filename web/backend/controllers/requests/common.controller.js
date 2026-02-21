@@ -17,7 +17,7 @@ import {
   canAccessRequestAsRequestor,
   normalizeRequestForResponse,
   ensureLotNumberForMachining,
-  ensureFinishedLotNumberForPackaging,
+  ensureFinishedLotNumberForPacking,
   buildRequestorOrgScopeFilter,
   computePriceForRequest,
   normalizeCaseInfosImplantFields,
@@ -1083,8 +1083,8 @@ const ensureReviewByStageDefaults = (request) => {
   };
   request.caseInfos.reviewByStage.machining = request.caseInfos.reviewByStage
     .machining || { status: "PENDING" };
-  request.caseInfos.reviewByStage.packaging = request.caseInfos.reviewByStage
-    .packaging || { status: "PENDING" };
+  request.caseInfos.reviewByStage.packing = request.caseInfos.reviewByStage
+    .packing || { status: "PENDING" };
   request.caseInfos.reviewByStage.shipping = request.caseInfos.reviewByStage
     .shipping || { status: "PENDING" };
   request.caseInfos.reviewByStage.tracking = request.caseInfos.reviewByStage
@@ -1097,9 +1097,9 @@ const revertManufacturerStageByReviewStage = (request, stage) => {
     request: "의뢰",
     cam: "의뢰",
     machining: "CAM",
-    packaging: "가공",
-    shipping: "세척.포장",
-    tracking: "발송",
+    packing: "가공",
+    shipping: "packing",
+    tracking: "shipping",
   };
   const target = prevMap[String(stage || "").trim()];
   if (target) {
@@ -1113,13 +1113,15 @@ const revertManufacturerStageByReviewStage = (request, stage) => {
 export async function deleteStageFile(req, res) {
   try {
     const { id } = req.params;
-    const stage = String(req.query.stage || "").trim();
+    const stage = String(req.query.stage || "")
+      .trim()
+      .toLowerCase();
     const rollbackOnly =
       String(req.query.rollbackOnly || "").trim() === "1" ||
       String(req.query.rollbackOnly || "")
         .trim()
         .toLowerCase() === "true";
-    const allowed = ["machining", "packaging", "shipping", "tracking"];
+    const allowed = ["machining", "packing", "shipping", "tracking"];
 
     if (!Types.ObjectId.isValid(id)) {
       return res
@@ -1162,7 +1164,7 @@ export async function deleteStageFile(req, res) {
 
       const prevStageMap = {
         machining: "CAM",
-        packaging: "가공",
+        packing: "가공",
         shipping: "세척.포장",
         tracking: "발송",
       };
@@ -1335,7 +1337,7 @@ const advanceManufacturerStageByReviewStage = async ({
     return;
   }
 
-  if (stage === "packaging") {
+  if (stage === "packing") {
     await ensureShippingPackageAndChargeFee({ request, userId, session });
     applyStatusMapping(request, "발송");
     return;
@@ -1376,7 +1378,7 @@ export async function updateReviewStatusByStage(req, res) {
       "request",
       "cam",
       "machining",
-      "packaging",
+      "packing",
       "shipping",
       "tracking",
     ];
@@ -1463,8 +1465,8 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
 
-        if (effectiveStage === "packaging") {
-          await ensureFinishedLotNumberForPackaging(request);
+        if (effectiveStage === "packing") {
+          await ensureFinishedLotNumberForPacking(request);
         }
 
         if (effectiveStage === "cam") {
@@ -1584,8 +1586,10 @@ export async function updateReviewStatusByStage(req, res) {
 export async function getStageFileUrl(req, res) {
   try {
     const { id } = req.params;
-    const stage = String(req.query.stage || "").trim();
-    const allowed = ["machining", "packaging", "shipping", "tracking"];
+    const stage = String(req.query.stage || "")
+      .trim()
+      .toLowerCase();
+    const allowed = ["machining", "packing", "shipping", "tracking"];
     if (!Types.ObjectId.isValid(id)) {
       return res
         .status(400)
