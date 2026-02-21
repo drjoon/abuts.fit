@@ -164,7 +164,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        private static bool DownloadSourceFileToFilledDir(string requestId, string filePath, string targetFullPath)
+        internal static bool DownloadSourceFileToFilledDir(string requestId, string filePath, string targetFullPath)
         {
             try
             {

@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import sharp from "sharp";
 import path from "path";
 import fs from "fs/promises";
+import os from "os";
 
 dotenv.config({ path: path.resolve(process.cwd(), "local.env") });
 
@@ -17,6 +18,17 @@ const BACKEND_BASE = (
 ).replace(/\/+$/, "");
 
 const BRIDGE_SECRET = String(process.env.BRIDGE_SHARED_SECRET || "").trim();
+
+const IP_DISCOVERY_URL = String(
+  process.env.LOT_IP_DISCOVERY_URL || "https://api.ipify.org",
+).trim();
+const IP_DISCOVERY_TIMEOUT_MS = Number(
+  process.env.LOT_IP_DISCOVERY_TIMEOUT_MS || 3000,
+);
+const ALLOW_IPS = String(process.env.LOT_ALLOW_IPS || "")
+  .split(",")
+  .map((ip) => ip.trim())
+  .filter(Boolean);
 
 const WAIT_STABLE_MS = Number(process.env.LOT_WAIT_STABLE_MS || 800);
 
@@ -144,6 +156,75 @@ async function moveFileSafely(src, destDir) {
   }
 }
 
+function getLocalIpv4Addresses() {
+  const nets = os.networkInterfaces() || {};
+  const ips = new Set();
+  for (const list of Object.values(nets)) {
+    for (const info of list || []) {
+      if (!info || info.internal) continue;
+      const family = typeof info.family === "string" ? info.family : "";
+      if (family === "IPv4" || info.family === 4) {
+        ips.add(info.address);
+      }
+    }
+  }
+  return ips;
+}
+
+async function fetchPublicIp() {
+  if (!IP_DISCOVERY_URL) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), IP_DISCOVERY_TIMEOUT_MS);
+  try {
+    const res = await fetch(IP_DISCOVERY_URL, { signal: controller.signal });
+    if (!res.ok) return null;
+    const text = (await res.text())?.trim();
+    if (!text) return null;
+    return text.split(/\s+/)[0];
+  } catch (err) {
+    console.warn(
+      `[lot-server] public IP discovery failed: ${err?.message || err}`,
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function enforceIpAllowlist() {
+  if (!ALLOW_IPS.length || ALLOW_IPS.includes("*")) {
+    return;
+  }
+
+  const localIps = getLocalIpv4Addresses();
+  localIps.add("127.0.0.1");
+  localIps.add("::1");
+
+  let publicIp = null;
+  try {
+    publicIp = await fetchPublicIp();
+    if (publicIp) {
+      localIps.add(publicIp);
+    }
+  } catch {
+    // 이미 fetchPublicIp 내에서 로그 남김
+  }
+
+  const localList = Array.from(localIps);
+  const allowedMatch = ALLOW_IPS.find((ip) => localIps.has(ip));
+
+  if (!allowedMatch) {
+    console.error(
+      `[lot-server] IP allowlist blocked start. Allowed=${ALLOW_IPS.join(", ")} local/public=${localList.join(", ") || "(none)"}`,
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `[lot-server] IP allowlist passed (match=${allowedMatch}). Local/Public IPs: ${localList.join(", ")}`,
+  );
+}
+
 async function handleNewImage(filePath) {
   if (!isImageFile(filePath)) return;
 
@@ -203,6 +284,7 @@ async function handleNewImage(filePath) {
 }
 
 async function main() {
+  await enforceIpAllowlist();
   await ensureDir(PROCESSED_DIR);
   await ensureDir(FAILED_DIR);
 

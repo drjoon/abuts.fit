@@ -281,8 +281,42 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 
                 if (!File.Exists(stlPath))
                 {
-                    AppLogger.Log($"[NC Processing] STL file not found: {stlPath}");
-                    return;
+                    AppLogger.Log($"[NC Processing] STL file not found locally: {stlPath}. Trying to download from backend source-file API...");
+
+                    try
+                    {
+                        // req.StlPath 는 일반적으로 CAM 파일의 상대 경로(filePath)다.
+                        // DownloadSourceFileToFilledDir 는 sourceStep=2-filled 를 사용하여
+                        // 백엔드 /bg/source-file 에서 해당 STL 을 StorageFilledDirectory 로 다운로드한다.
+                        var safeName = System.IO.Path.GetFileName(req.StlPath ?? string.Empty);
+                        if (string.IsNullOrWhiteSpace(safeName))
+                        {
+                            AppLogger.Log("[NC Processing] Cannot determine safe file name from StlPath; aborting download.");
+                            return;
+                        }
+
+                        var filledDir = AppConfig.StorageFilledDirectory;
+                        if (!Directory.Exists(filledDir))
+                        {
+                            Directory.CreateDirectory(filledDir);
+                        }
+
+                        var targetPath = System.IO.Path.Combine(filledDir, safeName);
+                        var ok = Connect.DownloadSourceFileToFilledDir(req.RequestId, req.StlPath, targetPath);
+                        if (!ok)
+                        {
+                            AppLogger.Log($"[NC Processing] Failed to download STL via /bg/source-file for RequestId={req.RequestId}, filePath={req.StlPath}");
+                            return;
+                        }
+
+                        stlPath = targetPath;
+                        AppLogger.Log($"[NC Processing] STL downloaded successfully to: {stlPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"[NC Processing] Error while downloading STL from backend: {ex.GetType().Name}:{ex.Message}");
+                        return;
+                    }
                 }
 
                 AppLogger.Log($"[NC Processing] Starting CAM processing: RequestId={req.RequestId}, Clinic={req.ClinicName}, Patient={req.PatientName}, Tooth={req.Tooth}");
