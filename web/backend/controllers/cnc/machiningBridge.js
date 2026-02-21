@@ -1044,7 +1044,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
               startedAt: startBase ? new Date(startBase) : now,
               lastTickAt: now,
               completedAt: now,
-              percent: 100,패킹
+              percent: 100,
               elapsedSeconds: durationSeconds,
               durationSeconds,
             });
@@ -1052,7 +1052,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
         request.productionSchedule = request.productionSchedule || {};
         request.productionSchedule.actualMachiningComplete = now;
         if (!request.productionSchedule.machiningRecord && record?._id) {
-          request.produ패킹ionSchedule.machiningRecord = record._id;
+          request.productionSchedule.machiningRecord = record._id;
         }
 
         request.productionSchedule.machiningProgress = {
@@ -1066,7 +1066,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
           elapsedSeconds: durationSeconds,
         };
 
-        applyStatusMapping(request, "세척.포장");
+        applyStatusMapping(request, "세척.패킹");
         await request.save();
         console.log(
           "[bridge:machining:complete] request/record updated",
@@ -1074,7 +1074,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
             machineId: mid,
             requestId,
             recordId: record?._id,
-            stage: "세척.포장",
+            stage: "세척.패킹",
           }),
         );
       } else {
