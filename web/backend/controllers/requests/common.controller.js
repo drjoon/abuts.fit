@@ -519,23 +519,30 @@ async function chooseMachineForRequest({ request }) {
 
   const bridgeQueues = await fetchBridgeQueueSnapshot();
   const queueLenByMachineId = {};
+
+  // 1) DB 기반 큐 길이: 상태가 의뢰/CAM/가공 이고 assignedMachine 이 같은 건수를 센다.
+  //    브리지 스냅샷이 늦게 반영되는 경우에도 최소한 이 값만큼은 큐에 쌓여 있다고 본다.
+  const pairs = await Promise.all(
+    candidates.map(async (c) => {
+      const n = await Request.countDocuments({
+        status: { $in: ["의뢰", "CAM", "가공"] },
+        "productionSchedule.assignedMachine": c.machineId,
+      });
+      return [c.machineId, n];
+    }),
+  );
+  for (const [k, v] of pairs) {
+    queueLenByMachineId[k] = v;
+  }
+
+  // 2) 브리지 큐 스냅샷이 있으면, 각 장비별 실제 큐 길이와 DB 카운트를 비교해 더 큰 값을 사용한다.
+  //    이렇게 하면 첫 번째 CAM 배정 직후 브리지 큐가 아직 비어있더라도, DB에 저장된 배정 이력은 반영된다.
   if (bridgeQueues) {
     for (const c of candidates) {
       const list = bridgeQueues?.[c.machineId];
-      queueLenByMachineId[c.machineId] = Array.isArray(list) ? list.length : 0;
-    }
-  } else {
-    const pairs = await Promise.all(
-      candidates.map(async (c) => {
-        const n = await Request.countDocuments({
-          status: { $in: ["의뢰", "CAM", "가공"] },
-          "productionSchedule.assignedMachine": c.machineId,
-        });
-        return [c.machineId, n];
-      }),
-    );
-    for (const [k, v] of pairs) {
-      queueLenByMachineId[k] = v;
+      const len = Array.isArray(list) ? list.length : 0;
+      const prev = Number(queueLenByMachineId[c.machineId] ?? 0);
+      queueLenByMachineId[c.machineId] = Math.max(prev, len);
     }
   }
 

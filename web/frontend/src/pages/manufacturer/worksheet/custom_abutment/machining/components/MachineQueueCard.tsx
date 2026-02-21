@@ -206,6 +206,14 @@ export const MachineQueueCard = ({
           className="flex items-center gap-2"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
+          {!!materialDiameterLabel && (
+            <div
+              className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white text-[10px] font-extrabold text-slate-700 border border-slate-200"
+              title="현재 소재 직경"
+            >
+              {materialDiameterLabel}
+            </div>
+          )}
           <div className="text-[11px] font-extrabold text-slate-700">
             의뢰배정
           </div>
@@ -258,7 +266,7 @@ export const MachineQueueCard = ({
           <div
             role="button"
             tabIndex={0}
-            className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200 hover:bg-white/85 transition-colors cursor-pointer"
+            className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200 hover:bg-white/85 transition-colors cursor-pointer min-h-[96px]"
             onClick={(e) => {
               e.stopPropagation();
               onOpenCompleted?.(machineId, machineName);
@@ -295,7 +303,7 @@ export const MachineQueueCard = ({
           <div
             role="button"
             tabIndex={0}
-            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
+            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all min-h-[96px] ${
               !currentSlot
                 ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
                 : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
@@ -365,7 +373,7 @@ export const MachineQueueCard = ({
           <div
             role="button"
             tabIndex={0}
-            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
+            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all min-h-[96px] ${
               !nextSlot
                 ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
                 : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"

@@ -924,7 +924,7 @@ export const MachineCard = (props: MachineCardProps) => {
           <div
             role="button"
             tabIndex={0}
-            className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200 hover:bg-white/85 transition-colors"
+            className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200 hover:bg-white/85 transition-colors min-h-[96px]"
             onClick={(e) => {
               e.stopPropagation();
               setCompletedModalOpen(true);
@@ -959,7 +959,7 @@ export const MachineCard = (props: MachineCardProps) => {
           <div
             role="button"
             tabIndex={0}
-            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
+            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all min-h-[96px] ${
               !currentProg || !currentProg.name
                 ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
                 : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
@@ -1038,7 +1038,7 @@ export const MachineCard = (props: MachineCardProps) => {
           <div
             role="button"
             tabIndex={0}
-            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all ${
+            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all min-h-[96px] ${
               !nextProg
                 ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
                 : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
