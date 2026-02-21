@@ -744,7 +744,7 @@ export const PackingPage = ({
                     : ocrStage === "recognize"
                       ? "LOT 인식 중..."
                       : "처리 중..."
-                  : "이미지 파일을 놓으면 세척·포장 완료 후 발송 단계로 이동합니다."}
+                  : "세척.패킹 이미지를 드롭하세요"}
               </span>
             </div>
           </div>

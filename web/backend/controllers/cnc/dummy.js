@@ -120,11 +120,11 @@ export async function updateDummySettings(req, res) {
     const { machineId } = req.params;
     const { enabled, programName, schedules, excludeHolidays } = req.body || {};
 
-    const machine = await CncMachine.findOne({ machineId });
+    const machine = await getOrCreateCncMachine(machineId);
     if (!machine) {
-      return res.status(404).json({
+      return res.status(400).json({
         success: false,
-        message: "장비를 찾을 수 없습니다.",
+        message: "machineId is required",
       });
     }
 

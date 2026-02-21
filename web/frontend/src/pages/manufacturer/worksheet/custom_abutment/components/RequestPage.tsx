@@ -1050,29 +1050,15 @@ export const RequestPage = ({
         data-worksheet-scroll="1"
         onScroll={() => onScrollRef.current?.()}
       >
-        {(isMachiningStage || isCamStage) && isDraggingOver && (
+        {isCamStage && isDraggingOver && (
           <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
             <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-blue-500 text-center">
               <div className="text-2xl font-bold text-blue-700 mb-2">
-                {isMachiningStage
-                  ? "생산 이미지를 드롭하세요"
-                  : "NC 파일을 드롭하세요"}
+                NC 파일을 드롭하세요
               </div>
               <div className="text-sm text-slate-600">
-                {isMachiningStage
-                  ? "로트넘버를 자동으로 인식하여 해당 파일에 업로드합니다"
-                  : "파일명이 일치하는 의뢰건에 자동으로 업로드됩니다"}
+                파일명이 일치하는 의뢰건에 자동으로 업로드됩니다
               </div>
-            </div>
-          </div>
-        )}
-        {ocrProcessing && (
-          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-            <div className="bg-white rounded-2xl shadow-2xl p-8">
-              <div className="text-xl font-bold text-slate-800 mb-2">
-                로트넘버 인식 중...
-              </div>
-              <div className="text-sm text-slate-600">잠시만 기다려주세요</div>
             </div>
           </div>
         )}

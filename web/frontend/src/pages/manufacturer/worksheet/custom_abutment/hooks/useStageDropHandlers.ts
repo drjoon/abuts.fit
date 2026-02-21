@@ -111,7 +111,7 @@ export function useStageDropHandlers({
   );
 
   useEffect(() => {
-    if (!(isMachiningStage || isCamStage)) return;
+    if (!isCamStage) return;
 
     const onWindowDragOver = (e: globalThis.DragEvent) => {
       e.preventDefault();
@@ -132,11 +132,6 @@ export function useStageDropHandlers({
 
       const files = Array.from(e.dataTransfer?.files || []);
       if (files.length === 0) return;
-
-      if (isMachiningStage) {
-        void handleImageDropForOCR(files);
-        return;
-      }
 
       if (isCamStage) {
         const filledStlFiles = files.filter((f) =>
@@ -204,9 +199,7 @@ export function useStageDropHandlers({
       const files = Array.from(e.dataTransfer.files);
       if (files.length === 0) return;
 
-      if (isMachiningStage) {
-        void handleImageDropForOCR(files);
-      } else if (isCamStage) {
+      if (isCamStage) {
         const filledStlFiles = files.filter((f) =>
           f.name.toLowerCase().endsWith(".filled.stl"),
         );
@@ -259,11 +252,11 @@ export function useStageDropHandlers({
     (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       e.stopPropagation();
-      if (isMachiningStage || isCamStage) {
+      if (isCamStage) {
         setIsDraggingOver(true);
       }
     },
-    [isMachiningStage, isCamStage],
+    [isCamStage],
   );
 
   const handlePageDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
