@@ -24,6 +24,7 @@ import {
   getTodayYmdInKst,
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
+import { getAllProductionQueues } from "../cnc/shared.js";
 import { getOrganizationCreditBalanceBreakdown } from "./creation.controller.js";
 import s3Utils, {
   deleteFileFromS3,
@@ -595,31 +596,64 @@ async function chooseMachineForCamMachining({ request }) {
       .filter(([id]) => !!id),
   );
 
-  // "정확히" 일치: DB/장비에서 10, 10.0, 10.00 등으로 들어올 수 있어 소수점 오차만 허용
   const EPS = 0.0001;
-  const candidates = (Array.isArray(machines) ? machines : [])
-    .map((m) => {
-      const machineId = String(m?.machineId || "").trim();
-      const matDia = Number(m?.currentMaterial?.diameter);
-      return { machineId, materialDiameter: matDia };
-    })
-    .filter((m) => {
-      if (!m.machineId) return false;
+  const allMachineRows = (Array.isArray(machines) ? machines : []).map((m) => {
+    const machineId = String(m?.machineId || "").trim();
+    const matDia = Number(m?.currentMaterial?.diameter);
+    return { machineId, materialDiameter: matDia };
+  });
 
-      const meta = metaById.get(m.machineId);
-      if (meta?.allowRequestAssign === false) return false;
+  const camGroup = toDiameterGroup(camMaterialDiameter);
 
-      if (!Number.isFinite(m.materialDiameter) || m.materialDiameter <= 0)
-        return false;
-      if (Math.abs(m.materialDiameter - camMaterialDiameter) > EPS)
-        return false;
+  // 1차: CAM 직경과 거의 정확히 같은 소재 직경을 가진 장비만 후보로 사용
+  let candidates = allMachineRows.filter((m) => {
+    if (!m.machineId) return false;
 
-      return true;
-    });
+    const meta = metaById.get(m.machineId);
+    // 장비 설정(Machine 메타)이 아예 없으면 더 이상 사용하지 않는 장비로 보고 제외
+    if (!meta) return false;
+    if (meta.allowRequestAssign === false) return false;
+
+    if (!Number.isFinite(m.materialDiameter) || m.materialDiameter <= 0)
+      return false;
+    if (Math.abs(m.materialDiameter - camMaterialDiameter) > EPS) return false;
+
+    return true;
+  });
+
+  // 2차: 정확 일치 장비가 하나도 없으면, 같은 직경 그룹 내에서 CAM 직경 이상인 장비를 사용
+  if (!candidates.length) {
+    candidates = allMachineRows
+      .map((m) => {
+        return {
+          ...m,
+          diff: Number(m.materialDiameter) - camMaterialDiameter,
+        };
+      })
+      .filter((m) => {
+        if (!m.machineId) return false;
+
+        const meta = metaById.get(m.machineId);
+        // 장비 설정이 없는 machineId (삭제된 장비)는 자동 배정 대상에서 제외
+        if (!meta) return false;
+        if (meta.allowRequestAssign === false) return false;
+
+        if (!Number.isFinite(m.materialDiameter) || m.materialDiameter <= 0)
+          return false;
+
+        // 직경 그룹이 다르면 제외 (예: CAM 8mm인데 10mm-only 장비는 제외)
+        if (toDiameterGroup(m.materialDiameter) !== camGroup) return false;
+
+        // 소재 직경은 CAM 직경 이상이어야 한다.
+        if (m.materialDiameter < camMaterialDiameter) return false;
+
+        return true;
+      });
+  }
 
   if (!candidates.length) {
     const err = new Error(
-      `CAM에서 사용한 소재 직경(${camMaterialDiameter}mm)과 일치하는 CNC 장비가 없습니다.`,
+      `CAM에서 사용한 소재 직경(${camMaterialDiameter}mm)에 맞는 CNC 장비를 찾을 수 없습니다.`,
     );
     err.statusCode = 409;
     throw err;
@@ -1433,6 +1467,57 @@ export async function updateReviewStatusByStage(req, res) {
             request.productionSchedule.diameter = selected.diameter;
           }
           request.assignedMachine = selected.machineId;
+          // CAM 승인 시점 디버깅: 현재 요청의 productionSchedule 과 장비별 생산 큐 일부를 로깅
+          try {
+            // 1) 현재 요청 스케줄
+            console.log("[CAM-APPROVE] request productionSchedule", {
+              id: String(request._id),
+              requestId: request.requestId,
+              status: request.status,
+              manufacturerStage: request.manufacturerStage,
+              productionSchedule: request.productionSchedule,
+            });
+
+            // 2) 장비별 생산 큐 스냅샷 (M3/M4/M5 중심)
+            const related = await Request.find({
+              status: { $in: ["의뢰", "CAM", "생산", "가공"] },
+            })
+              .select("requestId status productionSchedule lotNumber timeline")
+              .lean();
+            const queues = getAllProductionQueues(related || []);
+            console.log("[CAM-APPROVE] production queues snapshot", {
+              M3: (queues.M3 || []).map((q) => ({
+                requestId: q.requestId,
+                status: q.status,
+                assignedMachine: q.productionSchedule?.assignedMachine,
+                queuePosition: q.productionSchedule?.queuePosition,
+                diameter: q.productionSchedule?.diameter,
+              })),
+              M4: (queues.M4 || []).map((q) => ({
+                requestId: q.requestId,
+                status: q.status,
+                assignedMachine: q.productionSchedule?.assignedMachine,
+                queuePosition: q.productionSchedule?.queuePosition,
+                diameter: q.productionSchedule?.diameter,
+              })),
+              M5: (queues.M5 || []).map((q) => ({
+                requestId: q.requestId,
+                status: q.status,
+                assignedMachine: q.productionSchedule?.assignedMachine,
+                queuePosition: q.productionSchedule?.queuePosition,
+                diameter: q.productionSchedule?.diameter,
+              })),
+              unassigned: (queues.unassigned || []).map((q) => ({
+                requestId: q.requestId,
+                status: q.status,
+                assignedMachine: q.productionSchedule?.assignedMachine,
+                queuePosition: q.productionSchedule?.queuePosition,
+                diameter: q.productionSchedule?.diameter,
+              })),
+            });
+          } catch (e) {
+            console.error("[CAM-APPROVE] debug logging failed", e);
+          }
           const meta = await Machine.findOne({ uid: selected.machineId })
             .select({ allowAutoMachining: 1, allowRequestAssign: 1 })
             .lean()
