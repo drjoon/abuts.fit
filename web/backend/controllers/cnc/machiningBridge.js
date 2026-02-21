@@ -440,7 +440,10 @@ async function triggerNextAutoMachiningAfterComplete({
         status: triggerResp.status,
         txt,
       };
-      console.warn("[bridge:auto-next] process-file failed", JSON.stringify(errPayload));
+      console.warn(
+        "[bridge:auto-next] process-file failed",
+        JSON.stringify(errPayload),
+      );
       const error = new Error("bridge process-file failed");
       error.code = "BRIDGE_PROCESS_FILE_FAILED";
       error.meta = errPayload;
@@ -1080,6 +1083,8 @@ export async function recordMachiningCompleteForBridge(req, res) {
           elapsedSeconds: durationSeconds,
         };
 
+        // CNC 가공 완료 시 제조 단계는 세척/패킹 단계로 전환한다.
+        // status/manufacturerStage enum 은 '세척.패킹' 을 사용한다.
         applyStatusMapping(request, "세척.패킹");
         await request.save();
         console.log(

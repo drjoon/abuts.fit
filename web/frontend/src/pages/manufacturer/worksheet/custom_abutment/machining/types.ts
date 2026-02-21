@@ -90,4 +90,7 @@ export type MachineQueueCardProps = {
   onOpenMaterial?: () => void;
   isActive?: boolean;
   onSelect?: () => void;
+  // Now Playing/Next Up 에서 직접 CAM 단계로 되돌리기(생산 큐에서 제거) 콜백
+  onRollbackNowPlaying?: (requestId: string, machineId: string) => void;
+  onRollbackNextUp?: (requestId: string, machineId: string) => void;
 };

@@ -214,6 +214,12 @@ export const MachiningQueueBoard = ({
               onOpenProgramCode={(prog, machineId) => {
                 void board.openProgramDetailForMachining(prog, machineId);
               }}
+              onRollbackNowPlaying={(requestId, mid) => {
+                void board.rollbackRequestInQueue(mid, requestId);
+              }}
+              onRollbackNextUp={(requestId, mid) => {
+                void board.rollbackRequestInQueue(mid, requestId);
+              }}
               onOpenCompleted={(mid, name) => {
                 board.setCompletedModalMachineId(String(mid || "").trim());
                 board.setCompletedModalTitle(

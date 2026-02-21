@@ -292,16 +292,16 @@ const requestSchema = new mongoose.Schema(
     },
     status: {
       // [레거시] 의뢰인용 상태 — SSOT는 caseInfos.reviewByStage. 추후 제거 예정.
+      // 사용 중인 상태값: 의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리 / 취소
       type: String,
       enum: [
         "의뢰",
         "CAM",
         "가공",
-        "세척.포장",
-        "발송",
+        "세척.패킹",
+        "포장.발송",
         "추적관리",
         "취소",
-        "완료",
       ],
       default: "의뢰",
     },
@@ -311,10 +311,18 @@ const requestSchema = new mongoose.Schema(
       enum: ["없음", "전", "중", "후"],
       default: "없음",
     },
-    // 제조사용 스테이지 (UI 표기용)
+    // 제조사용 스테이지 (UI 표기용) — status와 동일한 값을 사용한다.
     manufacturerStage: {
       type: String,
-      enum: ["의뢰", "CAM", "생산", "가공", "세척.포장", "발송", "추적관리"],
+      enum: [
+        "의뢰",
+        "CAM",
+        "가공",
+        "세척.패킹",
+        "포장.발송",
+        "추적관리",
+        "취소",
+      ],
       default: "의뢰",
     },
     // 레거시: 배송 모드 (프론트/백엔드 일부 로직에서 사용)

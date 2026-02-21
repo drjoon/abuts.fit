@@ -595,7 +595,7 @@ export const useMachiningBoard = ({
         toast({
           title: "자동 가공 ON",
           description:
-            "이 장비는 대기 의뢰가 있으면 자동으로 가공을 시작합니다.",
+            "이 장비는 대기 중인 의뢰가 있으면 자동으로 가공을 시작합니다.",
         });
 
         if (token) {
@@ -813,6 +813,44 @@ export const useMachiningBoard = ({
     void openReservationForMachine(targetMid);
   }, [openReservationForMachine, searchParams, setSearchParams]);
 
+  const rollbackRequestInQueue = useCallback(
+    async (machineId: string, requestId: string) => {
+      if (!token) return;
+      const mid = String(machineId || "").trim();
+      const rid = String(requestId || "").trim();
+      if (!mid || !rid) return;
+
+      try {
+        const res = await fetch(
+          `/api/cnc-machines/${encodeURIComponent(mid)}/production-queue/batch`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ deleteRequestIds: [rid] }),
+          },
+        );
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(
+            body?.message || body?.error || "CAM으로 되돌리기 실패",
+          );
+        }
+
+        await refreshProductionQueues();
+      } catch (e: any) {
+        toast({
+          title: "CAM으로 되돌리기 실패",
+          description: e?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    },
+    [refreshProductionQueues, toast, token],
+  );
+
   return {
     machines,
     mergedMachines,
@@ -869,6 +907,7 @@ export const useMachiningBoard = ({
     handleReplaceMaterial,
     handleAddMaterial,
     refreshCncMachineMeta,
+    rollbackRequestInQueue,
     token,
   };
 };

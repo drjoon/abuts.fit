@@ -119,7 +119,20 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
           ) : (
             <div className="space-y-2">
               {localJobs.map((job, idx) => {
-                const qty = Math.max(1, Number(job.qty || 1));
+                const qty = 1;
+                const parts = String(job.name || "")
+                  .trim()
+                  .split(/\s+/)
+                  .filter(Boolean);
+                const clinic = parts[0] || "";
+                const patient = parts[1] || "";
+                const tooth = parts[2] || "";
+                const lastCode =
+                  parts.length > 0 ? parts[parts.length - 1] : "";
+                const badge = parts.length > 1 ? parts[parts.length - 2] : "";
+                const middle = parts
+                  .slice(3, Math.max(3, parts.length - 2))
+                  .join(" ");
                 return (
                   <div
                     key={job.id}
@@ -157,71 +170,65 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                       onClick={() => onOpenCode(job.id)}
                       title={job.name}
                     >
-                      <div className="truncate font-extrabold text-slate-900 text-sm">
-                        {idx === 0 ? "Next ▶ " : ""}
-                        {job.name}
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-slate-500">
-                        {job.paused ? "일시정지" : "대기"}
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900 min-w-0">
+                          {idx === 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-300">
+                              Next
+                            </span>
+                          ) : null}
+                          <div className="flex flex-wrap items-center gap-1 min-w-0 text-[13px]">
+                            {clinic && (
+                              <span className="truncate" title={clinic}>
+                                {clinic}
+                              </span>
+                            )}
+                            {patient && (
+                              <>
+                                <span className="text-slate-400">/</span>
+                                <span className="truncate" title={patient}>
+                                  {patient}
+                                </span>
+                              </>
+                            )}
+                            {tooth && (
+                              <>
+                                <span className="text-slate-400">/</span>
+                                <span className="truncate" title={tooth}>
+                                  {tooth}
+                                </span>
+                              </>
+                            )}
+                            {middle && (
+                              <>
+                                <span className="text-slate-400">/</span>
+                                <span className="truncate" title={middle}>
+                                  {middle}
+                                </span>
+                              </>
+                            )}
+                            {badge && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
+                                {badge}
+                              </span>
+                            )}
+                            {lastCode && (
+                              <span
+                                className="ml-1 text-[11px] text-slate-400"
+                                title={lastCode}
+                              >
+                                {lastCode}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="inline-flex items-center gap-2 text-[11px] text-slate-500">
+                          <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-200">
+                            {job.paused ? "일시정지" : "대기"}
+                          </span>
+                        </div>
                       </div>
                     </button>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                        onClick={() => {
-                          if (readOnly) return;
-                          const nextQty = Math.max(1, qty - 1);
-                          setLocalJobs((prev) =>
-                            prev.map((j) =>
-                              j.id === job.id ? { ...j, qty: nextQty } : j,
-                            ),
-                          );
-                          onChangeQty(job.id, nextQty);
-                        }}
-                        disabled={!!readOnly}
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min={1}
-                        value={qty}
-                        disabled={!!readOnly}
-                        onChange={(e) => {
-                          const v = Math.max(
-                            1,
-                            Number(e.target.value || 1) || 1,
-                          );
-                          setLocalJobs((prev) =>
-                            prev.map((j) =>
-                              j.id === job.id ? { ...j, qty: v } : j,
-                            ),
-                          );
-                          onChangeQty(job.id, v);
-                        }}
-                        className="w-12 h-9 rounded-xl border border-slate-200 bg-white text-center text-sm font-extrabold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                        onClick={() => {
-                          if (readOnly) return;
-                          const nextQty = qty + 1;
-                          setLocalJobs((prev) =>
-                            prev.map((j) =>
-                              j.id === job.id ? { ...j, qty: nextQty } : j,
-                            ),
-                          );
-                          onChangeQty(job.id, nextQty);
-                        }}
-                        disabled={!!readOnly}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
 
                     <div className="flex items-center gap-1">
                       <button

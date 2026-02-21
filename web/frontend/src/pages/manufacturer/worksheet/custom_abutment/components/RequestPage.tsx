@@ -192,22 +192,6 @@ export const RequestPage = ({
         : Array.isArray(raw)
           ? raw
           : [];
-      // DB 메타 확인용 로그
-      if (list.length) {
-        console.groupCollapsed("[request files] 목록");
-        list.forEach((req: ManufacturerRequest) => {
-          console.log(req._id, {
-            file: req.caseInfos?.file,
-            camFile: req.caseInfos?.camFile,
-            ncFile: req.caseInfos?.ncFile,
-            status: req.status,
-            status2: req.status2,
-            manufacturerStage: req.manufacturerStage,
-            derivedStage: deriveStageForFilter(req),
-          });
-        });
-        console.groupEnd();
-      }
       if (data?.success && Array.isArray(list)) {
         setRequests(list);
       }

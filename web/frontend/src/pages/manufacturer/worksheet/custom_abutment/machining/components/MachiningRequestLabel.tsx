@@ -48,7 +48,7 @@ export const MachiningRequestLabel = ({
           <span className="truncate">-</span>
         )}
         {lotBadge ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300">
             {lotBadge}
           </span>
         ) : null}
@@ -68,7 +68,7 @@ export const MachiningRequestLabel = ({
           <span className="truncate">-</span>
         )}
         {lotBadge ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300">
             {lotBadge}
           </span>
         ) : null}

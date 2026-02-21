@@ -5,6 +5,12 @@ import {
   type ChangeEvent,
   type ReactNode,
 } from "react";
+import {
+  ChevronsLeft,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsRight,
+} from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   Dialog,
@@ -324,18 +330,20 @@ export const CncMaterialModal = ({
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-9 px-2"
+                      className="h-9 w-9 p-0 flex items-center justify-center"
                       onClick={() => adjustRemaining(-10)}
+                      title="-10"
                     >
-                      -10
+                      <ChevronsLeft className="h-4 w-4" />
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-9 px-2"
+                      className="h-9 w-9 p-0 flex items-center justify-center"
                       onClick={() => adjustRemaining(-1)}
+                      title="-1"
                     >
-                      -1
+                      <ChevronLeft className="h-4 w-4" />
                     </Button>
                   </div>
                   <Input
@@ -350,18 +358,20 @@ export const CncMaterialModal = ({
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-9 px-2"
+                      className="h-9 w-9 p-0 flex items-center justify-center"
                       onClick={() => adjustRemaining(1)}
+                      title="+1"
                     >
-                      +1
+                      <ChevronRight className="h-4 w-4" />
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-9 px-2"
+                      className="h-9 w-9 p-0 flex items-center justify-center"
                       onClick={() => adjustRemaining(10)}
+                      title="+10"
                     >
-                      +10
+                      <ChevronsRight className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>

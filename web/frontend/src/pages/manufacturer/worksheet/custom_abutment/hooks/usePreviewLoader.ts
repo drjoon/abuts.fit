@@ -187,9 +187,6 @@ export function usePreviewLoader({
             ? req.caseInfos.finishLine.points
             : null;
           if (Array.isArray(casePoints) && casePoints.length >= 2) {
-            console.log("[PreviewLoader] finish line from caseInfos", {
-              count: casePoints.length,
-            });
             return { points: casePoints, source: "caseInfos" as const };
           }
 
@@ -264,12 +261,6 @@ export function usePreviewLoader({
           finishLinePoints: finishLineResult.points,
           finishLineSource: finishLineResult.source,
         });
-        if (finishLineResult.points?.length) {
-          console.log("[PreviewLoader] finish line ready for preview", {
-            source: finishLineResult.source,
-            count: finishLineResult.points.length,
-          });
-        }
         setPreviewOpen(true);
         toast({
           title: "다운로드 완료",

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { ArrowLeft } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { MaterialDiameterChip } from "@/features/manufacturer/cnc/components/MaterialDiameterChip";
@@ -82,6 +83,8 @@ export const MachineQueueCard = ({
   onOpenMaterial,
   isActive,
   onSelect,
+  onRollbackNowPlaying,
+  onRollbackNextUp,
 }: MachineQueueCardProps) => {
   useToast();
 
@@ -120,7 +123,11 @@ export const MachineQueueCard = ({
     ? String(currentSlot.requestId)
     : "";
 
-  const totalMachiningCount = machiningQueueAll.length;
+  // Next Up 대기 건수는 전체 가공 대기열에서 현재 Now Playing(실행중) 1건을 제외한 값이다.
+  const totalMachiningCount = Math.max(
+    0,
+    machiningQueueAll.length - (currentSlot ? 1 : 0),
+  );
 
   const statusColor = getMachineStatusDotClass(machineStatus?.status);
 
@@ -367,13 +374,15 @@ export const MachineQueueCard = ({
                 {headRequestId ? (
                   <button
                     type="button"
-                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-extrabold text-slate-700 hover:bg-slate-50"
+                    className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onOpenRequestLog?.(headRequestId);
+                      if (!onRollbackNowPlaying) return;
+                      onRollbackNowPlaying(headRequestId, machineId);
                     }}
+                    title="CAM으로 되돌리기"
                   >
-                    로그
+                    <ArrowLeft className="h-4 w-4" />
                   </button>
                 ) : null}
               </div>
@@ -409,7 +418,7 @@ export const MachineQueueCard = ({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
                   <span>{MACHINING_SECTION_LABELS.nextUp}</span>
-                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.3 text-[10px] font-extrabold text-slate-700">
                     대기 {totalMachiningCount}건
                   </span>
                 </div>
@@ -433,7 +442,24 @@ export const MachineQueueCard = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0"></div>
+              <div className="flex items-center gap-2 shrink-0">
+                {nextSlot?.requestId ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-8 px-3 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!onRollbackNextUp) return;
+                      const rid = String(nextSlot.requestId || "").trim();
+                      if (!rid) return;
+                      onRollbackNextUp(rid, machineId);
+                    }}
+                  >
+                    <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+                    롤백
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>

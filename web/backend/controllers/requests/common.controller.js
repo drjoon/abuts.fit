@@ -977,7 +977,10 @@ async function triggerBridgeForCnc({ request }) {
     throw err;
   }
 
-  const ncFileName = request?.caseInfos?.ncFile?.fileName;
+  const ncMeta = request?.caseInfos?.ncFile || {};
+  const ncFileNameRaw =
+    ncMeta.fileName || ncMeta.originalName || path.basename(ncMeta.s3Key || "");
+  const ncFileName = String(ncFileNameRaw || "").trim();
   if (!ncFileName) {
     const err = new Error("NC 파일이 없어 CNC 공정을 시작할 수 없습니다.");
     err.statusCode = 400;
@@ -1446,8 +1449,11 @@ export async function updateReviewStatusByStage(req, res) {
             "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";
         } else {
           // CAM, machining 등 이후 단계는 필요 시 단계별로 비동기 처리 여부를 나눠서 관리한다.
-          // CAM 승인 시에는 상태를 즉시 '가공'으로 올리지 않고, Bridge(CNC) 완료 콜백에서 전환한다.
-          if (effectiveStage !== "cam") {
+          // CAM 승인 시에는 제조사 공정을 '가공' 단계로 즉시 전환하되,
+          // 실제 CNC 가공 시작은 Bridge(CNC) 쪽 상태(allowAutoMachining, 자동 트리거 등)에 의해 제어된다.
+          if (effectiveStage === "cam") {
+            applyStatusMapping(request, "가공");
+          } else {
             await advanceManufacturerStageByReviewStage({
               request,
               stage: effectiveStage,
@@ -1529,12 +1535,24 @@ export async function updateReviewStatusByStage(req, res) {
             .lean()
             .session(session)
             .catch(() => null);
+
+          console.log("[CAM-APPROVE] auto-machining check", {
+            requestId: request.requestId,
+            machineId: selected.machineId,
+            allowRequestAssign: meta?.allowRequestAssign,
+            allowAutoMachining: meta?.allowAutoMachining,
+          });
+
           if (
             meta?.allowRequestAssign !== false &&
             meta?.allowAutoMachining === true
           ) {
-            triggerBridgeForCnc({ request }).catch(() => {
-              // ignore
+            triggerBridgeForCnc({ request }).catch((err) => {
+              console.error("[CAM-APPROVE] triggerBridgeForCnc failed", {
+                requestId: request.requestId,
+                machineId: selected.machineId,
+                message: err?.message,
+              });
             });
           }
         }

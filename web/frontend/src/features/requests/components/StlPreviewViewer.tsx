@@ -84,11 +84,6 @@ export function StlPreviewViewer({
     let cancelled = false;
     (async () => {
       try {
-        console.log("[StlPreviewViewer] load start", {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        });
         const buffer = await file.arrayBuffer();
         if (cancelled) return;
 
@@ -108,22 +103,9 @@ export function StlPreviewViewer({
         const position = geometry.getAttribute("position");
         const index = geometry.getIndex();
         if (!bbox || !position) {
-          console.log("[StlPreviewViewer] no bbox/position", {
-            hasBbox: !!bbox,
-            hasPosition: !!position,
-          });
           scene.add(mesh);
           return;
         }
-
-        console.log("[StlPreviewViewer] geometry stats", {
-          vertexCount: position.count,
-          hasIndex: !!index,
-          bbox: {
-            min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z },
-            max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z },
-          },
-        });
 
         // 최대 직경(전체) + 커넥션 직경(z=0) 계산
         let maxR = 0;
@@ -195,20 +177,10 @@ export function StlPreviewViewer({
         mesh.position.sub(center);
 
         const hasFinishLine = Array.isArray(finishLinePoints);
-        console.log("[StlPreviewViewer] finish line", {
-          hasFinishLine,
-          rawCount: finishLinePoints?.length || 0,
-          sample: finishLinePoints?.slice?.(0, 5),
-        });
         if (hasFinishLine && finishLinePoints!.length >= 2) {
           const pts = finishLinePoints!
             .filter((p) => Array.isArray(p) && p.length >= 3)
             .map((p) => new THREE.Vector3(p[0], p[1], p[2]).sub(center));
-          console.log("[StlPreviewViewer] finish line processed", {
-            processedCount: pts.length,
-            first: pts[0]?.toArray?.(),
-            last: pts[pts.length - 1]?.toArray?.(),
-          });
           if (pts.length >= 2) {
             const closedPts = pts.slice();
             const first = closedPts[0];
@@ -241,13 +213,7 @@ export function StlPreviewViewer({
             });
             finishLine = new THREE.Mesh(tubeGeometry, tubeMaterial);
             scene.add(finishLine);
-          } else {
-            console.log(
-              "[StlPreviewViewer] finish line skipped: insufficient pts",
-            );
           }
-        } else if (hasFinishLine) {
-          console.log("[StlPreviewViewer] finish line skipped: < 2 raw points");
         }
 
         const sphere = geometry.boundingSphere;
