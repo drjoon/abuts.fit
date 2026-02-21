@@ -208,10 +208,6 @@ export const MachineQueueCard = ({
                 statusRefreshing ? "animate-pulse" : ""
               }`}
             />
-            <div className="shrink-0 text-[12px] font-extrabold text-slate-700">
-              {totalMachiningCount}건
-            </div>
-            {headPreloadBadge ? headPreloadBadge : null}
           </div>
         </div>
 
@@ -411,8 +407,11 @@ export const MachineQueueCard = ({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold text-slate-500">
-                  {MACHINING_SECTION_LABELS.nextUp}
+                <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+                  <span>{MACHINING_SECTION_LABELS.nextUp}</span>
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
+                    대기 {totalMachiningCount}건
+                  </span>
                 </div>
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {nextSlot ? (

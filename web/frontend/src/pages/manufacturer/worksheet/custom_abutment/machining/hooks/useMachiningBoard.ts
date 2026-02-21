@@ -72,6 +72,93 @@ export const useMachiningBoard = ({
     queueMapRef.current = queueMap;
   }, [queueMap]);
 
+  const [machineStatusMap] = useState<Record<string, MachineStatus>>({});
+
+  const [machiningElapsedSecondsMap, setMachiningElapsedSecondsMap] = useState<
+    Record<string, number>
+  >({});
+  const machiningElapsedBaseRef = useRef<
+    Record<string, { elapsedSeconds: number; tickAtMs: number }>
+  >({});
+
+  const [lastCompletedMap, setLastCompletedMap] = useState<
+    Record<string, LastCompletedMachining>
+  >({});
+
+  const [nowPlayingHintMap, setNowPlayingHintMap] = useState<
+    Record<string, NowPlayingHint>
+  >({});
+
+  const reconcileMachiningTimersFromQueues = useCallback((map: QueueMap) => {
+    const nextBases: Record<
+      string,
+      { elapsedSeconds: number; tickAtMs: number }
+    > = {
+      ...machiningElapsedBaseRef.current,
+    };
+    const nextSecondsFromQueues: Record<string, number> = {};
+    const nextHintsFromQueues: Record<string, NowPlayingHint> = {};
+
+    for (const [midRaw, listRaw] of Object.entries(map || {})) {
+      const mid = String(midRaw || "").trim();
+      if (!mid) continue;
+      const list = Array.isArray(listRaw) ? listRaw : [];
+      const running = list.find((it: any) => {
+        const rec = it?.machiningRecord;
+        if (!rec || typeof rec !== "object") return false;
+        const st = String(rec?.status || "")
+          .trim()
+          .toUpperCase();
+        if (st === "RUNNING") return true;
+        const startedAt = rec?.startedAt
+          ? new Date(rec.startedAt).getTime()
+          : 0;
+        const completedAt = rec?.completedAt
+          ? new Date(rec.completedAt).getTime()
+          : 0;
+        return startedAt > 0 && completedAt <= 0;
+      });
+
+      if (!running) {
+        delete nextBases[mid];
+        continue;
+      }
+
+      const rec = (running as any)?.machiningRecord || {};
+      const startedAtMs = rec?.startedAt
+        ? new Date(rec.startedAt).getTime()
+        : 0;
+      const baseElapsed =
+        typeof rec?.elapsedSeconds === "number" && rec.elapsedSeconds >= 0
+          ? Math.floor(rec.elapsedSeconds)
+          : startedAtMs > 0
+            ? Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
+            : 0;
+
+      nextBases[mid] = { elapsedSeconds: baseElapsed, tickAtMs: Date.now() };
+      nextSecondsFromQueues[mid] = baseElapsed;
+
+      const rid = String((running as any)?.requestId || "").trim();
+      const jobId = rec?.jobId != null ? String(rec.jobId).trim() : null;
+      nextHintsFromQueues[mid] = {
+        machineId: mid,
+        jobId,
+        requestId: rid || null,
+        bridgePath: null,
+        startedAt: rec?.startedAt
+          ? String(rec.startedAt)
+          : new Date().toISOString(),
+      };
+    }
+
+    machiningElapsedBaseRef.current = nextBases;
+    setMachiningElapsedSecondsMap((prev) => ({
+      ...prev,
+      ...nextSecondsFromQueues,
+    }));
+    setNowPlayingHintMap((prev) => ({ ...prev, ...nextHintsFromQueues }));
+  }, []);
+
   const refreshProductionQueues = useCallback(async () => {
     if (!token) return;
     try {
@@ -110,29 +197,43 @@ export const useMachiningBoard = ({
           } satisfies QueueItem;
         });
       });
-
       setQueueMap(normalized);
+      reconcileMachiningTimersFromQueues(normalized);
     } catch {
       // ignore
     }
-  }, [token]);
+  }, [token, reconcileMachiningTimersFromQueues]);
 
-  const [machineStatusMap] = useState<Record<string, MachineStatus>>({});
+  // 1초마다 로컬 타이머를 증가시켜 Now Playing 경과 시간을 표시한다.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const bases = machiningElapsedBaseRef.current || {};
+      const now = Date.now();
+      const updates: Record<string, number> = {};
+      for (const [mid, base] of Object.entries(bases)) {
+        if (!base || typeof base !== "object") continue;
+        updates[mid] = Math.max(
+          0,
+          Math.floor(base.elapsedSeconds + (now - base.tickAtMs) / 1000),
+        );
+      }
 
-  const [machiningElapsedSecondsMap, setMachiningElapsedSecondsMap] = useState<
-    Record<string, number>
-  >({});
-  const machiningElapsedBaseRef = useRef<
-    Record<string, { elapsedSeconds: number; tickAtMs: number }>
-  >({});
-
-  const [lastCompletedMap, setLastCompletedMap] = useState<
-    Record<string, LastCompletedMachining>
-  >({});
-
-  const [nowPlayingHintMap, setNowPlayingHintMap] = useState<
-    Record<string, NowPlayingHint>
-  >({});
+      const keys = Object.keys(updates);
+      if (!keys.length) return;
+      setMachiningElapsedSecondsMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const k of keys) {
+          if (next[k] !== updates[k]) {
+            next[k] = updates[k];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const [statusRefreshing, setStatusRefreshing] = useState(false);
   const [statusRefreshedAt, setStatusRefreshedAt] = useState<string | null>(
@@ -288,71 +389,61 @@ export const useMachiningBoard = ({
     let mounted = true;
     if (!token) return;
     setLoading(true);
-    fetch("/api/cnc-machines/queues", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) =>
-        res
-          .json()
-          .catch(() => ({}))
-          .then((body: any) => ({ res, body })),
-      )
-      .then(({ res, body }) => {
-        if (!res.ok || body?.success === false) {
-          throw new Error(body?.message || body?.error || "생산 큐 조회 실패");
-        }
-        const map =
-          body?.data && typeof body.data === "object" ? body.data : {};
-        if (mounted) setQueueMap(map);
-      })
-      .catch((e: any) => {
-        toast({
-          title: "생산 큐 조회 실패",
-          description: e?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [token, toast]);
-
-  const refreshLastCompletedFromServer = useCallback(() => {
-    if (!token) return;
-
-    let mounted = true;
-    fetch("/api/cnc-machines/machining/last-completed", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) =>
-        res
-          .json()
-          .catch(() => ({}))
-          .then((body: any) => ({ res, body })),
-      )
-      .then(({ res, body }) => {
-        if (!mounted) return;
-        if (!res.ok || body?.success === false) return;
-        const map =
-          body?.data && typeof body.data === "object" ? (body.data as any) : {};
-        setLastCompletedMap(map);
-      })
-      .catch(() => {
+    void (async () => {
+      try {
+        await refreshProductionQueues();
+      } catch {
         // ignore
-      });
-
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
     return () => {
       mounted = false;
     };
+  }, [token, refreshProductionQueues]);
+
+  const refreshLastCompletedFromServer = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/cnc-machines/machining/last-completed", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) return;
+      const map =
+        body?.data && typeof body.data === "object" ? (body.data as any) : {};
+      setLastCompletedMap(map);
+    } catch {
+      // ignore
+    }
   }, [token]);
 
   useEffect(() => {
-    const cleanup = refreshLastCompletedFromServer();
-    return cleanup;
+    void refreshLastCompletedFromServer();
   }, [refreshLastCompletedFromServer]);
+
+  // 가공 중에는 일정 주기로 queues/last-completed를 다시 불러와
+  // 완료/큐 이동을 리프레시 없이 반영한다.
+  useEffect(() => {
+    if (!token) return;
+    const hasActive =
+      Object.keys(machiningElapsedBaseRef.current || {}).length > 0 ||
+      Object.keys(nowPlayingHintMap || {}).length > 0;
+    if (!hasActive) return;
+
+    const id = window.setInterval(() => {
+      void refreshProductionQueues();
+      void refreshLastCompletedFromServer();
+    }, 3000);
+
+    return () => window.clearInterval(id);
+  }, [
+    token,
+    nowPlayingHintMap,
+    refreshLastCompletedFromServer,
+    refreshProductionQueues,
+  ]);
 
   useEffect(() => {
     if (!token) return;
@@ -434,7 +525,7 @@ export const useMachiningBoard = ({
       offTick?.();
       offCompleted?.();
     };
-  }, [token, refreshProductionQueues, machiningElapsedSecondsMap]);
+  }, [token, refreshLastCompletedFromServer, refreshProductionQueues]);
 
   const refreshMachineStatuses = useCallback(async () => {
     if (!token) return;

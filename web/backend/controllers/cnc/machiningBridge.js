@@ -172,9 +172,21 @@ export async function triggerNextAutoMachiningManually(req, res) {
       "[bridge:auto-next] triggerNextAutoMachiningManually failed",
       error?.message || error,
     );
-    return res.status(500).json({
+
+    const status =
+      (error && typeof error.statusCode === "number" && error.statusCode) ||
+      (error && typeof error.status === "number" && error.status) ||
+      500;
+
+    let message = error?.message || "자동 가공 트리거 중 오류가 발생했습니다.";
+    if (error?.code === "BRIDGE_PROCESS_FILE_FAILED") {
+      message = "브리지 서버에서 가공 시작 요청이 거절되었습니다. (forbidden)";
+    }
+
+    return res.status(status).json({
       success: false,
-      message: error?.message || "자동 가공 트리거 중 오류가 발생했습니다.",
+      message,
+      error: error?.meta || undefined,
     });
   }
 }
@@ -422,16 +434,17 @@ async function triggerNextAutoMachiningAfterComplete({
     });
     if (!triggerResp.ok) {
       const txt = await triggerResp.text().catch(() => "");
-      console.warn(
-        "[bridge:auto-next] process-file failed",
-        JSON.stringify({
-          machineId: mid,
-          requestId,
-          status: triggerResp.status,
-          txt,
-        }),
-      );
-      return;
+      const errPayload = {
+        machineId: mid,
+        requestId,
+        status: triggerResp.status,
+        txt,
+      };
+      console.warn("[bridge:auto-next] process-file failed", JSON.stringify(errPayload));
+      const error = new Error("bridge process-file failed");
+      error.code = "BRIDGE_PROCESS_FILE_FAILED";
+      error.meta = errPayload;
+      throw error;
     }
 
     try {
@@ -447,6 +460,7 @@ async function triggerNextAutoMachiningAfterComplete({
       "[bridge:auto-next] triggerNextAutoMachiningAfterComplete failed",
       e?.message || e,
     );
+    throw e;
   }
 }
 
