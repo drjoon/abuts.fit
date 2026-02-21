@@ -22,6 +22,7 @@ import {
 import { useAuthStore } from "@/store/useAuthStore";
 import { useMachineStatusStore } from "@/store/useMachineStatusStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { MaterialDiameterChip } from "@/features/manufacturer/cnc/components/MaterialDiameterChip";
 import { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import {
   getMachineStatusDotClass,
@@ -757,18 +758,15 @@ export const MachineCard = (props: MachineCardProps) => {
             </>
           )}
           {onMaterialClick && (
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors disabled:opacity-40 shadow-sm text-[11px] font-extrabold"
+            <MaterialDiameterChip
+              label={materialDiameterLabel}
+              variant="circle"
+              disabled={loading}
               onClick={(e) => {
                 e.stopPropagation();
                 onMaterialClick(e);
               }}
-              title="소재 선택"
-              disabled={loading}
-            >
-              {materialDiameterLabel}
-            </button>
+            />
           )}
           <button
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-white/80 text-slate-700 border border-slate-200 hover:bg-white hover:text-slate-900 transition-colors shadow-sm"

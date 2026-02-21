@@ -25,7 +25,9 @@ export const MachiningRequestLabel = ({
   const t = String(tooth || "").trim() || "-";
   const rid = String(requestId || "").trim();
 
-  const lotBadge = String(lotNumber || "").trim().slice(-3);
+  const lotBadge = String(lotNumber || "")
+    .trim()
+    .slice(-3);
 
   const desktopParts = [org, clinic, patient, t, rid].filter(Boolean);
   const mobileParts = [clinic, patient, t].filter(Boolean);
@@ -35,12 +37,12 @@ export const MachiningRequestLabel = ({
       <div className="hidden md:flex flex-wrap items-center gap-2 text-sm text-slate-700 min-w-0">
         {desktopParts.length ? (
           desktopParts.map((part, idx) => (
-            <React.Fragment key={`${idx}-${part}`}>
+            <span key={`${idx}-${part}`} className="flex items-center gap-1">
               {idx > 0 ? <span className="text-slate-400">/</span> : null}
               <span className="truncate" title={part}>
                 {part}
               </span>
-            </React.Fragment>
+            </span>
           ))
         ) : (
           <span className="truncate">-</span>
@@ -55,12 +57,12 @@ export const MachiningRequestLabel = ({
       <div className="flex md:hidden flex-wrap items-center gap-2 text-sm text-slate-700 min-w-0">
         {mobileParts.length ? (
           mobileParts.map((part, idx) => (
-            <React.Fragment key={`${idx}-${part}`}>
+            <span key={`${idx}-${part}`} className="flex items-center gap-1">
               {idx > 0 ? <span className="text-slate-400">/</span> : null}
               <span className="truncate" title={part}>
                 {part}
               </span>
-            </React.Fragment>
+            </span>
           ))
         ) : (
           <span className="truncate">-</span>

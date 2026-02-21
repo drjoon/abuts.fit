@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { MaterialDiameterChip } from "@/features/manufacturer/cnc/components/MaterialDiameterChip";
 import { getMachineStatusDotClass } from "@/pages/manufacturer/equipment/cnc/lib/machineStatus";
 import {
   MACHINING_SECTION_LABELS,
@@ -78,6 +79,7 @@ export const MachineQueueCard = ({
   lastCompleted,
   nowPlayingHint,
   onOpenCompleted,
+  onOpenMaterial,
   isActive,
   onSelect,
 }: MachineQueueCardProps) => {
@@ -125,15 +127,35 @@ export const MachineQueueCard = ({
   const headerTitle = machineName || machineId;
 
   const materialDiameterLabel = useMemo(() => {
-    const dia = machine?.currentMaterial?.diameter;
-    if (typeof dia === "number" && Number.isFinite(dia) && dia > 0) {
-      const v = Number.isInteger(dia) ? String(dia) : dia.toFixed(1);
+    // 1) 장비의 현재 소재 직경이 명시되어 있으면 그대로 사용 (숫자/문자열 모두 지원)
+    const rawDia = (machine as any)?.currentMaterial?.diameter;
+    let numeric = Number.isFinite(rawDia)
+      ? Number(rawDia)
+      : Number.parseFloat(String(rawDia || "").replace(/[^0-9.]/g, ""));
+    if (Number.isFinite(numeric) && numeric > 0) {
+      const v = Number.isInteger(numeric)
+        ? String(numeric)
+        : numeric.toFixed(1);
       return v;
     }
-    const group = machine?.currentMaterial?.diameterGroup;
-    const numeric = Number.parseFloat(
-      String(group || "").replace(/[^0-9.]/g, ""),
-    );
+
+    // 2) currentMaterial.diameterGroup 이 있으면 숫자로 파싱해서 사용
+    const group = (machine as any)?.currentMaterial?.diameterGroup;
+    numeric = Number.parseFloat(String(group || "").replace(/[^0-9.]/g, ""));
+
+    // 3) 가공 보드에서는 currentMaterial 이 아직 없고 maxModelDiameterGroups 만 있는 경우가 있어,
+    //    그럴 때는 첫 번째 그룹을 직경으로 사용한다 (예: ["8"] → 8).
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      const firstGroup =
+        Array.isArray((machine as any)?.maxModelDiameterGroups) &&
+        (machine as any).maxModelDiameterGroups.length > 0
+          ? (machine as any).maxModelDiameterGroups[0]
+          : null;
+      if (firstGroup != null) {
+        numeric = Number.parseFloat(String(firstGroup).replace(/[^0-9.]/g, ""));
+      }
+    }
+
     if (Number.isFinite(numeric) && numeric > 0) {
       const v = numeric > 10 ? 12 : numeric;
       return `${Number.isInteger(v) ? v : v.toFixed(1)}`;
@@ -206,14 +228,15 @@ export const MachineQueueCard = ({
           className="flex items-center gap-2"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
-          {!!materialDiameterLabel && (
-            <div
-              className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-white text-[10px] font-extrabold text-slate-700 border border-slate-200"
-              title="현재 소재 직경"
-            >
-              {materialDiameterLabel}
-            </div>
-          )}
+          <MaterialDiameterChip
+            label={materialDiameterLabel || "-"}
+            variant="circle"
+            title="소재 설정"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenMaterial?.();
+            }}
+          />
           <div className="text-[11px] font-extrabold text-slate-700">
             의뢰배정
           </div>
