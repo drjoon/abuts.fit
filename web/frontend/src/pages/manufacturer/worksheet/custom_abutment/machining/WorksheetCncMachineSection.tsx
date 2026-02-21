@@ -468,80 +468,142 @@ export const WorksheetCncMachineSection = ({
     });
   }, [cncMachineMetaMap, machines]);
 
-  const filteredMachines = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return machines;
-    return machines.filter((m) => {
-      const fields = [m.name, m.uid as string, m.ip as string].filter(Boolean);
-      return fields.some((f) => String(f).toLowerCase().includes(q));
-    });
-  }, [machines, searchQuery]);
+  const [diameterQueueSummary, setDiameterQueueSummary] = useState<{
+    labels: UiDiameterBucketKey[];
+    counts: number[];
+    total: number;
+  }>(() => ({
+    labels: ["6", "8", "10", "12"],
+    counts: [0, 0, 0, 0],
+    total: 0,
+  }));
 
-  const filteredMergedMachines = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return mergedMachines;
-    return mergedMachines.filter((m) => {
-      const fields = [m.name, m.uid as string, m.ip as string].filter(Boolean);
-      return fields.some((f) => String(f).toLowerCase().includes(q));
-    });
-  }, [mergedMachines, searchQuery]);
+  const [machiningQueues, setMachiningQueues] = useState<
+    Record<UiDiameterBucketKey, WorksheetQueueItem[]>
+  >(() => ({
+    "6": [],
+    "8": [],
+    "10": [],
+    "12": [],
+  }));
 
-  const diameterQueueSummary = useMemo(() => {
-    const labels: UiDiameterBucketKey[] = ["6", "8", "10", "12"];
-    const counts = labels.map(() => 0);
-    const total = 0;
-    return { labels, counts, total };
-  }, []);
-
-  const machiningQueues: Record<UiDiameterBucketKey, WorksheetQueueItem[]> =
-    useMemo(
-      () => ({
+  useEffect(() => {
+    if (!token) {
+      setDiameterQueueSummary({
+        labels: ["6", "8", "10", "12"],
+        counts: [0, 0, 0, 0],
+        total: 0,
+      });
+      setMachiningQueues({
         "6": [],
         "8": [],
         "10": [],
         "12": [],
-      }),
-      [],
-    );
-
-  const handleTempClick = (machine: Machine) => {
-    void openTempDetail(machine.uid);
-  };
-
-  const handleToolClick = async (machine: Machine) => {
-    try {
-      setWorkUid(machine.uid);
-      const res = await callRaw(machine.uid, "GetToolLifeInfo");
-      const data: any = res?.data ?? res;
-      const toolLife =
-        data?.machineToolLife?.toolLife ??
-        data?.machineToolLife?.toolLifeInfo ??
-        [];
-
-      let level: HealthLevel = "unknown";
-      if (Array.isArray(toolLife) && toolLife.length) {
-        let anyAlarm = false;
-        let anyWarn = false;
-        for (const t of toolLife) {
-          const use = t.useCount ?? 0;
-          const cfg = t.configCount ?? 0;
-          if (cfg <= 0) continue;
-          const ratio = use / cfg;
-          if (ratio >= 1) anyAlarm = true;
-          else if (ratio >= 0.95) anyWarn = true;
-        }
-        if (anyAlarm) level = "alarm";
-        else if (anyWarn) level = "warn";
-        else level = "ok";
-      }
-
-      openToolDetail(toolLife, level);
-    } catch (e: any) {
-      const msg = e?.message ?? "공구 상세 조회 중 오류";
-      setError(msg);
-      openToolDetail([], "alarm");
+      });
+      return;
     }
-  };
+
+    let cancelled = false;
+
+    const loadQueues = async () => {
+      try {
+        const res = await fetch("/api/cnc-machines/queues", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const body: any = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || body?.error || "생산 큐 조회 실패");
+        }
+
+        if (cancelled) return;
+
+        const map =
+          body?.data && typeof body.data === "object" ? (body.data as any) : {};
+
+        const labels: UiDiameterBucketKey[] = ["6", "8", "10", "12"];
+        const counts = [0, 0, 0, 0];
+        const buckets: Record<UiDiameterBucketKey, WorksheetQueueItem[]> = {
+          "6": [],
+          "8": [],
+          "10": [],
+          "12": [],
+        };
+
+        const machineList = Array.isArray(mergedMachines) ? mergedMachines : [];
+
+        for (const m of machineList) {
+          const uid = String(m?.uid || "").trim();
+          if (!uid) continue;
+
+          const raw: any[] = Array.isArray(map?.[uid]) ? map[uid] : [];
+          const filtered = raw.filter((it) => {
+            const s = String(it?.status || "").trim();
+            return s === "생산" || s === "가공";
+          });
+
+          for (const item of filtered) {
+            const diameterRaw =
+              item?.diameterGroup != null ? item.diameterGroup : item?.diameter;
+            const bucketIndex = getDiameterBucketIndex(
+              diameterRaw != null ? String(diameterRaw) : null,
+            );
+            if (bucketIndex == null) continue;
+            const key = labels[bucketIndex] as UiDiameterBucketKey;
+
+            const queueItem: WorksheetQueueItem = {
+              id: String(item?.requestId || ""),
+              client: String(item?.clinicName || ""),
+              patient: String(item?.patientName || ""),
+              tooth: String(item?.tooth || ""),
+              connectionDiameter:
+                typeof item?.diameter === "number" &&
+                Number.isFinite(item.diameter)
+                  ? item.diameter
+                  : null,
+              maxDiameter: null,
+              camDiameter: null,
+              programText: String(item?.requestId || ""),
+              qty:
+                typeof item?.machiningQty === "number" &&
+                Number.isFinite(item.machiningQty)
+                  ? item.machiningQty
+                  : 1,
+            };
+
+            buckets[key].push(queueItem);
+            counts[bucketIndex]++;
+          }
+        }
+
+        if (cancelled) return;
+
+        const total = counts.reduce((sum, c) => sum + c, 0);
+        setDiameterQueueSummary({ labels, counts, total });
+        setMachiningQueues(buckets);
+      } catch {
+        if (cancelled) return;
+        setDiameterQueueSummary({
+          labels: ["6", "8", "10", "12"],
+          counts: [0, 0, 0, 0],
+          total: 0,
+        });
+        setMachiningQueues({
+          "6": [],
+          "8": [],
+          "10": [],
+          "12": [],
+        });
+      }
+    };
+
+    void loadQueues();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mergedMachines, token]);
 
   const handleCardClick = async (machine: Machine) => {
     try {
@@ -566,9 +628,29 @@ export const WorksheetCncMachineSection = ({
     }
   };
 
+  const handleTempClick = (machine: Machine) => {
+    openTempDetail(machine.uid);
+  };
+
+  const handleToolClick = (machine: Machine) => {
+    setWorkUid(machine.uid);
+    const level = toolHealthByUid[machine.uid] ?? "unknown";
+    openToolDetail([], level);
+  };
+
   const handleQueueClick = () => {
     setQueueModalOpen(true);
   };
+
+  const filteredMergedMachines = useMemo(() => {
+    if (!searchQuery.trim()) return mergedMachines;
+    const query = searchQuery.toLowerCase();
+    return mergedMachines.filter(
+      (m) =>
+        m.name?.toLowerCase().includes(query) ||
+        m.uid?.toLowerCase().includes(query),
+    );
+  }, [mergedMachines, searchQuery]);
 
   return (
     <>
@@ -592,7 +674,7 @@ export const WorksheetCncMachineSection = ({
                 machine={m}
                 loading={loading}
                 onTempClick={() => handleTempClick(m)}
-                onToolClick={() => void handleToolClick(m)}
+                onToolClick={() => handleToolClick(m)}
                 tempHealth={tempHealthByUid[m.uid] ?? "unknown"}
                 toolHealth={toolHealthByUid[m.uid] ?? "unknown"}
                 statusOverride={statusByUid[m.uid]}
