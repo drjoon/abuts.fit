@@ -120,7 +120,7 @@ export function normalizeRequestStage(requestLike) {
   }
 
   // 의뢰 단계
-  if (["request","의뢰"].includes(stage)) {
+  if (["request", "의뢰"].includes(stage)) {
     return "request";
   }
 
@@ -536,7 +536,40 @@ export async function computePriceForRequest({
 }
 
 export function applyStatusMapping(request, status) {
-  request.status = status;
+  const s = String(status || "").trim();
+
+  // 기본 status 동기화
+  request.status = s;
+
+  // manufacturerStage 는 생산 공정의 메인 단계를 나타내는 SSOT 라벨로 사용한다.
+  // 세부 배송 상태(status2) 등은 여기서 최소한으로만 매핑한다.
+
+  // 명시적인 메인 단계 라벨은 그대로 manufacturerStage 로 사용
+  const mainStages = [
+    "의뢰",
+    "CAM",
+    "가공",
+    "세척.패킹",
+    "포장.발송",
+    "추적관리",
+    "취소",
+  ];
+
+  if (mainStages.includes(s)) {
+    request.manufacturerStage = s;
+    // 메인 단계 전환 시 status2 는 기본값으로 초기화
+    request.status2 = "없음";
+    return;
+  }
+
+  // 세부 배송 단계(status2) → manufacturerStage 는 "포장.발송" 으로 통일
+  if (["배송대기", "배송중", "배송지연", "배송완료"].includes(s)) {
+    request.manufacturerStage = "포장.발송";
+    request.status2 = s;
+    return;
+  }
+
+  // 그 외 레거시 값들은 manufacturerStage 를 건드리지 않고 status 만 유지
 }
 
 export async function computeDiameterStats(requests, leadDays) {
