@@ -149,6 +149,36 @@ export async function getCompletedMachiningRecords(req, res) {
   }
 }
 
+export async function triggerNextAutoMachiningManually(req, res) {
+  try {
+    const mid = String(req.params?.machineId || "").trim();
+    if (!mid) {
+      return res
+        .status(400)
+        .json({ success: false, message: "machineId is required" });
+    }
+
+    await triggerNextAutoMachiningAfterComplete({
+      machineId: mid,
+      completedRequestId: "",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { machineId: mid },
+    });
+  } catch (error) {
+    console.warn(
+      "[bridge:auto-next] triggerNextAutoMachiningManually failed",
+      error?.message || error,
+    );
+    return res.status(500).json({
+      success: false,
+      message: error?.message || "자동 가공 트리거 중 오류가 발생했습니다.",
+    });
+  }
+}
+
 function shouldEmitStarted(key) {
   const now = Date.now();
   const last = startedEmitCache.get(key);
@@ -240,6 +270,21 @@ export async function getLastCompletedMachiningMap(req, res) {
       const rid = String(rec?.requestId || "").trim();
       const reqDoc = rid ? reqById.get(rid) : null;
       const displayLabel = formatRequestLabelForCompleted(reqDoc, rid);
+      const clinicName = reqDoc?.caseInfos?.clinicName
+        ? String(reqDoc.caseInfos.clinicName).trim()
+        : "";
+      const patientName = reqDoc?.caseInfos?.patientName
+        ? String(reqDoc.caseInfos.patientName).trim()
+        : "";
+      const tooth = reqDoc?.caseInfos?.tooth
+        ? String(reqDoc.caseInfos.tooth).trim()
+        : "";
+      const lotPart = reqDoc?.lotNumber?.part
+        ? String(reqDoc.lotNumber.part).trim()
+        : "";
+      const lotFinal = reqDoc?.lotNumber?.final
+        ? String(reqDoc.lotNumber.final).trim()
+        : "";
       const completedAt = rec?.completedAt
         ? new Date(rec.completedAt).toISOString()
         : rec?.updatedAt
@@ -257,6 +302,13 @@ export async function getLastCompletedMachiningMap(req, res) {
         jobId: rec?.jobId != null ? String(rec.jobId) : null,
         requestId: rid || null,
         displayLabel: String(displayLabel || "").trim() || null,
+        clinicName,
+        patientName,
+        tooth,
+        lotNumber: {
+          part: lotPart || undefined,
+          final: lotFinal || undefined,
+        },
         completedAt,
         durationSeconds,
       };
@@ -992,7 +1044,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
               startedAt: startBase ? new Date(startBase) : now,
               lastTickAt: now,
               completedAt: now,
-              percent: 100,
+              percent: 100,패킹
               elapsedSeconds: durationSeconds,
               durationSeconds,
             });
@@ -1000,7 +1052,7 @@ export async function recordMachiningCompleteForBridge(req, res) {
         request.productionSchedule = request.productionSchedule || {};
         request.productionSchedule.actualMachiningComplete = now;
         if (!request.productionSchedule.machiningRecord && record?._id) {
-          request.productionSchedule.machiningRecord = record._id;
+          request.produ패킹ionSchedule.machiningRecord = record._id;
         }
 
         request.productionSchedule.machiningProgress = {

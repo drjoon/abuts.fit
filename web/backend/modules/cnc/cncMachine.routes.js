@@ -74,6 +74,14 @@ router.post(
   requireBridgeSecret,
   cncMachineController.recordMachiningFailForBridge,
 );
+
+// 수동 자동 가공 트리거: 프론트에서 호출해 다음 대기 의뢰 가공을 시작
+router.post(
+  "/machining/auto-trigger/:machineId",
+  authenticate,
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.triggerNextAutoMachiningManually,
+);
 router.patch(
   "/bridge/dummy-settings/:machineId/last-run-key",
   requireBridgeIpAllowlist,

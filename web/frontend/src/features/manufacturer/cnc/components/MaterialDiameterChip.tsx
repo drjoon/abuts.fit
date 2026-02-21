@@ -34,7 +34,7 @@ export const MaterialDiameterChip: React.FC<MaterialDiameterChipProps> = ({
     return (
       <button
         type="button"
-        className={`${commonClass} rounded-full px-3 h-8 min-w-[2rem]`}
+        className={`${commonClass} rounded-full px-3 h-8 min-w-[1rem]`}
         onClick={onClick}
         disabled={disabled || !onClick}
         title={title}

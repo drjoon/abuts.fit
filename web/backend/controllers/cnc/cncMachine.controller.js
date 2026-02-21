@@ -53,6 +53,7 @@ import {
   recordMachiningTickForBridge,
   getLastCompletedMachiningMap,
   getCompletedMachiningRecords,
+  triggerNextAutoMachiningManually,
 } from "../../controllers/cnc/machiningBridge.js";
 
 export {
@@ -63,6 +64,7 @@ export {
   createCncDirectDownloadPresignForBridge,
   updateDummyLastRunKeyForBridge,
   recordMachiningTickForBridge,
+  triggerNextAutoMachiningManually,
   recordMachiningStartForBridge,
   recordMachiningCompleteForBridge,
   recordMachiningFailForBridge,

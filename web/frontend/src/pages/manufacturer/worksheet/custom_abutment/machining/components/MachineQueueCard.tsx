@@ -203,15 +203,6 @@ export const MachineQueueCard = ({
             <div className="truncate text-[15px] font-extrabold text-slate-900">
               {headerTitle}
             </div>
-            {!!materialDiameterLabel && (
-              <Badge
-                variant="outline"
-                className="shrink-0 bg-white text-[10px] font-extrabold text-slate-700 border-slate-200 px-2 py-0.5"
-                title="현재 소재 직경"
-              >
-                {materialDiameterLabel}
-              </Badge>
-            )}
             <span
               className={`w-3 h-3 rounded-full ${statusColor} ${
                 statusRefreshing ? "animate-pulse" : ""
@@ -304,7 +295,7 @@ export const MachineQueueCard = ({
                   </span>
                   <span>소요 {lastCompletedSummary?.durationLabel || "-"}</span>
                 </div>
-                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                <div className="mt-0.5 text-[15px] font-extrabold text-slate-900 leading-tight max-h-[40px] overflow-hidden">
                   {lastCompleted ? (
                     <MachiningRequestLabel
                       clinicName={(lastCompleted as any)?.clinicName}
@@ -312,7 +303,7 @@ export const MachineQueueCard = ({
                       tooth={(lastCompleted as any)?.tooth}
                       requestId={(lastCompleted as any)?.requestId}
                       lotNumber={lastCompletedLotRaw}
-                      className="text-[15px]"
+                      className="text-[15px] leading-tight"
                     />
                   ) : (
                     "없음"

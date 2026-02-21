@@ -320,10 +320,10 @@ export const useMachiningBoard = ({
     };
   }, [token, toast]);
 
-  useEffect(() => {
-    let mounted = true;
+  const refreshLastCompletedFromServer = useCallback(() => {
     if (!token) return;
 
+    let mounted = true;
     fetch("/api/cnc-machines/machining/last-completed", {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -338,7 +338,7 @@ export const useMachiningBoard = ({
         if (!res.ok || body?.success === false) return;
         const map =
           body?.data && typeof body.data === "object" ? (body.data as any) : {};
-        setLastCompletedMap((prev) => ({ ...map, ...prev }));
+        setLastCompletedMap(map);
       })
       .catch(() => {
         // ignore
@@ -348,6 +348,11 @@ export const useMachiningBoard = ({
       mounted = false;
     };
   }, [token]);
+
+  useEffect(() => {
+    const cleanup = refreshLastCompletedFromServer();
+    return cleanup;
+  }, [refreshLastCompletedFromServer]);
 
   useEffect(() => {
     if (!token) return;
@@ -409,61 +414,9 @@ export const useMachiningBoard = ({
         if (jid && qJobId === jid) return true;
         return false;
       });
-      const displayLabel = found ? resolveCompletedDisplayLabel(found) : rid;
-
-      const lotPart = found
-        ? String((found as any)?.lotNumber?.part || "").trim()
-        : "";
-      const lotFinal = found
-        ? String((found as any)?.lotNumber?.final || "").trim()
-        : "";
-
-      const durationSeconds = (() => {
-        const fromDuration =
-          typeof data?.durationSeconds === "number" && data.durationSeconds >= 0
-            ? Math.floor(data.durationSeconds)
-            : null;
-        if (fromDuration != null) return fromDuration;
-
-        const fromElapsed =
-          typeof data?.elapsedSeconds === "number" && data.elapsedSeconds >= 0
-            ? Math.floor(data.elapsedSeconds)
-            : null;
-        if (fromElapsed != null) return fromElapsed;
-
-        const fromBase = machiningElapsedBaseRef.current?.[mid]?.elapsedSeconds;
-        if (typeof fromBase === "number" && fromBase >= 0)
-          return Math.floor(fromBase);
-
-        const fromMap = machiningElapsedSecondsMap?.[mid];
-        if (typeof fromMap === "number" && fromMap >= 0)
-          return Math.floor(fromMap);
-
-        return 0;
-      })();
-
-      setLastCompletedMap((prev) => ({
-        ...prev,
-        [mid]: {
-          machineId: mid,
-          jobId: data?.jobId != null ? String(data.jobId) : null,
-          requestId: data?.requestId != null ? String(data.requestId) : null,
-          displayLabel: String(displayLabel || "").trim() || null,
-          clinicName: found
-            ? String((found as any)?.clinicName || "").trim()
-            : "",
-          patientName: found
-            ? String((found as any)?.patientName || "").trim()
-            : "",
-          tooth: found ? String((found as any)?.tooth || "").trim() : "",
-          lotNumber: {
-            part: lotPart || undefined,
-            final: lotFinal || undefined,
-          },
-          completedAt: String(data?.completedAt || new Date().toISOString()),
-          durationSeconds,
-        },
-      }));
+      // 완료 시점에는 서버의 MachiningRecord 기반 "last-completed" 맵이
+      // 가장 신뢰할 수 있는 데이터이므로, 별도 계산 대신 서버 맵을 다시 불러온다.
+      void refreshLastCompletedFromServer();
 
       setNowPlayingHintMap((prev) => {
         const next = { ...prev };
@@ -547,20 +500,46 @@ export const useMachiningBoard = ({
         throw new Error(body?.message || "자동 가공 설정 저장 실패");
       }
 
-      const trigger = body?.autoMachiningTrigger;
       if (next === true) {
-        if (trigger?.attempted) {
-          toast({
-            title: "자동 가공 ON",
-            description: trigger?.requestId
-              ? `대기 의뢰(${String(trigger.requestId)}) 자동 시작을 트리거했습니다.`
-              : "자동 시작을 트리거했습니다.",
-          });
-        } else {
-          toast({
-            title: "자동 가공 ON",
-            description: "대기 의뢰가 없어 자동 시작 트리거를 건너뜁니다.",
-          });
+        toast({
+          title: "자동 가공 ON",
+          description:
+            "이 장비는 대기 의뢰가 있으면 자동으로 가공을 시작합니다.",
+        });
+
+        if (token) {
+          const name = target?.name || uid;
+          try {
+            const resp = await fetch(
+              `/api/cnc-machines/machining/auto-trigger/${encodeURIComponent(
+                uid,
+              )}`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+              },
+            );
+            const body2: any = await resp.json().catch(() => ({}));
+            if (!resp.ok || body2?.success === false) {
+              throw new Error(
+                body2?.message || body2?.error || "자동 가공 트리거 호출 실패",
+              );
+            }
+
+            toast({
+              title: "자동 가공 트리거 전송",
+              description: `${name} 대기 의뢰 자동 시작을 요청했습니다.`,
+            });
+          } catch (err: any) {
+            toast({
+              title: "자동 가공 트리거 실패",
+              description: err?.message || "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+          }
         }
       }
     } catch (e: any) {
@@ -632,20 +611,13 @@ export const useMachiningBoard = ({
         return;
       }
 
-      const t = (Array.isArray(machines) ? machines : []).find(
-        (m) => m.uid === uid,
+      const confirmed = window.confirm(
+        "ON 하면 대기 중인 의뢰의 자동 가공이 즉시 시작될 수 있습니다. 계속 진행하시겠습니까?",
       );
-      const name = t?.name || uid;
-
-      toast({
-        title: "자동 가공을 켤까요?",
-        description:
-          "ON 하면 대기 중인 의뢰의 자동 가공이 즉시 시작될 수 있습니다. 계속 진행하시겠습니까?",
-        variant: "destructive",
-        duration: 8000,
-      });
+      if (!confirmed) return;
+      void updateMachineAuto(uid, true);
     },
-    [machines, toast],
+    [updateMachineAuto],
   );
 
   const globalAutoEnabled = useMemo(() => {
