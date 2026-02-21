@@ -4,6 +4,8 @@ dist
 stats.html
 *.env
 .env.*
+logs
+.elasticbeanstalk/logs/
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/app_versions
@@ -13,4 +15,3 @@ stats.html
 cam
 docs
 hi-link
-

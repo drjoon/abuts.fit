@@ -1395,6 +1395,7 @@ export async function updateReviewStatusByStage(req, res) {
     }
 
     let resultRequest = null;
+    let acceptedMessage = "";
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id).session(session);
@@ -1424,15 +1425,12 @@ export async function updateReviewStatusByStage(req, res) {
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
       if (status === "APPROVED") {
         if (effectiveStage === "request") {
-          // b3: 사전 스크리닝 통과한 경우에만 CAM로 전환 + CAM 소재 직경 확정
+          // 비동기 처리: 의뢰 승인 시점에 manufacturerStage/status 를 CAM으로 바꾸지 않는다.
+          // Esprit(NC 생성) 완료 콜백(/api/bg/register-file, sourceStep=3-nc)에서 상태를 CAM으로 전환한다.
+          // 여기서는 '명령 접수'만 처리하고, BG 트리거만 시도한다.
           const screening = await screenCamMachineForRequest({ request });
           request.caseInfos.reviewByStage.request.reason = "";
-          await advanceManufacturerStageByReviewStage({
-            request,
-            stage: effectiveStage,
-            userId: req.user?._id,
-            session,
-          });
+
           await ensureLotNumberForMachining(request);
           request.productionSchedule = request.productionSchedule || {};
           if (screening.ok) {
@@ -1441,14 +1439,22 @@ export async function updateReviewStatusByStage(req, res) {
           } else {
             request.productionSchedule.diameterGroup = screening.reqGroup;
           }
+
+          request.productionSchedule.actualCamStart = new Date();
           await triggerEspritForNc({ request, session });
+          acceptedMessage =
+            "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";
         } else {
-          await advanceManufacturerStageByReviewStage({
-            request,
-            stage: effectiveStage,
-            userId: req.user?._id,
-            session,
-          });
+          // CAM, machining 등 이후 단계는 필요 시 단계별로 비동기 처리 여부를 나눠서 관리한다.
+          // CAM 승인 시에는 상태를 즉시 '가공'으로 올리지 않고, Bridge(CNC) 완료 콜백에서 전환한다.
+          if (effectiveStage !== "cam") {
+            await advanceManufacturerStageByReviewStage({
+              request,
+              stage: effectiveStage,
+              userId: req.user?._id,
+              session,
+            });
+          }
         }
 
         if (effectiveStage === "packaging") {
@@ -1543,6 +1549,7 @@ export async function updateReviewStatusByStage(req, res) {
     return res.status(200).json({
       success: true,
       data: await normalizeRequestForResponse(resultRequest),
+      message: acceptedMessage,
     });
   } catch (error) {
     const statusCode = error.statusCode || 500;

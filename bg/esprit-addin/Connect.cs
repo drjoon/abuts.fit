@@ -8,7 +8,6 @@
 // obligations or liability whatsoever for this file or for the results of  |
 // your use of it or any modified or compiled version of it you may make.   |
 //--------------------------------------------------------------------------'
-
 using DPTechnology.AnnexLibraries;
 using DPTechnology.AnnexLibraries.EspritAnnex;
 using Microsoft.Win32;
@@ -27,29 +26,16 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
-
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Properties;
 using Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging;
-
-
 namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 {
-
     [ClassInterface(ClassInterfaceType.None), ComVisible(true),
         Guid("1c4198bd-2143-470a-a041-93f2ebf4c904"),
         ProgId("ESPRIT2025AddinProject.Connect")]
     public class Connect : DPTechnology.AnnexLibraries.EspritAddIn
     {
-
-        private static readonly HttpClient BackendHttp = new HttpClient(new HttpClientHandler
-        {
-            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-            UseProxy = false,
-        })
-        {
-            Timeout = TimeSpan.FromSeconds(20),
-        };
-
+        private static HttpClient BackendHttp;
         [DataContract]
         private class ApiResponseEnvelope<T>
         {
@@ -57,13 +43,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public bool ok { get; set; }
             [DataMember] public T data { get; set; }
         }
-
         [DataContract]
         private class PendingItemsData
         {
             [DataMember] public PendingItem[] items { get; set; }
         }
-
         [DataContract]
         private class PendingItem
         {
@@ -72,7 +56,36 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public string s3Key { get; set; }
             [DataMember] public string s3Url { get; set; }
         }
+        static Connect()
+        {
+            try
+            {
+                ServicePointManager.SecurityProtocol =
+                    SecurityProtocolType.Tls12 |
+#if NET48
+                    SecurityProtocolType.Tls13 |
+#endif
+                    SecurityProtocolType.Tls11 |
+                    SecurityProtocolType.Tls;
+            }
+            catch
+            {
+                // ignore
+            }
 
+            BackendHttp = new HttpClient(new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                UseProxy = false,
+            })
+            {
+                Timeout = TimeSpan.FromSeconds(20),
+            };
+
+            BackendHttp.DefaultRequestHeaders.Accept.Clear();
+            BackendHttp.DefaultRequestHeaders.Accept.Add(
+                new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+        }
         private static void AddBridgeSecretHeader(HttpRequestMessage req)
         {
             var secret = (AppConfig.GetBridgeSecret() ?? string.Empty).Trim();
@@ -82,12 +95,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 req.Headers.Add("X-Bridge-Secret", secret);
             }
         }
-
         private static string BackendApiBase()
         {
             return (AppConfig.GetBackendUrl() ?? string.Empty).Trim().TrimEnd('/');
         }
-
         private static string SafeFileName(string value)
         {
             try
@@ -99,7 +110,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return value ?? string.Empty;
             }
         }
-
         private static void PurgeOldFiles(string dirPath, int days)
         {
             try
@@ -122,7 +132,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             catch { }
         }
-
         private static PendingItem[] FetchPendingNcItems()
         {
             try
@@ -140,7 +149,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         AppLogger.Log($"Connect: pending-nc failed status={resp.StatusCode} body={body}");
                         return Array.Empty<PendingItem>();
                     }
-
                     try
                     {
                         using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(body)))
@@ -163,14 +171,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return Array.Empty<PendingItem>();
             }
         }
-
         internal static bool DownloadSourceFileToFilledDir(string requestId, string filePath, string targetFullPath)
         {
             try
             {
                 var baseUrl = BackendApiBase();
                 if (string.IsNullOrWhiteSpace(baseUrl)) return false;
-
                 var qs = new List<string>();
                 qs.Add("sourceStep=2-filled");
                 if (!string.IsNullOrWhiteSpace(requestId))
@@ -182,7 +188,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     qs.Add("filePath=" + Uri.EscapeDataString(filePath));
                 }
                 var url = baseUrl + "/bg/source-file?" + string.Join("&", qs);
-
                 using (var req = new HttpRequestMessage(HttpMethod.Get, url))
                 {
                     AddBridgeSecretHeader(req);
@@ -210,7 +215,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return false;
             }
         }
-
         private static void RecoverPendingNcToQueue(EspritHttpServer httpServer)
         {
             try
@@ -218,10 +222,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 if (httpServer == null) return;
                 PurgeOldFiles(AppConfig.StorageFilledDirectory, 15);
                 PurgeOldFiles(AppConfig.StorageNcDirectory, 15);
-
                 var items = FetchPendingNcItems();
                 if (items == null || items.Length == 0) return;
-
                 foreach (var it in items)
                 {
                     try
@@ -232,13 +234,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         {
                             continue;
                         }
-
                         var safeName = SafeFileName(fp);
                         if (string.IsNullOrWhiteSpace(safeName))
                         {
                             continue;
                         }
-
                         var filledDir = AppConfig.StorageFilledDirectory;
                         if (!Directory.Exists(filledDir))
                         {
@@ -253,7 +253,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                                 continue;
                             }
                         }
-
                         httpServer.EnqueueNcRequest(new NcGenerationRequest
                         {
                             RequestId = rid,
@@ -266,11 +265,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             catch { }
         }
-
-
         // Default Property Procedures should not need changes
         #region " Default Property Procedures "
-
         private DPTechnology.AnnexLibraries.IConnectionManager _ConnectionManager;
         protected override DPTechnology.AnnexLibraries.IConnectionManager ConnectionManager
         {
@@ -285,35 +281,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     _ConnectionManager.DocumentInitialize += _ConnectionManager_DocumentInitialize;
                     _ConnectionManager.EspritApplicationShutdown += _ConnectionManager_EspritApplicationShutdown;
                 }
-
                 return _ConnectionManager;
             }
         }
-
-
         public override string Description
         {
             // To modify the AddInDescription go to the Resources tab in the project Properties.
             get { return Resources.AddInDescription; }
         }
-
         public override string FriendlyName
         {
             // To modify the AddInFriendlyName go to the Resources tab in the project Properties.
             get { return Resources.AddInFriendlyName; }
         }
-
         public override string Name
         {
             get { return System.Reflection.Assembly.GetExecutingAssembly().GetName().Name; }
         }
-
         public override System.Diagnostics.TraceLevel OutputWindowTraceLevel
         {
             // To modify the OutputWindowTraceLevel go to the Settings tab in the project Properties.
             get { return Settings.Default.OutputWindowTraceLevel; }
         }
-
         protected override Nullable<Int32> PreviousLanguage
         {
             get
@@ -333,16 +322,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
             }
         }
-
         protected override System.Globalization.CultureInfo ResourcesCulture
         {
             get { return Resources.Culture; }
             set { Resources.Culture = value; }
         }
-
         #endregion
-
-
         private static Esprit.Application _espApp;
         private static Document _currentDocument;
         private static EspritHttpServer _httpServer;
@@ -354,35 +339,29 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             _currentDocument = document;
         }
-
         private static void SetApplication(Esprit.Application application)
         {
             if (_espApp == application)
             {
                 return;
             }
-
             if (_espApp != null)
             {
                 ToggleApplicationEventHandlers(_espApp, false);
             }
-
             _espApp = application;
-
             if (_espApp != null)
             {
                 SetCurrentDocument(_espApp.Document);
                 ToggleApplicationEventHandlers(_espApp, true);
             }
         }
-
         private static void ToggleApplicationEventHandlers(Esprit.Application application, bool attach)
         {
             var eventType = typeof(_IApplicationEvents_Event);
             var afterDocumentOpen = new ComAwareEventInfo(eventType, nameof(_IApplicationEvents_Event.AfterDocumentOpen));
             var afterNewDocumentOpen = new ComAwareEventInfo(eventType, nameof(_IApplicationEvents_Event.AfterNewDocumentOpen));
             var afterTemplateOpen = new ComAwareEventInfo(eventType, nameof(_IApplicationEvents_Event.AfterTemplateOpen));
-
             if (attach)
             {
                 afterDocumentOpen.AddEventHandler(application, _afterDocumentOpenHandler);
@@ -396,16 +375,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 afterTemplateOpen.RemoveEventHandler(application, _afterTemplateOpenHandler);
             }
         }
-
-
-
         public static int _iCntOfCommands = 1;
         public Esprit.PMTab exTab;
         public Esprit.ProjectManager _pm;
         private AddInMainWindow _mainWindow;
-
         public static int _MyCookie;
-
         
         public void _ConnectionManager_AddInConnect(Esprit.Application espritApplication)
         {
@@ -416,10 +390,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             //        
             // This event can be removed if it does not need to be used (e.g. if you only need an Esprit.Document or Esprit.Document members).
             AppLogger.EnsureInitialized();
-
             SetApplication(espritApplication);
             _pm = _espApp.ProjectManager;
-
             // -------------------------
             // 1. Start HTTP Server for NC generation requests
             // -------------------------
@@ -428,47 +400,37 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 _httpServer = new EspritHttpServer(espritApplication);
                 _httpServer.Start();
             }
-
             try
             {
                 var serverRef = _httpServer;
                 Task.Run(() => RecoverPendingNcToQueue(serverRef));
             }
             catch { }
-
             // -------------------------
             // 2. Apply commands
             // -------------------------
             var EC = espritApplication.AddIn as EspritCommands.AddIn;
             _MyCookie = EC.GetCookie();
-
             
             //EC.OnCommand;
             EC.OnCommand += EC_OnCommand;
-
             // Show floating main window on launch
             string folderPath = AppConfig.StorageFilledDirectory;
             bool folderExists = Directory.Exists(folderPath);
             List<string> files = folderExists ? Directory.GetFiles(folderPath, "*.stl").ToList() : new List<string>();
             AppLogger.Log($"Connect: StorageFilledDirectory={folderPath}, exists={folderExists}, fileCount={files.Count}");
-
             if (_mainWindow == null || _mainWindow.IsDisposed)
             {
                 _mainWindow = new AddInMainWindow();
                 _mainWindow.FileRequested += HandleFileRequest;
             }
-
             _mainWindow.UpdateFiles(files);
             _mainWindow.ShowWindow();
-
         }
-
-
         private void EC_OnCommand(int Cookie, int UserId)
         {
             if (Cookie != _MyCookie)
                 return;
-
             switch (UserId)
             {
                 case 0:
@@ -479,15 +441,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     
                     da.InputFPointVal(0.25);
                     da.InputBPointVal(10.85);
-
                     // TODO : put your folder path as second argument of RepeatProcess constructor
                     // e.g.: RepeatProcess rp = new RepeatProcess(_espApp, @"C:\STLFiles");
                     // Event based processing, no need to run rp.Run()
-
                     break;
             }
         }
-
         public void _ConnectionManager_AddInDisconnect()
         {
             // Triggered when the Add-In disconnects because it was Unloaded from the Add-In Manager.
@@ -512,14 +471,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
             ReleaseApplicationEventHandlers();
         }
-
         private void HandleFileRequest(string filePath)
         {
             if (string.IsNullOrEmpty(filePath))
             {
                 return;
             }
-
             try
             {
                 new StlFileProcessor(_espApp).Process(filePath);
@@ -529,7 +486,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"STL 처리 중 오류가 발생했습니다: {ex.Message}");
             }
         }
-
         public void _ConnectionManager_DocumentClosed(bool espritIsShuttingDown)
         {
             // Triggered after the Document has been closed.
@@ -540,12 +496,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 SetCurrentDocument(null);
             }
         }
-
         public void _ConnectionManager_DocumentInitialize(Esprit.Document espritDocument, string fileName)
         {
             // 항상 최신 Document 포인터를 저장해 이후에도 null이 되지 않도록 유지
             SetCurrentDocument(espritDocument);
-
             // Triggered whenever the Document object has been re-initialized.
             //
             // If an Esprit.Document object property or variable is declared in your project you can assign it from here.
@@ -560,31 +514,25 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             // Procedures that apply only when opening existing files (and not staring New ones) can be called here.
             //
             // This event procedure can be removed if it does not need to be used (but that is rarely the case).
-
         }
-
         public void _ConnectionManager_EspritApplicationShutdown()
         {
             // Triggered when the Add-In disconnects explicitly because ESPRIT is shutting down.
             // This event can be removed if it does not need to be used.
             SetApplication(null);
         }
-
         private static void OnApplicationAfterDocumentOpen(string fileName)
         {
             SetCurrentDocument(_espApp?.Document);
         }
-
         private static void OnApplicationAfterNewDocumentOpen()
         {
             SetCurrentDocument(_espApp?.Document);
         }
-
         private static void OnApplicationAfterTemplateOpen(string fileName)
         {
             SetCurrentDocument(_espApp?.Document);
         }
-
         private static void ReleaseApplicationEventHandlers()
         {
             if (_espApp != null)
@@ -592,8 +540,5 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 ToggleApplicationEventHandlers(_espApp, false);
             }
         }
-
-
     }
-
 }

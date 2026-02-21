@@ -196,7 +196,11 @@ export const useRequestFileHandlers = ({
           title: "검토 상태 변경 완료",
           description:
             params.status === "APPROVED"
-              ? "승인되었습니다."
+              ? stageKey === "request" ||
+                stageKey === "cam" ||
+                stageKey === "machining"
+                ? "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
+                : "승인되었습니다."
               : params.status === "REJECTED"
                 ? "반려되었습니다."
                 : "미승인 상태로 변경되었습니다.",

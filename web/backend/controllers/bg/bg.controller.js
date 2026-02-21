@@ -9,6 +9,7 @@ import fs from "fs/promises";
 import Request from "../../models/request.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import { getPresignedPutUrl } from "../../utils/s3.utils.js";
+import { applyStatusMapping } from "../requests/utils.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -480,6 +481,27 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
             uploadedAt: now,
           });
         updateData["productionSchedule.actualCamComplete"] = now;
+
+        // 비동기 CAM 플로우: 의뢰 승인 시점에는 CAM으로 stage를 올리지 않고,
+        // Esprit(NC 생성) 완료 콜백 시점에만 CAM 단계로 전환한다.
+        try {
+          const cloned = {
+            status: request?.status,
+            status2: request?.status2,
+            manufacturerStage: request?.manufacturerStage,
+          };
+          applyStatusMapping(cloned, "CAM");
+          updateData["status"] = cloned.status;
+          updateData["status2"] = cloned.status2;
+          updateData["manufacturerStage"] = cloned.manufacturerStage;
+        } catch {
+          updateData["status"] = "CAM";
+          updateData["status2"] = "없음";
+          updateData["manufacturerStage"] = "CAM";
+        }
+        updateData["caseInfos.reviewByStage.request.status"] = "APPROVED";
+        updateData["caseInfos.reviewByStage.request.reason"] = "";
+        updateData["caseInfos.reviewByStage.request.updatedAt"] = now;
         break;
 
       case "cnc-preload":
@@ -508,6 +530,25 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         if (metadata?.machineId) {
           updateData["productionSchedule.assignedMachine"] = metadata.machineId;
         }
+        // CNC 가공 시작(또는 완료) 시점에만 manufacturerStage/status 를 '가공'으로 전환한다.
+        try {
+          const cloned = {
+            status: request?.status,
+            status2: request?.status2,
+            manufacturerStage: request?.manufacturerStage,
+          };
+          applyStatusMapping(cloned, "가공");
+          updateData["status"] = cloned.status;
+          updateData["status2"] = cloned.status2;
+          updateData["manufacturerStage"] = cloned.manufacturerStage;
+        } catch {
+          updateData["status"] = "가공";
+          updateData["status2"] = "없음";
+          updateData["manufacturerStage"] = "가공";
+        }
+        updateData["caseInfos.reviewByStage.cam.status"] = "APPROVED";
+        updateData["caseInfos.reviewByStage.cam.reason"] = "";
+        updateData["caseInfos.reviewByStage.cam.updatedAt"] = now;
         break;
     }
 

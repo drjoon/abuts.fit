@@ -4,11 +4,14 @@ dist
 stats.html
 *.env
 .env.*
+logs
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+.frontend_node_modules__eb_deploy_backup
 
 *.zip
 # cam

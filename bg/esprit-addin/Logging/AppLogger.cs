@@ -57,6 +57,25 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
 
                 _initialized = true;
                 BeginRun();
+                LogInitialConfiguration();
+            }
+        }
+
+        public static IDisposable BeginScopedLog(string scopeName = null)
+        {
+            EnsureInitialized();
+
+            lock (InitLock)
+            {
+                DisposeListeners();
+
+                var folder = EnsureMonthFolder();
+                var fileName = string.IsNullOrWhiteSpace(scopeName)
+                    ? $"{DateTime.Now:yyyyMMdd-HHmmss}.txt"
+                    : $"{DateTime.Now:yyyyMMdd-HHmmss}_{Sanitize(scopeName)}.txt";
+                var logFile = Path.Combine(folder, fileName);
+                InitializeListeners(logFile);
+                return new ScopedLogHandle();
             }
         }
 
@@ -66,57 +85,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
 
             lock (InitLock)
             {
-                try
-                {
-                    if (_timestampListener != null)
-                    {
-                        Trace.Listeners.Remove(_timestampListener);
-                        _timestampListener.Flush();
-                        _timestampListener.Dispose();
-                        _timestampListener = null;
-                    }
-                    if (_latestListener != null)
-                    {
-                        Trace.Listeners.Remove(_latestListener);
-                        _latestListener.Flush();
-                        _latestListener.Dispose();
-                        _latestListener = null;
-                    }
+                DisposeListeners();
 
-                    if (_timestampWriter != null)
-                    {
-                        _timestampWriter.Flush();
-                        _timestampWriter.Dispose();
-                        _timestampWriter = null;
-                    }
-                    if (_latestWriter != null)
-                    {
-                        _latestWriter.Flush();
-                        _latestWriter.Dispose();
-                        _latestWriter = null;
-                    }
-                }
-                catch
-                {
-                }
-
-                string monthFolder = string.IsNullOrWhiteSpace(_monthFolder)
-                    ? Path.Combine(_logsRoot ?? AppDomain.CurrentDomain.BaseDirectory, DateTime.Now.ToString("yyyy-MM"))
-                    : _monthFolder;
-                Directory.CreateDirectory(monthFolder);
-
+                var monthFolder = EnsureMonthFolder();
                 string logFile = Path.Combine(monthFolder, $"{DateTime.Now:yyyyMMdd-HHmmss}.txt");
-
-                _timestampWriter = new StreamWriter(logFile, true) { AutoFlush = true };
-                _latestWriter = new StreamWriter(_latestLogPath, false) { AutoFlush = true };
-
-                _timestampListener = new TextWriterTraceListener(_timestampWriter);
-                _latestListener = new TextWriterTraceListener(_latestWriter);
-
-                Trace.Listeners.Add(_timestampListener);
-                Trace.Listeners.Add(_latestListener);
-                Trace.AutoFlush = true;
-                Trace.WriteLine($"==== Trace started at {DateTime.Now:O} ====");
+                InitializeListeners(logFile);
             }
         }
 
@@ -125,6 +98,115 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Logging
             EnsureInitialized();
             var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
             Trace.WriteLine(line);
+        }
+
+        private static void DisposeListeners()
+        {
+            try
+            {
+                if (_timestampListener != null)
+                {
+                    Trace.Listeners.Remove(_timestampListener);
+                    _timestampListener.Flush();
+                    _timestampListener.Dispose();
+                    _timestampListener = null;
+                }
+                if (_latestListener != null)
+                {
+                    Trace.Listeners.Remove(_latestListener);
+                    _latestListener.Flush();
+                    _latestListener.Dispose();
+                    _latestListener = null;
+                }
+
+                if (_timestampWriter != null)
+                {
+                    _timestampWriter.Flush();
+                    _timestampWriter.Dispose();
+                    _timestampWriter = null;
+                }
+                if (_latestWriter != null)
+                {
+                    _latestWriter.Flush();
+                    _latestWriter.Dispose();
+                    _latestWriter = null;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static string EnsureMonthFolder()
+        {
+            string monthFolder = string.IsNullOrWhiteSpace(_monthFolder)
+                ? Path.Combine(_logsRoot ?? AppDomain.CurrentDomain.BaseDirectory, DateTime.Now.ToString("yyyy-MM"))
+                : _monthFolder;
+            Directory.CreateDirectory(monthFolder);
+            _monthFolder = monthFolder;
+            return monthFolder;
+        }
+
+        private static void InitializeListeners(string logFile)
+        {
+            _timestampWriter = new StreamWriter(logFile, true) { AutoFlush = true };
+            _latestWriter = new StreamWriter(_latestLogPath, false) { AutoFlush = true };
+
+            _timestampListener = new TextWriterTraceListener(_timestampWriter);
+            _latestListener = new TextWriterTraceListener(_latestWriter);
+
+            Trace.Listeners.Add(_timestampListener);
+            Trace.Listeners.Add(_latestListener);
+            Trace.AutoFlush = true;
+            Trace.WriteLine($"==== Trace started at {DateTime.Now:O} ====");
+        }
+
+        private static void LogInitialConfiguration()
+        {
+            try
+            {
+                var backendUrl = AppConfig.GetBackendUrl();
+                var bridgeSecret = AppConfig.GetBridgeSecret();
+                var allowIps = AppConfig.GetEspritAllowIpsRaw();
+                var baseDir = AppConfig.BaseDirectory;
+                var filledDir = AppConfig.StorageFilledDirectory;
+                var ncDir = AppConfig.StorageNcDirectory;
+
+                var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                Trace.WriteLine($"[{now}] [Config] BaseDirectory={baseDir}");
+                Trace.WriteLine($"[{now}] [Config] StorageFilledDirectory={filledDir}");
+                Trace.WriteLine($"[{now}] [Config] StorageNcDirectory={ncDir}");
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        private static string Sanitize(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            foreach (var c in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(c, '_');
+            }
+            return value.Replace(' ', '_');
+        }
+
+        private sealed class ScopedLogHandle : IDisposable
+        {
+            private bool _disposed;
+
+            public void Dispose()
+            {
+                if (_disposed) return;
+                lock (InitLock)
+                {
+                    DisposeListeners();
+                    InitializeListeners(Path.Combine(EnsureMonthFolder(), "latest.txt"));
+                }
+                _disposed = true;
+            }
         }
     }
 }
