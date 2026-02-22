@@ -216,7 +216,6 @@ export const useMachiningBoard = ({
       if (!res.ok || body?.success === false) {
         throw new Error(body?.message || "생산 큐 재배정 실패");
       }
-      await refreshProductionQueues();
       window.dispatchEvent(new Event("cnc-queues-updated"));
       toast({
         title: "재배정 완료",
@@ -509,22 +508,37 @@ export const useMachiningBoard = ({
       // Socket.io 이벤트 데이터를 직접 사용하여 플리커링 방지
       if (rid) {
         const elapsedSec = machiningElapsedSecondsMap[mid] || 0;
-        setLastCompletedMap((prev) => ({
-          ...prev,
-          [mid]: {
-            machineId: mid,
-            jobId: jid || null,
-            requestId: rid,
-            displayLabel: rid,
-            clinicName: "",
-            patientName: "",
-            tooth: "",
-            rollbackCount: 0,
-            lotNumber: {},
-            completedAt: new Date().toISOString(),
-            durationSeconds: elapsedSec,
-          },
-        }));
+        const nowPlaying = nowPlayingHintMap[mid];
+
+        console.log("[onCncMachiningCompleted]", {
+          mid,
+          rid,
+          jid,
+          elapsedSec,
+          nowPlaying,
+          found: !!found,
+        });
+
+        setLastCompletedMap((prev) => {
+          const updated = {
+            ...prev,
+            [mid]: {
+              machineId: mid,
+              jobId: jid || null,
+              requestId: rid,
+              displayLabel: rid,
+              clinicName: "",
+              patientName: "",
+              tooth: "",
+              rollbackCount: 0,
+              lotNumber: {},
+              completedAt: new Date().toISOString(),
+              durationSeconds: elapsedSec,
+            },
+          };
+          console.log("[lastCompletedMap updated]", updated);
+          return updated;
+        });
       }
 
       setNowPlayingHintMap((prev) => {
@@ -876,7 +890,6 @@ export const useMachiningBoard = ({
           );
         }
 
-        await refreshProductionQueues();
         window.dispatchEvent(new Event("cnc-queues-updated"));
         window.dispatchEvent(new Event("request-rollback"));
       } catch (e: any) {
