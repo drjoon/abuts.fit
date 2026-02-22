@@ -101,7 +101,6 @@ const formatMachineDiameterLabel = (machine: Machine): string => {
 
 interface WorksheetMachineCardProps {
   machine: Machine;
-  loading: boolean;
   onTempClick: () => void;
   onToolClick: () => void;
   tempHealth: HealthLevel;
@@ -113,7 +112,6 @@ interface WorksheetMachineCardProps {
 
 const WorksheetCncMachineCard = ({
   machine,
-  loading,
   onTempClick,
   onToolClick,
   tempHealth,
@@ -221,10 +219,8 @@ const WorksheetCncMachineCard = ({
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={(e) => {
               e.stopPropagation();
-              if (loading) return;
               onTempClick();
             }}
-            disabled={loading}
           >
             <Thermometer
               className={`h-4 w-4 ${getHealthColorClass(tempHealth)}`}
@@ -235,10 +231,8 @@ const WorksheetCncMachineCard = ({
             className="inline-flex items-center justify-center rounded-full w-8 h-8 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 hover:text-gray-900 transition-colors disabled:opacity-40"
             onClick={(e) => {
               e.stopPropagation();
-              if (loading) return;
               onToolClick();
             }}
-            disabled={loading}
           >
             <Wrench className={`h-4 w-4 ${getHealthColorClass(toolHealth)}`} />
           </button>
@@ -341,7 +335,7 @@ interface WorksheetCncMachineSectionProps {
 export const WorksheetCncMachineSection = ({
   searchQuery,
 }: WorksheetCncMachineSectionProps) => {
-  const { machines, loading } = useCncMachines();
+  const { machines } = useCncMachines();
   const { callRaw } = useCncRaw();
   const [error, setError] = useState<string | null>(null);
   const { token } = useAuthStore();
@@ -672,7 +666,6 @@ export const WorksheetCncMachineSection = ({
               <WorksheetCncMachineCard
                 key={m.uid}
                 machine={m}
-                loading={loading}
                 onTempClick={() => handleTempClick(m)}
                 onToolClick={() => handleToolClick(m)}
                 tempHealth={tempHealthByUid[m.uid] ?? "unknown"}

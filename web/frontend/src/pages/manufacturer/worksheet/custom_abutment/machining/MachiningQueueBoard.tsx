@@ -29,7 +29,6 @@ export const MachiningQueueBoard = ({
     statusRefreshedAt,
     statusRefreshErroredAt,
     globalAutoEnabled,
-    loading,
     isMockFromBackend,
     isReadOnly,
     workUid,
@@ -140,7 +139,6 @@ export const MachiningQueueBoard = ({
             onClick={() => {
               void board.reassignProductionQueues();
             }}
-            disabled={loading}
           >
             재배정
           </button>
@@ -155,7 +153,6 @@ export const MachiningQueueBoard = ({
             onClick={() => {
               void board.setGlobalAutoEnabled(!globalAutoEnabled);
             }}
-            disabled={loading}
           >
             <span
               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${

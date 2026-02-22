@@ -146,73 +146,81 @@ export const RequestPage = ({
     setPreviewOpen,
   });
 
-  const fetchRequestsCore = useCallback(async () => {
-    if (!token) return null;
+  const fetchRequestsCore = useCallback(
+    async (silent = false) => {
+      if (!token) return null;
 
-    try {
-      setIsLoading(true);
-      const basePath =
-        user?.role === "admin"
-          ? "/api/admin/requests"
-          : user?.role === "manufacturer"
-            ? "/api/requests/all"
-            : "/api/requests";
+      try {
+        if (!silent) setIsLoading(true);
+        const basePath =
+          user?.role === "admin"
+            ? "/api/admin/requests"
+            : user?.role === "manufacturer"
+              ? "/api/requests/all"
+              : "/api/requests";
 
-      const path = (() => {
-        if (user?.role !== "manufacturer") return basePath;
-        const url = new URL(basePath, window.location.origin);
-        // /api/requests/all 은 기본 limit=10 페이지네이션이므로, 워크시트 집계/큐바를 위해 넉넉히 가져온다.
-        url.searchParams.set("page", "1");
-        url.searchParams.set("limit", "5000");
-        return url.pathname + url.search;
-      })();
+        const path = (() => {
+          if (user?.role !== "manufacturer") return basePath;
+          const url = new URL(basePath, window.location.origin);
+          // /api/requests/all 은 기본 limit=10 페이지네이션이므로, 워크시트 집계/큐바를 위해 넉넉히 가져온다.
+          url.searchParams.set("page", "1");
+          url.searchParams.set("limit", "5000");
+          return url.pathname + url.search;
+        })();
 
-      // 캐시를 무시하고 항상 최신 데이터를 조회 (NC 파일 업데이트 반영용)
-      const res = await fetch(path, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        cache: "no-store", // 브라우저 캐시 무시
-      });
-
-      if (!res.ok) {
-        toast({
-          title: "의뢰 불러오기 실패",
-          description: "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
+        // 캐시를 무시하고 항상 최신 데이터를 조회 (NC 파일 업데이트 반영용)
+        const res = await fetch(path, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store", // 브라우저 캐시 무시
         });
+
+        if (!res.ok) {
+          toast({
+            title: "의뢰 불러오기 실패",
+            description: "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return null;
+        }
+
+        const data = await res.json();
+        const raw = data?.data;
+        const list = Array.isArray(raw?.requests)
+          ? raw.requests
+          : Array.isArray(raw)
+            ? raw
+            : [];
+        if (data?.success && Array.isArray(list)) {
+          setRequests(list);
+        }
+
+        return list as ManufacturerRequest[];
+      } catch (error) {
+        console.error("Error fetching requests:", error);
+        if (!silent) {
+          toast({
+            title: "의뢰 불러오기 실패",
+            description: "네트워크 오류가 발생했습니다.",
+            variant: "destructive",
+          });
+        }
         return null;
+      } finally {
+        if (!silent) setIsLoading(false);
       }
+    },
+    [token, user?.role, toast],
+  );
 
-      const data = await res.json();
-      const raw = data?.data;
-      const list = Array.isArray(raw?.requests)
-        ? raw.requests
-        : Array.isArray(raw)
-          ? raw
-          : [];
-      if (data?.success && Array.isArray(list)) {
-        setRequests(list);
-      }
-
-      return list as ManufacturerRequest[];
-    } catch (error) {
-      console.error("Error fetching requests:", error);
-      toast({
-        title: "의뢰 불러오기 실패",
-        description: "네트워크 오류가 발생했습니다.",
-        variant: "destructive",
-      });
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [token, user?.role, toast]);
-
-  const fetchRequests = useCallback(async () => {
-    await fetchRequestsCore();
-  }, [fetchRequestsCore]);
+  const fetchRequests = useCallback(
+    async (silent = false) => {
+      await fetchRequestsCore(silent);
+    },
+    [fetchRequestsCore],
+  );
 
   const {
     handleDownloadOriginalStl,
@@ -258,12 +266,12 @@ export const RequestPage = ({
 
       const requestId = String(notification?.data?.requestId || "").trim();
       if (!requestId) {
-        void fetchRequests();
+        void fetchRequests(true);
         return;
       }
 
       void (async () => {
-        const list = await fetchRequestsCore();
+        const list = await fetchRequestsCore(true);
         if (!previewOpen) return;
         if (!list || !Array.isArray(list) || list.length === 0) return;
 
@@ -322,7 +330,7 @@ export const RequestPage = ({
     const unsubCompleted = onCncMachiningCompleted((data: any) => {
       const requestId = data?.requestId ? String(data.requestId).trim() : "";
       if (!requestId) {
-        void fetchRequests();
+        void fetchRequests(true);
         return;
       }
 
@@ -333,7 +341,7 @@ export const RequestPage = ({
         }),
       );
 
-      void fetchRequests();
+      void fetchRequests(true);
     });
 
     const handleRequestRollback = () => {

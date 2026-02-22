@@ -383,7 +383,7 @@ export const useMachiningBoard = ({
   useEffect(() => {
     let mounted = true;
     if (!token) return;
-    setLoading(true);
+    // Remove setLoading(true) here to prevent full page flash when navigating or on initial socket events.
     void (async () => {
       try {
         await refreshProductionQueues();
@@ -495,14 +495,14 @@ export const useMachiningBoard = ({
       // 완료된 건을 즉시 lastCompletedMap에 추가하여 Complete 섹션에 바로 표시
       const elapsedSec = machiningElapsedSecondsMap[mid] || 0;
 
-      if (rid) {
+      if (rid || jid) {
         setLastCompletedMap((prev) => ({
           ...prev,
           [mid]: {
             machineId: mid,
             jobId: jid || null,
-            requestId: rid,
-            displayLabel: rid,
+            requestId: rid || null,
+            displayLabel: rid || jid || null,
             clinicName: "",
             patientName: "",
             tooth: "",
@@ -927,7 +927,6 @@ export const useMachiningBoard = ({
     reassignProductionQueues,
     handleBoardClickCapture,
     isMockFromBackend,
-    loading,
     globalAutoEnabled,
     setGlobalAutoEnabled,
     updateMachineAuto,
