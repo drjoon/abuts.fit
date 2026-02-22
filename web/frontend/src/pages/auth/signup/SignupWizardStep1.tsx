@@ -91,17 +91,6 @@ export const SignupWizardStep1 = ({
           <span className="text-xs font-medium">이메일</span>
         </Button>
       </div>
-
-      <div className="text-center text-sm text-muted-foreground">
-        이미 계정이 있으신가요?{" "}
-        <Button
-          variant="link"
-          className="p-0 h-auto text-sm text-white/80 hover:text-white"
-          onClick={() => navigate("/login")}
-        >
-          로그인
-        </Button>
-      </div>
     </div>
   );
 };

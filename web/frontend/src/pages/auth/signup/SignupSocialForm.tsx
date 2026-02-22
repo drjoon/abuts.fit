@@ -227,11 +227,11 @@ export const SignupSocialForm = ({
           {isLoading
             ? "처리 중..."
             : isSocialCompleteMode
-            ? "가입 완료"
-            : "회원가입"}
+              ? "가입 완료"
+              : "회원가입"}
         </Button>
 
-        <div className="text-center text-sm text-muted-foreground">
+        {/* <div className="text-center text-sm text-muted-foreground">
           이미 계정이 있으신가요?{" "}
           <Button
             variant="link"
@@ -240,7 +240,7 @@ export const SignupSocialForm = ({
           >
             로그인
           </Button>
-        </div>
+        </div> */}
       </form>
     </>
   );

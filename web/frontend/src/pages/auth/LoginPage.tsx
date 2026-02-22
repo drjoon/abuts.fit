@@ -227,10 +227,6 @@ export const LoginPage = () => {
                   </div>
                 </div>
 
-                {/* <div className="pt-4 m-4 relative flex justify-center text-sm uppercase">
-                  <span className="bg-white px-2 text-slate-500">또는</span>
-                </div> */}
-
                 <form onSubmit={handleSubmit} className="space-y-4 pt-6">
                   <div className="grid gap-4 md:grid-cols-[1fr,auto] md:items-stretch">
                     <div ref={columnRef} className="space-y-3">
@@ -351,7 +347,14 @@ export const LoginPage = () => {
                 </div>
 
                 {isDev && (
-                  <div className="mt-6 flex justify-end">
+                  <div className="mt-6 flex items-center justify-between">
+                    <Button
+                      variant="link"
+                      asChild
+                      className="text-xs uppercase tracking-[0.35em] text-white/60 hover:text-white"
+                    >
+                      <Link to="/forgot-password">FORGOT PASSWORD</Link>
+                    </Button>
                     <Button
                       type="button"
                       variant="link"

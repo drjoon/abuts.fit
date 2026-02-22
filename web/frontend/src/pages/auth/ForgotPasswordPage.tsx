@@ -77,10 +77,6 @@ export const ForgotPasswordPage = () => {
             <h1 className="text-3xl font-semibold text-white">
               비밀번호 재설정
             </h1>
-            <p className="text-white/75">
-              가입한 이메일 주소로 재설정 링크를 보내드립니다. 메일은 1시간 동안
-              유효합니다.
-            </p>
           </div>
         </div>
 
@@ -89,7 +85,7 @@ export const ForgotPasswordPage = () => {
             <CardHeader className="text-center space-y-2">
               <CardTitle className="text-2xl text-white">이메일 입력</CardTitle>
               <CardDescription className="text-white/70">
-                입력하신 주소로 재설정 링크를 전송합니다.
+                입력하신 메일 주소로 재설정 링크를 전송합니다.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -98,9 +94,7 @@ export const ForgotPasswordPage = () => {
                   <Label
                     htmlFor="forgot-email"
                     className="text-sm font-medium text-white/80"
-                  >
-                    이메일
-                  </Label>
+                  ></Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-3 h-4 w-4 text-white/50" />
                     <Input
@@ -126,12 +120,12 @@ export const ForgotPasswordPage = () => {
               </form>
               <div className="mt-6 text-sm text-white/70 space-y-2">
                 <p>
-                  메일이 도착하지 않았다면 스팸함을 확인하거나, 입력한 이메일이
-                  맞는지 다시 확인해주세요.
+                  메일이 도착하지 않았다면 스팸함을 확인하거나 <br />
+                  입력한 이메일이 맞는지 다시 확인해주세요.
                 </p>
                 <p>링크는 1시간 동안만 유효합니다.</p>
               </div>
-              <div className="mt-8 flex flex-col gap-2">
+              <div className="mt-8 flex flex-col gap-2 sm:flex-row">
                 <Button
                   variant="ghost"
                   onClick={() => navigate("/login")}

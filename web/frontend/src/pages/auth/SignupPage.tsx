@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -478,6 +479,8 @@ export const SignupPage = () => {
     }
   };
 
+  const showHeroSection = isWizardMode && wizardStep === 1;
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
       <div className="pointer-events-none absolute inset-0">
@@ -493,42 +496,48 @@ export const SignupPage = () => {
         />
       </div>
 
-      <main className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-4 py-16 lg:flex-row lg:items-center">
-        <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-left">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
-            <span>secure access</span>
-            <span className="h-1 w-1 rounded-full bg-emerald-300" />
-            <span>abuts.fit</span>
-          </div>
-          <div className="space-y-4">
-            <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
-              하나의 로그인으로 제조 · 배송까지
-              <br />
-              전체 제작 프로세스 동기화
-            </h1>
-            <p className="text-base text-white/80">
-              제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
-              2단계 인증 수준의 로그인 경험을 제공합니다.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
-            <p className="text-xs uppercase tracking-[0.4em] text-white/60">
-              realtime sync
-            </p>
-            <p className="text-4xl font-semibold text-white">98.7%</p>
-            <p className="text-sm text-white/70">
-              동기화 성공률 · 운영팀 SLA 기준
-            </p>
-          </div>
-        </section>
+      <main
+        className={`relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-4 py-16 ${showHeroSection ? "lg:flex-row lg:items-center" : "items-center"}`}
+      >
+        {showHeroSection && (
+          <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-left">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
+              <span>secure access</span>
+              <span className="h-1 w-1 rounded-full bg-emerald-300" />
+              <span>abuts.fit</span>
+            </div>
+            <div className="space-y-4">
+              <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
+                하나의 로그인으로 제조 · 배송까지
+                <br />
+                전체 제작 프로세스 동기화
+              </h1>
+              <p className="text-base text-white/80">
+                제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
+                2단계 인증 수준의 로그인 경험을 제공합니다.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
+              <p className="text-xs uppercase tracking-[0.4em] text-white/60">
+                realtime sync
+              </p>
+              <p className="text-4xl font-semibold text-white">98.7%</p>
+              <p className="text-sm text-white/70">
+                동기화 성공률 · 운영팀 SLA 기준
+              </p>
+            </div>
+          </section>
+        )}
 
-        <section className="w-full lg:w-1/2 lg:flex-1">
+        <section
+          className={`w-full ${showHeroSection ? "lg:w-1/2 lg:flex-1" : "max-w-xl"}`}
+        >
           <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
             <CardHeader className="pb-4 text-center">
               <CardTitle className="text-lg font-medium text-white/90">
                 {isWizardMode
                   ? wizardStep === 1
-                    ? "방법 선택"
+                    ? "회원 가입"
                     : wizardStep === 2
                       ? "추천인 (선택)"
                       : wizardStep === 3
@@ -788,6 +797,24 @@ export const SignupPage = () => {
                   )}
                 </>
               )}
+
+              <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-white/70">
+                <Button
+                  variant="ghost"
+                  className="text-white/70 hover:text-white"
+                  onClick={() => navigate("/")}
+                >
+                  홈으로 돌아가기
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  asChild
+                  className="text-white/70 hover:text-white"
+                >
+                  <Link to="/login">로그인</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </section>
