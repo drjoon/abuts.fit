@@ -568,6 +568,37 @@ export const useMachiningBoard = ({
             if (jid && qJobId === jid) return false;
             return true;
           });
+
+          // 모든 의뢰건이 완료되면 자동 가공 OFF
+          if (next[mid].length === 0) {
+            console.log(
+              "[onCncMachiningCompleted] All items completed, disabling auto-machining",
+              { mid },
+            );
+            void (async () => {
+              try {
+                const res = await fetch(`/api/cnc-machines/${mid}`, {
+                  method: "PATCH",
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ allowAutoMachining: false }),
+                });
+                if (res.ok) {
+                  console.log(
+                    "[onCncMachiningCompleted] Auto-machining disabled",
+                    { mid },
+                  );
+                }
+              } catch (e) {
+                console.error(
+                  "[onCncMachiningCompleted] Failed to disable auto-machining",
+                  e,
+                );
+              }
+            })();
+          }
         }
         return next;
       });
