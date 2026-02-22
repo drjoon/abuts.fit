@@ -208,9 +208,9 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   return (
     <div className="w-full flex flex-col h-full relative">
       {/* 고정 영역: 운송장 출력/택배 수거 접수 + 선반 그룹 버튼 */}
-      <div className="flex-shrink-0 w-full bg-white/98 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 shadow-sm">
+      <div className="flex-shrink-0 w-full sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
         {/* 운송장 출력 및 택배 수거 접수 버튼 */}
-        <div className="flex gap-2 justify-center pt-4 pb-1 px-2 border-b border-slate-100">
+        <div className="flex gap-2 justify-center pt-4 pb-1 px-2">
           <button
             onClick={handlePrintLabels}
             disabled={isPrinting || occupiedAddresses.length === 0}
