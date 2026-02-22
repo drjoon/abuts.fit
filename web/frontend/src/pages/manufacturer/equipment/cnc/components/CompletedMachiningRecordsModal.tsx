@@ -18,6 +18,7 @@ type CompletedMachiningItem = {
   completedAt: string | null;
   durationSeconds: number;
   displayLabel: string | null;
+  rollbackCount?: number;
 };
 
 export type CompletedMachiningRecordsModalProps = {
@@ -258,7 +259,10 @@ export const CompletedMachiningRecordsModal = ({
           )}
 
           {formattedItems.map((row, index) => {
-            const isRolledBack = row.rid ? rolledBackIds.has(row.rid) : false;
+            const rollbackCount = Number((row as any)?.rollbackCount || 0);
+            const isRolledBack =
+              (row.rid ? rolledBackIds.has(row.rid) : false) ||
+              rollbackCount > 0;
             return (
               <div
                 key={items[index].id}

@@ -121,6 +121,20 @@ export const WorksheetCardGrid = ({
       const canRollback =
         stageForRollback !== "의뢰" && stageForRollback !== "추적관리";
 
+      const reviewStageKey = (() => {
+        const stage = String(tabStage || "").trim();
+        if (stage === "tracking") return "tracking";
+        if (stage === "shipping") return "shipping";
+        if (stage === "packing") return "packing";
+        if (isMachiningStage) return "machining";
+        if (isCamStage) return "cam";
+        return "request";
+      })();
+      const rollbackCountForStage = Number(
+        caseInfos.rollbackCounts?.[reviewStageKey] || 0,
+      );
+      const canApproveFromRollback = rollbackCountForStage > 0;
+
       const lotBadgeClass = (() => {
         const s = String(stageForRollback || "").trim();
         const base =
@@ -311,22 +325,29 @@ export const WorksheetCardGrid = ({
                 <ArrowLeft className="h-4 w-4" />
               </button>
             )}
-            {onApprove &&
-              !isCompletedForCurrentStage &&
-              tabStage !== "shipping" && (
-                <button
-                  type="button"
-                  className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onApprove(request);
-                  }}
-                  aria-label="승인"
-                >
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              )}
+            {onApprove && !isCompletedForCurrentStage && (
+              <button
+                type="button"
+                className={`h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50 ${
+                  canApproveFromRollback ? "" : "opacity-40 cursor-not-allowed"
+                }`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!canApproveFromRollback) return;
+                  onApprove(request);
+                }}
+                aria-label="승인"
+                title={
+                  canApproveFromRollback
+                    ? "승인"
+                    : "롤백 이력이 있을 때만 승인 가능"
+                }
+                disabled={!canApproveFromRollback}
+              >
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
           </div>
           {isUploading && progress !== undefined && (
             <div className="absolute inset-0 z-10 bg-white/80 flex flex-col items-center justify-center p-4 rounded-xl">

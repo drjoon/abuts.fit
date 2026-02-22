@@ -54,6 +54,7 @@ export type LastCompletedMachining = {
   clinicName?: string;
   patientName?: string;
   tooth?: string;
+  rollbackCount?: number;
   lotNumber?: {
     part?: string;
     final?: string;

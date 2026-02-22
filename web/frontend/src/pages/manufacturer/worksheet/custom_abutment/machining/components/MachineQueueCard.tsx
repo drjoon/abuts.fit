@@ -199,6 +199,11 @@ export const MachineQueueCard = ({
   const machiningLotBadgeClass =
     "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
   const [completedRolledBack, setCompletedRolledBack] = useState(false);
+  const completedRollbackCount = Number(
+    (lastCompleted as any)?.rollbackCount || 0,
+  );
+  const isCompletedRolledBack =
+    completedRolledBack || completedRollbackCount > 0;
 
   useEffect(() => {
     setCompletedRolledBack(false);
@@ -317,7 +322,9 @@ export const MachineQueueCard = ({
                       lotNumber={lastCompletedLotRaw}
                       lotBadgeClassName={machiningLotBadgeClass}
                       className={`text-[15px] leading-tight ${
-                        completedRolledBack ? "line-through text-slate-400" : ""
+                        isCompletedRolledBack
+                          ? "line-through text-slate-400"
+                          : ""
                       }`}
                     />
                   ) : (

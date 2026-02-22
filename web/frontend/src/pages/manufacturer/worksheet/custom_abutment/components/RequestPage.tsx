@@ -489,19 +489,28 @@ export const RequestPage = ({
 
   const handleCardApprove = useCallback(
     (req: ManufacturerRequest) => {
-      if (!req?._id || tabStage !== "shipping") return;
-
-      // 발송 탭에서 승인: 추적관리 단계로 넘어가기
+      if (!req?._id) return;
+      const stageKey = getReviewStageKeyByTab({
+        stage: tabStage,
+        isCamStage,
+        isMachiningStage,
+      });
       void handleUpdateReviewStatus({
         req,
         status: "APPROVED",
-        stageOverride: "shipping",
+        stageOverride: stageKey,
       });
     },
-    [tabStage, handleUpdateReviewStatus],
+    [tabStage, isCamStage, isMachiningStage, handleUpdateReviewStatus],
   );
 
   const enableCardRollback =
+    tabStage === "cam" ||
+    tabStage === "machining" ||
+    tabStage === "shipping" ||
+    tabStage === "tracking";
+
+  const enableCardApprove =
     tabStage === "cam" ||
     tabStage === "machining" ||
     tabStage === "shipping" ||
@@ -1164,9 +1173,7 @@ export const RequestPage = ({
                                 : undefined
                             }
                             onApprove={
-                              tabStage === "shipping"
-                                ? handleCardApprove
-                                : undefined
+                              enableCardApprove ? handleCardApprove : undefined
                             }
                             onUploadNc={handleUploadNc}
                             uploadProgress={uploadProgress}
@@ -1192,9 +1199,7 @@ export const RequestPage = ({
                 onDeleteCam={handleDeleteCam}
                 onDeleteNc={handleDeleteNc}
                 onRollback={enableCardRollback ? handleCardRollback : undefined}
-                onApprove={
-                  tabStage === "shipping" ? handleCardApprove : undefined
-                }
+                onApprove={enableCardApprove ? handleCardApprove : undefined}
                 onUploadNc={handleUploadNc}
                 uploadProgress={uploadProgress}
                 uploading={uploading}

@@ -99,6 +99,14 @@ export interface RequestCaseInfos {
       reason?: string;
     };
   };
+  rollbackCounts?: {
+    request?: number;
+    cam?: number;
+    machining?: number;
+    packing?: number;
+    shipping?: number;
+    tracking?: number;
+  };
   stageFiles?: {
     machining?: {
       fileName?: string;

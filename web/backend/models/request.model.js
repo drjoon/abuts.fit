@@ -149,6 +149,14 @@ const requestSchema = new mongoose.Schema(
           reason: String,
         },
       },
+      rollbackCounts: {
+        request: { type: Number, default: 0 },
+        cam: { type: Number, default: 0 },
+        machining: { type: Number, default: 0 },
+        packing: { type: Number, default: 0 },
+        shipping: { type: Number, default: 0 },
+        tracking: { type: Number, default: 0 },
+      },
       stageFiles: {
         machining: {
           fileName: String,

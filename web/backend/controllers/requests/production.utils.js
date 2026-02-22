@@ -194,7 +194,8 @@ export function getProductionQueueForMachine(machineId, requests) {
       if (schedule.assignedMachine !== machineId) return false;
 
       // 의뢰, CAM, 가공 단계만 (발송 이후는 제외)
-      if (!["의뢰", "CAM", "생산", "가공"].includes(req.status)) return false;
+      if (!["의뢰", "CAM", "가공"].includes(req.manufacturerStage))
+        return false;
 
       return true;
     })
@@ -224,7 +225,7 @@ export function getAllProductionQueues(requests) {
     if (!schedule) continue;
 
     // 의뢰, CAM, 가공 단계만
-    if (!["의뢰", "CAM", "생산", "가공"].includes(req.status)) continue;
+    if (!["의뢰", "CAM", "가공"].includes(req.manufacturerStage)) continue;
 
     const machine = schedule.assignedMachine;
     if (machine && typeof machine === "string") {
@@ -289,7 +290,7 @@ export async function recalculateQueueOnMaterialChange(
 
   // 해당 직경 그룹의 unassigned 의뢰 조회
   const unassignedRequests = await Request.find({
-    status: { $in: ["의뢰", "CAM", "생산"] },
+    manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
     "productionSchedule.assignedMachine": null,
     "productionSchedule.diameterGroup": newDiameterGroup,
   });

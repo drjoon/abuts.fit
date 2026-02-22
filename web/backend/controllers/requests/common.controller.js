@@ -47,6 +47,16 @@ const BRIDGE_PROCESS_BASE =
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
+const bumpRollbackCount = (request, stageKey) => {
+  if (!request) return;
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
+  const key = String(stageKey || "").trim();
+  if (!key) return;
+  request.caseInfos.rollbackCounts[key] =
+    Number(request.caseInfos.rollbackCounts[key] || 0) + 1;
+};
+
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
@@ -1160,6 +1170,8 @@ export async function deleteStageFile(req, res) {
         reason: "",
       };
 
+      bumpRollbackCount(request, stage);
+
       const prevStageMap = {
         machining: "CAM",
         packing: "가공",
@@ -1193,6 +1205,7 @@ export async function deleteStageFile(req, res) {
     }
 
     delete request.caseInfos.stageFiles[stage];
+    bumpRollbackCount(request, stage);
 
     request.caseInfos.reviewByStage[stage] = {
       status: "PENDING",
@@ -2487,6 +2500,7 @@ export async function deleteCamFileAndRollback(req, res) {
         updatedBy: req.user?._id,
         reason: "",
       };
+      bumpRollbackCount(request, "cam");
       request.manufacturerStage = "의뢰";
       await request.save();
 
@@ -2506,6 +2520,7 @@ export async function deleteCamFileAndRollback(req, res) {
       updatedBy: req.user?._id,
       reason: "",
     };
+    bumpRollbackCount(request, "cam");
     request.lotNumber = request.lotNumber || {};
     request.lotNumber.part = undefined;
     request.lotNumber.final = undefined;
@@ -2733,6 +2748,7 @@ export async function saveNcFileAndMoveToMachining(req, res) {
       updatedBy: req.user?._id,
       reason: "",
     };
+    bumpRollbackCount(request, "machining");
     request.caseInfos.ncFile = {
       fileName: finalNcName,
       originalName: originalName || resolvedFileName,
@@ -2830,13 +2846,18 @@ export async function deleteNcFileAndRollbackCam(req, res) {
 
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.ncFile = undefined;
-    ensureReviewByStageDefaults(request);
-    request.caseInfos.reviewByStage.machining = {
-      status: "PENDING",
-      updatedAt: new Date(),
-      updatedBy: req.user?._id,
-      reason: "",
-    };
+    if (rollbackOnly) {
+      ensureReviewByStageDefaults(request);
+      request.caseInfos.reviewByStage.machining = {
+        status: "PENDING",
+        updatedAt: new Date(),
+        updatedBy: req.user?._id,
+        reason: "",
+      };
+      bumpRollbackCount(request, "machining");
+    } else {
+      bumpRollbackCount(request, "machining");
+    }
 
     // 제조사 공정: 가공 단계 -> CAM 또는 의뢰
     const isRollbackToRequest = req.query.nextStage === "request";

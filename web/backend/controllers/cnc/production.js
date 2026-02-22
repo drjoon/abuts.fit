@@ -7,10 +7,10 @@ import {
 export async function getProductionQueues(req, res) {
   try {
     const requests = await Request.find({
-      status: { $in: ["의뢰", "CAM", "생산", "가공"] },
+      manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
     })
       .select(
-        "requestId status productionSchedule caseInfos lotNumber timeline",
+        "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline",
       )
       .populate({
         path: "productionSchedule.machiningRecord",

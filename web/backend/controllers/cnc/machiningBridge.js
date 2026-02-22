@@ -84,7 +84,7 @@ export async function getCompletedMachiningRecords(req, res) {
       requestId: { $in: uniqueRequestIds },
     })
       .select(
-        "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth",
+        "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.rollbackCounts",
       )
       .lean();
     const reqMap = new Map(
@@ -101,6 +101,7 @@ export async function getCompletedMachiningRecords(req, res) {
         clinicName: req?.caseInfos?.clinicName || r?.clinicName,
         patientName: req?.caseInfos?.patientName || r?.patientName,
         tooth: req?.caseInfos?.tooth || r?.tooth,
+        rollbackCount: Number(req?.caseInfos?.rollbackCounts?.machining || 0),
       };
     });
 
@@ -127,6 +128,7 @@ export async function getCompletedMachiningRecords(req, res) {
         clinicName: r?.clinicName || null,
         patientName: r?.patientName || null,
         tooth: r?.tooth || null,
+        rollbackCount: Number(r?.rollbackCount || 0),
       };
     });
 
@@ -264,7 +266,7 @@ export async function getLastCompletedMachiningMap(req, res) {
     const reqDocs = uniqueRequestIds.length
       ? await Request.find({ requestId: { $in: uniqueRequestIds } })
           .select(
-            "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth",
+            "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.rollbackCounts",
           )
           .lean()
       : [];
@@ -317,6 +319,9 @@ export async function getLastCompletedMachiningMap(req, res) {
         clinicName,
         patientName,
         tooth,
+        rollbackCount: Number(
+          reqDoc?.caseInfos?.rollbackCounts?.machining || 0,
+        ),
         lotNumber: {
           part: lotPart || undefined,
           final: lotFinal || undefined,
