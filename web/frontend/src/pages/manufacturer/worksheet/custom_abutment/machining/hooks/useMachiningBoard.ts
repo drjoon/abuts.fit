@@ -79,9 +79,7 @@ export const useMachiningBoard = ({
   const [machiningElapsedSecondsMap, setMachiningElapsedSecondsMap] = useState<
     Record<string, number>
   >({});
-  const machiningElapsedBaseRef = useRef<
-    Record<string, { elapsedSeconds: number; tickAtMs: number }>
-  >({});
+  const machiningElapsedBaseRef = useRef<Record<string, number>>({});
 
   const [lastCompletedMap, setLastCompletedMap] = useState<
     Record<string, LastCompletedMachining>
@@ -92,10 +90,7 @@ export const useMachiningBoard = ({
   >({});
 
   const reconcileMachiningTimersFromQueues = useCallback((map: QueueMap) => {
-    const nextBases: Record<
-      string,
-      { elapsedSeconds: number; tickAtMs: number }
-    > = {
+    const nextBases: Record<string, number> = {
       ...machiningElapsedBaseRef.current,
     };
     const nextSecondsFromQueues: Record<string, number> = {};
@@ -137,7 +132,8 @@ export const useMachiningBoard = ({
             ? Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
             : 0;
 
-      nextBases[mid] = { elapsedSeconds: baseElapsed, tickAtMs: Date.now() };
+      // 타이머 베이스를 밀리초 타임스탐프로 저장 (현재 시간 - 경과 시간)
+      nextBases[mid] = Date.now() - baseElapsed * 1000;
       nextSecondsFromQueues[mid] = baseElapsed;
 
       const rid = String((running as any)?.requestId || "").trim();
@@ -234,37 +230,6 @@ export const useMachiningBoard = ({
       });
     }
   }, [refreshProductionQueues, toast, token]);
-
-  // 1초마다 로컬 타이머를 증가시켜 Now Playing 경과 시간을 표시한다.
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const bases = machiningElapsedBaseRef.current || {};
-      const now = Date.now();
-      const updates: Record<string, number> = {};
-      for (const [mid, base] of Object.entries(bases)) {
-        if (!base || typeof base !== "object") continue;
-        updates[mid] = Math.max(
-          0,
-          Math.floor(base.elapsedSeconds + (now - base.tickAtMs) / 1000),
-        );
-      }
-
-      const keys = Object.keys(updates);
-      if (!keys.length) return;
-      setMachiningElapsedSecondsMap((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        for (const k of keys) {
-          if (next[k] !== updates[k]) {
-            next[k] = updates[k];
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, []);
 
   const [statusRefreshing, setStatusRefreshing] = useState(false);
   const [statusRefreshedAt, setStatusRefreshedAt] = useState<string | null>(
@@ -455,27 +420,33 @@ export const useMachiningBoard = ({
     void refreshLastCompletedFromServer();
   }, [refreshLastCompletedFromServer]);
 
-  // 가공 중에는 일정 주기로 queues/last-completed를 다시 불러와
-  // 완료/큐 이동을 리프레시 없이 반영한다.
+  // 가공 중에는 1초 간격으로 경과 시간을 업데이트한다.
+  // 경과 시간은 Socket.io tick 이벤트로 패치되며, 프론트엔드 타이머로 부드럽게 표시된다.
   useEffect(() => {
-    if (!token) return;
     const hasActive =
       Object.keys(machiningElapsedBaseRef.current || {}).length > 0 ||
       Object.keys(nowPlayingHintMap || {}).length > 0;
     if (!hasActive) return;
 
     const id = window.setInterval(() => {
-      void refreshProductionQueues();
-      void refreshLastCompletedFromServer();
-    }, 3000);
+      setMachiningElapsedSecondsMap((prev) => {
+        const next = { ...prev };
+        for (const mid of Object.keys(machiningElapsedBaseRef.current || {})) {
+          const base = machiningElapsedBaseRef.current[mid];
+          if (base && typeof base === "number") {
+            const elapsed = Math.max(
+              0,
+              Math.floor(((Date.now() as number) - base) / 1000),
+            );
+            next[mid] = elapsed;
+          }
+        }
+        return next;
+      });
+    }, 1000);
 
     return () => window.clearInterval(id);
-  }, [
-    token,
-    nowPlayingHintMap,
-    refreshLastCompletedFromServer,
-    refreshProductionQueues,
-  ]);
+  }, [nowPlayingHintMap]);
 
   useEffect(() => {
     if (!token) return;
@@ -497,10 +468,7 @@ export const useMachiningBoard = ({
           startedAt: String(data?.startedAt || new Date().toISOString()),
         },
       }));
-      machiningElapsedBaseRef.current[mid] = {
-        elapsedSeconds: 0,
-        tickAtMs: Date.now(),
-      };
+      machiningElapsedBaseRef.current[mid] = Date.now();
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
       void refreshProductionQueues();
     });
@@ -513,10 +481,10 @@ export const useMachiningBoard = ({
           ? Math.floor(data.elapsedSeconds)
           : null;
       if (sec == null) return;
-      machiningElapsedBaseRef.current[mid] = {
-        elapsedSeconds: sec,
-        tickAtMs: Date.now(),
-      };
+      // 서버의 경과 시간을 기준으로 타이머 베이스를 업데이트
+      // 이후 프론트엔드 타이머가 이 기준점에서 계속 진행
+      const now = Date.now();
+      machiningElapsedBaseRef.current[mid] = now - sec * 1000;
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: sec }));
     });
 
