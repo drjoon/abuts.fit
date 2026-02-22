@@ -2,6 +2,7 @@ import type { RequestBase } from "@/types/request";
 
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
+  mailboxAddress?: string | null;
 };
 
 export type ReviewStageKey =

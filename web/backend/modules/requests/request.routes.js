@@ -130,6 +130,13 @@ router.post(
   requestController.createMyBulkShipping,
 );
 
+// 발송 처리 (운송장 등록)
+router.post(
+  "/shipping/register",
+  authorize(["manufacturer", "admin"]),
+  requestController.registerShipment,
+);
+
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", requestController.getRequestById);
 

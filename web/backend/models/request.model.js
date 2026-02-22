@@ -344,6 +344,12 @@ const requestSchema = new mongoose.Schema(
       },
       updatedAt: Date, // 마지막 변경 시각
     },
+    // 가상 우편함 할당 주소 (A1A1 ~ C4C4)
+    mailboxAddress: {
+      type: String,
+      default: null,
+      index: true,
+    },
     // 생산 스케줄 (생산자 관점, 시각 단위 관리)
     productionSchedule: {
       // 예정 시각

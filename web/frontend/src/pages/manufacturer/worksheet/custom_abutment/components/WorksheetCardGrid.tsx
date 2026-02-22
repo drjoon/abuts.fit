@@ -133,9 +133,26 @@ export const WorksheetCardGrid = ({
       const rollbackCountForStage = Number(
         caseInfos.rollbackCounts?.[reviewStageKey] || 0,
       );
+
+      // packing 단계에서는 각인 이미지가 있어야 승인 가능
+      const hasEngravingImage =
+        reviewStageKey === "packing"
+          ? !!(
+              caseInfos.stageFiles?.packing?.s3Url ||
+              caseInfos.stageFiles?.packing?.filePath
+            )
+          : true;
+
       const canApproveFromRollback =
-        rollbackCountForStage > 0 ||
-        (isCamStage && Number(caseInfos.rollbackCounts?.cam || 0) > 0);
+        hasEngravingImage &&
+        (rollbackCountForStage > 0 ||
+          (isCamStage && Number(caseInfos.rollbackCounts?.cam || 0) > 0) ||
+          (reviewStageKey === "packing" &&
+            Number(caseInfos.rollbackCounts?.shipping || 0) > 0) ||
+          (reviewStageKey === "cam" &&
+            Number(caseInfos.rollbackCounts?.machining || 0) > 0) ||
+          (reviewStageKey === "request" &&
+            Number(caseInfos.rollbackCounts?.cam || 0) > 0));
 
       const lotBadgeClass = (() => {
         const s = String(stageForRollback || "").trim();
@@ -341,9 +358,11 @@ export const WorksheetCardGrid = ({
                 }}
                 aria-label="승인"
                 title={
-                  canApproveFromRollback
-                    ? "승인"
-                    : "롤백 이력이 있을 때만 승인 가능"
+                  !hasEngravingImage
+                    ? "각인 이미지가 필요합니다"
+                    : canApproveFromRollback
+                      ? "승인"
+                      : "롤백 이력이 있을 때만 승인 가능"
                 }
                 disabled={!canApproveFromRollback}
               >

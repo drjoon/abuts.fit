@@ -25,6 +25,7 @@ import {
   bumpRollbackCount,
   ensureReviewByStageDefaults,
 } from "./utils.js";
+import { allocateVirtualMailboxAddress } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
@@ -95,6 +96,10 @@ const revertManufacturerStageByReviewStage = (request, stage) => {
   const prevStage = prevMap[stage];
   if (prevStage) {
     applyStatusMapping(request, prevStage);
+  }
+  // 포장.발송 단계에서 롤백할 때 우편함 주소 해제
+  if (stage === "shipping") {
+    request.mailboxAddress = null;
   }
 };
 
@@ -491,6 +496,18 @@ export async function updateReviewStatusByStage(req, res) {
 
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
+          if (!request.mailboxAddress) {
+            try {
+              // 의뢰자 organization ID를 전달하여 같은 의뢰자의 요청들을 같은 우편함으로 그룹화
+              const requestorOrgId =
+                request.requestor?.organization?._id ||
+                request.requestor?.organization;
+              request.mailboxAddress =
+                await allocateVirtualMailboxAddress(requestorOrgId);
+            } catch (err) {
+              console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+            }
+          }
         }
 
         if (effectiveStage === "cam") {

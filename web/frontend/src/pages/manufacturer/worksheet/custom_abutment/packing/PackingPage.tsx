@@ -402,6 +402,18 @@ export const PackingPage = ({
     [handleUploadStageFile],
   );
 
+  const handleCardApprove = useCallback(
+    (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+      void handleUpdateReviewStatus({
+        req,
+        status: "APPROVED",
+        stageOverride: "packing",
+      });
+    },
+    [handleUpdateReviewStatus],
+  );
+
   const handleCardRollback = useCallback(
     (req: ManufacturerRequest) => {
       if (!req?._id) return;
@@ -426,7 +438,7 @@ export const PackingPage = ({
         return;
       }
 
-      if (stage === "발송") {
+      if (stage === "발송" || stage === "포장.발송") {
         void handleUpdateReviewStatus({
           req,
           status: "PENDING",
@@ -666,6 +678,7 @@ export const PackingPage = ({
               onDeleteCam={() => {}}
               onDeleteNc={handleDeleteNc}
               onRollback={handleCardRollback}
+              onApprove={handleCardApprove}
               uploadProgress={uploadProgress}
               isCamStage={false}
               isMachiningStage={false}
@@ -674,6 +687,7 @@ export const PackingPage = ({
               deletingCam={{}}
               deletingNc={deletingNc}
               currentStageOrder={currentStageOrder}
+              tabStage="packing"
             />
 
             <div ref={sentinelRef} className="py-4 text-center text-gray-500">

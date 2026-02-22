@@ -1,5 +1,7 @@
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import { Types } from "mongoose";
 import {
   buildRequestorOrgScopeFilter,
   calculateExpressShipYmd,
@@ -14,6 +16,7 @@ import {
   normalizeRequestStageLabel,
   REQUEST_STAGE_GROUPS,
   getRequestorOrgId,
+  ensureReviewByStageDefaults,
 } from "./utils.js";
 
 const __cache = new Map();
@@ -447,6 +450,100 @@ export async function getMyBulkShipping(req, res) {
   }
 }
 
+/**
+ * 발송 처리 (운송장 번호 등록 및 상태 변경)
+ * @route POST /api/requests/shipping/register
+ */
+export async function registerShipment(req, res) {
+  try {
+    const { requestIds, trackingNumber, carrier = "hanjin" } = req.body || {};
+
+    if (!Array.isArray(requestIds) || requestIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "선택된 의뢰가 없습니다.",
+      });
+    }
+
+    if (!trackingNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "운송장 번호가 필요합니다.",
+      });
+    }
+
+    const requests = await Request.find({
+      requestId: { $in: requestIds },
+      manufacturerStage: "포장.발송",
+    });
+
+    if (!requests.length) {
+      return res.status(404).json({
+        success: false,
+        message: "조건에 맞는 의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    const updatedIds = [];
+
+    for (const r of requests) {
+      // 1. Create or update DeliveryInfo
+      let deliveryInfo = null;
+      if (r.deliveryInfoRef) {
+        deliveryInfo = await DeliveryInfo.findById(r.deliveryInfoRef);
+      }
+
+      if (!deliveryInfo) {
+        deliveryInfo = await DeliveryInfo.create({
+          request: r._id,
+          trackingNumber,
+          carrier,
+          shippedAt: new Date(),
+        });
+        r.deliveryInfoRef = deliveryInfo._id;
+      } else {
+        deliveryInfo.trackingNumber = trackingNumber;
+        deliveryInfo.carrier = carrier;
+        if (!deliveryInfo.shippedAt) deliveryInfo.shippedAt = new Date();
+        await deliveryInfo.save();
+      }
+
+      // 2. Update Review Stage
+      ensureReviewByStageDefaults(r);
+      r.caseInfos.reviewByStage.shipping = {
+        ...r.caseInfos.reviewByStage.shipping,
+        status: "APPROVED",
+        updatedAt: new Date(),
+        updatedBy: req.user?._id,
+        reason: "",
+      };
+
+      // 3. Move to Tracking Stage
+      applyStatusMapping(r, "추적관리");
+
+      // 4. Clear mailbox address
+      r.mailboxAddress = null;
+
+      await r.save();
+      updatedIds.push(r.requestId);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${updatedIds.length}건의 의뢰가 발송 처리되었습니다.`,
+      data: {
+        updatedIds,
+      },
+    });
+  } catch (error) {
+    console.error("Error in registerShipment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "발송 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
 /**
  * 묶음 배송 생성/신청 (의뢰자용)
  * @route POST /api/requests/my/bulk-shipping

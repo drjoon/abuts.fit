@@ -43,6 +43,8 @@ import {
   getAcceptByStage,
   getDiameterBucketIndex,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import { MailboxGrid } from "../shipping/components/MailboxGrid";
+import { MailboxContentsModal } from "../shipping/components/MailboxContentsModal";
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
 import { MachiningQueueBoard } from "../machining/MachiningQueueBoard";
 import { PreviewModal } from "./PreviewModal";
@@ -116,6 +118,11 @@ export const RequestPage = ({
   const visibleCountRef = useRef(9);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const totalCountRef = useRef(0);
+  const [mailboxModalOpen, setMailboxModalOpen] = useState(false);
+  const [mailboxModalAddress, setMailboxModalAddress] = useState("");
+  const [mailboxModalRequests, setMailboxModalRequests] = useState<
+    ManufacturerRequest[]
+  >([]);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -522,12 +529,14 @@ export const RequestPage = ({
   const enableCardRollback =
     tabStage === "cam" ||
     tabStage === "machining" ||
+    tabStage === "packing" ||
     tabStage === "shipping" ||
     tabStage === "tracking";
 
   const enableCardApprove =
     tabStage === "cam" ||
     tabStage === "machining" ||
+    tabStage === "packing" ||
     tabStage === "shipping" ||
     tabStage === "tracking";
 
@@ -782,205 +791,21 @@ export const RequestPage = ({
     requestAnimationFrame(maybeFill);
   }, [visibleCount, filteredAndSorted.length]);
 
-  const groupedByShippingPackage = useMemo(() => {
-    if (tabStage !== "shipping") return null;
-    const map = new Map<string, ManufacturerRequest[]>();
-    for (const r of paginatedRequests) {
-      const key = String(r.shippingPackageId || "").trim() || "unassigned";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
-    }
-    return map;
-  }, [paginatedRequests, tabStage]);
+  const handleRegisterShipment = useCallback(
+    async (address: string, reqs: ManufacturerRequest[]) => {
+      if (!reqs.length) return;
+      setMailboxModalAddress(address);
+      setMailboxModalRequests(reqs);
+      setMailboxModalOpen(true);
+    },
+    [],
+  );
 
-  const handleDownloadShippingToday = useCallback(async () => {
-    if (tabStage !== "shipping") return;
-
-    // 박스 단위 그룹핑: shippingPackageId 기준, 미배정(unassigned)은 제외
-    const boxMap = new Map<string, ManufacturerRequest[]>();
-    for (const r of filteredAndSorted) {
-      const rawKey = String(r.shippingPackageId || "").trim();
-      if (!rawKey) continue;
-      if (!boxMap.has(rawKey)) boxMap.set(rawKey, []);
-      boxMap.get(rawKey)!.push(r);
-    }
-
-    const totalBoxCount = boxMap.size;
-    const totalRequestCount = Array.from(boxMap.values()).reduce(
-      (sum, reqs) => sum + reqs.length,
-      0,
-    );
-
-    if (totalBoxCount === 0 || totalRequestCount === 0) {
-      toast({
-        title: "접수할 박스가 없습니다",
-        description: "발송 박스가 배정된 의뢰가 없습니다.",
-      });
-      return;
-    }
-
-    // 컨펌 모달 띄우기
-    setConfirmTitle("모든 박스 접수 확인");
-    setConfirmDescription(
-      <div className="space-y-2">
-        <p>
-          총 <span className="font-semibold">{totalBoxCount}개 박스</span>(
-          {totalRequestCount}건)를 접수하시겠습니까?
-        </p>
-        <p className="text-sm text-slate-600">
-          접수하면 모든 의뢰건이 일괄 승인되어 추적관리 탭으로 이동합니다.
-        </p>
-      </div>,
-    );
-    setConfirmOpen(true);
-    setConfirmAction(() => async () => {
-      try {
-        if (!token) {
-          throw new Error("로그인이 필요합니다.");
-        }
-
-        // 1. 모든 의뢰건 일괄 승인 (토스트/리프레시 없이 직접 호출)
-        //    - 택배 접수 완료 시 다음 단계(추적관리)로 이동해야 하므로 tracking 을 승인한다.
-        const allRequests = Array.from(boxMap.values()).flat();
-        const tasks = await Promise.allSettled(
-          allRequests.map(async (req) => {
-            const res = await fetch(`/api/requests/${req._id}/review-status`, {
-              method: "PATCH",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                stage: "tracking",
-                status: "APPROVED",
-                reason: "",
-              }),
-            });
-            if (!res.ok) {
-              const body: any = await res.json().catch(() => ({}));
-              throw new Error(body?.message || body?.error || "승인 실패");
-            }
-          }),
-        );
-
-        const failedCount = tasks.filter((t) => t.status === "rejected").length;
-        if (failedCount > 0) {
-          throw new Error(
-            `${failedCount}건 승인에 실패했습니다. 잠시 후 다시 시도해주세요.`,
-          );
-        }
-
-        // 2. 엑셀 다운로드
-        const { utils, writeFileXLSX } = await import("xlsx");
-        const today = toKstYmd(new Date()) || "";
-
-        const header = [
-          "기공소명",
-          "전화1",
-          "",
-          "전화2",
-          "",
-          "주소",
-          "박스수량",
-          "종류",
-          "",
-          "결제",
-        ];
-
-        const aoa: (string | number)[][] = [header];
-
-        for (const [, reqs] of boxMap.entries()) {
-          const sample = reqs[0];
-          if (!sample) continue;
-
-          const ci: any = sample.caseInfos || {};
-          const name =
-            ci.clinicName ||
-            sample.requestor?.organization ||
-            sample.requestor?.name ||
-            "";
-
-          const orgPhone = (sample as any)?.requestorOrganization?.extracted
-            ?.phoneNumber as string | undefined;
-          const userPhone = sample.requestor?.phoneNumber as string | undefined;
-          const phone = (ci as any)?.phone || orgPhone || userPhone || "";
-
-          const di = (sample.deliveryInfoRef || null) as any;
-          const addrObj = di?.address as
-            | {
-                street?: string;
-                city?: string;
-                state?: string;
-                zipCode?: string;
-                country?: string;
-              }
-            | undefined;
-          const diAddr = addrObj
-            ? [
-                addrObj.street,
-                addrObj.city,
-                addrObj.state,
-                addrObj.zipCode,
-                addrObj.country,
-              ]
-                .filter(Boolean)
-                .join(" ")
-            : "";
-
-          const orgAddr = (sample as any)?.requestorOrganization?.extracted
-            ?.address as string | undefined;
-
-          const addr = (ci as any)?.address || diAddr || orgAddr || "";
-
-          aoa.push([
-            name,
-            phone,
-            "",
-            phone,
-            "",
-            addr,
-            "1",
-            "의료기기",
-            "",
-            "신용",
-          ]);
-        }
-
-        const sheet = utils.aoa_to_sheet(aoa);
-        const wb = utils.book_new();
-        utils.book_append_sheet(wb, sheet, "배송");
-        writeFileXLSX(wb, `애크로덴트-${today}.xlsx`);
-
-        await fetchRequests();
-        setSearchParams((prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("stage", "tracking");
-          return next;
-        });
-
-        toast({
-          title: "접수 완료",
-          description: `총 ${totalBoxCount}개 박스(${totalRequestCount}건) 접수 완료`,
-        });
-      } catch (err: any) {
-        toast({
-          title: "접수 실패",
-          description:
-            err?.message || "접수/다운로드 처리 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        setConfirmAction(null);
-      }
-    });
-  }, [
-    filteredAndSorted,
-    fetchRequests,
-    setSearchParams,
-    tabStage,
-    toast,
-    token,
-  ]);
+  const handleShipmentModalClose = useCallback(() => {
+    setMailboxModalOpen(false);
+    setMailboxModalAddress("");
+    setMailboxModalRequests([]);
+  }, []);
 
   const diameterQueueForReceive = useMemo(() => {
     const labels: DiameterBucketKey[] = ["6", "8", "10", "12"];
@@ -1078,133 +903,21 @@ export const RequestPage = ({
         )}
 
         <div className="space-y-4 mt-6">
-          {tabStage === "shipping" && (
-            <div className="flex justify-end">
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleDownloadShippingToday}
-              >
-                오늘 택배 접수
-              </Button>
-            </div>
-          )}
-
           <div className="pb-12 pt-2">
             {tabStage === "machining" ? (
               <MachiningQueueBoard searchQuery={worksheetSearch} />
+            ) : tabStage === "shipping" ? (
+              <div className="space-y-8">
+                <MailboxGrid
+                  requests={filteredAndSorted.filter((r) => r.mailboxAddress)}
+                  onBoxClick={(address, reqs) =>
+                    handleRegisterShipment(address, reqs)
+                  }
+                />
+              </div>
             ) : isEmpty ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-10 text-center text-slate-500">
                 표시할 의뢰가 없습니다.
-              </div>
-            ) : tabStage === "shipping" && groupedByShippingPackage ? (
-              <div className="space-y-4">
-                {Array.from(groupedByShippingPackage.entries()).map(
-                  ([key, reqs]) => {
-                    const sample = reqs[0];
-                    if (!sample) return null;
-                    const org =
-                      sample?.requestor?.organization ||
-                      sample?.requestor?.name ||
-                      sample?.requestor?._id ||
-                      "기공소 미지정";
-                    const pickup =
-                      sample?.productionSchedule?.scheduledShipPickup;
-                    const shipYmd = pickup
-                      ? toKstYmd(new Date(pickup)) || "-"
-                      : "-";
-                    const title =
-                      key === "unassigned"
-                        ? "발송 박스 미배정"
-                        : `발송 박스 ${String(key).slice(-6)}`;
-                    return (
-                      <div
-                        key={key}
-                        className="app-glass-card app-glass-card--xl flex flex-col space-y-3"
-                      >
-                        <div className="flex items-center justify-between gap-2 px-4 pt-4">
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-semibold text-slate-800">
-                              {title}
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
-                            >
-                              {org}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
-                            >
-                              발송 {shipYmd}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] bg-blue-50 text-blue-700 border-blue-200 font-semibold"
-                            >
-                              {reqs.length}건
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                reqs.forEach((r) => handleCardRollback(r));
-                              }}
-                              aria-label="롤백"
-                              title="모든 의뢰 롤백"
-                            >
-                              ←
-                            </button>
-                            <button
-                              type="button"
-                              className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                reqs.forEach((r) => handleCardApprove(r));
-                              }}
-                              aria-label="승인"
-                              title="모든 의뢰 승인"
-                            >
-                              →
-                            </button>
-                          </div>
-                        </div>
-                        <div className="px-4 pb-4">
-                          <WorksheetCardGrid
-                            requests={reqs}
-                            onDownload={handleDownloadOriginal}
-                            onOpenPreview={handleOpenPreview}
-                            onDeleteCam={handleDeleteCam}
-                            onDeleteNc={handleDeleteNc}
-                            onRollback={
-                              enableCardRollback
-                                ? handleCardRollback
-                                : undefined
-                            }
-                            onApprove={
-                              enableCardApprove ? handleCardApprove : undefined
-                            }
-                            onUploadNc={handleUploadNc}
-                            uploadProgress={uploadProgress}
-                            uploading={uploading}
-                            deletingCam={deletingCam}
-                            deletingNc={deletingNc}
-                            isCamStage={isCamStage}
-                            isMachiningStage={isMachiningStage}
-                            downloading={downloading}
-                            currentStageOrder={currentStageOrder}
-                          />
-                        </div>
-                      </div>
-                    );
-                  },
-                )}
               </div>
             ) : (
               <WorksheetCardGrid
@@ -1258,6 +971,14 @@ export const RequestPage = ({
         queues={diameterQueueForReceive.buckets}
         selectedBucket={receiveSelectedBucket}
         onSelectBucket={setReceiveSelectedBucket}
+      />
+
+      <MailboxContentsModal
+        open={mailboxModalOpen}
+        onOpenChange={handleShipmentModalClose}
+        address={mailboxModalAddress}
+        requests={mailboxModalRequests}
+        onRollback={handleCardRollback}
       />
 
       <PreviewModal
