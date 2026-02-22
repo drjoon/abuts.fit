@@ -92,14 +92,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="BridgeShared.cs" />
-    <Compile Include="Controllers\AlarmsController.cs" />
-    <Compile Include="Controllers\StatusController.cs" />
-    <Compile Include="Controllers\ControlController.cs" />
-    <Compile Include="Controllers\ProgramsController.cs" />
-    <Compile Include="Controllers\JobsController.cs" />
-    <Compile Include="Controllers\ContinuousController.cs" />
-    <Compile Include="Controllers\RawController.cs" />
+    <Compile Include="Controllers\BridgeController.cs" />
     <Compile Include="Controllers\BridgeMaterialController.cs" />
     <Compile Include="Controllers\BridgeStoreController.cs" />
     <Compile Include="Controllers\BridgeProcessController.cs" />
@@ -118,6 +111,7 @@
     <Compile Include="Mode1Api.cs" />
     <Compile Include="Mode1HandleStore.cs" />
     <Compile Include="Controllers\MachinesController.cs" />
+    <Compile Include="Controllers\ControlController.cs" />
     <Compile Include="BridgeAuthHandler.cs" />
     <Compile Include="Models\MachineConfigItem.cs" />
     <Compile Include="MachineMaterialStore.cs" />
