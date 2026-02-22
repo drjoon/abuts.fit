@@ -13,8 +13,14 @@ import type { MachineQueueCardProps, QueueItem } from "../types";
 import { formatMachiningLabel } from "../utils/label";
 import { MachiningRequestLabel } from "./MachiningRequestLabel";
 
-const isMachiningStatus = (status?: string) => {
-  const s = String(status || "").trim();
+const isMachiningStatus = (slot?: QueueItem) => {
+  const s = String(slot?.status || "").trim();
+  const recStatus = String(slot?.machiningRecord?.status || "")
+    .trim()
+    .toUpperCase();
+  if (recStatus) {
+    if (["RUNNING", "PROCESSING"].includes(recStatus)) return true;
+  }
   return s === "생산" || s === "가공";
 };
 
@@ -90,7 +96,7 @@ export const MachineQueueCard = ({
   useToast();
 
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
-    isMachiningStatus(q?.status),
+    isMachiningStatus(q),
   );
 
   const { currentSlot, nextSlot } = useMemo(() => {
