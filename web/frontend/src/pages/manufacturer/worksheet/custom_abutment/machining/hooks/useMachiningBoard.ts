@@ -408,7 +408,7 @@ export const useMachiningBoard = ({
       if (!res.ok || body?.success === false) return;
       const map =
         body?.data && typeof body.data === "object" ? (body.data as any) : {};
-      setLastCompletedMap(map);
+      setLastCompletedMap((prev) => ({ ...prev, ...map }));
     } catch {
       // ignore
     }
@@ -491,61 +491,27 @@ export const useMachiningBoard = ({
 
       const rid = data?.requestId != null ? String(data.requestId).trim() : "";
       const jid = data?.jobId != null ? String(data.jobId).trim() : "";
-      const jobs = Array.isArray(queueMapRef.current?.[mid])
-        ? queueMapRef.current[mid]
-        : [];
-      const found = jobs.find((j) => {
-        if (!j || typeof j !== "object") return false;
-        const qRid = String((j as any)?.requestId || "").trim();
-        if (rid && qRid === rid) return true;
-        const qJobId = String((j as any)?.jobId || (j as any)?.id || "").trim();
-        if (jid && qJobId === jid) return true;
-        return false;
-      });
 
       // 완료된 건을 즉시 lastCompletedMap에 추가하여 Complete 섹션에 바로 표시
-      // Socket.io 이벤트 데이터를 직접 사용하여 플리커링 방지
       const elapsedSec = machiningElapsedSecondsMap[mid] || 0;
-      const nowPlaying = nowPlayingHintMap[mid];
-
-      console.log("[onCncMachiningCompleted] event received", {
-        mid,
-        rid,
-        jid,
-        elapsedSec,
-        nowPlaying,
-        found: !!found,
-        ridCheck: !!rid,
-      });
 
       if (rid) {
-        console.log(
-          "[onCncMachiningCompleted] rid is truthy, calling setLastCompletedMap",
-        );
-        setLastCompletedMap((prev) => {
-          const updated = {
-            ...prev,
-            [mid]: {
-              machineId: mid,
-              jobId: jid || null,
-              requestId: rid,
-              displayLabel: rid,
-              clinicName: "",
-              patientName: "",
-              tooth: "",
-              rollbackCount: 0,
-              lotNumber: {},
-              completedAt: new Date().toISOString(),
-              durationSeconds: elapsedSec,
-            },
-          };
-          console.log("[lastCompletedMap updated]", updated);
-          return updated;
-        });
-      } else {
-        console.log(
-          "[onCncMachiningCompleted] rid is falsy, skipping setLastCompletedMap",
-        );
+        setLastCompletedMap((prev) => ({
+          ...prev,
+          [mid]: {
+            machineId: mid,
+            jobId: jid || null,
+            requestId: rid,
+            displayLabel: rid,
+            clinicName: "",
+            patientName: "",
+            tooth: "",
+            rollbackCount: 0,
+            lotNumber: {},
+            completedAt: new Date().toISOString(),
+            durationSeconds: elapsedSec,
+          },
+        }));
       }
 
       setNowPlayingHintMap((prev) => {
@@ -571,9 +537,10 @@ export const useMachiningBoard = ({
 
           // 모든 의뢰건이 완료되면 자동 가공 OFF
           if (next[mid].length === 0) {
-            console.log(
-              "[onCncMachiningCompleted] All items completed, disabling auto-machining",
-              { mid },
+            setMachines((prevList) =>
+              prevList.map((m) =>
+                m.uid === mid ? { ...m, allowAutoMachining: false } : m,
+              ),
             );
             void (async () => {
               try {
@@ -585,16 +552,18 @@ export const useMachiningBoard = ({
                   },
                   body: JSON.stringify({ allowAutoMachining: false }),
                 });
-                if (res.ok) {
-                  console.log(
-                    "[onCncMachiningCompleted] Auto-machining disabled",
-                    { mid },
+                if (!res.ok) {
+                  setMachines((prevList) =>
+                    prevList.map((m) =>
+                      m.uid === mid ? { ...m, allowAutoMachining: true } : m,
+                    ),
                   );
                 }
-              } catch (e) {
-                console.error(
-                  "[onCncMachiningCompleted] Failed to disable auto-machining",
-                  e,
+              } catch {
+                setMachines((prevList) =>
+                  prevList.map((m) =>
+                    m.uid === mid ? { ...m, allowAutoMachining: true } : m,
+                  ),
                 );
               }
             })();
