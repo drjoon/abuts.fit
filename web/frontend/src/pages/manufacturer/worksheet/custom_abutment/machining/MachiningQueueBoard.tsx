@@ -131,7 +131,7 @@ export const MachiningQueueBoard = ({
           </div>
         </div>
         <div
-          className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3"
+          className="flex items-center gap-3"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
           <button

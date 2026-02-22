@@ -1,9 +1,0 @@
-{
-  "LambdaFunctionConfigurations": [
-    {
-      "Id": "abuts-email-inbound",
-      "LambdaFunctionArn": "arn:aws:lambda:ap-south-1:106055905364:function:ABUTS-EMAIL-INBOUND",
-      "Events": ["s3:ObjectCreated:*"]
-    }
-  ]
-}

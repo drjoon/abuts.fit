@@ -133,7 +133,9 @@ export const WorksheetCardGrid = ({
       const rollbackCountForStage = Number(
         caseInfos.rollbackCounts?.[reviewStageKey] || 0,
       );
-      const canApproveFromRollback = rollbackCountForStage > 0;
+      const canApproveFromRollback =
+        rollbackCountForStage > 0 ||
+        (isCamStage && Number(caseInfos.rollbackCounts?.cam || 0) > 0);
 
       const lotBadgeClass = (() => {
         const s = String(stageForRollback || "").trim();

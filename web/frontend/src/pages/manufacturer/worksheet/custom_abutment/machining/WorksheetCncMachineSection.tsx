@@ -600,8 +600,15 @@ export const WorksheetCncMachineSection = ({
 
     void loadQueues();
 
+    const handleQueuesUpdated = () => {
+      void loadQueues();
+    };
+
+    window.addEventListener("cnc-queues-updated", handleQueuesUpdated);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("cnc-queues-updated", handleQueuesUpdated);
     };
   }, [mergedMachines, token]);
 

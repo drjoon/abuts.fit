@@ -151,18 +151,15 @@ export async function reassignProductionQueues(req, res) {
     for (const uid of allowAssignSet) {
       queueCounts.set(uid, 0);
     }
-    for (const reqItem of requests) {
-      const uid = String(
-        reqItem?.productionSchedule?.assignedMachine || "",
-      ).trim();
-      if (uid && queueCounts.has(uid)) {
-        queueCounts.set(uid, (queueCounts.get(uid) || 0) + 1);
-      }
-    }
 
     const assignmentsByMachine = new Map();
     const ops = [];
-    for (const reqItem of requests) {
+    const sortedRequests = [...requests].sort((a, b) => {
+      const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
+      const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
+      return aTime - bTime;
+    });
+    for (const reqItem of sortedRequests) {
       const group = inferDiameterGroup(reqItem);
       const candidates = machinesByGroup.get(group) || [];
       if (!candidates.length) continue;

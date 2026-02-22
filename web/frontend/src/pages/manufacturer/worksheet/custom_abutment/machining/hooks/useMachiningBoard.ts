@@ -221,6 +221,7 @@ export const useMachiningBoard = ({
         throw new Error(body?.message || "생산 큐 재배정 실패");
       }
       await refreshProductionQueues();
+      window.dispatchEvent(new Event("cnc-queues-updated"));
       toast({
         title: "재배정 완료",
         description: "현재 설정 기준으로 생산 큐를 재배정했습니다.",
@@ -422,6 +423,7 @@ export const useMachiningBoard = ({
     void (async () => {
       try {
         await refreshProductionQueues();
+        window.dispatchEvent(new Event("cnc-queues-updated"));
       } catch {
         // ignore
       } finally {
@@ -870,6 +872,7 @@ export const useMachiningBoard = ({
         }
 
         await refreshProductionQueues();
+        window.dispatchEvent(new Event("cnc-queues-updated"));
       } catch (e: any) {
         toast({
           title: "CAM으로 되돌리기 실패",

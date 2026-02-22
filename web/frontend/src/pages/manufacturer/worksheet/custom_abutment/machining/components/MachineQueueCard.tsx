@@ -490,7 +490,7 @@ export const MachineQueueCard = ({
                 {nextSlot?.requestId ? (
                   <button
                     type="button"
-                    className="inline-flex h-8 px-2 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!onRollbackNextUp) return;
@@ -498,8 +498,9 @@ export const MachineQueueCard = ({
                       if (!rid) return;
                       onRollbackNextUp(rid, machineId);
                     }}
+                    title="CAM으로 되돌리기"
                   >
-                    <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+                    <ArrowLeft className="h-3.5 w-3.5" />
                   </button>
                 ) : null}
               </div>
