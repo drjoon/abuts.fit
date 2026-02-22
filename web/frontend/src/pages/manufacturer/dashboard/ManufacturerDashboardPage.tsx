@@ -57,9 +57,30 @@ export const ManufacturerDashboardPage = () => {
     retry: false,
   });
 
+  const { data: managementStatusResponse } = useQuery({
+    queryKey: ["manufacturer-dashboard-management-status"],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const res = await apiFetch<any>({
+        path: `/api/manufacturer/management-status`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) {
+        throw new Error("관리 상태 조회에 실패했습니다.");
+      }
+      return res.data;
+    },
+    retry: false,
+  });
+
   const riskSummary = riskSummaryResponse?.success
     ? (riskSummaryResponse.data?.riskSummary ?? null)
     : null;
+
+  const managementStatus = managementStatusResponse?.success
+    ? (managementStatusResponse.data?.status ?? {})
+    : {};
 
   const stats = [
     {
@@ -107,8 +128,8 @@ export const ManufacturerDashboardPage = () => {
       href: "/dashboard/cnc",
       icon: Boxes,
       meta: ["소재 재고/교체 예약"],
-      hasIssue: false,
-      status: "이상 없음",
+      hasIssue: managementStatus.material?.hasIssue ?? false,
+      status: managementStatus.material?.status ?? "이상 없음",
     },
     {
       key: "tools",
@@ -117,8 +138,8 @@ export const ManufacturerDashboardPage = () => {
       href: "/dashboard/cnc",
       icon: Wrench,
       meta: ["마모/교체 주기 확인"],
-      hasIssue: false,
-      status: "이상 없음",
+      hasIssue: managementStatus.tools?.hasIssue ?? false,
+      status: managementStatus.tools?.status ?? "이상 없음",
     },
     {
       key: "machines",
@@ -127,8 +148,8 @@ export const ManufacturerDashboardPage = () => {
       href: "/dashboard/cnc",
       icon: Factory,
       meta: ["장비 상태/알람 확인"],
-      hasIssue: false,
-      status: "이상 없음",
+      hasIssue: managementStatus.machines?.hasIssue ?? false,
+      status: managementStatus.machines?.status ?? "이상 없음",
     },
     {
       key: "products",
@@ -137,8 +158,8 @@ export const ManufacturerDashboardPage = () => {
       href: "/dashboard/products",
       icon: PackageCheck,
       meta: ["프로파일/템플릿 관리"],
-      hasIssue: false,
-      status: "이상 없음",
+      hasIssue: managementStatus.products?.hasIssue ?? false,
+      status: managementStatus.products?.status ?? "이상 없음",
     },
   ];
 
@@ -154,53 +175,47 @@ export const ManufacturerDashboardPage = () => {
         }
         topSection={
           <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 items-stretch">
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardContent>
-                  <div className="grid grid-cols-1 gap-3 mt-6">
-                    {managementCards.map((item) => (
-                      <div
-                        key={item.key}
-                        onClick={() => navigate(item.href)}
-                        className="cursor-pointer app-surface app-surface--item"
-                      >
-                        <div className="flex items-center gap-3">
-                          <item.icon className="h-4 w-4 text-primary" />
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <div className="text-sm font-semibold text-slate-900">
-                                {item.label}
-                              </div>
-                              <span
-                                className={`text-[11px] font-semibold ${
-                                  item.hasIssue
-                                    ? "text-red-600"
-                                    : "text-green-600"
-                                }`}
-                              >
-                                {item.hasIssue
-                                  ? item.status || "이상 있음"
-                                  : "이상 없음"}
-                              </span>
-                            </div>
-                            <div className="text-xs text-muted-foreground flex flex-col gap-1">
-                              <span>{item.description}</span>
-                              {item.meta?.map((line) => (
-                                <span
-                                  key={line}
-                                  className="text-[11px] text-slate-500"
-                                >
-                                  {line}
-                                </span>
-                              ))}
-                            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
+              {managementCards.map((item) => (
+                <Card
+                  key={item.key}
+                  onClick={() => navigate(item.href)}
+                  className="app-glass-card app-glass-card--lg cursor-pointer"
+                >
+                  <CardContent className="pt-6">
+                    <div className="flex items-start gap-3">
+                      <item.icon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="text-sm font-semibold text-slate-900">
+                            {item.label}
                           </div>
+                          <span
+                            className={`text-[11px] font-semibold whitespace-nowrap ${
+                              item.hasIssue ? "text-red-600" : "text-green-600"
+                            }`}
+                          >
+                            {item.hasIssue
+                              ? item.status || "이상 있음"
+                              : "이상 없음"}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground flex flex-col gap-1">
+                          <span>{item.description}</span>
+                          {item.meta?.map((line) => (
+                            <span
+                              key={line}
+                              className="text-[11px] text-slate-500"
+                            >
+                              {line}
+                            </span>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           </div>
         }

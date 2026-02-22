@@ -9,6 +9,7 @@ import {
   getManufacturerDailySettlementSnapshotStatus,
   triggerManufacturerDailySettlementSnapshotRecalc,
 } from "../../controllers/manufacturers/manufacturer.controller.js";
+import { getManagementStatus } from "./manufacturer.controller.js";
 import {
   sendVerificationCode,
   verifyCode,
@@ -18,6 +19,15 @@ const router = Router();
 
 router.use(authenticate);
 router.use(authorize(["manufacturer", "admin"]));
+
+// 관리 상태 조회
+router.get(
+  "/management-status",
+  authorize(["manufacturer", "admin"], {
+    manufacturerRoles: ["owner", "staff"],
+  }),
+  getManagementStatus,
+);
 
 // 입금 내역 기록 (금전 관련: manufacturer owner만)
 router.post(
