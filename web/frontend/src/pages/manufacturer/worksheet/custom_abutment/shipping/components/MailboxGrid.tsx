@@ -21,6 +21,12 @@ const mockRequestPickup = async (mailboxAddresses: string[]) => {
   return new Promise((resolve) => setTimeout(resolve, 500));
 };
 
+const mockCancelPickup = async (mailboxAddresses: string[]) => {
+  console.log("↩️ 택배 수거 취소 API 호출 (Mock):", mailboxAddresses);
+  // TODO: 택배사 API 연결
+  return new Promise((resolve) => setTimeout(resolve, 500));
+};
+
 export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   const { toast } = useToast();
   // 선반: 가로 A~X (3개씩 묶음) / 세로 1~4
@@ -43,6 +49,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   );
   const [isPrinting, setIsPrinting] = useState(false);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
+  const [pickupRequested, setPickupRequested] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -170,13 +177,13 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     }
   };
 
-  // Handle requesting pickup
-  const handleRequestPickup = async () => {
+  // Handle requesting or cancelling pickup
+  const handlePickupAction = async () => {
     const printedAddresses = occupiedAddresses.filter((addr) =>
       printedMailboxes.has(addr),
     );
 
-    if (printedAddresses.length === 0) {
+    if (!pickupRequested && printedAddresses.length === 0) {
       toast({
         title: "접수 불가",
         description:
@@ -188,22 +195,45 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
 
     setIsRequestingPickup(true);
     try {
-      await mockRequestPickup(printedAddresses);
-      toast({
-        title: "택배 수거 접수 완료",
-        description: `${printedAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
-      });
+      if (!pickupRequested) {
+        await mockRequestPickup(printedAddresses);
+        setPickupRequested(true);
+        toast({
+          title: "택배 수거 접수 완료",
+          description: `${printedAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
+        });
+      } else {
+        await mockCancelPickup(Array.from(printedMailboxes));
+        setPickupRequested(false);
+        toast({
+          title: "택배 수거 접수 취소",
+          description: "택배 수거 접수가 취소되었습니다.",
+        });
+      }
     } catch (error) {
-      console.error("택배 수거 접수 실패:", error);
+      console.error("택배 수거 처리 실패:", error);
       toast({
-        title: "택배 수거 접수 실패",
-        description: "택배 수거 접수에 실패했습니다.",
+        title: pickupRequested ? "취소 실패" : "택배 수거 접수 실패",
+        description: pickupRequested
+          ? "택배 수거 접수 취소에 실패했습니다."
+          : "택배 수거 접수에 실패했습니다.",
         variant: "destructive",
       });
     } finally {
       setIsRequestingPickup(false);
     }
   };
+
+  const canRequestPickup =
+    occupiedAddresses.filter((addr) => printedMailboxes.has(addr)).length > 0;
+
+  const pickupButtonLabel = isRequestingPickup
+    ? pickupRequested
+      ? "취소 중..."
+      : "접수 중..."
+    : pickupRequested
+      ? "↩️ 접수 취소"
+      : "🚚 택배 접수";
 
   return (
     <div className="w-full flex flex-col h-full relative">
@@ -223,21 +253,19 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
             {isPrinting ? "출력 중..." : "📦 운송장 출력"}
           </button>
           <button
-            onClick={handleRequestPickup}
+            onClick={handlePickupAction}
             disabled={
-              isRequestingPickup ||
-              occupiedAddresses.filter((addr) => printedMailboxes.has(addr))
-                .length === 0
+              isRequestingPickup || (!pickupRequested && !canRequestPickup)
             }
             className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
-              isRequestingPickup ||
-              occupiedAddresses.filter((addr) => printedMailboxes.has(addr))
-                .length === 0
+              isRequestingPickup || (!pickupRequested && !canRequestPickup)
                 ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
+                : pickupRequested
+                  ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 shadow-sm"
+                  : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
             }`}
           >
-            {isRequestingPickup ? "접수 중..." : "🚚 택배 수거 접수"}
+            {pickupButtonLabel}
           </button>
         </div>
 
