@@ -17,15 +17,9 @@ const addWeekdays = (startDate: Date, days: number) => {
   return current;
 };
 
-const calculateExpressDate = (maxDiameter?: number) => {
+const calculateExpressDate = () => {
   const base = new Date();
-  const d =
-    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
-      ? maxDiameter
-      : null;
-
-  const days = d != null && d >= 10 ? 4 : 1;
-  const shipDate = addWeekdays(base, days);
+  const shipDate = addWeekdays(base, 1);
   return toKstYmd(shipDate) || "";
 };
 

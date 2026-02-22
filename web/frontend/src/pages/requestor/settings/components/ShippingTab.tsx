@@ -20,9 +20,9 @@ interface ShippingTabProps {
 }
 
 const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
-const MIN_WAIT_DAYS = 3;
-const MAX_WAIT_DAYS = 14;
-const DEFAULT_MAX_WAIT_DAYS = 5;
+const MIN_WAIT_DAYS = 1;
+const MAX_WAIT_DAYS = 2;
+const DEFAULT_MAX_WAIT_DAYS = 2;
 
 const WEEKDAY_OPTIONS = ["mon", "tue", "wed", "thu", "fri"] as const;
 
@@ -241,7 +241,8 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
               박스로 묶어 출고합니다.
             </div>
             <div className="text-base text-blue-800 leading-relaxed">
-              오래된 제품은 최대 대기일 내에 자동으로 출고됩니다.
+              기본 목표는 의뢰일 +1영업일 출고이며, 부득이한 경우 +2영업일 내
+              처리됩니다.
             </div>
             <div className="mt-4 space-y-3">
               <label className="flex items-center gap-3">
@@ -275,7 +276,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
                   className="w-20 px-3 py-2 text-base border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                 />
                 <span className="text-base font-medium text-blue-900">
-                  일 대기
+                  영업일 대기
                 </span>
               </label>
             </div>

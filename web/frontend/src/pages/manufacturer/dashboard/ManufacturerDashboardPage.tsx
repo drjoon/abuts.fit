@@ -11,10 +11,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import {
-  WorksheetDiameterCard,
-  type DiameterStats,
-} from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { Badge } from "@/components/ui/badge";
@@ -44,28 +40,6 @@ export const ManufacturerDashboardPage = () => {
 
   if (!user || user.role !== "manufacturer") return null;
 
-  const { data: diameterStatsResponse } = useQuery({
-    queryKey: ["manufacturer-diameter-stats"],
-    enabled: Boolean(token),
-    queryFn: async () => {
-      const res = await apiFetch<any>({
-        path: "/api/requests/diameter-stats",
-        method: "GET",
-        token,
-        headers: token
-          ? {
-              "x-mock-role": "manufacturer",
-            }
-          : undefined,
-      });
-      if (!res.ok) {
-        throw new Error("직경별 통계 조회에 실패했습니다.");
-      }
-      return res.data;
-    },
-    retry: false,
-  });
-
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["manufacturer-dashboard-risk-summary", period],
     enabled: Boolean(token),
@@ -83,11 +57,6 @@ export const ManufacturerDashboardPage = () => {
     retry: false,
   });
 
-  const diameterStatsFromApi: DiameterStats | undefined =
-    diameterStatsResponse?.success
-      ? diameterStatsResponse.data?.diameterStats
-      : undefined;
-
   const riskSummary = riskSummaryResponse?.success
     ? (riskSummaryResponse.data?.riskSummary ?? null)
     : null;
@@ -96,7 +65,7 @@ export const ManufacturerDashboardPage = () => {
     {
       key: "in-progress",
       label: "진행중",
-      value: String(diameterStatsFromApi?.total ?? 0),
+      value: "0",
       icon: FileText,
       change: "",
     },
@@ -185,8 +154,7 @@ export const ManufacturerDashboardPage = () => {
         }
         topSection={
           <div className="space-y-3">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
-              <WorksheetDiameterCard stats={diameterStatsFromApi} />
+            <div className="grid grid-cols-1 gap-3 items-stretch">
               <Card className="app-glass-card app-glass-card--lg">
                 <CardContent>
                   <div className="grid grid-cols-1 gap-3 mt-6">

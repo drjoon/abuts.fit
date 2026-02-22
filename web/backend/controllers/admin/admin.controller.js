@@ -18,13 +18,6 @@ import {
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
 
-const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
-  d6: 2,
-  d8: 2,
-  d10: 5,
-  d12: 5,
-};
-
 const BASE_UNIT_PRICE = 15000;
 const DISCOUNT_PER_ORDER = 10;
 const MAX_DISCOUNT_PER_UNIT = 5000;
@@ -2556,78 +2549,6 @@ async function changeUserRole(req, res) {
   }
 }
 
-// 최대 직경 기준 4개 구간(<=6, <=8, <=10, 12mm) 통계를 계산하는 헬퍼 (관리자용)
-async function computeAdminDiameterStats(requests, leadDays) {
-  const effectiveLeadDays = {
-    ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
-    ...(leadDays || {}),
-  };
-
-  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD12] =
-    await Promise.all([
-      formatEtaLabelFromNow(effectiveLeadDays.d6),
-      formatEtaLabelFromNow(effectiveLeadDays.d8),
-      formatEtaLabelFromNow(effectiveLeadDays.d10),
-      formatEtaLabelFromNow(effectiveLeadDays.d12),
-    ]);
-
-  const bucketDefs = [
-    {
-      id: "d6",
-      diameter: 6,
-      shipLabel: shipLabelD6,
-    },
-    {
-      id: "d8",
-      diameter: 8,
-      shipLabel: shipLabelD8,
-    },
-    {
-      id: "d10",
-      diameter: 10,
-      shipLabel: shipLabelD10,
-    },
-    {
-      id: "d12",
-      diameter: 12,
-      shipLabel: shipLabelD12,
-    },
-  ];
-
-  const counts = {
-    d6: 0,
-    d8: 0,
-    d10: 0,
-    d12: 0,
-  };
-
-  if (Array.isArray(requests)) {
-    requests.forEach((r) => {
-      const raw = r?.caseInfos?.maxDiameter;
-      const d =
-        typeof raw === "number" ? raw : raw != null ? Number(raw) : null;
-      if (d == null || Number.isNaN(d)) return;
-
-      if (d <= 6) counts.d6 += 1;
-      else if (d <= 8) counts.d8 += 1;
-      else if (d <= 10) counts.d10 += 1;
-      else if (d <= 12) counts.d12 += 1;
-    });
-  }
-
-  const total = counts.d6 + counts.d8 + counts.d10 + counts.d12;
-  const maxCount = Math.max(1, counts.d6, counts.d8, counts.d10, counts.d12);
-
-  const buckets = bucketDefs.map((def) => ({
-    diameter: def.diameter,
-    shipLabel: def.shipLabel,
-    count: counts[def.id] || 0,
-    ratio: maxCount > 0 ? (counts[def.id] || 0) / maxCount : 0,
-  }));
-
-  return { total, buckets };
-}
-
 /**
  * 대시보드 통계 조회
  * @route GET /api/admin/dashboard
@@ -2739,18 +2660,6 @@ async function getDashboardStats(req, res) {
     ]);
 
     // 직경 통계 (caseInfos.maxDiameter 기반)
-    const leadDays = await getDeliveryEtaLeadDays();
-    const requestsForDiameter = await Request.find({
-      manufacturerStage: { $ne: "취소" },
-      "caseInfos.implantSystem": { $exists: true, $ne: "" },
-      "caseInfos.maxDiameter": { $ne: null },
-    })
-      .select({ caseInfos: 1 })
-      .lean();
-    const diameterStats = await computeAdminDiameterStats(
-      requestsForDiameter,
-      leadDays,
-    );
 
     // 응답 데이터 구성
     const dashboardData = {
@@ -2770,7 +2679,6 @@ async function getDashboardStats(req, res) {
         total: totalFiles,
         totalSize: totalFileSize.length > 0 ? totalFileSize[0].totalSize : 0,
       },
-      diameterStats,
     };
 
     res.status(200).json({
@@ -2779,7 +2687,6 @@ async function getDashboardStats(req, res) {
         userStats: dashboardData.users,
         requestStats: dashboardData.requests,
         recentActivity: dashboardData.files,
-        diameterStats: dashboardData.diameterStats,
         systemAlerts,
       },
     });

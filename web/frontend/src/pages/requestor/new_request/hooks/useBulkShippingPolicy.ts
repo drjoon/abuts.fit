@@ -37,12 +37,12 @@ const getShippingPolicy = (email?: string | null): ShippingPolicyResult => {
 
     return {
       shippingMode,
-      summary: `${autoBatchThreshold}개씩 발송, 최대 ${maxWaitDays}일 대기`,
+      summary: "의뢰일 +1영업일 출고(필요 시 +2영업일)",
     };
   } catch {
     return {
       shippingMode: "countBased",
-      summary: "20개씩 발송, 최대 5일 대기",
+      summary: "의뢰일 +1영업일 출고(필요 시 +2영업일)",
     };
   }
 };

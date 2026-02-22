@@ -34,7 +34,6 @@ export const {
 } = commonController;
 
 export const {
-  getDiameterStats,
   getAssignedDashboardSummary,
   getMyDashboardSummary,
   getDashboardRiskSummary,

@@ -5,8 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { WorksheetDiameterCard } from "@/shared/ui/dashboard/WorksheetDiameterCard";
-import type { DiameterStats } from "@/shared/ui/dashboard/WorksheetDiameterCard";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
@@ -258,49 +256,10 @@ export const AdminDashboardPage = () => {
   };
 
   let data: DashboardData = baseData;
-  const diameterStatsFromApi: DiameterStats | undefined =
-    adminDashboardResponse?.success
-      ? (adminDashboardResponse.data?.diameterStats as
-          | DiameterStats
-          | undefined)
-      : undefined;
 
   const riskSummary = riskSummaryResponse?.success
     ? (riskSummaryResponse.data?.riskSummary ?? null)
     : null;
-
-  const diameterTopSection = !token ? (
-    <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium mb-2">
-          커스텀 어벗먼트 최대 직경별 진행 현황
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-center text-muted-foreground text-sm py-10">
-          로그인이 필요합니다.
-        </div>
-      </CardContent>
-    </Card>
-  ) : !diameterStatsFromApi ? (
-    <Card className="app-glass-card app-glass-card--lg">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium mb-2">
-          커스텀 어벗먼트 최대 직경별 진행 현황
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-center text-muted-foreground text-sm py-10">
-          통계 데이터를 불러올 수 없습니다.
-        </div>
-      </CardContent>
-    </Card>
-  ) : (
-    <WorksheetDiameterCard
-      stats={diameterStatsFromApi}
-      key={"admin-dashboard"}
-    />
-  );
 
   if (adminDashboardResponse?.success) {
     const userStats = adminDashboardResponse.data.userStats || {};
@@ -362,8 +321,7 @@ export const AdminDashboardPage = () => {
         headerRight={undefined}
         statsGridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
         topSection={
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch">
-            {diameterTopSection}
+          <div className="grid grid-cols-1 gap-3 items-stretch">
             <RequestorRiskSummaryCard riskSummary={riskSummary} />
           </div>
         }

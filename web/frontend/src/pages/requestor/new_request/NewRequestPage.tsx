@@ -679,9 +679,7 @@ export const NewRequestPage = () => {
                 navigate("/dashboard/settings?tab=shipping")
               }
               onSelectExpress={async () => {
-                const guessShipDate = calculateExpressDate(
-                  caseInfos?.maxDiameter,
-                );
+                const guessShipDate = calculateExpressDate();
                 try {
                   const res = await apiFetch<any>({
                     path: `/api/requests/shipping-estimate?mode=express&maxDiameter=${encodeURIComponent(

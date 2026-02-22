@@ -30,10 +30,10 @@ export {
 };
 
 export const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
-  d6: 2,
-  d8: 2,
-  d10: 5,
-  d12: 5,
+  d6: 1,
+  d8: 1,
+  d10: 1,
+  d12: 1,
 };
 
 export function getRequestorOrgId(req) {
@@ -210,41 +210,8 @@ export async function calculateExpressShipYmd({ maxDiameter, baseYmd }) {
     typeof baseYmd === "string" && baseYmd.trim()
       ? baseYmd.trim()
       : getTodayYmdInKst();
-  const d =
-    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
-      ? maxDiameter
-      : null;
-
-  // 기본: 다음 영업일 출고
-  if (d == null || d <= 8) {
-    return addKoreanBusinessDays({ startYmd: todayYmd, days: 1 });
-  }
-
-  // d10 이상: 다음 수요일 출고(기존 정책 유지) + 해당 날짜가 휴일/주말이면 다음 영업일로 보정
-  const baseDate = new Date(`${todayYmd}T00:00:00+09:00`);
-  const currentDow = baseDate.getDay();
-  const targetDow = 3; // Wed
-
-  let daysToAdd = targetDow - currentDow;
-  if (currentDow > 1) {
-    daysToAdd += 7;
-  }
-  if (daysToAdd <= 0) {
-    daysToAdd += 7;
-  }
-
-  const candidate = new Date(baseDate);
-  candidate.setDate(baseDate.getDate() + daysToAdd);
-  const candidateYmd = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    day: "2-digit",
-  }).format(candidate);
-
-  // 수요일이 휴일/주말이면 다음 영업일, 영업일이면 그대로
-  return normalizeKoreanBusinessDay({ ymd: candidateYmd });
+  void maxDiameter;
+  return addKoreanBusinessDays({ startYmd: todayYmd, days: 1 });
 }
 
 export async function getDeliveryEtaLeadDays() {
@@ -580,77 +547,6 @@ export function applyStatusMapping(request, status) {
   if (["배송대기", "배송중", "배송지연", "배송완료", "발송"].includes(s)) {
     request.manufacturerStage = "포장.발송";
   }
-}
-
-export async function computeDiameterStats(requests, leadDays) {
-  const effectiveLeadDays = {
-    ...DEFAULT_DELIVERY_ETA_LEAD_DAYS,
-    ...(leadDays || {}),
-  };
-
-  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD12] =
-    await Promise.all([
-      formatEtaLabelFromNow(effectiveLeadDays.d6),
-      formatEtaLabelFromNow(effectiveLeadDays.d8),
-      formatEtaLabelFromNow(effectiveLeadDays.d10),
-      formatEtaLabelFromNow(effectiveLeadDays.d12),
-    ]);
-
-  const bucketDefs = [
-    {
-      id: "d6",
-      diameter: 6,
-      shipLabel: shipLabelD6,
-    },
-    {
-      id: "d8",
-      diameter: 8,
-      shipLabel: shipLabelD8,
-    },
-    {
-      id: "d10",
-      diameter: 10,
-      shipLabel: shipLabelD10,
-    },
-    {
-      id: "d12",
-      diameter: 12,
-      shipLabel: shipLabelD12,
-    },
-  ];
-
-  const counts = {
-    d6: 0,
-    d8: 0,
-    d10: 0,
-    d12: 0,
-  };
-
-  if (Array.isArray(requests)) {
-    requests.forEach((r) => {
-      const raw = r?.caseInfos?.maxDiameter;
-      const d =
-        typeof raw === "number" ? raw : raw != null ? Number(raw) : null;
-      if (d == null || Number.isNaN(d)) return;
-
-      if (d <= 6) counts.d6 += 1;
-      else if (d <= 8) counts.d8 += 1;
-      else if (d <= 10) counts.d10 += 1;
-      else if (d <= 12) counts.d12 += 1;
-    });
-  }
-
-  const total = counts.d6 + counts.d8 + counts.d10 + counts.d12;
-  const maxCount = Math.max(1, counts.d6, counts.d8, counts.d10, counts.d12);
-
-  const buckets = bucketDefs.map((def) => ({
-    diameter: def.diameter,
-    shipLabel: def.shipLabel,
-    count: counts[def.id] || 0,
-    ratio: maxCount > 0 ? (counts[def.id] || 0) / maxCount : 0,
-  }));
-
-  return { total, buckets };
 }
 
 /**

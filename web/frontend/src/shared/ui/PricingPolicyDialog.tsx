@@ -135,6 +135,16 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
                   <b>가공 단계부터는</b> 취소할 수 없습니다.
                 </p>
               </section>
+
+              <section className="space-y-1">
+                <h3 className="font-semibold text-foreground text-md">
+                  8. 출고 리드타임
+                </h3>
+                <p>
+                  모든 제품은 <b>의뢰일 +1영업일 출고</b>를 목표로 하며,
+                  부득이한 경우 <b>+2영업일 내</b> 처리됩니다.
+                </p>
+              </section>
             </div>
           </DialogDescription>
         </DialogHeader>

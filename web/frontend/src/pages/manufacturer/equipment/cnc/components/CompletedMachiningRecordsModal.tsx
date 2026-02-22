@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
 import { MachiningRequestLabel } from "@/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel";
+import { ArrowLeft } from "lucide-react";
 
 type CompletedMachiningItem = {
   id: string;
@@ -278,7 +279,9 @@ export const CompletedMachiningRecordsModal = ({
                       type="button"
                       className="inline-flex h-8 px-3 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
                       onClick={() => onRollbackRequest(row.rid, machineId)}
-                    ></button>
+                    >
+                      <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+                    </button>
                   ) : null}
                 </div>
               </div>

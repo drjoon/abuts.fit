@@ -381,14 +381,10 @@ export async function createRequest(req, res) {
 
     // 발송 예정일 (YYYY-MM-DD, KST)
     const createdYmd = toKstYmd(requestedAt) || getTodayYmdInKst();
-    const maxD = normalizedCaseInfos?.maxDiameter;
-    const isSmall =
-      typeof maxD === "number" && !Number.isNaN(maxD) ? maxD <= 8 : true;
-    const days = shippingMode === "express" ? (isSmall ? 1 : 4) : 0;
-    const estimatedShipYmd =
-      shippingMode === "express"
-        ? await addKoreanBusinessDays({ startYmd: createdYmd, days })
-        : await normalizeKoreanBusinessDay({ ymd: createdYmd });
+    const estimatedShipYmd = await addKoreanBusinessDays({
+      startYmd: createdYmd,
+      days: 1,
+    });
     newRequest.timeline = newRequest.timeline || {};
     newRequest.timeline.estimatedShipYmd = estimatedShipYmd;
 

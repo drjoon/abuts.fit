@@ -28,19 +28,7 @@ const memo = async ({ key, ttlMs, fn }) => {
   return value;
 };
 
-const resolveExpressShipLeadDays = (maxDiameter) => {
-  const d =
-    typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
-      ? maxDiameter
-      : maxDiameter != null && String(maxDiameter).trim()
-        ? Number(maxDiameter)
-        : null;
-
-  if (d == null || Number.isNaN(d)) return 4;
-  if (d <= 8) return 1;
-  if (d >= 10) return 4;
-  return 1;
-};
+const resolveExpressShipLeadDays = () => 1;
 
 /**
  * 배송 방식 변경 (의뢰자용)
@@ -109,16 +97,15 @@ export async function updateMyShippingMode(req, res) {
             const createdYmd = toKstYmd(req.createdAt) || getTodayYmdInKst();
             req.timeline.estimatedShipYmd = await addKoreanBusinessDays({
               startYmd: createdYmd,
-              days: resolveExpressShipLeadDays(maxDiameter),
+              days: 1,
             });
           } else {
             const pickup = newSchedule?.scheduledShipPickup;
             const pickupYmd = pickup ? toKstYmd(pickup) : null;
-            req.timeline.estimatedShipYmd = pickupYmd
-              ? pickupYmd
-              : await normalizeKoreanBusinessDay({
-                  ymd: toKstYmd(req.createdAt) || getTodayYmdInKst(),
-                });
+            req.timeline.estimatedShipYmd = await addKoreanBusinessDays({
+              startYmd: toKstYmd(req.createdAt) || getTodayYmdInKst(),
+              days: 1,
+            });
           }
 
           await req.save();
@@ -279,13 +266,10 @@ export async function getShippingEstimate(req, res) {
 
     const todayYmd = getTodayYmdInKst();
     const baseYmd = todayYmd;
-    const estimatedShipYmd =
-      mode === "express"
-        ? await addKoreanBusinessDays({
-            startYmd: baseYmd,
-            days: resolveExpressShipLeadDays(maxDiameter),
-          })
-        : await normalizeKoreanBusinessDay({ ymd: baseYmd });
+    const estimatedShipYmd = await addKoreanBusinessDays({
+      startYmd: baseYmd,
+      days: 1,
+    });
 
     return res.status(200).json({
       success: true,

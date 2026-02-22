@@ -9,7 +9,6 @@ import {
   buildRequestorOrgScopeFilter,
   buildRequestorOrgFilter,
   getDeliveryEtaLeadDays,
-  computeDiameterStats,
   normalizeCaseInfosImplantFields,
   addKoreanBusinessDays,
   getTodayYmdInKst,
@@ -17,7 +16,6 @@ import {
   getThisMonthStartYmdInKst,
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
-  ymdToMmDd,
   getReferralGroupLeaderId,
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
@@ -232,185 +230,6 @@ export async function getAssignedDashboardSummary(req, res) {
     return res.status(500).json({
       success: false,
       message: "제조사 대시보드 요약 조회 중 오류가 발생했습니다.",
-    });
-  }
-}
-
-/**
- * 최대 직경별 통계 (공용)
- * @route GET /api/requests/diameter-stats
- */
-export async function getDiameterStats(req, res) {
-  try {
-    const userId = req.user?._id?.toString() || "anonymous";
-    const role = req.user?.role || "public";
-    const isManufacturer = role === "manufacturer";
-
-    const leadDays = await getDeliveryEtaLeadDays();
-    const requestFilter = {
-      manufacturerStage: { $ne: "취소" },
-      "caseInfos.implantSystem": { $exists: true, $ne: "" },
-    };
-
-    const filter =
-      role === "requestor"
-        ? { ...requestFilter, ...(await buildRequestorOrgScopeFilter(req)) }
-        : isManufacturer
-          ? {
-              $and: [
-                requestFilter,
-                {
-                  "caseInfos.reviewByStage.shipping.status": {
-                    $ne: "APPROVED",
-                  },
-                },
-                {
-                  $or: [
-                    { manufacturer: req.user._id },
-                    { manufacturer: null },
-                    { manufacturer: { $exists: false } },
-                  ],
-                },
-              ],
-            }
-          : requestFilter;
-
-    // 집계 쿼리로 직경별 통계 계산 (메모리 사용량 대폭 감소)
-    const stats = await Request.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: null,
-          d6Count: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $lte: ["$caseInfos.maxDiameter", 6] },
-                    { $gt: ["$caseInfos.maxDiameter", 0] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          d8Count: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gt: ["$caseInfos.maxDiameter", 6] },
-                    { $lte: ["$caseInfos.maxDiameter", 8] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          d10Count: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gt: ["$caseInfos.maxDiameter", 8] },
-                    { $lte: ["$caseInfos.maxDiameter", 10] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          d12Count: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gt: ["$caseInfos.maxDiameter", 10] },
-                    { $lte: ["$caseInfos.maxDiameter", 12] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          totalCount: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const result = stats[0] || {
-      d6Count: 0,
-      d8Count: 0,
-      d10Count: 0,
-      d12Count: 0,
-      totalCount: 0,
-    };
-
-    const diameterStatsLegacy = [
-      { range: "≤6mm", count: result.d6Count, leadDays: leadDays.d6 },
-      { range: "6-8mm", count: result.d8Count, leadDays: leadDays.d8 },
-      { range: "8-10mm", count: result.d10Count, leadDays: leadDays.d10 },
-      {
-        range: "10-12mm",
-        count: result.d12Count,
-        leadDays: leadDays.d12,
-      },
-    ];
-
-    const todayYmd = getTodayYmdInKst();
-
-    const toBucket = async ({ diameter, count, leadDays }) => {
-      const etaYmd = await addKoreanBusinessDays({
-        startYmd: todayYmd,
-        days:
-          typeof leadDays === "number" && !Number.isNaN(leadDays)
-            ? leadDays
-            : 0,
-      });
-      const shipLabel = ymdToMmDd(etaYmd);
-      const total = result.totalCount || 0;
-      const ratio = total ? Math.min(1, Math.max(0, count / total)) : 0;
-      return { diameter, shipLabel, ratio, count };
-    };
-
-    const buckets = await Promise.all([
-      toBucket({ diameter: 6, count: result.d6Count, leadDays: leadDays.d6 }),
-      toBucket({ diameter: 8, count: result.d8Count, leadDays: leadDays.d8 }),
-      toBucket({
-        diameter: 10,
-        count: result.d10Count,
-        leadDays: leadDays.d10,
-      }),
-      toBucket({
-        diameter: 12,
-        count: result.d12Count,
-        leadDays: leadDays.d12,
-      }),
-    ]);
-
-    const diameterStats = {
-      buckets,
-      total: result.totalCount,
-    };
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        diameterStats,
-        diameterStatsLegacy,
-        total: result.totalCount,
-      },
-      cached: false,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "직경별 통계 조회 중 오류가 발생했습니다.",
-      error: error.message,
     });
   }
 }
@@ -733,127 +552,6 @@ export async function getMyDashboardSummary(req, res) {
     const riskSummary = calculateRiskSummary(activeRequests);
 
     // 직경별 통계 실제 집계
-    const diameterAggResult = await Request.aggregate([
-      {
-        $match: {
-          ...requestFilter,
-          "caseInfos.implantSystem": { $exists: true, $ne: "" },
-          manufacturerStage: { $ne: "취소" },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          d6Count: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $lte: ["$caseInfos.maxDiameter", 6] },
-                    { $gt: ["$caseInfos.maxDiameter", 0] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          d8Count: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gt: ["$caseInfos.maxDiameter", 6] },
-                    { $lte: ["$caseInfos.maxDiameter", 8] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          d10Count: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gt: ["$caseInfos.maxDiameter", 8] },
-                    { $lte: ["$caseInfos.maxDiameter", 10] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          d12Count: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gt: ["$caseInfos.maxDiameter", 10] },
-                    { $lte: ["$caseInfos.maxDiameter", 12] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-        },
-      },
-    ]);
-
-    const diameterResult = diameterAggResult[0] || {
-      d6Count: 0,
-      d8Count: 0,
-      d10Count: 0,
-      d12Count: 0,
-    };
-
-    const diameterStats = [
-      {
-        range: "≤6mm",
-        count: diameterResult.d6Count,
-        leadDays: deliveryLeadDays.d6,
-      },
-      {
-        range: "6-8mm",
-        count: diameterResult.d8Count,
-        leadDays: deliveryLeadDays.d8,
-      },
-      {
-        range: "8-10mm",
-        count: diameterResult.d10Count,
-        leadDays: deliveryLeadDays.d10,
-      },
-      {
-        range: "10-12mm",
-        count: diameterResult.d12Count,
-        leadDays: deliveryLeadDays.d12,
-      },
-    ];
-
-    const effectiveLeadDays = {
-      d6: deliveryLeadDays?.d6 ?? 2,
-      d8: deliveryLeadDays?.d8 ?? 2,
-      d10: deliveryLeadDays?.d10 ?? 5,
-      d12: deliveryLeadDays?.d12 ?? 5,
-    };
-
-    const resolveNormalLeadDays = (maxDiameter) => {
-      const d =
-        typeof maxDiameter === "number" && !Number.isNaN(maxDiameter)
-          ? maxDiameter
-          : maxDiameter != null && String(maxDiameter).trim()
-            ? Number(maxDiameter)
-            : null;
-      if (d == null || Number.isNaN(d)) return effectiveLeadDays.d10;
-      if (d <= 6) return effectiveLeadDays.d6;
-      if (d <= 8) return effectiveLeadDays.d8;
-      if (d <= 10) return effectiveLeadDays.d10;
-      return effectiveLeadDays.d12;
-    };
 
     const recentRequests = await Promise.all(
       (recentRequestsResult || []).map(async (r) => {
@@ -884,22 +582,10 @@ export async function getMyDashboardSummary(req, res) {
 
         const createdYmd = toKstYmd(r.createdAt) || getTodayYmdInKst();
         const baseYmd = await normalizeKoreanBusinessDay({ ymd: createdYmd });
-        const d =
-          typeof ci?.maxDiameter === "number" && !Number.isNaN(ci.maxDiameter)
-            ? ci.maxDiameter
-            : null;
-
-        const mode = String(
-          r.finalShipping?.mode ||
-            r.originalShipping?.mode ||
-            r.shippingMode ||
-            "normal",
-        ).trim();
-        const isExpress = mode === "express";
-        const days = isExpress ? (d != null && d <= 8 ? 1 : 4) : 0;
-        const estimatedShipYmd = isExpress
-          ? await addKoreanBusinessDays({ startYmd: baseYmd, days })
-          : baseYmd;
+        const estimatedShipYmd = await addKoreanBusinessDays({
+          startYmd: baseYmd,
+          days: 1,
+        });
 
         return {
           ...r,
@@ -955,7 +641,6 @@ export async function getMyDashboardSummary(req, res) {
       },
       manufacturingSummary,
       riskSummary,
-      diameterStats,
       recentRequests,
     };
 
