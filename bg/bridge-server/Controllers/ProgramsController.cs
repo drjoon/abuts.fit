@@ -605,8 +605,6 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             return Request.CreateResponse(HttpStatusCode.OK, new { success = true, results });
         }
-    }
-}
 
         public class UploadProgramRequest
         {
@@ -660,11 +658,18 @@ namespace HiLinkBridgeWebApi48.Controllers
 
                 foreach (var machineId in machineIds)
                 {
-                    BridgeShared.QueueUploadProgramData(machineId, headType, slotNo, processed, req?.isNew ?? true);
-                    results.Add(new { machineId, success = true, message = "Program upload requested", slotNo, path = relPath });
+                    if (!BridgeShared.UploadProgramDataBlocking(machineId, headType, slotNo, processed, req?.isNew ?? true, out var usedMode, out var error))
+                    {
+                        results.Add(new { machineId, success = false, message = error ?? "UploadProgramDataBlocking failed" });
+                        continue;
+                    }
+
+                    results.Add(new { machineId, success = true, message = "Program uploaded", slotNo, path = relPath, usedMode });
                 }
 
-                return Request.CreateResponse(HttpStatusCode.OK, new { success = true, results });
+                var anyFail = results.Any(x => (bool)x.GetType().GetProperty("success").GetValue(x) == false);
+                var statusCode = anyFail ? HttpStatusCode.InternalServerError : HttpStatusCode.OK;
+                return Request.CreateResponse(statusCode, new { success = !anyFail, results });
             }
             catch (Exception ex)
             {

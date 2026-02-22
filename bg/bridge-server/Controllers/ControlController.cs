@@ -11,6 +11,8 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/cnc")]
     public class ControlController : ApiController
     {
+        public static bool IsRunning { get; set; } = true;
+
         public class StartStopRequest
         {
             public short? ioUid { get; set; }

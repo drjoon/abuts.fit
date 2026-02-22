@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Web.Http;
-using Hi_Link_Advanced.EdgeBridge;
 using Hi_Link.Libraries.Model;
+using HiLinkBridgeWebApi48.Models;
+using PayloadUpdateActivateProg = Hi_Link.Libraries.Model.UpdateMachineActivateProgNo;
 
 namespace HiLinkBridgeWebApi48.Controllers
 {
@@ -14,7 +15,7 @@ namespace HiLinkBridgeWebApi48.Controllers
         // POST /api/cnc/raw
         [HttpPost]
         [Route("raw")]
-        public HttpResponseMessage Raw([FromBody] EdgeBridgeBaseDto raw)
+        public HttpResponseMessage Raw([FromBody] RawHiLinkRequest raw)
         {
             if (raw == null)
             {
@@ -46,7 +47,7 @@ namespace HiLinkBridgeWebApi48.Controllers
                 var headTypeToken = raw.payload?["headType"];
                 if (headTypeToken != null)
                 {
-                    try { headType = (short)headTypeToken.Value<int>(); } catch { }
+                    try { headType = (short)headTypeToken.ToObject<int>(); } catch { }
                 }
 
                 if (BridgeShared.IsMockCncMachiningEnabled())
@@ -113,9 +114,10 @@ namespace HiLinkBridgeWebApi48.Controllers
                 short headType = 1;
                 try
                 {
-                    if (raw.payload != null)
+                    var headTypeVal = raw.payload?.ToObject<int?>();
+                    if (headTypeVal.HasValue)
                     {
-                        headType = (short)raw.payload.Value<int>();
+                        headType = (short)headTypeVal.Value;
                     }
                 }
                 catch { }
