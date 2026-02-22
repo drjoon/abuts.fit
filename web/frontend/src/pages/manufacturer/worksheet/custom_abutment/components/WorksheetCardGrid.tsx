@@ -121,6 +121,28 @@ export const WorksheetCardGrid = ({
       const canRollback =
         stageForRollback !== "의뢰" && stageForRollback !== "추적관리";
 
+      const lotBadgeClass = (() => {
+        const s = String(stageForRollback || "").trim();
+        const base =
+          "text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border";
+        if (s === "CAM") {
+          return `${base} bg-indigo-50 text-indigo-700 border-indigo-200`;
+        }
+        if (s === "가공") {
+          return `${base} bg-blue-50 text-blue-700 border-blue-200`;
+        }
+        if (s === "세척.포장" || s === "세척.패킹") {
+          return `${base} bg-emerald-50 text-emerald-700 border-emerald-200`;
+        }
+        if (s === "발송" || s === "포장.발송") {
+          return `${base} bg-amber-50 text-amber-700 border-amber-200`;
+        }
+        if (s === "추적관리") {
+          return `${base} bg-slate-50 text-slate-700 border-slate-200`;
+        }
+        return `${base} bg-slate-50 text-slate-700 border-slate-200`;
+      })();
+
       const stageBadge = (() => {
         const s = String(stageForRollback || "").trim();
         const base =
@@ -274,7 +296,7 @@ export const WorksheetCardGrid = ({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
-          <div className="absolute right-2 top-2 z-20 hidden gap-1 group-hover/card:flex">
+          <div className="absolute right-2 top-2 z-20 flex gap-1">
             {onRollback && canRollback && (
               <button
                 type="button"
@@ -427,10 +449,7 @@ export const WorksheetCardGrid = ({
                       </Badge>
                     )}
                   {lotPartDisplay && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border-slate-200"
-                    >
+                    <Badge variant="outline" className={lotBadgeClass}>
                       {lotPartDisplay}
                     </Badge>
                   )}

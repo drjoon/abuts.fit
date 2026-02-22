@@ -85,6 +85,7 @@ export const MachineQueueCard = ({
   onSelect,
   onRollbackNowPlaying,
   onRollbackNextUp,
+  onRollbackCompleted,
 }: MachineQueueCardProps) => {
   useToast();
 
@@ -194,6 +195,9 @@ export const MachineQueueCard = ({
       (lastCompleted as any)?.lotNumber?.part ||
       "",
   ).trim();
+  const lastCompletedRequestId = String(lastCompleted?.requestId || "").trim();
+  const machiningLotBadgeClass =
+    "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
 
   return (
     <div
@@ -306,6 +310,7 @@ export const MachineQueueCard = ({
                       tooth={(lastCompleted as any)?.tooth}
                       requestId={(lastCompleted as any)?.requestId}
                       lotNumber={lastCompletedLotRaw}
+                      lotBadgeClassName={machiningLotBadgeClass}
                       className="text-[15px] leading-tight"
                     />
                   ) : (
@@ -313,7 +318,22 @@ export const MachineQueueCard = ({
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0" />
+              <div className="flex items-center gap-2 shrink-0">
+                {lastCompletedRequestId ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-8 px-3 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!onRollbackCompleted) return;
+                      onRollbackCompleted(lastCompletedRequestId, machineId);
+                    }}
+                  >
+                    <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+                    롤백
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -363,6 +383,7 @@ export const MachineQueueCard = ({
                           currentSlot?.lotNumber?.part ||
                           "",
                       ).trim()}
+                      lotBadgeClassName={machiningLotBadgeClass}
                       className="text-[15px]"
                     />
                   ) : (
@@ -434,6 +455,7 @@ export const MachineQueueCard = ({
                           nextSlot?.lotNumber?.part ||
                           "",
                       ).trim()}
+                      lotBadgeClassName={machiningLotBadgeClass}
                       className="text-[15px]"
                     />
                   ) : (
@@ -456,7 +478,6 @@ export const MachineQueueCard = ({
                     }}
                   >
                     <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-                    롤백
                   </button>
                 ) : null}
               </div>

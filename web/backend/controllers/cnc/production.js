@@ -122,9 +122,9 @@ export async function applyProductionQueueBatchForMachine(req, res) {
       : [];
 
     const list = await Request.find({
-      status: { $in: ["의뢰", "CAM", "생산", "가공"] },
+      manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
       "productionSchedule.assignedMachine": mid,
-    }).select("_id requestId productionSchedule status manufacturerStage");
+    }).select("_id requestId productionSchedule manufacturerStage");
 
     const byRequestId = new Map();
     for (const r of list) {

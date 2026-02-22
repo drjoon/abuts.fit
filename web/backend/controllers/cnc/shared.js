@@ -375,12 +375,9 @@ export async function rollbackRequestToCamByRequestId(requestId) {
   const request = await Request.findOne({ requestId: rid });
   if (!request) return null;
 
-  const status = String(request.status || "").trim();
   const stage = String(request.manufacturerStage || "").trim();
-
-  if (!["생산", "가공"].includes(status) && !["생산", "가공"].includes(stage)) {
-    return request;
-  }
+  const rollbackStages = ["가공", "세척.포장", "세척.패킹"];
+  if (!rollbackStages.includes(stage)) return request;
 
   try {
     const orgId =

@@ -220,6 +220,9 @@ export const MachiningQueueBoard = ({
               onRollbackNextUp={(requestId, mid) => {
                 void board.rollbackRequestInQueue(mid, requestId);
               }}
+              onRollbackCompleted={(requestId, mid) => {
+                void board.rollbackRequestInQueue(mid, requestId);
+              }}
               onOpenCompleted={(mid, name) => {
                 board.setCompletedModalMachineId(String(mid || "").trim());
                 board.setCompletedModalTitle(
@@ -242,6 +245,9 @@ export const MachiningQueueBoard = ({
         machineId={completedModalMachineId}
         title={completedModalTitle}
         pageSize={5}
+        onRollbackRequest={(requestId, machineId) => {
+          void board.rollbackRequestInQueue(machineId, requestId);
+        }}
       />
 
       {eventLogRequestId ? (

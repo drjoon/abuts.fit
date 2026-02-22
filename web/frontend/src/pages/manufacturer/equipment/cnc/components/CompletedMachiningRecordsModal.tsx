@@ -25,6 +25,7 @@ export type CompletedMachiningRecordsModalProps = {
   machineId: string;
   title?: string;
   pageSize?: number;
+  onRollbackRequest?: (requestId: string, machineId: string) => void;
 };
 
 export const CompletedMachiningRecordsModal = ({
@@ -33,6 +34,7 @@ export const CompletedMachiningRecordsModal = ({
   machineId,
   title,
   pageSize = 5,
+  onRollbackRequest,
 }: CompletedMachiningRecordsModalProps) => {
   const { token } = useAuthStore();
   const [items, setItems] = useState<CompletedMachiningItem[]>([]);
@@ -221,6 +223,9 @@ export const CompletedMachiningRecordsModal = ({
     return { hhmm, mmss, clinic, patient, tooth, rid, lotRaw };
   };
 
+  const machiningLotBadgeClass =
+    "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[92vw] max-w-2xl max-h-[78vh] overflow-hidden">
@@ -263,10 +268,18 @@ export const CompletedMachiningRecordsModal = ({
                         tooth={row.tooth}
                         requestId={row.rid}
                         lotNumber={row.lotRaw}
+                        lotBadgeClassName={machiningLotBadgeClass}
                         className="text-[15px]"
                       />
                     </div>
                   </div>
+                  {row.rid && onRollbackRequest ? (
+                    <button
+                      type="button"
+                      className="inline-flex h-8 px-3 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                      onClick={() => onRollbackRequest(row.rid, machineId)}
+                    ></button>
+                  ) : null}
                 </div>
               </div>
             );
