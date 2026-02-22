@@ -8,7 +8,7 @@ import { ApiError } from "../../utils/ApiError.js";
 import {
   uploadToRhinoServer,
   buildStandardStlFileName,
-} from "./creation.controller.js";
+} from "./creation.helpers.controller.js";
 import { normalizeCaseInfosImplantFields } from "./utils.js";
 
 // 새 드래프트 생성
