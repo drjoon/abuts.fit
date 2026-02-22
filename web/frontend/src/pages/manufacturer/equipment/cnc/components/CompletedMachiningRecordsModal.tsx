@@ -174,6 +174,22 @@ export const CompletedMachiningRecordsModal = ({
 
   useEffect(() => {
     if (!open) return;
+    const handleRollback = () => {
+      setItems([]);
+      setCursor(null);
+      setHasMore(true);
+      setError(null);
+      void fetchPage({ reset: true });
+    };
+
+    window.addEventListener("request-rollback", handleRollback);
+    return () => {
+      window.removeEventListener("request-rollback", handleRollback);
+    };
+  }, [open, fetchPage]);
+
+  useEffect(() => {
+    if (!open) return;
     if (!sentinelRef.current) return;
     const el = sentinelRef.current;
 

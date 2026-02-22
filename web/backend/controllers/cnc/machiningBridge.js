@@ -247,18 +247,10 @@ export async function getLastCompletedMachiningMap(req, res) {
       status: "COMPLETED",
     })
       .sort({ completedAt: -1, updatedAt: -1, createdAt: -1 })
-      .limit(200)
+      .limit(500)
       .lean();
 
-    const byMachine = new Map();
-    for (const r of Array.isArray(recs) ? recs : []) {
-      const mid = String(r?.machineId || "").trim();
-      if (!mid) continue;
-      if (byMachine.has(mid)) continue;
-      byMachine.set(mid, r);
-    }
-
-    const requestIds = Array.from(byMachine.values())
+    const requestIds = recs
       .map((r) => String(r?.requestId || "").trim())
       .filter(Boolean);
     const uniqueRequestIds = Array.from(new Set(requestIds));
@@ -266,7 +258,7 @@ export async function getLastCompletedMachiningMap(req, res) {
     const reqDocs = uniqueRequestIds.length
       ? await Request.find({ requestId: { $in: uniqueRequestIds } })
           .select(
-            "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.rollbackCounts",
+            "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.rollbackCounts manufacturerStage",
           )
           .lean()
       : [];
@@ -274,6 +266,27 @@ export async function getLastCompletedMachiningMap(req, res) {
     for (const r of Array.isArray(reqDocs) ? reqDocs : []) {
       const rid = String(r?.requestId || "").trim();
       if (rid) reqById.set(rid, r);
+    }
+
+    const byMachine = new Map();
+    for (const r of Array.isArray(recs) ? recs : []) {
+      const mid = String(r?.machineId || "").trim();
+      if (!mid) continue;
+      if (byMachine.has(mid)) continue;
+
+      const rid = String(r?.requestId || "").trim();
+      if (rid) {
+        const reqDoc = reqById.get(rid);
+        // If the request has been rolled back from '세척.패킹' (or later), it's no longer the "last completed"
+        if (
+          reqDoc &&
+          ["의뢰", "CAM", "가공"].includes(reqDoc.manufacturerStage)
+        ) {
+          continue;
+        }
+      }
+
+      byMachine.set(mid, r);
     }
 
     const data = {};
@@ -367,14 +380,20 @@ export async function triggerNextAutoMachiningAfterComplete({
       const rid = String(r?.requestId || "").trim();
       if (!rid) return false;
       if (completedRequestId && rid === completedRequestId) return false;
-      const path = String(r?.caseInfos?.ncFile?.filePath || "").trim();
+      const path = String(
+        r?.ncFile?.filePath || r?.caseInfos?.ncFile?.filePath || "",
+      ).trim();
       return !!path;
     });
     if (!pick) return;
 
     const requestId = String(pick.requestId || "").trim();
-    const bridgePath = String(pick?.caseInfos?.ncFile?.filePath || "").trim();
-    const rawFileName = String(pick?.caseInfos?.ncFile?.fileName || "").trim();
+    const bridgePath = String(
+      pick?.ncFile?.filePath || pick?.caseInfos?.ncFile?.filePath || "",
+    ).trim();
+    const rawFileName = String(
+      pick?.ncFile?.fileName || pick?.caseInfos?.ncFile?.fileName || "",
+    ).trim();
     const derivedFileName = bridgePath ? bridgePath.split(/[/\\]/).pop() : "";
     const fileName = rawFileName || derivedFileName;
     if (!fileName || !bridgePath) return;
@@ -1270,6 +1289,45 @@ export async function recordMachiningCompleteForBridge(req, res) {
       });
     } catch {
       // ignore
+    }
+
+    // 완료 이후 대기 중인 가공 의뢰가 없으면 자동 가공 OFF
+    try {
+      const pendingCount = await Request.countDocuments({
+        manufacturerStage: { $in: ["CAM", "가공"] },
+        "productionSchedule.assignedMachine": mid,
+      });
+
+      if (pendingCount === 0) {
+        const m = await Machine.findOneAndUpdate(
+          { $or: [{ uid: mid }, { name: mid }] },
+          { $set: { allowAutoMachining: false } },
+          { new: true },
+        ).lean();
+
+        if (m) {
+          try {
+            getIO().emit("cnc-machine-settings-changed", {
+              machineId: m.uid,
+              settings: {
+                allowAutoMachining: false,
+                allowJobStart: m.allowJobStart,
+                allowProgramDelete: m.allowProgramDelete,
+                allowRequestAssign: m.allowRequestAssign,
+              },
+            });
+            console.log(
+              `[bridge:machining:complete] auto-machining turned off for ${mid} (queue empty)`,
+            );
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(
+        `[bridge:machining:complete] failed to check pending queue for auto-machining off: ${e.message}`,
+      );
     }
 
     return res.status(200).json({ success: true });

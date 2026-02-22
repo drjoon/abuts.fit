@@ -6,6 +6,7 @@ import {
   onCncMachiningCompleted,
   onCncMachiningTick,
   onCncMachiningStarted,
+  onCncMachineSettingsChanged,
 } from "@/shared/realtime/socket";
 import { apiFetch } from "@/shared/api/apiClient";
 import { getMockCncMachiningEnabled } from "@/shared/bridge/bridgeSettings";
@@ -75,6 +76,114 @@ export const useMachiningBoard = ({
   }, [queueMap]);
 
   const [machineStatusMap] = useState<Record<string, MachineStatus>>({});
+
+  const machinesRef = useRef(machines);
+  useEffect(() => {
+    machinesRef.current = machines;
+  }, [machines]);
+
+  const updateMachineAuto = useCallback(
+    async (uid: string, next: boolean) => {
+      if (!token) return;
+      const target = (
+        Array.isArray(machinesRef.current) ? machinesRef.current : []
+      ).find((m) => m.uid === uid);
+      if (!target) return;
+
+      const prev = target.allowAutoMachining === true;
+      setMachines((prevList) =>
+        prevList.map((m) =>
+          m.uid === uid ? { ...m, allowAutoMachining: next } : m,
+        ),
+      );
+
+      try {
+        const res = await apiFetch({
+          path: "/api/machines",
+          method: "POST",
+          token,
+          jsonBody: {
+            uid: target.uid,
+            name: target.name,
+            ip: target.ip,
+            port: target.port,
+            // 자동가공 설정은 allowAutoMachining만 변경하고,
+            // 원격가공 허용(allowJobStart)은 현재 설정을 그대로 유지한다.
+            allowJobStart: target.allowJobStart !== false,
+            allowProgramDelete: target.allowProgramDelete === true,
+            allowRequestAssign: target.allowRequestAssign !== false,
+            allowAutoMachining: next,
+          },
+        });
+        const body: any = res.data ?? {};
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "자동 가공 설정 저장 실패");
+        }
+
+        if (next === true) {
+          toast({
+            title: "자동 가공 ON",
+            description:
+              "이 장비는 대기 중인 의뢰가 있으면 자동으로 가공을 시작합니다.",
+          });
+
+          if (token) {
+            const name = target?.name || uid;
+            try {
+              const resp = await fetch(
+                `/api/cnc-machines/machining/auto-trigger/${encodeURIComponent(
+                  uid,
+                )}`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                  },
+                },
+              );
+              const body2: any = await resp.json().catch(() => ({}));
+              if (!resp.ok || body2?.success === false) {
+                throw new Error(
+                  body2?.message ||
+                    body2?.error ||
+                    "자동 가공 트리거 호출 실패",
+                );
+              }
+
+              toast({
+                title: "자동 가공 트리거 전송",
+                description: `${name} 대기 의뢰 자동 시작을 요청했습니다.`,
+              });
+            } catch (err: any) {
+              toast({
+                title: "자동 가공 트리거 실패",
+                description: err?.message || "잠시 후 다시 시도해주세요.",
+                variant: "destructive",
+              });
+            }
+          }
+        }
+      } catch (e: any) {
+        setMachines((prevList) =>
+          prevList.map((m) =>
+            m.uid === uid ? { ...m, allowAutoMachining: prev } : m,
+          ),
+        );
+        toast({
+          title: "설정 저장 실패",
+          description: e?.message || "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    },
+    [setMachines, toast, token],
+  );
+
+  const updateMachineAutoRef = useRef(updateMachineAuto);
+  useEffect(() => {
+    updateMachineAutoRef.current = updateMachineAuto;
+  }, [updateMachineAuto]);
 
   const [machiningElapsedSecondsMap, setMachiningElapsedSecondsMap] = useState<
     Record<string, number>
@@ -466,8 +575,9 @@ export const useMachiningBoard = ({
           startedAt: String(data?.startedAt || new Date().toISOString()),
         },
       }));
+      // Set to -1 to indicate "just started, waiting for tick"
       machiningElapsedBaseRef.current[mid] = Date.now();
-      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
+      setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: -1 }));
     });
 
     const offTick = onCncMachiningTick((data: any) => {
@@ -538,11 +648,6 @@ export const useMachiningBoard = ({
             if (jid && qJobId === jid) return false;
             return true;
           });
-
-          // 모든 의뢰건이 완료되면 자동 가공 OFF
-          if (next[mid].length === 0) {
-            void updateMachineAuto(mid, false);
-          }
         }
         return next;
       });
@@ -551,12 +656,42 @@ export const useMachiningBoard = ({
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
     });
 
+    const offSettingsChanged = onCncMachineSettingsChanged((data: any) => {
+      const mid = String(data?.machineId || "").trim();
+      if (!mid || !data?.settings) return;
+
+      setMachines((prevList) => {
+        const targetIdx = prevList.findIndex((m) => m.uid === mid);
+        if (targetIdx === -1) return prevList;
+
+        const nextList = [...prevList];
+        const target = nextList[targetIdx];
+
+        // Update relevant settings from the event
+        if (typeof data.settings.allowAutoMachining === "boolean") {
+          target.allowAutoMachining = data.settings.allowAutoMachining;
+        }
+        if (typeof data.settings.allowJobStart === "boolean") {
+          target.allowJobStart = data.settings.allowJobStart;
+        }
+        if (typeof data.settings.allowProgramDelete === "boolean") {
+          target.allowProgramDelete = data.settings.allowProgramDelete;
+        }
+        if (typeof data.settings.allowRequestAssign === "boolean") {
+          target.allowRequestAssign = data.settings.allowRequestAssign;
+        }
+
+        return nextList;
+      });
+    });
+
     return () => {
       offStarted?.();
       offTick?.();
       offCompleted?.();
+      offSettingsChanged?.();
     };
-  }, [token]);
+  }, [token, setMachines]);
 
   const refreshMachineStatuses = useCallback(async () => {
     if (!token) return;
@@ -584,99 +719,6 @@ export const useMachiningBoard = ({
     lastRefreshAtRef.current = now;
     void refreshMachineStatuses();
   }, [refreshMachineStatuses]);
-
-  const updateMachineAuto = async (uid: string, next: boolean) => {
-    if (!token) return;
-    const target = (Array.isArray(machines) ? machines : []).find(
-      (m) => m.uid === uid,
-    );
-    if (!target) return;
-
-    const prev = target.allowAutoMachining === true;
-    setMachines((prevList) =>
-      prevList.map((m) =>
-        m.uid === uid ? { ...m, allowAutoMachining: next } : m,
-      ),
-    );
-
-    try {
-      const res = await apiFetch({
-        path: "/api/machines",
-        method: "POST",
-        token,
-        jsonBody: {
-          uid: target.uid,
-          name: target.name,
-          ip: target.ip,
-          port: target.port,
-          // 자동가공 설정은 allowAutoMachining만 변경하고,
-          // 원격가공 허용(allowJobStart)은 현재 설정을 그대로 유지한다.
-          allowJobStart: target.allowJobStart !== false,
-          allowProgramDelete: target.allowProgramDelete === true,
-          allowRequestAssign: target.allowRequestAssign !== false,
-          allowAutoMachining: next,
-        },
-      });
-      const body: any = res.data ?? {};
-      if (!res.ok || body?.success === false) {
-        throw new Error(body?.message || "자동 가공 설정 저장 실패");
-      }
-
-      if (next === true) {
-        toast({
-          title: "자동 가공 ON",
-          description:
-            "이 장비는 대기 중인 의뢰가 있으면 자동으로 가공을 시작합니다.",
-        });
-
-        if (token) {
-          const name = target?.name || uid;
-          try {
-            const resp = await fetch(
-              `/api/cnc-machines/machining/auto-trigger/${encodeURIComponent(
-                uid,
-              )}`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-              },
-            );
-            const body2: any = await resp.json().catch(() => ({}));
-            if (!resp.ok || body2?.success === false) {
-              throw new Error(
-                body2?.message || body2?.error || "자동 가공 트리거 호출 실패",
-              );
-            }
-
-            toast({
-              title: "자동 가공 트리거 전송",
-              description: `${name} 대기 의뢰 자동 시작을 요청했습니다.`,
-            });
-          } catch (err: any) {
-            toast({
-              title: "자동 가공 트리거 실패",
-              description: err?.message || "잠시 후 다시 시도해주세요.",
-              variant: "destructive",
-            });
-          }
-        }
-      }
-    } catch (e: any) {
-      setMachines((prevList) =>
-        prevList.map((m) =>
-          m.uid === uid ? { ...m, allowAutoMachining: prev } : m,
-        ),
-      );
-      toast({
-        title: "설정 저장 실패",
-        description: e?.message || "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const updateMachineRequestAssign = async (uid: string, next: boolean) => {
     if (!token) return;

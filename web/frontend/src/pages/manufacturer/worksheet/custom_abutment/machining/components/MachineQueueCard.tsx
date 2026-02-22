@@ -190,15 +190,14 @@ export const MachineQueueCard = ({
       : "없음";
 
   const elapsedLabel = (() => {
+    if (machiningElapsedSeconds === -1) {
+      return "가공 시작!";
+    }
     return formatElapsedMMSS(machiningElapsedSeconds);
   })();
 
   const [completedRolledBack, setCompletedRolledBack] = useState(false);
-  const completedRollbackCount = Number(
-    (lastCompleted as any)?.rollbackCount || 0,
-  );
-  const isCompletedRolledBack =
-    completedRolledBack || completedRollbackCount > 0;
+  const isCompletedRolledBack = completedRolledBack;
 
   const effectiveLastCompleted = isCompletedRolledBack ? null : lastCompleted;
 

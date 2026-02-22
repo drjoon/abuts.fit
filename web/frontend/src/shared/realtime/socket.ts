@@ -338,7 +338,30 @@ export function onCncMachiningTick(
   };
 }
 
-// CNC 가공 타임아웃 이벤트 리스너
+// CNC 장비 설정 변경 이벤트 리스너
+export function onCncMachineSettingsChanged(
+  callback: (data: { machineId: string; settings: any }) => void,
+) {
+  const s = getSocket();
+  if (s) {
+    s.on("cnc-machine-settings-changed", callback);
+    return () => s.off("cnc-machine-settings-changed", callback);
+  }
+  // 소켓이 아직 초기화되지 않은 경우 지연 등록
+  let bound: Socket | null = null;
+  const timer = setInterval(() => {
+    const cur = getSocket();
+    if (cur) {
+      clearInterval(timer);
+      bound = cur;
+      cur.on("cnc-machine-settings-changed", callback);
+    }
+  }, 100);
+  return () => {
+    clearInterval(timer);
+    bound?.off("cnc-machine-settings-changed", callback);
+  };
+}
 export function onCncMachiningTimeout(
   callback: (data: {
     machineId: string;
