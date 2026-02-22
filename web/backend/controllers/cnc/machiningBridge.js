@@ -356,7 +356,7 @@ export async function triggerNextAutoMachiningAfterComplete({
     if (m?.allowAutoMachining !== true) return;
 
     const pending = await Request.find({
-      status: { $in: ["CAM", "가공", "생산"] },
+      manufacturerStage: { $in: ["CAM", "가공"] },
       "productionSchedule.assignedMachine": mid,
     })
       .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
