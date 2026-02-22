@@ -602,31 +602,9 @@ export const useMachiningBoard = ({
       const rid = data?.requestId != null ? String(data.requestId).trim() : "";
       const jid = data?.jobId != null ? String(data.jobId).trim() : "";
 
-      // 완료된 건을 즉시 lastCompletedMap에 추가하여 Complete 섹션에 바로 표시
-      const elapsedSec = machiningElapsedSecondsMap[mid] || 0;
-      const nowPlayingHint = nowPlayingHintMap[mid];
-
-      if (rid || jid) {
-        // NowPlaying의 정보를 최대한 활용하여 Complete 카드 렌더링에 필요한 정보 유지
-        const displayLabel = rid || jid || null;
-
-        setLastCompletedMap((prev) => ({
-          ...prev,
-          [mid]: {
-            machineId: mid,
-            jobId: jid || null,
-            requestId: rid || null,
-            displayLabel,
-            clinicName: "", // Socket.io 이벤트에는 없지만 렌더링에 필수적이지 않음
-            patientName: "", // Socket.io 이벤트에는 없지만 렌더링에 필수적이지 않음
-            tooth: "", // Socket.io 이벤트에는 없지만 렌더링에 필수적이지 않음
-            rollbackCount: 0,
-            lotNumber: {},
-            completedAt: new Date().toISOString(),
-            durationSeconds: elapsedSec,
-          },
-        }));
-      }
+      // 완료된 건을 즉시 lastCompletedMap에 반영하기 위해 서버에서 최신 상태를 패치한다.
+      // (기존의 단순 낙관적 업데이트는 병원/환자명 등이 누락되는 문제가 있었음)
+      void refreshLastCompletedFromServer();
 
       setNowPlayingHintMap((prev) => {
         const next = { ...prev };
