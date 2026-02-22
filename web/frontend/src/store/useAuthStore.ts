@@ -15,7 +15,6 @@ export interface User {
   avatar?: string;
   companyName?: string;
   referralCode?: string;
-  mockUserId?: string;
   approvedAt?: string | null;
   organizationId?: string | null;
   salesmanPayoutAccount?: {
@@ -51,90 +50,6 @@ const normalizeApiUser = (u: any): User | null => {
         : undefined,
   };
 };
-
-export const mockUsers: User[] = [
-  {
-    id: "1",
-    name: "의뢰인 1",
-    email: "requestor.principal@demo.abuts.fit",
-    role: "requestor",
-    companyName: "서울치과기공소",
-    referralCode: "mock_requestor_principal",
-    mockUserId: "000000000000000000000001",
-  },
-  {
-    id: "2",
-    name: "의뢰인 2",
-    email: "requestor.vice_principal@demo.abuts.fit",
-    role: "requestor",
-    companyName: "서울치과기공소",
-    referralCode: "mock_requestor_vice_principal",
-    mockUserId: "000000000000000000000002",
-  },
-  {
-    id: "3",
-    name: "의뢰인 3",
-    email: "requestor.staff@demo.abuts.fit",
-    role: "requestor",
-    companyName: "",
-    referralCode: "mock_requestor_staff",
-    mockUserId: "000000000000000000000003",
-  },
-  {
-    id: "4",
-    name: "제조사 1",
-    email: "manufacturer.master@demo.abuts.fit",
-    role: "manufacturer",
-    companyName: "애크로덴트",
-    referralCode: "mock_manufacturer_master",
-    mockUserId: "000000000000000000000004",
-  },
-  {
-    id: "5",
-    name: "제조사 2",
-    email: "manufacturer.manager@demo.abuts.fit",
-    role: "manufacturer",
-    companyName: "애크로덴트",
-    referralCode: "mock_manufacturer_manager",
-    mockUserId: "000000000000000000000005",
-  },
-  {
-    id: "6",
-    name: "제조사 3",
-    email: "manufacturer.staff@demo.abuts.fit",
-    role: "manufacturer",
-    companyName: "애크로덴트",
-    referralCode: "mock_manufacturer_staff",
-    mockUserId: "000000000000000000000006",
-  },
-  {
-    id: "7",
-    name: "관리자 1",
-    email: "admin.master@demo.abuts.fit",
-    role: "admin",
-    companyName: "Abuts.fit",
-    referralCode: "mock_admin_master",
-    mockUserId: "000000000000000000000007",
-  },
-  {
-    id: "8",
-    name: "관리자 2",
-    email: "admin.manager@demo.abuts.fit",
-    role: "admin",
-    companyName: "Abuts.fit",
-    referralCode: "mock_admin_manager",
-    mockUserId: "000000000000000000000008",
-  },
-  {
-    id: "9",
-    name: "관리자 3",
-    email: "admin.staff@demo.abuts.fit",
-    role: "admin",
-    companyName: "Abuts.fit",
-    referralCode: "mock_admin_staff",
-    mockUserId: "000000000000000000000009",
-  },
-];
 
 interface AuthState {
   user: User | null;
@@ -174,44 +89,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
     token: stored.token,
     refreshToken: stored.refreshToken,
     login: async (email: string, password: string) => {
-      const foundUser = mockUsers.find((u) => u.email === email);
-      if (foundUser && password === "a64468ff-514b") {
-        const mockUser: User = {
-          ...foundUser,
-          approvedAt: foundUser.approvedAt || new Date().toISOString(),
-        };
-        const mockToken = "MOCK_DEV_TOKEN";
-        try {
-          sessionStorage.setItem("abuts_mock_role", mockUser.role);
-          sessionStorage.setItem("abuts_mock_email", mockUser.email);
-          sessionStorage.setItem("abuts_mock_name", mockUser.name);
-          sessionStorage.setItem(
-            "abuts_mock_organization",
-            mockUser.companyName || "",
-          );
-          sessionStorage.setItem("abuts_mock_phone", "");
-          sessionStorage.setItem(
-            "abuts_mock_user_id",
-            mockUser.mockUserId || "",
-          );
-        } catch {
-          // ignore
-        }
-        try {
-          localStorage.setItem(AUTH_TOKEN_KEY, mockToken);
-          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(mockUser));
-        } catch {
-          // ignore localStorage errors
-        }
-        set({
-          user: mockUser,
-          isAuthenticated: true,
-          token: mockToken,
-          refreshToken: null,
-        });
-        return true;
-      }
-
       try {
         const res = await fetch("/api/auth/login", {
           method: "POST",
@@ -241,7 +118,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
           return false;
         }
 
-        // localStorage에 먼저 저장
         try {
           localStorage.setItem(AUTH_TOKEN_KEY, token);
           if (refreshToken)
@@ -253,7 +129,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
           return false;
         }
 
-        // 그 후 Zustand state 업데이트
         set({
           user: normalizedUser,
           isAuthenticated: true,
@@ -313,19 +188,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
     logout: () => {
       try {
-        sessionStorage.removeItem("abuts_mock_role");
-        sessionStorage.removeItem("abuts_mock_email");
-        sessionStorage.removeItem("abuts_mock_name");
-        sessionStorage.removeItem("abuts_mock_organization");
-        sessionStorage.removeItem("abuts_mock_phone");
-        sessionStorage.removeItem("abuts_mock_user_id");
-        localStorage.removeItem("abuts_mock_role");
-        localStorage.removeItem("abuts_mock_email");
-        localStorage.removeItem("abuts_mock_name");
-        localStorage.removeItem("abuts_mock_organization");
-        localStorage.removeItem("abuts_mock_phone");
-        localStorage.removeItem("abuts_mock_user_id");
-
         localStorage.removeItem(AUTH_TOKEN_KEY);
         localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
         localStorage.removeItem(AUTH_USER_KEY);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,14 +13,30 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
-import { Navigation } from "@/features/layout/Navigation";
-import { Footer } from "@/features/landing/Footer";
 
-const DEV_ACCOUNTS = [
-  { label: "의뢰자", email: "requestor.owner@demo.abuts.fit" },
-  { label: "제조사", email: "manufacturer.owner@demo.abuts.fit" },
-  { label: "영업자", email: "s001@gmail.com" },
-  { label: "관리자", email: "admin.owner@demo.abuts.fit" },
+type DevAccount = {
+  label: string;
+  email: string;
+  password: string;
+};
+
+const DEV_ACCOUNTS: DevAccount[] = [
+  {
+    label: "의뢰자",
+    email: "requestor.owner@demo.abuts.fit",
+    password: "Rq!8zY#4fQ@7nC5$",
+  },
+  {
+    label: "제조사",
+    email: "manufacturer.owner@demo.abuts.fit",
+    password: "Mo!7vL#6pR@3sB8$",
+  },
+  { label: "영업자", email: "s001@gmail.com", password: "Abc!1234" },
+  {
+    label: "관리자",
+    email: "admin.owner@demo.abuts.fit",
+    password: "Ao!6fN#9rV@4cH2$",
+  },
 ];
 const isDev = import.meta.env.DEV;
 
@@ -30,9 +46,22 @@ export const LoginPage = () => {
   const [step, setStep] = useState<"email" | "password">("email");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [columnHeight, setColumnHeight] = useState(0);
+  const columnRef = useRef<HTMLDivElement>(null);
   const { login } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (columnRef.current) {
+        setColumnHeight(columnRef.current.offsetHeight);
+      }
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [step, email, password]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,11 +93,36 @@ export const LoginPage = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
+  const handleDevLogin = async (account: DevAccount) => {
+    setEmail(account.email);
+    setPassword(account.password);
+    setStep("password");
+    setIsLoading(true);
+    try {
+      const success = await login(account.email, account.password);
+      if (success) {
+        navigate("/dashboard", { replace: true });
+      } else {
+        toast({
+          title: "로그인 실패",
+          description: `${account.label} 계정 로그인에 실패했습니다.`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "오류 발생",
+        description: "로그인 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-      <main className="pt-24 pb-16 flex items-center justify-center">
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+      <main className="w-full max-w-md py-16">
         <div className="w-full px-4">
           <div className="max-w-md mx-auto">
             <Card className="shadow-elegant border-border/50">
@@ -132,143 +186,146 @@ export const LoginPage = () => {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="email">이메일</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="이메일을 입력하세요"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="pl-10"
-                        autoComplete="username"
-                        required
-                        disabled={step === "password"}
-                      />
+                  <div className="grid gap-4 md:grid-cols-[1fr,auto] md:items-stretch">
+                    <div ref={columnRef} className="space-y-3">
+                      <div className="space-y-2">
+                        {/* <Label htmlFor="email">이메일</Label> */}
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            id="email"
+                            type="email"
+                            placeholder="이메일을 입력하세요"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="pl-10"
+                            autoComplete="username"
+                            required
+                            disabled={step === "password"}
+                          />
+                        </div>
+                      </div>
+
+                      {step === "password" && (
+                        <div className="space-y-2">
+                          {/* <Label htmlFor="password">비밀번호</Label> */}
+                          <div className="relative">
+                            <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              id="password"
+                              type={showPassword ? "text" : "password"}
+                              placeholder="비밀번호를 입력하세요"
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              className="pl-10 pr-10"
+                              autoComplete="current-password"
+                              required
+                            />
+                            <button
+                              type="button"
+                              className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                              onClick={() => setShowPassword(!showPassword)}
+                            >
+                              {showPassword ? (
+                                <EyeOff className="h-4 w-4" />
+                              ) : (
+                                <Eye className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div
+                      className="md:flex md:items-stretch"
+                      style={
+                        step === "password" && columnHeight
+                          ? { height: `${columnHeight}px` }
+                          : undefined
+                      }
+                    >
+                      <Button
+                        type="submit"
+                        variant="hero"
+                        className={`w-full md:w-24 flex items-center justify-center text-base ${
+                          step === "password"
+                            ? "h-[40px] md:h-full"
+                            : "h-[40px] md:h-[40px]"
+                        }`}
+                        disabled={isLoading}
+                      >
+                        {step === "email"
+                          ? "로그인"
+                          : isLoading
+                            ? "로그인 중..."
+                            : "로그인"}
+                      </Button>
                     </div>
                   </div>
 
                   {step === "password" && (
-                    <>
-                      <div className="space-y-2">
-                        <Label htmlFor="password">비밀번호</Label>
-                        <div className="relative">
-                          <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            id="password"
-                            type={showPassword ? "text" : "password"}
-                            placeholder="비밀번호를 입력하세요"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="pl-10 pr-10"
-                            autoComplete="current-password"
-                            required
-                          />
-                          <button
-                            type="button"
-                            className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
-                            onClick={() => setShowPassword(!showPassword)}
-                          >
-                            {showPassword ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-sm">
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:text-foreground"
-                          onClick={() => {
-                            setPassword("");
-                            setStep("email");
-                          }}
-                        >
-                          이메일 변경
-                        </button>
-                        <Link
-                          to="/forgot-password"
-                          className="text-primary hover:underline"
-                        >
-                          비밀번호를 잊으셨나요?
-                        </Link>
-                      </div>
-                    </>
+                    <div className="flex items-center justify-between text-sm">
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          setPassword("");
+                          setStep("email");
+                        }}
+                      >
+                        이메일 변경
+                      </button>
+                      <Link
+                        to="/forgot-password"
+                        className="text-primary hover:underline"
+                      >
+                        비밀번호를 잊으셨나요?
+                      </Link>
+                    </div>
                   )}
-
-                  <Button
-                    type="submit"
-                    variant="hero"
-                    className="w-full h-12 flex items-center justify-center text-base"
-                    disabled={isLoading}
-                  >
-                    {step === "email"
-                      ? "로그인"
-                      : isLoading
-                        ? "로그인 중..."
-                        : "로그인"}
-                  </Button>
                 </form>
 
-                {isDev && (
-                  <div className="mt-4 pt-4 border-t border-dashed border-border/60">
-                    <p className="text-xs text-muted-foreground mb-2 text-center">
-                      개발용 간편 로그인
-                    </p>
-                    <div className="flex flex-wrap gap-2 justify-center">
-                      {DEV_ACCOUNTS.map((acc) => (
-                        <Button
-                          key={acc.email}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="text-xs h-7 px-3"
-                          disabled={isLoading}
-                          onClick={async () => {
-                            setIsLoading(true);
-                            try {
-                              const success = await login(
-                                acc.email,
-                                "Abc!1234",
-                              );
-                              if (success) {
-                                navigate("/dashboard", { replace: true });
-                              } else {
-                                toast({
-                                  title: "로그인 실패",
-                                  description: `${acc.email} 계정 로그인에 실패했습니다.`,
-                                  variant: "destructive",
-                                });
-                              }
-                            } finally {
-                              setIsLoading(false);
-                            }
-                          }}
-                        >
-                          {acc.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div className="mt-8 text-center">
+                  <Button variant="ghost" onClick={() => navigate("/")}>
+                    홈으로 돌아가기
+                  </Button>
+
+                  <Button variant="ghost" asChild>
+                    <Link to="/signup">회원가입</Link>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>
 
-          <div className="mt-8 text-center">
-            <Button variant="ghost" onClick={() => navigate("/")}>
-              홈으로 돌아가기
-            </Button>
-          </div>
+          {isDev && (
+            <div className="mt-4 pt-4 border-t border-dashed border-border/60">
+              <p className="text-xs text-muted-foreground mb-2 text-center">
+                개발용 간편 로그인
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {DEV_ACCOUNTS.map((acc) => (
+                  <Button
+                    key={acc.email}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-9 px-3 flex flex-col items-center gap-1"
+                    disabled={isLoading}
+                    onClick={() => handleDevLogin(acc)}
+                  >
+                    <span className="font-semibold">{acc.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {acc.email}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 };
