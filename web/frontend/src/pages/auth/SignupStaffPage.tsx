@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Footer } from "@/features/landing/Footer";
-import { Navigation } from "@/features/layout/Navigation";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -206,28 +204,53 @@ export const SignupStaffPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <Navigation />
+    <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/40 via-cyan-400/30 to-emerald-300/30 blur-[180px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-orange-400/20 blur-[180px]" />
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.5) 1px, transparent 0)",
+            backgroundSize: "90px 90px",
+          }}
+        />
+      </div>
 
-      <main className="flex-1 bg-muted/20 py-12">
-        <div className="mx-auto max-w-xl px-4">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-xl">제조사·관리자 전용 가입</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                초대 받은 인원만 사용하세요. 링크가 외부에 노출되지 않도록
-                주의해주세요.
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center px-4 py-16 text-center">
+        <div className="space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
+            <span>staff onboarding</span>
+            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span>abuts.fit</span>
+          </div>
+          <h1 className="text-3xl font-semibold text-white">
+            제조사·관리자 전용 가입
+          </h1>
+          <p className="text-white/75">
+            초대 받은 인원만 접근 가능합니다. 승인 후 대시보드 전체 기능을
+            이용할 수 있습니다.
+          </p>
+        </div>
+
+        <div className="mt-10 w-full max-w-2xl text-left">
+          <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
+            <CardHeader className="space-y-2 text-center">
+              <CardTitle className="text-2xl text-white">
+                초대 기반 등록
+              </CardTitle>
+              <p className="text-sm text-white/70">
+                링크가 외부에 노출되지 않도록 주의해주세요.
               </p>
               {invitedBy ? (
-                <p className="text-xs text-muted-foreground">
-                  초대자: {invitedBy}
-                </p>
+                <p className="text-xs text-white/60">초대자: {invitedBy}</p>
               ) : null}
             </CardHeader>
             <CardContent>
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">역할 선택</p>
+                  <p className="text-sm font-medium text-white/80">역할 선택</p>
                   <div className="grid grid-cols-2 gap-2">
                     {["manufacturer", "admin"].map((r) => (
                       <button
@@ -236,8 +259,8 @@ export const SignupStaffPage = () => {
                         onClick={() => setRole(r as any)}
                         className={`rounded-md border px-3 py-2 text-sm font-medium transition ${
                           role === r
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "bg-background hover:bg-muted"
+                            ? "border-white/20 bg-white/15 text-white"
+                            : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
                         }`}
                         disabled={isLoading}
                       >
@@ -249,11 +272,13 @@ export const SignupStaffPage = () => {
 
                 {!isSocialNewMode && (
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">소셜 가입</p>
+                    <p className="text-sm font-medium text-white/80">
+                      소셜 가입
+                    </p>
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        className="h-10 rounded-md border bg-background text-sm font-medium hover:bg-muted disabled:opacity-60"
+                        className="h-10 rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10 disabled:opacity-50"
                         onClick={() => goSocialSignup("google")}
                         disabled={isLoading}
                       >
@@ -261,7 +286,7 @@ export const SignupStaffPage = () => {
                       </button>
                       <button
                         type="button"
-                        className="h-10 rounded-md border bg-background text-sm font-medium hover:bg-muted disabled:opacity-60"
+                        className="h-10 rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10 disabled:opacity-50"
                         onClick={() => goSocialSignup("kakao")}
                         disabled={isLoading}
                       >
@@ -272,13 +297,16 @@ export const SignupStaffPage = () => {
                 )}
 
                 {isSocialNewMode && (
-                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                  <div className="rounded-md border border-white/10 bg-white/5 p-3 text-sm text-white/80">
                     소셜 계정으로 가입을 진행합니다.
                   </div>
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium" htmlFor="name">
+                  <label
+                    className="text-sm font-medium text-white/80"
+                    htmlFor="name"
+                  >
                     이름
                   </label>
                   <input
@@ -286,7 +314,7 @@ export const SignupStaffPage = () => {
                     name="name"
                     value={formData.name}
                     onChange={handleChange}
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40"
                     placeholder="홍길동"
                     required
                     disabled={isLoading}
@@ -294,7 +322,10 @@ export const SignupStaffPage = () => {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium" htmlFor="email">
+                  <label
+                    className="text-sm font-medium text-white/80"
+                    htmlFor="email"
+                  >
                     이메일
                   </label>
                   <input
@@ -303,7 +334,7 @@ export const SignupStaffPage = () => {
                     type="email"
                     value={formData.email}
                     onChange={handleChange}
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40"
                     placeholder="staff@example.com"
                     required
                     disabled={isLoading}
@@ -313,7 +344,10 @@ export const SignupStaffPage = () => {
                 {!isSocialNewMode && (
                   <>
                     <div className="space-y-1">
-                      <label className="text-sm font-medium" htmlFor="password">
+                      <label
+                        className="text-sm font-medium text-white/80"
+                        htmlFor="password"
+                      >
                         비밀번호 (10자 이상 + 특수문자 포함)
                       </label>
                       <input
@@ -322,7 +356,7 @@ export const SignupStaffPage = () => {
                         type="password"
                         value={formData.password}
                         onChange={handleChange}
-                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40"
                         required
                         disabled={isLoading}
                       />
@@ -330,7 +364,7 @@ export const SignupStaffPage = () => {
 
                     <div className="space-y-1">
                       <label
-                        className="text-sm font-medium"
+                        className="text-sm font-medium text-white/80"
                         htmlFor="confirmPassword"
                       >
                         비밀번호 확인
@@ -341,7 +375,7 @@ export const SignupStaffPage = () => {
                         type="password"
                         value={formData.confirmPassword}
                         onChange={handleChange}
-                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white placeholder:text-white/40"
                         required
                         disabled={isLoading}
                       />
@@ -359,7 +393,7 @@ export const SignupStaffPage = () => {
 
                 <button
                   type="button"
-                  className="h-11 w-full rounded-md border bg-background text-sm font-medium hover:bg-muted"
+                  className="h-11 w-full rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10"
                   onClick={() => navigate("/login")}
                   disabled={isLoading}
                 >
@@ -370,8 +404,6 @@ export const SignupStaffPage = () => {
           </Card>
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 };

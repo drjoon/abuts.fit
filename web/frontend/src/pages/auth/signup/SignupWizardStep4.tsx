@@ -14,7 +14,7 @@ export const SignupWizardStep4 = ({ onNavigate }: SignupWizardStep4Props) => {
 
       <div className="space-y-2">
         <h2 className="text-xl font-bold">회원가입 완료!</h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-white/70">
           abuts.fit에 오신 것을 환영합니다
         </p>
       </div>

@@ -87,9 +87,8 @@ export const SignupPage = () => {
   useEffect(() => {
     if (signupRole === "salesman") {
       setPendingSocialProvider(null);
-      if (wizardStep === 2) setWizardStep(1);
     }
-  }, [signupRole, wizardStep]);
+  }, [signupRole]);
 
   useEffect(() => {
     if (!isSocialNewMode) return;
@@ -495,90 +494,100 @@ export const SignupPage = () => {
       </div>
 
       <main className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-4 py-16 lg:flex-row lg:items-center">
-        <section className="space-y-6 text-center lg:w-1/2 lg:text-left">
+        <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-left">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
-            <span>onboarding</span>
+            <span>secure access</span>
             <span className="h-1 w-1 rounded-full bg-emerald-300" />
             <span>abuts.fit</span>
           </div>
           <div className="space-y-4">
             <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
-              맞춤 어버트먼트 제작을 위한
+              하나의 로그인으로 제조 · 배송까지
               <br />
-              디지털 워크스페이스 가입
+              전체 제작 프로세스 동기화
             </h1>
             <p className="text-base text-white/80">
-              의뢰자·영업자 모두 동일한 실시간 제작 현황을 공유하고, 자동화된
-              워크플로우로 시간을 절약하세요.
+              제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
+              2단계 인증 수준의 로그인 경험을 제공합니다.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-4 text-left">
-            <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
-              <p className="text-3xl font-semibold text-white">1,500+</p>
-              <p className="text-xs uppercase tracking-widest text-white/60">
-                월간 처리 케이스
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
-              <p className="text-3xl font-semibold text-white">24/7</p>
-              <p className="text-xs uppercase tracking-widest text-white/60">
-                실시간 트래킹
-              </p>
-            </div>
+          <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
+            <p className="text-xs uppercase tracking-[0.4em] text-white/60">
+              realtime sync
+            </p>
+            <p className="text-4xl font-semibold text-white">98.7%</p>
+            <p className="text-sm text-white/70">
+              동기화 성공률 · 운영팀 SLA 기준
+            </p>
           </div>
         </section>
 
-        <section className="w-full lg:w-1/2">
-          <Card className="border-white/15 bg-white/85 text-slate-900 shadow-[0_25px_65px_rgba(7,7,19,0.35)] backdrop-blur-2xl">
-            <CardHeader className="text-center">
-              <CardTitle className="text-2xl font-semibold">회원가입</CardTitle>
-              <p className="text-sm text-slate-600">
-                abuts.fit에 오신 것을 환영합니다
-              </p>
+        <section className="w-full lg:w-1/2 lg:flex-1">
+          <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
+            <CardHeader className="pb-4 text-center">
+              <CardTitle className="text-lg font-medium text-white/90">
+                {isWizardMode
+                  ? wizardStep === 1
+                    ? "방법 선택"
+                    : wizardStep === 2
+                      ? "추천인 (선택)"
+                      : wizardStep === 3
+                        ? "계정 정보"
+                        : "완료"
+                  : isSocialNewMode
+                    ? wizardStep === 1 && signupRole === "requestor"
+                      ? "추천인 (선택)"
+                      : wizardStep === 2
+                        ? "기본 정보"
+                        : wizardStep === 3
+                          ? "이메일 인증"
+                          : "완료"
+                    : wizardStep === 1
+                      ? "기본 정보"
+                      : wizardStep === 3
+                        ? "이메일 인증"
+                        : "완료"}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {isWizardMode ? (
                 <>
                   {wizardStep === 1 && (
                     <div className="space-y-6">
-                      <div className="space-y-3">
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setSignupRole("requestor")}
-                              className={`h-10 rounded-md border text-sm font-medium transition-colors ${
-                                signupRole === "requestor"
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-background hover:bg-muted"
-                              }`}
-                            >
-                              의뢰자
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSignupRole("salesman")}
-                              className={`h-10 rounded-md border text-sm font-medium transition-colors ${
-                                signupRole === "salesman"
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-background hover:bg-muted"
-                              }`}
-                            >
-                              영업자
-                            </button>
-                          </div>
-                          {signupRole === "requestor" && (
-                            <p className="text-md text-muted-foreground">
-                              치과기공소 혹은 치과병의원
-                            </p>
-                          )}
-                          {signupRole === "salesman" && (
-                            <p className="text-md text-muted-foreground text-right">
-                              영업하시는 개인사업자나 법인
-                            </p>
-                          )}
-                        </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSignupRole("requestor")}
+                          className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                            signupRole === "requestor"
+                              ? "border-white/10 bg-white/15 text-white"
+                              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                          }`}
+                        >
+                          의뢰자
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSignupRole("salesman")}
+                          className={`h-10 rounded-md border text-sm font-medium transition-colors ${
+                            signupRole === "salesman"
+                              ? "border-white/10 bg-white/15 text-white"
+                              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                          }`}
+                        >
+                          영업자
+                        </button>
                       </div>
+                      {signupRole === "requestor" && (
+                        <p className="text-sm text-white/70">
+                          치과기공소 혹은 치과병의원
+                        </p>
+                      )}
+                      {signupRole === "salesman" && (
+                        <p className="text-sm text-white/70 text-right">
+                          영업하는 개인사업자 혹은 법인
+                        </p>
+                      )}
 
                       <SignupWizardStep1
                         googleUrl={oauthStartUrl("google")}
@@ -616,33 +625,56 @@ export const SignupPage = () => {
 
                   {wizardStep === 2 && (
                     <div className="space-y-4">
-                      <div className="space-y-1">
-                        <p className="text-md font-medium">
-                          추천인 코드/ID (선택)
-                        </p>
-                        <p className="text-md text-muted-foreground">
-                          영업자 소개로 가입하는 경우 입력하면 소개 가입
-                          크레딧이 지급될 수 있어요.
-                        </p>
-                      </div>
-
                       <input
                         value={refInput}
                         onChange={(e) => setRefInput(e.target.value)}
-                        placeholder="추천인 코드 또는 사용자 ID"
-                        className="h-10 w-full rounded-md border bg-background px-3 text-md"
+                        placeholder="추천인 코드 또는 사용자 계정"
+                        className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-md text-white placeholder:text-white/40"
                       />
 
+                      {!pendingSocialProvider && (
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <button
+                            type="button"
+                            className="h-10 w-full rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10"
+                            onClick={() => setWizardStep(1)}
+                          >
+                            뒤로가기
+                          </button>
+                          <button
+                            type="button"
+                            className="h-10 w-full rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10"
+                            onClick={() => setWizardStep(3)}
+                          >
+                            건너뛰기
+                          </button>
+                        </div>
+                      )}
+
                       {pendingSocialProvider && (
-                        <button
-                          type="button"
-                          className="h-10 w-full rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
-                          onClick={() => goSocialSignup(pendingSocialProvider)}
-                        >
-                          {pendingSocialProvider === "google"
-                            ? "Google로 계속"
-                            : "카카오로 계속"}
-                        </button>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <button
+                            type="button"
+                            className="h-10 w-full rounded-md border border-white/10 bg-white/5 text-sm font-medium text-white/80 hover:bg-white/10"
+                            onClick={() => {
+                              setPendingSocialProvider(null);
+                              setWizardStep(1);
+                            }}
+                          >
+                            뒤로가기
+                          </button>
+                          <button
+                            type="button"
+                            className="h-10 w-full rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+                            onClick={() =>
+                              goSocialSignup(pendingSocialProvider)
+                            }
+                          >
+                            {pendingSocialProvider === "google"
+                              ? "Google로 계속"
+                              : "카카오로 계속"}
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}
@@ -681,27 +713,17 @@ export const SignupPage = () => {
                     wizardStep === 1 &&
                     signupRole === "requestor" && (
                       <div className="space-y-4">
-                        <div className="space-y-1">
-                          <p className="text-md font-medium">
-                            추천인 코드/ID (선택)
-                          </p>
-                          <p className="text-md text-muted-foreground">
-                            영업자 소개로 가입하는 경우 입력하면 소개 가입
-                            크레딧이 지급될 수 있어요.
-                          </p>
-                        </div>
-
                         <input
                           value={refInput}
                           onChange={(e) => setRefInput(e.target.value)}
-                          placeholder="추천인 코드 또는 사용자 ID"
-                          className="h-10 w-full rounded-md border bg-background px-3 text-md"
+                          placeholder="추천인 코드 또는 사용자 계정"
+                          className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-md text-white placeholder:text-white/40"
                         />
 
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            className="h-10 flex-1 rounded-md border bg-background text-md font-medium hover:bg-muted"
+                            className="h-10 flex-1 rounded-md border border-white/10 bg-white/5 text-md font-medium text-white/80 hover:bg-white/10"
                             onClick={() => navigate("/login")}
                           >
                             취소

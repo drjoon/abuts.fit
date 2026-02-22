@@ -24,7 +24,7 @@ export const SignupWizardStep1 = ({
         <Button
           variant="outline"
           type="button"
-          className="h-14 flex flex-col items-center justify-center gap-2 px-2"
+          className="h-14 flex flex-col items-center justify-center gap-2 px-2 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
           onClick={() => {
             if (onGoogleClick) return onGoogleClick();
             window.location.href = googleUrl;
@@ -54,7 +54,7 @@ export const SignupWizardStep1 = ({
         <Button
           variant="outline"
           type="button"
-          className="h-14 flex flex-col items-center justify-center gap-2 px-2"
+          className="h-14 flex flex-col items-center justify-center gap-2 px-2 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
           onClick={() => {
             if (onKakaoClick) return onKakaoClick();
             window.location.href = kakaoUrl;
@@ -71,7 +71,7 @@ export const SignupWizardStep1 = ({
 
         <Button
           type="button"
-          className="h-14 flex flex-col items-center justify-center gap-2 px-2"
+          className="h-14 flex flex-col items-center justify-center gap-2 px-2 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
           variant="outline"
           onClick={onEmailClick}
         >
@@ -96,7 +96,7 @@ export const SignupWizardStep1 = ({
         이미 계정이 있으신가요?{" "}
         <Button
           variant="link"
-          className="p-0 h-auto text-sm"
+          className="p-0 h-auto text-sm text-white/80 hover:text-white"
           onClick={() => navigate("/login")}
         >
           로그인

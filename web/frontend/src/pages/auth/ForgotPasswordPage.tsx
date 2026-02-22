@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { Mail } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Navigation } from "@/features/layout/Navigation";
-import { Footer } from "@/features/landing/Footer";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -54,74 +52,105 @@ export const ForgotPasswordPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-      <main className="pt-24 pb-16 flex items-center justify-center">
-        <div className="w-full px-4">
-          <div className="max-w-md mx-auto">
-            <Card className="shadow-elegant border-border/50">
-              <CardHeader className="text-center space-y-2">
-                <CardTitle className="text-2xl">비밀번호 재설정</CardTitle>
-                <CardDescription>
-                  가입한 이메일 주소로 비밀번호 재설정 링크를 보내드립니다.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="forgot-email">이메일</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="forgot-email"
-                        type="email"
-                        placeholder="가입한 이메일 주소"
-                        className="pl-10"
-                        autoComplete="email"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <Button
-                    type="submit"
-                    variant="hero"
-                    className="w-full h-12 text-base"
-                    disabled={isSubmitting || isSent}
-                  >
-                    {isSent ? "이메일이 전송되었습니다" : "재설정 링크 보내기"}
-                  </Button>
-                </form>
-                <div className="mt-6 text-sm text-muted-foreground space-y-2">
-                  <p>
-                    메일이 도착하지 않았다면 스팸함을 확인하거나, 입력한
-                    이메일이 맞는지 다시 확인해주세요.
-                  </p>
-                  <p>링크는 1시간 동안만 유효합니다.</p>
-                </div>
-                <div className="mt-8 flex flex-col gap-2">
-                  <Button
-                    variant="ghost"
-                    onClick={() => navigate("/login")}
-                    className="w-full"
-                  >
-                    로그인으로 돌아가기
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => navigate("/signup")}
-                    className="w-full"
-                  >
-                    회원가입
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+    <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/40 via-cyan-400/30 to-emerald-300/30 blur-[180px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-orange-400/20 blur-[180px]" />
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.5) 1px, transparent 0)",
+            backgroundSize: "90px 90px",
+          }}
+        />
+      </div>
+
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center px-4 py-16 text-center">
+        <div className="space-y-4">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
+            <span>account</span>
+            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span>support</span>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold text-white">
+              비밀번호 재설정
+            </h1>
+            <p className="text-white/75">
+              가입한 이메일 주소로 재설정 링크를 보내드립니다. 메일은 1시간 동안
+              유효합니다.
+            </p>
           </div>
         </div>
+
+        <div className="mt-10 w-full max-w-md">
+          <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
+            <CardHeader className="text-center space-y-2">
+              <CardTitle className="text-2xl text-white">이메일 입력</CardTitle>
+              <CardDescription className="text-white/70">
+                입력하신 주소로 재설정 링크를 전송합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="forgot-email"
+                    className="text-sm font-medium text-white/80"
+                  >
+                    이메일
+                  </Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-white/50" />
+                    <Input
+                      id="forgot-email"
+                      type="email"
+                      placeholder="가입한 이메일 주소"
+                      className="pl-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="submit"
+                  variant="hero"
+                  className="w-full h-12 text-base"
+                  disabled={isSubmitting || isSent}
+                >
+                  {isSent ? "이메일이 전송되었습니다" : "재설정 링크 보내기"}
+                </Button>
+              </form>
+              <div className="mt-6 text-sm text-white/70 space-y-2">
+                <p>
+                  메일이 도착하지 않았다면 스팸함을 확인하거나, 입력한 이메일이
+                  맞는지 다시 확인해주세요.
+                </p>
+                <p>링크는 1시간 동안만 유효합니다.</p>
+              </div>
+              <div className="mt-8 flex flex-col gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => navigate("/login")}
+                  className="w-full text-white/80 hover:text-white"
+                >
+                  로그인으로 돌아가기
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate("/signup")}
+                  className="w-full border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                >
+                  회원가입
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </main>
-      <Footer />
     </div>
   );
 };

@@ -173,9 +173,9 @@ export const LoginPage = () => {
 
         <section className="w-full lg:w-1/2 lg:flex-1">
           <div className="w-full space-y-6">
-            <Card className="border-white/15 bg-white/90 text-slate-900 shadow-[0_25px_65px_rgba(7,7,19,0.35)] backdrop-blur-2xl">
+            <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
               <CardHeader className="text-center">
-                <CardTitle className="text-2xl">로그인</CardTitle>
+                <CardTitle className="text-2xl text-white">로그인</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -183,7 +183,7 @@ export const LoginPage = () => {
                     <Button
                       variant="outline"
                       type="button"
-                      className="w-full h-12 flex items-center justify-center text-base"
+                      className="w-full h-12 flex items-center justify-center text-base border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                       onClick={() => {
                         window.location.href = "/api/auth/oauth/google/start";
                       }}
@@ -211,7 +211,7 @@ export const LoginPage = () => {
                     <Button
                       variant="outline"
                       type="button"
-                      className="w-full h-12 flex items-center justify-center text-base"
+                      className="w-full h-12 flex items-center justify-center text-base border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                       onClick={() => {
                         window.location.href = "/api/auth/oauth/kakao/start";
                       }}
@@ -237,14 +237,14 @@ export const LoginPage = () => {
                       <div className="space-y-2">
                         {/* <Label htmlFor="email">이메일</Label> */}
                         <div className="relative">
-                          <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                          <Mail className="absolute left-3 top-3 h-4 w-4 text-white/50" />
                           <Input
                             id="email"
                             type="email"
                             placeholder="이메일을 입력하세요"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
-                            className="pl-10"
+                            className="pl-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
                             autoComplete="username"
                             required
                             disabled={step === "password"}
@@ -256,20 +256,20 @@ export const LoginPage = () => {
                         <div className="space-y-2">
                           {/* <Label htmlFor="password">비밀번호</Label> */}
                           <div className="relative">
-                            <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                            <Lock className="absolute left-3 top-3 h-4 w-4 text-white/50" />
                             <Input
                               id="password"
                               type={showPassword ? "text" : "password"}
                               placeholder="비밀번호를 입력하세요"
                               value={password}
                               onChange={(e) => setPassword(e.target.value)}
-                              className="pl-10 pr-10"
+                              className="pl-10 pr-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
                               autoComplete="current-password"
                               required
                             />
                             <button
                               type="button"
-                              className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                              className="absolute right-3 top-3 text-white/50 hover:text-white"
                               onClick={() => setShowPassword(!showPassword)}
                             >
                               {showPassword ? (
@@ -311,10 +311,10 @@ export const LoginPage = () => {
                   </div>
 
                   {step === "password" && (
-                    <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center justify-between text-sm text-white/70">
                       <button
                         type="button"
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-white/70 hover:text-white"
                         onClick={() => {
                           setPassword("");
                           setStep("email");
@@ -324,7 +324,7 @@ export const LoginPage = () => {
                       </button>
                       <Link
                         to="/forgot-password"
-                        className="text-primary hover:underline"
+                        className="text-emerald-300 hover:text-emerald-200"
                       >
                         비밀번호를 잊으셨나요?
                       </Link>
@@ -332,10 +332,10 @@ export const LoginPage = () => {
                   )}
                 </form>
 
-                <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-slate-600">
+                <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-white/70">
                   <Button
                     variant="ghost"
-                    className="text-slate-600 hover:text-slate-900"
+                    className="text-white/70 hover:text-white"
                     onClick={() => navigate("/")}
                   >
                     홈으로 돌아가기
@@ -344,7 +344,7 @@ export const LoginPage = () => {
                   <Button
                     variant="ghost"
                     asChild
-                    className="text-slate-600 hover:text-slate-900"
+                    className="text-white/70 hover:text-white"
                   >
                     <Link to="/signup">회원가입</Link>
                   </Button>
@@ -355,7 +355,7 @@ export const LoginPage = () => {
                     <Button
                       type="button"
                       variant="link"
-                      className="text-xs uppercase tracking-[0.35em] text-slate-500 hover:text-slate-900"
+                      className="text-xs uppercase tracking-[0.35em] text-white/60 hover:text-white"
                       onClick={() => setDevModalOpen(true)}
                     >
                       DEV QUICK LOGIN

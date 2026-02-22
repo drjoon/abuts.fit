@@ -16,7 +16,7 @@ export const SignupSocialWizardStep4 = ({
 
       <div className="space-y-2">
         <h2 className="text-2xl font-bold">회원가입 완료</h2>
-        <p className="text-muted-foreground">abuts.fit에 가입되었습니다</p>
+        <p className="text-white/70">abuts.fit에 가입되었습니다</p>
       </div>
 
       <Button

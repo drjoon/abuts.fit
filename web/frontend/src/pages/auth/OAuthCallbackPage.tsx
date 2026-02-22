@@ -108,5 +108,32 @@ export const OAuthCallbackPage = () => {
     };
   }, [loginWithToken, navigate, searchParams, toast]);
 
-  return <div className="p-6">로그인 처리 중...</div>;
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/40 via-cyan-400/30 to-emerald-300/30 blur-[180px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-orange-400/20 blur-[180px]" />
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.5) 1px, transparent 0)",
+            backgroundSize: "90px 90px",
+          }}
+        />
+      </div>
+
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center px-4 py-16 text-center">
+        <div className="w-full max-w-md rounded-2xl border border-white/12 bg-white/5 p-8 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
+          <p className="text-sm uppercase tracking-[0.4em] text-white/60">
+            processing
+          </p>
+          <h1 className="mt-3 text-2xl font-semibold">로그인 처리 중...</h1>
+          <p className="mt-2 text-white/70 text-sm">
+            소셜 로그인 응답을 확인하는 중입니다. 잠시만 기다려주세요.
+          </p>
+        </div>
+      </main>
+    </div>
+  );
 };

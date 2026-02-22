@@ -71,7 +71,7 @@ export const SignupSocialWizardStep1 = ({
       }}
     >
       <div className="space-y-2">
-        <Label htmlFor="name" className="text-sm font-medium">
+        <Label htmlFor="name" className="text-sm font-medium text-white/80">
           이름
         </Label>
         <Input
@@ -84,12 +84,12 @@ export const SignupSocialWizardStep1 = ({
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="name"
-          className="h-10"
+          className="h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="email" className="text-sm font-medium">
+        <Label htmlFor="email" className="text-sm font-medium text-white/80">
           이메일
         </Label>
         <Input
@@ -102,7 +102,7 @@ export const SignupSocialWizardStep1 = ({
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           autoComplete="email"
-          className="h-10"
+          className="h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
         />
       </div>
 
@@ -112,7 +112,7 @@ export const SignupSocialWizardStep1 = ({
           variant="outline"
           disabled={isLoading}
           onClick={onPrevious}
-          className="h-10"
+          className="h-10 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
         >
           이전
         </Button>

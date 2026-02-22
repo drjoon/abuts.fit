@@ -50,7 +50,10 @@ export const SignupSocialWizardStep2 = ({
       {emailChanged && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label htmlFor="email" className="text-sm font-medium">
+            <Label
+              htmlFor="email"
+              className="text-sm font-medium text-white/80"
+            >
               이메일
             </Label>
             {emailVerifiedAt && (
@@ -69,7 +72,7 @@ export const SignupSocialWizardStep2 = ({
               value={formData.email}
               onChange={onFormChange}
               disabled={isLoading || !!emailVerifiedAt}
-              className="h-10 flex-1"
+              className="h-10 flex-1 border-white/10 bg-white/5 text-white placeholder:text-white/40"
             />
             {!emailVerifiedAt && (
               <Button
@@ -77,7 +80,7 @@ export const SignupSocialWizardStep2 = ({
                 variant="outline"
                 disabled={isLoading || !formData.email}
                 onClick={onSendEmailVerification}
-                className="h-10 px-4 flex-shrink-0"
+                className="h-10 px-4 flex-shrink-0 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
               >
                 발송
               </Button>
@@ -95,14 +98,14 @@ export const SignupSocialWizardStep2 = ({
                   placeholder="4자리 인증 코드 입력"
                   disabled={isLoading}
                   maxLength={4}
-                  className="h-10 flex-1 text-center text-lg tracking-widest"
+                  className="h-10 flex-1 border-white/10 bg-white/5 text-center text-lg tracking-widest text-white placeholder:text-white/40"
                 />
                 <Button
                   type="button"
                   variant="outline"
                   disabled={isLoading || emailCode.length !== 4}
                   onClick={() => onVerifyEmailVerification(emailCode)}
-                  className="h-10 px-4 flex-shrink-0"
+                  className="h-10 px-4 flex-shrink-0 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                 >
                   확인
                 </Button>
@@ -121,7 +124,7 @@ export const SignupSocialWizardStep2 = ({
           variant="outline"
           disabled={isLoading}
           onClick={onPrevious}
-          className="h-10"
+          className="h-10 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
         >
           이전
         </Button>
