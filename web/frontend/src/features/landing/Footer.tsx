@@ -27,8 +27,8 @@ export const Footer = () => {
   ];
 
   return (
-    <footer className="bg-background border-t border-border">
-      <div className="container mx-auto px-4 py-16">
+    <footer className="relative mt-8 border-t border-white/10 bg-[#02030b]/80 text-white backdrop-blur-2xl">
+      <div className="container mx-auto px-6 py-16 sm:px-10 lg:px-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           <div className="lg:col-span-2">
             <div
@@ -41,31 +41,31 @@ export const Footer = () => {
               </span>
             </div>
 
-            <p className="text-muted-foreground mb-6 leading-relaxed">
-              어벗츠 주식회사가 제공하는 커스텀 어벗 의뢰 플랫폼입니다. 커스텀
+            <p className="text-white/70 mb-6 leading-relaxed">
+              어벗츠 주식회사가 제공하는 커스텀 어벗먼트 의뢰 플랫폼입니다. 커스텀
               어벗먼트 제조는 애크로덴트가 단독으로 담당합니다.
             </p>
 
             <div className="space-y-3">
-              <div className="flex items-center text-muted-foreground">
+              <div className="flex items-center text-white/70">
                 <Mail className="w-4 h-4 mr-2" />
                 <a
                   href={`mailto:${CONTACT_EMAIL}`}
-                  className="hover:text-foreground transition-colors"
+                  className="hover:text-white transition-colors"
                 >
                   {CONTACT_EMAIL}
                 </a>
               </div>
-              <div className="flex items-center text-muted-foreground">
+              <div className="flex items-center text-white/70">
                 <Phone className="w-4 h-4 mr-2" />
                 <a
                   href={`tel:${COMPANY_PHONE}`}
-                  className="hover:text-foreground transition-colors"
+                  className="hover:text-white transition-colors"
                 >
                   {COMPANY_PHONE}
                 </a>
               </div>
-              <div className="flex items-center text-muted-foreground">
+              <div className="flex items-center text-white/70">
                 <MapPin className="w-4 h-4 mr-2" />
                 <span>{COMPANY_ADDRESS}</span>
               </div>
@@ -79,7 +79,7 @@ export const Footer = () => {
                 <li key={link.label}>
                   <Link
                     to={link.href}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-white/60 hover:text-white transition-colors"
                   >
                     {link.label}
                   </Link>
@@ -95,7 +95,7 @@ export const Footer = () => {
                 <li key={link.label}>
                   <Link
                     to={link.href}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-white/60 hover:text-white transition-colors"
                   >
                     {link.label}
                   </Link>
@@ -105,12 +105,12 @@ export const Footer = () => {
           </div>
         </div>
 
-        <div className="mt-8 pt-8 border-t border-border">
+        <div className="mt-8 pt-8 border-t border-white/10">
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center space-x-4 mb-4 md:mb-0">
               <Badge variant="secondary">한국어</Badge>
-              <span className="text-muted-foreground text-sm">
-                © 2025 어벗츠 주식회사. All rights reserved.
+              <span className="text-white/60 text-sm">
+                © 2026 어벗츠 주식회사. All rights reserved.
               </span>
             </div>
 
@@ -119,7 +119,7 @@ export const Footer = () => {
                 href="https://www.instagram.com/abuts.fit"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="text-white/60 hover:text-white transition-colors"
                 aria-label="Instagram"
               >
                 <Instagram className="w-5 h-5" />
@@ -128,7 +128,7 @@ export const Footer = () => {
                 href="https://www.facebook.com/abuts.fit"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="text-white/60 hover:text-white transition-colors"
                 aria-label="Facebook"
               >
                 <Facebook className="w-5 h-5" />
@@ -137,7 +137,7 @@ export const Footer = () => {
                 href="https://x.com/abuts_fit"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="text-white/60 hover:text-white transition-colors"
                 aria-label="X (Twitter)"
               >
                 <svg
@@ -151,7 +151,7 @@ export const Footer = () => {
             </div>
           </div>
 
-          <div className="mt-6 text-xs text-muted-foreground leading-relaxed">
+          <div className="mt-6 text-xs text-white/60 leading-relaxed">
             <div>
               {COMPANY_NAME} | 대표자: {COMPANY_CEO_NAME} | 사업자등록번호:{" "}
               {COMPANY_BUSINESS_REGISTRATION_NUMBER}

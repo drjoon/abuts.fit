@@ -40,18 +40,24 @@ export const Navigation = () => {
   };
 
   return (
-    <nav className="fixed top-0 w-full bg-background/80 backdrop-blur-sm border-b border-border z-50">
+    <nav className="fixed top-0 w-full z-50">
+      <div className="absolute inset-0 bg-[#02030b]/60 backdrop-blur-2xl border-b border-white/10" />
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          <div
-            className="flex items-center space-x-3 cursor-pointer"
+        <div className="relative flex items-center justify-between h-16">
+          <button
+            className="flex items-center gap-3 text-white transition hover:opacity-90"
             onClick={() => navigate("/")}
           >
-            <img src={logo} alt="Abuts.fit" className="h-8 w-8" />
-            <span className="text-xl font-bold bg-gradient-hero bg-clip-text text-transparent">
+            <img
+              src={logo}
+              alt="Abuts.fit"
+              className="h-12 w-12 object-contain"
+              style={{ backgroundColor: "transparent" }}
+            />
+            <span className="text-2xl font-semibold bg-gradient-to-r from-[#6E8BFF] via-[#A278FF] to-[#FF9D62] bg-clip-text text-transparent">
               abuts.fit
             </span>
-          </div>
+          </button>
 
           <div className="hidden md:flex items-center space-x-8">
             {menuItems.map((item) => (
@@ -68,22 +74,37 @@ export const Navigation = () => {
           <div className="hidden md:flex items-center space-x-4">
             {isAuthenticated ? (
               <>
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-white/70">
                   안녕하세요, {user?.name}님
                 </span>
-                <Button variant="ghost" onClick={handleLoginClick}>
+                <Button
+                  variant="ghost"
+                  className="text-white"
+                  onClick={handleLoginClick}
+                >
                   대시보드
                 </Button>
-                <Button variant="outline" onClick={handleLogout}>
+                <Button
+                  variant="outline"
+                  className="border-white/30 text-white"
+                  onClick={handleLogout}
+                >
                   로그아웃
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" onClick={handleLoginClick}>
+                <Button
+                  variant="ghost"
+                  className="text-white"
+                  onClick={handleLoginClick}
+                >
                   로그인
                 </Button>
-                <Button variant="hero" onClick={handleSignupClick}>
+                <Button
+                  className="bg-white text-slate-900 hover:bg-white/90"
+                  onClick={handleSignupClick}
+                >
                   회원가입
                 </Button>
               </>
@@ -113,19 +134,19 @@ export const Navigation = () => {
             <div className="pt-4 space-y-2">
               {isAuthenticated ? (
                 <>
-                  <div className="text-sm text-muted-foreground text-center mb-2">
+                  <div className="text-sm text-white/80 text-center mb-2">
                     안녕하세요, {user?.name}님
                   </div>
                   <Button
                     variant="ghost"
-                    className="w-full"
+                    className="w-full text-white"
                     onClick={handleLoginClick}
                   >
                     대시보드
                   </Button>
                   <Button
                     variant="outline"
-                    className="w-full"
+                    className="w-full border-white/30 text-white"
                     onClick={handleLogout}
                   >
                     로그아웃
@@ -135,14 +156,13 @@ export const Navigation = () => {
                 <>
                   <Button
                     variant="ghost"
-                    className="w-full"
+                    className="w-full text-white"
                     onClick={handleLoginClick}
                   >
                     로그인
                   </Button>
                   <Button
-                    variant="hero"
-                    className="w-full"
+                    className="w-full bg-white text-slate-900 hover:bg-white/90"
                     onClick={handleSignupClick}
                   >
                     회원가입

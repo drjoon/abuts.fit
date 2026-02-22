@@ -4,8 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Navigation } from "@/features/layout/Navigation";
-import { Footer } from "@/features/landing/Footer";
+import {
+  PublicPageLayout,
+  PUBLIC_CARD_CLASS,
+} from "./components/PublicPageLayout";
 import { MapPin, Phone, Mail, Clock, Send } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -25,7 +27,7 @@ export const ContactPage = () => {
   const { toast } = useToast();
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -53,155 +55,144 @@ export const ContactPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
+    <PublicPageLayout>
+      <div className="space-y-8 max-w-6xl mx-auto">
+        <div className="text-center space-y-2">
+          <p className="text-xs uppercase tracking-[0.35em] text-white/60">
+            contact
+          </p>
+          <h1 className="text-4xl font-semibold text-white">문의하기</h1>
+          <p className="text-white/70">
+            궁금한 점이나 제안 사항이 있다면 언제든 메시지를 남겨주세요.
+          </p>
+        </div>
 
-      <div className="container mx-auto px-4 py-24">
-        <div className="max-w-6xl mx-auto">
-          {/* 헤더 */}
-          <div className="text-center mb-12">
-            <h1 className="text-4xl font-bold mb-4">문의하기</h1>
-            <p className="text-muted-foreground text-lg">
-              궁금한 점이나 제안사항이 있으시면 언제든 연락주세요
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* 연락처 정보 */}
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>연락처 정보</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="flex items-start gap-4">
-                    <MapPin className="h-6 w-6 text-primary mt-1" />
-                    <div>
-                      <p className="text-muted-foreground">{COMPANY_ADDRESS}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4">
-                    <Phone className="h-6 w-6 text-primary mt-1" />
-                    <div>
-                      <p className="text-muted-foreground">{COMPANY_PHONE}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4">
-                    <Mail className="h-6 w-6 text-primary mt-1" />
-                    <div>
-                      <p className="text-muted-foreground">{CONTACT_EMAIL}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4">
-                    <Clock className="h-6 w-6 text-primary mt-1" />
-                    <div>
-                      <h3 className="font-medium mb-1">운영시간</h3>
-                      <p className="text-muted-foreground">
-                        평일: 오전 9시 - 오후 6시
-                        <br />
-                        토요일: 오전 9시 - 오후 1시
-                        <br />
-                        일요일 및 공휴일 휴무
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 지도 (실제로는 구글 맵이나 카카오 맵 API 사용) */}
-              <Card>
-                <CardContent className="p-0">
-                  <div className="h-64 bg-muted flex items-center justify-center">
-                    <p className="text-muted-foreground">지도 영역</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* 문의 폼 */}
-            <Card>
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          <div className="space-y-6">
+            <Card className={PUBLIC_CARD_CLASS}>
               <CardHeader>
-                <CardTitle>메시지 보내기</CardTitle>
+                <CardTitle className="text-slate-900">연락처 정보</CardTitle>
               </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">이름 *</Label>
-                      <Input
-                        id="name"
-                        name="name"
-                        value={formData.name}
-                        onChange={handleInputChange}
-                        placeholder="이름을 입력하세요"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">연락처</Label>
-                      <Input
-                        id="phone"
-                        name="phone"
-                        value={formData.phone}
-                        onChange={handleInputChange}
-                        placeholder="연락처를 입력하세요"
-                      />
-                    </div>
-                  </div>
+              <CardContent className="space-y-6 text-slate-600">
+                <div className="flex items-start gap-4">
+                  <MapPin className="h-6 w-6 text-primary mt-1" />
+                  <p>{COMPANY_ADDRESS}</p>
+                </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="email">이메일 *</Label>
-                    <Input
-                      id="email"
-                      name="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      placeholder="이메일을 입력하세요"
-                      required
-                    />
-                  </div>
+                <div className="flex items-start gap-4">
+                  <Phone className="h-6 w-6 text-primary mt-1" />
+                  <p>{COMPANY_PHONE}</p>
+                </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="subject">제목 *</Label>
-                    <Input
-                      id="subject"
-                      name="subject"
-                      value={formData.subject}
-                      onChange={handleInputChange}
-                      placeholder="문의 제목을 입력하세요"
-                      required
-                    />
-                  </div>
+                <div className="flex items-start gap-4">
+                  <Mail className="h-6 w-6 text-primary mt-1" />
+                  <p>{CONTACT_EMAIL}</p>
+                </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="message">메시지 *</Label>
-                    <Textarea
-                      id="message"
-                      name="message"
-                      value={formData.message}
-                      onChange={handleInputChange}
-                      placeholder="자세한 문의 내용을 입력하세요"
-                      rows={6}
-                      required
-                    />
+                <div className="flex items-start gap-4">
+                  <Clock className="h-6 w-6 text-primary mt-1" />
+                  <div>
+                    <h3 className="font-medium text-slate-900 mb-1">
+                      운영시간
+                    </h3>
+                    <p>
+                      평일: 오전 9시 - 오후 6시
+                      <br />
+                      토요일: 오전 9시 - 오후 1시
+                      <br />
+                      일요일 및 공휴일 휴무
+                    </p>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
 
-                  <Button type="submit" className="w-full">
-                    <Send className="h-4 w-4 mr-2" />
-                    메시지 보내기
-                  </Button>
-                </form>
+            <Card className={PUBLIC_CARD_CLASS}>
+              <CardContent className="p-0">
+                <div className="flex h-64 items-center justify-center rounded-2xl bg-slate-900/10 text-slate-500">
+                  지도 영역
+                </div>
               </CardContent>
             </Card>
           </div>
+
+          <Card className={PUBLIC_CARD_CLASS}>
+            <CardHeader>
+              <CardTitle className="text-slate-900">메시지 보내기</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">이름 *</Label>
+                    <Input
+                      id="name"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      placeholder="이름을 입력하세요"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">연락처</Label>
+                    <Input
+                      id="phone"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      placeholder="연락처를 입력하세요"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">이메일 *</Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    placeholder="이메일을 입력하세요"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="subject">제목 *</Label>
+                  <Input
+                    id="subject"
+                    name="subject"
+                    value={formData.subject}
+                    onChange={handleInputChange}
+                    placeholder="문의 제목을 입력하세요"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="message">메시지 *</Label>
+                  <Textarea
+                    id="message"
+                    name="message"
+                    value={formData.message}
+                    onChange={handleInputChange}
+                    placeholder="자세한 문의 내용을 입력하세요"
+                    rows={6}
+                    required
+                  />
+                </div>
+
+                <Button type="submit" className="w-full">
+                  <Send className="h-4 w-4 mr-2" />
+                  메시지 보내기
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
         </div>
       </div>
-
-      <Footer />
-    </div>
+    </PublicPageLayout>
   );
 };
