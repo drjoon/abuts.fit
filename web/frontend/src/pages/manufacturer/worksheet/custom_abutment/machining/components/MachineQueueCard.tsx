@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -198,6 +198,11 @@ export const MachineQueueCard = ({
   const lastCompletedRequestId = String(lastCompleted?.requestId || "").trim();
   const machiningLotBadgeClass =
     "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
+  const [completedRolledBack, setCompletedRolledBack] = useState(false);
+
+  useEffect(() => {
+    setCompletedRolledBack(false);
+  }, [lastCompletedRequestId]);
 
   return (
     <div
@@ -311,7 +316,9 @@ export const MachineQueueCard = ({
                       requestId={(lastCompleted as any)?.requestId}
                       lotNumber={lastCompletedLotRaw}
                       lotBadgeClassName={machiningLotBadgeClass}
-                      className="text-[15px] leading-tight"
+                      className={`text-[15px] leading-tight ${
+                        completedRolledBack ? "line-through text-slate-400" : ""
+                      }`}
                     />
                   ) : (
                     "없음"
@@ -322,15 +329,15 @@ export const MachineQueueCard = ({
                 {lastCompletedRequestId ? (
                   <button
                     type="button"
-                    className="inline-flex h-8 px-3 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                    className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!onRollbackCompleted) return;
+                      setCompletedRolledBack(true);
                       onRollbackCompleted(lastCompletedRequestId, machineId);
                     }}
                   >
-                    <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-                    롤백
+                    <ArrowLeft className="h-4 w-4" />
                   </button>
                 ) : null}
               </div>

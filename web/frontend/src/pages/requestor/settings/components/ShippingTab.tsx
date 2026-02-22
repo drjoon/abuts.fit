@@ -241,8 +241,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
               박스로 묶어 출고합니다.
             </div>
             <div className="text-base text-blue-800 leading-relaxed">
-              기본 목표는 의뢰일 +1영업일 출고이며, 부득이한 경우 +2영업일 내
-              처리됩니다.
+              출고 기준: 의뢰일 +1영업일 (불가피 시 +2영업일).
             </div>
             <div className="mt-4 space-y-3">
               <label className="flex items-center gap-3">

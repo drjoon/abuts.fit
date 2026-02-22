@@ -37,12 +37,12 @@ const getShippingPolicy = (email?: string | null): ShippingPolicyResult => {
 
     return {
       shippingMode,
-      summary: "의뢰일 +1영업일 출고(필요 시 +2영업일)",
+      summary: "출고: 의뢰+1영업일 (최대 +2)",
     };
   } catch {
     return {
       shippingMode: "countBased",
-      summary: "의뢰일 +1영업일 출고(필요 시 +2영업일)",
+      summary: "출고: 의뢰+1영업일 (최대 +2)",
     };
   }
 };

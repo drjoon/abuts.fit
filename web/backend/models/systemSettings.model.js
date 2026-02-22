@@ -11,7 +11,7 @@ const systemSettingsSchema = new mongoose.Schema(
       d6: { type: Number, default: 1 },
       d8: { type: Number, default: 1 },
       d10: { type: Number, default: 1 },
-      d10plus: { type: Number, default: 1 },
+      d12: { type: Number, default: 1 },
     },
     securitySettings: {
       twoFactorAuth: { type: Boolean, default: true },

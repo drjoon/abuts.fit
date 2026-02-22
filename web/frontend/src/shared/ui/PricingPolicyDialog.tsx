@@ -141,8 +141,7 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
                   8. 출고 리드타임
                 </h3>
                 <p>
-                  모든 제품은 <b>의뢰일 +1영업일 출고</b>를 목표로 하며,
-                  부득이한 경우 <b>+2영업일 내</b> 처리됩니다.
+                  발송 기준: <b>의뢰일 +1영업일</b> (불가피 시 +2영업일).
                 </p>
               </section>
             </div>
