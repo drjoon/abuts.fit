@@ -9,6 +9,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
@@ -47,6 +53,7 @@ export const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [columnHeight, setColumnHeight] = useState(0);
+  const [devModalOpen, setDevModalOpen] = useState(false);
   const columnRef = useRef<HTMLDivElement>(null);
   const { login } = useAuthStore();
   const navigate = useNavigate();
@@ -121,11 +128,52 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
-      <main className="w-full max-w-md py-16">
-        <div className="w-full px-4">
-          <div className="max-w-md mx-auto">
-            <Card className="shadow-elegant border-border/50">
+    <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-48 -right-32 h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-blue-500/40 via-cyan-400/30 to-emerald-300/30 blur-[180px]" />
+        <div className="absolute bottom-0 left-[-120px] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br from-purple-500/40 via-pink-500/30 to-orange-400/20 blur-[180px]" />
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.5) 1px, transparent 0)",
+            backgroundSize: "90px 90px",
+          }}
+        />
+      </div>
+
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-4 py-16 lg:flex-row lg:items-center">
+        <section className="w-full space-y-6 text-center lg:w-1/2 lg:flex-1 lg:text-left">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
+            <span>secure access</span>
+            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span>abuts.fit</span>
+          </div>
+          <div className="space-y-4">
+            <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
+              하나의 로그인으로 제조 · 배송까지
+              <br />
+              전체 제작 프로세스 동기화
+            </h1>
+            <p className="text-base text-white/80">
+              제작 현황, 스케줄, 실시간 트래킹을 모두 한 화면에서 제어하세요.
+              2단계 인증 수준의 로그인 경험을 제공합니다.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/15 bg-white/5 p-6 backdrop-blur">
+            <p className="text-xs uppercase tracking-[0.4em] text-white/60">
+              realtime sync
+            </p>
+            <p className="text-4xl font-semibold text-white">98.7%</p>
+            <p className="text-sm text-white/70">
+              동기화 성공률 · 운영팀 SLA 기준
+            </p>
+          </div>
+        </section>
+
+        <section className="w-full lg:w-1/2 lg:flex-1">
+          <div className="w-full space-y-6">
+            <Card className="border-white/15 bg-white/90 text-slate-900 shadow-[0_25px_65px_rgba(7,7,19,0.35)] backdrop-blur-2xl">
               <CardHeader className="text-center">
                 <CardTitle className="text-2xl">로그인</CardTitle>
               </CardHeader>
@@ -179,13 +227,11 @@ export const LoginPage = () => {
                   </div>
                 </div>
 
-                <div className="pt-4 m-4 relative flex justify-center text-sm uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">
-                    또는
-                  </span>
-                </div>
+                {/* <div className="pt-4 m-4 relative flex justify-center text-sm uppercase">
+                  <span className="bg-white px-2 text-slate-500">또는</span>
+                </div> */}
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4 pt-6">
                   <div className="grid gap-4 md:grid-cols-[1fr,auto] md:items-stretch">
                     <div ref={columnRef} className="space-y-3">
                       <div className="space-y-2">
@@ -286,46 +332,71 @@ export const LoginPage = () => {
                   )}
                 </form>
 
-                <div className="mt-8 text-center">
-                  <Button variant="ghost" onClick={() => navigate("/")}>
+                <div className="mt-8 flex flex-wrap items-center justify-center gap-3 text-slate-600">
+                  <Button
+                    variant="ghost"
+                    className="text-slate-600 hover:text-slate-900"
+                    onClick={() => navigate("/")}
+                  >
                     홈으로 돌아가기
                   </Button>
 
-                  <Button variant="ghost" asChild>
+                  <Button
+                    variant="ghost"
+                    asChild
+                    className="text-slate-600 hover:text-slate-900"
+                  >
                     <Link to="/signup">회원가입</Link>
                   </Button>
                 </div>
+
+                {isDev && (
+                  <div className="mt-6 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="text-xs uppercase tracking-[0.35em] text-slate-500 hover:text-slate-900"
+                      onClick={() => setDevModalOpen(true)}
+                    >
+                      DEV QUICK LOGIN
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
-
-          {isDev && (
-            <div className="mt-4 pt-4 border-t border-dashed border-border/60">
-              <p className="text-xs text-muted-foreground mb-2 text-center">
-                개발용 간편 로그인
-              </p>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {DEV_ACCOUNTS.map((acc) => (
-                  <Button
-                    key={acc.email}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-9 px-3 flex flex-col items-center gap-1"
-                    disabled={isLoading}
-                    onClick={() => handleDevLogin(acc)}
-                  >
-                    <span className="font-semibold">{acc.label}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {acc.email}
-                    </span>
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        </section>
       </main>
+
+      {isDev && (
+        <Dialog open={devModalOpen} onOpenChange={setDevModalOpen}>
+          <DialogContent className="max-w-lg bg-slate-950/95 text-white backdrop-blur-xl border-white/10">
+            <DialogHeader>
+              <DialogTitle className="text-center tracking-[0.4em] text-xs text-white/60 uppercase">
+                DEV QUICK LOGIN
+              </DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {DEV_ACCOUNTS.map((acc) => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  className="rounded-2xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-emerald-300/60"
+                  disabled={isLoading}
+                  onClick={() => handleDevLogin(acc)}
+                >
+                  <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">
+                    {acc.label}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-white break-all">
+                    {acc.email}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

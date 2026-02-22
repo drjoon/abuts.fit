@@ -19,13 +19,7 @@ export const SignupWizardStep1 = ({
   const navigate = useNavigate();
 
   return (
-    <div className="space-y-6">
-      <div className="text-center space-y-1">
-        <p className="text-sm text-muted-foreground">
-          가입 방법을 선택해주세요
-        </p>
-      </div>
-
+    <div className="space-y-10 pt-4">
       <div className="grid grid-cols-3 gap-3">
         <Button
           variant="outline"

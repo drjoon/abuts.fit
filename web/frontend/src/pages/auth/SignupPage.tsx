@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Navigation } from "@/features/layout/Navigation";
-import { Footer } from "@/features/landing/Footer";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
@@ -482,15 +480,59 @@ export const SignupPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
+    <div className="relative min-h-screen overflow-hidden bg-[#030711] text-white">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 -left-24 h-96 w-96 rounded-full bg-gradient-to-br from-emerald-400/40 to-cyan-500/30 blur-[160px]" />
+        <div className="absolute top-32 right-[-120px] h-[28rem] w-[28rem] rounded-full bg-gradient-to-br from-indigo-500/40 via-purple-500/30 to-pink-500/30 blur-[180px]" />
+        <div
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.5) 1px, transparent 0)",
+            backgroundSize: "80px 80px",
+          }}
+        />
+      </div>
 
-      <main className="pt-24 pb-16">
-        <div className="container mx-auto px-4 max-w-md">
-          <Card>
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center gap-12 px-4 py-16 lg:flex-row lg:items-center">
+        <section className="space-y-6 text-center lg:w-1/2 lg:text-left">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1 text-xs uppercase tracking-[0.3em] text-white/70">
+            <span>onboarding</span>
+            <span className="h-1 w-1 rounded-full bg-emerald-300" />
+            <span>abuts.fit</span>
+          </div>
+          <div className="space-y-4">
+            <h1 className="text-3xl font-semibold leading-tight text-white md:text-4xl">
+              맞춤 어버트먼트 제작을 위한
+              <br />
+              디지털 워크스페이스 가입
+            </h1>
+            <p className="text-base text-white/80">
+              의뢰자·영업자 모두 동일한 실시간 제작 현황을 공유하고, 자동화된
+              워크플로우로 시간을 절약하세요.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-left">
+            <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
+              <p className="text-3xl font-semibold text-white">1,500+</p>
+              <p className="text-xs uppercase tracking-widest text-white/60">
+                월간 처리 케이스
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
+              <p className="text-3xl font-semibold text-white">24/7</p>
+              <p className="text-xs uppercase tracking-widest text-white/60">
+                실시간 트래킹
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="w-full lg:w-1/2">
+          <Card className="border-white/15 bg-white/85 text-slate-900 shadow-[0_25px_65px_rgba(7,7,19,0.35)] backdrop-blur-2xl">
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl font-bold">회원가입</CardTitle>
-              <p className="text-muted-foreground">
+              <CardTitle className="text-2xl font-semibold">회원가입</CardTitle>
+              <p className="text-sm text-slate-600">
                 abuts.fit에 오신 것을 환영합니다
               </p>
             </CardHeader>
@@ -501,7 +543,6 @@ export const SignupPage = () => {
                     <div className="space-y-6">
                       <div className="space-y-3">
                         <div className="space-y-2">
-                          <p className="text-sm font-medium">가입 유형</p>
                           <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
@@ -527,8 +568,13 @@ export const SignupPage = () => {
                             </button>
                           </div>
                           {signupRole === "requestor" && (
-                            <p className="text-xs text-muted-foreground">
-                              의뢰자 : 치과기공소 혹은 치과내 기공실
+                            <p className="text-md text-muted-foreground">
+                              치과기공소 혹은 치과병의원
+                            </p>
+                          )}
+                          {signupRole === "salesman" && (
+                            <p className="text-md text-muted-foreground text-right">
+                              영업하시는 개인사업자나 법인
                             </p>
                           )}
                         </div>
@@ -571,10 +617,10 @@ export const SignupPage = () => {
                   {wizardStep === 2 && (
                     <div className="space-y-4">
                       <div className="space-y-1">
-                        <p className="text-sm font-medium">
+                        <p className="text-md font-medium">
                           추천인 코드/ID (선택)
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-md text-muted-foreground">
                           영업자 소개로 가입하는 경우 입력하면 소개 가입
                           크레딧이 지급될 수 있어요.
                         </p>
@@ -584,7 +630,7 @@ export const SignupPage = () => {
                         value={refInput}
                         onChange={(e) => setRefInput(e.target.value)}
                         placeholder="추천인 코드 또는 사용자 ID"
-                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        className="h-10 w-full rounded-md border bg-background px-3 text-md"
                       />
 
                       {pendingSocialProvider && (
@@ -636,10 +682,10 @@ export const SignupPage = () => {
                     signupRole === "requestor" && (
                       <div className="space-y-4">
                         <div className="space-y-1">
-                          <p className="text-sm font-medium">
+                          <p className="text-md font-medium">
                             추천인 코드/ID (선택)
                           </p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-md text-muted-foreground">
                             영업자 소개로 가입하는 경우 입력하면 소개 가입
                             크레딧이 지급될 수 있어요.
                           </p>
@@ -649,20 +695,20 @@ export const SignupPage = () => {
                           value={refInput}
                           onChange={(e) => setRefInput(e.target.value)}
                           placeholder="추천인 코드 또는 사용자 ID"
-                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                          className="h-10 w-full rounded-md border bg-background px-3 text-md"
                         />
 
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            className="h-10 flex-1 rounded-md border bg-background text-sm font-medium hover:bg-muted"
+                            className="h-10 flex-1 rounded-md border bg-background text-md font-medium hover:bg-muted"
                             onClick={() => navigate("/login")}
                           >
                             취소
                           </button>
                           <button
                             type="button"
-                            className="h-10 flex-1 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+                            className="h-10 flex-1 rounded-md bg-primary text-primary-foreground text-md font-medium hover:opacity-90"
                             onClick={() => setWizardStep(2)}
                           >
                             다음
@@ -722,10 +768,8 @@ export const SignupPage = () => {
               )}
             </CardContent>
           </Card>
-        </div>
+        </section>
       </main>
-
-      <Footer />
     </div>
   );
 };
