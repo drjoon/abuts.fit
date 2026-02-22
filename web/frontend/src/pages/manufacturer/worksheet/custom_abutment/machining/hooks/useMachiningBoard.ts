@@ -31,6 +31,8 @@ const isMachiningStatus = (status?: string) => {
 
 const resolveCompletedDisplayLabel = (q: QueueItem | null) => {
   if (!q) return "-";
+  const rolledBackCount = Number((q as any)?.rollbackCount || 0);
+  if (rolledBackCount > 0) return "-";
   return formatMachiningLabel(q);
 };
 
@@ -203,6 +205,34 @@ export const useMachiningBoard = ({
       // ignore
     }
   }, [token, reconcileMachiningTimersFromQueues]);
+
+  const reassignProductionQueues = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/cnc-machines/queues/reassign", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || "생산 큐 재배정 실패");
+      }
+      await refreshProductionQueues();
+      toast({
+        title: "재배정 완료",
+        description: "현재 설정 기준으로 생산 큐를 재배정했습니다.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "재배정 실패",
+        description: e?.message || "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    }
+  }, [refreshProductionQueues, toast, token]);
 
   // 1초마다 로컬 타이머를 증가시켜 Now Playing 경과 시간을 표시한다.
   useEffect(() => {
@@ -867,6 +897,7 @@ export const useMachiningBoard = ({
     statusRefreshError,
     statusRefreshErroredAt,
     refreshMachineStatuses,
+    reassignProductionQueues,
     handleBoardClickCapture,
     isMockFromBackend,
     loading,

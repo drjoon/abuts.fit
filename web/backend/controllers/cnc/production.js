@@ -3,6 +3,8 @@ import {
   getAllProductionQueues,
   rollbackRequestToCamByRequestId,
 } from "./shared.js";
+import CncMachine from "../../models/cncMachine.model.js";
+import Machine from "../../models/machine.model.js";
 
 export async function getProductionQueues(req, res) {
   try {
@@ -23,7 +25,7 @@ export async function getProductionQueues(req, res) {
     for (const machineId in queues) {
       queues[machineId] = queues[machineId].map((reqItem, index) => ({
         requestId: reqItem.requestId,
-        status: reqItem.status,
+        status: reqItem.manufacturerStage || reqItem.status,
         lotNumber: reqItem.lotNumber || {},
         queuePosition:
           reqItem.productionSchedule?.queuePosition != null
@@ -74,15 +76,142 @@ export async function getProductionQueues(req, res) {
       }));
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: queues,
     });
   } catch (error) {
     console.error("Error in getProductionQueues:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "생산 큐 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+const inferDiameterGroup = (reqItem) => {
+  const groupRaw = String(
+    reqItem?.productionSchedule?.diameterGroup || "",
+  ).trim();
+  if (groupRaw) return groupRaw;
+  const diameter = Number(reqItem?.productionSchedule?.diameter);
+  if (Number.isFinite(diameter) && diameter > 0) {
+    if (diameter <= 6) return "6";
+    if (diameter <= 8) return "8";
+    if (diameter <= 10) return "10";
+    return "12";
+  }
+  return "";
+};
+
+export async function reassignProductionQueues(req, res) {
+  try {
+    const requests = await Request.find({
+      manufacturerStage: { $in: ["CAM", "가공"] },
+    }).select(
+      "_id requestId manufacturerStage productionSchedule assignedMachine caseInfos",
+    );
+
+    const cncMachines = await CncMachine.find({ status: "active" })
+      .select({ machineId: 1, maxModelDiameterGroups: 1 })
+      .lean();
+
+    const machineUids = cncMachines
+      .map((m) => String(m?.machineId || "").trim())
+      .filter(Boolean);
+
+    const machineFlags = await Machine.find({ uid: { $in: machineUids } })
+      .select({ uid: 1, allowRequestAssign: 1 })
+      .lean();
+
+    const allowAssignSet = new Set(
+      machineFlags
+        .filter((m) => m?.allowRequestAssign !== false)
+        .map((m) => String(m?.uid || "").trim())
+        .filter(Boolean),
+    );
+
+    const machinesByGroup = new Map();
+    for (const m of cncMachines) {
+      const uid = String(m?.machineId || "").trim();
+      if (!uid || !allowAssignSet.has(uid)) continue;
+      const groups = Array.isArray(m?.maxModelDiameterGroups)
+        ? m.maxModelDiameterGroups
+        : [];
+      for (const g of groups) {
+        const key = String(g || "").trim();
+        if (!key) continue;
+        if (!machinesByGroup.has(key)) machinesByGroup.set(key, []);
+        machinesByGroup.get(key).push(uid);
+      }
+    }
+
+    const queueCounts = new Map();
+    for (const uid of allowAssignSet) {
+      queueCounts.set(uid, 0);
+    }
+    for (const reqItem of requests) {
+      const uid = String(
+        reqItem?.productionSchedule?.assignedMachine || "",
+      ).trim();
+      if (uid && queueCounts.has(uid)) {
+        queueCounts.set(uid, (queueCounts.get(uid) || 0) + 1);
+      }
+    }
+
+    const assignmentsByMachine = new Map();
+    const ops = [];
+    for (const reqItem of requests) {
+      const group = inferDiameterGroup(reqItem);
+      const candidates = machinesByGroup.get(group) || [];
+      if (!candidates.length) continue;
+
+      const sorted = [...candidates].sort((a, b) => {
+        const ac = queueCounts.get(a) || 0;
+        const bc = queueCounts.get(b) || 0;
+        if (ac !== bc) return ac - bc;
+        return String(a).localeCompare(String(b));
+      });
+      const selected = sorted[0];
+      queueCounts.set(selected, (queueCounts.get(selected) || 0) + 1);
+
+      if (!assignmentsByMachine.has(selected)) {
+        assignmentsByMachine.set(selected, []);
+      }
+      assignmentsByMachine.get(selected).push(reqItem);
+    }
+
+    for (const [uid, list] of assignmentsByMachine.entries()) {
+      list.forEach((reqItem, idx) => {
+        ops.push({
+          updateOne: {
+            filter: { _id: reqItem._id },
+            update: {
+              $set: {
+                "productionSchedule.assignedMachine": uid,
+                "productionSchedule.queuePosition": idx + 1,
+                assignedMachine: uid,
+              },
+            },
+          },
+        });
+      });
+    }
+
+    if (ops.length > 0) {
+      await Request.bulkWrite(ops);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { reassignedCount: ops.length },
+    });
+  } catch (error) {
+    console.error("Error in reassignProductionQueues:", error);
+    return res.status(500).json({
+      success: false,
+      message: "생산 큐 재배정 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

@@ -193,23 +193,29 @@ export const MachineQueueCard = ({
     return formatElapsedMMSS(machiningElapsedSeconds);
   })();
 
-  const lastCompletedSummary = (() =>
-    buildLastCompletedSummary(lastCompleted))();
-
-  const lastCompletedLotRaw = String(
-    (lastCompleted as any)?.lotNumber?.final ||
-      (lastCompleted as any)?.lotNumber?.part ||
-      "",
-  ).trim();
-  const lastCompletedRequestId = String(lastCompleted?.requestId || "").trim();
-  const machiningLotBadgeClass =
-    "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
   const [completedRolledBack, setCompletedRolledBack] = useState(false);
   const completedRollbackCount = Number(
     (lastCompleted as any)?.rollbackCount || 0,
   );
   const isCompletedRolledBack =
     completedRolledBack || completedRollbackCount > 0;
+
+  const effectiveLastCompleted = isCompletedRolledBack ? null : lastCompleted;
+
+  const lastCompletedSummary = (() =>
+    buildLastCompletedSummary(effectiveLastCompleted))();
+
+  const lastCompletedLotRaw = String(
+    (effectiveLastCompleted as any)?.lotNumber?.final ||
+      (effectiveLastCompleted as any)?.lotNumber?.part ||
+      "",
+  ).trim();
+  const lastCompletedRequestId = String(
+    effectiveLastCompleted?.requestId || "",
+  ).trim();
+
+  const machiningLotBadgeClass =
+    "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
 
   useEffect(() => {
     setCompletedRolledBack(false);
@@ -309,7 +315,7 @@ export const MachineQueueCard = ({
               onOpenCompleted?.(machineId, machineName);
             }}
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-semibold text-slate-500">
                   {MACHINING_SECTION_LABELS.complete}
@@ -319,30 +325,26 @@ export const MachineQueueCard = ({
                   <span>소요 {lastCompletedSummary?.durationLabel || "-"}</span>
                 </div>
                 <div className="mt-0.5 text-[15px] font-extrabold text-slate-900 leading-tight">
-                  {lastCompleted ? (
+                  {effectiveLastCompleted ? (
                     <MachiningRequestLabel
-                      clinicName={(lastCompleted as any)?.clinicName}
-                      patientName={(lastCompleted as any)?.patientName}
-                      tooth={(lastCompleted as any)?.tooth}
-                      requestId={(lastCompleted as any)?.requestId}
+                      clinicName={(effectiveLastCompleted as any)?.clinicName}
+                      patientName={(effectiveLastCompleted as any)?.patientName}
+                      tooth={(effectiveLastCompleted as any)?.tooth}
+                      requestId={(effectiveLastCompleted as any)?.requestId}
                       lotNumber={lastCompletedLotRaw}
                       lotBadgeClassName={machiningLotBadgeClass}
-                      className={`text-[15px] leading-tight ${
-                        isCompletedRolledBack
-                          ? "line-through text-slate-400"
-                          : ""
-                      }`}
+                      className="text-[15px] leading-tight"
                     />
                   ) : (
                     "없음"
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
                 {lastCompletedRequestId ? (
                   <button
                     type="button"
-                    className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!onRollbackCompleted) return;
@@ -350,7 +352,7 @@ export const MachineQueueCard = ({
                       onRollbackCompleted(lastCompletedRequestId, machineId);
                     }}
                   >
-                    <ArrowLeft className="h-4 w-4" />
+                    <ArrowLeft className="h-3.5 w-3.5" />
                   </button>
                 ) : null}
               </div>
@@ -411,11 +413,11 @@ export const MachineQueueCard = ({
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
                 {headRequestId ? (
                   <button
                     type="button"
-                    className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!onRollbackNowPlaying) return;
@@ -423,7 +425,7 @@ export const MachineQueueCard = ({
                     }}
                     title="CAM으로 되돌리기"
                   >
-                    <ArrowLeft className="h-4 w-4" />
+                    <ArrowLeft className="h-3.5 w-3.5" />
                   </button>
                 ) : null}
               </div>
@@ -484,11 +486,11 @@ export const MachineQueueCard = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
                 {nextSlot?.requestId ? (
                   <button
                     type="button"
-                    className="inline-flex h-8 px-3 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                    className="inline-flex h-8 px-2 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!onRollbackNextUp) return;

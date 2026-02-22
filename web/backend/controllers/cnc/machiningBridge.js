@@ -341,7 +341,7 @@ export async function getLastCompletedMachiningMap(req, res) {
   }
 }
 
-async function triggerNextAutoMachiningAfterComplete({
+export async function triggerNextAutoMachiningAfterComplete({
   machineId,
   completedRequestId,
 }) {

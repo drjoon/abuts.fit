@@ -31,6 +31,7 @@ import {
 import {
   applyProductionQueueBatchForMachine,
   getProductionQueues,
+  reassignProductionQueues,
 } from "../../controllers/cnc/production.js";
 import {
   cancelScheduledMaterialChange,
@@ -89,6 +90,7 @@ export {
   clearBridgeQueueForMachine,
   getProductionQueues,
   applyProductionQueueBatchForMachine,
+  reassignProductionQueues,
   updateMachineMaterial,
   updateMaterialRemaining,
   scheduleMaterialChange,

@@ -276,6 +276,13 @@ router.get(
   cncMachineController.getProductionQueues,
 );
 
+// 생산 큐 재배정 (제조사, 관리자)
+router.post(
+  "/queues/reassign",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.reassignProductionQueues,
+);
+
 // 생산 큐 배치 변경 (순서/수량/삭제)
 router.post(
   "/:machineId/production-queue/batch",

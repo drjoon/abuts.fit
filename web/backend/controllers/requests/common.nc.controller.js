@@ -499,9 +499,11 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         reason: "",
       };
     }
-    bumpRollbackCount(request, "machining");
 
     const isRollbackToRequest = req.query.nextStage === "request";
+    const rollbackStageKey = isRollbackToRequest ? "machining" : "cam";
+    bumpRollbackCount(request, rollbackStageKey);
+
     if (isRollbackToRequest) {
       request.manufacturerStage = "의뢰";
     } else {

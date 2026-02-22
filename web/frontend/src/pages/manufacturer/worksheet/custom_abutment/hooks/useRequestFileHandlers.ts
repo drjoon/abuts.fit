@@ -191,19 +191,37 @@ export const useRequestFileHandlers = ({
 
         await fetchRequests();
 
+        let successTitle = "검토 상태 변경 완료";
+        let successDescription =
+          params.status === "APPROVED"
+            ? stageKey === "request" ||
+              stageKey === "cam" ||
+              stageKey === "machining"
+              ? "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
+              : "승인되었습니다."
+            : params.status === "REJECTED"
+              ? "반려되었습니다."
+              : "미승인 상태로 변경되었습니다.";
+
+        try {
+          const body = await res
+            .clone()
+            .json()
+            .catch(() => null);
+          if (body?.message) {
+            successDescription = body.message;
+            if (body.message.includes("자동 가공 명령")) {
+              successTitle = "자동 가공 트리거 전송";
+            }
+          }
+        } catch {
+          // ignore
+        }
+
         // 성공 시에만 안내 토스트 표시
         toast({
-          title: "검토 상태 변경 완료",
-          description:
-            params.status === "APPROVED"
-              ? stageKey === "request" ||
-                stageKey === "cam" ||
-                stageKey === "machining"
-                ? "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
-                : "승인되었습니다."
-              : params.status === "REJECTED"
-                ? "반려되었습니다."
-                : "미승인 상태로 변경되었습니다.",
+          title: successTitle,
+          description: successDescription,
           duration: 3000, // 성공 토스트는 3초 후 자동 소멸
         });
 

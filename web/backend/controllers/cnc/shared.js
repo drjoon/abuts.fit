@@ -529,7 +529,7 @@ export async function getProductionQueuesHandler(req, res) {
     for (const machineId in queues) {
       queues[machineId] = queues[machineId].map((req, index) => ({
         requestId: req.requestId,
-        status: req.status,
+        status: req.manufacturerStage || req.status,
         queuePosition:
           req.productionSchedule?.queuePosition != null
             ? req.productionSchedule.queuePosition

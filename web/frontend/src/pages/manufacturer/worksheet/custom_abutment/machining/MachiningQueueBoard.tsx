@@ -134,6 +134,16 @@ export const MachiningQueueBoard = ({
           className="app-surface app-surface--panel flex items-center gap-3 px-4 py-3"
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
+          <button
+            type="button"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
+            onClick={() => {
+              void board.reassignProductionQueues();
+            }}
+            disabled={loading}
+          >
+            재배정
+          </button>
           <div className="text-[12px] font-extrabold text-slate-700">
             전체 자동 가공 허용
           </div>

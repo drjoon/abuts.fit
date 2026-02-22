@@ -25,6 +25,7 @@ import {
   bumpRollbackCount,
   ensureReviewByStageDefaults,
 } from "./utils.js";
+import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
 import { getOrganizationCreditBalanceBreakdown } from "./creation.helpers.controller.js";
@@ -139,11 +140,53 @@ async function chooseMachineForCamMachining({ request }) {
   }
 
   const diameterGroup = inferDiameterGroupFromRequest(request);
-  const preferredByGroup = {
-    6: "M3",
-    8: "M4",
-  };
-  let targetMachineId = preferredByGroup[diameterGroup] || null;
+  let targetMachineId = null;
+
+  const cncMachines = await CncMachine.find({ status: "active" })
+    .select({ machineId: 1, maxModelDiameterGroups: 1 })
+    .lean();
+  const machineIds = cncMachines
+    .map((m) => String(m?.machineId || "").trim())
+    .filter(Boolean);
+
+  const machineFlags = await Machine.find({ uid: { $in: machineIds } })
+    .select({ uid: 1, allowRequestAssign: 1 })
+    .lean();
+  const allowAssignSet = new Set(
+    machineFlags
+      .filter((m) => m?.allowRequestAssign !== false)
+      .map((m) => String(m?.uid || "").trim())
+      .filter(Boolean),
+  );
+
+  const candidates = cncMachines
+    .filter((m) => {
+      const uid = String(m?.machineId || "").trim();
+      if (!uid || !allowAssignSet.has(uid)) return false;
+      const groups = Array.isArray(m?.maxModelDiameterGroups)
+        ? m.maxModelDiameterGroups
+        : [];
+      return groups.includes(diameterGroup);
+    })
+    .map((m) => String(m?.machineId || "").trim())
+    .filter(Boolean);
+
+  if (candidates.length) {
+    const queueCounts = await Promise.all(
+      candidates.map(async (uid) => {
+        const count = await Request.countDocuments({
+          "productionSchedule.assignedMachine": uid,
+          manufacturerStage: { $in: ["CAM", "가공"] },
+        });
+        return { uid, count };
+      }),
+    );
+    const sorted = queueCounts.filter(Boolean).sort((a, b) => {
+      if (a.count !== b.count) return a.count - b.count;
+      return String(a.uid).localeCompare(String(b.uid));
+    });
+    targetMachineId = sorted[0]?.uid || null;
+  }
 
   if (!targetMachineId) {
     const activeMachines = await Machine.find({ status: "active" })
@@ -256,6 +299,9 @@ export async function deleteStageFile(req, res) {
       };
 
       bumpRollbackCount(request, stage);
+      if (stage === "machining") {
+        bumpRollbackCount(request, "cam");
+      }
 
       const prevStageMap = {
         machining: "CAM",
@@ -291,6 +337,9 @@ export async function deleteStageFile(req, res) {
 
     delete request.caseInfos.stageFiles[stage];
     bumpRollbackCount(request, stage);
+    if (stage === "machining") {
+      bumpRollbackCount(request, "cam");
+    }
 
     request.caseInfos.reviewByStage[stage] = {
       status: "PENDING",
@@ -511,13 +560,23 @@ export async function updateReviewStatusByStage(req, res) {
             meta?.allowRequestAssign !== false &&
             meta?.allowAutoMachining === true
           ) {
-            triggerBridgeForCnc({ request }).catch((err) => {
-              console.error("[CAM-APPROVE] triggerBridgeForCnc failed", {
-                requestId: request.requestId,
-                machineId: selected.machineId,
-                message: err?.message,
-              });
+            // 트리거 성공 시 응답 메시지 변경
+            triggerNextAutoMachiningAfterComplete({
+              machineId: selected.machineId,
+              completedRequestId: null,
+            }).catch((err) => {
+              console.error(
+                "[CAM-APPROVE] triggerNextAutoMachiningAfterComplete failed",
+                {
+                  requestId: request.requestId,
+                  machineId: selected.machineId,
+                  message: err?.message,
+                },
+              );
             });
+            acceptedMessage = "자동 가공 명령이 전송되었습니다.";
+          } else {
+            acceptedMessage = "가공 단계로 이동했습니다.";
           }
         }
       } else if (status === "PENDING") {
