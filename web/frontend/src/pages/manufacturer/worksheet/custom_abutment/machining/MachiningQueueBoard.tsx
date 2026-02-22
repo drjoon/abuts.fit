@@ -23,13 +23,28 @@ export const MachiningQueueBoard = ({
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
 
   const {
+    machines,
     filteredMachines,
+    statusByUid,
+    machineStatusMap,
+    queueMap,
+    setQueueMap,
+    machiningElapsedSecondsMap,
+    lastCompletedMap,
+    nowPlayingHintMap,
     statusRefreshing,
     statusRefreshError,
     statusRefreshedAt,
     statusRefreshErroredAt,
-    globalAutoEnabled,
+    reassignProductionQueues,
+    handleBoardClickCapture,
     isMockFromBackend,
+    globalAutoEnabled,
+    setGlobalAutoEnabled,
+    updateMachineAuto,
+    updateMachineRequestAssign,
+    openReservationForMachine,
+    openProgramDetailForMachining,
     isReadOnly,
     workUid,
     programEditorOpen,
@@ -44,8 +59,9 @@ export const MachiningQueueBoard = ({
     playlistJobs,
     playlistMachineId,
     setPlaylistOpen,
-    openReservationForMachine,
-    openProgramDetailForMachining,
+    setPlaylistJobs,
+    buildPlaylistJobsFromQueue,
+    loadProductionQueueForMachine,
     completedModalOpen,
     setCompletedModalOpen,
     completedModalMachineId,
@@ -58,16 +74,17 @@ export const MachiningQueueBoard = ({
     setMaterialModalTarget,
     handleReplaceMaterial,
     handleAddMaterial,
+    rollbackRequestInQueue,
   } = board;
 
   const requestToggleMachineAuto = useCallback(
     (uid: string, next: boolean) => {
       if (!next) {
-        void board.updateMachineAuto(uid, false);
+        void updateMachineAuto(uid, false);
         return;
       }
 
-      const t = (Array.isArray(board.machines) ? board.machines : []).find(
+      const t = (Array.isArray(machines) ? machines : []).find(
         (m: any) => m.uid === uid,
       );
       const name = t?.name || uid;
@@ -82,7 +99,7 @@ export const MachiningQueueBoard = ({
           <ToastAction
             altText="자동 가공 ON"
             onClick={() => {
-              void board.updateMachineAuto(uid, true);
+              void updateMachineAuto(uid, true);
             }}
           >
             {name} ON
@@ -90,14 +107,14 @@ export const MachiningQueueBoard = ({
         ),
       });
     },
-    [board, toast],
+    [machines, toast, updateMachineAuto],
   );
 
   return (
     <div
       className="space-y-4"
-      onMouseDownCapture={board.handleBoardClickCapture}
-      onTouchStartCapture={board.handleBoardClickCapture}
+      onMouseDownCapture={handleBoardClickCapture}
+      onTouchStartCapture={handleBoardClickCapture}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
@@ -137,7 +154,7 @@ export const MachiningQueueBoard = ({
             type="button"
             className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
             onClick={() => {
-              void board.reassignProductionQueues();
+              void reassignProductionQueues();
             }}
           >
             재배정
@@ -151,7 +168,7 @@ export const MachiningQueueBoard = ({
               globalAutoEnabled ? "bg-emerald-500" : "bg-gray-300"
             }`}
             onClick={() => {
-              void board.setGlobalAutoEnabled(!globalAutoEnabled);
+              void setGlobalAutoEnabled(!globalAutoEnabled);
             }}
           >
             <span
@@ -165,8 +182,8 @@ export const MachiningQueueBoard = ({
 
       <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 p-4 pb-8 -mx-2">
         {filteredMachines.map((m) => {
-          const statusFromStore = board.statusByUid?.[m.uid];
-          const local = board.machineStatusMap?.[m.uid] ?? null;
+          const statusFromStore = statusByUid?.[m.uid];
+          const local = machineStatusMap?.[m.uid] ?? null;
           const mergedStatus: MachineStatus | null = local
             ? {
                 ...local,
@@ -189,27 +206,21 @@ export const MachiningQueueBoard = ({
               machineId={m.uid}
               machineName={m.name}
               machine={m}
-              queue={
-                Array.isArray(board.queueMap?.[m.uid])
-                  ? board.queueMap[m.uid]
-                  : []
-              }
+              queue={Array.isArray(queueMap?.[m.uid]) ? queueMap[m.uid] : []}
               machiningElapsedSeconds={
-                typeof board.machiningElapsedSecondsMap?.[m.uid] === "number"
-                  ? board.machiningElapsedSecondsMap[m.uid]
+                typeof machiningElapsedSecondsMap?.[m.uid] === "number"
+                  ? machiningElapsedSecondsMap[m.uid]
                   : null
               }
-              lastCompleted={board.lastCompletedMap?.[m.uid] || null}
-              nowPlayingHint={board.nowPlayingHintMap?.[m.uid] || null}
-              onOpenRequestLog={(requestId) =>
-                board.setEventLogRequestId(requestId)
-              }
+              lastCompleted={lastCompletedMap?.[m.uid] || null}
+              nowPlayingHint={nowPlayingHintMap?.[m.uid] || null}
+              onOpenRequestLog={(requestId) => setEventLogRequestId(requestId)}
               autoEnabled={m.allowAutoMachining === true}
               onToggleAuto={(next) => {
                 requestToggleMachineAuto(m.uid, next);
               }}
               onToggleRequestAssign={(next) => {
-                void board.updateMachineRequestAssign(m.uid, next);
+                void updateMachineRequestAssign(m.uid, next);
               }}
               machineStatus={mergedStatus}
               statusRefreshing={statusRefreshing}
@@ -217,25 +228,25 @@ export const MachiningQueueBoard = ({
               onSelect={() => {
                 setActiveMachineId(m.uid);
               }}
-              onOpenReservation={() => board.openReservationForMachine(m.uid)}
+              onOpenReservation={() => openReservationForMachine(m.uid)}
               onOpenProgramCode={(prog, machineId) => {
-                void board.openProgramDetailForMachining(prog, machineId);
+                void openProgramDetailForMachining(prog, machineId);
               }}
               onRollbackNowPlaying={(requestId, mid) => {
-                void board.rollbackRequestInQueue(mid, requestId);
+                void rollbackRequestInQueue(mid, requestId);
               }}
               onRollbackNextUp={(requestId, mid) => {
-                void board.rollbackRequestInQueue(mid, requestId);
+                void rollbackRequestInQueue(mid, requestId);
               }}
               onRollbackCompleted={(requestId, mid) => {
-                void board.rollbackRequestInQueue(mid, requestId);
+                void rollbackRequestInQueue(mid, requestId);
               }}
               onOpenCompleted={(mid, name) => {
-                board.setCompletedModalMachineId(String(mid || "").trim());
-                board.setCompletedModalTitle(
+                setCompletedModalMachineId(String(mid || "").trim());
+                setCompletedModalTitle(
                   `${String(name || mid || "").trim()} 가공 완료`,
                 );
-                board.setCompletedModalOpen(true);
+                setCompletedModalOpen(true);
               }}
               onOpenMaterial={() => {
                 setMaterialModalTarget(m);
@@ -253,7 +264,7 @@ export const MachiningQueueBoard = ({
         title={completedModalTitle}
         pageSize={5}
         onRollbackRequest={(requestId, machineId) => {
-          void board.rollbackRequestInQueue(machineId, requestId);
+          void rollbackRequestInQueue(machineId, requestId);
         }}
       />
 
@@ -262,7 +273,7 @@ export const MachiningQueueBoard = ({
           open={!!eventLogRequestId}
           mode={{ kind: "request", requestId: eventLogRequestId }}
           onOpenChange={(next) => {
-            if (!next) board.setEventLogRequestId(null);
+            if (!next) setEventLogRequestId(null);
           }}
         />
       ) : null}
@@ -274,7 +285,7 @@ export const MachiningQueueBoard = ({
         readOnly={false}
         deleteVariant="worksheet"
         onClose={() => {
-          board.setPlaylistOpen(false);
+          setPlaylistOpen(false);
         }}
         onOpenCode={(jobId) => {
           const mid = String(playlistMachineId || "").trim();
@@ -295,7 +306,7 @@ export const MachiningQueueBoard = ({
             requestId: job.requestId || "",
             headType: 1,
           };
-          void board.openProgramDetailForMachining(prog, mid);
+          void openProgramDetailForMachining(prog, mid);
         }}
         onDelete={(jobId) => {
           void (async () => {
@@ -330,15 +341,13 @@ export const MachiningQueueBoard = ({
                   qBody?.data && typeof qBody.data === "object"
                     ? qBody.data
                     : {};
-                board.setQueueMap(map);
+                setQueueMap(map);
                 const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
-                board.setPlaylistJobs(
-                  board.buildPlaylistJobsFromQueue(rawNext),
-                );
-                await board.loadProductionQueueForMachine(mid, rawNext);
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                await loadProductionQueueForMachine(mid, rawNext);
                 return;
               }
-              await board.loadProductionQueueForMachine(mid);
+              await loadProductionQueueForMachine(mid);
             } catch (e: any) {
               toast({
                 title: "CAM으로 되돌리기 실패",
@@ -381,15 +390,13 @@ export const MachiningQueueBoard = ({
                   qBody?.data && typeof qBody.data === "object"
                     ? qBody.data
                     : {};
-                board.setQueueMap(map);
+                setQueueMap(map);
                 const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
-                board.setPlaylistJobs(
-                  board.buildPlaylistJobsFromQueue(rawNext),
-                );
-                await board.loadProductionQueueForMachine(mid, rawNext);
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                await loadProductionQueueForMachine(mid, rawNext);
                 return;
               }
-              await board.loadProductionQueueForMachine(mid);
+              await loadProductionQueueForMachine(mid);
             } catch (e: any) {
               toast({
                 title: "순서 변경 실패",
@@ -434,15 +441,13 @@ export const MachiningQueueBoard = ({
                   qBody?.data && typeof qBody.data === "object"
                     ? qBody.data
                     : {};
-                board.setQueueMap(map);
+                setQueueMap(map);
                 const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
-                board.setPlaylistJobs(
-                  board.buildPlaylistJobsFromQueue(rawNext),
-                );
-                await board.loadProductionQueueForMachine(mid, rawNext);
+                setPlaylistJobs(buildPlaylistJobsFromQueue(rawNext));
+                await loadProductionQueueForMachine(mid, rawNext);
                 return;
               }
-              await board.loadProductionQueueForMachine(mid);
+              await loadProductionQueueForMachine(mid);
             } catch (e: any) {
               toast({
                 title: "수량 변경 실패",

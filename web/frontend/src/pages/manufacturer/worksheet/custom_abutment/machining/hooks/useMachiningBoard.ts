@@ -494,18 +494,22 @@ export const useMachiningBoard = ({
 
       // 완료된 건을 즉시 lastCompletedMap에 추가하여 Complete 섹션에 바로 표시
       const elapsedSec = machiningElapsedSecondsMap[mid] || 0;
+      const nowPlayingHint = nowPlayingHintMap[mid];
 
       if (rid || jid) {
+        // NowPlaying의 정보를 최대한 활용하여 Complete 카드 렌더링에 필요한 정보 유지
+        const displayLabel = rid || jid || null;
+
         setLastCompletedMap((prev) => ({
           ...prev,
           [mid]: {
             machineId: mid,
             jobId: jid || null,
             requestId: rid || null,
-            displayLabel: rid || jid || null,
-            clinicName: "",
-            patientName: "",
-            tooth: "",
+            displayLabel,
+            clinicName: "", // Socket.io 이벤트에는 없지만 렌더링에 필수적이지 않음
+            patientName: "", // Socket.io 이벤트에는 없지만 렌더링에 필수적이지 않음
+            tooth: "", // Socket.io 이벤트에는 없지만 렌더링에 필수적이지 않음
             rollbackCount: 0,
             lotNumber: {},
             completedAt: new Date().toISOString(),
@@ -537,36 +541,7 @@ export const useMachiningBoard = ({
 
           // 모든 의뢰건이 완료되면 자동 가공 OFF
           if (next[mid].length === 0) {
-            setMachines((prevList) =>
-              prevList.map((m) =>
-                m.uid === mid ? { ...m, allowAutoMachining: false } : m,
-              ),
-            );
-            void (async () => {
-              try {
-                const res = await fetch(`/api/cnc-machines/${mid}`, {
-                  method: "PATCH",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ allowAutoMachining: false }),
-                });
-                if (!res.ok) {
-                  setMachines((prevList) =>
-                    prevList.map((m) =>
-                      m.uid === mid ? { ...m, allowAutoMachining: true } : m,
-                    ),
-                  );
-                }
-              } catch {
-                setMachines((prevList) =>
-                  prevList.map((m) =>
-                    m.uid === mid ? { ...m, allowAutoMachining: true } : m,
-                  ),
-                );
-              }
-            })();
+            void updateMachineAuto(mid, false);
           }
         }
         return next;
@@ -750,22 +725,6 @@ export const useMachiningBoard = ({
       });
     }
   };
-
-  const requestToggleMachineAuto = useCallback(
-    (uid: string, next: boolean) => {
-      if (!next) {
-        void updateMachineAuto(uid, false);
-        return;
-      }
-
-      const confirmed = window.confirm(
-        "ON 하면 대기 중인 의뢰의 자동 가공이 즉시 시작될 수 있습니다. 계속 진행하시겠습니까?",
-      );
-      if (!confirmed) return;
-      void updateMachineAuto(uid, true);
-    },
-    [updateMachineAuto],
-  );
 
   const globalAutoEnabled = useMemo(() => {
     const list = Array.isArray(machines) ? machines : [];

@@ -25,6 +25,7 @@ import {
 import type { HealthLevel } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";
 import { useToast } from "@/shared/hooks/use-toast";
 import type { DiameterBucketKey as UiDiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
+import { useMachiningBoard } from "./hooks/useMachiningBoard";
 
 const getMachineStatusChip = (status: string) => {
   const s = (status || "").toUpperCase();
@@ -335,7 +336,9 @@ interface WorksheetCncMachineSectionProps {
 export const WorksheetCncMachineSection = ({
   searchQuery,
 }: WorksheetCncMachineSectionProps) => {
-  const { machines } = useCncMachines();
+  const { machines, updateMachineAuto } = useMachiningBoard({
+    token: useAuthStore.getState().token,
+  });
   const { callRaw } = useCncRaw();
   const [error, setError] = useState<string | null>(null);
   const { token } = useAuthStore();
@@ -387,80 +390,6 @@ export const WorksheetCncMachineSection = ({
   const [queueModalOpen, setQueueModalOpen] = useState(false);
   const [selectedBucket, setSelectedBucket] =
     useState<UiDiameterBucketKey | null>(null);
-
-  const [cncMachineMetaMap, setCncMachineMetaMap] = useState<
-    Record<string, any>
-  >({});
-
-  useEffect(() => {
-    if (!token) return;
-    let mounted = true;
-    void (async () => {
-      try {
-        const res = await fetch("/api/cnc-machines", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) return;
-        const list: any[] = Array.isArray(body?.data) ? body.data : [];
-        const next: Record<string, any> = {};
-        for (const item of list) {
-          const machineId = String(item?.machineId || "");
-          if (!machineId) continue;
-          next[machineId] = item;
-        }
-        if (mounted) setCncMachineMetaMap(next);
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [token]);
-
-  const mergedMachines: Machine[] = useMemo(() => {
-    return (machines || []).map((m) => {
-      const meta = cncMachineMetaMap[m.uid];
-      if (!meta) return m;
-
-      const normalizeGroup = (g: any) => {
-        const raw = String(g || "").trim();
-        const numeric = Number.parseFloat(raw.replace(/[^0-9.]/g, ""));
-        if (Number.isFinite(numeric) && numeric > 10) return "12";
-        if (Number.isFinite(numeric) && numeric > 0)
-          return String(Math.trunc(numeric));
-        return raw;
-      };
-      const normalizedCurrent = meta.currentMaterial
-        ? {
-            ...meta.currentMaterial,
-            diameterGroup: normalizeGroup(meta.currentMaterial?.diameterGroup),
-          }
-        : undefined;
-      const normalizedSchedule = meta.scheduledMaterialChange
-        ? {
-            ...meta.scheduledMaterialChange,
-            newDiameterGroup: normalizeGroup(
-              meta.scheduledMaterialChange?.newDiameterGroup,
-            ),
-          }
-        : undefined;
-      const normalizedMaxGroups = Array.isArray(meta.maxModelDiameterGroups)
-        ? meta.maxModelDiameterGroups.map(normalizeGroup)
-        : undefined;
-
-      return {
-        ...m,
-        currentMaterial: normalizedCurrent || (m as any).currentMaterial,
-        scheduledMaterialChange:
-          normalizedSchedule || (m as any).scheduledMaterialChange,
-        maxModelDiameterGroups:
-          normalizedMaxGroups || (m as any).maxModelDiameterGroups,
-        dummySettings: meta.dummySettings || (m as any).dummySettings,
-      } as any;
-    });
-  }, [cncMachineMetaMap, machines]);
 
   const [diameterQueueSummary, setDiameterQueueSummary] = useState<{
     labels: UiDiameterBucketKey[];
@@ -525,7 +454,7 @@ export const WorksheetCncMachineSection = ({
           "12": [],
         };
 
-        const machineList = Array.isArray(mergedMachines) ? mergedMachines : [];
+        const machineList = Array.isArray(machines) ? machines : [];
 
         for (const m of machineList) {
           const uid = String(m?.uid || "").trim();
@@ -597,7 +526,7 @@ export const WorksheetCncMachineSection = ({
     return () => {
       cancelled = true;
     };
-  }, [mergedMachines, token]);
+  }, [machines, token]);
 
   const handleCardClick = async (machine: Machine) => {
     try {
@@ -637,14 +566,14 @@ export const WorksheetCncMachineSection = ({
   };
 
   const filteredMergedMachines = useMemo(() => {
-    if (!searchQuery.trim()) return mergedMachines;
+    if (!searchQuery.trim()) return machines;
     const query = searchQuery.toLowerCase();
-    return mergedMachines.filter(
+    return machines.filter(
       (m) =>
         m.name?.toLowerCase().includes(query) ||
         m.uid?.toLowerCase().includes(query),
     );
-  }, [mergedMachines, searchQuery]);
+  }, [machines, searchQuery]);
 
   return (
     <>
@@ -662,7 +591,7 @@ export const WorksheetCncMachineSection = ({
           />
 
           <div className="grid gap-4 sm:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-            {filteredMergedMachines.map((m) => (
+            {machines.map((m) => (
               <WorksheetCncMachineCard
                 key={m.uid}
                 machine={m}
