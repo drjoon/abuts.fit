@@ -27,6 +27,9 @@ import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 
+// TODO: 개발 완료 후 false로 변경 (LOT 인식 API 호출 대신 "AAD" 하드코딩)
+const IS_SIMULATION_MODE = true;
+
 type FilePreviewInfo = {
   originalName: string;
   url: string;
@@ -278,29 +281,36 @@ export const PackingPage = ({
                 return;
               }
 
-              const aiRes = await fetch("/api/ai/recognize-lot-number", {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  s3Key: uploaded.key,
-                  originalName: uploaded.originalName,
-                }),
-              });
+              let rawLot: string = "";
 
-              if (!aiRes.ok) {
-                toast({
-                  title: "LOT 번호 인식에 실패했습니다",
-                  description: "AI 인식 서버 응답이 올바르지 않습니다.",
-                  variant: "destructive",
+              if (IS_SIMULATION_MODE) {
+                await new Promise((resolve) => setTimeout(resolve, 800)); // 시뮬레이션 지연
+                rawLot = "AAD";
+              } else {
+                const aiRes = await fetch("/api/ai/recognize-lot-number", {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    s3Key: uploaded.key,
+                    originalName: uploaded.originalName,
+                  }),
                 });
-                return;
-              }
 
-              const aiData = await aiRes.json();
-              const rawLot: string = aiData?.data?.lotNumber || "";
+                if (!aiRes.ok) {
+                  toast({
+                    title: "LOT 번호 인식에 실패했습니다",
+                    description: "AI 인식 서버 응답이 올바르지 않습니다.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+
+                const aiData = await aiRes.json();
+                rawLot = aiData?.data?.lotNumber || "";
+              }
 
               const recognizedSuffix = extractLotSuffix3(rawLot || "");
               if (!recognizedSuffix) {

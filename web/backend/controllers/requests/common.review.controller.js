@@ -83,6 +83,21 @@ function inferDiameterGroupFromRequest(request) {
   return inferDiameterGroupFromDiameter(diameter) || "8";
 }
 
+const revertManufacturerStageByReviewStage = (request, stage) => {
+  const prevMap = {
+    request: "의뢰",
+    cam: "의뢰",
+    machining: "CAM",
+    packing: "가공",
+    shipping: "세척.패킹",
+    tracking: "포장.발송",
+  };
+  const prevStage = prevMap[stage];
+  if (prevStage) {
+    applyStatusMapping(request, prevStage);
+  }
+};
+
 async function screenCamMachineForRequest({ request }) {
   if (!request) {
     return { ok: false, reason: "요청 정보가 없습니다.", reqGroup: "8" };
@@ -465,13 +480,12 @@ export async function updateReviewStatusByStage(req, res) {
           // 실제 CNC 가공 시작은 Bridge(CNC) 쪽 상태(allowAutoMachining, 자동 트리거 등)에 의해 제어된다.
           if (effectiveStage === "cam") {
             applyStatusMapping(request, "가공");
-          } else {
-            await advanceManufacturerStageByReviewStage({
-              request,
-              stage: effectiveStage,
-              userId: req.user?._id,
-              session,
-            });
+          } else if (effectiveStage === "machining") {
+            applyStatusMapping(request, "세척.패킹");
+          } else if (effectiveStage === "packing") {
+            applyStatusMapping(request, "포장.발송");
+          } else if (effectiveStage === "shipping") {
+            applyStatusMapping(request, "추적관리");
           }
         }
 
