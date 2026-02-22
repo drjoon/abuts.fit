@@ -387,7 +387,6 @@ export const useMachiningBoard = ({
     void (async () => {
       try {
         await refreshProductionQueues();
-        window.dispatchEvent(new Event("cnc-queues-updated"));
       } catch {
         // ignore
       } finally {
@@ -506,19 +505,23 @@ export const useMachiningBoard = ({
 
       // 완료된 건을 즉시 lastCompletedMap에 추가하여 Complete 섹션에 바로 표시
       // Socket.io 이벤트 데이터를 직접 사용하여 플리커링 방지
+      const elapsedSec = machiningElapsedSecondsMap[mid] || 0;
+      const nowPlaying = nowPlayingHintMap[mid];
+
+      console.log("[onCncMachiningCompleted] event received", {
+        mid,
+        rid,
+        jid,
+        elapsedSec,
+        nowPlaying,
+        found: !!found,
+        ridCheck: !!rid,
+      });
+
       if (rid) {
-        const elapsedSec = machiningElapsedSecondsMap[mid] || 0;
-        const nowPlaying = nowPlayingHintMap[mid];
-
-        console.log("[onCncMachiningCompleted]", {
-          mid,
-          rid,
-          jid,
-          elapsedSec,
-          nowPlaying,
-          found: !!found,
-        });
-
+        console.log(
+          "[onCncMachiningCompleted] rid is truthy, calling setLastCompletedMap",
+        );
         setLastCompletedMap((prev) => {
           const updated = {
             ...prev,
@@ -539,6 +542,10 @@ export const useMachiningBoard = ({
           console.log("[lastCompletedMap updated]", updated);
           return updated;
         });
+      } else {
+        console.log(
+          "[onCncMachiningCompleted] rid is falsy, skipping setLastCompletedMap",
+        );
       }
 
       setNowPlayingHintMap((prev) => {
@@ -548,24 +555,22 @@ export const useMachiningBoard = ({
       });
 
       // 큐에서 완료된 건을 제거하여 상단 카운터 자동 갱신
-      if (found) {
-        setQueueMap((prev) => {
-          const next = { ...prev };
-          if (Array.isArray(next[mid])) {
-            next[mid] = next[mid].filter((j) => {
-              if (!j || typeof j !== "object") return true;
-              const qRid = String((j as any)?.requestId || "").trim();
-              if (rid && qRid === rid) return false;
-              const qJobId = String(
-                (j as any)?.jobId || (j as any)?.id || "",
-              ).trim();
-              if (jid && qJobId === jid) return false;
-              return true;
-            });
-          }
-          return next;
-        });
-      }
+      setQueueMap((prev) => {
+        const next = { ...prev };
+        if (Array.isArray(next[mid])) {
+          next[mid] = next[mid].filter((j) => {
+            if (!j || typeof j !== "object") return true;
+            const qRid = String((j as any)?.requestId || "").trim();
+            if (rid && qRid === rid) return false;
+            const qJobId = String(
+              (j as any)?.jobId || (j as any)?.id || "",
+            ).trim();
+            if (jid && qJobId === jid) return false;
+            return true;
+          });
+        }
+        return next;
+      });
 
       delete machiningElapsedBaseRef.current[mid];
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
@@ -576,7 +581,7 @@ export const useMachiningBoard = ({
       offTick?.();
       offCompleted?.();
     };
-  }, [token, machiningElapsedSecondsMap]);
+  }, [token]);
 
   const refreshMachineStatuses = useCallback(async () => {
     if (!token) return;
