@@ -470,7 +470,6 @@ export const useMachiningBoard = ({
       }));
       machiningElapsedBaseRef.current[mid] = Date.now();
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
-      void refreshProductionQueues();
     });
 
     const offTick = onCncMachiningTick((data: any) => {
@@ -507,7 +506,9 @@ export const useMachiningBoard = ({
       });
 
       // 완료된 건을 즉시 lastCompletedMap에 추가하여 Complete 섹션에 바로 표시
-      if (found && rid) {
+      // Socket.io 이벤트 데이터를 직접 사용하여 플리커링 방지
+      if (rid) {
+        const elapsedSec = machiningElapsedSecondsMap[mid] || 0;
         setLastCompletedMap((prev) => ({
           ...prev,
           [mid]: {
@@ -521,13 +522,10 @@ export const useMachiningBoard = ({
             rollbackCount: 0,
             lotNumber: {},
             completedAt: new Date().toISOString(),
-            durationSeconds: 0,
+            durationSeconds: elapsedSec,
           },
         }));
       }
-
-      // 서버의 MachiningRecord 기반 최신 데이터로 갱신
-      void refreshLastCompletedFromServer();
 
       setNowPlayingHintMap((prev) => {
         const next = { ...prev };
@@ -535,9 +533,28 @@ export const useMachiningBoard = ({
         return next;
       });
 
+      // 큐에서 완료된 건을 제거하여 상단 카운터 자동 갱신
+      if (found) {
+        setQueueMap((prev) => {
+          const next = { ...prev };
+          if (Array.isArray(next[mid])) {
+            next[mid] = next[mid].filter((j) => {
+              if (!j || typeof j !== "object") return true;
+              const qRid = String((j as any)?.requestId || "").trim();
+              if (rid && qRid === rid) return false;
+              const qJobId = String(
+                (j as any)?.jobId || (j as any)?.id || "",
+              ).trim();
+              if (jid && qJobId === jid) return false;
+              return true;
+            });
+          }
+          return next;
+        });
+      }
+
       delete machiningElapsedBaseRef.current[mid];
       setMachiningElapsedSecondsMap((prev) => ({ ...prev, [mid]: 0 }));
-      void refreshProductionQueues();
     });
 
     return () => {
@@ -545,7 +562,7 @@ export const useMachiningBoard = ({
       offTick?.();
       offCompleted?.();
     };
-  }, [token, refreshLastCompletedFromServer, refreshProductionQueues]);
+  }, [token, machiningElapsedSecondsMap]);
 
   const refreshMachineStatuses = useCallback(async () => {
     if (!token) return;
