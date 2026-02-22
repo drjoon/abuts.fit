@@ -287,7 +287,7 @@ export const RequestorBulkShippingBannerCard = ({
     if (policy.shippingMode === "countBased") {
       return `${
         policy.autoBatchThreshold || 20
-      }개 이상 모이면 자동 묶음 배송됩니다. 배송비를 절감하고 출고 일정을 관리해 보세요.`;
+      }개 이상 모이면 자동 묶음 배송됩니다. 배송비를 절감하고 발송 일정을 관리해 보세요.`;
     }
 
     const dayLabels: Record<string, string> = {
@@ -300,7 +300,7 @@ export const RequestorBulkShippingBannerCard = ({
     const days = (policy.weeklyBatchDays || [])
       .map((d) => dayLabels[d])
       .join(", ");
-    return `${days} 오후에 묶음 배송됩니다. 배송비를 절감하고 출고 일정을 관리해 보세요.`;
+    return `${days} 오후에 묶음 배송됩니다. 배송비를 절감하고 발송 일정을 관리해 보세요.`;
   };
 
   const handleOpenModal = () => {

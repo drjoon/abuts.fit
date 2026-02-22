@@ -26,7 +26,7 @@ export const FeaturesSection = () => {
     {
       icon: BarChart3,
       title: "실시간 진행 현황",
-      description: "의뢰 접수부터 제작/출고까지 진행 상태를 확인합니다.",
+      description: "의뢰 접수부터 제작/발송까지 진행 상태를 확인합니다.",
       category: "진행",
     },
     {

@@ -238,10 +238,10 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
             </Label>
             <div className="text-base text-blue-800 leading-relaxed">
               생산 완료되어 발송 대기 중인 제품이 설정한 개수 이상 모이면 한
-              박스로 묶어 출고합니다.
+              박스로 묶어 발송합니다.
             </div>
             <div className="text-base text-blue-800 leading-relaxed">
-              출고 기준: 의뢰일 +1영업일 (불가피 시 +2영업일).
+              발송 기준: 의뢰일 +1영업일 (불가피 시 +2영업일).
             </div>
             <div className="mt-4 space-y-3">
               <label className="flex items-center gap-3">
@@ -256,7 +256,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
                   className="w-20 px-3 py-2 text-base border border-slate-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                 />
                 <span className="text-base font-medium text-blue-900">
-                  개 이상 모이면 출고
+                  개 이상 모이면 발송
                 </span>
               </label>
               <label className="flex items-center gap-3">
@@ -290,7 +290,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
             </Label>
             <p className="text-base text-green-800 leading-relaxed">
               선택한(녹색) 요일에 도착할 수 있도록 직전 영업일 오후 3시(운송장
-              입력) 마감까지 발송 대기 중인 제품을 한 박스에 담아 출고하며, 오후
+              입력) 마감까지 발송 대기 중인 제품을 한 박스에 담아 발송하며, 오후
               4시에 택배사가 수거합니다.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">

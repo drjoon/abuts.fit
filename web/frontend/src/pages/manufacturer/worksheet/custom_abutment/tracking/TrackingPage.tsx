@@ -137,7 +137,7 @@ export const TrackingInquiryPage = () => {
       const header = [
         "의뢰ID",
         "환자/치아",
-        "출고일",
+        "발송일",
         "택배사",
         "송장번호",
         "원재료(Heat No.)",
@@ -182,7 +182,7 @@ export const TrackingInquiryPage = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "UDI-지난달-출고내역.csv";
+      a.download = "UDI-지난달-발송내역.csv";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -253,7 +253,7 @@ export const TrackingInquiryPage = () => {
         return showCompleted ? true : !isDone(r);
       })
       .filter((r) => {
-        // 추적관리 화면에서는 기본적으로 발송/출고된 건만 표시.
+        // 추적관리 화면에서는 기본적으로 발송된 건만 표시.
         // 단, DB상 제조사 단계가 '추적관리'로 이미 넘어간 건은 배송정보가 없어도 표시해야 한다.
         const stage = String(r.manufacturerStage || "").trim();
         if (stage === "추적관리") return true;
@@ -343,7 +343,7 @@ export const TrackingInquiryPage = () => {
             <td>${r.requestId || ""}</td>
             <td>${ci.patientName || ""} / ${ci.tooth || ""}</td>
             <td>가공·탈지·연마·검사·세척·포장</td>
-            <td>출하승인·출고</td>
+            <td>출하승인·발송</td>
             <td>${shippedDate}</td>
             <td>${r.assignedMachine || ""}</td>
             <td>${lotMaterial}</td>
@@ -356,7 +356,7 @@ export const TrackingInquiryPage = () => {
       headers = [
         "의뢰ID",
         "환자/치아",
-        "출고일",
+        "발송일",
         "택배사",
         "송장번호",
         "원재료",
@@ -387,7 +387,7 @@ export const TrackingInquiryPage = () => {
         "의뢰ID",
         "택배사",
         "송장번호",
-        "접수(출고)",
+        "접수(발송)",
         "배송완료",
         "상태",
       ];
@@ -518,7 +518,7 @@ export const TrackingInquiryPage = () => {
     const header = [
       "의뢰ID",
       "환자/치아",
-      "출고일",
+      "발송일",
       "택배사",
       "송장번호",
       "원재료(Heat No.)",
@@ -791,24 +791,6 @@ export const TrackingInquiryPage = () => {
                             ))}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-3">
-                            {["출하승인", "출고"].map((step) => (
-                              <label
-                                key={step}
-                                className="flex items-center gap-1 text-sm"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked
-                                  readOnly
-                                  className="h-4 w-4 accent-primary"
-                                />
-                                <span>{step}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </TableCell>
                         <TableCell>{shippedDate}</TableCell>
                         <TableCell>{r.assignedMachine || "-"}</TableCell>
                         <TableCell>{r.lotNumber?.material || "-"}</TableCell>
@@ -842,7 +824,7 @@ export const TrackingInquiryPage = () => {
                   <TableRow>
                     <TableHead>의뢰ID</TableHead>
                     <TableHead>환자/치아</TableHead>
-                    <TableHead>출고일</TableHead>
+                    <TableHead>발송일</TableHead>
                     <TableHead>택배사</TableHead>
                     <TableHead>송장번호</TableHead>
                     <TableHead>원재료</TableHead>
@@ -879,7 +861,7 @@ export const TrackingInquiryPage = () => {
                         colSpan={7}
                         className="text-center text-muted-foreground"
                       >
-                        지난달 출고 내역이 없습니다.
+                        지난달 발송 내역이 없습니다.
                       </TableCell>
                     </TableRow>
                   )}
@@ -900,7 +882,7 @@ export const TrackingInquiryPage = () => {
                     <TableHead>의뢰ID</TableHead>
                     <TableHead>택배사</TableHead>
                     <TableHead>송장번호</TableHead>
-                    <TableHead>접수(출고)</TableHead>
+                    <TableHead>접수(발송)</TableHead>
                     <TableHead>배송완료</TableHead>
                     <TableHead>상태</TableHead>
                   </TableRow>

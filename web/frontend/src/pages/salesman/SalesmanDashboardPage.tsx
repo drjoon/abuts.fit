@@ -8,6 +8,7 @@ import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { Copy, Users, Wallet, Coins, BadgeCheck, UserPlus } from "lucide-react";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
+import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import {
   Tooltip,
   TooltipContent,
@@ -72,6 +73,7 @@ export const SalesmanDashboardPage = () => {
   const [loading, setLoading] = useState(false);
 
   const [creditModalOpen, setCreditModalOpen] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(false);
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
 
@@ -152,6 +154,15 @@ export const SalesmanDashboardPage = () => {
         headerRight={
           <div className="flex flex-wrap items-center gap-2">
             <PeriodFilter value={period} onChange={setPeriod} />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => setPolicyOpen(true)}
+            >
+              의뢰자 정책
+            </Button>
             <Button
               type="button"
               size="sm"
@@ -426,6 +437,7 @@ export const SalesmanDashboardPage = () => {
         mode="self"
         titleSuffix="보유 크레딧 (미지급 수수료)"
       />
+      <PricingPolicyDialog open={policyOpen} onOpenChange={setPolicyOpen} />
     </TooltipProvider>
   );
 };

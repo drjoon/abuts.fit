@@ -138,7 +138,7 @@ export const PricingPolicyDialog = ({ open, onOpenChange }: Props) => {
 
               <section className="space-y-1">
                 <h3 className="font-semibold text-foreground text-md">
-                  8. 출고 리드타임
+                  8. 발송 리드타임
                 </h3>
                 <p>
                   발송 기준: <b>의뢰일 +1영업일</b> (불가피 시 +2영업일).

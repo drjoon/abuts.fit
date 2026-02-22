@@ -259,7 +259,7 @@ const RiskDetailModal = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>출고 마감 위험 상세</DialogTitle>
+          <DialogTitle>발송 마감 위험 상세</DialogTitle>
           <DialogDescription>
             운송장 입력 마감(15:00) 기준으로 임박/지연 의뢰를 확인하고
             조치하세요.
@@ -277,7 +277,7 @@ const RiskDetailModal = ({
                 </Badge>
                 <span>
                   {item.dueDate
-                    ? `출고마감 ${String(item.dueDate).slice(0, 16)}`
+                    ? `발송마감 ${String(item.dueDate).slice(0, 16)}`
                     : "-"}
                 </span>
               </div>

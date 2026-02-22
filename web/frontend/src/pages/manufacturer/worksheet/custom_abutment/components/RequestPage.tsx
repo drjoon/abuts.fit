@@ -1113,7 +1113,7 @@ export const RequestPage = ({
                               variant="outline"
                               className="text-[11px] bg-slate-50 text-slate-700 border-slate-200"
                             >
-                              출고 {shipYmd}
+                              발송 {shipYmd}
                             </Badge>
                             <Badge
                               variant="outline"

@@ -223,7 +223,7 @@ export const RequestorRiskSummaryCard = ({
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>지연 가능 의뢰: {summary.warningCount ?? 0}건</span>
           <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
-          <span>정시 출고 비율: {summary.onTimeRate ?? 0}%</span>
+          <span>정시 발송 비율: {summary.onTimeRate ?? 0}%</span>
         </div>
         <div className="space-y-2 flex-1 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {summary.items && summary.items.length > 0 ? (

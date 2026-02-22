@@ -43,6 +43,9 @@ export const CompletedMachiningRecordsModal = ({
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rolledBackIds, setRolledBackIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const inFlightRef = useRef(false);
@@ -227,6 +230,11 @@ export const CompletedMachiningRecordsModal = ({
   const machiningLotBadgeClass =
     "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
 
+  const formattedItems = useMemo(
+    () => items.map((it) => formatRow(it)),
+    [items],
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[92vw] max-w-2xl max-h-[78vh] overflow-hidden">
@@ -249,11 +257,11 @@ export const CompletedMachiningRecordsModal = ({
             </div>
           )}
 
-          {items.map((it) => {
-            const row = formatRow(it);
+          {formattedItems.map((row, index) => {
+            const isRolledBack = row.rid ? rolledBackIds.has(row.rid) : false;
             return (
               <div
-                key={it.id}
+                key={items[index].id}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
               >
                 <div className="flex items-center justify-between gap-3">
@@ -262,7 +270,11 @@ export const CompletedMachiningRecordsModal = ({
                       종료 {row.hhmm}
                       <span className="ml-4">소요 {row.mmss}</span>
                     </div>
-                    <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
+                    <div
+                      className={`mt-0.5 truncate text-[15px] font-extrabold text-slate-900 ${
+                        isRolledBack ? "line-through text-slate-400" : ""
+                      }`}
+                    >
                       <MachiningRequestLabel
                         clinicName={row.clinic}
                         patientName={row.patient}
@@ -277,10 +289,17 @@ export const CompletedMachiningRecordsModal = ({
                   {row.rid && onRollbackRequest ? (
                     <button
                       type="button"
-                      className="inline-flex h-8 px-3 items-center justify-center rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
-                      onClick={() => onRollbackRequest(row.rid, machineId)}
+                      className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                      onClick={() => {
+                        setRolledBackIds((prev) => {
+                          const next = new Set(prev);
+                          next.add(row.rid);
+                          return next;
+                        });
+                        onRollbackRequest(row.rid, machineId);
+                      }}
                     >
-                      <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+                      <ArrowLeft className="h-4 w-4" />
                     </button>
                   ) : null}
                 </div>
