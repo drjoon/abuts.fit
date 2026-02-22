@@ -17,17 +17,17 @@ import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";
 
 const DEV_ACCOUNTS = [
-  { label: "r001", email: "r001@gmail.com" },
-  { label: "r004", email: "r004@gmail.com" },
-  { label: "r007", email: "r007@gmail.com" },
-  { label: "r010", email: "r010@gmail.com" },
-  { label: "r013", email: "r013@gmail.com" },
+  { label: "의뢰자", email: "requestor.owner@demo.abuts.fit" },
+  { label: "제조사", email: "manufacturer.owner@demo.abuts.fit" },
+  { label: "영업자", email: "s001@gmail.com" },
+  { label: "관리자", email: "admin.owner@demo.abuts.fit" },
 ];
 const isDev = import.meta.env.DEV;
 
 export const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [step, setStep] = useState<"email" | "password">("email");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuthStore();
@@ -36,6 +36,10 @@ export const LoginPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (step === "email") {
+      setStep("password");
+      return;
+    }
     setIsLoading(true);
 
     try {
@@ -141,46 +145,61 @@ export const LoginPage = () => {
                         className="pl-10"
                         autoComplete="username"
                         required
+                        disabled={step === "password"}
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="password">비밀번호</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="비밀번호를 입력하세요"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="pl-10 pr-10"
-                        autoComplete="current-password"
-                        required
-                      />
-                      <button
-                        type="button"
-                        className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                  {step === "password" && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="password">비밀번호</Label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            id="password"
+                            type={showPassword ? "text" : "password"}
+                            placeholder="비밀번호를 입력하세요"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="pl-10 pr-10"
+                            autoComplete="current-password"
+                            required
+                          />
+                          <button
+                            type="button"
+                            className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
 
-                  <div className="flex justify-end text-sm">
-                    <Link
-                      to="/forgot-password"
-                      className="text-primary hover:underline"
-                    >
-                      비밀번호를 잊으셨나요?
-                    </Link>
-                  </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => {
+                            setPassword("");
+                            setStep("email");
+                          }}
+                        >
+                          이메일 변경
+                        </button>
+                        <Link
+                          to="/forgot-password"
+                          className="text-primary hover:underline"
+                        >
+                          비밀번호를 잊으셨나요?
+                        </Link>
+                      </div>
+                    </>
+                  )}
 
                   <Button
                     type="submit"
@@ -188,7 +207,11 @@ export const LoginPage = () => {
                     className="w-full h-12 flex items-center justify-center text-base"
                     disabled={isLoading}
                   >
-                    {isLoading ? "로그인 중..." : "로그인"}
+                    {step === "email"
+                      ? "로그인"
+                      : isLoading
+                        ? "로그인 중..."
+                        : "로그인"}
                   </Button>
                 </form>
 

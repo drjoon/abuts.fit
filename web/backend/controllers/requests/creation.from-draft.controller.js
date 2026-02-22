@@ -5,7 +5,6 @@ import CreditLedger from "../../models/creditLedger.model.js";
 import {
   normalizeCaseInfosImplantFields,
   computePriceForRequest,
-  applyStatusMapping,
   canAccessRequestAsRequestor,
   buildRequestorOrgScopeFilter,
   addKoreanBusinessDays,
@@ -414,13 +413,19 @@ export async function createRequestsFromDraft(req, res) {
         if (strategy === "skip") continue;
 
         const expectedExistingId = String(dup?.existingRequest?._id || "");
-        if (!r?.existingRequestId || !Types.ObjectId.isValid(r.existingRequestId)) {
+        if (
+          !r?.existingRequestId ||
+          !Types.ObjectId.isValid(r.existingRequestId)
+        ) {
           return res.status(400).json({
             success: false,
             message: "유효한 existingRequestId가 필요합니다.",
           });
         }
-        if (expectedExistingId && String(r.existingRequestId) !== expectedExistingId) {
+        if (
+          expectedExistingId &&
+          String(r.existingRequestId) !== expectedExistingId
+        ) {
           return res.status(400).json({
             success: false,
             message: "중복 의뢰(existingRequestId) 정보가 일치하지 않습니다.",
@@ -476,7 +481,6 @@ export async function createRequestsFromDraft(req, res) {
               throw err;
             }
 
-            const existingStatus = String(existingDoc.status || "");
             const existingStage = String(
               existingDoc.manufacturerStage || "",
             ).trim();
@@ -485,11 +489,10 @@ export async function createRequestsFromDraft(req, res) {
               CAM: 1,
               생산: 2,
               발송: 3,
-              완료: 4,
+              추적관리: 4,
             };
-            const currentStageOrder =
-              stageOrder[existingStage] ?? stageOrder[existingStatus] ?? 0;
-            if (existingStatus === "완료") {
+            const currentStageOrder = stageOrder[existingStage] ?? 0;
+            if (existingStage === "추적관리") {
               const err = new Error(
                 "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요.",
               );
@@ -504,8 +507,8 @@ export async function createRequestsFromDraft(req, res) {
               throw err;
             }
 
-            if (existingDoc.status !== "취소") {
-              applyStatusMapping(existingDoc, "취소");
+            if (existingStage !== "취소") {
+              existingDoc.manufacturerStage = "취소";
               await existingDoc.save({ session });
             }
 
@@ -653,7 +656,9 @@ export async function createRequestsFromDraft(req, res) {
             }
           }
 
-          applyStatusMapping(newRequest, newRequest.status);
+          if (!newRequest.manufacturerStage) {
+            newRequest.manufacturerStage = "의뢰";
+          }
           await newRequest.save({ session });
 
           if (item.caseInfosWithFile.file?.s3Key) {
