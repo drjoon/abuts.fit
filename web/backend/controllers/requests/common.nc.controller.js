@@ -2,21 +2,17 @@ import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import { ApiError } from "../../utils/ApiError.js";
-import { normalizeRequestForResponse } from "./utils.js";
+import {
+  normalizeRequestForResponse,
+  ensureLotNumberForMachining,
+  addKoreanBusinessDays,
+  bumpRollbackCount,
+  ensureReviewByStageDefaults,
+} from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
-
-const bumpRollbackCount = (request, stageKey) => {
-  if (!request) return;
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
-  const key = String(stageKey || "").trim();
-  if (!key) return;
-  request.caseInfos.rollbackCounts[key] =
-    Number(request.caseInfos.rollbackCounts[key] || 0) + 1;
-};
 
 function withBridgeHeaders(extra = {}) {
   const base = {};
@@ -65,7 +61,12 @@ function makeDirectRootNcName({ requestId, fileName }) {
   return `${head}.nc`;
 }
 
-async function uploadNcToBridgeStore({ requestId, s3Key, fileName, storeScope }) {
+async function uploadNcToBridgeStore({
+  requestId,
+  s3Key,
+  fileName,
+  storeScope,
+}) {
   if (!BRIDGE_BASE) {
     return { ok: false, reason: "BRIDGE_BASE is not configured" };
   }
@@ -101,23 +102,6 @@ async function uploadNcToBridgeStore({ requestId, s3Key, fileName, storeScope })
   const savedPath = String(body?.path || relPath);
   return { ok: true, path: savedPath, camDiameter };
 }
-
-const ensureReviewByStageDefaults = (request) => {
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
-  request.caseInfos.reviewByStage.request =
-    request.caseInfos.reviewByStage.request || { status: "PENDING" };
-  request.caseInfos.reviewByStage.cam =
-    request.caseInfos.reviewByStage.cam || { status: "PENDING" };
-  request.caseInfos.reviewByStage.machining =
-    request.caseInfos.reviewByStage.machining || { status: "PENDING" };
-  request.caseInfos.reviewByStage.packing =
-    request.caseInfos.reviewByStage.packing || { status: "PENDING" };
-  request.caseInfos.reviewByStage.shipping =
-    request.caseInfos.reviewByStage.shipping || { status: "PENDING" };
-  request.caseInfos.reviewByStage.tracking =
-    request.caseInfos.reviewByStage.tracking || { status: "PENDING" };
-};
 
 export async function ensureNcFileOnBridgeStoreByRequestId(req, res) {
   try {

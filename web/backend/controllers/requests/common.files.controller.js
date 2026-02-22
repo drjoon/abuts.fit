@@ -1,38 +1,14 @@
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiError } from "../../utils/ApiError.js";
-import { normalizeRequestForResponse } from "./utils.js";
+import {
+  normalizeRequestForResponse,
+  ensureReviewByStageDefaults,
+  bumpRollbackCount,
+} from "./utils.js";
 import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
-
-const bumpRollbackCount = (request, stageKey) => {
-  if (!request) return;
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
-  const key = String(stageKey || "").trim();
-  if (!key) return;
-  request.caseInfos.rollbackCounts[key] =
-    Number(request.caseInfos.rollbackCounts[key] || 0) + 1;
-};
-
-const ensureReviewByStageDefaults = (request) => {
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
-  request.caseInfos.reviewByStage.request = request.caseInfos.reviewByStage
-    .request || { status: "PENDING" };
-  request.caseInfos.reviewByStage.cam = request.caseInfos.reviewByStage.cam || {
-    status: "PENDING",
-  };
-  request.caseInfos.reviewByStage.machining = request.caseInfos.reviewByStage
-    .machining || { status: "PENDING" };
-  request.caseInfos.reviewByStage.packing = request.caseInfos.reviewByStage
-    .packing || { status: "PENDING" };
-  request.caseInfos.reviewByStage.shipping = request.caseInfos.reviewByStage
-    .shipping || { status: "PENDING" };
-  request.caseInfos.reviewByStage.tracking = request.caseInfos.reviewByStage
-    .tracking || { status: "PENDING" };
-};
 
 export async function getStlFileUrl(req, res) {
   return getCamFileUrl(req, res);

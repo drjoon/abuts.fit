@@ -22,6 +22,7 @@ import {
   computePriceForRequest,
   normalizeCaseInfosImplantFields,
   getTodayYmdInKst,
+  bumpRollbackCount,
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
@@ -46,16 +47,6 @@ const BRIDGE_PROCESS_BASE =
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
-
-const bumpRollbackCount = (request, stageKey) => {
-  if (!request) return;
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
-  const key = String(stageKey || "").trim();
-  if (!key) return;
-  request.caseInfos.rollbackCounts[key] =
-    Number(request.caseInfos.rollbackCounts[key] || 0) + 1;
-};
 
 function withBridgeHeaders(extra = {}) {
   const base = {};

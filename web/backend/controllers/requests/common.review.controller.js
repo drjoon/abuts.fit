@@ -22,6 +22,8 @@ import {
   computePriceForRequest,
   normalizeCaseInfosImplantFields,
   getTodayYmdInKst,
+  bumpRollbackCount,
+  ensureReviewByStageDefaults,
 } from "./utils.js";
 import { computeShippingPriority } from "./shippingPriority.utils.js";
 import { getAllProductionQueues } from "../cnc/shared.js";
@@ -47,22 +49,125 @@ const BRIDGE_PROCESS_BASE =
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
-const bumpRollbackCount = (request, stageKey) => {
-  if (!request) return;
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
-  const key = String(stageKey || "").trim();
-  if (!key) return;
-  request.caseInfos.rollbackCounts[key] =
-    Number(request.caseInfos.rollbackCounts[key] || 0) + 1;
-};
-
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
     base["X-Bridge-Secret"] = BRIDGE_SHARED_SECRET;
   }
   return { ...base, ...extra };
+}
+
+function inferDiameterGroupFromDiameter(diameter) {
+  if (!Number.isFinite(diameter) || diameter <= 0) return null;
+  if (diameter <= 6) return "6";
+  if (diameter <= 8) return "8";
+  if (diameter <= 10) return "10";
+  return "12";
+}
+
+function inferDiameterGroupFromRequest(request) {
+  const schedule = request?.productionSchedule || {};
+  const explicitGroup = String(schedule.diameterGroup || "").trim();
+  if (explicitGroup) return explicitGroup;
+
+  const diameterCandidates = [
+    schedule.diameter,
+    request?.caseInfos?.maxDiameter,
+    request?.caseInfos?.camDiameter,
+  ]
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+
+  const diameter = diameterCandidates.length ? diameterCandidates[0] : null;
+  return inferDiameterGroupFromDiameter(diameter) || "8";
+}
+
+async function screenCamMachineForRequest({ request }) {
+  if (!request) {
+    return { ok: false, reason: "요청 정보가 없습니다.", reqGroup: "8" };
+  }
+
+  const schedule = request.productionSchedule || {};
+  const diameterCandidates = [
+    schedule.diameter,
+    request?.caseInfos?.maxDiameter,
+    request?.caseInfos?.camDiameter,
+  ]
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+
+  if (!diameterCandidates.length) {
+    return {
+      ok: false,
+      reason: "소재 직경 정보를 찾을 수 없습니다.",
+      reqGroup: "8",
+    };
+  }
+
+  const diameter = diameterCandidates[0];
+  const diameterGroup = inferDiameterGroupFromDiameter(diameter) || "8";
+
+  return {
+    ok: true,
+    diameter,
+    diameterGroup,
+    preferredMachine:
+      diameterGroup === "6" ? "M3" : diameterGroup === "8" ? "M4" : null,
+    reqGroup: diameterGroup,
+  };
+}
+
+async function chooseMachineForCamMachining({ request }) {
+  if (!request) throw new Error("request is required");
+  const schedule = request.productionSchedule || {};
+
+  const existingMachineId = String(
+    schedule.assignedMachine || request.assignedMachine || "",
+  ).trim();
+  const existingQueuePos = Number(schedule.queuePosition);
+  if (existingMachineId) {
+    return {
+      machineId: existingMachineId,
+      queuePosition: Number.isFinite(existingQueuePos)
+        ? existingQueuePos
+        : null,
+      diameterGroup:
+        schedule.diameterGroup || inferDiameterGroupFromRequest(request),
+      diameter:
+        schedule.diameter || Number(request?.caseInfos?.maxDiameter) || null,
+    };
+  }
+
+  const diameterGroup = inferDiameterGroupFromRequest(request);
+  const preferredByGroup = {
+    6: "M3",
+    8: "M4",
+  };
+  let targetMachineId = preferredByGroup[diameterGroup] || null;
+
+  if (!targetMachineId) {
+    const activeMachines = await Machine.find({ status: "active" })
+      .select({ uid: 1 })
+      .sort({ uid: 1 })
+      .lean();
+    if (!activeMachines?.length) {
+      throw new Error("활성화된 장비가 없습니다.");
+    }
+    targetMachineId = String(activeMachines[0].uid || "").trim();
+  }
+
+  const queueCount = await Request.countDocuments({
+    "productionSchedule.assignedMachine": targetMachineId,
+    manufacturerStage: { $in: ["CAM", "가공"] },
+  });
+
+  return {
+    machineId: targetMachineId,
+    queuePosition: queueCount + 1,
+    diameterGroup,
+    diameter:
+      schedule.diameter || Number(request?.caseInfos?.maxDiameter) || null,
+  };
 }
 
 async function ensureDeliveryInfoShippedAtNow({ request, session }) {

@@ -310,6 +310,29 @@ export async function normalizeRequestForResponse(requestDoc) {
   return obj;
 }
 
+export function ensureReviewByStageDefaults(request) {
+  if (!request) return;
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+  const review = request.caseInfos.reviewByStage;
+  review.request = review.request || { status: "PENDING" };
+  review.cam = review.cam || { status: "PENDING" };
+  review.machining = review.machining || { status: "PENDING" };
+  review.packing = review.packing || { status: "PENDING" };
+  review.shipping = review.shipping || { status: "PENDING" };
+  review.tracking = review.tracking || { status: "PENDING" };
+}
+
+export function bumpRollbackCount(request, stageKey) {
+  if (!request) return;
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
+  const key = String(stageKey || "").trim();
+  if (!key) return;
+  request.caseInfos.rollbackCounts[key] =
+    Number(request.caseInfos.rollbackCounts[key] || 0) + 1;
+}
+
 async function nextLotLetters() {
   const counter = await LotCounter.findOneAndUpdate(
     { key: "global" },
