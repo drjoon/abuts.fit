@@ -537,8 +537,28 @@ export const useMachiningBoard = ({
         if (jid && qJobId === jid) return true;
         return false;
       });
-      // 완료 시점에는 서버의 MachiningRecord 기반 "last-completed" 맵이
-      // 가장 신뢰할 수 있는 데이터이므로, 별도 계산 대신 서버 맵을 다시 불러온다.
+
+      // 완료된 건을 즉시 lastCompletedMap에 추가하여 Complete 섹션에 바로 표시
+      if (found && rid) {
+        setLastCompletedMap((prev) => ({
+          ...prev,
+          [mid]: {
+            machineId: mid,
+            jobId: jid || null,
+            requestId: rid,
+            displayLabel: rid,
+            clinicName: "",
+            patientName: "",
+            tooth: "",
+            rollbackCount: 0,
+            lotNumber: {},
+            completedAt: new Date().toISOString(),
+            durationSeconds: 0,
+          },
+        }));
+      }
+
+      // 서버의 MachiningRecord 기반 최신 데이터로 갱신
       void refreshLastCompletedFromServer();
 
       setNowPlayingHintMap((prev) => {
