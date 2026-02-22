@@ -1,6 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import type { ManufacturerRequest } from "../../utils/request";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/shared/hooks/use-toast";
 
 type MailboxGridProps = {
   requests: ManufacturerRequest[];
@@ -21,6 +22,7 @@ const mockRequestPickup = async (mailboxAddresses: string[]) => {
 };
 
 export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
+  const { toast } = useToast();
   // 선반: 가로 A~X (3개씩 묶음) / 세로 1~4
   // 서랍장(박스): 가로 A,B,C,D / 세로 1,2,3,4
   const shelfNames = Array.from({ length: 24 }, (_, i) =>
@@ -60,6 +62,41 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     }
     return map;
   }, [requests]);
+
+  // 발송일 기준으로 우편함 배경색 결정
+  const getMailboxColorClass = (items: ManufacturerRequest[]) => {
+    if (items.length === 0) return "bg-white border-slate-200";
+
+    // 가장 빠른 발송 예정일 찾기
+    const earliestShipDate = items.reduce((earliest, req) => {
+      const shipYmd = req.timeline?.estimatedShipYmd;
+      if (!shipYmd) return earliest;
+      if (!earliest || shipYmd < earliest) return shipYmd;
+      return earliest;
+    }, "");
+
+    if (!earliestShipDate) {
+      // 발송일 정보 없음 - 기본 파란색
+      return "bg-blue-50 border-blue-400 cursor-pointer hover:bg-blue-100 hover:shadow-md";
+    }
+
+    // 오늘 날짜 (KST 기준 YYYY-MM-DD)
+    const today = new Date();
+    const kstOffset = 9 * 60; // KST = UTC+9
+    const kstDate = new Date(today.getTime() + kstOffset * 60 * 1000);
+    const todayYmd = kstDate.toISOString().split("T")[0];
+
+    if (earliestShipDate === todayYmd) {
+      // 오늘 발송 예정 - 파란색
+      return "bg-blue-50 border-blue-400 cursor-pointer hover:bg-blue-100 hover:shadow-md";
+    } else if (earliestShipDate > todayYmd) {
+      // 미래 발송 예정 - 회색
+      return "bg-slate-50 border-slate-300 cursor-pointer hover:bg-slate-100 hover:shadow-md";
+    } else {
+      // 과거 발송 예정 (지연) - 빨간색
+      return "bg-red-50 border-red-400 cursor-pointer hover:bg-red-100 hover:shadow-md";
+    }
+  };
 
   // Prevent browser back/forward on swipe
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -104,7 +141,11 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
   // Handle printing shipping labels
   const handlePrintLabels = async () => {
     if (occupiedAddresses.length === 0) {
-      alert("운송장을 출력할 우편함이 없습니다.");
+      toast({
+        title: "우편함 없음",
+        description: "운송장을 출력할 우편함이 없습니다.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -113,10 +154,17 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
       await mockPrintShippingLabels(occupiedAddresses);
       // Mark all occupied mailboxes as printed
       setPrintedMailboxes(new Set(occupiedAddresses));
-      alert(`${occupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`);
+      toast({
+        title: "운송장 출력 완료",
+        description: `${occupiedAddresses.length}개 우편함의 운송장이 출력되었습니다.`,
+      });
     } catch (error) {
       console.error("운송장 출력 실패:", error);
-      alert("운송장 출력에 실패했습니다.");
+      toast({
+        title: "운송장 출력 실패",
+        description: "운송장 출력에 실패했습니다.",
+        variant: "destructive",
+      });
     } finally {
       setIsPrinting(false);
     }
@@ -129,39 +177,47 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
     );
 
     if (printedAddresses.length === 0) {
-      alert(
-        "택배 수거를 접수할 우편함이 없습니다. 먼저 운송장을 출력해주세요.",
-      );
+      toast({
+        title: "접수 불가",
+        description:
+          "택배 수거를 접수할 우편함이 없습니다. 먼저 운송장을 출력해주세요.",
+        variant: "destructive",
+      });
       return;
     }
 
     setIsRequestingPickup(true);
     try {
       await mockRequestPickup(printedAddresses);
-      alert(
-        `${printedAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
-      );
+      toast({
+        title: "택배 수거 접수 완료",
+        description: `${printedAddresses.length}개 우편함의 택배 수거가 접수되었습니다.`,
+      });
     } catch (error) {
       console.error("택배 수거 접수 실패:", error);
-      alert("택배 수거 접수에 실패했습니다.");
+      toast({
+        title: "택배 수거 접수 실패",
+        description: "택배 수거 접수에 실패했습니다.",
+        variant: "destructive",
+      });
     } finally {
       setIsRequestingPickup(false);
     }
   };
 
   return (
-    <div className="w-full flex flex-col h-full">
+    <div className="w-full flex flex-col h-full relative">
       {/* 고정 영역: 운송장 출력/택배 수거 접수 + 선반 그룹 버튼 */}
-      <div className="flex-shrink-0 w-full bg-white/98 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-50">
+      <div className="flex-shrink-0 w-full bg-white/98 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-40 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 shadow-sm">
         {/* 운송장 출력 및 택배 수거 접수 버튼 */}
-        <div className="flex gap-2 justify-center py-2 px-2 border-b border-slate-100">
+        <div className="flex gap-2 justify-center pt-4 pb-1 px-2 border-b border-slate-100">
           <button
             onClick={handlePrintLabels}
             disabled={isPrinting || occupiedAddresses.length === 0}
             className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
               isPrinting || occupiedAddresses.length === 0
                 ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                : "bg-green-600 text-white border-green-600 hover:bg-green-700 shadow-sm"
+                : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
             }`}
           >
             {isPrinting ? "출력 중..." : "📦 운송장 출력"}
@@ -178,7 +234,7 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
               occupiedAddresses.filter((addr) => printedMailboxes.has(addr))
                 .length === 0
                 ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                : "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-sm"
+                : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm"
             }`}
           >
             {isRequestingPickup ? "접수 중..." : "🚚 택배 수거 접수"}
@@ -186,14 +242,14 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
         </div>
 
         {/* 선반 그룹 선택 라디오/버튼 그룹 */}
-        <div className="flex flex-wrap gap-1.5 justify-center py-2 px-2">
+        <div className="flex flex-wrap gap-1.5 justify-center pt-1 pb-4 px-2">
           {shelfGroups.map((group, idx) => (
             <button
               key={idx}
               onClick={() => setSelectedGroupIdx(idx)}
               className={`px-3 py-1 text-xs font-medium rounded-full transition-colors border ${
                 idx === selectedGroupIdx
-                  ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                  ? "bg-blue-50 text-blue-700 border-blue-200 shadow-sm"
                   : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"
               }`}
             >
@@ -255,20 +311,30 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                               relative flex flex-col items-center justify-between p-1 rounded border transition-all select-none
                               ${
                                 isOccupied
-                                  ? "bg-blue-50 border-blue-400 cursor-pointer hover:bg-blue-100 hover:shadow-md"
+                                  ? getMailboxColorClass(items)
                                   : "bg-white border-slate-200"
                               }
                             `}
                             style={{
                               width: "48px",
-                              height: "56px",
+                              height: "37px",
                               touchAction: "manipulation",
                             }}
                           >
                             {/* 상단 라벨 */}
                             <div
                               className={`font-mono font-bold leading-none text-center w-full pointer-events-none ${
-                                isOccupied ? "text-blue-800" : "text-slate-400"
+                                isOccupied
+                                  ? getMailboxColorClass(items).includes(
+                                      "bg-blue",
+                                    )
+                                    ? "text-blue-800"
+                                    : getMailboxColorClass(items).includes(
+                                          "bg-red",
+                                        )
+                                      ? "text-red-800"
+                                      : "text-slate-700"
+                                  : "text-slate-400"
                               }`}
                               style={{ fontSize: "9px" }}
                             >
@@ -278,7 +344,17 @@ export const MailboxGrid = ({ requests, onBoxClick }: MailboxGridProps) => {
                             <div className="flex-1 flex items-center justify-center pointer-events-none">
                               {isOccupied && (
                                 <div
-                                  className="font-bold text-blue-700 leading-none"
+                                  className={`font-bold leading-none ${
+                                    getMailboxColorClass(items).includes(
+                                      "bg-blue",
+                                    )
+                                      ? "text-blue-700"
+                                      : getMailboxColorClass(items).includes(
+                                            "bg-red",
+                                          )
+                                        ? "text-red-700"
+                                        : "text-slate-700"
+                                  }`}
                                   style={{ fontSize: "16px" }}
                                 >
                                   {items.length}

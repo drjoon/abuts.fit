@@ -285,7 +285,12 @@ export const PackingPage = ({
 
               if (IS_SIMULATION_MODE) {
                 await new Promise((resolve) => setTimeout(resolve, 800)); // 시뮬레이션 지연
-                rawLot = "AAD";
+                const firstPackingReq =
+                  requests.find(
+                    (r) => deriveStageForFilter(r) === "세척.패킹",
+                  ) || requests[0];
+                rawLot =
+                  extractLotSuffix3(firstPackingReq?.lotNumber?.part) || "AAD";
               } else {
                 const aiRes = await fetch("/api/ai/recognize-lot-number", {
                   method: "POST",

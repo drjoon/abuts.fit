@@ -236,6 +236,11 @@ export interface RequestBase {
     label?: string;
   };
 
+  timeline?: {
+    estimatedShipYmd?: string; // YYYY-MM-DD 형식 (KST 기준, 발송 예정일)
+    actualCompletion?: string | Date;
+  };
+
   // 결제/가격 정보 (백엔드 price, paymentStatus 매핑)
   price?: {
     amount?: number;

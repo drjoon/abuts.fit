@@ -874,10 +874,10 @@ export const RequestPage = ({
       onDrop={handlePageDrop}
       onDragOver={handlePageDragOver}
       onDragLeave={handlePageDragLeave}
-      className="relative w-full text-gray-800 flex flex-col items-stretch"
+      className="relative w-full h-full text-gray-800 flex flex-col items-stretch"
     >
       <div
-        className="flex-1"
+        className="flex-1 overflow-y-auto"
         ref={setScrollContainer}
         data-worksheet-scroll="1"
         onScroll={() => onScrollRef.current?.()}
@@ -902,12 +902,14 @@ export const RequestPage = ({
           />
         )}
 
-        <div className="space-y-4 mt-6">
-          <div className="pb-12 pt-2">
+        <div
+          className={`space-y-4 ${tabStage === "shipping" ? "mt-0" : "mt-6"}`}
+        >
+          <div className={`pb-12 ${tabStage === "shipping" ? "pt-0" : "pt-2"}`}>
             {tabStage === "machining" ? (
               <MachiningQueueBoard searchQuery={worksheetSearch} />
             ) : tabStage === "shipping" ? (
-              <div className="space-y-8">
+              <div className="w-full">
                 <MailboxGrid
                   requests={filteredAndSorted.filter((r) => r.mailboxAddress)}
                   onBoxClick={(address, reqs) =>

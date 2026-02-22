@@ -500,10 +500,17 @@ export async function updateReviewStatusByStage(req, res) {
             try {
               // 의뢰자 organization ID를 전달하여 같은 의뢰자의 요청들을 같은 우편함으로 그룹화
               const requestorOrgId =
+                request.requestorOrganizationId ||
                 request.requestor?.organization?._id ||
                 request.requestor?.organization;
+              console.log(
+                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 시작 - 조직 ID: ${requestorOrgId}`,
+              );
               request.mailboxAddress =
                 await allocateVirtualMailboxAddress(requestorOrgId);
+              console.log(
+                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 완료: ${request.mailboxAddress}`,
+              );
             } catch (err) {
               console.error("[MAILBOX_ALLOCATION_ERROR]", err);
             }
