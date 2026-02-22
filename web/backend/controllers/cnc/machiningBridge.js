@@ -63,28 +63,27 @@ export async function getCompletedMachiningRecords(req, res) {
       }
     }
 
+    // Fetch more records to account for items that might be filtered out
+    const fetchLimit = limit * 3;
     const recs = await MachiningRecord.find(query)
       .sort({ completedAt: -1, _id: -1 })
-      .limit(limit + 1)
+      .limit(fetchLimit)
       .select(
-        "requestId jobId status completedAt durationSeconds displayLabel lotNumber clinicName patientName tooth",
+        "requestId jobId status completedAt durationSeconds elapsedSeconds displayLabel lotNumber clinicName patientName tooth",
       )
       .lean();
 
-    const slice = recs.slice(0, limit);
-    const hasMore = recs.length > limit;
-
-    const requestIds = slice
+    const requestIds = recs
       .map((r) => String(r?.requestId || "").trim())
       .filter(Boolean);
     const uniqueRequestIds = Array.from(new Set(requestIds));
 
-    // request 정보 병합 (lotNumber, clinic/patient/tooth)
+    // request 정보 병합 (lotNumber, clinic/patient/tooth, manufacturerStage)
     const reqDocs = await Request.find({
       requestId: { $in: uniqueRequestIds },
     })
       .select(
-        "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.rollbackCounts",
+        "requestId lotNumber caseInfos.clinicName caseInfos.patientName caseInfos.tooth caseInfos.rollbackCounts manufacturerStage",
       )
       .lean();
     const reqMap = new Map(
@@ -93,7 +92,39 @@ export async function getCompletedMachiningRecords(req, res) {
         .filter(([k]) => !!k),
     );
 
-    const merged = slice.map((r) => {
+    const validRecs = [];
+    let nextCursor = null;
+    let hasMore = false;
+
+    for (const r of recs) {
+      const rid = String(r?.requestId || "").trim();
+      if (rid) {
+        const reqDoc = reqMap.get(rid);
+        // If rolled back to before '세척.패킹', it is not considered completed anymore
+        if (
+          reqDoc &&
+          ["의뢰", "CAM", "가공"].includes(reqDoc.manufacturerStage)
+        ) {
+          continue;
+        }
+      }
+      if (validRecs.length < limit) {
+        validRecs.push(r);
+      } else {
+        hasMore = true;
+        nextCursor = `${new Date(r.completedAt).toISOString()}|${String(r._id)}`;
+        break;
+      }
+    }
+
+    if (!hasMore && recs.length === fetchLimit) {
+      // We exhausted the fetched records but there might be more in the database
+      hasMore = true;
+      const lastRec = recs[recs.length - 1];
+      nextCursor = `${new Date(lastRec.completedAt).toISOString()}|${String(lastRec._id)}`;
+    }
+
+    const merged = validRecs.map((r) => {
       const req = reqMap.get(String(r?.requestId || "").trim());
       return {
         ...r,
@@ -131,12 +162,6 @@ export async function getCompletedMachiningRecords(req, res) {
         rollbackCount: Number(r?.rollbackCount || 0),
       };
     });
-
-    const last = slice[slice.length - 1] || null;
-    const nextCursor =
-      hasMore && last?.completedAt
-        ? `${new Date(last.completedAt).toISOString()}|${String(last._id)}`
-        : null;
 
     return res.status(200).json({
       success: true,
@@ -363,17 +388,28 @@ export async function triggerNextAutoMachiningAfterComplete({
 
   try {
     const m = await Machine.findOne({ $or: [{ uid: mid }, { name: mid }] })
-      .select({ allowAutoMachining: 1 })
+      .select({
+        allowAutoMachining: 1,
+        allowJobStart: 1,
+        allowProgramDelete: 1,
+        allowRequestAssign: 1,
+      })
       .lean()
       .catch(() => null);
-    if (m?.allowAutoMachining !== true) return;
+
+    if (m?.allowAutoMachining !== true) {
+      console.log(
+        `[bridge:auto-next] skip for ${mid}: allowAutoMachining is false`,
+      );
+      return;
+    }
 
     const pending = await Request.find({
       manufacturerStage: { $in: ["CAM", "가공"] },
       "productionSchedule.assignedMachine": mid,
     })
       .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
-      .limit(3)
+      .limit(5)
       .lean();
 
     const pick = (Array.isArray(pending) ? pending : []).find((r) => {
@@ -385,7 +421,35 @@ export async function triggerNextAutoMachiningAfterComplete({
       ).trim();
       return !!path;
     });
-    if (!pick) return;
+
+    if (!pick) {
+      console.log(
+        `[bridge:auto-next] no pending jobs found for ${mid}, turning off auto-machining.`,
+      );
+      // No pending jobs, turn off auto-machining
+      const updatedMachine = await Machine.findOneAndUpdate(
+        { $or: [{ uid: mid }, { name: mid }] },
+        { $set: { allowAutoMachining: false } },
+        { new: true },
+      ).lean();
+
+      if (updatedMachine) {
+        try {
+          getIO().emit("cnc-machine-settings-changed", {
+            machineId: updatedMachine.uid,
+            settings: {
+              allowAutoMachining: false,
+              allowJobStart: updatedMachine.allowJobStart,
+              allowProgramDelete: updatedMachine.allowProgramDelete,
+              allowRequestAssign: updatedMachine.allowRequestAssign,
+            },
+          });
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
 
     const requestId = String(pick.requestId || "").trim();
     const bridgePath = String(
@@ -396,7 +460,18 @@ export async function triggerNextAutoMachiningAfterComplete({
     ).trim();
     const derivedFileName = bridgePath ? bridgePath.split(/[/\\]/).pop() : "";
     const fileName = rawFileName || derivedFileName;
-    if (!fileName || !bridgePath) return;
+
+    console.log(
+      `[bridge:auto-next] attempting to trigger ${requestId} on ${mid}`,
+      { bridgePath, fileName },
+    );
+
+    if (!fileName || !bridgePath) {
+      console.log(
+        `[bridge:auto-next] skip for ${mid}: missing fileName or bridgePath for ${requestId}`,
+      );
+      return;
+    }
 
     const base =
       process.env.BRIDGE_NODE_URL ||
