@@ -336,10 +336,17 @@ export const RequestPage = ({
       void fetchRequests();
     });
 
+    const handleRequestRollback = () => {
+      void fetchRequests();
+    };
+
+    window.addEventListener("request-rollback", handleRequestRollback);
+
     return () => {
       if (typeof unsubBg === "function") unsubBg();
       if (typeof unsubTick === "function") unsubTick();
       if (typeof unsubCompleted === "function") unsubCompleted();
+      window.removeEventListener("request-rollback", handleRequestRollback);
     };
   }, [
     fetchRequests,

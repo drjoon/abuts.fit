@@ -454,8 +454,8 @@ export async function rollbackRequestToCamByRequestId(requestId) {
   request.caseInfos = request.caseInfos || {};
   request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
   request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
-  request.caseInfos.rollbackCounts.machining =
-    Number(request.caseInfos.rollbackCounts.machining || 0) + 1;
+  request.caseInfos.rollbackCounts.cam =
+    Number(request.caseInfos.rollbackCounts.cam || 0) + 1;
 
   const now = new Date();
 

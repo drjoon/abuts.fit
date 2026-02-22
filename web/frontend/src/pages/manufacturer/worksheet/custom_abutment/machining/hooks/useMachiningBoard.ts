@@ -873,6 +873,7 @@ export const useMachiningBoard = ({
 
         await refreshProductionQueues();
         window.dispatchEvent(new Event("cnc-queues-updated"));
+        window.dispatchEvent(new Event("request-rollback"));
       } catch (e: any) {
         toast({
           title: "CAM으로 되돌리기 실패",
