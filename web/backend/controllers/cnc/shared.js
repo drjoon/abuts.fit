@@ -477,9 +477,7 @@ export async function rollbackRequestToCamByRequestId(requestId) {
     ...machiningReview,
   };
 
-  request.status = "CAM";
   request.manufacturerStage = "CAM";
-  request.status2 = "없음";
 
   request.productionSchedule = request.productionSchedule || {};
   request.productionSchedule.actualMachiningStart = null;
@@ -515,9 +513,11 @@ export async function getMachinesHandler(req, res) {
 export async function getProductionQueuesHandler(req, res) {
   try {
     const requests = await Request.find({
-      status: { $in: ["의뢰", "CAM", "생산", "가공"] },
+      manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
     })
-      .select("requestId status productionSchedule caseInfos timeline")
+      .select(
+        "requestId manufacturerStage productionSchedule caseInfos timeline",
+      )
       .populate({
         path: "productionSchedule.machiningRecord",
         select:

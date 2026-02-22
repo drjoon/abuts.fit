@@ -175,7 +175,19 @@ export async function handleHanjinTrackingWebhook(req, res) {
     const debug = toBool(process.env.DEBUG_HANJIN_WEBHOOK);
 
     if (deliveryInfo.deliveredAt) {
-      request.status2 = "완료";
+      request.caseInfos = request.caseInfos || {};
+      request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+      request.caseInfos.reviewByStage.shipping = request.caseInfos.reviewByStage
+        .shipping || { status: "PENDING" };
+      request.caseInfos.reviewByStage.shipping = {
+        ...request.caseInfos.reviewByStage.shipping,
+        status: "APPROVED",
+        updatedAt: new Date(),
+        updatedBy: null,
+        reason: "",
+      };
+
+      request.manufacturerStage = "추적관리";
       request.timeline = request.timeline || {};
       if (!request.timeline.actualCompletion) {
         request.timeline.actualCompletion = deliveryInfo.deliveredAt;

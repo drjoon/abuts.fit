@@ -33,7 +33,7 @@ export const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d6: 2,
   d8: 2,
   d10: 5,
-  d10plus: 5,
+  d12: 5,
 };
 
 export function getRequestorOrgId(req) {
@@ -85,45 +85,28 @@ export async function buildRequestorOrgScopeFilter(req) {
 }
 
 export function normalizeRequestStage(requestLike) {
-  // stage 분류는 manufacturerStage가 authoritative (status 기반 로직은 레거시)
-  const status = String(requestLike?.status || "");
   const stage = String(requestLike?.manufacturerStage || "");
-  const status2 = String(requestLike?.status2 || "");
 
-  // 취소/완료는 레거시 status에도 남아있을 수 있어 최소한으로만 유지
-  if (status === "취소") return "cancel";
-  if (status2 === "완료") return "completed";
+  if (stage === "취소") return "cancel";
 
-  // 포장·발송 단계 (shipping)
-  if (["shipping", "포장.발송"].includes(stage)) {
-    return "shipping";
-  }
-
-  // 추적관리 단계 (tracking)
   if (["tracking", "추적관리"].includes(stage)) {
     return "tracking";
   }
-
-  // 가공 단계
-  if (["machining", "가공"].includes(stage)) {
-    return "machining";
+  if (["shipping", "포장.발송"].includes(stage)) {
+    return "shipping";
   }
-
-  // 세척/패킹 단계 (packing)
   if (["packing", "세척.패킹"].includes(stage)) {
     return "packing";
   }
-
-  // CAM 단계
+  if (["machining", "가공"].includes(stage)) {
+    return "machining";
+  }
   if (["cam", "CAM"].includes(stage)) {
     return "cam";
   }
-
-  // 의뢰 단계
   if (["request", "의뢰"].includes(stage)) {
     return "request";
   }
-
   return "request";
 }
 
@@ -134,9 +117,46 @@ export function normalizeRequestStageLabel(requestLike) {
   if (s === "machining") return "가공";
   if (s === "packing") return "세척.패킹";
   if (s === "shipping") return "포장.발송";
-  if (s === "completed") return "완료";
+  if (s === "tracking") return "추적관리";
   if (s === "cancel") return "취소";
   return "의뢰";
+}
+
+export const REQUEST_STAGE_GROUPS = {
+  pre: ["의뢰", "CAM"],
+  post: ["가공", "세척.패킹"],
+  waiting: ["포장.발송", "추적관리"],
+  bulkCandidateAll: [
+    "의뢰",
+    "CAM",
+    "가공",
+    "세척.패킹",
+    "포장.발송",
+    "추적관리",
+  ],
+  bulkCreateEligible: ["CAM", "가공", "세척.패킹", "포장.발송"],
+};
+
+const REQUEST_STAGE_ORDER = {
+  request: 0,
+  의뢰: 0,
+  cam: 1,
+  CAM: 1,
+  machining: 2,
+  가공: 2,
+  packing: 3,
+  "세척.패킹": 3,
+  shipping: 3,
+  "포장.발송": 3,
+  tracking: 4,
+  추적관리: 4,
+};
+
+export function getRequestStageOrder(requestLike) {
+  const normalized = normalizeRequestStage(requestLike);
+  if (normalized === "cancel") return -1;
+  const stage = String(requestLike?.manufacturerStage || "").trim();
+  return REQUEST_STAGE_ORDER[stage] ?? REQUEST_STAGE_ORDER[normalized] ?? 0;
 }
 
 export async function canAccessRequestAsRequestor(req, requestDoc) {
@@ -420,7 +440,7 @@ export async function computePriceForRequest({
     "caseInfos.tooth": tooth,
     "caseInfos.clinicName": clinicName,
     "caseInfos.implantSystem": { $exists: true, $ne: "" },
-    status: { $ne: "취소" },
+    manufacturerStage: { $ne: "취소" },
     createdAt: { $gte: remakeCutoff },
   })
     .select({ _id: 1 })
@@ -491,7 +511,7 @@ export async function computePriceForRequest({
   last30Cutoff.setDate(last30Cutoff.getDate() - 30);
   const last30DaysOrders = await Request.countDocuments({
     ...scopeFilter,
-    status: { $ne: "취소" },
+    manufacturerStage: { $ne: "취소" },
     createdAt: { $gte: last30Cutoff },
   });
 
@@ -508,7 +528,7 @@ export async function computePriceForRequest({
   const referralLast30DaysOrders = referredUserIds.length
     ? await Request.countDocuments({
         requestor: { $in: referredUserIds },
-        status: { $ne: "취소" },
+        manufacturerStage: { $ne: "취소" },
         createdAt: { $gte: last30Cutoff },
       })
     : 0;
@@ -538,11 +558,7 @@ export async function computePriceForRequest({
 export function applyStatusMapping(request, status) {
   const s = String(status || "").trim();
 
-  // 기본 status 동기화
-  request.status = s;
-
   // manufacturerStage 는 생산 공정의 메인 단계를 나타내는 SSOT 라벨로 사용한다.
-  // 세부 배송 상태(status2) 등은 여기서 최소한으로만 매핑한다.
 
   // 명시적인 메인 단계 라벨은 그대로 manufacturerStage 로 사용
   const mainStages = [
@@ -557,19 +573,13 @@ export function applyStatusMapping(request, status) {
 
   if (mainStages.includes(s)) {
     request.manufacturerStage = s;
-    // 메인 단계 전환 시 status2 는 기본값으로 초기화
-    request.status2 = "없음";
     return;
   }
 
-  // 세부 배송 단계(status2) → manufacturerStage 는 "포장.발송" 으로 통일
-  if (["배송대기", "배송중", "배송지연", "배송완료"].includes(s)) {
+  // 세부 배송 문자열이 들어오더라도 manufacturerStage 는 shipping 으로 통일
+  if (["배송대기", "배송중", "배송지연", "배송완료", "발송"].includes(s)) {
     request.manufacturerStage = "포장.발송";
-    request.status2 = s;
-    return;
   }
-
-  // 그 외 레거시 값들은 manufacturerStage 를 건드리지 않고 status 만 유지
 }
 
 export async function computeDiameterStats(requests, leadDays) {
@@ -578,12 +588,12 @@ export async function computeDiameterStats(requests, leadDays) {
     ...(leadDays || {}),
   };
 
-  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD10plus] =
+  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD12] =
     await Promise.all([
       formatEtaLabelFromNow(effectiveLeadDays.d6),
       formatEtaLabelFromNow(effectiveLeadDays.d8),
       formatEtaLabelFromNow(effectiveLeadDays.d10),
-      formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+      formatEtaLabelFromNow(effectiveLeadDays.d12),
     ]);
 
   const bucketDefs = [
@@ -603,9 +613,9 @@ export async function computeDiameterStats(requests, leadDays) {
       shipLabel: shipLabelD10,
     },
     {
-      id: "d10plus",
+      id: "d12",
       diameter: 12,
-      shipLabel: shipLabelD10plus,
+      shipLabel: shipLabelD12,
     },
   ];
 
@@ -613,7 +623,7 @@ export async function computeDiameterStats(requests, leadDays) {
     d6: 0,
     d8: 0,
     d10: 0,
-    d10plus: 0,
+    d12: 0,
   };
 
   if (Array.isArray(requests)) {
@@ -626,18 +636,12 @@ export async function computeDiameterStats(requests, leadDays) {
       if (d <= 6) counts.d6 += 1;
       else if (d <= 8) counts.d8 += 1;
       else if (d <= 10) counts.d10 += 1;
-      else counts.d10plus += 1;
+      else if (d <= 12) counts.d12 += 1;
     });
   }
 
-  const total = counts.d6 + counts.d8 + counts.d10 + counts.d10plus;
-  const maxCount = Math.max(
-    1,
-    counts.d6,
-    counts.d8,
-    counts.d10,
-    counts.d10plus,
-  );
+  const total = counts.d6 + counts.d8 + counts.d10 + counts.d12;
+  const maxCount = Math.max(1, counts.d6, counts.d8, counts.d10, counts.d12);
 
   const buckets = bucketDefs.map((def) => ({
     diameter: def.diameter,

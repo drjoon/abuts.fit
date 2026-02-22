@@ -290,27 +290,6 @@ const requestSchema = new mongoose.Schema(
         },
       },
     },
-    status: {
-      // [레거시] 의뢰인용 상태 — SSOT는 caseInfos.reviewByStage. 추후 제거 예정.
-      // 사용 중인 상태값: 의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리 / 취소
-      type: String,
-      enum: [
-        "의뢰",
-        "CAM",
-        "가공",
-        "세척.패킹",
-        "포장.발송",
-        "추적관리",
-        "취소",
-      ],
-      default: "의뢰",
-    },
-    // [레거시] 공정 내 세부 단계 — SSOT는 caseInfos.reviewByStage. 추후 제거 예정.
-    status2: {
-      type: String,
-      enum: ["없음", "전", "중", "후"],
-      default: "없음",
-    },
     // 제조사용 스테이지 (UI 표기용) — status와 동일한 값을 사용한다.
     manufacturerStage: {
       type: String,
@@ -506,7 +485,7 @@ requestSchema.index({
   "caseInfos.clinicName": 1,
   "caseInfos.patientName": 1,
   "caseInfos.tooth": 1,
-  status: 1,
+  manufacturerStage: 1,
   createdAt: -1,
 });
 
@@ -515,14 +494,14 @@ requestSchema.index({
   "caseInfos.clinicName": 1,
   "caseInfos.patientName": 1,
   "caseInfos.tooth": 1,
-  status: 1,
+  manufacturerStage: 1,
   createdAt: -1,
 });
 
 // 대시보드 조회 최적화를 위한 복합 인덱스
 requestSchema.index({
   requestorOrganizationId: 1,
-  status: 1,
+  manufacturerStage: 1,
   "caseInfos.implantSystem": 1,
   createdAt: -1,
 });
@@ -530,7 +509,7 @@ requestSchema.index({
 // 제조사 대시보드 조회를 위한 인덱스
 requestSchema.index({
   manufacturer: 1,
-  status: 1,
+  manufacturerStage: 1,
   "caseInfos.implantSystem": 1,
   createdAt: -1,
 });
@@ -538,7 +517,7 @@ requestSchema.index({
 // 배송 모드 및 상태 기반 조회를 위한 인덱스
 requestSchema.index({
   requestorOrganizationId: 1,
-  status: 1,
+  manufacturerStage: 1,
   shippingMode: 1,
 });
 

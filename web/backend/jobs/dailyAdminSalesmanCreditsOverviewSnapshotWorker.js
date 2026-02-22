@@ -53,7 +53,9 @@ async function isTodaySnapshotMissing(ymd) {
 async function computeAndUpsertSnapshot({ ymd, range }) {
   const mongoUri = process.env.MONGODB_URI;
   if (!mongoUri) {
-    console.error("[dailyAdminSalesmanCreditsOverviewSnapshot] MONGODB_URI is not set");
+    console.error(
+      "[dailyAdminSalesmanCreditsOverviewSnapshot] MONGODB_URI is not set",
+    );
     return;
   }
 
@@ -74,9 +76,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   const salesmen = await User.find({ role: "salesman", active: true })
     .select({ _id: 1 })
     .lean();
-  const salesmanObjectIds = (salesmen || [])
-    .map((s) => s?._id)
-    .filter(Boolean);
+  const salesmanObjectIds = (salesmen || []).map((s) => s?._id).filter(Boolean);
 
   const salesmenCount = salesmanObjectIds.length;
 
@@ -140,7 +140,9 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     else if (type === "PAYOUT") paidOutAmount += total;
     else if (type === "ADJUST") adjustedAmount += total;
   }
-  const balanceAmount = normalizeNumber(earnedAmount - paidOutAmount + adjustedAmount);
+  const balanceAmount = normalizeNumber(
+    earnedAmount - paidOutAmount + adjustedAmount,
+  );
 
   // 직접 소개 의뢰자: salesmen -> requestor
   const directRequestors = await User.find({
@@ -216,9 +218,10 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
 
   const orgIdsAll = Array.from(
     new Set(
-      [...directOrgIdsBySalesmanId.values(), ...level1OrgIdsBySalesmanId.values()].flatMap((s) =>
-        Array.from(s),
-      ),
+      [
+        ...directOrgIdsBySalesmanId.values(),
+        ...level1OrgIdsBySalesmanId.values(),
+      ].flatMap((s) => Array.from(s)),
     ),
   )
     .filter((id) => Types.ObjectId.isValid(id))
@@ -231,7 +234,7 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
           {
             $match: {
               requestorOrganizationId: { $in: orgIdsAll },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: rangeStartUtc, $lte: rangeEndUtc },
             },
           },
@@ -246,7 +249,9 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
                   ],
                 },
               },
-              bonusRevenueAmount: { $sum: { $ifNull: ["$price.bonusAmount", 0] } },
+              bonusRevenueAmount: {
+                $sum: { $ifNull: ["$price.bonusAmount", 0] },
+              },
               orderCount: { $sum: 1 },
             },
           },
@@ -299,7 +304,9 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     indirectCommissionTotal += paid * commissionRate * 0.5;
   }
 
-  const totalCommissionAmount = normalizeNumber(directCommissionTotal + indirectCommissionTotal);
+  const totalCommissionAmount = normalizeNumber(
+    directCommissionTotal + indirectCommissionTotal,
+  );
 
   await AdminSalesmanCreditsOverviewSnapshot.updateOne(
     { ymd, periodKey },
@@ -368,7 +375,5 @@ if (
     process.exit(1);
   });
 } else {
-  console.log(
-    "[dailyAdminSalesmanCreditsOverviewSnapshot] Worker is disabled",
-  );
+  console.log("[dailyAdminSalesmanCreditsOverviewSnapshot] Worker is disabled");
 }

@@ -39,14 +39,11 @@ const getStage = (req: ManufacturerRequest): ProcessStage | "" => {
 };
 
 const isDone = (req: ManufacturerRequest) => {
-  const status = String(req.status || "").trim();
-  const status2 = String((req as any).status2 || "").trim();
+  const stage = String(req.manufacturerStage || "").trim();
   const di = (req.deliveryInfoRef || null) as any;
   const deliveredAt = di?.deliveredAt ? new Date(di.deliveredAt) : null;
   const shippedAt = di?.shippedAt ? new Date(di.shippedAt) : null;
-  return (
-    status === "완료" || status2 === "완료" || Boolean(deliveredAt || shippedAt)
-  );
+  return stage === "추적관리" || Boolean(deliveredAt || shippedAt);
 };
 
 const normalizeDeliveryInfo = (ref?: string | DeliveryInfoSummary) => {

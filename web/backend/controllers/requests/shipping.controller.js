@@ -12,6 +12,7 @@ import {
   applyStatusMapping,
   normalizeRequestStage,
   normalizeRequestStageLabel,
+  REQUEST_STAGE_GROUPS,
   getRequestorOrgId,
 } from "./utils.js";
 
@@ -194,8 +195,7 @@ export async function getMyShippingPackagesSummary(req, res) {
       })
       .populate({
         path: "requestIds",
-        select:
-          "requestId title caseInfos status status2 manufacturerStage createdAt",
+        select: "requestId title caseInfos manufacturerStage createdAt",
       })
       .sort({ createdAt: -1 })
       .lean();
@@ -226,8 +226,6 @@ export async function getMyShippingPackagesSummary(req, res) {
             requestId: req?.requestId || "",
             title: req?.title || "",
             caseInfos: req?.caseInfos || {},
-            status: req?.status || "",
-            status2: req?.status2 || "",
             manufacturerStage: req?.manufacturerStage || "",
             createdAt: req?.createdAt,
           }))
@@ -331,7 +329,7 @@ export async function getMyBulkShipping(req, res) {
       if (d <= 6) return effectiveLeadDays.d6;
       if (d <= 8) return effectiveLeadDays.d8;
       if (d <= 10) return effectiveLeadDays.d10;
-      return effectiveLeadDays.d10plus;
+      return effectiveLeadDays.d12;
     };
 
     // 배치 최적화: 같은 diameter는 1회만 계산
@@ -383,22 +381,12 @@ export async function getMyBulkShipping(req, res) {
 
     const requests = await Request.find({
       ...requestFilter,
-      status: {
-        $in: [
-          "의뢰",
-          "의뢰접수",
-          "CAM",
-          "가공전",
-          "생산",
-          "가공후",
-          "발송",
-          "배송대기",
-          "배송중",
-        ],
+      manufacturerStage: {
+        $in: REQUEST_STAGE_GROUPS.bulkCandidateAll,
       },
     })
       .select(
-        "requestId title status manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedShipYmd requestor",
+        "requestId title manufacturerStage caseInfos shippingMode requestedShipDate createdAt timeline.estimatedShipYmd requestor",
       )
       .populate("requestor", "name organization")
       .lean();
@@ -427,7 +415,7 @@ export async function getMyBulkShipping(req, res) {
         patient: ci.patientName || "",
         tooth: ci.tooth || "",
         diameter: maxDiameter,
-        status: r.status,
+        stage: r.manufacturerStage,
         stageKey,
         stageLabel,
         shippingMode: r.shippingMode || "normal",
@@ -439,19 +427,21 @@ export async function getMyBulkShipping(req, res) {
     const [pre, post, waiting] = await Promise.all([
       Promise.all(
         requests
+          .filter((r) => REQUEST_STAGE_GROUPS.pre.includes(r.manufacturerStage))
+          .map(mapItem),
+      ),
+      Promise.all(
+        requests
           .filter((r) =>
-            ["의뢰", "의뢰접수", "CAM", "가공전"].includes(r.status),
+            REQUEST_STAGE_GROUPS.post.includes(r.manufacturerStage),
           )
           .map(mapItem),
       ),
       Promise.all(
         requests
-          .filter((r) => ["생산", "가공후"].includes(r.status))
-          .map(mapItem),
-      ),
-      Promise.all(
-        requests
-          .filter((r) => ["발송", "배송대기", "배송중"].includes(r.status))
+          .filter((r) =>
+            REQUEST_STAGE_GROUPS.waiting.includes(r.manufacturerStage),
+          )
           .map(mapItem),
       ),
     ]);
@@ -492,7 +482,7 @@ export async function createMyBulkShipping(req, res) {
     const requests = await Request.find({
       ...requestFilter,
       requestId: { $in: requestIds },
-      status: { $in: ["CAM", "생산", "발송"] },
+      manufacturerStage: { $in: REQUEST_STAGE_GROUPS.bulkCreateEligible },
     });
 
     if (!requests.length) {

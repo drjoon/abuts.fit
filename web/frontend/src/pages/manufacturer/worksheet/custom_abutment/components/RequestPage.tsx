@@ -620,9 +620,8 @@ export const RequestPage = ({
     // 발송 탭 기본: 완료 건은 숨김 (헤더의 완료포함 체크 시에만 노출)
     if (tabStage === "shipping") {
       return requests.filter((req) => {
-        const status = String(req.status || "").trim();
-        const status2 = String((req as any).status2 || "").trim();
-        if (status === "완료" || status2 === "완료") return false;
+        const stage = String(req.manufacturerStage || "").trim();
+        if (stage === "추적관리") return false;
         try {
           return filterRequests ? filterRequests(req) : true;
         } catch {

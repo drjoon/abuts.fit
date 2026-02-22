@@ -112,7 +112,7 @@ async function runDailySnapshot(ymd, range) {
         {
           $match: {
             requestor: { $in: relevantUserIds },
-            status: "완료",
+            "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: rangeStart, $lte: rangeEnd },
           },
         },
@@ -137,7 +137,7 @@ async function runDailySnapshot(ymd, range) {
         {
           $match: {
             requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
-            status: "완료",
+            "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: rangeStart, $lte: rangeEnd },
           },
         },

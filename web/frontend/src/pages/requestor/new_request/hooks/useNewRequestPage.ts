@@ -9,6 +9,7 @@ import { useNewRequestImplant } from "./useNewRequestImplant";
 import { type DraftCaseInfo } from "./newRequestTypes";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
+import { getNormalizedStageOrder } from "@/utils/stage";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
@@ -28,7 +29,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [duplicatePrompt, setDuplicatePrompt] = useState<{
-    mode: "active" | "completed";
+    mode: "active" | "tracking";
     duplicates: any[];
   } | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -38,7 +39,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   >(null);
 
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[] | null>(
-    null
+    null,
   );
 
   const [pendingUploadDecisions, setPendingUploadDecisions] = useState<
@@ -145,7 +146,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       // 1) 로컬 캐시(caseInfosMap) 업데이트
       updateCaseInfos(fileKey, updates);
     },
-    [selectedPreviewIndex, files, updateCaseInfos, currentCaseInfos]
+    [selectedPreviewIndex, files, updateCaseInfos, currentCaseInfos],
   );
 
   // useNewRequestImplant 내부에서 clinicName이 바뀔 때마다
@@ -231,7 +232,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
     // 현재 파일의 clinicName과 일치하는 프리셋 찾기
     const matchingClinic = rawClinicPresets.find(
-      (c) => c.name === currentClinicName
+      (c) => c.name === currentClinicName,
     );
     return matchingClinic?.id || null;
   }, [currentCaseInfos.clinicName, rawClinicPresets]);
@@ -251,7 +252,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         updateCaseInfos(currentFileKey, { clinicName });
       }
     },
-    [rawHandleSelectClinic, rawClinicPresets, currentFileKey, updateCaseInfos]
+    [rawHandleSelectClinic, rawClinicPresets, currentFileKey, updateCaseInfos],
   );
 
   const handleAddOrSelectClinic = useCallback(
@@ -264,7 +265,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
         // 선택된 치과의 favorite 임플란트 찾기
         const selectedClinic = rawClinicPresets.find(
-          (c) => c.name === trimmedName
+          (c) => c.name === trimmedName,
         );
         const favorite = selectedClinic?.favorite;
 
@@ -285,7 +286,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       rawClinicPresets,
       currentFileKey,
       updateCaseInfos,
-    ]
+    ],
   );
 
   // 파일 관리 (업로드/삭제/복원)
@@ -316,7 +317,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     async (incomingFiles: File[]) => {
       await rawHandleUpload(incomingFiles);
     },
-    [rawHandleUpload]
+    [rawHandleUpload],
   );
 
   const handleUpload = useCallback(
@@ -353,7 +354,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           } catch (err) {
             return { file: f, error: true };
           }
-        })
+        }),
       );
 
       for (const result of checkResults) {
@@ -427,7 +428,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         await rawHandleUpload(eligibleFiles);
       }
     },
-    [rawHandleUpload, setDuplicatePrompt, setPendingUploadFiles, toast, token]
+    [rawHandleUpload, setDuplicatePrompt, setPendingUploadFiles, toast, token],
   );
 
   const setupNextPath = "/dashboard/new-request";
@@ -536,7 +537,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
                 const body: any = insightsRes.data || {};
                 const data = body?.data || body;
                 const avgDailySpendSupply = Number(
-                  data?.avgDailySpendSupply || 0
+                  data?.avgDailySpendSupply || 0,
                 );
                 const hasUsageData = data?.hasUsageData === true;
                 if (
@@ -554,7 +555,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
           const now = new Date();
           const ymd = `${now.getFullYear()}-${String(
-            now.getMonth() + 1
+            now.getMonth() + 1,
           ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
           const toastKey = `abutsfit:credit-topup-toast:v1:${userId}:${ymd}`;
 
@@ -571,7 +572,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
     try {
       const toastKey = `abutsfit:setup-complete-toast-shown:v1:${String(
-        user?.id || "guest"
+        user?.id || "guest",
       )}`;
       if (!sessionStorage.getItem(toastKey)) {
         sessionStorage.setItem(toastKey, "1");
@@ -610,7 +611,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         });
 
         if (!res.ok) return;
-        const body = await res.json().catch(() => ({} as any));
+        const body = await res.json().catch(() => ({}) as any);
         const req = body?.data ?? body;
         if (!req) return;
 
@@ -698,35 +699,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     caseInfosMap,
     patchDraftImmediately,
     onDuplicateDetected: (payload) => {
-      const toStageOrder = (req: any) => {
-        const stage = String(req?.manufacturerStage || "").trim();
-        const status = String(req?.status || "").trim();
-        const status2 = String(req?.status2 || "").trim();
-        if (status2 === "완료") return 4;
-        const stageOrderMap: Record<string, number> = {
-          의뢰: 0,
-          의뢰접수: 0,
-          request: 0,
-          cam: 1,
-          CAM: 1,
-          가공전: 1,
-          production: 2,
-          생산: 2,
-          가공후: 2,
-          shipping: 3,
-          발송: 3,
-          추적관리: 3,
-          배송대기: 3,
-          배송중: 3,
-          completed: 4,
-          완료: 4,
-        };
-        return stageOrderMap[stage] ?? stageOrderMap[status] ?? 0;
-      };
-
       const mappedDuplicates = Array.isArray(payload?.duplicates)
         ? payload.duplicates.map((dup: any) => {
-            const so = toStageOrder(dup?.existingRequest);
+            const so = getNormalizedStageOrder(dup?.existingRequest);
             return {
               ...dup,
               lockedReason: so >= 2 ? "production" : undefined,
@@ -829,13 +804,13 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         caseId: string;
         strategy: "skip" | "replace" | "remake";
         existingRequestId: string;
-      }[]
+      }[],
     ) => {
       const ok = await ensureSetupForUpload();
       if (!ok) return;
       await rawHandleSubmitWithDuplicateResolutions(opts as any);
     },
-    [ensureSetupForUpload, rawHandleSubmitWithDuplicateResolutions]
+    [ensureSetupForUpload, rawHandleSubmitWithDuplicateResolutions],
   );
 
   // 환자 사례 미리보기 (파일 기반)

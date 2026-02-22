@@ -46,7 +46,7 @@ async function progressStages() {
 
     // 1. 의뢰 → CAM: 발송예정일 2영업일 이내 도달
     const requestsToCam = await Request.find({
-      status: "의뢰",
+      manufacturerStage: "의뢰",
       "timeline.estimatedShipYmd": { $exists: true, $lte: twoDaysFromNow },
     });
 
@@ -61,7 +61,7 @@ async function progressStages() {
 
     // 2. CAM → 가공: CAM 승인 완료된 건
     const camToProduction = await Request.find({
-      status: "CAM",
+      manufacturerStage: "CAM",
       "caseInfos.reviewByStage.cam.status": "APPROVED",
     });
 
@@ -74,7 +74,7 @@ async function progressStages() {
 
     // 3. 가공 → 세척.패킹: 출고 예정일 1영업일 이내 도달한 가공 완료 건
     const productionToPackaging = await Request.find({
-      status: "가공",
+      manufacturerStage: "가공",
       "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
     });
 
@@ -89,7 +89,7 @@ async function progressStages() {
 
     // 4. 세척.패킹 → 포장.발송: 출고 예정일이 도래한 세척·패킹 완료 건
     const packagingToShipping = await Request.find({
-      status: "세척.패킹",
+      manufacturerStage: "세척.패킹",
       "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
     });
 

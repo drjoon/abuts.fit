@@ -12,7 +12,7 @@ const PREFIX = (
 ).toLowerCase();
 const DOMAIN = String(process.env.E2E_RP_DOMAIN || "demo.abuts.fit").trim();
 const PASSWORD = String(
-  process.env.E2E_RP_PASSWORD || "E2E_password123!"
+  process.env.E2E_RP_PASSWORD || "E2E_password123!",
 ).trim();
 
 const now = new Date();
@@ -84,7 +84,7 @@ async function upsertUser({ key, name, referredByUserId }) {
         updatedAt: joinedAt,
         phoneVerifiedAt: joinedAt,
       },
-    }
+    },
   );
 
   return await User.findById(user._id).select("-password").lean();
@@ -123,7 +123,7 @@ async function ensureOrganization({ user, key }) {
           "verification.checkedAt": joinedAt,
         },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, new: true, setDefaultsOnInsert: true },
     ).lean();
   };
 
@@ -146,7 +146,7 @@ async function ensureOrganization({ user, key }) {
         organizationId: org._id,
         organization: org.name,
       },
-    }
+    },
   );
 
   return org;
@@ -178,7 +178,7 @@ async function upsertLedger({
         updatedAt: createdAt || now,
       },
     },
-    { upsert: true }
+    { upsert: true },
   );
 }
 
@@ -198,7 +198,7 @@ function makeSeedRequestId({ prefix, key, idx }) {
   // NOTE: requestId는 unique index가 있어 null이면 중복 에러가 납니다.
   // seed는 Mongoose pre('save') 훅을 우회할 수 있으니 여기서 직접 생성합니다.
   const base = `E2E-RP-${String(prefix || "e2e.rp")}-${String(key)}-${String(
-    idx
+    idx,
   )}`;
   const rand = crypto.randomBytes(4).toString("hex");
   return `${base}-${rand}`;
@@ -217,10 +217,18 @@ async function seedCompletedRequests({ key, userId, orgId, count, baseDate }) {
       requestId,
       requestor: new mongoose.Types.ObjectId(String(userId)),
       requestorOrganizationId: new mongoose.Types.ObjectId(String(orgId)),
-      caseInfos: makeCaseInfos({ clinicName, patientName, tooth, idx: i }),
-      status: "완료",
-      status2: "완료",
-      manufacturerStage: "발송",
+      caseInfos: {
+        ...makeCaseInfos({ clinicName, patientName, tooth, idx: i }),
+        reviewByStage: {
+          shipping: {
+            status: "APPROVED",
+            updatedAt: createdAt,
+            updatedBy: null,
+            reason: "",
+          },
+        },
+      },
+      manufacturerStage: "추적관리",
       price: {
         amount: 15000,
         baseAmount: 15000,
@@ -237,7 +245,7 @@ async function seedCompletedRequests({ key, userId, orgId, count, baseDate }) {
     await Request.collection.updateOne(
       { requestId },
       { $setOnInsert: doc },
-      { upsert: true }
+      { upsert: true },
     );
   }
 }

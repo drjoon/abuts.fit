@@ -14,6 +14,7 @@ import {
   canAccessRequestAsRequestor,
   buildRequestorOrgScopeFilter,
   normalizeRequestStage,
+  getRequestStageOrder,
   getDeliveryEtaLeadDays,
   addKoreanBusinessDays,
   normalizeKoreanBusinessDay,
@@ -88,7 +89,7 @@ export async function checkDuplicateCaseInfo(req, res) {
     const query = {
       $and: [
         requestFilter,
-        { status: { $ne: "취소" } },
+        { manufacturerStage: { $ne: "취소" } },
         {
           "caseInfos.clinicName": clinicName,
           "caseInfos.patientName": patientName,
@@ -101,8 +102,6 @@ export async function checkDuplicateCaseInfo(req, res) {
       .select({
         _id: 1,
         requestId: 1,
-        status: 1,
-        status2: 1,
         manufacturerStage: 1,
         price: 1,
         createdAt: 1,
@@ -145,8 +144,6 @@ export async function checkDuplicateCaseInfo(req, res) {
         existingRequest: {
           _id: String(existing._id),
           requestId: String(existing.requestId || ""),
-          status: String(existing.status || ""),
-          status2: String(existing.status2 || ""),
           manufacturerStage: String(existing.manufacturerStage || ""),
           price: existing.price ? { amount: existing.price.amount } : null,
           createdAt: existing.createdAt || null,
@@ -801,7 +798,7 @@ export async function createRequestsFromDraft(req, res) {
       const query = {
         $and: [
           requestFilter,
-          { status: { $ne: "취소" } },
+          { manufacturerStage: { $ne: "취소" } },
           { $or: orConditions },
         ],
       };
@@ -810,7 +807,7 @@ export async function createRequestsFromDraft(req, res) {
         .select({
           _id: 1,
           requestId: 1,
-          status: 1,
+          manufacturerStage: 1,
           createdAt: 1,
           price: 1,
           "caseInfos.clinicName": 1,
@@ -844,13 +841,13 @@ export async function createRequestsFromDraft(req, res) {
           existingRequest: {
             _id: String(existing._id),
             requestId: String(existing.requestId || ""),
-            status: String(existing.status || ""),
+            manufacturerStage: String(existing.manufacturerStage || ""),
             price: existing.price || null,
             createdAt: existing.createdAt || null,
             caseInfos: {
-              clinicName: String(existingCi?.clinicName || ""),
-              patientName: String(existingCi?.patientName || ""),
-              tooth: String(existingCi?.tooth || ""),
+              clinicName: String(existing?.caseInfos?.clinicName || ""),
+              patientName: String(existing?.caseInfos?.patientName || ""),
+              tooth: String(existing?.caseInfos?.tooth || ""),
             },
           },
         });
@@ -859,13 +856,13 @@ export async function createRequestsFromDraft(req, res) {
 
     if (duplicates.length > 0 && !duplicateResolutions) {
       const first = duplicates[0];
-      const st = String(first?.existingRequest?.status || "");
-      const mode = st === "완료" ? "completed" : "active";
+      const st = String(first?.existingRequest?.manufacturerStage || "");
+      const mode = st === "추적관리" ? "tracking" : "active";
       return res.status(409).json({
         success: false,
         code: "DUPLICATE_REQUEST",
         message:
-          st === "완료"
+          st === "추적관리"
             ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
             : "동일한 정보의 의뢰가 이미 진행 중입니다. 기존 의뢰를 취소하고 다시 의뢰할까요?",
         data: {
@@ -910,18 +907,20 @@ export async function createRequestsFromDraft(req, res) {
         );
         unresolved.forEach((d, idx) => {
           console.log(
-            `  #${idx}: CaseId=${d.caseId}, Patient=${d.patientName}, ExistingStatus=${d.existingRequest?.status}`,
+            `  #${idx}: CaseId=${d.caseId}, Patient=${d.patientName}, ExistingStage=${d.existingRequest?.manufacturerStage}`,
           );
         });
 
         const firstUnresolved = unresolved[0];
-        const st = String(firstUnresolved?.existingRequest?.status || "");
-        const mode = st === "완료" ? "completed" : "active";
+        const st = String(
+          firstUnresolved?.existingRequest?.manufacturerStage || "",
+        );
+        const mode = st === "추적관리" ? "tracking" : "active";
         return res.status(409).json({
           success: false,
           code: "DUPLICATE_REQUEST",
           message:
-            st === "완료"
+            st === "추적관리"
               ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 중복 의뢰 처리 방법을 선택해주세요."
               : "동일한 정보의 의뢰가 이미 진행 중입니다. 중복 의뢰 처리 방법을 선택해주세요.",
           data: {
@@ -1075,7 +1074,11 @@ export async function createRequestsFromDraft(req, res) {
             if (!existingRequestId) continue;
 
             const existingDoc = await Request.findById(existingRequestId)
-              .select({ _id: 1, status: 1, status2: 1 })
+              .select({
+                _id: 1,
+                manufacturerStage: 1,
+                "caseInfos.reviewByStage.shipping.status": 1,
+              })
               .session(session);
             if (!existingDoc) {
               const err = new Error("기존 의뢰를 찾을 수 없습니다.");
@@ -1087,9 +1090,10 @@ export async function createRequestsFromDraft(req, res) {
               err.statusCode = 403;
               throw err;
             }
-            const existingStatus = String(existingDoc.status || "");
-            const existingStatus2 = String(existingDoc.status2 || "");
-            if (existingStatus2 !== "완료") {
+            const shippingReviewStatus = String(
+              existingDoc?.caseInfos?.reviewByStage?.shipping?.status || "",
+            ).trim();
+            if (shippingReviewStatus !== "APPROVED") {
               const err = new Error(
                 "진행 중인 의뢰는 재의뢰(리메이크)로 처리할 수 없습니다. 기존 의뢰를 취소하고 재의뢰로 진행해주세요.",
               );
@@ -1358,44 +1362,22 @@ export async function hasDuplicateCase(req, res) {
     // 모든 Request를 검색하여 파일명 매칭 확인
     const allRequests = await Request.find({
       ...requestFilter,
-      status: { $ne: "취소" },
+      manufacturerStage: { $ne: "취소" },
       createdAt: { $gte: cutoff },
     })
       .select({
         _id: 1,
         requestId: 1,
-        status: 1,
-        status2: 1,
         manufacturerStage: 1,
+        "caseInfos.reviewByStage.shipping.status": 1,
         caseInfos: 1,
         price: 1,
         createdAt: 1,
       })
       .lean();
 
-    const stageOrderMap = {
-      request: 0,
-      의뢰: 0,
-      의뢰접수: 0,
-      cam: 1,
-      CAM: 1,
-      가공전: 1,
-      production: 2,
-      생산: 2,
-      가공후: 2,
-      shipping: 3,
-      발송: 3,
-      추적관리: 3,
-      배송대기: 3,
-      배송중: 3,
-      completed: 4,
-      완료: 4,
-    };
-
     const computeStageOrder = (doc) => {
-      const normalized = normalizeRequestStage(doc);
-      if (normalized === "cancel") return -1;
-      return stageOrderMap[normalized] ?? 0;
+      return getRequestStageOrder(doc);
     };
 
     let existing = null;
@@ -1457,15 +1439,11 @@ export async function hasDuplicateCase(req, res) {
         exists: Boolean(existing),
         hasDuplicate: Boolean(existing),
         stageOrder,
-        status: existing?.status,
-        status2: existing?.status2,
         manufacturerStage: existing?.manufacturerStage,
         existingRequest: existing
           ? {
               _id: existing._id,
               requestId: existing.requestId,
-              status: existing.status,
-              status2: existing.status2,
               manufacturerStage: existing.manufacturerStage,
               caseInfos: existing.caseInfos,
               price: existing.price ? { amount: existing.price.amount } : null,

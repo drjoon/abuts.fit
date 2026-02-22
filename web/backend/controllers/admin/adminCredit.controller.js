@@ -213,7 +213,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
           {
             $match: {
               requestorOrganizationId: { $in: allOrgIds },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: range.start, $lte: range.end },
             },
           },
@@ -1025,7 +1025,7 @@ export async function adminGetSalesmanCredits(req, res) {
             {
               $match: {
                 requestorOrganizationId: { $in: allOrgIds },
-                status: "완료",
+                "caseInfos.reviewByStage.shipping.status": "APPROVED",
                 ...(Object.keys(revenueCreatedAtMatch).length
                   ? { createdAt: revenueCreatedAtMatch }
                   : {}),

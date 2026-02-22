@@ -111,7 +111,7 @@ async function runMonthlySnapshot() {
         {
           $match: {
             requestor: { $in: relevantUserIds },
-            status: "완료",
+            "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },
@@ -136,7 +136,7 @@ async function runMonthlySnapshot() {
         {
           $match: {
             requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
-            status: "완료",
+            "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },

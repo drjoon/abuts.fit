@@ -20,7 +20,7 @@ type UseNewRequestSubmitV2Params = {
   caseInfosMap?: Record<string, CaseInfos>;
   patchDraftImmediately?: (map: Record<string, CaseInfos>) => Promise<void>;
   onDuplicateDetected?: (payload: {
-    mode: "active" | "completed";
+    mode: "active" | "tracking";
     duplicates: any[];
   }) => void;
 };
@@ -109,7 +109,7 @@ export const useNewRequestSubmitV2 = ({
   };
 
   const submitFromDraft = async (
-    duplicateResolutions?: DuplicateResolutionCase[]
+    duplicateResolutions?: DuplicateResolutionCase[],
   ) => {
     if (!token) {
       toast({
@@ -158,7 +158,7 @@ export const useNewRequestSubmitV2 = ({
             method: "PUT",
             headers: getHeaders(),
             body: JSON.stringify(payload),
-          }
+          },
         );
 
         if (!res.ok) throw new Error("서버 응답 오류");
@@ -211,7 +211,7 @@ export const useNewRequestSubmitV2 = ({
           toast({
             title: "의뢰 제출 중 오류",
             description: `제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다: ${duplicates.join(
-              ", "
+              ", ",
             )}. 중복 항목을 제거하거나 수정한 후 다시 제출해주세요.`,
             variant: "destructive",
             duration: 5000,
@@ -254,7 +254,7 @@ export const useNewRequestSubmitV2 = ({
         payload.duplicateResolutions = duplicateResolutions;
         console.log(
           "[useNewRequestSubmitV2] Resolution details:",
-          duplicateResolutions
+          duplicateResolutions,
         );
       }
 
@@ -280,7 +280,7 @@ export const useNewRequestSubmitV2 = ({
           const mode = errData?.data?.mode;
           const duplicates = errData?.data?.duplicates;
           if (
-            (mode === "active" || mode === "completed") &&
+            (mode === "active" || mode === "tracking") &&
             Array.isArray(duplicates) &&
             duplicates.length > 0
           ) {
@@ -363,7 +363,7 @@ export const useNewRequestSubmitV2 = ({
   };
 
   const handleSubmitWithDuplicateResolutions = async (
-    opts: DuplicateResolutionCase[]
+    opts: DuplicateResolutionCase[],
   ) => {
     await submitFromDraft(opts);
   };

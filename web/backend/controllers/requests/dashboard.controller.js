@@ -114,8 +114,8 @@ export async function getAssignedDashboardSummary(req, res) {
         data: {
           total: 0,
           canceledCount: 0,
-          completed: 0,
-          designCount: 0,
+          trackingCount: 0,
+          requestCount: 0,
           camCount: 0,
           machiningCount: 0,
           packingCount: 0,
@@ -125,7 +125,7 @@ export async function getAssignedDashboardSummary(req, res) {
     }
 
     const baseFilter = {
-      status: { $ne: "취소" },
+      manufacturerStage: { $ne: "취소" },
       "caseInfos.implantSystem": { $exists: true, $ne: "" },
       "productionSchedule.assignedMachine": { $in: machineIds },
     };
@@ -143,20 +143,10 @@ export async function getAssignedDashboardSummary(req, res) {
             $let: {
               vars: {
                 stage: { $ifNull: ["$manufacturerStage", ""] },
-                shippingReviewStatus: {
-                  $ifNull: ["$caseInfos.reviewByStage.shipping.status", ""],
-                },
               },
               in: {
                 $switch: {
                   branches: [
-                    // NOTE: status/status2 are legacy. Stage is classified by manufacturerStage.
-                    {
-                      case: {
-                        $or: [{ $eq: ["$$shippingReviewStatus", "APPROVED"] }],
-                      },
-                      then: "completed",
-                    },
                     {
                       case: {
                         $in: ["$$stage", ["tracking", "추적관리"]],
@@ -177,27 +167,15 @@ export async function getAssignedDashboardSummary(req, res) {
                     },
                     {
                       case: {
-                        $in: [
-                          "$$stage",
-                          ["machining", "production", "가공", "생산"],
-                        ],
+                        $in: ["$$stage", ["machining", "가공"]],
                       },
                       then: "machining",
                     },
                     {
                       case: {
-                        $in: ["$$stage", ["cam", "CAM", "가공전"]],
+                        $in: ["$$stage", ["cam", "CAM"]],
                       },
                       then: "cam",
-                    },
-                    {
-                      case: {
-                        $in: [
-                          "$$stage",
-                          ["request", "receive", "의뢰", "의뢰접수"],
-                        ],
-                      },
-                      then: "request",
                     },
                   ],
                   default: "request",
@@ -212,12 +190,12 @@ export async function getAssignedDashboardSummary(req, res) {
           _id: null,
           total: { $sum: 1 },
           canceledCount: {
-            $sum: { $cond: [{ $eq: ["$status", "취소"] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0] },
           },
-          completed: {
-            $sum: { $cond: [{ $eq: ["$normalizedStage", "completed"] }, 1, 0] },
+          trackingCount: {
+            $sum: { $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0] },
           },
-          designCount: {
+          requestCount: {
             $sum: { $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0] },
           },
           camCount: {
@@ -241,8 +219,8 @@ export async function getAssignedDashboardSummary(req, res) {
       data: {
         total: Number(statsResult?.total ?? 0) || 0,
         canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
-        completed: Number(statsResult?.completed ?? 0) || 0,
-        designCount: Number(statsResult?.designCount ?? 0) || 0,
+        trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
+        requestCount: Number(statsResult?.requestCount ?? 0) || 0,
         camCount: Number(statsResult?.camCount ?? 0) || 0,
         machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
         packingCount: Number(statsResult?.packingCount ?? 0) || 0,
@@ -269,19 +247,23 @@ export async function getDiameterStats(req, res) {
     const isManufacturer = role === "manufacturer";
 
     const leadDays = await getDeliveryEtaLeadDays();
-    const baseFilter = {
-      status: { $ne: "취소" },
+    const requestFilter = {
+      manufacturerStage: { $ne: "취소" },
       "caseInfos.implantSystem": { $exists: true, $ne: "" },
     };
 
     const filter =
       role === "requestor"
-        ? { ...baseFilter, ...(await buildRequestorOrgScopeFilter(req)) }
+        ? { ...requestFilter, ...(await buildRequestorOrgScopeFilter(req)) }
         : isManufacturer
           ? {
               $and: [
-                baseFilter,
-                { status2: { $ne: "완료" } },
+                requestFilter,
+                {
+                  "caseInfos.reviewByStage.shipping.status": {
+                    $ne: "APPROVED",
+                  },
+                },
                 {
                   $or: [
                     { manufacturer: req.user._id },
@@ -291,7 +273,7 @@ export async function getDiameterStats(req, res) {
                 },
               ],
             }
-          : baseFilter;
+          : requestFilter;
 
     // 집계 쿼리로 직경별 통계 계산 (메모리 사용량 대폭 감소)
     const stats = await Request.aggregate([
@@ -341,9 +323,18 @@ export async function getDiameterStats(req, res) {
               ],
             },
           },
-          d10plusCount: {
+          d12Count: {
             $sum: {
-              $cond: [{ $gt: ["$caseInfos.maxDiameter", 10] }, 1, 0],
+              $cond: [
+                {
+                  $and: [
+                    { $gt: ["$caseInfos.maxDiameter", 10] },
+                    { $lte: ["$caseInfos.maxDiameter", 12] },
+                  ],
+                },
+                1,
+                0,
+              ],
             },
           },
           totalCount: { $sum: 1 },
@@ -355,7 +346,7 @@ export async function getDiameterStats(req, res) {
       d6Count: 0,
       d8Count: 0,
       d10Count: 0,
-      d10plusCount: 0,
+      d12Count: 0,
       totalCount: 0,
     };
 
@@ -364,9 +355,9 @@ export async function getDiameterStats(req, res) {
       { range: "6-8mm", count: result.d8Count, leadDays: leadDays.d8 },
       { range: "8-10mm", count: result.d10Count, leadDays: leadDays.d10 },
       {
-        range: ">10mm",
-        count: result.d10plusCount,
-        leadDays: leadDays.d10plus,
+        range: "10-12mm",
+        count: result.d12Count,
+        leadDays: leadDays.d12,
       },
     ];
 
@@ -396,8 +387,8 @@ export async function getDiameterStats(req, res) {
       }),
       toBucket({
         diameter: 12,
-        count: result.d10plusCount,
-        leadDays: leadDays.d10plus,
+        count: result.d12Count,
+        leadDays: leadDays.d12,
       }),
     ]);
 
@@ -493,11 +484,16 @@ export async function getMyReferralDirectMembers(req, res) {
           {
             $match: {
               requestor: { $in: memberIds },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
-          { $group: { _id: "$requestor", count: { $sum: 1 } } },
+          {
+            $group: {
+              _id: "$requestor",
+              count: { $sum: 1 },
+            },
+          },
         ])
       : [];
     const ordersByUserId = new Map(
@@ -556,118 +552,40 @@ export async function getMyDashboardSummary(req, res) {
               normalizedStage: {
                 $let: {
                   vars: {
-                    status: { $ifNull: ["$status", ""] },
                     stage: { $ifNull: ["$manufacturerStage", ""] },
-                    status2: { $ifNull: ["$status2", ""] },
-                    shippingReviewStatus: {
-                      $ifNull: ["$caseInfos.reviewByStage.shipping.status", ""],
-                    },
                   },
                   in: {
                     $switch: {
                       branches: [
                         {
-                          case: { $eq: ["$$status", "취소"] },
-                          then: "cancel",
-                        },
-                        {
                           case: {
-                            $or: [
-                              { $eq: ["$$shippingReviewStatus", "APPROVED"] },
-                              { $eq: ["$$status", "완료"] },
-                              { $eq: ["$$status2", "완료"] },
-                            ],
+                            $in: ["$$stage", ["tracking", "추적관리"]],
                           },
-                          then: "completed",
+                          then: "tracking",
                         },
                         {
                           case: {
-                            $or: [
-                              {
-                                $in: [
-                                  "$$stage",
-                                  [
-                                    "shipping",
-                                    "tracking",
-                                    "포장.발송",
-                                    "추적관리",
-                                  ],
-                                ],
-                              },
-                              {
-                                $in: [
-                                  "$$status",
-                                  [
-                                    "shipping",
-                                    "tracking",
-                                    "포장.발송",
-                                    "추적관리",
-                                  ],
-                                ],
-                              },
-                            ],
+                            $in: ["$$stage", ["shipping", "포장.발송"]],
                           },
                           then: "shipping",
                         },
                         {
                           case: {
-                            $or: [
-                              {
-                                $in: ["$$stage", ["packing", "세척.패킹"]],
-                              },
-                              {
-                                $in: ["$$status", ["packing", "세척.패킹"]],
-                              },
-                            ],
+                            $in: ["$$stage", ["packing", "세척.패킹"]],
                           },
                           then: "packing",
                         },
                         {
                           case: {
-                            $or: [
-                              {
-                                $in: [
-                                  "$$stage",
-                                  ["machining", "production", "가공", "생산"],
-                                ],
-                              },
-                              {
-                                $in: [
-                                  "$$status",
-                                  ["machining", "production", "가공", "생산"],
-                                ],
-                              },
-                            ],
+                            $in: ["$$stage", ["machining", "가공"]],
                           },
                           then: "machining",
                         },
                         {
                           case: {
-                            $or: [
-                              { $in: ["$$stage", ["cam", "CAM", "가공전"]] },
-                              { $in: ["$$status", ["cam", "CAM", "가공전"]] },
-                            ],
+                            $in: ["$$stage", ["cam", "CAM"]],
                           },
                           then: "cam",
-                        },
-                        {
-                          case: {
-                            $or: [
-                              {
-                                $in: [
-                                  "$$stage",
-                                  ["request", "receive", "의뢰", "의뢰접수"],
-                                ],
-                              },
-                              {
-                                $in: [
-                                  "$$status",
-                                  ["request", "receive", "의뢰", "의뢰접수"],
-                                ],
-                              },
-                            ],
-                          },
-                          then: "request",
                         },
                       ],
                       default: "request",
@@ -682,14 +600,16 @@ export async function getMyDashboardSummary(req, res) {
               _id: null,
               total: { $sum: 1 },
               canceledCount: {
-                $sum: { $cond: [{ $eq: ["$status", "취소"] }, 1, 0] },
-              },
-              completed: {
                 $sum: {
-                  $cond: [{ $eq: ["$normalizedStage", "completed"] }, 1, 0],
+                  $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0],
                 },
               },
-              designCount: {
+              trackingCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
+                },
+              },
+              requestCount: {
                 $sum: {
                   $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
                 },
@@ -725,13 +645,12 @@ export async function getMyDashboardSummary(req, res) {
         Request.find({
           ...requestFilter,
           "caseInfos.implantSystem": { $exists: true, $ne: "" },
-          status: { $ne: "취소" },
+          manufacturerStage: { $ne: "취소" },
         })
           .select({
             _id: 1,
             requestId: 1,
             title: 1,
-            status: 1,
             manufacturerStage: 1,
             createdAt: 1,
             caseInfos: 1,
@@ -751,20 +670,19 @@ export async function getMyDashboardSummary(req, res) {
     const stats = statsResult[0] || {
       total: 0,
       canceledCount: 0,
-      completed: 0,
-      designCount: 0,
+      trackingCount: 0,
+      requestCount: 0,
       camCount: 0,
       machiningCount: 0,
       packingCount: 0,
       shippingCount: 0,
-      trackingCount: 0,
     };
 
     // '포장.발송'은 shipping, '추적관리'는 tracking으로 분리.
     const shippingTotal = stats.shippingCount;
 
     const totalActive =
-      stats.designCount +
+      stats.requestCount +
         stats.camCount +
         stats.machiningCount +
         stats.packingCount +
@@ -774,7 +692,7 @@ export async function getMyDashboardSummary(req, res) {
     const manufacturingSummary = {
       totalActive,
       stages: [
-        { key: "design", label: "의뢰", count: stats.designCount },
+        { key: "request", label: "의뢰", count: stats.requestCount },
         { key: "cam", label: "CAM", count: stats.camCount },
         { key: "machining", label: "가공", count: stats.machiningCount },
         { key: "packing", label: "세척.패킹", count: stats.packingCount },
@@ -808,7 +726,7 @@ export async function getMyDashboardSummary(req, res) {
       },
     })
       .select(
-        "requestId title status status2 manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
+        "requestId title manufacturerStage productionSchedule caseInfos createdAt timeline shippingMode finalShipping originalShipping",
       )
       .lean();
 
@@ -820,7 +738,7 @@ export async function getMyDashboardSummary(req, res) {
         $match: {
           ...requestFilter,
           "caseInfos.implantSystem": { $exists: true, $ne: "" },
-          status: { $ne: "취소" },
+          manufacturerStage: { $ne: "취소" },
         },
       },
       {
@@ -868,9 +786,18 @@ export async function getMyDashboardSummary(req, res) {
               ],
             },
           },
-          d10plusCount: {
+          d12Count: {
             $sum: {
-              $cond: [{ $gt: ["$caseInfos.maxDiameter", 10] }, 1, 0],
+              $cond: [
+                {
+                  $and: [
+                    { $gt: ["$caseInfos.maxDiameter", 10] },
+                    { $lte: ["$caseInfos.maxDiameter", 12] },
+                  ],
+                },
+                1,
+                0,
+              ],
             },
           },
         },
@@ -881,7 +808,7 @@ export async function getMyDashboardSummary(req, res) {
       d6Count: 0,
       d8Count: 0,
       d10Count: 0,
-      d10plusCount: 0,
+      d12Count: 0,
     };
 
     const diameterStats = [
@@ -901,9 +828,9 @@ export async function getMyDashboardSummary(req, res) {
         leadDays: deliveryLeadDays.d10,
       },
       {
-        range: ">10mm",
-        count: diameterResult.d10plusCount,
-        leadDays: deliveryLeadDays.d10plus,
+        range: "10-12mm",
+        count: diameterResult.d12Count,
+        leadDays: deliveryLeadDays.d12,
       },
     ];
 
@@ -911,7 +838,7 @@ export async function getMyDashboardSummary(req, res) {
       d6: deliveryLeadDays?.d6 ?? 2,
       d8: deliveryLeadDays?.d8 ?? 2,
       d10: deliveryLeadDays?.d10 ?? 5,
-      d10plus: deliveryLeadDays?.d10plus ?? 5,
+      d12: deliveryLeadDays?.d12 ?? 5,
     };
 
     const resolveNormalLeadDays = (maxDiameter) => {
@@ -925,7 +852,7 @@ export async function getMyDashboardSummary(req, res) {
       if (d <= 6) return effectiveLeadDays.d6;
       if (d <= 8) return effectiveLeadDays.d8;
       if (d <= 10) return effectiveLeadDays.d10;
-      return effectiveLeadDays.d10plus;
+      return effectiveLeadDays.d12;
     };
 
     const recentRequests = await Promise.all(
@@ -989,7 +916,6 @@ export async function getMyDashboardSummary(req, res) {
         _id: r._id,
         requestId: r.requestId,
         title: r.title,
-        status: r.status,
         manufacturerStage: r.manufacturerStage,
         date: r.createdAt ? toKstYmd(r.createdAt) || "" : "",
         estimatedShipYmd: r.estimatedShipYmd || null,
@@ -1007,7 +933,7 @@ export async function getMyDashboardSummary(req, res) {
 
     const responseData = {
       stats: {
-        totalRequests: stats.designCount,
+        totalRequests: stats.requestCount,
         totalRequestsChange: "+0%",
         inProgress,
         inProgressChange: "+0%",
@@ -1023,8 +949,8 @@ export async function getMyDashboardSummary(req, res) {
         inTrackingChange: "+0%",
         canceled: stats.canceledCount,
         canceledChange: "+0%",
-        completed: stats.completed,
-        doneOrCanceled: stats.completed + stats.canceledCount,
+        tracking: stats.trackingCount,
+        doneOrCanceled: stats.trackingCount + stats.canceledCount,
         doneOrCanceledChange: "+0%",
       },
       manufacturingSummary,
@@ -1039,7 +965,7 @@ export async function getMyDashboardSummary(req, res) {
           $match: {
             ...requestFilter,
             "caseInfos.implantSystem": { $exists: true, $ne: "" },
-            $or: [{ status: { $nin: ["완료", "취소"] } }, dateFilter],
+            manufacturerStage: { $ne: "취소" },
           },
         },
         {
@@ -1047,57 +973,40 @@ export async function getMyDashboardSummary(req, res) {
             normalizedStage: {
               $let: {
                 vars: {
-                  status: { $ifNull: ["$status", ""] },
                   stage: { $ifNull: ["$manufacturerStage", ""] },
-                  status2: { $ifNull: ["$status2", ""] },
-                  shippingReviewStatus: {
-                    $ifNull: ["$caseInfos.reviewByStage.shipping.status", ""],
-                  },
                 },
                 in: {
                   $switch: {
                     branches: [
-                      { case: { $eq: ["$$status", "취소"] }, then: "cancel" },
                       {
                         case: {
-                          $or: [
-                            { $eq: ["$$shippingReviewStatus", "APPROVED"] },
-                            { $eq: ["$$status", "완료"] },
-                            { $eq: ["$$status2", "완료"] },
-                          ],
+                          $in: ["$$stage", ["tracking", "추적관리"]],
                         },
-                        then: "completed",
+                        then: "tracking",
                       },
                       {
                         case: {
-                          $in: [
-                            "$$stage",
-                            ["shipping", "tracking", "발송", "추적관리"],
-                          ],
+                          $in: ["$$stage", ["shipping", "포장.발송"]],
                         },
                         then: "shipping",
                       },
                       {
                         case: {
-                          $in: [
-                            "$$stage",
-                            ["machining", "packing", "production", "생산"],
-                          ],
+                          $in: ["$$stage", ["packing", "세척.패킹"]],
                         },
-                        then: "production",
-                      },
-                      {
-                        case: { $in: ["$$stage", ["cam", "CAM", "가공전"]] },
-                        then: "cam",
+                        then: "packing",
                       },
                       {
                         case: {
-                          $in: [
-                            "$$stage",
-                            ["request", "receive", "의뢰", "의뢰접수"],
-                          ],
+                          $in: ["$$stage", ["machining", "가공"]],
                         },
-                        then: "request",
+                        then: "machining",
+                      },
+                      {
+                        case: {
+                          $in: ["$$stage", ["cam", "CAM"]],
+                        },
+                        then: "cam",
                       },
                     ],
                     default: "request",
@@ -1110,9 +1019,7 @@ export async function getMyDashboardSummary(req, res) {
         {
           $group: {
             _id: {
-              status: "$status",
               manufacturerStage: "$manufacturerStage",
-              status2: "$status2",
               normalizedStage: "$normalizedStage",
             },
             count: { $sum: 1 },
@@ -1150,15 +1057,8 @@ export async function getDashboardRiskSummary(req, res) {
     const dateFilter = buildDateFilter(period);
 
     const baseFilter = {
-      status: { $ne: "취소" },
+      manufacturerStage: { $ne: "취소" },
       "caseInfos.implantSystem": { $exists: true, $ne: "" },
-    };
-
-    const completionWindowFilter = {
-      $or: [
-        { status2: { $ne: "완료" } },
-        { $and: [{ status2: "완료" }, dateFilter] },
-      ],
     };
 
     const role = String(req.user?.role || "");
@@ -1175,19 +1075,14 @@ export async function getDashboardRiskSummary(req, res) {
                   { manufacturer: { $exists: false } },
                 ],
               },
-              completionWindowFilter,
             ],
           }
         : role === "admin"
           ? {
-              $and: [baseFilter, completionWindowFilter],
+              $and: [baseFilter],
             }
           : {
-              $and: [
-                baseFilter,
-                await buildRequestorOrgScopeFilter(req),
-                completionWindowFilter,
-              ],
+              $and: [baseFilter, await buildRequestorOrgScopeFilter(req)],
             };
 
     const requests = await Request.find(filter)
@@ -1209,10 +1104,12 @@ export async function getDashboardRiskSummary(req, res) {
       const deliveredAt = r.deliveryInfoRef?.deliveredAt
         ? new Date(r.deliveryInfoRef.deliveredAt)
         : null;
-      const isDone = r.status2 === "완료" || Boolean(deliveredAt || shippedAt);
+      const isDone =
+        r?.caseInfos?.reviewByStage?.shipping?.status === "APPROVED" ||
+        Boolean(deliveredAt || shippedAt);
       if (isDone) continue;
 
-      const stage = String(r.manufacturerStage || r.status || "").trim();
+      const stage = String(r.manufacturerStage || "").trim();
       const isPreShip = ["의뢰", "CAM", "생산"].includes(stage);
       if (!isPreShip) continue;
 
@@ -1275,8 +1172,6 @@ export async function getDashboardRiskSummary(req, res) {
         title,
         manufacturer: secondaryText,
         riskLevel: level,
-        status: r?.status,
-        status2: r?.status2,
         dueDate: sp?.deadlineAt || null,
         message,
         caseInfos: r?.caseInfos || {},
@@ -1428,13 +1323,13 @@ export async function getMyPricingReferralStats(req, res) {
       groupMemberIds.length
         ? Request.countDocuments({
             requestor: { $in: groupMemberIds },
-            status: "완료",
+            "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           })
         : Promise.resolve(0),
       Request.countDocuments({
         requestor: requestorId,
-        status: "완료",
+        "caseInfos.reviewByStage.shipping.status": "APPROVED",
         createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
       }),
       User.findById(requestorId)

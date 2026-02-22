@@ -22,7 +22,7 @@ const DEFAULT_DELIVERY_ETA_LEAD_DAYS = {
   d6: 2,
   d8: 2,
   d10: 5,
-  d10plus: 5,
+  d12: 5,
 };
 
 const BASE_UNIT_PRICE = 15000;
@@ -225,7 +225,7 @@ export async function getReferralGroups(req, res) {
           {
             $match: {
               requestor: { $in: relevantUserIds },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
@@ -261,7 +261,7 @@ export async function getReferralGroups(req, res) {
           {
             $match: {
               requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
@@ -561,7 +561,7 @@ export async function getReferralGroups(req, res) {
           {
             $match: {
               requestorOrganizationId: { $in: commissionOrgObjectIds },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
@@ -745,7 +745,7 @@ export async function getReferralGroups(req, res) {
           {
             $match: {
               requestor: { $in: allDirectRequestorIds },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
@@ -993,7 +993,7 @@ async function getReferralGroupTree(req, res) {
           {
             $match: {
               requestor: { $in: memberIds },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
@@ -1089,7 +1089,7 @@ async function getReferralGroupTree(req, res) {
           {
             $match: {
               requestorOrganizationId: { $in: orgObjectIdsInGroup },
-              status: "완료",
+              "caseInfos.reviewByStage.shipping.status": "APPROVED",
               createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
             },
           },
@@ -1467,7 +1467,7 @@ export async function recalcReferralSnapshot() {
         {
           $match: {
             requestor: { $in: relevantUserIds },
-            status: "완료",
+            "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },
@@ -1491,7 +1491,7 @@ export async function recalcReferralSnapshot() {
         {
           $match: {
             requestorOrganizationId: { $in: requestorLeaderOrgObjectIds },
-            status: "완료",
+            "caseInfos.reviewByStage.shipping.status": "APPROVED",
             createdAt: { $gte: lastMonthStart, $lte: lastMonthEnd },
           },
         },
@@ -1745,7 +1745,7 @@ async function getPricingStats(req, res) {
     const { start, end } = getDateRangeFromQuery(req);
     const match = {
       createdAt: { $gte: start, $lte: end },
-      status: "완료",
+      "caseInfos.reviewByStage.shipping.status": "APPROVED",
     };
 
     const rows = await Request.aggregate([
@@ -2563,12 +2563,12 @@ async function computeAdminDiameterStats(requests, leadDays) {
     ...(leadDays || {}),
   };
 
-  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD10plus] =
+  const [shipLabelD6, shipLabelD8, shipLabelD10, shipLabelD12] =
     await Promise.all([
       formatEtaLabelFromNow(effectiveLeadDays.d6),
       formatEtaLabelFromNow(effectiveLeadDays.d8),
       formatEtaLabelFromNow(effectiveLeadDays.d10),
-      formatEtaLabelFromNow(effectiveLeadDays.d10plus),
+      formatEtaLabelFromNow(effectiveLeadDays.d12),
     ]);
 
   const bucketDefs = [
@@ -2588,9 +2588,9 @@ async function computeAdminDiameterStats(requests, leadDays) {
       shipLabel: shipLabelD10,
     },
     {
-      id: "d10plus",
+      id: "d12",
       diameter: 12,
-      shipLabel: shipLabelD10plus,
+      shipLabel: shipLabelD12,
     },
   ];
 
@@ -2598,7 +2598,7 @@ async function computeAdminDiameterStats(requests, leadDays) {
     d6: 0,
     d8: 0,
     d10: 0,
-    d10plus: 0,
+    d12: 0,
   };
 
   if (Array.isArray(requests)) {
@@ -2611,18 +2611,12 @@ async function computeAdminDiameterStats(requests, leadDays) {
       if (d <= 6) counts.d6 += 1;
       else if (d <= 8) counts.d8 += 1;
       else if (d <= 10) counts.d10 += 1;
-      else counts.d10plus += 1;
+      else if (d <= 12) counts.d12 += 1;
     });
   }
 
-  const total = counts.d6 + counts.d8 + counts.d10 + counts.d10plus;
-  const maxCount = Math.max(
-    1,
-    counts.d6,
-    counts.d8,
-    counts.d10,
-    counts.d10plus,
-  );
+  const total = counts.d6 + counts.d8 + counts.d10 + counts.d12;
+  const maxCount = Math.max(1, counts.d6, counts.d8, counts.d10, counts.d12);
 
   const buckets = bucketDefs.map((def) => ({
     diameter: def.diameter,
@@ -2682,27 +2676,29 @@ async function getDashboardStats(req, res) {
       active: true,
     });
 
-    // 의뢰 통계 (4단계 공정 + 완료/취소)
+    // 의뢰 통계
     const { start, end } = getDateRangeFromQuery(req);
     const allRequestsForStats = await Request.find({
       createdAt: { $gte: start, $lte: end },
     })
-      .select({ status: 1, status2: 1, manufacturerStage: 1 })
+      .select({
+        manufacturerStage: 1,
+        "caseInfos.reviewByStage.shipping.status": 1,
+      })
       .lean();
 
     const normalizeStage = (r) => {
-      const status = String(r.status || "");
       const stage = String(r.manufacturerStage || "");
-      const status2 = String(r.status2 || "");
 
-      if (status === "취소") return "취소";
-      if (status === "완료" || status2 === "완료") return "완료";
+      if (stage === "취소") return "취소";
 
       if (["shipping", "tracking", "발송", "추적관리"].includes(stage))
         return "발송";
-      if (["machining", "packaging", "production", "생산"].includes(stage))
+      if (
+        ["machining", "packing", "production", "생산", "가공"].includes(stage)
+      )
         return "생산";
-      if (["cam", "CAM", "가공전"].includes(stage)) return "CAM";
+      if (["cam", "CAM"].includes(stage)) return "CAM";
       return "의뢰";
     };
 
@@ -2711,7 +2707,6 @@ async function getDashboardStats(req, res) {
       CAM: 0,
       생산: 0,
       발송: 0,
-      완료: 0,
       취소: 0,
     };
 
@@ -2746,7 +2741,7 @@ async function getDashboardStats(req, res) {
     // 직경 통계 (caseInfos.maxDiameter 기반)
     const leadDays = await getDeliveryEtaLeadDays();
     const requestsForDiameter = await Request.find({
-      status: { $ne: "취소" },
+      manufacturerStage: { $ne: "취소" },
       "caseInfos.implantSystem": { $exists: true, $ne: "" },
       "caseInfos.maxDiameter": { $ne: null },
     })
@@ -3288,10 +3283,10 @@ async function updateSystemSettings(req, res) {
             rawLeadDays.d10 == null
               ? undefined
               : Math.max(0, Number(rawLeadDays.d10)),
-          d10plus:
-            rawLeadDays.d10plus == null
+          d12:
+            rawLeadDays.d12 == null
               ? undefined
-              : Math.max(0, Number(rawLeadDays.d10plus)),
+              : Math.max(0, Number(rawLeadDays.d12)),
         }
       : null;
 

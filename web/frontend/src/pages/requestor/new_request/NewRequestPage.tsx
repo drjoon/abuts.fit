@@ -546,8 +546,8 @@ export const NewRequestPage = () => {
           open={!!duplicatePrompt}
           preventCloseOnOverlayClick={true}
           title={
-            duplicatePrompt?.mode === "completed"
-              ? "완료된 의뢰가 이미 있습니다"
+            duplicatePrompt?.mode === "tracking"
+              ? "추적관리 의뢰가 이미 있습니다"
               : "진행 중인 의뢰가 이미 있습니다"
           }
           description={
@@ -578,17 +578,10 @@ export const NewRequestPage = () => {
                     <div className="rounded border border-gray-200 bg-white p-2">
                       <div className="flex flex-col gap-0.5 text-[11px]">
                         <span className="truncate">
-                          상태:{" "}
-                          {String(
-                            existing?.status2 === "완료"
-                              ? "완료"
-                              : existing?.manufacturerStage ||
-                                  existing?.status ||
-                                  "",
-                          )}
+                          상태: {String(existing?.manufacturerStage || "")}
                           {isLocked && (
                             <span className="text-red-500 ml-1">
-                              (생산/발송 단계 의뢰는 변경/취소할 수 없습니다.)
+                              (가공 단계 이후 의뢰는 변경/취소할 수 없습니다.)
                             </span>
                           )}
                         </span>

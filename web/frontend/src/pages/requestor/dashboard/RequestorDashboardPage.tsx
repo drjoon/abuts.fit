@@ -53,6 +53,7 @@ import {
   RequestDetailDialog,
   type RequestDetailDialogRequest,
 } from "@/features/requests/components/RequestDetailDialog";
+import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
 
 type DashboardOutletContext = {
   creditBalance: number | null;
@@ -89,37 +90,6 @@ export const RequestorDashboardPage = () => {
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
 
-  const normalizeStage = (r: any) => {
-    // stage 분류는 manufacturerStage가 authoritative (status 기반 로직은 레거시)
-    const stage = String(r?.manufacturerStage || "");
-    const status = String(r?.status || "");
-    const status2 = String(r?.status2 || "");
-
-    // 취소/완료는 일부 레거시 데이터에 남아있을 수 있어 최소한으로만 유지
-    if (status === "취소") return "cancel";
-    if (status2 === "완료") return "completed";
-
-    if (["tracking", "추적관리"].includes(stage)) {
-      return "tracking";
-    }
-    if (["shipping", "포장.발송"].includes(stage)) {
-      return "shipping";
-    }
-    if (["packing", "세척.패킹"].includes(stage)) {
-      return "packing";
-    }
-    if (["machining", "가공"].includes(stage)) {
-      return "machining";
-    }
-    if (["cam", "CAM"].includes(stage)) {
-      return "cam";
-    }
-    if (["request", "의뢰"].includes(stage)) {
-      return "request";
-    }
-    return "request";
-  };
-
   const stageGroupByLabel: Record<string, string[] | null> = {
     // 6단계 공통 공정: 의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
     의뢰: ["request"],
@@ -142,19 +112,7 @@ export const RequestorDashboardPage = () => {
     const group = stageGroupByLabel[label];
     const base = (all || []).filter(filterAbutmentRequest);
     if (!group) return base;
-    return base.filter((r) => group.includes(normalizeStage(r)));
-  };
-
-  const stageLabel = (r: any) => {
-    const s = normalizeStage(r);
-    if (s === "request") return "의뢰";
-    if (s === "cam") return "CAM";
-    if (s === "machining") return "가공";
-    if (s === "packing") return "세척.패킹";
-    if (s === "shipping") return "포장.발송";
-    if (s === "tracking") return "추적관리";
-    if (s === "cancel") return "취소";
-    return "의뢰";
+    return base.filter((r) => group.includes(getNormalizedStage(r)));
   };
 
   const {
@@ -817,7 +775,7 @@ export const RequestorDashboardPage = () => {
                       {title}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      상태: {stageLabel(r)} / 의뢰번호:{" "}
+                      상태: {getNormalizedStageLabel(r)} / 의뢰번호:{" "}
                       {String(r?.requestId || "")}
                     </div>
                   </button>

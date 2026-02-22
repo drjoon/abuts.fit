@@ -497,7 +497,7 @@ async function chooseMachineForRequest({ request }) {
           ? bridgeQueues[keep.machineId].length
           : 0
         : await Request.countDocuments({
-            status: { $in: ["의뢰", "CAM", "가공"] },
+            manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
             "productionSchedule.assignedMachine": keep.machineId,
           });
 
@@ -526,7 +526,7 @@ async function chooseMachineForRequest({ request }) {
   const pairs = await Promise.all(
     candidates.map(async (c) => {
       const n = await Request.countDocuments({
-        status: { $in: ["의뢰", "CAM", "가공"] },
+        manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
         "productionSchedule.assignedMachine": c.machineId,
       });
       return [c.machineId, n];
@@ -670,7 +670,7 @@ async function chooseMachineForCamMachining({ request }) {
     const pairs = await Promise.all(
       candidates.map(async (c) => {
         const n = await Request.countDocuments({
-          status: { $in: ["의뢰", "CAM", "가공"] },
+          manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
           "productionSchedule.assignedMachine": c.machineId,
         });
         return [c.machineId, n];
@@ -883,10 +883,11 @@ async function triggerEspritForNc({ request, session }) {
     request?.caseInfos?.ncFile?.fileName || request?.caseInfos?.ncFile?.s3Key;
   if (existingNc) return;
 
-  // idempotency: CAM 단계(status2=중)인데 NC가 없다면 이미 NC 생성이 진행 중인 것으로 간주
-  if (String(request?.status || "").trim() === "CAM") {
-    const s2 = String(request?.status2 || "").trim();
-    if (s2 === "중") {
+  // idempotency: CAM 단계인데 NC가 없고 actualCamComplete가 비어있다면
+  // 이미 NC 생성(백그라운드) 진행 중인 것으로 간주
+  if (String(request?.manufacturerStage || "").trim() === "CAM") {
+    const camComplete = request?.productionSchedule?.actualCamComplete;
+    if (!camComplete) {
       return;
     }
   }
@@ -1104,9 +1105,6 @@ const revertManufacturerStageByReviewStage = (request, stage) => {
   const target = prevMap[String(stage || "").trim()];
   if (target) {
     request.manufacturerStage = target;
-    // status/status2는 레거시 호환용으로 동기화
-    request.status = target;
-    request.status2 = "없음";
   }
 };
 
@@ -1170,10 +1168,7 @@ export async function deleteStageFile(req, res) {
       };
       const prevStage = prevStageMap[stage];
       if (prevStage) {
-        // reviewByStage가 SSOT이며, status/manufacturerStage는 레거시 호환용으로 동기화
         request.manufacturerStage = prevStage;
-        request.status = prevStage;
-        request.status2 = "없음";
       }
 
       await request.save();
@@ -1346,7 +1341,7 @@ const advanceManufacturerStageByReviewStage = async ({
   if (stage === "shipping") {
     await ensureShippingPackageAndChargeFee({ request, userId, session });
     await ensureDeliveryInfoShippedAtNow({ request, session });
-    applyStatusMapping(request, "발송"); // '발송' 상태 내에서 상세 단계(status2)만 변경됨
+    applyStatusMapping(request, "발송");
     return;
   }
 
@@ -1487,43 +1482,44 @@ export async function updateReviewStatusByStage(req, res) {
             console.log("[CAM-APPROVE] request productionSchedule", {
               id: String(request._id),
               requestId: request.requestId,
-              status: request.status,
               manufacturerStage: request.manufacturerStage,
               productionSchedule: request.productionSchedule,
             });
 
             // 2) 장비별 생산 큐 스냅샷 (M3/M4/M5 중심)
             const related = await Request.find({
-              status: { $in: ["의뢰", "CAM", "생산", "가공"] },
+              manufacturerStage: { $in: ["의뢰", "CAM", "가공"] },
             })
-              .select("requestId status productionSchedule lotNumber timeline")
+              .select(
+                "requestId manufacturerStage productionSchedule lotNumber timeline",
+              )
               .lean();
             const queues = getAllProductionQueues(related || []);
             console.log("[CAM-APPROVE] production queues snapshot", {
               M3: (queues.M3 || []).map((q) => ({
                 requestId: q.requestId,
-                status: q.status,
+                manufacturerStage: q.manufacturerStage,
                 assignedMachine: q.productionSchedule?.assignedMachine,
                 queuePosition: q.productionSchedule?.queuePosition,
                 diameter: q.productionSchedule?.diameter,
               })),
               M4: (queues.M4 || []).map((q) => ({
                 requestId: q.requestId,
-                status: q.status,
+                manufacturerStage: q.manufacturerStage,
                 assignedMachine: q.productionSchedule?.assignedMachine,
                 queuePosition: q.productionSchedule?.queuePosition,
                 diameter: q.productionSchedule?.diameter,
               })),
               M5: (queues.M5 || []).map((q) => ({
                 requestId: q.requestId,
-                status: q.status,
+                manufacturerStage: q.manufacturerStage,
                 assignedMachine: q.productionSchedule?.assignedMachine,
                 queuePosition: q.productionSchedule?.queuePosition,
                 diameter: q.productionSchedule?.diameter,
               })),
               unassigned: (queues.unassigned || []).map((q) => ({
                 requestId: q.requestId,
-                status: q.status,
+                manufacturerStage: q.manufacturerStage,
                 assignedMachine: q.productionSchedule?.assignedMachine,
                 queuePosition: q.productionSchedule?.queuePosition,
                 diameter: q.productionSchedule?.diameter,
@@ -1659,7 +1655,7 @@ export async function saveStageFile(req, res) {
       source,
     } = req.body || {};
 
-    const allowed = ["machining", "packaging", "shipping", "tracking"];
+    const allowed = ["machining", "packing", "shipping", "tracking"];
     if (!Types.ObjectId.isValid(id)) {
       return res
         .status(400)
@@ -1748,7 +1744,7 @@ export async function getAllRequests(req, res) {
     // 필터링 파라미터
     const role = req.user?.role;
     let filter = {};
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status) filter.manufacturerStage = req.query.status;
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
     // 제조사: 본인에게 배정되었거나 미배정된 의뢰 + 취소 제외
@@ -1756,7 +1752,7 @@ export async function getAllRequests(req, res) {
       filter = {
         $and: [
           filter,
-          { status: { $ne: "취소" } },
+          { manufacturerStage: { $ne: "취소" } },
           {
             $or: [
               { manufacturer: req.user._id },
@@ -1855,14 +1851,14 @@ export async function getMyRequests(req, res) {
 
     // 기본 필터: 로그인한 의뢰자 소속 기공소(조직) 기준
     const filter = await buildRequestorOrgScopeFilter(req);
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status) filter.manufacturerStage = req.query.status;
     if (req.query.statusIn) {
       const raw = Array.isArray(req.query.statusIn)
         ? req.query.statusIn
         : [req.query.statusIn];
       const values = raw.map((v) => String(v || "").trim()).filter(Boolean);
       if (values.length) {
-        filter.status = { $in: values };
+        filter.manufacturerStage = { $in: values };
       }
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
@@ -2029,15 +2025,13 @@ export async function updateRequest(req, res) {
     // 의뢰 상태별 수정 가능 필드 제한 (비관리자)
     let caseInfosAllowed = true;
     if (!isAdmin) {
-      const currentStatus = String(request.status || "");
       const stageStatus = String(request.manufacturerStage || "");
 
       // CAM 승인 이후(또는 가공/세척.포장/발송/추적 단계)는 caseInfos 수정 전면 차단
       const afterCam =
         camApproved ||
-        ["가공", "세척.포장", "발송", "추적관리"].includes(currentStatus) ||
         ["가공", "세척.포장", "발송", "추적관리"].includes(stageStatus) ||
-        (currentStatus === "CAM" && camApproved);
+        (stageStatus === "CAM" && camApproved);
 
       if (afterCam) {
         const allowedTopLevelFields = [
@@ -2058,9 +2052,9 @@ export async function updateRequest(req, res) {
           });
         }
         caseInfosAllowed = false;
-      } else if (currentStatus === "의뢰") {
+      } else if (stageStatus === "의뢰") {
         // 제한 없음
-      } else if (currentStatus === "CAM") {
+      } else if (stageStatus === "CAM") {
         // CAM 승인 전: 제한 없음 (caseInfos 허용)
       }
     }
@@ -2179,14 +2173,11 @@ export async function updateRequestStatus(req, res) {
 
     // 취소는 의뢰/CAM 단계에서만 가능 (manufacturerStage도 허용 범위에 포함)
     if (status === "취소") {
-      const currentStatus = String(request.status || "").trim();
       const manufacturerStage = String(request.manufacturerStage || "").trim();
-      const allowedCancelStatuses = ["의뢰", "의뢰접수", "CAM", "가공전"];
-      const allowedCancelStages = ["의뢰", "의뢰접수", "CAM", "가공전"];
-      const isStatusAllowed = allowedCancelStatuses.includes(currentStatus);
+      const allowedCancelStages = ["의뢰", "CAM"];
       const isStageAllowed = allowedCancelStages.includes(manufacturerStage);
 
-      if (!isStatusAllowed && !isStageAllowed) {
+      if (!isStageAllowed) {
         return res.status(400).json({
           success: false,
           message:
@@ -2195,10 +2186,11 @@ export async function updateRequestStatus(req, res) {
       }
     }
 
-    // 의뢰 상태 변경 (status2 동기화 포함)
+    // 의뢰 상태 변경
     applyStatusMapping(request, status);
 
     // 신속 배송이 출고(배송중)로 전환되면, 그동안 쌓인 묶음(일반) 배송대기 건도 함께 출고 처리
+    // 완료 판단은 reviewByStage.shipping 승인 여부로 처리한다.
     if (status === "배송중" && request.shippingMode === "express") {
       const groupFilter = request.requestorOrganizationId
         ? { requestorOrganizationId: request.requestorOrganizationId }
@@ -2208,14 +2200,13 @@ export async function updateRequestStatus(req, res) {
       await Request.updateMany(
         {
           ...groupFilter,
-          status: "배송대기",
+          manufacturerStage: { $nin: ["취소", "추적관리"] },
+          "caseInfos.reviewByStage.shipping.status": { $ne: "APPROVED" },
           shippingMode: "normal",
           _id: { $ne: request._id },
         },
         {
           $set: {
-            status: "배송중",
-            status2: "중",
             manufacturerStage: "발송",
           },
         },
@@ -2457,7 +2448,7 @@ export async function saveCamFileAndCompleteCam(req, res) {
   }
 }
 /**
- * 제조사/관리자: CAM 결과 파일 제거 및 상태 가공전으로 롤백
+ * 제조사/관리자: CAM 결과 파일 제거 및 상태 CAM으로 롤백
  * @route DELETE /api/requests/:id/cam-file
  */
 export async function deleteCamFileAndRollback(req, res) {
@@ -2515,9 +2506,6 @@ export async function deleteCamFileAndRollback(req, res) {
       updatedBy: req.user?._id,
       reason: "",
     };
-    // status/status2는 레거시 호환용으로 동기화
-    request.status = "의뢰";
-    request.status2 = "없음";
     request.lotNumber = request.lotNumber || {};
     request.lotNumber.part = undefined;
     request.lotNumber.final = undefined;
@@ -2850,16 +2838,11 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       reason: "",
     };
 
-    // 제조사 공정: 가공(중) -> CAM(가공/후) 또는 의뢰(의뢰접수)
-    // reviewByStage가 SSOT이며, status/manufacturerStage는 레거시 호환용으로 동기화
+    // 제조사 공정: 가공 단계 -> CAM 또는 의뢰
     const isRollbackToRequest = req.query.nextStage === "request";
     if (isRollbackToRequest) {
-      request.status = "의뢰";
-      request.status2 = "없음";
       request.manufacturerStage = "의뢰";
     } else {
-      request.status = "CAM";
-      request.status2 = "없음";
       request.manufacturerStage = "CAM";
 
       const organizationId =
@@ -2956,14 +2939,12 @@ export async function deleteRequest(req, res) {
     }
 
     // 단계 검증: 관리자면 가공(machining) 단계 이전까지, 의뢰자면 의뢰/CAM 단계까지만 허용
-    const currentStatus = String(request.status || "");
+    const stageStatus = String(request.manufacturerStage || "");
     const isAdmin = req.user.role === "admin";
 
-    const deletableStatuses = isAdmin
-      ? ["의뢰", "CAM", "가공"]
-      : ["의뢰", "CAM"];
+    const deletableStages = isAdmin ? ["의뢰", "CAM", "가공"] : ["의뢰", "CAM"];
 
-    if (!deletableStatuses.includes(currentStatus)) {
+    if (!deletableStages.includes(stageStatus)) {
       return res.status(400).json({
         success: false,
         message: isAdmin

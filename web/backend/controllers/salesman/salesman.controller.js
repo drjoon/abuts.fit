@@ -395,7 +395,7 @@ export async function getSalesmanDashboard(req, res) {
       {
         $match: {
           requestorOrganizationId: { $in: orgObjectIds },
-          status: "완료",
+          "caseInfos.reviewByStage.shipping.status": "APPROVED",
           createdAt: { $gte: start, $lt: end },
         },
       },

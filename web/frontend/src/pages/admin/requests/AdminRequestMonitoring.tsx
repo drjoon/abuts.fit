@@ -17,39 +17,15 @@ import {
   Search,
   FileText,
   Clock,
-  CheckCircle,
   Building2,
   User,
   Truck,
   XCircle,
 } from "lucide-react";
+import { getNormalizedStageLabel } from "@/utils/stage";
 
-const normalizeStage = (
-  status?: string,
-  manufacturerStage?: string,
-  status2?: string,
-) => {
-  const s = String(status || "");
-  const stage = String(manufacturerStage || "");
-  const s2 = String(status2 || "");
-
-  if (s === "취소") return "취소";
-  if (s2 === "완료") return "완료";
-
-  if (["shipping", "포장.발송"].includes(stage)) return "포장.발송";
-  if (["packing", "세척.패킹"].includes(stage)) return "세척.패킹";
-  if (["machining", "가공"].includes(stage)) return "가공";
-  if (["cam", "CAM"].includes(stage)) return "CAM";
-  if (["request", "의뢰"].includes(stage)) return "의뢰";
-  return "";
-};
-
-const getStatusBadge = (
-  status?: string,
-  manufacturerStage?: string,
-  status2?: string,
-) => {
-  const norm = normalizeStage(status, manufacturerStage, status2);
+const getStatusBadge = (requestLike: any) => {
+  const norm = getNormalizedStageLabel(requestLike);
   switch (norm) {
     case "의뢰":
       return <Badge variant="outline">의뢰</Badge>;
@@ -73,8 +49,8 @@ const getStatusBadge = (
           포장.발송
         </Badge>
       );
-    case "완료":
-      return <Badge variant="secondary">완료</Badge>;
+    case "추적관리":
+      return <Badge variant="secondary">추적관리</Badge>;
     case "취소":
       return <Badge variant="destructive">취소</Badge>;
     default:
@@ -107,12 +83,8 @@ const getPriorityBadge = (priority: string) => {
   }
 };
 
-const getStatusIcon = (
-  status: string,
-  manufacturerStage?: string,
-  status2?: string,
-) => {
-  const norm = normalizeStage(status, manufacturerStage, status2);
+const getStatusIcon = (requestLike: any) => {
+  const norm = getNormalizedStageLabel(requestLike);
   switch (norm) {
     case "의뢰":
       return <FileText className="h-4 w-4 text-blue-500" />;
@@ -122,8 +94,8 @@ const getStatusIcon = (
       return <Clock className="h-4 w-4 text-green-500" />;
     case "포장.발송":
       return <Truck className="h-4 w-4 text-orange-500" />;
-    case "완료":
-      return <CheckCircle className="h-4 w-4 text-green-500" />;
+    case "추적관리":
+      return <Truck className="h-4 w-4 text-green-600" />;
     case "취소":
       return <XCircle className="h-4 w-4 text-red-500" />;
     default:
@@ -195,11 +167,7 @@ export const AdminRequestMonitoring = () => {
   const filteredRequests = requests.filter((request) => {
     const caseInfos = request.caseInfos || {};
     const requestor = request.requestor || {};
-    const effectiveStatus = normalizeStage(
-      request.status,
-      request.manufacturerStage,
-      request.status2,
-    );
+    const effectiveStatus = getNormalizedStageLabel(request);
     const matchesSearch =
       (caseInfos.patientName || "")
         .toLowerCase()
@@ -247,7 +215,7 @@ export const AdminRequestMonitoring = () => {
   const machiningCount = byStatus["가공"] || 0;
   const packagingCount = byStatus["세척.패킹"] || byStatus["세척.포장"] || 0;
   const shippingCount = byStatus["포장.발송"] || byStatus["발송"] || 0;
-  const doneCount = byStatus["완료"] || 0;
+  const trackingCount = byStatus["추적관리"] || 0;
   const canceledCount = byStatus["취소"] || 0;
 
   return (
@@ -401,12 +369,12 @@ export const AdminRequestMonitoring = () => {
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-100 rounded-lg">
-                  <CheckCircle className="h-4 w-4 text-emerald-700" />
+                  <Truck className="h-4 w-4 text-emerald-700" />
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">추적관리</p>
                   <p className="text-2xl font-bold">
-                    {doneCount.toLocaleString()}
+                    {trackingCount.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -436,11 +404,7 @@ export const AdminRequestMonitoring = () => {
                     <div className="flex items-start justify-between mb-3">
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          {getStatusIcon(
-                            request.status,
-                            request.manufacturerStage,
-                            request.status2,
-                          )}
+                          {getStatusIcon(request)}
                           <h3 className="font-medium truncate">
                             {request.caseInfos?.patientName} (
                             {request.caseInfos?.tooth})
@@ -463,11 +427,7 @@ export const AdminRequestMonitoring = () => {
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
-                        {getStatusBadge(
-                          request.status,
-                          request.manufacturerStage,
-                          request.status2,
-                        )}
+                        {getStatusBadge(request)}
                         <div className="text-right text-xs">
                           <p className="font-medium text-primary">
                             {(

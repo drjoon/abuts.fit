@@ -140,7 +140,9 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
   if (!request) {
     const normalizedTarget = normalizeFilePath(filePath);
     if (normalizedTarget) {
-      const allRequests = await Request.find({ status: { $ne: "취소" } })
+      const allRequests = await Request.find({
+        manufacturerStage: { $ne: "취소" },
+      })
         .select({ requestId: 1, caseInfos: 1 })
         .lean();
 
@@ -288,7 +290,9 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
     if (normalizedTarget) {
       // 모든 진행 중인 의뢰를 가져와서 파일명 매칭 (최근 90일 내역 위주로 성능 고려 가능하나 일단 전체 검색)
-      const allRequests = await Request.find({ status: { $ne: "취소" } })
+      const allRequests = await Request.find({
+        manufacturerStage: { $ne: "취소" },
+      })
         .select({ requestId: 1, caseInfos: 1 })
         .lean();
       console.log(
@@ -486,17 +490,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         // Esprit(NC 생성) 완료 콜백 시점에만 CAM 단계로 전환한다.
         try {
           const cloned = {
-            status: request?.status,
-            status2: request?.status2,
             manufacturerStage: request?.manufacturerStage,
           };
           applyStatusMapping(cloned, "CAM");
-          updateData["status"] = cloned.status;
-          updateData["status2"] = cloned.status2;
           updateData["manufacturerStage"] = cloned.manufacturerStage;
         } catch {
-          updateData["status"] = "CAM";
-          updateData["status2"] = "없음";
           updateData["manufacturerStage"] = "CAM";
         }
         updateData["caseInfos.reviewByStage.request.status"] = "APPROVED";
@@ -533,17 +531,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         // CNC 가공 시작(또는 완료) 시점에만 manufacturerStage/status 를 '가공'으로 전환한다.
         try {
           const cloned = {
-            status: request?.status,
-            status2: request?.status2,
             manufacturerStage: request?.manufacturerStage,
           };
           applyStatusMapping(cloned, "가공");
-          updateData["status"] = cloned.status;
-          updateData["status2"] = cloned.status2;
           updateData["manufacturerStage"] = cloned.manufacturerStage;
         } catch {
-          updateData["status"] = "가공";
-          updateData["status2"] = "없음";
           updateData["manufacturerStage"] = "가공";
         }
         updateData["caseInfos.reviewByStage.cam.status"] = "APPROVED";
@@ -706,7 +698,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
 
   if (!request && filePath) {
     const normalized = normalizeFilePath(filePath);
-    const all = await Request.find({ status: { $ne: "취소" } })
+    const all = await Request.find({ manufacturerStage: { $ne: "취소" } })
       .select({ requestId: 1, caseInfos: 1, lotNumber: 1 })
       .lean();
 
@@ -776,10 +768,10 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
 
 // Rhino 서버가 재기동될 때 input 폴더에 없는 원본 STL 목록을 넘겨주기 위한 API
 // GET /api/bg/pending-stl
-// 조건: 요청이 취소/완료가 아니고, caseInfos.file은 있으나 camFile이 없는 건
+// 조건: 요청이 취소가 아니고, caseInfos.file은 있으나 camFile이 없는 건
 export const listPendingStl = asyncHandler(async (req, res) => {
   const requests = await Request.find({
-    status: { $nin: ["취소", "완료", "cancelled", "completed"] },
+    manufacturerStage: { $ne: "취소" },
     "caseInfos.file.filePath": { $exists: true, $ne: null },
     $or: [
       { "caseInfos.camFile": { $exists: false } },
@@ -820,7 +812,7 @@ export const listPendingStl = asyncHandler(async (req, res) => {
 
 export const listPendingNc = asyncHandler(async (_req, res) => {
   const requests = await Request.find({
-    status: { $nin: ["취소", "완료", "cancelled", "completed"] },
+    manufacturerStage: { $ne: "취소" },
     "caseInfos.camFile.filePath": { $exists: true, $ne: null },
     $or: [
       { "caseInfos.ncFile": { $exists: false } },
@@ -1147,12 +1139,8 @@ export const getFileProcessingStatus = asyncHandler(async (req, res) => {
   }
 
   const ci = matched.caseInfos || {};
-  const reqStatus = String(matched.status || "").trim();
-  const isClosed =
-    reqStatus === "취소" ||
-    reqStatus === "완료" ||
-    reqStatus.toLowerCase() === "cancelled" ||
-    reqStatus.toLowerCase() === "completed";
+  const stage = String(matched.manufacturerStage || "").trim();
+  const isClosed = stage === "취소";
   const requestReviewStatus = ci?.reviewByStage?.request?.status;
 
   if (step === "1-stl") {
