@@ -7,10 +7,9 @@ import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { SignupWizardStep1 } from "./signup/SignupWizardStep1";
 import { SignupWizardStep2 } from "./signup/SignupWizardStep2";
-import { SignupWizardStep4 } from "./signup/SignupWizardStep4";
 import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupSocialWizardStep2 } from "./signup/SignupSocialWizardStep3";
-import { SignupSocialWizardStep4 } from "./signup/SignupSocialWizardStep4";
+import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 
 export const SignupPage = () => {
   const { token, user, loginWithToken } = useAuthStore();
@@ -32,6 +31,9 @@ export const SignupPage = () => {
   const [emailVerifiedAt, setEmailVerifiedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [emailVerificationSent, setEmailVerificationSent] = useState(false);
+  const [isEmailStatusChecking, setIsEmailStatusChecking] = useState(false);
+  const [lastEmailVerificationSentAt, setLastEmailVerificationSentAt] =
+    useState<Date | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
@@ -99,9 +101,55 @@ export const SignupPage = () => {
     }
   }, [isSocialNewMode, searchParams]);
 
-  const shouldAskReferralInput = !referredByReferralCode;
+  const shouldAskReferralInput = !referredByReferralCode && !isSocialNewMode;
 
   const shouldShowReferralStepForSocial = true;
+
+  const socialHasReferralStep = false;
+  const socialInfoStepIndex: 1 | 2 = 1;
+  const socialVerifyStepIndex: 2 | 3 = 2;
+
+  const cardTitle = useMemo(() => {
+    if (isWizardMode) {
+      switch (wizardStep) {
+        case 1:
+          return "회원 가입";
+        case 2:
+          return "추천인 (선택)";
+        case 3:
+          return "계정 정보";
+        case 4:
+          return "이메일 인증";
+        default:
+          return "완료";
+      }
+    }
+
+    if (isSocialNewMode) {
+      if (socialHasReferralStep && wizardStep === 1) {
+        return "추천인 (선택)";
+      }
+      if (wizardStep === socialInfoStepIndex) {
+        return "기본 정보";
+      }
+      if (wizardStep === socialVerifyStepIndex) {
+        return "이메일 인증";
+      }
+      return "완료";
+    }
+
+    if (wizardStep === 1) return "기본 정보";
+    if (wizardStep === 3) return "계정 정보";
+    if (wizardStep === 4) return "이메일 인증";
+    return "완료";
+  }, [
+    isSocialNewMode,
+    isWizardMode,
+    socialHasReferralStep,
+    socialInfoStepIndex,
+    socialVerifyStepIndex,
+    wizardStep,
+  ]);
 
   useEffect(() => {
     if (!isWizardMode) return;
@@ -181,30 +229,44 @@ export const SignupPage = () => {
     if (!isSocialNewMode) return;
     const socialToken = sessionStorage.getItem("socialToken");
     if (!socialToken) return;
-    try {
-      const base64Url = socialToken.split(".")[1] || "";
-      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-      const payload = JSON.parse(atob(base64));
-      setSocialInfo({
-        email: payload.email || "",
-        name: payload.name || "",
-        provider: payload.provider || "",
-        providerUserId: payload.providerUserId || "",
-      });
-      setFormData((prev) => ({
-        ...prev,
-        name: payload.name || "",
-        email: payload.email || "",
-      }));
-    } catch (e) {
-      console.error("socialToken 디코딩 실패:", e);
-    }
+
+    const decodeJwtPayload = (token: string) => {
+      try {
+        const base64Url = token.split(".")[1] || "";
+        const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+        const binary = atob(base64);
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+        const decoded = new TextDecoder().decode(bytes);
+        return JSON.parse(decoded);
+      } catch (error) {
+        console.error("socialToken 디코딩 실패:", error);
+        return null;
+      }
+    };
+
+    const payload = decodeJwtPayload(socialToken);
+    if (!payload) return;
+
+    setSocialInfo({
+      email: payload.email || "",
+      name: payload.name || "",
+      provider: payload.provider || "",
+      providerUserId: payload.providerUserId || "",
+    });
+    setFormData((prev) => ({
+      ...prev,
+      name: payload.name || "",
+      email: payload.email || "",
+    }));
   }, [isSocialNewMode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.name === "email") {
       setEmailVerifiedAt(null);
       setEmailVerificationSent(false);
+      setLastEmailVerificationSentAt(null);
+      setIsEmailStatusChecking(false);
+      localStorage.removeItem("signupEmailVerified");
     }
     setFormData({
       ...formData,
@@ -225,10 +287,20 @@ export const SignupPage = () => {
     return /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/.test(e);
   }, []);
 
+  const normalizedEmail = useMemo(
+    () =>
+      String(formData.email || "")
+        .trim()
+        .toLowerCase(),
+    [formData.email],
+  );
+  const isEmailValidValue = useMemo(
+    () => isValidEmail(normalizedEmail),
+    [isValidEmail, normalizedEmail],
+  );
+
   const sendEmailVerification = useCallback(async () => {
-    const email = String(formData.email || "")
-      .trim()
-      .toLowerCase();
+    const email = normalizedEmail;
     if (!isValidEmail(email)) {
       toast({
         title: "오류",
@@ -247,87 +319,28 @@ export const SignupPage = () => {
       });
       const data: any = res.data || {};
       if (!res.ok || !data?.success) {
-        throw new Error(data?.message || "인증 코드 발송에 실패했습니다.");
+        throw new Error(data?.message || "인증 메일 발송에 실패했습니다.");
       }
 
       setEmailVerificationSent(true);
+      setLastEmailVerificationSentAt(new Date());
       toast({
-        title: "인증 코드 발송",
-        description: "이메일로 인증 코드를 발송했습니다.",
+        title: "가입 확인 메일 발송",
+        description: "메일 받은 편지함에서 '가입 확인' 버튼을 눌러주세요.",
       });
     } catch (err) {
       toast({
         title: "오류",
-        description: (err as any)?.message || "다시 시도해주세요.",
+        description:
+          (err as any)?.message || "메일 발송 중 오류가 발생했습니다.",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
-  }, [formData.email, isValidEmail, toast]);
+  }, [isValidEmail, normalizedEmail, toast]);
 
-  const verifyEmailVerification = useCallback(
-    async (code: string) => {
-      const email = String(formData.email || "")
-        .trim()
-        .toLowerCase();
-
-      if (!email) {
-        toast({
-          title: "오류",
-          description: "이메일이 필요합니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      if (!code || !/^\d{4}$/.test(code)) {
-        toast({
-          title: "오류",
-          description: "인증 코드는 4자리 숫자입니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        const res = await request<any>({
-          path: "/api/auth/signup/email-verification/verify",
-          method: "POST",
-          jsonBody: { email, code },
-        });
-        const data: any = res.data || {};
-        if (!res.ok || !data?.success) {
-          throw new Error(data?.message || "이메일 인증에 실패했습니다.");
-        }
-        const verifiedAtRaw = data?.data?.verifiedAt;
-        const verifiedAt = verifiedAtRaw ? new Date(verifiedAtRaw) : new Date();
-        setEmailVerifiedAt(verifiedAt);
-        localStorage.setItem(
-          "signupEmailVerified",
-          JSON.stringify({ email, verifiedAt }),
-        );
-        toast({
-          title: "이메일 인증 완료",
-          description: "이메일 인증이 완료되었습니다.",
-        });
-      } catch (err) {
-        toast({
-          title: "오류",
-          description: (err as any)?.message || "다시 시도해주세요.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [formData.email, toast],
-  );
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const submitSignup = useCallback(async () => {
     if (
       !isSocialCompleteMode &&
       !isSocialNewMode &&
@@ -341,10 +354,11 @@ export const SignupPage = () => {
       return;
     }
 
+    if (isLoading) return;
+
     setIsLoading(true);
 
     try {
-      // social_new 모드: 소셜 정보로 신규 계정 생성
       if (isSocialNewMode) {
         if (!socialInfo) {
           toast({
@@ -378,24 +392,15 @@ export const SignupPage = () => {
           throw new Error(data?.message || "회원가입에 실패했습니다.");
         }
 
-        const authToken = data?.data?.token;
-        const authRefreshToken = data?.data?.refreshToken;
+        sessionStorage.removeItem("socialToken");
+        localStorage.removeItem("signupFormData");
+        localStorage.removeItem("signupEmailVerified");
 
-        if (authToken) {
-          sessionStorage.removeItem("socialToken");
-          await loginWithToken(authToken, authRefreshToken);
-          localStorage.removeItem("signupFormData");
-          localStorage.removeItem("signupEmailVerified");
-          navigate("/dashboard", { replace: true });
-        } else {
-          toast({
-            title: "회원가입 완료",
-            description: "로그인 페이지로 이동합니다.",
-          });
-          localStorage.removeItem("signupFormData");
-          localStorage.removeItem("signupEmailVerified");
-          navigate("/login");
-        }
+        toast({
+          title: "가입 신청 완료",
+          description: "이메일 확인 후 로그인하실 수 있습니다.",
+        });
+        navigate("/", { replace: true });
         return;
       }
 
@@ -477,6 +482,141 @@ export const SignupPage = () => {
     } finally {
       setIsLoading(false);
     }
+  }, [
+    formData.confirmPassword,
+    formData.email,
+    formData.name,
+    formData.password,
+    isLoading,
+    isSocialCompleteMode,
+    isSocialNewMode,
+    loginWithToken,
+    navigate,
+    referredByCode,
+    referredByUserId,
+    signupRole,
+    socialInfo,
+    token,
+    toast,
+    user,
+  ]);
+
+  const verifyEmailCode = useCallback(
+    async (code: string) => {
+      if (!isEmailValidValue) {
+        toast({
+          title: "오류",
+          description: "유효한 이메일을 입력해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const res = await request({
+          method: "POST",
+          path: "/api/auth/signup/email-verification/verify",
+          jsonBody: { email: normalizedEmail, code },
+        });
+
+        const payload = res.data as {
+          success?: boolean;
+          message?: string;
+        } | null;
+        if (res.ok && payload?.success) {
+          setEmailVerifiedAt(new Date());
+          localStorage.setItem(
+            "signupEmailVerified",
+            JSON.stringify({ email: normalizedEmail, verifiedAt: new Date() }),
+          );
+          toast({
+            title: "인증 완료",
+            description: "이메일 인증이 완료되었습니다.",
+          });
+          await submitSignup();
+        } else {
+          toast({
+            title: "오류",
+            description: payload?.message || "인증 코드가 일치하지 않습니다.",
+            variant: "destructive",
+          });
+        }
+      } catch (err) {
+        toast({
+          title: "오류",
+          description:
+            (err as any)?.message || "인증 처리 중 문제가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+    [isEmailValidValue, normalizedEmail, submitSignup, toast],
+  );
+
+  const refreshEmailVerificationStatus = useCallback(async () => {
+    const email = normalizedEmail;
+    if (!isEmailValidValue) {
+      toast({
+        title: "오류",
+        description: "먼저 올바른 이메일을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsEmailStatusChecking(true);
+    try {
+      const res = await request<any>({
+        path: `/api/auth/signup/email-verification/status?email=${encodeURIComponent(email)}`,
+        method: "GET",
+      });
+      const payload: any = res.data?.data;
+      if (!res.ok || !payload) {
+        throw new Error(res.data?.message || "상태를 확인할 수 없습니다.");
+      }
+
+      if (payload.verified) {
+        const verifiedAt = payload.verifiedAt
+          ? new Date(payload.verifiedAt)
+          : new Date();
+        setEmailVerifiedAt(verifiedAt);
+        localStorage.setItem(
+          "signupEmailVerified",
+          JSON.stringify({ email, verifiedAt }),
+        );
+        toast({
+          title: "이메일 인증 완료",
+          description: "이제 다음 단계로 이동하실 수 있습니다.",
+        });
+      } else {
+        toast({
+          title: "이메일 확인 필요",
+          description: "메일의 '가입 확인' 버튼을 누른 뒤 다시 확인해주세요.",
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "오류",
+        description:
+          (err as any)?.message || "인증 상태 조회 중 문제가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsEmailStatusChecking(false);
+    }
+  }, [isEmailValidValue, normalizedEmail, toast]);
+
+  const handleEditEmail = useCallback(() => {
+    setEmailVerifiedAt(null);
+    setEmailVerificationSent(false);
+    setIsEmailStatusChecking(false);
+    setLastEmailVerificationSentAt(null);
+    localStorage.removeItem("signupEmailVerified");
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitSignup();
   };
 
   const showHeroSection = isWizardMode && wizardStep === 1;
@@ -535,27 +675,7 @@ export const SignupPage = () => {
           <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
             <CardHeader className="pb-4 text-center">
               <CardTitle className="text-lg font-medium text-white/90">
-                {isWizardMode
-                  ? wizardStep === 1
-                    ? "회원 가입"
-                    : wizardStep === 2
-                      ? "추천인 (선택)"
-                      : wizardStep === 3
-                        ? "계정 정보"
-                        : "완료"
-                  : isSocialNewMode
-                    ? wizardStep === 1 && signupRole === "requestor"
-                      ? "추천인 (선택)"
-                      : wizardStep === 2
-                        ? "기본 정보"
-                        : wizardStep === 3
-                          ? "이메일 인증"
-                          : "완료"
-                    : wizardStep === 1
-                      ? "기본 정보"
-                      : wizardStep === 3
-                        ? "이메일 인증"
-                        : "완료"}
+                {cardTitle}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -689,110 +809,70 @@ export const SignupPage = () => {
                   )}
 
                   {wizardStep === 3 && (
-                    <SignupWizardStep2
+                    <SignupWizardAccountStep
                       formData={formData}
                       isLoading={isLoading}
-                      emailVerifiedAt={emailVerifiedAt}
-                      emailVerificationSent={emailVerificationSent}
                       onFormChange={handleChange}
                       onPrevious={() =>
                         setWizardStep(shouldAskReferralInput ? 2 : 1)
                       }
-                      onSendEmailVerification={sendEmailVerification}
-                      onVerifyEmailVerification={verifyEmailVerification}
-                      onNext={() =>
-                        handleSubmit({ preventDefault: () => {} } as any)
-                      }
+                      onNext={() => setWizardStep(4)}
                       isStrongPassword={isStrongPassword}
                       toast={toast}
                     />
                   )}
 
                   {wizardStep === 4 && (
-                    <SignupWizardStep4
-                      onNavigate={() =>
-                        navigate("/dashboard", { replace: true })
-                      }
+                    <SignupWizardStep2
+                      formData={formData}
+                      isLoading={isLoading}
+                      emailVerifiedAt={emailVerifiedAt}
+                      emailVerificationSent={emailVerificationSent}
+                      isEmailValid={isEmailValidValue}
+                      isEmailStatusChecking={isEmailStatusChecking}
+                      lastEmailVerificationSentAt={lastEmailVerificationSentAt}
+                      onFormChange={handleChange}
+                      onPrevious={() => setWizardStep(3)}
+                      onSendEmailVerification={sendEmailVerification}
+                      onVerifyCode={verifyEmailCode}
+                      onEditEmail={handleEditEmail}
                     />
                   )}
                 </>
               ) : (
                 <>
-                  {isSocialNewMode &&
-                    wizardStep === 1 &&
-                    signupRole === "requestor" && (
-                      <div className="space-y-4">
-                        <input
-                          value={refInput}
-                          onChange={(e) => setRefInput(e.target.value)}
-                          placeholder="추천인 코드 또는 사용자 계정"
-                          className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-md text-white placeholder:text-white/40"
-                        />
-
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            className="h-10 flex-1 rounded-md border border-white/10 bg-white/5 text-md font-medium text-white/80 hover:bg-white/10"
-                            onClick={() => navigate("/login")}
-                          >
-                            취소
-                          </button>
-                          <button
-                            type="button"
-                            className="h-10 flex-1 rounded-md bg-primary text-primary-foreground text-md font-medium hover:opacity-90"
-                            onClick={() => setWizardStep(2)}
-                          >
-                            다음
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                  {wizardStep ===
-                    (isSocialNewMode && signupRole === "requestor" ? 2 : 1) && (
+                  {wizardStep === socialInfoStepIndex && (
                     <SignupSocialWizardStep1
                       formData={formData}
                       socialInfo={socialInfo}
                       isLoading={isLoading}
                       onFormChange={handleChange}
                       onPrevious={() => {
-                        if (isSocialNewMode && signupRole === "requestor") {
+                        if (socialHasReferralStep) {
                           setWizardStep(1);
-                          return;
+                        } else {
+                          navigate("/login");
                         }
-                        navigate("/login");
                       }}
-                      onNext={() => setWizardStep(3)}
+                      onNext={() => setWizardStep(socialVerifyStepIndex)}
                       toast={toast}
                     />
                   )}
 
-                  {wizardStep === 3 && (
+                  {wizardStep === socialVerifyStepIndex && (
                     <SignupSocialWizardStep2
                       formData={formData}
                       socialInfo={socialInfo}
                       isLoading={isLoading}
                       emailVerifiedAt={emailVerifiedAt}
                       emailVerificationSent={emailVerificationSent}
+                      isEmailValid={isEmailValidValue}
+                      isEmailStatusChecking={isEmailStatusChecking}
+                      lastEmailVerificationSentAt={lastEmailVerificationSentAt}
                       onFormChange={handleChange}
                       onSendEmailVerification={sendEmailVerification}
-                      onVerifyEmailVerification={verifyEmailVerification}
-                      onPrevious={() =>
-                        setWizardStep(
-                          isSocialNewMode && signupRole === "requestor" ? 2 : 1,
-                        )
-                      }
-                      onSubmit={() => {
-                        handleSubmit({ preventDefault: () => {} } as any);
-                      }}
-                    />
-                  )}
-
-                  {wizardStep === 4 && (
-                    <SignupSocialWizardStep4
-                      onNavigate={() => {
-                        navigate("/dashboard", { replace: true });
-                      }}
+                      onVerifyCode={verifyEmailCode}
+                      onPrevious={() => setWizardStep(socialInfoStepIndex)}
                     />
                   )}
                 </>

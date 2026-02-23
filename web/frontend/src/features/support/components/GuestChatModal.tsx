@@ -80,28 +80,36 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md border-white/15 bg-[#050915]/95 text-white shadow-[0_35px_80px_rgba(4,8,18,0.65)] backdrop-blur-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2 text-white">
+            <MessageSquare className="h-5 w-5 text-cyan-300" />
             문의 남기기
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">이름 *</Label>
+            <Label htmlFor="name" className="text-sm font-medium text-white/80">
+              이름 *
+            </Label>
             <Input
               id="name"
               placeholder="이름을 입력해주세요"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
+              className="h-11 border-white/10 bg-white/5 text-white placeholder:text-white/40"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">이메일 *</Label>
+            <Label
+              htmlFor="email"
+              className="text-sm font-medium text-white/80"
+            >
+              이메일 *
+            </Label>
             <Input
               id="email"
               type="email"
@@ -109,11 +117,17 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              className="h-11 border-white/10 bg-white/5 text-white placeholder:text-white/40"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="message">문의 내용 *</Label>
+            <Label
+              htmlFor="message"
+              className="text-sm font-medium text-white/80"
+            >
+              문의 내용 *
+            </Label>
             <Textarea
               id="message"
               placeholder="궁금한 내용을 입력해주세요"
@@ -121,15 +135,20 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
               onChange={(e) => setMessage(e.target.value)}
               rows={4}
               required
+              className="border-white/10 bg-white/5 text-white placeholder:text-white/40"
             />
           </div>
 
-          <div className="text-xs text-muted-foreground">
+          <div className="rounded-xl border border-white/5 bg-white/5 p-3 text-xs text-white/70">
             * 문의 남기기 기능은 비회원용입니다. 답변은 입력하신 이메일로
             발송됩니다.
           </div>
 
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button
+            type="submit"
+            className="w-full h-11 rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 text-slate-950 font-semibold shadow-lg shadow-cyan-500/25 hover:from-emerald-300 hover:via-cyan-300 hover:to-blue-400"
+            disabled={loading}
+          >
             <Send className="h-4 w-4 mr-2" />
             {loading ? "전송 중..." : "문의 남기기"}
           </Button>

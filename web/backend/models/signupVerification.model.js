@@ -64,18 +64,27 @@ const signupVerificationSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    confirmTokenHash: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    confirmTokenExpiresAt: {
+      type: Date,
+      default: null,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 signupVerificationSchema.index(
   { purpose: 1, channel: 1, target: 1 },
-  { unique: true }
+  { unique: true },
 );
 
 const SignupVerification = mongoose.model(
   "SignupVerification",
-  signupVerificationSchema
+  signupVerificationSchema,
 );
 
 export default SignupVerification;

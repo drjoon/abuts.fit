@@ -5,7 +5,9 @@ import oauthController from "../../controllers/auth/oauth.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
 import {
   sendSignupEmailVerification,
-  verifySignupEmailVerification,
+  verifySignupEmailCode,
+  confirmSignupEmail,
+  getSignupEmailVerificationStatus,
 } from "../../controllers/auth/signupVerification.controller.js";
 
 // 회원가입
@@ -30,7 +32,12 @@ router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password/:token", authController.resetPassword);
 
 router.post("/signup/email-verification/send", sendSignupEmailVerification);
-router.post("/signup/email-verification/verify", verifySignupEmailVerification);
+router.post("/signup/email-verification/verify", verifySignupEmailCode);
+router.get("/signup/email-verification/confirm", confirmSignupEmail);
+router.get(
+  "/signup/email-verification/status",
+  getSignupEmailVerificationStatus,
+);
 
 // 로그아웃 (인증 필요)
 router.post("/logout", authenticate, authController.logout);
@@ -43,7 +50,7 @@ router.get("/oauth/kakao/callback", oauthController.kakaoCallback);
 router.post(
   "/oauth/complete-signup",
   authenticate,
-  oauthController.completeSignup
+  oauthController.completeSignup,
 );
 
 export default router;

@@ -218,8 +218,7 @@ const Index = () => {
                   Demo 계정으로 보기
                 </Button>
                 <Button
-                  variant="outline"
-                  className="h-11 flex-1 rounded-full border-slate-300 text-slate-900 hover:bg-slate-100"
+                  className="h-11 flex-1 rounded-full bg-slate-300 text-slate-900 font-semibold shadow-lg transition-all hover:bg-slate-200"
                   onClick={() => setShowGuestChat(true)}
                 >
                   문의 남기기

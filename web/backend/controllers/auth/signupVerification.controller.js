@@ -3,6 +3,7 @@ import SignupVerification from "../../models/signupVerification.model.js";
 import User from "../../models/user.model.js";
 import { sendEmail } from "../../utils/email.util.js";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
+import { getFrontendBaseUrl, getBackendBaseUrl } from "../../utils/url.util.js";
 
 const normalizeEmail = (email) =>
   String(email || "")
@@ -121,6 +122,8 @@ const updateSendState = async ({
   channel,
   target,
   codeHash,
+  confirmTokenHash,
+  confirmTokenExpiresAt,
   expiresAt,
   sentAt,
   todayKey,
@@ -131,6 +134,8 @@ const updateSendState = async ({
     {
       $set: {
         codeHash,
+        confirmTokenHash,
+        confirmTokenExpiresAt,
         expiresAt,
         sentAt,
         dailySendDate: todayKey,
@@ -185,6 +190,8 @@ export async function sendSignupEmailVerification(req, res) {
       channel: "email",
       target: email,
       codeHash: sha256(verificationCode),
+      confirmTokenHash: null,
+      confirmTokenExpiresAt: null,
       expiresAt,
       sentAt,
       todayKey: gate.todayKey,
@@ -193,11 +200,23 @@ export async function sendSignupEmailVerification(req, res) {
 
     const subject = "[abuts.fit] 이메일 인증 코드";
     const html = `
-      <p>안녕하세요,</p>
-      <p>abuts.fit 이메일 인증을 위한 코드입니다.</p>
-      <p style="font-size: 24px; font-weight: bold; color: #007bff; letter-spacing: 4px;">${verificationCode}</p>
-      <p>이 코드는 10분 동안 유효합니다.</p>
-      <p>감사합니다,<br>abuts.fit 팀</p>
+      <table style="width:100%;max-width:520px;margin:0 auto;font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#050915;padding:32px;border-radius:16px;color:#fff;">
+        <tr>
+          <td style="text-align:center;">
+            <p style="text-transform:uppercase;letter-spacing:0.35em;font-size:11px;color:#7dd3fc;margin:0 0 12px;">abuts.fit</p>
+            <h1 style="margin:0 0 16px;font-size:24px;">이메일 인증 코드</h1>
+            <p style="margin:0 0 24px;color:rgba(255,255,255,0.75);line-height:1.6;">
+              회원가입 화면에서 아래 4자리 코드를 입력해주세요.
+            </p>
+            <div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:20px;margin:0 0 24px;">
+              <p style="margin:0;font-size:36px;font-weight:700;letter-spacing:0.15em;color:#34d399;">${verificationCode}</p>
+            </div>
+            <p style="margin:0;color:rgba(255,255,255,0.6);font-size:13px;">
+              이 코드는 10분간 유효합니다.
+            </p>
+          </td>
+        </tr>
+      </table>
     `;
 
     try {
@@ -205,7 +224,7 @@ export async function sendSignupEmailVerification(req, res) {
         to: email,
         subject,
         html,
-        text: `인증 코드: ${verificationCode}\n10분 안에 입력해주세요.`,
+        text: `회원가입 인증 코드: ${verificationCode}\n10분 안에 입력해주세요.`,
       });
       console.log("[email-sent] signup verification", {
         email,
@@ -358,4 +377,165 @@ export async function assertSignupVerifications({ email }) {
     .lean();
 
   return Boolean(emailDoc?._id);
+}
+
+export async function verifySignupEmailCode(req, res) {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const code = String(req.body?.code || "").trim();
+
+    if (!email || !code) {
+      return res.status(400).json({
+        success: false,
+        message: "이메일과 인증 코드를 입력해주세요.",
+      });
+    }
+
+    const doc = await SignupVerification.findOne({
+      purpose: "signup",
+      channel: "email",
+      target: email,
+    }).lean();
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "인증 요청을 찾을 수 없습니다.",
+      });
+    }
+
+    if (doc.verifiedAt) {
+      return res.status(200).json({
+        success: true,
+        message: "이미 인증되었습니다.",
+      });
+    }
+
+    if (!doc.codeHash) {
+      return res.status(400).json({
+        success: false,
+        message: "인증 코드가 발송되지 않았습니다.",
+      });
+    }
+
+    const now = new Date();
+    if (doc.expiresAt && now > doc.expiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: "인증 코드가 만료되었습니다. 다시 발송해주세요.",
+      });
+    }
+
+    const inputHash = sha256(code);
+    if (inputHash !== doc.codeHash) {
+      await SignupVerification.updateOne(
+        { _id: doc._id },
+        { $inc: { attempts: 1 } },
+      );
+      return res.status(400).json({
+        success: false,
+        message: "인증 코드가 일치하지 않습니다.",
+      });
+    }
+
+    await SignupVerification.updateOne(
+      { _id: doc._id },
+      { $set: { verifiedAt: now } },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "이메일 인증이 완료되었습니다.",
+    });
+  } catch (error) {
+    console.error("[verifySignupEmailCode] error", error);
+    return res.status(500).json({
+      success: false,
+      message: "인증 처리 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+export async function confirmSignupEmail(req, res) {
+  try {
+    const token = String(req.query?.token || "").trim();
+    if (!token) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 토큰입니다." });
+    }
+
+    const tokenHash = sha256(token);
+    const doc = await SignupVerification.findOne({
+      purpose: "signup",
+      channel: "email",
+      confirmTokenHash: tokenHash,
+      confirmTokenExpiresAt: { $gt: new Date() },
+      consumedAt: null,
+    }).lean();
+
+    if (!doc) {
+      return res.status(400).json({
+        success: false,
+        message: "토큰이 유효하지 않거나 만료되었습니다.",
+      });
+    }
+
+    await SignupVerification.updateOne(
+      { _id: doc._id },
+      {
+        $set: {
+          verifiedAt: new Date(),
+          confirmTokenHash: null,
+          confirmTokenExpiresAt: null,
+          codeHash: null,
+          expiresAt: null,
+          sentAt: null,
+          attempts: 0,
+        },
+      },
+    );
+
+    const loginUrl = `${getFrontendBaseUrl(req).replace(/\/$/, "")}/login`;
+    return res.redirect(302, loginUrl);
+  } catch (error) {
+    console.error("[confirmSignupEmail] failed", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "이메일 확인 중 오류가 발생했습니다." });
+  }
+}
+
+export async function getSignupEmailVerificationStatus(req, res) {
+  try {
+    const email = normalizeEmail(req.query?.email || req.body?.email);
+    if (!email) {
+      return res
+        .status(400)
+        .json({ success: false, message: "이메일을 입력해주세요." });
+    }
+
+    const doc = await SignupVerification.findOne({
+      purpose: "signup",
+      channel: "email",
+      target: email,
+    })
+      .select({ verifiedAt: 1, sentAt: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        verified: Boolean(doc?.verifiedAt),
+        verifiedAt: doc?.verifiedAt || null,
+        lastSentAt: doc?.sentAt || null,
+      },
+    });
+  } catch (error) {
+    console.error("[getSignupEmailVerificationStatus] failed", error);
+    return res.status(500).json({
+      success: false,
+      message: "이메일 인증 상태 조회 중 오류가 발생했습니다.",
+    });
+  }
 }
