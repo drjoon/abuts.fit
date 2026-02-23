@@ -236,7 +236,7 @@ export const SignupStaffPage = () => {
 
         <div className="mt-10 w-full max-w-2xl text-left">
           <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
-            <CardHeader className="space-y-2 text-center">
+            <CardHeader className="space-y-2 text-center px-8">
               <CardTitle className="text-2xl text-white">
                 초대 기반 등록
               </CardTitle>
@@ -247,7 +247,7 @@ export const SignupStaffPage = () => {
                 <p className="text-xs text-white/60">초대자: {invitedBy}</p>
               ) : null}
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-8 pb-8">
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-white/80">역할 선택</p>

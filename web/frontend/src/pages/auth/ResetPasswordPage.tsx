@@ -118,7 +118,7 @@ export const ResetPasswordPage = () => {
 
         <div className="mt-10 w-full max-w-md text-left">
           <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
-            <CardHeader className="text-center space-y-2">
+            <CardHeader className="text-center space-y-2 px-8">
               <CardTitle className="text-2xl text-white">
                 비밀번호 재설정
               </CardTitle>
@@ -134,7 +134,7 @@ export const ResetPasswordPage = () => {
                 </p>
               )}
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-8 pb-8">
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-2">
                   <Label

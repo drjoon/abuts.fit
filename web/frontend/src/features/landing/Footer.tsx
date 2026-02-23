@@ -42,8 +42,8 @@ export const Footer = () => {
             </div>
 
             <p className="text-white/70 mb-6 leading-relaxed">
-              어벗츠 주식회사가 제공하는 커스텀 어벗먼트 의뢰 플랫폼입니다. 커스텀
-              어벗먼트 제조는 애크로덴트가 단독으로 담당합니다.
+              어벗츠 주식회사가 제공하는 커스텀 어벗먼트 관리 플랫폼입니다.
+              커스텀 어벗먼트 제조는 (주)애크로덴트가 단독으로 담당합니다.
             </p>
 
             <div className="space-y-3">

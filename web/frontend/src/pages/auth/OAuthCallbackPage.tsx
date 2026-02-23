@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import type { NavigateOptions, To } from "react-router-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -11,6 +12,22 @@ export const OAuthCallbackPage = () => {
 
   useEffect(() => {
     let cancelled = false;
+    const startedAt = Date.now();
+
+    const waitForMinimumDisplay = async () => {
+      const elapsed = Date.now() - startedAt;
+      const remaining = 1500 - elapsed;
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
+    };
+
+    const navigateAfterDelay = async (to: To, options?: NavigateOptions) => {
+      await waitForMinimumDisplay();
+      if (!cancelled) {
+        navigate(to, options);
+      }
+    };
 
     const run = async () => {
       const error = searchParams.get("error");
@@ -42,11 +59,13 @@ export const OAuthCallbackPage = () => {
           sessionStorage.removeItem("oauthReturnTo");
           sessionStorage.removeItem("oauthSignupRole");
           sessionStorage.removeItem("oauthSignupRef");
-          navigate(`${target}?${qs.toString()}`, { replace: true });
+          await navigateAfterDelay(`${target}?${qs.toString()}`, {
+            replace: true,
+          });
           return;
         }
 
-        navigate("/login", { replace: true });
+        await navigateAfterDelay("/login", { replace: true });
         return;
       }
 
@@ -66,7 +85,9 @@ export const OAuthCallbackPage = () => {
         sessionStorage.removeItem("oauthReturnTo");
         sessionStorage.removeItem("oauthSignupRole");
         sessionStorage.removeItem("oauthSignupRef");
-        navigate(`${target}?${qs.toString()}`, { replace: true });
+        await navigateAfterDelay(`${target}?${qs.toString()}`, {
+          replace: true,
+        });
         return;
       }
 
@@ -76,7 +97,7 @@ export const OAuthCallbackPage = () => {
           description: "토큰이 전달되지 않았습니다.",
           variant: "destructive",
         });
-        navigate("/login", { replace: true });
+        await navigateAfterDelay("/login", { replace: true });
         return;
       }
 
@@ -89,16 +110,18 @@ export const OAuthCallbackPage = () => {
           description: "로그인 처리에 실패했습니다.",
           variant: "destructive",
         });
-        navigate("/login", { replace: true });
+        await navigateAfterDelay("/login", { replace: true });
         return;
       }
 
       if (needsSignup === "1") {
-        navigate("/signup?mode=social_complete", { replace: true });
+        await navigateAfterDelay("/signup?mode=social_complete", {
+          replace: true,
+        });
         return;
       }
 
-      navigate("/dashboard", { replace: true });
+      await navigateAfterDelay("/dashboard", { replace: true });
     };
 
     run();

@@ -27,8 +27,8 @@ const Index = () => {
   const navigate = useNavigate();
 
   const stats = [
-    { label: "월간 처리 케이스", value: "1,500+" },
-    { label: "평균 처리 속도", value: "24H" },
+    { label: "월간 케이스", value: "1,500+" },
+    { label: "평균 처리 시간", value: "24h 이내" },
     { label: "동기화 성공률", value: "98.7%" },
   ];
 

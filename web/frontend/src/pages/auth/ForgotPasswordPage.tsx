@@ -82,7 +82,7 @@ export const ForgotPasswordPage = () => {
 
         <div className="mt-4 w-full max-w-md">
           <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
-            <CardContent>
+            <CardContent className="px-8 pb-8 pt-6">
               <form onSubmit={handleSubmit} className="mt-6 space-y-6">
                 <div className="space-y-2">
                   <Label

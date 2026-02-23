@@ -8,7 +8,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { SignupWizardStep1 } from "./signup/SignupWizardStep1";
 import { SignupWizardStep2 } from "./signup/SignupWizardStep2";
 import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
-import { SignupSocialWizardStep2 } from "./signup/SignupSocialWizardStep3";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 
 export const SignupPage = () => {
@@ -107,7 +106,6 @@ export const SignupPage = () => {
 
   const socialHasReferralStep = false;
   const socialInfoStepIndex: 1 | 2 = 1;
-  const socialVerifyStepIndex: 2 | 3 = 2;
 
   const cardTitle = useMemo(() => {
     if (isWizardMode) {
@@ -129,13 +127,7 @@ export const SignupPage = () => {
       if (socialHasReferralStep && wizardStep === 1) {
         return "추천인 (선택)";
       }
-      if (wizardStep === socialInfoStepIndex) {
-        return "기본 정보";
-      }
-      if (wizardStep === socialVerifyStepIndex) {
-        return "이메일 인증";
-      }
-      return "완료";
+      return "기본 정보";
     }
 
     if (wizardStep === 1) return "기본 정보";
@@ -147,7 +139,6 @@ export const SignupPage = () => {
     isWizardMode,
     socialHasReferralStep,
     socialInfoStepIndex,
-    socialVerifyStepIndex,
     wizardStep,
   ]);
 
@@ -392,15 +383,23 @@ export const SignupPage = () => {
           throw new Error(data?.message || "회원가입에 실패했습니다.");
         }
 
+        const authToken = data?.data?.token;
+        const authRefreshToken = data?.data?.refreshToken;
+
         sessionStorage.removeItem("socialToken");
         localStorage.removeItem("signupFormData");
         localStorage.removeItem("signupEmailVerified");
 
-        toast({
-          title: "가입 신청 완료",
-          description: "이메일 확인 후 로그인하실 수 있습니다.",
-        });
-        navigate("/", { replace: true });
+        if (authToken) {
+          await loginWithToken(authToken, authRefreshToken);
+          navigate("/dashboard", { replace: true });
+        } else {
+          toast({
+            title: "회원가입 완료",
+            description: "가입이 완료되었습니다. 로그인 페이지로 이동합니다.",
+          });
+          navigate("/login", { replace: true });
+        }
         return;
       }
 
@@ -673,12 +672,12 @@ export const SignupPage = () => {
           className={`w-full ${showHeroSection ? "lg:w-1/2 lg:flex-1" : "max-w-xl"}`}
         >
           <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
-            <CardHeader className="pb-4 text-center">
+            <CardHeader className="pb-4 text-center px-8">
               <CardTitle className="text-lg font-medium text-white/90">
                 {cardTitle}
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-8 pb-8">
               {isWizardMode ? (
                 <>
                   {wizardStep === 1 && (
@@ -854,27 +853,12 @@ export const SignupPage = () => {
                           navigate("/login");
                         }
                       }}
-                      onNext={() => setWizardStep(socialVerifyStepIndex)}
+                      onNext={submitSignup}
                       toast={toast}
                     />
                   )}
 
-                  {wizardStep === socialVerifyStepIndex && (
-                    <SignupSocialWizardStep2
-                      formData={formData}
-                      socialInfo={socialInfo}
-                      isLoading={isLoading}
-                      emailVerifiedAt={emailVerifiedAt}
-                      emailVerificationSent={emailVerificationSent}
-                      isEmailValid={isEmailValidValue}
-                      isEmailStatusChecking={isEmailStatusChecking}
-                      lastEmailVerificationSentAt={lastEmailVerificationSentAt}
-                      onFormChange={handleChange}
-                      onSendEmailVerification={sendEmailVerification}
-                      onVerifyCode={verifyEmailCode}
-                      onPrevious={() => setWizardStep(socialInfoStepIndex)}
-                    />
-                  )}
+                  {/* 소셜 가입은 이메일 인증 단계를 건너뛰고 바로 가입 처리 */}
                 </>
               )}
 

@@ -174,10 +174,10 @@ export const LoginPage = () => {
         <section className="w-full lg:w-1/2 lg:flex-1">
           <div className="w-full space-y-6">
             <Card className="border-white/12 bg-white/5 text-white shadow-[0_25px_65px_rgba(7,7,19,0.55)] backdrop-blur-2xl">
-              <CardHeader className="text-center">
+              <CardHeader className="text-center px-8">
                 <CardTitle className="text-2xl text-white">로그인</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-8 pb-8">
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Button
@@ -347,14 +347,7 @@ export const LoginPage = () => {
                 </div>
 
                 {isDev && (
-                  <div className="mt-6 flex items-center justify-between">
-                    <Button
-                      variant="link"
-                      asChild
-                      className="text-xs uppercase tracking-[0.35em] text-white/60 hover:text-white"
-                    >
-                      <Link to="/forgot-password">FORGOT PASSWORD</Link>
-                    </Button>
+                  <div className="mt-6 flex items-center justify-end">
                     <Button
                       type="button"
                       variant="link"
