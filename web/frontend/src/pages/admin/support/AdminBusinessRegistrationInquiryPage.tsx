@@ -24,6 +24,15 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/shared/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
@@ -56,11 +65,29 @@ export const AdminBusinessRegistrationInquiryPage = () => {
   const [items, setItems] = useState<BusinessRegistrationInquiry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adminNote, setAdminNote] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [bulkStatus, setBulkStatus] = useState<"open" | "resolved">("resolved");
 
   const selected = useMemo(
     () => items.find((item) => item._id === selectedId) || null,
     [items, selectedId],
   );
+
+  const filteredItems = useMemo(() => {
+    if (!searchQuery.trim()) return items;
+    const query = searchQuery.toLowerCase();
+    return items.filter((item) => {
+      const user = item.user || item.userSnapshot || {};
+      return (
+        item.subject?.toLowerCase().includes(query) ||
+        item.message?.toLowerCase().includes(query) ||
+        user.organization?.toLowerCase().includes(query) ||
+        user.name?.toLowerCase().includes(query) ||
+        user.email?.toLowerCase().includes(query)
+      );
+    });
+  }, [items, searchQuery]);
 
   useEffect(() => {
     let mounted = true;
@@ -96,6 +123,107 @@ export const AdminBusinessRegistrationInquiryPage = () => {
   useEffect(() => {
     setAdminNote(selected?.adminNote || "");
   }, [selected]);
+
+  const toggleSelection = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!checked) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(filteredItems.map((item) => item._id)));
+  };
+
+  const handleBulkStatusChange = async () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) {
+      toast({ title: "선택된 문의가 없습니다", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const updates = await Promise.all(
+        ids.map((id) =>
+          updateBusinessRegistrationInquiry(id, {
+            status: bulkStatus,
+            adminNote,
+          }),
+        ),
+      );
+      setItems((prev) =>
+        prev.map((item) => updates.find((u) => u._id === item._id) || item),
+      );
+      setSelectedIds(new Set());
+      toast({
+        title: `선택된 문의를 ${statusLabelMap[bulkStatus]}로 변경했습니다.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "일괄 처리 실패",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExportCsv = () => {
+    const rows = items.map((item) => {
+      const user = item.user || item.userSnapshot || {};
+      return {
+        id: item._id,
+        createdAt: item.createdAt || "",
+        type: typeLabelMap[item.type || "general"] || "",
+        status: statusLabelMap[item.status || "open"] || "",
+        subject: item.subject || "",
+        message: item.message || "",
+        organization: user.organization || "",
+        name: user.name || "",
+        email: user.email || "",
+      };
+    });
+    const header = [
+      "id",
+      "createdAt",
+      "type",
+      "status",
+      "subject",
+      "message",
+      "organization",
+      "name",
+      "email",
+    ];
+    const csv = [header.join(",")]
+      .concat(
+        rows.map((row) =>
+          header
+            .map(
+              (key) =>
+                `"${String((row as any)[key] || "").replace(/"/g, '""')}"`,
+            )
+            .join(","),
+        ),
+      )
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `inquiries-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleUpdate = async (nextStatus: "open" | "resolved") => {
     if (!selected) return;
@@ -163,6 +291,46 @@ export const AdminBusinessRegistrationInquiryPage = () => {
               <TabsTrigger value="user_registration">사용자등록</TabsTrigger>
             </TabsList>
           </Tabs>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Input
+              type="text"
+              placeholder="검색 (제목, 내용, 사업장, 담당자, 이메일)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="max-w-md"
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" onClick={handleExportCsv}>
+              CSV 내보내기
+            </Button>
+            <Select
+              value={bulkStatus}
+              onValueChange={(value) =>
+                setBulkStatus(value as "open" | "resolved")
+              }
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="resolved">처리완료</SelectItem>
+                <SelectItem value="open">미처리</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              onClick={handleBulkStatusChange}
+              disabled={saving || !selectedIds.size}
+            >
+              선택 상태 변경
+            </Button>
+            {selectedIds.size > 0 && (
+              <span className="text-sm text-slate-500">
+                선택 {selectedIds.size}건
+              </span>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -178,6 +346,17 @@ export const AdminBusinessRegistrationInquiryPage = () => {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox
+                      checked={
+                        filteredItems.length > 0 &&
+                        selectedIds.size === filteredItems.length
+                      }
+                      onCheckedChange={(value) =>
+                        handleSelectAll(Boolean(value))
+                      }
+                    />
+                  </TableHead>
                   <TableHead>접수일</TableHead>
                   <TableHead>유형</TableHead>
                   <TableHead>사업장</TableHead>
@@ -187,10 +366,11 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item) => {
+                {filteredItems.map((item) => {
                   const user = item.user || item.userSnapshot || {};
                   const typeLabel =
                     typeLabelMap[item.type || "general"] || "일반 문의";
+                  const isChecked = selectedIds.has(item._id);
                   return (
                     <TableRow
                       key={item._id}
@@ -201,6 +381,15 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                       }
                       onClick={() => setSelectedId(item._id)}
                     >
+                      <TableCell>
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(value) =>
+                            toggleSelection(item._id, Boolean(value))
+                          }
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                      </TableCell>
                       <TableCell>{formatDate(item.createdAt)}</TableCell>
                       <TableCell>{typeLabel}</TableCell>
                       <TableCell>{user.organization || "-"}</TableCell>
@@ -218,10 +407,10 @@ export const AdminBusinessRegistrationInquiryPage = () => {
                     </TableRow>
                   );
                 })}
-                {!items.length && !loading && (
+                {!filteredItems.length && !loading && (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={7}
                       className="text-center text-sm text-slate-400"
                     >
                       문의 내역이 없습니다.

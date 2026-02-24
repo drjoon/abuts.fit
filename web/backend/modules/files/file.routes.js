@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../../middlewares/auth.middleware.js";
+import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { upload } from "../../middlewares/upload.middleware.js";
 import { s3Upload } from "../../utils/s3.utils.js";
 import * as fileController from "../../controllers/files/file.controller.js";
@@ -11,7 +11,7 @@ router.post(
   "/upload",
   authenticate,
   upload.fields, // 'file'과 'files' 필드 모두 지원
-  fileController.uploadFile
+  fileController.uploadFile,
 );
 
 // 임시 파일 업로드 (S3, 의뢰 미지정, 사용자별 중복 방지)
@@ -19,13 +19,13 @@ router.post(
   "/temp",
   authenticate,
   s3Upload.array("files", 20),
-  fileController.uploadTempFiles
+  fileController.uploadTempFiles,
 );
 
 router.post(
   "/temp/presign",
   authenticate,
-  fileController.createTempUploadPresign
+  fileController.createTempUploadPresign,
 );
 
 // 전체 파일 목록 조회 (관리자) 또는 의뢰 ID로 필터링
@@ -41,7 +41,14 @@ router.get("/request/:requestId", authenticate, fileController.getRequestFiles);
 router.get(
   "/:id/download-url",
   authenticate,
-  fileController.getFileDownloadUrl
+  fileController.getFileDownloadUrl,
+);
+
+// S3 키 기반 다운로드 URL (관리자, 업로더, 조직 소유자)
+router.get(
+  "/s3/:key/download-url",
+  authenticate,
+  fileController.getS3DownloadUrl,
 );
 
 // 파일 상세 조회

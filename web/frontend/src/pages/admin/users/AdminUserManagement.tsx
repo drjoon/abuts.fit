@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   CardContent,
@@ -78,6 +78,8 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 type UiUserStatus = "active" | "pending" | "inactive" | "suspended";
+
+const PAGE_LIMIT = 60;
 
 type ApiUser = {
   _id: string;
@@ -216,6 +218,11 @@ export const AdminUserManagement = () => {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [licenseUrl, setLicenseUrl] = useState<string | null>(null);
   const [licenseLoading, setLicenseLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
@@ -229,34 +236,50 @@ export const AdminUserManagement = () => {
     organization: "",
   });
 
-  const fetchUsers = useCallback(async () => {
-    if (!token) return;
+  const fetchUsers = useCallback(
+    async (targetPage = 1, append = false) => {
+      if (!token) return;
 
-    setLoadingUsers(true);
-    try {
-      const res = await request<any>({
-        path: "/api/admin/users?page=1&limit=500",
-        method: "GET",
-        token,
-      });
-
-      if (!res.ok || !res.data?.success) {
-        toast({
-          title: "사용자 목록 조회 실패",
-          description: res.data?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-        return;
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoadingUsers(true);
       }
+      try {
+        const res = await request<any>({
+          path: `/api/admin/users?page=${targetPage}&limit=${PAGE_LIMIT}`,
+          method: "GET",
+          token,
+        });
 
-      const body: any = res.data || {};
-      const data = body.data || {};
-      const rawUsers: ApiUser[] = Array.isArray(data.users) ? data.users : [];
-      setUsers(rawUsers.map(toUiUser));
-    } finally {
-      setLoadingUsers(false);
-    }
-  }, [toast, token]);
+        if (!res.ok || !res.data?.success) {
+          toast({
+            title: "사용자 목록 조회 실패",
+            description: res.data?.message || "잠시 후 다시 시도해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const body: any = res.data || {};
+        const data = body.data || {};
+        const rawUsers: ApiUser[] = Array.isArray(data.users) ? data.users : [];
+        const mapped = rawUsers.map(toUiUser);
+        setUsers((prev) => (append ? [...(prev || []), ...mapped] : mapped));
+        const total = Number(data.pagination?.total || 0);
+        setTotalCount(total);
+        setHasMore(targetPage * PAGE_LIMIT < total);
+        setPage(targetPage);
+      } finally {
+        if (append) {
+          setLoadingMore(false);
+        } else {
+          setLoadingUsers(false);
+        }
+      }
+    },
+    [toast, token],
+  );
 
   const fetchUserDetail = useCallback(
     async (userId: string) => {
@@ -408,19 +431,40 @@ export const AdminUserManagement = () => {
   );
 
   useEffect(() => {
-    void fetchUsers();
+    void fetchUsers(1, false);
   }, [fetchUsers]);
 
   useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        if (loadingUsers || loadingMore) return;
+        if (!hasMore) return;
+        void fetchUsers(page + 1, true);
+      },
+      { rootMargin: "240px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fetchUsers, hasMore, loadingMore, loadingUsers, page]);
+
+  useEffect(() => {
     const loadLicense = async () => {
-      if (!token || !selectedUser?.organizationInfo?.businessLicense?.fileId) {
+      const license = selectedUser?.organizationInfo?.businessLicense;
+      if (!token || (!license?.fileId && !license?.s3Key)) {
         setLicenseUrl(null);
         return;
       }
       setLicenseLoading(true);
       try {
+        const endpoint = license?.fileId
+          ? `/api/files/${license.fileId}/download-url`
+          : `/api/files/s3/${encodeURIComponent(license?.s3Key || "")}/download-url`;
         const res = await request<any>({
-          path: `/api/files/${selectedUser.organizationInfo.businessLicense.fileId}/download-url`,
+          path: endpoint,
           method: "GET",
           token,
         });
@@ -514,7 +558,7 @@ export const AdminUserManagement = () => {
     [toast, token],
   );
 
-  const totalUsers = sourceUsers.length;
+  const totalUsers = totalCount || sourceUsers.length;
   const totalRequestor = sourceUsers.filter(
     (u) => u.role === "requestor",
   ).length;
@@ -878,6 +922,12 @@ export const AdminUserManagement = () => {
                 </div>
               ))}
             </div>
+            <div ref={loadMoreRef} className="h-8" />
+            {loadingMore && (
+              <div className="text-sm text-muted-foreground pt-2">
+                추가 사용자 불러오는 중...
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -978,7 +1028,7 @@ export const AdminUserManagement = () => {
         </Dialog>
 
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-          <DialogContent className="max-w-xl">
+          <DialogContent className="max-w-6xl w-full">
             <DialogHeader>
               <DialogTitle>사용자 상세</DialogTitle>
             </DialogHeader>
@@ -1038,7 +1088,7 @@ export const AdminUserManagement = () => {
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
                   <div className="space-y-3 rounded-lg border p-4">
                     <div className="text-sm font-medium">사업자등록증</div>
                     {licenseLoading && (
@@ -1065,7 +1115,7 @@ export const AdminUserManagement = () => {
                     </div>
                     {selectedUser.organizationInfo?.extracted ? (
                       <div className="grid gap-2 text-sm">
-                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
                           <span className="text-muted-foreground">
                             사업자명
                           </span>
@@ -1074,14 +1124,14 @@ export const AdminUserManagement = () => {
                               .companyName || "-"}
                           </span>
                         </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
                           <span className="text-muted-foreground">대표자</span>
                           <span>
                             {selectedUser.organizationInfo.extracted
                               .representativeName || "-"}
                           </span>
                         </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
                           <span className="text-muted-foreground">
                             사업자번호
                           </span>
@@ -1090,14 +1140,14 @@ export const AdminUserManagement = () => {
                               .businessNumber || "-"}
                           </span>
                         </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
                           <span className="text-muted-foreground">주소</span>
                           <span>
                             {selectedUser.organizationInfo.extracted.address ||
                               "-"}
                           </span>
                         </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
                           <span className="text-muted-foreground">
                             전화번호
                           </span>
@@ -1106,14 +1156,14 @@ export const AdminUserManagement = () => {
                               .phoneNumber || "-"}
                           </span>
                         </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
                           <span className="text-muted-foreground">이메일</span>
                           <span>
                             {selectedUser.organizationInfo.extracted.email ||
                               "-"}
                           </span>
                         </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
                           <span className="text-muted-foreground">
                             업태/업종
                           </span>
@@ -1126,7 +1176,7 @@ export const AdminUserManagement = () => {
                               : ""}
                           </span>
                         </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
                           <span className="text-muted-foreground">개업일</span>
                           <span>
                             {selectedUser.organizationInfo.extracted

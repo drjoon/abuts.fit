@@ -632,3 +632,49 @@ export const getFileDownloadUrl = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
 });
+
+// S3 키 기반 다운로드 URL 생성 (관리자, 업로더, 조직 소유자)
+export const getS3DownloadUrl = asyncHandler(async (req, res) => {
+  const key = String(req.params.key || "").trim();
+  if (!key) {
+    throw new ApiError(400, "Invalid S3 key");
+  }
+
+  // Admin always allowed
+  if (req.user?.role === "admin") {
+    const signedUrl = await s3Utils.getDownloadSignedUrl(key);
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
+  }
+
+  // Check if file exists in DB and user is uploader
+  const file = await File.findOne({ key }).populate("uploadedBy", "_id");
+  if (file && file.uploadedBy?._id.toString() === req.user._id.toString()) {
+    const signedUrl = await s3Utils.getDownloadSignedUrl(key);
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
+  }
+
+  // Check if user is organization owner and file belongs to their organization
+  if (req.user?.organizationId) {
+    const RequestorOrganization = (
+      await import("../../models/requestorOrganization.model.js")
+    ).default;
+    const org = await RequestorOrganization.findById(
+      req.user.organizationId,
+    ).select("businessLicense");
+
+    if (org?.businessLicense?.s3Key === key) {
+      const signedUrl = await s3Utils.getDownloadSignedUrl(key);
+      return res
+        .status(200)
+        .json(
+          new ApiResponse(200, { url: signedUrl }, "Download URL generated"),
+        );
+    }
+  }
+
+  throw new ApiError(403, "Forbidden");
+});
