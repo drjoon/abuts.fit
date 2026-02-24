@@ -58,12 +58,10 @@ const SettingsPage = lazy(() =>
     default: m.SettingsPage,
   })),
 );
-const RequestorOnboardingWizardPage = lazy(() =>
-  import("./pages/requestor/wizard/RequestorOnboardingWizardPage").then(
-    (m) => ({
-      default: m.RequestorOnboardingWizardPage,
-    }),
-  ),
+const SharedOnboardingWizardPage = lazy(() =>
+  import("./shared/onboarding/SharedOnboardingWizardPage").then((m) => ({
+    default: m.SharedOnboardingWizardPage,
+  })),
 );
 import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
 import { AdminRequestMonitoring } from "@/pages/admin/requests/AdminRequestMonitoring";
@@ -333,7 +331,7 @@ const App = () => {
                           "admin",
                         ]}
                       >
-                        <RequestorOnboardingWizardPage />
+                        <SharedOnboardingWizardPage />
                       </RoleProtectedRoute>
                     }
                   />

@@ -11,7 +11,7 @@ type BackendGuideProgress = {
   finishedAt?: string | null;
 };
 
-export const RequestorOnboardingWizardPage = () => {
+export const SharedOnboardingWizardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
