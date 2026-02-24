@@ -202,6 +202,8 @@ export const OrganizationStep = ({
   const [ownerErrors, setOwnerErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [ownerSaveFailed, setOwnerSaveFailed] = useState(false);
+  const [ownerSaveErrorMessage, setOwnerSaveErrorMessage] = useState("");
+  const [inquirySubmitting, setInquirySubmitting] = useState(false);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>("missing");
   const [licenseFileName, setLicenseFileName] = useState("");
   const [licenseFileId, setLicenseFileId] = useState("");
@@ -620,6 +622,7 @@ export const OrganizationStep = ({
     }
     if (!validateOwnerForm()) return false;
     setOwnerSaveFailed(false);
+    setOwnerSaveErrorMessage("");
     setSaving(true);
     try {
       const res = await request<any>({
@@ -660,6 +663,7 @@ export const OrganizationStep = ({
           variant: "destructive",
         });
         setOwnerSaveFailed(true);
+        setOwnerSaveErrorMessage(message);
         return false;
       }
       toast({ title: "사업자 정보가 저장되었습니다" });
@@ -671,9 +675,59 @@ export const OrganizationStep = ({
     } catch {
       toast({ title: "저장 실패", variant: "destructive" });
       setOwnerSaveFailed(true);
+      setOwnerSaveErrorMessage("저장에 실패했습니다.");
       return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const submitBusinessInquiry = async () => {
+    if (!token) {
+      toast({ title: "로그인이 필요합니다", variant: "destructive" });
+      return false;
+    }
+    setInquirySubmitting(true);
+    try {
+      const res = await request<any>({
+        path: "/api/support/business-registration-inquiries",
+        method: "POST",
+        token,
+        jsonBody: {
+          organizationType,
+          reason: "사업자등록 저장 실패",
+          errorMessage: ownerSaveErrorMessage,
+          ownerForm,
+          license: {
+            fileId: licenseFileId || null,
+            s3Key: licenseS3Key || null,
+            originalName: licenseFileName || null,
+          },
+        },
+      });
+      if (!res.ok) {
+        const body: any = res.data || {};
+        toast({
+          title: "문의 접수 실패",
+          description: String(body?.message || "문의 접수에 실패했습니다."),
+          variant: "destructive",
+        });
+        return false;
+      }
+      toast({
+        title: "문의가 접수되었습니다",
+        description: "담당자가 확인 후 연락드릴게요.",
+      });
+      return true;
+    } catch {
+      toast({
+        title: "문의 접수 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setInquirySubmitting(false);
     }
   };
 
@@ -967,16 +1021,20 @@ export const OrganizationStep = ({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => {
+                  disabled={inquirySubmitting}
+                  onClick={async () => {
+                    const ok = await submitBusinessInquiry();
+                    if (!ok) return;
                     markComplete();
                     toast({
                       title: "다음 단계로 이동했습니다",
-                      description:
-                        "담당자가 확인 후 연락드릴게요. 설정에서 언제든 다시 저장할 수 있어요.",
+                      description: "설정에서 언제든 다시 저장할 수 있어요.",
                     });
                   }}
                 >
-                  문의 남기고 다음으로
+                  {inquirySubmitting
+                    ? "문의 접수 중..."
+                    : "관리자에게 문의하고 계속하기"}
                 </Button>
               </div>
             </div>

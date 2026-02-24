@@ -53,10 +53,12 @@ const sidebarItems = {
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
     { icon: Users2, label: "리퍼럴그룹", href: "/dashboard/referral-groups" },
+    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   salesman: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
+    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   manufacturer: [
@@ -64,6 +66,7 @@ const sidebarItems = {
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
     { icon: Factory, label: "장비", href: "/dashboard/cnc" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
@@ -91,6 +94,11 @@ const sidebarItems = {
       icon: Mail,
       label: "메일",
       href: "/dashboard/mail",
+    },
+    {
+      icon: MessageSquare,
+      label: "문의",
+      href: "/dashboard/inquiries",
     },
     { icon: Shield, label: "보안", href: "/dashboard/security-settings" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },

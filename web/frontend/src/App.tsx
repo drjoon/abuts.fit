@@ -63,11 +63,17 @@ const SharedOnboardingWizardPage = lazy(() =>
     default: m.SharedOnboardingWizardPage,
   })),
 );
+const InquiriesPage = lazy(() =>
+  import("./pages/dashboard/InquiriesPage").then((m) => ({
+    default: m.InquiriesPage,
+  })),
+);
 import { AdminUserManagement } from "@/pages/admin/users/AdminUserManagement";
 import { AdminRequestMonitoring } from "@/pages/admin/requests/AdminRequestMonitoring";
 import AdminMailPage from "@/pages/admin/support/AdminMailPage";
 import AdminSmsPage from "@/pages/admin/support/AdminSmsPage";
 import { AdminChatManagement } from "@/pages/admin/support/AdminChatManagement";
+import AdminInquiriesPage from "@/pages/admin/support/AdminBusinessRegistrationInquiryPage";
 import AdminTaxInvoices from "@/pages/admin/system/AdminTaxInvoices";
 import { AdminSecurity } from "@/pages/admin/system/AdminSecurity";
 import AdminOrganizationVerification from "@/pages/admin/system/AdminOrganizationVerification";
@@ -274,6 +280,7 @@ const App = () => {
                     element={<AdminRequestMonitoring />}
                   />
                   <Route path="mail" element={<AdminMailPage />} />
+                  <Route path="inquiries" element={<AdminInquiriesPage />} />
                   <Route path="sms" element={<AdminSmsPage />} />
                   <Route
                     path="chat-management"
@@ -332,6 +339,16 @@ const App = () => {
                         ]}
                       >
                         <SharedOnboardingWizardPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="inquiries"
+                    element={
+                      <RoleProtectedRoute
+                        roles={["requestor", "salesman", "manufacturer"]}
+                      >
+                        <InquiriesPage />
                       </RoleProtectedRoute>
                     }
                   />

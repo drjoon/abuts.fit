@@ -2085,6 +2085,22 @@ async function getAllUsers(req, res) {
     const userIds = users
       .map((u) => u?._id)
       .filter((id) => Types.ObjectId.isValid(String(id)));
+    const organizationIds = users
+      .map((u) => u?.organizationId)
+      .filter((id) => Types.ObjectId.isValid(String(id)));
+    const organizations = organizationIds.length
+      ? await RequestorOrganization.find({ _id: { $in: organizationIds } })
+          .select({
+            name: 1,
+            businessLicense: 1,
+            extracted: 1,
+            verification: 1,
+          })
+          .lean()
+      : [];
+    const organizationMap = new Map(
+      organizations.map((org) => [String(org._id), org]),
+    );
 
     const requestCounts = await Request.aggregate([
       {
@@ -2104,10 +2120,20 @@ async function getAllUsers(req, res) {
       requestCounts.map((r) => [String(r._id), Number(r.count || 0)]),
     );
 
-    const usersWithStats = users.map((u) => ({
-      ...u,
-      totalRequests: countMap.get(String(u._id)) || 0,
-    }));
+    const usersWithStats = users.map((u) => {
+      const organization = organizationMap.get(String(u.organizationId || ""));
+      const hasLicense =
+        Boolean(organization?.businessLicense?.s3Key) ||
+        Boolean(organization?.businessLicense?.fileId);
+      const unresolvedBusiness =
+        hasLicense && organization?.verification?.verified === false;
+      return {
+        ...u,
+        totalRequests: countMap.get(String(u._id)) || 0,
+        organizationInfo: organization || null,
+        unresolvedBusiness,
+      };
+    });
 
     // 전체 사용자 수
     const total = await User.countDocuments(filter);
@@ -2309,9 +2335,29 @@ async function getUserById(req, res) {
       });
     }
 
+    const organization = user?.organizationId
+      ? await RequestorOrganization.findById(user.organizationId)
+          .select({
+            name: 1,
+            businessLicense: 1,
+            extracted: 1,
+            verification: 1,
+          })
+          .lean()
+      : null;
+    const hasLicense =
+      Boolean(organization?.businessLicense?.s3Key) ||
+      Boolean(organization?.businessLicense?.fileId);
+    const unresolvedBusiness =
+      hasLicense && organization?.verification?.verified === false;
+
     res.status(200).json({
       success: true,
-      data: user,
+      data: {
+        ...user.toObject(),
+        organizationInfo: organization || null,
+        unresolvedBusiness,
+      },
     });
   } catch (error) {
     res.status(500).json({

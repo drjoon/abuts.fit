@@ -21,10 +21,12 @@ import {
   Send,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const Index = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);
   const navigate = useNavigate();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   const stats = [
     { label: "월간 케이스", value: "1,500+" },
@@ -107,7 +109,9 @@ const Index = () => {
               <Button
                 size="lg"
                 className="flex-1 basis-[calc(50%-0.75rem)] h-14 rounded-full bg-white text-slate-900 hover:bg-white/90 sm:basis-auto"
-                onClick={() => navigate("/signup")}
+                onClick={() =>
+                  navigate(isAuthenticated ? "/dashboard" : "/signup")
+                }
               >
                 지금 가입하기
                 <ArrowRight className="ml-2 h-5 w-5" />
@@ -116,7 +120,9 @@ const Index = () => {
                 size="lg"
                 variant="outline"
                 className="flex-1 basis-[calc(50%-0.75rem)] h-14 rounded-full border-white/40 bg-transparent text-white hover:bg-white/10 sm:basis-auto"
-                onClick={() => navigate("/login")}
+                onClick={() =>
+                  navigate(isAuthenticated ? "/dashboard" : "/login")
+                }
               >
                 로그인
               </Button>

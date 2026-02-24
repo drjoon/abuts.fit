@@ -64,6 +64,11 @@ import {
   adminGetSalesmanLedger,
   adminCreateSalesmanPayout,
 } from "../../controllers/admin/adminCredit.controller.js";
+import {
+  adminListBusinessRegistrationInquiries,
+  adminGetBusinessRegistrationInquiry,
+  adminResolveBusinessRegistrationInquiry,
+} from "../../controllers/support/support.controller.js";
 // 모든 라우트에 인증 및 관리자 권한 확인 미들웨어 적용
 router.use(authenticate);
 router.use(authorize(["admin"]));
@@ -87,6 +92,20 @@ router.patch("/requests/:id/assign", adminController.assignManufacturer);
 
 // 대시보드 통계
 router.get("/dashboard", adminController.getDashboardStats);
+
+// 사업자등록 문의
+router.get(
+  "/business-registration-inquiries",
+  adminListBusinessRegistrationInquiries,
+);
+router.get(
+  "/business-registration-inquiries/:id",
+  adminGetBusinessRegistrationInquiry,
+);
+router.patch(
+  "/business-registration-inquiries/:id",
+  adminResolveBusinessRegistrationInquiry,
+);
 
 // 크레딧 관리
 router.get("/credits/stats", adminGetCreditStats);

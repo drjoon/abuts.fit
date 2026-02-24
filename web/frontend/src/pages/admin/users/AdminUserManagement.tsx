@@ -93,6 +93,32 @@ type ApiUser = {
   totalRequests?: number;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
+  organizationInfo?: {
+    name?: string;
+    businessLicense?: {
+      fileId?: string | null;
+      s3Key?: string | null;
+      originalName?: string | null;
+    } | null;
+    extracted?: {
+      companyName?: string;
+      businessNumber?: string;
+      address?: string;
+      phoneNumber?: string;
+      email?: string;
+      representativeName?: string;
+      businessType?: string;
+      businessItem?: string;
+      startDate?: string;
+    } | null;
+    verification?: {
+      verified?: boolean;
+      provider?: string;
+      message?: string;
+      checkedAt?: string | null;
+    } | null;
+  } | null;
+  unresolvedBusiness?: boolean;
 };
 
 type UiUserRow = {
@@ -108,6 +134,8 @@ type UiUserRow = {
   totalRequests?: number | null;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
+  organizationInfo?: ApiUser["organizationInfo"] | null;
+  unresolvedBusiness?: boolean;
 };
 
 const formatDate = (input?: string) => {
@@ -146,6 +174,8 @@ const toUiUser = (u: ApiUser): UiUserRow => {
         : null,
     replacesUserId: u.replacesUserId || null,
     replacedByUserId: u.replacedByUserId || null,
+    organizationInfo: u.organizationInfo || null,
+    unresolvedBusiness: Boolean(u.unresolvedBusiness),
   };
 };
 
@@ -184,6 +214,8 @@ export const AdminUserManagement = () => {
   const [selectedUser, setSelectedUser] = useState<UiUserRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [licenseUrl, setLicenseUrl] = useState<string | null>(null);
+  const [licenseLoading, setLicenseLoading] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
@@ -379,6 +411,31 @@ export const AdminUserManagement = () => {
     void fetchUsers();
   }, [fetchUsers]);
 
+  useEffect(() => {
+    const loadLicense = async () => {
+      if (!token || !selectedUser?.organizationInfo?.businessLicense?.fileId) {
+        setLicenseUrl(null);
+        return;
+      }
+      setLicenseLoading(true);
+      try {
+        const res = await request<any>({
+          path: `/api/files/${selectedUser.organizationInfo.businessLicense.fileId}/download-url`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok) {
+          setLicenseUrl(null);
+          return;
+        }
+        setLicenseUrl(res.data?.data?.url || null);
+      } finally {
+        setLicenseLoading(false);
+      }
+    };
+    void loadLicense();
+  }, [selectedUser, token]);
+
   const sourceUsers = users || [];
 
   const filteredUsers = useMemo(() => {
@@ -467,6 +524,7 @@ export const AdminUserManagement = () => {
   ).length;
   const totalAdmin = sourceUsers.filter((u) => u.role === "admin").length;
   const totalPending = sourceUsers.filter((u) => u.status === "pending").length;
+  const unresolvedUsers = sourceUsers.filter((u) => u.unresolvedBusiness);
 
   return (
     <div className="min-h-screen bg-gradient-subtle p-6">
@@ -566,6 +624,40 @@ export const AdminUserManagement = () => {
         </div>
 
         {/* Search and Filter (moved below summary cards) */}
+        {unresolvedUsers.length > 0 && (
+          <Card className="border-amber-200 bg-amber-50/70">
+            <CardHeader>
+              <CardTitle className="text-base">사업자 정보 확인 필요</CardTitle>
+              <CardDescription>
+                사업자등록증 검증이 미처리된 사용자입니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {unresolvedUsers.map((user) => (
+                <div
+                  key={user.id}
+                  className="rounded-lg border border-amber-200 bg-white p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="font-medium">{user.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {user.companyName || "사업장 미등록"}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => fetchUserDetail(user.id)}
+                    >
+                      상세보기
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
         <div className="flex gap-4 flex-wrap">
           <div className="flex gap-2 flex-wrap">
             <Button
@@ -677,7 +769,11 @@ export const AdminUserManagement = () => {
               {filteredUsers.map((user) => (
                 <div
                   key={user.id}
-                  className="p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                  className={
+                    user.unresolvedBusiness
+                      ? "p-4 border border-amber-200 rounded-lg bg-amber-50/40"
+                      : "p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                  }
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
@@ -695,6 +791,11 @@ export const AdminUserManagement = () => {
                             {getRoleLabel(user.role)}
                           </Badge>
                           {getStatusBadge(user.status)}
+                          {user.unresolvedBusiness && (
+                            <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                              사업자 확인 필요
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground truncate">
                           {user.email}
@@ -922,6 +1023,122 @@ export const AdminUserManagement = () => {
                     <div className="font-medium">
                       {getStatusBadge(selectedUser.status)}
                     </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">사업자 상태</div>
+                    <div className="font-medium">
+                      {selectedUser.unresolvedBusiness ? (
+                        <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                          확인 필요
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">정상</Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <div className="space-y-3 rounded-lg border p-4">
+                    <div className="text-sm font-medium">사업자등록증</div>
+                    {licenseLoading && (
+                      <div className="text-sm text-muted-foreground">
+                        불러오는 중...
+                      </div>
+                    )}
+                    {!licenseLoading && licenseUrl && (
+                      <img
+                        src={licenseUrl}
+                        alt="사업자등록증"
+                        className="w-full rounded-md border object-contain"
+                      />
+                    )}
+                    {!licenseLoading && !licenseUrl && (
+                      <div className="text-sm text-muted-foreground">
+                        등록된 사업자등록증이 없습니다.
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-3 rounded-lg border p-4">
+                    <div className="text-sm font-medium">
+                      추출된 사업자 정보
+                    </div>
+                    {selectedUser.organizationInfo?.extracted ? (
+                      <div className="grid gap-2 text-sm">
+                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                          <span className="text-muted-foreground">
+                            사업자명
+                          </span>
+                          <span>
+                            {selectedUser.organizationInfo.extracted
+                              .companyName || "-"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                          <span className="text-muted-foreground">대표자</span>
+                          <span>
+                            {selectedUser.organizationInfo.extracted
+                              .representativeName || "-"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                          <span className="text-muted-foreground">
+                            사업자번호
+                          </span>
+                          <span>
+                            {selectedUser.organizationInfo.extracted
+                              .businessNumber || "-"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                          <span className="text-muted-foreground">주소</span>
+                          <span>
+                            {selectedUser.organizationInfo.extracted.address ||
+                              "-"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                          <span className="text-muted-foreground">
+                            전화번호
+                          </span>
+                          <span>
+                            {selectedUser.organizationInfo.extracted
+                              .phoneNumber || "-"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                          <span className="text-muted-foreground">이메일</span>
+                          <span>
+                            {selectedUser.organizationInfo.extracted.email ||
+                              "-"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                          <span className="text-muted-foreground">
+                            업태/업종
+                          </span>
+                          <span>
+                            {selectedUser.organizationInfo.extracted
+                              .businessType || "-"}
+                            {selectedUser.organizationInfo.extracted
+                              .businessItem
+                              ? ` / ${selectedUser.organizationInfo.extracted.businessItem}`
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-[120px_1fr] gap-2">
+                          <span className="text-muted-foreground">개업일</span>
+                          <span>
+                            {selectedUser.organizationInfo.extracted
+                              .startDate || "-"}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">
+                        추출된 정보가 없습니다.
+                      </div>
+                    )}
                   </div>
                 </div>
 
