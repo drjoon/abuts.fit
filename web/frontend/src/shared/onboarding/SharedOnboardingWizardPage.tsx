@@ -12,7 +12,7 @@ type BackendGuideProgress = {
 };
 
 export const SharedOnboardingWizardPage = () => {
-  const { user, token } = useAuthStore();
+  const { user, token, setUser } = useAuthStore();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [progress, setProgress] = useState<BackendGuideProgress | null>(null);
@@ -73,12 +73,35 @@ export const SharedOnboardingWizardPage = () => {
     };
   }, [token]);
 
+  const markWizardCompleted = async () => {
+    if (!token) return;
+    if (!user) return;
+    try {
+      const res = await apiFetch<any>({
+        path: "/api/users/profile",
+        method: "PUT",
+        token,
+        jsonBody: { onboardingWizardCompleted: true },
+      });
+      if (!res.ok) return;
+      const body = res.data || {};
+      const data = body.data || body;
+      setUser({
+        ...user,
+        onboardingWizardCompleted: Boolean(
+          data?.onboardingWizardCompleted ?? true,
+        ),
+      });
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     if (!progress?.finishedAt) return;
-    const timer = window.setTimeout(() => {
+    void markWizardCompleted().finally(() => {
       navigate("/dashboard", { replace: true });
-    }, 1500);
-    return () => window.clearTimeout(timer);
+    });
   }, [navigate, progress?.finishedAt]);
 
   const mode = useMemo<"account" | "organization">(() => {
@@ -93,9 +116,9 @@ export const SharedOnboardingWizardPage = () => {
   };
 
   const handleComplete = () => {
-    window.setTimeout(() => {
+    void markWizardCompleted().finally(() => {
       navigate("/dashboard", { replace: true });
-    }, 1500);
+    });
   };
 
   if (loading || !progress) {

@@ -6,6 +6,8 @@ import CreditLedger from "../../models/creditLedger.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
 import {
+  ORGANIZATION_ALLOWED_ROLE_SET,
+  resolveOrganizationType,
   assertOrganizationRole,
   buildOrganizationTypeFilter,
 } from "./organizationRole.util.js";
@@ -426,10 +428,25 @@ export async function getMyOrganization(req, res) {
 
 export async function searchOrganizations(req, res) {
   try {
-    const roleCheck = assertOrganizationRole(req, res);
-    if (!roleCheck) return;
-    const { organizationType } = roleCheck;
-    const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
+    const userRole = String(req.user?.role || "").trim();
+    if (!ORGANIZATION_ALLOWED_ROLE_SET.has(userRole) && userRole !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    }
+
+    const rawType = String(req.query?.organizationType || "").trim();
+    const requestedType = ORGANIZATION_ALLOWED_ROLE_SET.has(rawType)
+      ? rawType
+      : null;
+    const organizationType =
+      rawType === "all"
+        ? null
+        : requestedType || resolveOrganizationType(req.user, null);
+    const orgTypeFilter = organizationType
+      ? buildOrganizationTypeFilter(organizationType)
+      : {};
 
     const q = String(req.query?.q || "").trim();
     if (!q) {

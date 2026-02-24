@@ -111,6 +111,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    onboardingWizardCompleted: {
+      type: Boolean,
+      default: false,
+    },
     verificationToken: String,
     verificationExpires: Date,
     resetPasswordToken: String,

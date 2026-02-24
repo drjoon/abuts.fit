@@ -201,6 +201,7 @@ export const OrganizationStep = ({
   const [ownerForm, setOwnerForm] = useState<OwnerFormState>(initialOwnerState);
   const [ownerErrors, setOwnerErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [ownerSaveFailed, setOwnerSaveFailed] = useState(false);
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>("missing");
   const [licenseFileName, setLicenseFileName] = useState("");
   const [licenseFileId, setLicenseFileId] = useState("");
@@ -618,6 +619,7 @@ export const OrganizationStep = ({
       return false;
     }
     if (!validateOwnerForm()) return false;
+    setOwnerSaveFailed(false);
     setSaving(true);
     try {
       const res = await request<any>({
@@ -657,15 +659,18 @@ export const OrganizationStep = ({
           description: message,
           variant: "destructive",
         });
+        setOwnerSaveFailed(true);
         return false;
       }
       toast({ title: "사업자 정보가 저장되었습니다" });
       clearLocalDraft();
       setMembership("owner");
       markComplete();
+      setOwnerSaveFailed(false);
       return true;
     } catch {
       toast({ title: "저장 실패", variant: "destructive" });
+      setOwnerSaveFailed(true);
       return false;
     } finally {
       setSaving(false);
@@ -951,6 +956,31 @@ export const OrganizationStep = ({
               );
             })}
           </div>
+          {ownerSaveFailed && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+              <p className="font-medium">저장 오류가 반복됩니다</p>
+              <p className="mt-1">
+                관리자에게 문의를 남기고 다음 단계로 진행할 수 있어요.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    markComplete();
+                    toast({
+                      title: "다음 단계로 이동했습니다",
+                      description:
+                        "담당자가 확인 후 연락드릴게요. 설정에서 언제든 다시 저장할 수 있어요.",
+                    });
+                  }}
+                >
+                  문의 남기고 다음으로
+                </Button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -524,6 +524,7 @@ async function register(req, res) {
       referralCode,
       referredByUserId: referredByObjectId,
       referralGroupLeaderId,
+      onboardingWizardCompleted: false,
       approvedAt: isInstantApprove ? new Date() : null,
       active: isInstantApprove,
       ...(normalizedRole === "requestor" && !socialProvider

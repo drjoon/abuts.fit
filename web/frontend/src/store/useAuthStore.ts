@@ -17,6 +17,7 @@ export interface User {
   referralCode?: string;
   approvedAt?: string | null;
   organizationId?: string | null;
+  onboardingWizardCompleted?: boolean;
   salesmanPayoutAccount?: {
     bankName: string;
     accountNumber: string;
@@ -39,6 +40,7 @@ const normalizeApiUser = (u: any): User | null => {
     referralCode: String(u.referralCode || ""),
     approvedAt: u.approvedAt ? String(u.approvedAt) : null,
     organizationId: u.organizationId ? String(u.organizationId) : null,
+    onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
     salesmanPayoutAccount:
       u.role === "salesman"
         ? {
@@ -61,6 +63,7 @@ interface AuthState {
     token: string,
     refreshToken?: string | null,
   ) => Promise<boolean>;
+  setUser: (user: User | null) => void;
   logout: () => void;
 }
 
@@ -164,6 +167,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
           referralCode: String(u.referralCode || ""),
           approvedAt: u.approvedAt ? String(u.approvedAt) : null,
           organizationId: u.organizationId ? String(u.organizationId) : null,
+          onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
         };
 
         try {
@@ -185,6 +189,21 @@ export const useAuthStore = create<AuthState>((set, get) => {
       } catch {
         return false;
       }
+    },
+    setUser: (user: User | null) => {
+      try {
+        if (user) {
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+        } else {
+          localStorage.removeItem(AUTH_USER_KEY);
+        }
+      } catch {
+        // ignore
+      }
+      set((state) => ({
+        user,
+        isAuthenticated: Boolean(state.token && user),
+      }));
     },
     logout: () => {
       try {

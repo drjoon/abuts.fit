@@ -4,7 +4,6 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
-import { onAppEvent } from "@/shared/realtime/socket";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -143,9 +142,9 @@ export const DashboardLayout = () => {
   const [bootstrappingAuth, setBootstrappingAuth] = useState(false);
   const [bootstrappedOnce, setBootstrappedOnce] = useState(false);
   const [sidebarProfileImage, setSidebarProfileImage] = useState<string>("");
-  const lastAutoRedirectKeyRef = useRef<string>("");
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
+  const onboardingCompleted = Boolean(user?.onboardingWizardCompleted);
   const shouldForceOnboarding =
     user?.role !== undefined &&
     ["requestor", "salesman", "manufacturer", "admin"].includes(user.role);
@@ -155,72 +154,17 @@ export const DashboardLayout = () => {
     if (!user) return;
     if (!shouldForceOnboarding) return;
     if (isWizardRoute) return;
+    if (onboardingCompleted) return;
 
-    const redirectKey = `${String(user.id)}:${location.pathname}:${location.search}`;
-    if (lastAutoRedirectKeyRef.current === redirectKey) return;
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await apiFetch<any>({
-          path: "/api/guide-progress/requestor-onboarding",
-          method: "GET",
-          token,
-        });
-        if (cancelled) return;
-        if (!res.ok) return;
-        const body: any = res.data || {};
-        const data = body.data || body;
-        const finishedAt = data?.finishedAt;
-        if (finishedAt) return;
-
-        lastAutoRedirectKeyRef.current = redirectKey;
-        navigate("/dashboard/wizard?mode=account", { replace: true });
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    navigate("/dashboard/wizard?mode=account", { replace: true });
   }, [
     isWizardRoute,
-    location.pathname,
-    location.search,
     navigate,
+    onboardingCompleted,
     shouldForceOnboarding,
     token,
     user,
   ]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (!user) return;
-    if (!shouldForceOnboarding) return;
-
-    const unsubscribe = onAppEvent((evt) => {
-      if (evt.type !== "guide-progress:updated") return;
-      const payload = evt.data || {};
-      if (payload?.tourId !== "requestor-onboarding") return;
-      const finishedAt = payload?.finishedAt;
-
-      if (!finishedAt) {
-        if (!location.pathname.startsWith("/dashboard/wizard")) {
-          navigate("/dashboard/wizard?mode=account", { replace: true });
-        }
-        return;
-      }
-
-      if (location.pathname.startsWith("/dashboard/wizard")) {
-        navigate("/dashboard", { replace: true });
-      }
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [location.pathname, navigate, shouldForceOnboarding, token, user]);
 
   useEffect(() => {
     if (bootstrappedOnce) return;

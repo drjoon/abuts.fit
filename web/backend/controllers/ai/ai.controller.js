@@ -1,6 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";
-import RequestorOrganization from "../../models/requestorOrganization.model.js";
+import Organization from "../../models/organization.model.js";
+import {
+  assertOrganizationRole,
+  buildOrganizationTypeFilter,
+} from "../organizations/organizationRole.util.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 
 // 지연 초기화: dotenv 로드 후 첫 호출 시 초기화
@@ -41,17 +45,18 @@ export async function parseBusinessLicense(req, res) {
       });
     }
 
-    if (!req.user || req.user.role !== "requestor") {
-      return res.status(403).json({
-        success: false,
-        message: "접근 권한이 없습니다.",
-      });
-    }
+    const roleCheck = assertOrganizationRole(req, res);
+    if (!roleCheck) return;
+    const { organizationType } = roleCheck;
 
     const hasOrganization = !!req.user.organizationId;
     let org = null;
     if (hasOrganization) {
-      org = await RequestorOrganization.findById(req.user.organizationId)
+      const orgTypeFilter = buildOrganizationTypeFilter(organizationType);
+      org = await Organization.findOne({
+        _id: req.user.organizationId,
+        ...orgTypeFilter,
+      })
         .select({ owner: 1, owners: 1 })
         .lean();
       const meId = String(req.user._id);
@@ -121,7 +126,7 @@ export async function parseBusinessLicense(req, res) {
       };
 
       if (hasOrganization && org?._id) {
-        await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
+        await Organization.findByIdAndUpdate(req.user.organizationId, {
           $set: {
             businessLicense: {
               fileId: fileId || null,
@@ -333,7 +338,7 @@ export async function parseBusinessLicense(req, res) {
 
     if (hasOrganization && org?._id) {
       try {
-        await RequestorOrganization.findByIdAndUpdate(req.user.organizationId, {
+        await Organization.findByIdAndUpdate(req.user.organizationId, {
           $set: normalizedBusinessNumber ? setWithBusinessNumber : baseSet,
         });
       } catch (e) {
@@ -345,18 +350,15 @@ export async function parseBusinessLicense(req, res) {
               "사업자등록번호가 이미 등록되어 있어 자동 저장을 건너뛰었습니다. 사업자등록번호를 확인하거나, 기존 기공소에 가입 요청을 진행해주세요.",
           };
 
-          await RequestorOrganization.findByIdAndUpdate(
-            req.user.organizationId,
-            {
-              $set: {
-                ...baseSet,
-                verification: {
-                  ...verificationOverride,
-                  checkedAt: new Date(),
-                },
+          await Organization.findByIdAndUpdate(req.user.organizationId, {
+            $set: {
+              ...baseSet,
+              verification: {
+                ...verificationOverride,
+                checkedAt: new Date(),
               },
             },
-          );
+          });
 
           return res.json({
             success: true,
