@@ -79,7 +79,7 @@ const getRoleBadgeVariant = (role: string) => {
 
 type UiUserStatus = "active" | "pending" | "inactive" | "suspended";
 
-const PAGE_LIMIT = 60;
+const PAGE_LIMIT = 20;
 
 type ApiUser = {
   _id: string;
@@ -223,18 +223,7 @@ export const AdminUserManagement = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [creatingUser, setCreatingUser] = useState(false);
-  const [createdTempPassword, setCreatedTempPassword] = useState<string | null>(
-    null,
-  );
-  const [createForm, setCreateForm] = useState({
-    name: "",
-    email: "",
-    role: "requestor",
-    organization: "",
-  });
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
 
   const fetchUsers = useCallback(
     async (targetPage = 1, append = false) => {
@@ -327,67 +316,6 @@ export const AdminUserManagement = () => {
     [toast, token],
   );
 
-  const createUser = useCallback(async () => {
-    if (!token) return;
-
-    const email = createForm.email.trim().toLowerCase();
-    if (!email) {
-      toast({
-        title: "입력 오류",
-        description: "이메일은 필수입니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setCreatingUser(true);
-    setCreatedTempPassword(null);
-    try {
-      const res = await request<any>({
-        path: "/api/admin/users",
-        method: "POST",
-        token,
-        jsonBody: {
-          name: createForm.name,
-          email,
-          role: createForm.role,
-          organization: createForm.organization,
-          autoActivate: true,
-        },
-      });
-
-      if (!res.ok || !res.data?.success) {
-        toast({
-          title: "사용자 생성 실패",
-          description: res.data?.message || "잠시 후 다시 시도해주세요.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const tempPassword = res.data?.data?.tempPassword || null;
-      setCreatedTempPassword(tempPassword);
-
-      toast({
-        title: "사용자 생성 완료",
-        description: tempPassword
-          ? "임시 비밀번호가 발급되었습니다. 복사 후 전달하세요."
-          : "사용자가 생성되었습니다.",
-      });
-      await fetchUsers();
-    } finally {
-      setCreatingUser(false);
-    }
-  }, [
-    createForm.email,
-    createForm.name,
-    createForm.organization,
-    createForm.role,
-    fetchUsers,
-    toast,
-    token,
-  ]);
-
   const approveUser = useCallback(
     async (userId: string) => {
       if (!token) return false;
@@ -445,7 +373,10 @@ export const AdminUserManagement = () => {
         if (!hasMore) return;
         void fetchUsers(page + 1, true);
       },
-      { rootMargin: "240px" },
+      {
+        root: listContainerRef.current || null,
+        rootMargin: listContainerRef.current ? "200px" : "240px",
+      },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -703,25 +634,6 @@ export const AdminUserManagement = () => {
           </Card>
         )}
         <div className="flex gap-4 flex-wrap">
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              size="sm"
-              className="bg-orange-600 hover:bg-orange-700 text-white"
-              onClick={() => {
-                setCreateOpen(true);
-                setCreatedTempPassword(null);
-                setCreateForm({
-                  name: "",
-                  email: "",
-                  role: "requestor",
-                  organization: "",
-                });
-              }}
-            >
-              사용자 추가
-            </Button>
-          </div>
-
           <div className="relative flex-1 min-w-[280px]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -930,102 +842,6 @@ export const AdminUserManagement = () => {
             )}
           </CardContent>
         </Card>
-
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>사용자 추가</DialogTitle>
-            </DialogHeader>
-
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <div className="text-sm text-muted-foreground mb-1">이름</div>
-                  <Input
-                    value={createForm.name}
-                    onChange={(e) =>
-                      setCreateForm((p) => ({ ...p, name: e.target.value }))
-                    }
-                    placeholder="이름"
-                  />
-                </div>
-                <div>
-                  <div className="text-sm text-muted-foreground mb-1">역할</div>
-                  <Select
-                    value={createForm.role}
-                    onValueChange={(v) =>
-                      setCreateForm((p) => ({ ...p, role: v }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="역할 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="requestor">의뢰자</SelectItem>
-                      <SelectItem value="salesman">영업자</SelectItem>
-                      <SelectItem value="manufacturer">제조사</SelectItem>
-                      <SelectItem value="admin">관리자</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-sm text-muted-foreground mb-1">이메일</div>
-                <Input
-                  value={createForm.email}
-                  onChange={(e) =>
-                    setCreateForm((p) => ({ ...p, email: e.target.value }))
-                  }
-                  placeholder="email@example.com"
-                />
-              </div>
-
-              <div>
-                <div className="text-sm text-muted-foreground mb-1">조직</div>
-                <Input
-                  value={createForm.organization}
-                  onChange={(e) =>
-                    setCreateForm((p) => ({
-                      ...p,
-                      organization: e.target.value,
-                    }))
-                  }
-                  placeholder="조직명(선택)"
-                />
-              </div>
-
-              {createdTempPassword && (
-                <div className="p-3 rounded-lg border border-orange-200 bg-orange-50">
-                  <div className="text-sm font-semibold text-orange-800">
-                    임시 비밀번호
-                  </div>
-                  <div className="mt-1 font-mono text-sm break-all text-orange-900">
-                    {createdTempPassword}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setCreateOpen(false)}
-                  disabled={creatingUser}
-                >
-                  닫기
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => void createUser()}
-                  disabled={creatingUser}
-                >
-                  {creatingUser ? "생성 중..." : "생성"}
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
           <DialogContent className="max-w-6xl w-full">
