@@ -22,7 +22,7 @@ import {
 import {
   BusinessLicenseUpload,
   type BusinessLicenseUploadHandle,
-} from "./business/BusinessLicenseUpload";
+} from "@/shared/components/business/BusinessLicenseUpload";
 import { BusinessForm } from "./business/BusinessForm";
 import { OrganizationSearchSection } from "./business/OrganizationSearchSection";
 import { JoinRequestsSection } from "./business/JoinRequestsSection";
@@ -32,7 +32,7 @@ import {
   BusinessData,
   LicenseStatus,
   MembershipStatus,
-} from "./business/types";
+} from "@/shared/components/business/types";
 import {
   normalizeBusinessNumber,
   normalizePhoneNumber,
@@ -295,7 +295,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
       try {
         if (!token) return;
         const res = await request<any>({
-          path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+          path: `/api/organizations/me?organizationType=${encodeURIComponent(
             organizationType,
           )}`,
           method: "GET",
@@ -477,7 +477,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     const t = setTimeout(async () => {
       try {
         const res = await request<any>({
-          path: `/api/requestor-organizations/search?q=${encodeURIComponent(
+          path: `/api/organizations/search?q=${encodeURIComponent(
             q,
           )}&organizationType=${encodeURIComponent(organizationType)}`,
           method: "GET",
@@ -514,7 +514,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
         }
         setJoinRequestsLoaded(false);
         const res = await request<any>({
-          path: `/api/requestor-organizations/join-requests/me?organizationType=${encodeURIComponent(
+          path: `/api/organizations/join-requests/me?organizationType=${encodeURIComponent(
             organizationType,
           )}`,
           method: "GET",
@@ -538,7 +538,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
   const refreshMembership = async () => {
     if (!token) return;
     const res = await request<any>({
-      path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+      path: `/api/organizations/me?organizationType=${encodeURIComponent(
         organizationType,
       )}`,
       method: "GET",
@@ -556,7 +556,7 @@ export const BusinessTab = ({ userData }: BusinessTabProps) => {
     if (!token) return;
     setJoinRequestsLoaded(false);
     const res = await request<any>({
-      path: `/api/requestor-organizations/join-requests/me?organizationType=${encodeURIComponent(
+      path: `/api/organizations/join-requests/me?organizationType=${encodeURIComponent(
         organizationType,
       )}`,
       method: "GET",

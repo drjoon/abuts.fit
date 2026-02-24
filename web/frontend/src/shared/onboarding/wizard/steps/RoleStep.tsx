@@ -57,7 +57,7 @@ export const RoleStep = ({
           onClick={() => handleSelect("member")}
         >
           <span className="text-base font-semibold">직원</span>
-          <span className="text-xs opacity-80">기존 조직 가입</span>
+          <span className="text-xs opacity-80">기존 사업자 가입</span>
         </Button>
       </div>
     </div>

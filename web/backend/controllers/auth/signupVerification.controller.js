@@ -183,7 +183,7 @@ export async function sendSignupEmailVerification(req, res) {
       4,
       "0",
     );
-    const expiresAt = new Date(now + 10 * 60 * 1000);
+    const expiresAt = new Date(now + 5 * 60 * 1000);
     const sentAt = new Date(now);
 
     await updateSendState({
@@ -212,7 +212,7 @@ export async function sendSignupEmailVerification(req, res) {
               <p style="margin:0;font-size:36px;font-weight:700;letter-spacing:0.15em;color:#34d399;">${verificationCode}</p>
             </div>
             <p style="margin:0;color:rgba(255,255,255,0.6);font-size:13px;">
-              이 코드는 10분간 유효합니다.
+              이 코드는 5분간 유효합니다.
             </p>
           </td>
         </tr>
@@ -224,7 +224,7 @@ export async function sendSignupEmailVerification(req, res) {
         to: email,
         subject,
         html,
-        text: `회원가입 인증 코드: ${verificationCode}\n10분 안에 입력해주세요.`,
+        text: `회원가입 인증 코드: ${verificationCode}\n5분 안에 입력해주세요.`,
       });
       console.log("[email-sent] signup verification", {
         email,

@@ -75,7 +75,7 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
       if (!token) return;
       try {
         const res = await request<any>({
-          path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+          path: `/api/organizations/me?organizationType=${encodeURIComponent(
             organizationType,
           )}`,
           method: "GET",

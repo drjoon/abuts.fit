@@ -74,11 +74,68 @@ export const SettingsWizard = ({
     }
     return "requestor";
   }, [user?.role]);
+  const storageIdentity = useMemo(() => {
+    const resolvedUser = user as {
+      _id?: string;
+      id?: string;
+      email?: string;
+    } | null;
+    return String(
+      resolvedUser?._id ||
+        resolvedUser?.id ||
+        resolvedUser?.email ||
+        token ||
+        "anonymous",
+    );
+  }, [token, user]);
+  const roleStorageKey = useMemo(() => {
+    return `onboarding:wizard-role:${organizationType}:${mode}:${storageIdentity}`;
+  }, [organizationType, mode, storageIdentity]);
+  const legacyRoleStorageKey = useMemo(() => {
+    return `onboarding:wizard-role:${organizationType}:${storageIdentity}`;
+  }, [organizationType, storageIdentity]);
+  const fallbackRoleStorageKey = useMemo(() => {
+    return `onboarding:wizard-role:${organizationType}:${mode}`;
+  }, [organizationType, mode]);
+  const stepStorageKey = useMemo(() => {
+    return `onboarding:wizard-step:${organizationType}:${mode}:${storageIdentity}`;
+  }, [organizationType, mode, storageIdentity]);
+  const legacyStepStorageKey = useMemo(() => {
+    return `onboarding:wizard-step:${organizationType}:${storageIdentity}`;
+  }, [organizationType, storageIdentity]);
+  const fallbackStepStorageKey = useMemo(() => {
+    return `onboarding:wizard-step:${organizationType}:${mode}`;
+  }, [organizationType, mode]);
+  const readStoredStep = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const raw =
+      window.localStorage.getItem(stepStorageKey) ||
+      window.localStorage.getItem(legacyStepStorageKey) ||
+      window.localStorage.getItem(fallbackStepStorageKey) ||
+      "";
+    const resolved = STEP_ORDER.includes(raw as WizardStepId)
+      ? (raw as WizardStepId)
+      : null;
+    if (resolved && raw === window.localStorage.getItem(legacyStepStorageKey)) {
+      window.localStorage.setItem(stepStorageKey, resolved);
+      window.localStorage.removeItem(legacyStepStorageKey);
+    }
+    return resolved;
+  }, [fallbackStepStorageKey, legacyStepStorageKey, stepStorageKey]);
   const [progress, setProgress] = useState<BackendGuideProgress | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState<WizardStepId | null>(null);
   const [selectedRole, setSelectedRole] = useState<"owner" | "member" | null>(
-    null,
+    () => {
+      if (typeof window === "undefined") return null;
+      const storedRole =
+        window.localStorage.getItem(roleStorageKey) ||
+        window.localStorage.getItem(legacyRoleStorageKey) ||
+        window.localStorage.getItem(fallbackRoleStorageKey);
+      return storedRole === "owner" || storedRole === "member"
+        ? storedRole
+        : null;
+    },
   );
   const [stepCompleted, setStepCompleted] = useState<
     Record<WizardStepId, boolean>
@@ -154,11 +211,13 @@ export const SettingsWizard = ({
     });
     setStepCompleted(nextCompleted);
     setCurrentStep((prev) => {
+      const storedStep = readStoredStep();
+      if (storedStep && !nextCompleted[storedStep]) return storedStep;
       const firstIncomplete = STEP_ORDER.find((step) => !nextCompleted[step]);
       if (firstIncomplete) return firstIncomplete;
       return prev ?? "organization";
     });
-  }, [progress?.steps]);
+  }, [progress?.steps, readStoredStep]);
 
   useEffect(() => {
     if (progress?.finishedAt) {
@@ -176,6 +235,19 @@ export const SettingsWizard = ({
       setCurrentStep(nextStep);
     }
   }, [currentStep, stepCompleted]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !currentStep) return;
+    window.localStorage.setItem(stepStorageKey, currentStep);
+    window.localStorage.setItem(fallbackStepStorageKey, currentStep);
+  }, [currentStep, fallbackStepStorageKey, stepStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!selectedRole) return;
+    window.localStorage.setItem(roleStorageKey, selectedRole);
+    window.localStorage.setItem(fallbackRoleStorageKey, selectedRole);
+  }, [fallbackRoleStorageKey, roleStorageKey, selectedRole]);
 
   const markGuideStep = useCallback(
     async (step: WizardStepId, done: boolean) => {
@@ -272,24 +344,7 @@ export const SettingsWizard = ({
       case "role":
         return "역할 선택";
       case "organization":
-        return selectedRole === "owner" ? "사업자 등록" : "조직 가입";
-      default:
-        return "";
-    }
-  }, [currentStep, selectedRole]);
-
-  const stepDescription = useMemo(() => {
-    switch (currentStep) {
-      case "profile":
-        return "이름과 프로필 이미지를 설정하세요.";
-      case "phone":
-        return "휴대전화 번호를 인증하세요.";
-      case "role":
-        return "대표 또는 직원 중 선택하세요.";
-      case "organization":
-        return selectedRole === "owner"
-          ? "사업자 정보를 입력해 대표 등록을 완료하세요."
-          : "기공소를 검색해 소속 신청을 보내세요.";
+        return selectedRole === "owner" ? "사업자 등록" : "사업자 가입";
       default:
         return "";
     }

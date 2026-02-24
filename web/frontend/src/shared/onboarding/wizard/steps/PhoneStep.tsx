@@ -290,6 +290,16 @@ export const PhoneStep = ({
     [focusCodeInput, sendCode, verificationSent],
   );
 
+  const handleCodeInputKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (code.trim().length !== 4) return;
+      void handleNextAction();
+    },
+    [code, handleNextAction],
+  );
+
   useEffect(() => {
     registerGoNextAction?.(() => handleNextAction());
     return () => registerGoNextAction?.(null);
@@ -424,6 +434,7 @@ export const PhoneStep = ({
             placeholder="4자리"
             inputMode="numeric"
             maxLength={4}
+            onKeyDown={handleCodeInputKeyDown}
             className={cn(codeError ? "border-destructive" : "")}
           />
         </div>

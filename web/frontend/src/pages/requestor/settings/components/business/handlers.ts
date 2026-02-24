@@ -190,7 +190,7 @@ export const handleSave = async (
     }
 
     const res = await request<any>({
-      path: "/api/requestor-organizations/me",
+      path: "/api/organizations/me",
       method: "PUT",
       token,
       headers: mockHeaders,
@@ -363,7 +363,7 @@ export const handleDeleteLicense = async (
 
     setLicenseDeleteLoading(true);
     const res = await request<any>({
-      path: "/api/requestor-organizations/me/business-license",
+      path: "/api/organizations/me/business-license",
       method: "DELETE",
       token,
       headers: mockHeaders,
@@ -430,7 +430,7 @@ export const handleJoinOrLeave = async (params: HandleJoinOrLeaveParams) => {
 
     setCancelLoadingOrgId(orgId);
     const res = await request<any>({
-      path: `/api/requestor-organizations/join-requests/${orgId}/${action}`,
+      path: `/api/organizations/join-requests/${orgId}/${action}`,
       method: "POST",
       token,
       headers: mockHeaders,
@@ -508,7 +508,7 @@ export const handleJoinRequest = async (params: HandleJoinRequestParams) => {
 
     setJoinLoading(true);
     const res = await request<any>({
-      path: "/api/requestor-organizations/join-requests",
+      path: "/api/organizations/join-requests",
       method: "POST",
       token,
       headers: mockHeaders,

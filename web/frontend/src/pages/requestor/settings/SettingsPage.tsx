@@ -67,7 +67,7 @@ export const RequestorSettingsPage = () => {
       setLoadingMembership(true);
       try {
         const res = await request<any>({
-          path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
+          path: `/api/organizations/me?organizationType=${encodeURIComponent(
             organizationType,
           )}`,
           method: "GET",

@@ -480,18 +480,34 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         return false;
       }
 
-      const orgRes = await request<any>({
-        path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(
-          organizationType,
-        )}`,
-        method: "GET",
-        token,
-        headers: mockHeaders,
-      });
-      const orgBody: any = orgRes.data || {};
-      const org = orgBody?.data || orgBody;
-      const membership = String(org?.membership || "none");
-      const hasBusinessNumber = org?.hasBusinessNumber === true;
+      let membership: "owner" | "member" | "pending" | "none" = "none";
+      let hasBusinessNumber = false;
+      try {
+        const orgRes = await request<any>({
+          path: `/api/organizations/me?organizationType=${encodeURIComponent(
+            organizationType,
+          )}`,
+          method: "GET",
+          token,
+          headers: mockHeaders,
+        });
+        if (orgRes.ok) {
+          const orgBody: any = orgRes.data || {};
+          const orgData = orgBody?.data || orgBody;
+          membership = (orgData?.membership || "none") as
+            | "owner"
+            | "member"
+            | "pending"
+            | "none";
+          const businessNumberRaw = String(
+            orgData?.extracted?.businessNumber || "",
+          ).trim();
+          hasBusinessNumber = Boolean(businessNumberRaw);
+        }
+      } catch {
+        // ignore
+      }
+
       if (!hasBusinessNumber) {
         toast({
           title: "설정이 필요합니다",

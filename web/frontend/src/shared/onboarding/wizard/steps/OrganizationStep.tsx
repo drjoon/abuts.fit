@@ -8,8 +8,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { Loader2, Search, CheckCircle2 } from "lucide-react";
 import { cn } from "@/shared/ui/cn";
-import { BusinessLicenseUpload } from "@/pages/requestor/settings/components/business/BusinessLicenseUpload";
-import type { LicenseStatus } from "@/pages/requestor/settings/components/business/types";
+import { BusinessLicenseUpload } from "@/shared/components/business/BusinessLicenseUpload";
+import type { LicenseStatus } from "@/shared/components/business/types";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 
 interface OrganizationStepProps {
@@ -23,9 +23,9 @@ interface OrganizationStepProps {
 const OWNER_FIELDS = [
   {
     key: "companyName",
-    label: "기공소 이름",
-    placeholder: "어벗츠 기공소",
-    span: "lg:col-span-2",
+    label: "사업자 이름",
+    placeholder: "어벗츠 사업자",
+    span: "sm:col-span-1",
   },
   {
     key: "representativeName",
@@ -49,16 +49,22 @@ const OWNER_FIELDS = [
     key: "email",
     label: "세금계산서 이메일",
     placeholder: "lab@example.com",
-    span: "lg:col-span-2",
+    span: "sm:col-span-1",
   },
 ];
 
 const OWNER_EXTRA_FIELDS = [
   {
     key: "address",
-    label: "사업장 주소",
-    placeholder: "서울시 ...",
-    span: "lg:col-span-3",
+    label: "사업자 주소",
+    placeholder: "주소 검색",
+    span: "sm:col-span-1",
+  },
+  {
+    key: "addressDetail",
+    label: "사업자 세부 주소",
+    placeholder: "상세 주소 입력",
+    span: "sm:col-span-1",
   },
   {
     key: "businessType",
@@ -74,13 +80,39 @@ const OWNER_EXTRA_FIELDS = [
   },
   {
     key: "startDate",
-    label: "개업연월일 (YYYYMMDD)",
-    placeholder: "20230101",
-    span: "lg:col-span-1",
+    label: "개업연월일",
+    placeholder: "YYYYMMDD",
+    span: "sm:col-span-1",
   },
 ];
 
 const OWNER_ALL_FIELDS = [...OWNER_FIELDS, ...OWNER_EXTRA_FIELDS];
+
+const normalizePhoneDigits = (value: string) => value.replace(/\D/g, "");
+
+const formatPhoneNumber = (value: string) => {
+  const digits = normalizePhoneDigits(value);
+  if (!digits) return "";
+  if (digits.startsWith("02")) {
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    if (digits.length <= 9) {
+      return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
+    }
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  }
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  if (digits.length <= 10) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
+};
+
+const isValidPhoneNumber = (value: string) => {
+  const digits = normalizePhoneDigits(value);
+  return digits.length >= 9 && digits.length <= 11;
+};
 
 interface OwnerFormState {
   companyName: string;
@@ -91,6 +123,7 @@ interface OwnerFormState {
   businessType: string;
   businessItem: string;
   address: string;
+  addressDetail: string;
   startDate: string;
 }
 
@@ -103,6 +136,7 @@ const initialOwnerState: OwnerFormState = {
   businessType: "",
   businessItem: "",
   address: "",
+  addressDetail: "",
   startDate: "",
 };
 
@@ -114,6 +148,43 @@ interface OrganizationResult {
   address?: string;
 }
 
+declare global {
+  interface Window {
+    daum?: {
+      Postcode?: new (options: {
+        oncomplete: (data: {
+          address?: string;
+          roadAddress?: string;
+          jibunAddress?: string;
+        }) => void;
+        onclose?: () => void;
+      }) => { open: (options?: { popupName?: string }) => void };
+    };
+  }
+}
+
+const POSTCODE_SCRIPT_SRC =
+  "https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+
+let postcodeScriptPromise: Promise<void> | null = null;
+const POSTCODE_POPUP_NAME = "daum-postcode";
+let postcodePopupOpen = false;
+
+const loadPostcodeScript = () => {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (window.daum?.Postcode) return Promise.resolve();
+  if (postcodeScriptPromise) return postcodeScriptPromise;
+  postcodeScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = POSTCODE_SCRIPT_SRC;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("주소 검색 스크립트 로딩 실패"));
+    document.body.appendChild(script);
+  });
+  return postcodeScriptPromise;
+};
+
 export const OrganizationStep = ({
   role,
   organizationType,
@@ -121,6 +192,7 @@ export const OrganizationStep = ({
   onComplete,
   registerGoNextAction,
 }: OrganizationStepProps) => {
+  const resolvedRole = role ?? "member";
   const { token, user } = useAuthStore();
   const { toast } = useToast();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
@@ -144,12 +216,69 @@ export const OrganizationStep = ({
   const ownerFieldRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [memberError, setMemberError] = useState("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [showManualInput, setShowManualInput] = useState(false);
+  const ownerFormRef = useRef<OwnerFormState>(initialOwnerState);
+  const hasLoadedRef = useRef(false);
+
+  const localDraftKey = useMemo(() => {
+    const resolvedUser = user as {
+      _id?: string;
+      id?: string;
+      email?: string;
+    } | null;
+    const userId = String(
+      resolvedUser?._id ||
+        resolvedUser?.id ||
+        resolvedUser?.email ||
+        token ||
+        "anonymous",
+    );
+    return `onboarding:business-draft:${organizationType}:${userId}`;
+  }, [organizationType, token, user]);
+
+  const readLocalDraft = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(localDraftKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, [localDraftKey]);
+
+  const clearLocalDraft = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(localDraftKey);
+  }, [localDraftKey]);
+
+  const focusFirstEmptyOwnerField = useCallback((form: OwnerFormState) => {
+    const fieldOrder = OWNER_ALL_FIELDS.map((field) => field.key);
+    const target =
+      fieldOrder.find(
+        (key) => !String(form[key as keyof OwnerFormState]).trim(),
+      ) || fieldOrder[0];
+    ownerFieldRefs.current[target]?.focus();
+  }, []);
 
   useEffect(() => {
     if (defaultCompleted) {
       setCompleted(true);
     }
   }, [defaultCompleted]);
+
+  useEffect(() => {
+    ownerFormRef.current = ownerForm;
+  }, [ownerForm]);
+
+  useEffect(() => {
+    if (resolvedRole === "member") {
+      searchInputRef.current?.focus();
+      return;
+    }
+    if (resolvedRole === "owner" && showManualInput) {
+      ownerFieldRefs.current.companyName?.focus();
+    }
+  }, [resolvedRole, showManualInput]);
 
   useEffect(() => {
     if (!token) return;
@@ -159,7 +288,7 @@ export const OrganizationStep = ({
       setLoading(true);
       try {
         const res = await request<any>({
-          path: `/api/requestor-organizations/me?organizationType=${encodeURIComponent(organizationType)}`,
+          path: `/api/organizations/me?organizationType=${encodeURIComponent(organizationType)}`,
           method: "GET",
           token,
         });
@@ -179,31 +308,70 @@ export const OrganizationStep = ({
         const extracted = data?.extracted || {};
         const org = data?.organization || {};
         const license = org?.businessLicense || {};
-        setOwnerForm((prev) => ({
-          ...prev,
-          companyName: String(org?.name || prev.companyName),
-          representativeName: String(
-            extracted?.representativeName || prev.representativeName,
-          ),
-          businessNumber: String(
-            extracted?.businessNumber || prev.businessNumber,
-          ),
-          phone: String(extracted?.phoneNumber || prev.phone),
-          email: String(extracted?.email || prev.email),
-          businessType: String(extracted?.businessType || prev.businessType),
-          businessItem: String(extracted?.businessItem || prev.businessItem),
-          address: String(extracted?.address || prev.address),
-          startDate: String(extracted?.startDate || prev.startDate),
-        }));
+        const localDraft = readLocalDraft();
+        const localOwner = localDraft?.ownerForm || {};
+        const localLicense = localDraft?.license || {};
+        setOwnerForm((prev) => {
+          const nextForm: OwnerFormState = {
+            ...prev,
+            companyName: String(org?.name || prev.companyName),
+            representativeName: String(
+              extracted?.representativeName || prev.representativeName,
+            ),
+            businessNumber: String(
+              extracted?.businessNumber || prev.businessNumber,
+            ),
+            phone: formatPhoneNumber(
+              String(extracted?.phoneNumber || prev.phone),
+            ),
+            email: String(extracted?.email || prev.email),
+            businessType: String(extracted?.businessType || prev.businessType),
+            businessItem: String(extracted?.businessItem || prev.businessItem),
+            address: String(extracted?.address || prev.address),
+            startDate: String(extracted?.startDate || prev.startDate),
+            addressDetail: String(prev.addressDetail || ""),
+          };
+          Object.keys(nextForm).forEach((key) => {
+            const typedKey = key as keyof OwnerFormState;
+            if (
+              !String(nextForm[typedKey] || "").trim() &&
+              String(localOwner?.[typedKey] || "").trim()
+            ) {
+              nextForm[typedKey] = String(localOwner[typedKey]);
+            }
+          });
+          return nextForm;
+        });
         const nextLicenseFileName = String(license?.originalName || "").trim();
         const nextLicenseFileId = String(license?.fileId || "").trim();
         const nextLicenseS3Key = String(license?.s3Key || "").trim();
-        setLicenseFileName(nextLicenseFileName);
-        setLicenseFileId(nextLicenseFileId);
-        setLicenseS3Key(nextLicenseS3Key);
-        setLicenseStatus(nextLicenseFileName ? "ready" : "missing");
+        const fallbackLicenseName = String(localLicense?.fileName || "").trim();
+        const fallbackLicenseId = String(localLicense?.fileId || "").trim();
+        const fallbackLicenseS3Key = String(localLicense?.s3Key || "").trim();
+        const resolvedLicenseName = nextLicenseFileName || fallbackLicenseName;
+        const fallbackStatus = String(localLicense?.status || "ready");
+        const resolvedStatus: LicenseStatus = [
+          "missing",
+          "uploading",
+          "uploaded",
+          "processing",
+          "ready",
+          "error",
+        ].includes(fallbackStatus)
+          ? (fallbackStatus as LicenseStatus)
+          : "ready";
+        setLicenseFileName(resolvedLicenseName);
+        setLicenseFileId(nextLicenseFileId || fallbackLicenseId);
+        setLicenseS3Key(nextLicenseS3Key || fallbackLicenseS3Key);
+        setLicenseStatus(resolvedLicenseName ? resolvedStatus : "missing");
+        if (localDraft?.showManualInput || Object.values(localOwner).length) {
+          setShowManualInput(true);
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          hasLoadedRef.current = true;
+        }
       }
     };
 
@@ -211,10 +379,10 @@ export const OrganizationStep = ({
     return () => {
       cancelled = true;
     };
-  }, [organizationType, onComplete, token]);
+  }, [organizationType, onComplete, readLocalDraft, token]);
 
   useEffect(() => {
-    if (!token || role !== "member" || !search.trim()) {
+    if (!token || resolvedRole !== "member" || !search.trim()) {
       setResults([]);
       return;
     }
@@ -222,7 +390,7 @@ export const OrganizationStep = ({
     const timer = setTimeout(async () => {
       try {
         const res = await request<any>({
-          path: `/api/requestor-organizations/search?q=${encodeURIComponent(search.trim())}&organizationType=${encodeURIComponent(organizationType)}`,
+          path: `/api/organizations/search?q=${encodeURIComponent(search.trim())}&organizationType=${encodeURIComponent(organizationType)}`,
           method: "GET",
           token,
         });
@@ -239,7 +407,7 @@ export const OrganizationStep = ({
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [organizationType, role, search, token]);
+  }, [organizationType, resolvedRole, search, token]);
 
   const markComplete = () => {
     if (completed) return;
@@ -324,7 +492,7 @@ export const OrganizationStep = ({
       const processingToast = toast({
         title: "AI 인식 중",
         description:
-          "사업자등록증을 인식하고 있어요. 약 5초 정도 걸릴 수 있어요.",
+          "사업자등록증을 인식하고 있어요. 약 10초 내외 걸릴 수 있어요.",
         duration: 60000,
       });
       const res = await request<any>({
@@ -346,35 +514,61 @@ export const OrganizationStep = ({
         const body: any = res.data || {};
         const data = body.data || body;
         const extracted = data?.extracted || {};
-        setOwnerForm((prev) => ({
-          ...prev,
-          companyName:
-            prev.companyName || String(extracted?.companyName || "").trim(),
-          representativeName:
-            prev.representativeName ||
-            String(extracted?.representativeName || "").trim(),
-          businessNumber:
-            prev.businessNumber ||
-            String(extracted?.businessNumber || "").trim(),
-          phone: prev.phone || String(extracted?.phoneNumber || "").trim(),
-          email: prev.email || String(extracted?.email || "").trim(),
-          businessType:
-            prev.businessType || String(extracted?.businessType || "").trim(),
-          businessItem:
-            prev.businessItem || String(extracted?.businessItem || "").trim(),
-          address: prev.address || String(extracted?.address || "").trim(),
-          startDate:
-            prev.startDate || String(extracted?.startDate || "").trim(),
-        }));
+        let nextForm: OwnerFormState | null = null;
+        setOwnerForm((prev) => {
+          nextForm = {
+            ...prev,
+            companyName:
+              prev.companyName || String(extracted?.companyName || "").trim(),
+            representativeName:
+              prev.representativeName ||
+              String(extracted?.representativeName || "").trim(),
+            businessNumber:
+              prev.businessNumber ||
+              String(extracted?.businessNumber || "").trim(),
+            phone:
+              prev.phone ||
+              formatPhoneNumber(String(extracted?.phoneNumber || "").trim()),
+            email: prev.email || String(extracted?.email || "").trim(),
+            businessType:
+              prev.businessType || String(extracted?.businessType || "").trim(),
+            businessItem:
+              prev.businessItem || String(extracted?.businessItem || "").trim(),
+            address: prev.address || String(extracted?.address || "").trim(),
+            startDate:
+              prev.startDate || String(extracted?.startDate || "").trim(),
+          };
+          return nextForm;
+        });
         setIsVerified(Boolean(data?.verification?.verified));
         setLicenseStatus("ready");
+        setShowManualInput(true);
         processingToast.dismiss();
+        requestAnimationFrame(() => {
+          focusFirstEmptyOwnerField(nextForm || ownerFormRef.current);
+        });
       } else {
         setLicenseStatus("error");
         processingToast.dismiss();
+        setShowManualInput(true);
+        toast({
+          title: "사업자등록증 인식 실패",
+          description: "직접 입력으로 이어집니다.",
+          variant: "destructive",
+        });
+        requestAnimationFrame(() => {
+          focusFirstEmptyOwnerField(ownerFormRef.current);
+        });
       }
     },
-    [canUploadLicense, licenseFileName, token, toast, uploadFilesWithToast],
+    [
+      canUploadLicense,
+      focusFirstEmptyOwnerField,
+      licenseFileName,
+      token,
+      toast,
+      uploadFilesWithToast,
+    ],
   );
 
   const validateOwnerForm = (): boolean => {
@@ -392,7 +586,7 @@ export const OrganizationStep = ({
     ];
     requiredKeys.forEach((key) => {
       if (!ownerForm[key as keyof OwnerFormState]?.toString().trim()) {
-        errors[key] = "필수 입력값입니다";
+        errors[key] = "필수 값입니다";
       }
     });
     if (
@@ -400,6 +594,9 @@ export const OrganizationStep = ({
       ownerForm.businessNumber.replace(/\D/g, "").length !== 10
     ) {
       errors.businessNumber = "10자리 숫자로 입력해주세요";
+    }
+    if (ownerForm.phone && !isValidPhoneNumber(ownerForm.phone)) {
+      errors.phone = "전화번호 형식이 올바르지 않습니다";
     }
     if (
       ownerForm.startDate &&
@@ -424,19 +621,19 @@ export const OrganizationStep = ({
     setSaving(true);
     try {
       const res = await request<any>({
-        path: "/api/requestor-organizations/me",
+        path: "/api/organizations/me",
         method: "PUT",
         token,
         jsonBody: {
           organizationType,
           name: ownerForm.companyName.trim(),
           representativeName: ownerForm.representativeName.trim(),
-          phoneNumber: ownerForm.phone.trim(),
+          phoneNumber: normalizePhoneDigits(ownerForm.phone),
           businessNumber: ownerForm.businessNumber.replace(/\D/g, ""),
           businessType: ownerForm.businessType.trim(),
           businessItem: ownerForm.businessItem.trim(),
           email: ownerForm.email.trim(),
-          address: ownerForm.address.trim(),
+          address: `${ownerForm.address} ${ownerForm.addressDetail}`.trim(),
           startDate: ownerForm.startDate.replace(/\D/g, ""),
           ...(licenseFileId || licenseS3Key || licenseFileName
             ? {
@@ -451,7 +648,10 @@ export const OrganizationStep = ({
       });
       if (!res.ok) {
         const body: any = res.data || {};
-        const message = String(body?.message || "저장에 실패했습니다.");
+        const rawMessage = String(body?.message || "저장에 실패했습니다.");
+        const message = /확인할 수 없습니다|사업자등록번호/.test(rawMessage)
+          ? "사업자등록정보에 오류가 있습니다."
+          : rawMessage;
         toast({
           title: "저장 실패",
           description: message,
@@ -460,6 +660,7 @@ export const OrganizationStep = ({
         return false;
       }
       toast({ title: "사업자 정보가 저장되었습니다" });
+      clearLocalDraft();
       setMembership("owner");
       markComplete();
       return true;
@@ -478,7 +679,7 @@ export const OrganizationStep = ({
     }
     if (!selectedOrgId) {
       const message = search.trim()
-        ? "기공소를 선택해주세요"
+        ? "사업자를 선택해주세요"
         : "검색어를 입력해주세요";
       setMemberError(message);
       searchInputRef.current?.focus();
@@ -487,7 +688,7 @@ export const OrganizationStep = ({
     setJoinLoading(true);
     try {
       const res = await request<any>({
-        path: "/api/requestor-organizations/join-requests",
+        path: "/api/organizations/join-requests",
         method: "POST",
         token,
         jsonBody: {
@@ -517,13 +718,44 @@ export const OrganizationStep = ({
     }
   };
 
-  const [showManualInput, setShowManualInput] = useState(false);
-
   const hasAnyInput = useMemo(() => {
     return Object.values(ownerForm).some(
       (v) => String(v || "").trim().length > 0,
     );
   }, [ownerForm]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || resolvedRole !== "owner") return;
+    if (!hasLoadedRef.current) return;
+    const hasDraft =
+      hasAnyInput || Boolean(licenseFileName || licenseFileId || licenseS3Key);
+    if (!hasDraft) {
+      clearLocalDraft();
+      return;
+    }
+    const payload = {
+      ownerForm,
+      showManualInput,
+      license: {
+        fileName: licenseFileName,
+        fileId: licenseFileId,
+        s3Key: licenseS3Key,
+        status: licenseStatus,
+      },
+    };
+    window.localStorage.setItem(localDraftKey, JSON.stringify(payload));
+  }, [
+    clearLocalDraft,
+    hasAnyInput,
+    licenseFileId,
+    licenseFileName,
+    licenseS3Key,
+    licenseStatus,
+    localDraftKey,
+    ownerForm,
+    resolvedRole,
+    showManualInput,
+  ]);
 
   useEffect(() => {
     if (hasAnyInput) {
@@ -533,13 +765,13 @@ export const OrganizationStep = ({
 
   useEffect(() => {
     if (!registerGoNextAction) return;
-    if (role === "owner") {
+    if (resolvedRole === "owner") {
       registerGoNextAction(() => handleOwnerSave());
-    } else if (role === "member") {
+    } else if (resolvedRole === "member") {
       registerGoNextAction(() => handleJoin());
     }
     return () => registerGoNextAction?.(null);
-  }, [role, registerGoNextAction, handleOwnerSave, handleJoin]);
+  }, [resolvedRole, registerGoNextAction, handleOwnerSave, handleJoin]);
 
   const renderOwnerForm = () => (
     <div className="space-y-4">
@@ -550,6 +782,7 @@ export const OrganizationStep = ({
           </p>
 
           <div
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             onDragOver={(event) => {
               event.preventDefault();
             }}
@@ -608,9 +841,10 @@ export const OrganizationStep = ({
             </Button>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {OWNER_ALL_FIELDS.map(({ key, label, placeholder }) => {
+            {OWNER_ALL_FIELDS.map(({ key, label, placeholder, span }) => {
+              const isAddress = key === "address";
               return (
-                <div className="space-y-1.5" key={key}>
+                <div className={cn("space-y-1.5", span)} key={key}>
                   <Label className="text-xs">
                     {label}
                     {ownerErrors[key] && (
@@ -625,14 +859,88 @@ export const OrganizationStep = ({
                     }}
                     value={ownerForm[key as keyof OwnerFormState] as string}
                     placeholder={placeholder}
+                    readOnly={isAddress}
                     onChange={(e) => {
+                      if (isAddress) return;
+                      const nextValue =
+                        key === "phone"
+                          ? formatPhoneNumber(e.target.value)
+                          : e.target.value;
                       setOwnerForm((prev) => ({
                         ...prev,
-                        [key]: e.target.value,
+                        [key]: nextValue,
                       }));
+                      if (key === "phone") {
+                        const hasDigits =
+                          normalizePhoneDigits(nextValue).length > 0;
+                        if (hasDigits && !isValidPhoneNumber(nextValue)) {
+                          setOwnerErrors((prev) => ({
+                            ...prev,
+                            phone: "전화번호 형식이 올바르지 않습니다",
+                          }));
+                          return;
+                        }
+                      }
                       if (ownerErrors[key]) {
                         setOwnerErrors((prev) => ({ ...prev, [key]: "" }));
                       }
+                    }}
+                    onClick={async () => {
+                      if (!isAddress) return;
+                      try {
+                        await loadPostcodeScript();
+                        if (!window.daum?.Postcode) {
+                          throw new Error("주소 검색 스크립트 로딩 실패");
+                        }
+                        if (postcodePopupOpen) {
+                          window.open("", POSTCODE_POPUP_NAME)?.focus();
+                          return;
+                        }
+                        postcodePopupOpen = true;
+                        new window.daum.Postcode({
+                          oncomplete: (data) => {
+                            const nextAddress =
+                              data.roadAddress ||
+                              data.jibunAddress ||
+                              data.address ||
+                              "";
+                            setOwnerForm((prev) => ({
+                              ...prev,
+                              address: nextAddress,
+                            }));
+                            if (ownerErrors.address) {
+                              setOwnerErrors((prev) => ({
+                                ...prev,
+                                address: "",
+                              }));
+                            }
+                            ownerFieldRefs.current.addressDetail?.focus();
+                          },
+                          onclose: () => {
+                            postcodePopupOpen = false;
+                          },
+                        }).open({ popupName: POSTCODE_POPUP_NAME });
+                      } catch {
+                        postcodePopupOpen = false;
+                        toast({
+                          title: "주소 검색을 불러오지 못했습니다",
+                          description: "잠시 후 다시 시도해주세요.",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      if (key === "address") {
+                        ownerFieldRefs.current.addressDetail?.focus();
+                        return;
+                      }
+                      if (key === "addressDetail") {
+                        ownerFieldRefs.current.businessType?.focus();
+                        return;
+                      }
+                      void handleOwnerSave();
                     }}
                     className={cn(
                       "h-9 text-sm",
@@ -651,13 +959,13 @@ export const OrganizationStep = ({
   const renderMemberSearch = () => (
     <div className="space-y-6">
       <p className="text-sm text-slate-500">
-        가입하고 싶은 기공소를 검색해 신청하세요. 대표가 승인하면 자동으로
+        가입하고 싶은 사업자를 검색해 신청하세요. 대표가 승인하면 자동으로
         연결됩니다.
       </p>
 
       <div className="space-y-2">
         <Label htmlFor="org-search">
-          기공소 검색
+          사업자 검색
           {memberError && (
             <span className="ml-2 text-xs font-medium text-destructive">
               {memberError}
@@ -670,12 +978,17 @@ export const OrganizationStep = ({
             id="org-search"
             ref={searchInputRef}
             className={cn("pl-9", memberError ? "border-destructive" : "")}
-            placeholder="기공소명, 대표자명, 사업자번호 중 하나 입력"
+            placeholder="사업자명, 대표자명, 사업자번호 중 하나 입력"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               setSelectedOrgId("");
               if (memberError) setMemberError("");
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              void handleJoin();
             }}
           />
         </div>
@@ -725,14 +1038,6 @@ export const OrganizationStep = ({
     </div>
   );
 
-  if (!role) {
-    return (
-      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center text-sm text-slate-500">
-        먼저 역할을 선택하면 필요한 카드가 열립니다.
-      </div>
-    );
-  }
-
   if (loading) {
     return (
       <div className="flex h-48 items-center justify-center text-sm text-slate-500">
@@ -752,12 +1057,12 @@ export const OrganizationStep = ({
               ? "사업자 정보가 등록되었습니다."
               : membership === "pending"
                 ? "대표 승인 대기 중입니다."
-                : "조직 연결이 끝났습니다."}
+                : "사업자 연결이 끝났습니다."}
           </p>
         </div>
       </div>
     );
   }
 
-  return role === "owner" ? renderOwnerForm() : renderMemberSearch();
+  return resolvedRole === "owner" ? renderOwnerForm() : renderMemberSearch();
 };
